@@ -3,12 +3,14 @@
   import { fuzzy, groupPath, groups, members, membership } from '../data';
   import { router } from '../router.svelte';
   import { sync, type Projection } from '../sync/client';
+  import PkImport from './PkImport.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
 
   let query = $state('');
   let filter = $state<string>('all'); // 'all' | 'archived' | group id
   let showGroups = $state(false);
+  let importing = $state(false);
 
   const all = $derived(members(projection).filter((m) => !m.deleted));
   const gs = $derived(groups(projection));
@@ -61,7 +63,12 @@
     {/each}
     <button class:on={filter === 'archived'} onclick={() => (filter = 'archived')}>Archived</button>
     <button class="ghost" onclick={() => (showGroups = !showGroups)}>{showGroups ? 'Done' : 'Groups…'}</button>
+    <button class="ghost" onclick={() => (importing = !importing)}>Import from PluralKit…</button>
   </div>
+
+  {#if importing}
+    <PkImport onclose={() => (importing = false)} />
+  {/if}
 
   {#if showGroups}
     <div class="groups">

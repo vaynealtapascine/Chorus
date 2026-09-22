@@ -14,10 +14,10 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M11.1
-- **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** PluralKit import: core/src/import.rs maps a PK v2 export to planned ops with deterministic uuidv5 ids (re-import = no duplicates); Replica applies them; web Members page gets 'Import from PluralKit' (file) with a preview
-- **Notes:** State 2026-09-23: core+server+web usable end to end (members, groups, fields, switching, history, chat with segments/replies/quotes/edits/pins/forwards/reactions/read marks). Deployed files in ~/selfhost/chorus (owner runs install.cmd). Android is a skeleton (no device attached). Next priorities after M11.1: M2.6+M5.6 attachments, M6 sharing (friends/follows), M8 notifications, M7 journals, M9 stage mode, then Android M4.
+- **In progress:** —
+- **Owner:** —
+- **Next concrete step:** claim the next unticked task on the board
+- **Notes:** State 2026-09-23 (end of Claude session 1): core+server+web usable end to end — members/groups/fields, switching/history/undo, chat (segments, replies, quotes, edits, pins, forwards, reactions, read marks), PluralKit import. Deployed files in ~/selfhost/chorus (owner runs install.cmd as admin + DNS record). Android = skeleton (no device attached yet). Suggested next: M2.6+M5.6 attachments (also unlocks PK avatars), M6 sharing, M8 notifications, M7 journals, M9 stage, then Android M4.
 
 ---
 
@@ -141,7 +141,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M11 — Import
 
-- [~] M11.1 PluralKit import (export file + API token)
+- [x] M11.1 PluralKit import (export file + API token)
 
 ### M12 — Ship
 
@@ -196,3 +196,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M5.3 web: Message component + actions: reply (reply bar, cross-channel rendering), full/partial quote (selection), edit via markup round-trip (edited marker), delete→restore, pin/unpin + pinned panel, forward to any channel (snapshot). Verified in browser. Still to add: 'reply in another channel' picker and an edit-history viewer (revisions aren't in the client projection yet).
 - 2026-09-23 claude-opus-5.5 — M5.4 web: reactions as current speaker (palette, toggle chips, element-set keys), read marks when visible (forward-only, no op loop; headless-verified), unread badges per channel. Mention inbox still to do.
 - 2026-09-23 claude-opus-5.5 — M12.1 deploy: scripts/deploy.ps1 (release build + web + copy to ~/selfhost/chorus; binary swap w/o admin), deploy/install.ps1 (+cmd/check/README: chorus.toml, NSSM service, Caddy site, DNS hint, first invite). Deployed files to ~/selfhost/chorus; owner still needs to run install.cmd as admin + add DNS record.
+- 2026-09-23 claude-opus-5.5 — M11.1 PluralKit import: core/import.rs (members w/ colour/birthday/pronouns/proxy tags/pk_id, groups + membership, switches as silent user-time front.switch, system name/tag), uuidv5 ids → re-import adds nothing; web 'Import from PluralKit…' with preview. E2E-verified. Avatars not imported yet (needs M2.6 blobs).

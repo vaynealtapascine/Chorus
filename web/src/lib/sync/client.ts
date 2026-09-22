@@ -123,6 +123,21 @@ export class SyncClient {
     return out.op.id;
   }
 
+  /** Import a PluralKit export (safe to repeat: ids are derived from PluralKit's). */
+  importPluralkit(exportJson: string): number {
+    if (!this.replica) throw new Error('not set up');
+    const out = JSON.parse(
+      this.replica.importPluralkit(
+        exportJson,
+        this.accountScope,
+        JSON.stringify({ now: Date.now(), tz_offset_min: -new Date().getTimezoneOffset() }),
+      ),
+    ) as { added: number; frames: unknown[] };
+    this.sendAll(out.frames);
+    this.changed();
+    return out.added;
+  }
+
   newId(): string {
     return newId(Date.now(), randomBytes());
   }
