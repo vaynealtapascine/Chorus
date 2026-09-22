@@ -250,3 +250,25 @@ async fn bad_token_is_refused() {
     let f: Frame = serde_json::from_str(&t).unwrap();
     assert!(matches!(f, Frame::Error { code, .. } if code == "unauthenticated"));
 }
+
+#[tokio::test]
+async fn a_device_links_another_device_to_its_account() {
+    let s = start().await;
+    let e = enrol(&s, auth::InviteKind::System, None, 21, "stars").await;
+    let http = reqwest::Client::new();
+    let url = format!("http://{}/api/v1/devices/invite", s.base);
+    assert_eq!(http.post(&url).send().await.unwrap().status(), 401);
+    let inv: Value =
+        http.post(&url).bearer_auth(e["session"].as_str().unwrap()).send().await.unwrap().json().await.unwrap();
+    let code = inv["code"].as_str().unwrap();
+    assert!(inv["url"].as_str().unwrap().ends_with(code));
+    let body = json!({"code": code, "device": {"name": "phone", "platform": "android", "public_key": pubkey(22)}});
+    let r = http.post(format!("http://{}/api/v1/auth/redeem", s.base)).json(&body).send().await.unwrap();
+    assert_eq!(r.status(), 201);
+    let phone: Value = r.json().await.unwrap();
+    assert_eq!(phone["account_id"], e["account_id"]);
+    // one use only
+    let body = json!({"code": code, "device": {"name": "again", "platform": "android", "public_key": pubkey(23)}});
+    let r = http.post(format!("http://{}/api/v1/auth/redeem", s.base)).json(&body).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+}

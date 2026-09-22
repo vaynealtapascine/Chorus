@@ -14,10 +14,10 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** —
-- **Owner:** —
-- **Next concrete step:** claim the next unticked task on the board
-- **Notes:** State 2026-09-23 (end of Claude session 1): core+server+web usable end to end — members/groups/fields, switching/history/undo, chat (segments, replies, quotes, edits, pins, forwards, reactions, read marks), PluralKit import. Deployed files in ~/selfhost/chorus (owner runs install.cmd as admin + DNS record). Android = skeleton (no device attached yet). Suggested next: M2.6+M5.6 attachments (also unlocks PK avatars), M6 sharing, M8 notifications, M7 journals, M9 stage, then Android M4.
+- **In progress:** M4.2 — Android local replica and sync (first pass)
+- **Owner:** gpt-6-sol, 2026-09-23
+- **Next concrete step:** replace `android/app/.../data/Store.kt` with Room over SQLCipher and a Keystore-wrapped database key, then add WorkManager sync triggers; verify the Android app on a device.
+- **Notes:** Opus left uncommitted Android work without a board entry. This turn recovered it: the app now builds with onboarding, foreground sync, front switching/history, basic member editing, and web-created one-use device invites. The current `Store.kt` uses **unencrypted SQLite** as a temporary prototype; do not distribute the APK or mark M4.2 done until SQLCipher is in place. QR scanning, background sync, the full member editor, and a device launch test are outstanding. `scripts/build-android-core.ps1 -Debug` regenerated ignored UniFFI bindings/native libraries; rerun it after FFI changes or on a fresh checkout. `:app:assembleDebug` and `:core-bridge:testDebugUnitTest` passed offline. `verify.py --quick --android` passed Rust/web but Android lint and the other unit tests could not download AndroidX Activity 1.8.2 from dl.google.com. No device is attached.
 
 ---
 
@@ -83,7 +83,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M4 — Android foundation
 
 - [ ] M4.1 Theme + components mirroring DESIGN.md
-- [ ] M4.2 Room (SQLCipher) + outbox + sync engine (via core UniFFI) + WorkManager
+- [~] M4.2 Room (SQLCipher) + outbox + sync engine (via core UniFFI) + WorkManager
 - [ ] M4.3 Onboarding via invite link / QR
 - [ ] M4.4 Members, groups, switcher, front history
 - [ ] M4.5 Quick-switch widget (Glance): pinned+recent grid, folders, mode chip, undo
@@ -197,3 +197,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M5.4 web: reactions as current speaker (palette, toggle chips, element-set keys), read marks when visible (forward-only, no op loop; headless-verified), unread badges per channel. Mention inbox still to do.
 - 2026-09-23 claude-opus-5.5 — M12.1 deploy: scripts/deploy.ps1 (release build + web + copy to ~/selfhost/chorus; binary swap w/o admin), deploy/install.ps1 (+cmd/check/README: chorus.toml, NSSM service, Caddy site, DNS hint, first invite). Deployed files to ~/selfhost/chorus; owner still needs to run install.cmd as admin + add DNS record.
 - 2026-09-23 claude-opus-5.5 — M11.1 PluralKit import: core/import.rs (members w/ colour/birthday/pronouns/proxy tags/pk_id, groups + membership, switches as silent user-time front.switch, system name/tag), uuidv5 ids → re-import adds nothing; web 'Import from PluralKit…' with preview. E2E-verified. Avatars not imported yet (needs M2.6 blobs).
+- 2026-09-23 gpt-6-sol — recovered Opus's uncommitted Android first pass and device-linking flow; regenerated UniFFI bridge, fixed invite deep-link handling and auth renewal, built debug APK, recorded M4.2 as WIP.

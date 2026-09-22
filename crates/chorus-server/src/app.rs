@@ -63,6 +63,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/redeem", post(redeem))
         .route("/auth/challenge", post(challenge))
         .route("/auth/session", post(session))
+        .route("/devices/invite", post(device_invite))
         .route("/sync", get(sync_ws));
     let mut app = Router::new().nest("/api/v1", api).with_state(state.clone());
     if let Some(dir) = state.cfg.server.web_dir.clone() {
@@ -160,6 +161,35 @@ async fn session(State(s): State<AppState>, Json(b): Json<SessionIn>) -> Result<
     let now = now_ms();
     let token = auth::verify(&s.db(), &b.device_id, &b.nonce, &b.signature, &s.instance_id, now, ttl)?;
     Ok(Json(json!({"session": token, "expires_at": now + ttl})))
+}
+
+fn bearer(headers: &axum::http::HeaderMap) -> Result<&str, ApiError> {
+    headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .ok_or_else(|| ApiError(StatusCode::UNAUTHORIZED, "unauthenticated", "missing session".into()))
+}
+
+/// A one-use, 1-day invite that links another device to the caller's account (API.md §2.1).
+async fn device_invite(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let now = now_ms();
+    let conn = s.db();
+    let who = auth::authenticate(&conn, bearer(&headers)?, now, s.session_ttl())?;
+    let code = auth::create_invite(
+        &conn,
+        auth::InviteKind::Device,
+        Some(&who.account_id),
+        &who.device_id,
+        86_400_000,
+        1,
+        now,
+    )?;
+    let url = format!("{}/i/{code}", s.cfg.server.public_url.trim_end_matches('/'));
+    Ok(Json(json!({"code": code, "url": url, "expires_at": now + 86_400_000})))
 }
 
 // ─── sync socket ─────────────────────────────────────────────────────────────

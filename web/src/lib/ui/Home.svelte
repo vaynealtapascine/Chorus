@@ -5,6 +5,7 @@
   import { doSwitch } from '../front.svelte';
   import FrontCard from './FrontCard.svelte';
   import Reviews from './Reviews.svelte';
+  import LinkDevice from './LinkDevice.svelte';
   import type { FrontEntry, Member } from './types';
 
   let { projection, dark, onswitch }: { projection: Projection; dark: boolean; onswitch: () => void } = $props();
@@ -91,6 +92,7 @@
       {/each}
     </div>
   </section>
+  <LinkDevice />
 </div>
 
 <style>

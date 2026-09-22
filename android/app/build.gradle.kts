@@ -38,4 +38,6 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.activity.compose)
     implementation(libs.core.ktx)
+    implementation(libs.okhttp)
+    implementation(libs.coroutines.android)
 }

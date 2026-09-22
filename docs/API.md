@@ -30,6 +30,13 @@ POST /auth/redeem
 → 201 { "account_id":"…", "device_id":"…", "short_id":"a1b2c3d4", "session":"<token>", "expires_at":… }
 ```
 
+Link another device of the same account (any enrolled device; one use, 1 day):
+
+```
+POST /devices/invite            Authorization: Bearer <session>
+→ 200 { "code":"…", "url":"https://chorus.…/i/<code>", "expires_at":… }
+```
+
 ### 2.2 Sessions
 
 - Session token: opaque random 256-bit, stored hashed, 30-day sliding expiry, bound to a device.

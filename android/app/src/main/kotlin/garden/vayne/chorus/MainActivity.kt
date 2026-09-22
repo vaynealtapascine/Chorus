@@ -1,112 +1,117 @@
 package garden.vayne.chorus
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import garden.vayne.chorus.data.Chorus
+import garden.vayne.chorus.data.Status
 import garden.vayne.chorus.designsystem.ChorusTheme
 import garden.vayne.chorus.designsystem.LocalChorusPalette
-import org.json.JSONObject
-import uniffi.chorus_ffi.adaptColor
-import uniffi.chorus_ffi.coreVersion
+import garden.vayne.chorus.ui.History
+import garden.vayne.chorus.ui.Home
+import garden.vayne.chorus.ui.Members
+import garden.vayne.chorus.ui.Onboarding
 
-/** M0.3 skeleton: proves the Rust core loads on device. Replaced by the real app in M4. */
 class MainActivity : ComponentActivity() {
+    private var inviteLink = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { ChorusTheme { Home() } }
+        inviteLink.value = inviteFrom(intent)
+        val chorus = Chorus.get(this)
+        setContent { ChorusTheme { App(chorus, inviteLink.value) } }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        inviteFrom(intent)?.let { inviteLink.value = it }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Chorus.get(this).reconnectNow()
+    }
+
+    private fun inviteFrom(i: Intent?): String? =
+        i?.data?.toString()?.takeIf { "/i/" in it } ?: i?.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { "/i/" in it }
 }
 
-private data class Sample(val id: String, val name: String, val color: String, val sigil: String)
+private enum class Tab(val label: String) { Home("Home"), Members("Members"), History("History") }
 
-private val sample = listOf(
-    Sample("kai", "Kai", "#C0694E", "🌌"),
-    Sample("june", "June", "#5E8C61", "🔖"),
-    Sample("rin", "Rin", "#fff27a", "❤️‍🔥"),
-    Sample("moss", "Moss", "#6C7BD6", "🌿"),
-)
-
-private fun hex(s: String) = Color(android.graphics.Color.parseColor(s))
-
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun Home() {
+private fun App(chorus: Chorus, invite: String?) {
     val p = LocalChorusPalette.current
-    val dark = isSystemInDarkTheme()
-    var fronting by remember { mutableStateOf("kai") }
-    Column(
-        Modifier.fillMaxSize().background(p.bg).safeDrawingPadding().padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-            Text("Chorus", fontSize = 28.sp, fontWeight = FontWeight.SemiBold, color = p.ink)
-            Spacer(Modifier.weight(1f))
-            Text("core ${coreVersion()}", fontSize = 12.sp, color = p.ink3)
-        }
-        val who = sample.first { it.id == fronting }
-        val c = JSONObject(adaptColor(who.color, dark, "subtle"))
-        Row(
-            Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(20.dp))
-                .border(1.dp, p.line, RoundedCornerShape(20.dp)).padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier.size(56.dp).border(2.dp, hex(c.getString("ring")), CircleShape).background(p.surface2, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) { Text(who.sigil, fontSize = 26.sp) }
-            Spacer(Modifier.width(16.dp))
-            Column {
-                Text(who.name, fontSize = 22.sp, fontWeight = FontWeight.Medium, color = hex(c.getString("name")))
-                Text("is here", fontSize = 13.sp, color = p.ink2)
+    val status by chorus.status.collectAsState()
+    val model by chorus.model.collectAsState()
+    var tab by rememberSaveable { mutableStateOf(Tab.Home) }
+
+    when (status) {
+        Status.Loading -> Box(Modifier.fillMaxSize().background(p.bg))
+        Status.NoDevice -> Onboarding(chorus, invite)
+        else -> Column(Modifier.fillMaxSize().background(p.bg)) {
+            Row(
+                Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Chorus", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = p.ink)
+                Spacer(Modifier.weight(1f))
+                val (dot, label) = when (status) {
+                    Status.Live -> p.ok to "live"
+                    Status.Connecting -> p.warn to "connecting"
+                    else -> p.ink3 to "offline"
+                }
+                Box(Modifier.size(8.dp).background(dot, CircleShape))
+                Spacer(Modifier.width(6.dp))
+                Text(label, fontSize = 12.sp, color = p.ink3)
             }
-        }
-        Text("Quick switch", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = p.ink2)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            sample.forEach { m ->
-                val mc = JSONObject(adaptColor(m.color, dark, "subtle"))
-                Row(
-                    Modifier.background(p.surface, CircleShape).border(1.dp, p.line, CircleShape)
-                        .clickable { fronting = m.id }.padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(
-                        Modifier.size(32.dp).border(2.dp, hex(mc.getString("ring")), CircleShape).background(p.surface2, CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) { Text(m.sigil) }
-                    Spacer(Modifier.width(8.dp))
-                    Text(m.name, color = hex(mc.getString("name")))
+            Box(Modifier.weight(1f)) {
+                when (tab) {
+                    Tab.Home -> Home(chorus, model)
+                    Tab.Members -> Members(chorus, model)
+                    Tab.History -> History(model)
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().background(p.surface).navigationBarsPadding().padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                Tab.entries.forEach { t ->
+                    Text(
+                        t.label,
+                        color = if (t == tab) p.accent else p.ink2,
+                        fontWeight = if (t == tab) FontWeight.SemiBold else FontWeight.Normal,
+                        modifier = Modifier.clickable { tab = t }.padding(horizontal = 20.dp, vertical = 12.dp),
+                    )
                 }
             }
         }

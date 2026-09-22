@@ -77,6 +77,22 @@ pub fn hlc_observe(last: String, node: u32, remote: String, now_ms: u64) -> Resu
     wrap(api::hlc_observe(&last, node, &remote, now_ms))
 }
 
+/// A new UUIDv7 id (`random` = 10 bytes).
+#[uniffi::export]
+pub fn new_id(now_ms: u64, random: Vec<u8>) -> Result<String, CoreError> {
+    let r: [u8; 10] = random
+        .get(..10)
+        .and_then(|b| b.try_into().ok())
+        .ok_or_else(|| CoreError::Invalid { reason: "need 10 random bytes".into() })?;
+    Ok(chorus_core::id::new_id(now_ms, r))
+}
+
+/// Preview a PluralKit import: `{"members", "groups", "switches", "warnings"}`.
+#[uniffi::export]
+pub fn plan_pluralkit(export_json: String, scope: String) -> Result<String, CoreError> {
+    wrap(api::JsonReplica::plan_pluralkit(&export_json, &scope))
+}
+
 /// The device's replica (engine + in-memory store + clock). See `chorus_core::replica`.
 #[derive(uniffi::Object)]
 pub struct CoreReplica(std::sync::Mutex<api::JsonReplica>);
@@ -137,5 +153,15 @@ impl CoreReplica {
 
     pub fn rejected(&self) -> String {
         self.lock().rejected()
+    }
+
+    /// → `{"added": n, "frames": […]}`. Safe to repeat.
+    pub fn import_pluralkit(
+        &self,
+        export_json: String,
+        scope: String,
+        device_now_json: String,
+    ) -> Result<String, CoreError> {
+        wrap(self.lock().import_pluralkit(&export_json, &scope, &device_now_json))
     }
 }

@@ -6,6 +6,8 @@ activity-compose = "1.9.3"
 core-ktx = "1.13.1"
 jna = "5.14.0"
 junit = "4.13.2"
+okhttp = "4.12.0"
+coroutines = "1.9.0"
 
 [libraries]
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
@@ -18,6 +20,8 @@ activity-compose = { group = "androidx.activity", name = "activity-compose", ver
 core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "core-ktx" }
 jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
