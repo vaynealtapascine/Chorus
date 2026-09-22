@@ -13,3 +13,5 @@ pub mod text;
 pub mod speaker;
 pub mod feed;
 pub mod color;
+pub mod model;
+pub mod sync;

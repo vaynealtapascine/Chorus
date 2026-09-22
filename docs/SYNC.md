@@ -328,8 +328,10 @@ user action
 `hello.epoch` differs (or whose cursor exceeds the server's max seq) enters **reconcile**:
 
 1. Server replies `welcome` with `reconcile: true` and its max seq per scope.
-2. Device re-pushes every op it holds for those scopes whose local seq is above the server's max
-   (or null). The server accepts unknown ids as new ops (new seqs); known ids are no-ops.
+2. Device re-pushes **every** confirmed op it holds for those scopes (plus its pending outbox as
+   usual). Seqs from the old epoch are meaningless — the restored server reuses them — so they
+   can't be used to pick what to send. The server accepts unknown ids as new ops (new seqs);
+   known ids are no-ops that return the current stamp.
 3. Device then re-snapshots. Pending outbox is kept throughout.
 
 This is how "phone as full replica" (D-043) restores data written after the last backup. A CLI
