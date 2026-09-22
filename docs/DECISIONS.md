@@ -82,5 +82,4 @@ Pin here as they are adopted (tool/library → version → date → why).
 | uniffi | 0.32.1 (proc-macro, library-mode bindgen; bin `uniffi-bindgen` in chorus-ffi) | 2026-09-23 | Kotlin bindings need JNA on Android (`net.java.dev.jna:jna:5.x@aar`). |
 | wasm-bindgen | 0.2.128 (crate) + wasm-bindgen-cli 0.2.128 | 2026-09-23 | CLI version must equal the crate version. |
 | cargo-ndk | 4.1.2 | 2026-09-23 | `cargo install cargo-ndk --locked` |
-| Android NDK | 28.2.13676358 at `F:\DunBuildndroid-sdk
-dk` (shared with Dun) | 2026-09-23 | `scripts/build-android-core.ps1` finds it. |
+| Android NDK | 28.2.13676358 at `F:/DunBuild/android-sdk/ndk` (shared with Dun) | 2026-09-23 | `scripts/build-android-core.ps1` finds it. |
