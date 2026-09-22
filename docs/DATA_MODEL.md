@@ -136,7 +136,10 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `message.forward` | `{channel_id, authors, items:[{message_id, offset?, length?}], comment?}` → a new message whose `forward_snapshot` holds the copied items | APP |
 | `*.restore` | `post.restore`, `member.restore`, `group.restore`, `space.restore` — same rule as messages | LWW-F |
 | `message.pin` / `message.unpin` | `{message_id}` | LWW-F |
-| `reaction.add` / `reaction.remove` | `{target_type, target_id, emoji, member_id}` | SET |
+| `reaction.add` / `reaction.remove` | `{target_type: message, target_id, emoji, member_id}` — in the message's `space:` scope | SET |
+| `post.react` / `post.unreact` | `{target_type: post, target_id, emoji, member_id}` — in the **reactor's** `account:` scope (they may not write to the post owner's scope); owners see them through views | SET |
+| `front.unretract` | `{target_op_id}` (undo an undo, Advanced) | TL |
+| `post.attachment` | attachment row for a post, same payload as `attachment.create` | APP |
 | `read.mark` | `{channel_id, reader_member_id?, message_id}` | max-by-message-order |
 | `attachment.create` | `{blob_hash, filename, mime, size, width?, height?, duration_ms?, alt_text?}` | APP |
 | `attachment.set` | `{alt_text?, is_spoiler?}` | LWW-F |
@@ -155,7 +158,7 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `pref.set` | per-account or per-device preferences (`{scope:'account'|'device', key, value}`) | LWW-F |
 | `admin.*` | invites, device revoke, purge | server-only |
 
-Every payload type is a Rust struct in `chorus-core::ops` with serde; the JSON Schema for each is
+The authoritative list is `CATALOGUE` in `chorus-core/src/op.rs` (kind → table, scope, merge action, settable fields); this table documents it. Every payload type is a Rust struct in `chorus-core` with serde; the JSON Schema for each is
 generated into `fixtures/schema/` so Kotlin/TS can validate.
 
 ## 4. Projected tables (server schema, SQLite)

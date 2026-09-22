@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M1.2
+- **In progress:** M1.4
 - **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** core/src/op.rs: envelope + payload structs; unknown kinds kept as raw JSON
+- **Next concrete step:** core/src/lww.rs: field-level LWW apply + LWW element set + tombstones
 - **Notes:** Read AGENTS.md → DECISIONS.md → SYNC.md + DATA_MODEL.md before M0/M1. Open questions (docs/OPEN_QUESTIONS.md) have defaults; don't block on them. README disclosure card image is not generated yet (M12.2).
 
 ---
@@ -51,9 +51,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M1 — Core (pure Rust, no IO)
 
 - [x] M1.1 IDs (UUIDv7), HLC type + string encoding, time types
-- [~] M1.2 Op envelope + op catalogue types (serde, versioned)
+- [x] M1.2 Op envelope + op catalogue types (serde, versioned)
 - [ ] M1.3 Front fold: switch/add/remove/update/retract/amend → snapshots → intervals
-- [ ] M1.4 LWW register + LWW element-set helpers, field-level merge
+- [~] M1.4 LWW register + LWW element-set helpers, field-level merge
 - [ ] M1.5 Text model: plain text + entities; markup parser (Telegram parity) + serializer
 - [ ] M1.6 Speaker parsing: sigils (emoji), proxy tags, multi-author prefixes, newline segments (D-045)
 - [ ] M1.7 Feed filter language: parser → AST → evaluator
@@ -169,3 +169,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — Q6 answered: server-wide custom emoji, no stickers (D-054); docs + M5.13 added. No open questions remain.
 - 2026-09-23 claude-opus-5.5 — M0.1 Cargo workspace (core + server crates, lints, release profile).
 - 2026-09-23 claude-opus-5.5 — M1.1 ids, HLC, occurred_at correction (core: id.rs, hlc.rs, time.rs)
+- 2026-09-23 claude-opus-5.5 — M1.2 op envelope, scope parsing, catalogue as data (core/src/op.rs), structural validation
