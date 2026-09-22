@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
-use crate::op::{self, Known, Op, OpError, Scope};
+use crate::op::{self, Op, OpError, Scope};
 use crate::time::{self, ClockSample};
 
 /// Max ops per push batch.
@@ -96,7 +96,60 @@ pub struct AckResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub occurred_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub received_at: Option<i64>,
+    /// Author account/device as stored (differs from the pusher for reconcile re-pushes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<AckError>,
+}
+
+impl AckResult {
+    fn ok(o: &Op) -> AckResult {
+        AckResult {
+            id: o.id.clone(),
+            seq: o.seq,
+            occurred_at: o.occurred_at,
+            received_at: o.received_at,
+            account_id: o.account_id.clone(),
+            device_id: o.device_id.clone(),
+            error: None,
+        }
+    }
+
+    fn err(id: String, code: &str, message: String, retry: bool) -> AckResult {
+        AckResult {
+            id,
+            seq: None,
+            occurred_at: None,
+            received_at: None,
+            account_id: None,
+            device_id: None,
+            error: Some(AckError { code: code.into(), message, retry }),
+        }
+    }
+}
+
+/// Everything the server adds to an op when it accepts it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stamp {
+    pub seq: i64,
+    pub occurred_at: i64,
+    pub received_at: i64,
+    pub account_id: String,
+    pub device_id: String,
+}
+
+impl Stamp {
+    pub fn apply(&self, o: &mut Op) {
+        o.seq = Some(self.seq);
+        o.occurred_at = Some(self.occurred_at);
+        o.received_at = Some(self.received_at);
+        o.account_id = Some(self.account_id.clone());
+        o.device_id = Some(self.device_id.clone());
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -124,6 +177,8 @@ pub enum Frame {
     Welcome {
         server_time: i64,
         epoch: String,
+        /// The account this device belongs to (the server is the authority).
+        account_id: String,
         offset_ms: i64,
         scopes: Vec<String>,
         /// Server's highest seq per granted scope (used by reconcile).
@@ -134,6 +189,9 @@ pub enum Frame {
     Push {
         batch: String,
         ops: Vec<Op>,
+        /// Reconcile re-push of already-accepted ops (SYNC.md §7.3).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        restore: bool,
     },
     Ack {
         batch: String,
@@ -186,14 +244,16 @@ pub trait ClientStore {
     fn set_scopes(&mut self, scopes: &[String]);
     /// Insert a server-confirmed op, replacing a local copy with the same id.
     fn put_remote(&mut self, op: Op);
-    /// Mark a pending op confirmed.
-    fn ack(&mut self, id: &str, seq: i64, occurred_at: i64);
+    /// Mark an op confirmed with the server's stamp.
+    fn ack(&mut self, id: &str, stamp: &Stamp);
     /// Move a pending op to "sync issues" (it stays out of projections and digests).
     fn reject(&mut self, id: &str, error: AckError);
-    /// Pending ops in creation order, excluding `skip`.
-    fn pending(&self, skip: &BTreeSet<String>, limit: usize) -> Vec<Op>;
-    /// Confirmed ops of a scope with seq > `after` (for reconcile re-push).
-    fn confirmed_after(&self, scope: &str, after: i64) -> Vec<Op>;
+    /// Pending ops excluding `skip`: new local ops in creation order (`restore == false`) or
+    /// ops being restored to the server after a restore (`restore == true`).
+    fn pending(&self, skip: &BTreeSet<String>, limit: usize, restore: bool) -> Vec<Op>;
+    /// Put every confirmed op of a scope back into the outbox, flagged restore, keeping its
+    /// stamps except `seq` (SYNC.md §7.3).
+    fn demote_for_restore(&mut self, scope: &str);
     /// Digest of confirmed ops in a scope.
     fn digest(&self, scope: &str) -> Digest;
     /// Forget confirmed-state bookkeeping so the scope can be re-pulled (ops are kept).
@@ -217,6 +277,7 @@ pub struct ClientEngine {
     pub last_offset_ms: i64,
     /// Scopes whose digest check failed and are being re-pulled.
     pub repairs: u64,
+    pub account_id: Option<String>,
 }
 
 impl ClientEngine {
@@ -228,6 +289,7 @@ impl ClientEngine {
             next_batch: 0,
             last_offset_ms: 0,
             repairs: 0,
+            account_id: None,
         }
     }
 
@@ -245,7 +307,7 @@ impl ClientEngine {
             clock,
             core: env!("CARGO_PKG_VERSION").into(),
             app: String::new(),
-            outbox: store.pending(&BTreeSet::new(), usize::MAX).len(),
+            outbox: store.pending(&BTreeSet::new(), usize::MAX, false).len(),
         }
     }
 
@@ -260,16 +322,19 @@ impl ClientEngine {
         if self.state != ClientState::Live {
             return out;
         }
-        while self.in_flight.len() < MAX_IN_FLIGHT {
-            let skip: BTreeSet<String> = self.in_flight.values().flatten().cloned().collect();
-            let ops = store.pending(&skip, BATCH_OPS);
-            if ops.is_empty() {
-                break;
+        // Ops being restored after a server restore go first, in their own batches.
+        for restore in [true, false] {
+            while self.in_flight.len() < MAX_IN_FLIGHT {
+                let skip: BTreeSet<String> = self.in_flight.values().flatten().cloned().collect();
+                let ops = store.pending(&skip, BATCH_OPS, restore);
+                if ops.is_empty() {
+                    break;
+                }
+                self.next_batch += 1;
+                let batch = format!("b{}", self.next_batch);
+                self.in_flight.insert(batch.clone(), ops.iter().map(|o| o.id.clone()).collect());
+                out.push(Frame::Push { batch, ops, restore });
             }
-            self.next_batch += 1;
-            let batch = format!("b{}", self.next_batch);
-            self.in_flight.insert(batch.clone(), ops.iter().map(|o| o.id.clone()).collect());
-            out.push(Frame::Push { batch, ops });
         }
         out
     }
@@ -277,37 +342,43 @@ impl ClientEngine {
     pub fn on_frame(&mut self, store: &mut dyn ClientStore, frame: Frame) -> Vec<Frame> {
         let mut out = Vec::new();
         match frame {
-            Frame::Welcome { epoch, offset_ms, scopes, max_seq, reconcile, .. } => {
+            Frame::Welcome { epoch, account_id, offset_ms, scopes, max_seq, reconcile, .. } => {
                 self.last_offset_ms = offset_ms;
-                if reconcile {
-                    // The server lost ops (restored from a backup). Seqs from the old epoch mean
-                    // nothing now — they get reused — so re-push every confirmed op; the server
-                    // keeps the ones it has (by id) and re-stamps the rest. Then pull from zero.
-                    let _ = &max_seq;
-                    let mut ops = Vec::new();
-                    for s in &scopes {
-                        ops.extend(store.confirmed_after(s, 0));
-                        store.reset_scope(s);
-                    }
-                    for chunk in ops.chunks(BATCH_OPS) {
-                        self.next_batch += 1;
-                        let batch = format!("r{}", self.next_batch);
-                        // not tracked as in-flight: their acks just restamp them
-                        out.push(Frame::Push { batch, ops: chunk.to_vec() });
-                    }
-                    for s in &scopes {
-                        out.push(Frame::Pull { scope: s.clone(), after: 0 });
-                    }
-                }
+                self.account_id = Some(account_id);
                 store.set_epoch(&epoch);
                 store.set_scopes(&scopes);
                 self.state = ClientState::Live;
+                if reconcile {
+                    // The server lost ops (restored from a backup). Seqs from the old epoch mean
+                    // nothing now — they get reused — so every confirmed op goes back into the
+                    // outbox (flagged restore) and is retried like any pending op until the server
+                    // has it; the server keeps ones it already has. Then pull from zero.
+                    let _ = &max_seq;
+                    for s in &scopes {
+                        store.demote_for_restore(s);
+                        store.reset_scope(s);
+                    }
+                    out.extend(self.pump(store));
+                    for s in &scopes {
+                        out.push(Frame::Pull { scope: s.clone(), after: 0 });
+                    }
+                    return out;
+                }
                 out.extend(self.pump(store));
             }
             Frame::Ack { batch, results } => {
                 for r in results {
                     match (r.seq, r.occurred_at, r.error) {
-                        (Some(seq), Some(at), None) => store.ack(&r.id, seq, at),
+                        (Some(seq), Some(at), None) => {
+                            let stamp = Stamp {
+                                seq,
+                                occurred_at: at,
+                                received_at: r.received_at.unwrap_or(at),
+                                account_id: r.account_id.or_else(|| self.account_id.clone()).unwrap_or_default(),
+                                device_id: r.device_id.unwrap_or_else(|| self.device_id.clone()),
+                            };
+                            store.ack(&r.id, &stamp)
+                        }
                         (_, _, Some(e)) if !e.retry => store.reject(&r.id, e),
                         _ => {} // retryable: stays pending
                     }
@@ -363,6 +434,8 @@ pub struct MemStore {
     /// Creation order of local ops.
     pub local_order: Vec<String>,
     pub rejected: BTreeMap<String, AckError>,
+    /// Ops being restored to a restored server (demoted from confirmed).
+    pub restoring: Vec<String>,
 }
 
 impl MemStore {
@@ -403,34 +476,42 @@ impl ClientStore for MemStore {
     }
     fn put_remote(&mut self, op: Op) {
         self.rejected.remove(&op.id);
+        self.restoring.retain(|id| *id != op.id);
         self.ops.insert(op.id.clone(), op);
     }
-    fn ack(&mut self, id: &str, seq: i64, occurred_at: i64) {
+    fn ack(&mut self, id: &str, stamp: &Stamp) {
         if let Some(o) = self.ops.get_mut(id) {
-            o.seq = Some(seq);
-            o.occurred_at = Some(occurred_at);
+            stamp.apply(o);
         }
+        self.restoring.retain(|x| x != id);
     }
     fn reject(&mut self, id: &str, error: AckError) {
         if self.ops.get(id).is_some_and(|o| o.seq.is_none()) {
             self.rejected.insert(id.into(), error);
         }
     }
-    fn pending(&self, skip: &BTreeSet<String>, limit: usize) -> Vec<Op> {
-        self.local_order
+    fn pending(&self, skip: &BTreeSet<String>, limit: usize, restore: bool) -> Vec<Op> {
+        let order = if restore { &self.restoring } else { &self.local_order };
+        order
             .iter()
             .filter(|id| !skip.contains(*id) && !self.rejected.contains_key(*id))
+            .filter(|id| restore || !self.restoring.contains(id))
             .filter_map(|id| self.ops.get(id))
             .filter(|o| o.seq.is_none())
             .take(limit)
             .cloned()
             .collect()
     }
-    fn confirmed_after(&self, scope: &str, after: i64) -> Vec<Op> {
-        let mut v: Vec<Op> =
-            self.ops.values().filter(|o| o.scope == scope && o.seq.is_some_and(|s| s > after)).cloned().collect();
-        v.sort_by_key(|o| o.seq);
-        v
+    fn demote_for_restore(&mut self, scope: &str) {
+        let mut ids: Vec<(i64, String)> =
+            self.ops.values().filter(|o| o.scope == scope && o.seq.is_some()).map(|o| (o.seq.unwrap_or(0), o.id.clone())).collect();
+        ids.sort();
+        for (_, id) in ids {
+            if let Some(o) = self.ops.get_mut(&id) {
+                o.seq = None;
+            }
+            self.restoring.push(id);
+        }
     }
     fn digest(&self, scope: &str) -> Digest {
         Digest::of(self.ops.values().filter(|o| o.scope == scope && o.seq.is_some()).map(|o| o.id.as_str()))
@@ -464,6 +545,9 @@ pub struct MemServer {
     pub devices: BTreeMap<String, String>,
     conns: BTreeMap<String, Conn>,
     pub rejected: Vec<(String, OpError)>,
+    /// After a restore, devices may re-push ops with their original stamps (SYNC.md §7.3).
+    /// Closed by an admin once every device has reconciled.
+    pub restore_open: bool,
 }
 
 impl MemServer {
@@ -477,6 +561,7 @@ impl MemServer {
             devices: BTreeMap::new(),
             conns: BTreeMap::new(),
             rejected: Vec::new(),
+            restore_open: false,
         }
     }
 
@@ -514,6 +599,7 @@ impl MemServer {
         self.log.truncate(keep);
         self.by_id = self.log.iter().enumerate().map(|(i, o)| (o.id.clone(), i)).collect();
         self.epoch += 1;
+        self.restore_open = true;
         self.conns.clear();
     }
 
@@ -527,48 +613,43 @@ impl MemServer {
     }
 
     /// Accept one op from a device. Idempotent by id.
-    fn accept(&mut self, device: &str, mut o: Op, now: i64) -> (AckResult, Option<Op>) {
+    ///
+    /// `restore` marks a reconcile re-push (SYNC.md §7.3): the op was already accepted in an
+    /// earlier epoch, so its original author and times are kept and only `seq` is new.
+    fn accept(&mut self, device: &str, mut o: Op, now: i64, restore: bool) -> (AckResult, Option<Op>) {
         let conn = self.conns.get(device).cloned();
         let Some(conn) = conn else {
-            return (AckResult { id: o.id, seq: None, occurred_at: None, error: Some(AckError { code: "unauthenticated".into(), message: "no session".into(), retry: true }) }, None);
+            return (AckResult::err(o.id, "unauthenticated", "no session".into(), true), None);
         };
         if let Some(&i) = self.by_id.get(&o.id) {
-            let e = &self.log[i];
-            return (AckResult { id: o.id, seq: e.seq, occurred_at: e.occurred_at, error: None }, None);
+            return (AckResult::ok(&self.log[i]), None);
         }
-        let reject = |id: String, e: OpError| AckResult {
-            id,
-            seq: None,
-            occurred_at: None,
-            error: Some(AckError { code: e.code().into(), message: e.to_string(), retry: false }),
-        };
-        match op::validate(&o) {
-            Err(e) => {
-                self.rejected.push((o.id.clone(), e.clone()));
-                return (reject(o.id, e), None);
-            }
-            Ok(Known::Yes(_) | Known::Opaque) => {}
+        if let Err(e) = op::validate(&o) {
+            self.rejected.push((o.id.clone(), e.clone()));
+            return (AckResult::err(o.id, e.code(), e.to_string(), false), None);
         }
-        let allowed = Scope::parse(&o.scope).is_some() && self.access.get(&conn.account).is_some_and(|s| s.contains(&o.scope));
+        let can = |acct: &str| self.access.get(acct).is_some_and(|s| s.contains(&o.scope));
+        let preserved = restore && o.account_id.is_some() && o.occurred_at.is_some();
+        // Authorship: a fresh op is the pusher's; a restored op keeps its author, who must
+        // still have access, and the pusher must be able to read the scope too.
+        let author = if preserved { o.account_id.clone().unwrap_or_default() } else { conn.account.clone() };
+        let allowed = Scope::parse(&o.scope).is_some() && can(&author) && can(&conn.account);
         if !allowed {
             let e = OpError::BadScope(format!("{} not writable", o.scope));
             self.rejected.push((o.id.clone(), e.clone()));
-            let mut r = reject(o.id, e);
-            if let Some(err) = r.error.as_mut() {
-                err.code = "forbidden".into();
-            }
-            return (r, None);
+            return (AckResult::err(o.id, "forbidden", e.to_string(), false), None);
         }
-        let t = time::OpTime { device_at: o.device_at, mono: o.mono, boot_id: o.boot_id.clone(), time_source: o.time_source };
-        let c = time::correct(&t, &conn.sample, now);
         o.seq = Some(self.log.len() as i64 + 1);
-        o.account_id = Some(conn.account.clone());
-        o.device_id = Some(device.into());
-        o.received_at = Some(now);
-        o.occurred_at = Some(c.occurred_at);
+        if !preserved {
+            let t = time::OpTime { device_at: o.device_at, mono: o.mono, boot_id: o.boot_id.clone(), time_source: o.time_source };
+            o.occurred_at = Some(time::correct(&t, &conn.sample, now).occurred_at);
+            o.account_id = Some(conn.account.clone());
+            o.device_id = Some(device.into());
+            o.received_at = Some(now);
+        }
         self.by_id.insert(o.id.clone(), self.log.len());
         self.log.push(o.clone());
-        (AckResult { id: o.id.clone(), seq: o.seq, occurred_at: o.occurred_at, error: None }, Some(o))
+        (AckResult::ok(&o), Some(o))
     }
 
     /// Handle a frame from `device`. Returns frames to deliver: `(device, frame)`.
@@ -592,6 +673,7 @@ impl MemServer {
                     Frame::Welcome {
                         server_time: now,
                         epoch: self.epoch_str(),
+                        account_id: self.devices.get(device).cloned().unwrap_or_default(),
                         offset_ms: offset,
                         scopes: scopes.clone(),
                         max_seq,
@@ -606,14 +688,15 @@ impl MemServer {
                     }
                 }
             }
-            Frame::Push { batch, ops } => {
+            Frame::Push { batch, ops, restore } => {
+                let restore = restore && self.restore_open;
                 if !self.conns.contains_key(device) {
                     return out;
                 }
                 let mut results = Vec::new();
                 let mut fresh: Vec<Op> = Vec::new();
                 for o in ops {
-                    let (r, new) = self.accept(device, o, now);
+                    let (r, new) = self.accept(device, o, now, restore);
                     results.push(r);
                     fresh.extend(new);
                 }

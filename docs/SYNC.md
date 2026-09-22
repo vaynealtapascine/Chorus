@@ -233,16 +233,16 @@ Reviews are computed by the server (it knows `seq`) and sync down as rows.
  "core":"1.2.0","app":"android 1.0.3","outbox":12}
 
 // S→C
-{"t":"welcome","server_time":1790000000123,"epoch":"…","offset_ms":-340,
+{"t":"welcome","server_time":1790000000123,"epoch":"…","account_id":"…","offset_ms":-340,
  "scopes":["account:…","space:…"],"snapshot":["space:new…"],"core_min":"1.0.0",
  "reconcile":false}
 
 // C→S: outbox, in creation order, ≤ 500 ops or 1 MB per batch
-{"t":"push","batch":"b-17","ops":[{…op envelope…}]}
+{"t":"push","batch":"b-17","ops":[{…op envelope…}]}          // "restore":true for reconcile pushes
 
 // S→C
 {"t":"ack","batch":"b-17","results":[
-  {"id":"…","seq":1250,"occurred_at":1789999000000},
+  {"id":"…","seq":1250,"occurred_at":1789999000000,"received_at":…,"account_id":"…","device_id":"…"},
   {"id":"…","error":{"code":"forbidden","retry":false,"message":"…"}}]}
 
 // S→C: catch-up and live, per scope, seq-ordered
@@ -251,8 +251,11 @@ Reviews are computed by the server (it knows `seq`) and sync down as rows.
 // S→C: views
 {"t":"views","records":[{"kind":"front","id":"acct…","ver":9,"row":{…}}],"to":80}
 
-// S→C: snapshot for a scope (chunked)
-{"t":"snap","scope":"space:…","chunk":1,"of":4,"tables":{"channel":[…],"message":[…]},"at_seq":1251}
+// S→C: end of catch-up for a scope, with the digest the device should now have
+{"t":"caught","scope":"space:…","to":1251,"digest":{"count":1251,"xor":"9f…"}}
+
+// C→S: (re)pull a scope, e.g. after a digest mismatch
+{"t":"pull","scope":"space:…","after":0}
 
 // both directions, every ~60 s
 {"t":"ping","clock":{…}}  /  {"t":"pong","server_time":…}
@@ -328,11 +331,17 @@ user action
 `hello.epoch` differs (or whose cursor exceeds the server's max seq) enters **reconcile**:
 
 1. Server replies `welcome` with `reconcile: true` and its max seq per scope.
-2. Device re-pushes **every** confirmed op it holds for those scopes (plus its pending outbox as
-   usual). Seqs from the old epoch are meaningless — the restored server reuses them — so they
-   can't be used to pick what to send. The server accepts unknown ids as new ops (new seqs);
-   known ids are no-ops that return the current stamp.
-3. Device then re-snapshots. Pending outbox is kept throughout.
+2. Device **demotes every confirmed op** of those scopes back into its outbox, flagged
+   `restore`, keeping their stamps except `seq`. Seqs from the old epoch are meaningless — the
+   restored server reuses them — so they can't be used to pick what to send. Because the ops are
+   in the outbox, they are retried like any pending op if the connection drops mid-way (the
+   simulator found that fire-and-forget re-pushes could strand ops).
+3. Restore pushes carry `restore: true`. While the server's **restore window** is open (from the
+   restore until an admin closes it with `chorus-server reconcile-close`, after
+   `reconcile-status` shows every device back), the server keeps a restore-pushed op's original
+   author, device and times and only assigns a new `seq`; known ids are no-ops that return the
+   stored stamp. Outside the window, restore pushes are treated as fresh ops from the pusher.
+4. Device pulls each scope from zero; ops it already holds are replaced by the server's copies.
 
 This is how "phone as full replica" (D-043) restores data written after the last backup. A CLI
 `chorus-server reconcile-status` shows which devices have reconciled since the restore.
@@ -378,7 +387,12 @@ A deterministic, seeded simulator in `chorus-core` tests (proptest):
   == projection built from the server log sorted by seq **and** by a random shuffle; digests equal;
   no op lost; each rejected op has a reason.
 
-Run with 10 000 seeds in CI (fast mode 500). A failing seed is written to `fixtures/regressions/`.
+Implemented in `crates/chorus-core/tests/converge.rs` against `sync::ClientEngine` and the
+reference `sync::MemServer`. Default run: 300 seeds (~2 s release). Long run:
+`CHORUS_SIM_SEEDS=10000 cargo test -p chorus-core --release --test converge`. Rerun one seed with
+`CHORUS_SIM_SEED=<n>`; `CHORUS_SIM_STATS=1` prints per-run counts. Snapshots are op pages
+(the device is an op replica, which `reproject` needs); table-row snapshots are a later
+optimization.
 
 ### 9.3 End-to-end chaos test
 

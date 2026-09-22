@@ -74,6 +74,11 @@ pub fn dedupe<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Vec<&'a Op> {
     v
 }
 
+/// A read mark: (message time, message id, op clock).
+type ReadMark = (i64, String, Hlc);
+/// Per read-state key: all `read.mark`s, and the latest `read.set`.
+type Reads = BTreeMap<String, (Vec<ReadMark>, Option<ReadMark>)>;
+
 fn scope_account(op: &Op) -> Option<&str> {
     op.scope.strip_prefix("account:")
 }
@@ -103,7 +108,7 @@ pub fn project<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Projection {
     let mut p = Projection::default();
     let mut front_ops: BTreeMap<String, Vec<FrontOp>> = BTreeMap::new();
     // read.mark maxima and read.set, resolved after the loop
-    let mut reads: BTreeMap<String, (Vec<(i64, String, Hlc)>, Option<(i64, String, Hlc)>)> = BTreeMap::new();
+    let mut reads: Reads = BTreeMap::new();
 
     for o in ops {
         let Ok(Known::Yes(spec)) = op::validate(o) else {
@@ -194,7 +199,7 @@ fn special(
     p: &mut Projection,
     o: &Op,
     payload: &Map<String, Value>,
-    reads: &mut BTreeMap<String, (Vec<(i64, String, Hlc)>, Option<(i64, String, Hlc)>)>,
+    reads: &mut Reads,
 ) {
     let entity = o.entity().unwrap_or("");
     let acct = o.account_id.clone().unwrap_or_default();
