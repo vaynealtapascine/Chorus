@@ -25,6 +25,26 @@ enum Cmd {
     Migrate,
     /// Integrity check and a short status report.
     Check,
+    /// Create an invite link for a new system, person or device.
+    Invite {
+        #[arg(long, value_enum, default_value = "system")]
+        kind: InviteArg,
+        /// For device invites: the account to add a device to.
+        #[arg(long)]
+        account: Option<String>,
+        /// Days until it expires.
+        #[arg(long, default_value_t = 7)]
+        days: i64,
+        #[arg(long, default_value_t = 1)]
+        uses: u32,
+    },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum InviteArg {
+    System,
+    Person,
+    Device,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -42,6 +62,28 @@ fn main() -> anyhow::Result<()> {
             let ok: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
             let ops: i64 = conn.query_row("SELECT count(*) FROM op", [], |r| r.get(0)).unwrap_or(0);
             println!("integrity: {ok}\nschema version: {}\nops: {ops}", db::schema_version(&conn)?);
+        }
+        Cmd::Invite { kind, account, days, uses } => {
+            use chorus_server::auth::{self, InviteKind};
+            let conn = chorus_server::open_and_migrate(&cfg)?;
+            let kind = match kind {
+                InviteArg::System => InviteKind::System,
+                InviteArg::Person => InviteKind::Person,
+                InviteArg::Device => InviteKind::Device,
+            };
+            if kind == InviteKind::Device && account.is_none() {
+                anyhow::bail!("--account is required for device invites");
+            }
+            let code = auth::create_invite(
+                &conn,
+                kind,
+                account.as_deref(),
+                "cli",
+                days * 24 * 3_600_000,
+                uses,
+                chorus_server::now_ms(),
+            )?;
+            println!("{}/i/{code}", cfg.server.public_url.trim_end_matches('/'));
         }
     }
     Ok(())

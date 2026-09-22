@@ -107,7 +107,7 @@ pub struct AckResult {
 }
 
 impl AckResult {
-    fn ok(o: &Op) -> AckResult {
+    pub fn ok(o: &Op) -> AckResult {
         AckResult {
             id: o.id.clone(),
             seq: o.seq,
@@ -119,7 +119,7 @@ impl AckResult {
         }
     }
 
-    fn err(id: String, code: &str, message: String, retry: bool) -> AckResult {
+    pub fn err(id: String, code: &str, message: String, retry: bool) -> AckResult {
         AckResult {
             id,
             seq: None,

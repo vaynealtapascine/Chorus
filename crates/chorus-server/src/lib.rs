@@ -1,7 +1,11 @@
 //! Chorus server: op log, projections, sync, API (docs/SYNC.md, docs/API.md).
 
+pub mod auth;
 pub mod config;
 pub mod db;
+pub mod ingest;
+pub mod oplog;
+pub mod project;
 
 use rusqlite::Connection;
 
