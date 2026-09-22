@@ -85,10 +85,31 @@ impl Replica {
     /// Create a local op (validated here, so the UI can report errors immediately), and the
     /// frames to send if connected.
     pub fn create(&mut self, n: NewOp, d: &DeviceNow, random: [u8; 10]) -> Result<(Op, Vec<Frame>), OpError> {
+        let id = crate::id::new_id(d.now.max(0) as u64, random);
+        let o = self.local_op(id, n, d)?;
+        let frames = self.engine.pump(&self.store);
+        Ok((o, frames))
+    }
+
+    /// Apply a PluralKit import plan (ids are fixed, so ops this device already has are
+    /// skipped; the server does the same for ops other devices already sent).
+    pub fn import(&mut self, plan: crate::import::Plan, d: &DeviceNow) -> Result<(usize, Vec<Frame>), OpError> {
+        let mut added = 0;
+        for p in plan.ops {
+            if self.store.ops.contains_key(&p.id) {
+                continue;
+            }
+            self.local_op(p.id, p.op, d)?;
+            added += 1;
+        }
+        Ok((added, self.engine.pump(&self.store)))
+    }
+
+    fn local_op(&mut self, id: String, n: NewOp, d: &DeviceNow) -> Result<Op, OpError> {
         let hlc = self.clock.tick(d.now.max(0) as u64);
         let seen = self.store.cursor(&n.scope);
         let o = Op {
-            id: crate::id::new_id(d.now.max(0) as u64, random),
+            id,
             kind: n.kind,
             v: op::CURRENT_V,
             scope: n.scope,
@@ -110,8 +131,7 @@ impl Replica {
         };
         op::validate(&o)?;
         self.store.add_local(o.clone());
-        let frames = self.engine.pump(&self.store);
-        Ok((o, frames))
+        Ok(o)
     }
 
     pub fn connect(&mut self, clock: ClockReading, token: &str) -> Frame {

@@ -248,6 +248,26 @@ impl JsonReplica {
     pub fn rejected(&self) -> String {
         js(&self.0.store.rejected)
     }
+
+    /// Plan only (for the preview): `{"members", "groups", "switches", "warnings"}`.
+    pub fn plan_pluralkit(export_json: &str, scope: &str) -> Result<String, String> {
+        let export: Value = parse("PluralKit export", export_json)?;
+        Ok(js(&crate::import::pluralkit(&export, scope)?))
+    }
+
+    /// Import: → `{"added": n, "frames": […]}`. Safe to repeat.
+    pub fn import_pluralkit(
+        &mut self,
+        export_json: &str,
+        scope: &str,
+        device_now_json: &str,
+    ) -> Result<String, String> {
+        let export: Value = parse("PluralKit export", export_json)?;
+        let plan = crate::import::pluralkit(&export, scope)?;
+        let d: crate::replica::DeviceNow = parse("device now", device_now_json)?;
+        let (added, frames) = self.0.import(plan, &d).map_err(|e| e.to_string())?;
+        Ok(js(&serde_json::json!({"added": added, "frames": frames})))
+    }
 }
 
 #[cfg(test)]

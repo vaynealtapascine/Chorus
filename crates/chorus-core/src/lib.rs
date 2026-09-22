@@ -9,6 +9,7 @@ pub mod feed;
 pub mod front;
 pub mod hlc;
 pub mod id;
+pub mod import;
 pub mod lww;
 pub mod model;
 pub mod op;

@@ -136,3 +136,23 @@ pub fn new_id(now_ms: f64, random: &[u8]) -> Result<String, JsError> {
         random.get(..10).and_then(|b| b.try_into().ok()).ok_or_else(|| JsError::new("need 10 random bytes"))?;
     Ok(chorus_core::id::new_id(now_ms as u64, r))
 }
+
+/// Preview a PluralKit import: `{"members", "groups", "switches", "warnings"}`.
+#[wasm_bindgen(js_name = planPluralkit)]
+pub fn plan_pluralkit(export_json: &str, scope: &str) -> Result<String, JsError> {
+    wrap(api::JsonReplica::plan_pluralkit(export_json, scope))
+}
+
+#[wasm_bindgen]
+impl WebReplica {
+    /// Import a PluralKit export into `scope`: `{"added", "frames"}`. Safe to repeat.
+    #[wasm_bindgen(js_name = importPluralkit)]
+    pub fn import_pluralkit(
+        &mut self,
+        export_json: &str,
+        scope: &str,
+        device_now_json: &str,
+    ) -> Result<String, JsError> {
+        wrap(self.0.import_pluralkit(export_json, scope, device_now_json))
+    }
+}
