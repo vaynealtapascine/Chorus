@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** — (nothing; spec phase done)
-- **Owner:** — (next agent: claim M0.1)
-- **Next concrete step:** M0.1 — create the Cargo workspace (`Cargo.toml` at repo root, `crates/chorus-core`, `crates/chorus-server`), pin the toolchain in `rust-toolchain.toml`, record versions in DECISIONS §Versions.
+- **In progress:** M1.1 IDs + HLC
+- **Owner:** claude-opus-5.5, 2026-09-23
+- **Next concrete step:** `crates/chorus-core/src/{id,hlc}.rs` with tests (SYNC.md §3.1).
 - **Notes:** Read AGENTS.md → DECISIONS.md → SYNC.md + DATA_MODEL.md before M0/M1. Open questions (docs/OPEN_QUESTIONS.md) have defaults; don't block on them. README disclosure card image is not generated yet (M12.2).
 
 ---
@@ -42,7 +42,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M0 — Scaffolding
 
-- [ ] M0.1 Cargo workspace: `crates/chorus-core`, `crates/chorus-server`; rust-toolchain pinned
+- [x] M0.1 Cargo workspace: `crates/chorus-core`, `crates/chorus-server`; rust-toolchain pinned
 - [ ] M0.2 `web/` Svelte 5 + Vite + TS skeleton (PWA plugin, strict TS)
 - [ ] M0.3 `android/` Kotlin + Compose skeleton (Gradle version catalog, minSdk 29, targetSdk 36)
 - [ ] M0.4 `fixtures/` conformance vector format + runner in Rust (see SYNC.md §9)
@@ -50,7 +50,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M1 — Core (pure Rust, no IO)
 
-- [ ] M1.1 IDs (UUIDv7), HLC type + string encoding, time types
+- [~] M1.1 IDs (UUIDv7), HLC type + string encoding, time types
 - [ ] M1.2 Op envelope + op catalogue types (serde, versioned)
 - [ ] M1.3 Front fold: switch/add/remove/update/retract/amend → snapshots → intervals
 - [ ] M1.4 LWW register + LWW element-set helpers, field-level merge
@@ -167,3 +167,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — Q&A with owner (6 rounds); wrote spec set S1–S12 (SPEC, DECISIONS, DATA_MODEL, SYNC, NOTIFICATIONS, API, DESIGN, CLIENTS, OPS, OPEN_QUESTIONS, README). Spec phase done.
 - 2026-09-23 claude-opus-5.5 — Owner answered open questions Q1–Q5, Q7–Q12 → D-045…D-053; spec docs updated; new board tasks M5.9–M5.12, M9.4, M12.3. Q6 (custom emoji) still open.
 - 2026-09-23 claude-opus-5.5 — Q6 answered: server-wide custom emoji, no stickers (D-054); docs + M5.13 added. No open questions remain.
+- 2026-09-23 claude-opus-5.5 — M0.1 Cargo workspace (core + server crates, lints, release profile).

@@ -70,3 +70,9 @@ Pin here as they are adopted (tool/library → version → date → why).
 | --- | --- | --- | --- |
 | Android targetSdk | 36 | 2026-09-23 | Matches Dun |
 | Android minSdk | 29 | 2026-09-23 | Android 10+; covers owner's Samsung and keeps Keystore/biometric APIs simple |
+| Rust | 1.98 (MSRV via `rust-version`), edition 2024, resolver 3 | 2026-09-23 | No `rust-toolchain.toml`: the machine's stable is 1.98.1 and pinning an exact toolchain would force a second download. |
+| serde / serde_json | 1.0.x | 2026-09-23 | |
+| uuid | 1.x (v7 via `Builder::from_unix_timestamp_millis`) | 2026-09-23 | Core stays pure: callers pass time + random bytes. |
+| sha2 | 0.10 | 2026-09-23 | Digests, blob hashes. |
+| thiserror | 2.x | 2026-09-23 | |
+| proptest | 1.x (dev) | 2026-09-23 | Convergence simulator. |
