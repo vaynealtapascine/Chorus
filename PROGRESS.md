@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M0.5
-- **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** rustfmt config + scripts/verify.py (fmt, clippy -D warnings, tests, web/android when present) + GitHub Actions workflow
+- **In progress:** —
+- **Owner:** —
+- **Next concrete step:** claim the next unticked task on the board
 - **Notes:** Read AGENTS.md → DECISIONS.md → SYNC.md + DATA_MODEL.md before M0/M1. Open questions (docs/OPEN_QUESTIONS.md) have defaults; don't block on them. README disclosure card image is not generated yet (M12.2).
 
 ---
@@ -46,7 +46,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [ ] M0.2 `web/` Svelte 5 + Vite + TS skeleton (PWA plugin, strict TS)
 - [ ] M0.3 `android/` Kotlin + Compose skeleton (Gradle version catalog, minSdk 29, targetSdk 36)
 - [x] M0.4 `fixtures/` conformance vector format + runner in Rust (see SYNC.md §9)
-- [~] M0.5 `scripts/verify` (fmt, clippy, tests, svelte-check, gradle lint/test) + CI workflow
+- [x] M0.5 `scripts/verify` (fmt, clippy, tests, svelte-check, gradle lint/test) + CI workflow
 
 ### M1 — Core (pure Rust, no IO)
 
@@ -179,3 +179,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M1.9 reference projection (model.rs), sans-IO sync engine + MemServer (sync.rs), convergence simulator (tests/converge.rs): 3000 seeds green; found & fixed 3 protocol bugs (see NOTES)
 - 2026-09-23 claude-opus-5.5 — M1.10 spike kept (D-056): chorus_core::api JSON layer; chorus-ffi (UniFFI) .so for arm64/x86_64 + Kotlin bindings; chorus-wasm runs in Node, 209 KB gz; build scripts
 - 2026-09-23 claude-opus-5.5 — M0.4 48 language-neutral fixtures in fixtures/<area>/ (fn + JSON args + expect) + runner tests/fixtures.rs with bless mode; generator scripts/gen-fixtures.py
+- 2026-09-23 claude-opus-5.5 — M0.5 rustfmt (max_width 120), scripts/verify.py (fmt, clippy -D warnings, tests, wasm build, web/android when present), .github/workflows/ci.yml

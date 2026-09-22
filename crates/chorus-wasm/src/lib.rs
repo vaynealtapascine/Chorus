@@ -26,7 +26,13 @@ pub fn to_markup(rich_json: &str) -> Result<String, JsError> {
 }
 
 #[wasm_bindgen]
-pub fn compose(src: &str, speakers_json: &str, options_json: &str, default_authors_json: &str, names_json: &str) -> Result<String, JsError> {
+pub fn compose(
+    src: &str,
+    speakers_json: &str,
+    options_json: &str,
+    default_authors_json: &str,
+    names_json: &str,
+) -> Result<String, JsError> {
     wrap(api::compose(src, speakers_json, options_json, default_authors_json, names_json))
 }
 

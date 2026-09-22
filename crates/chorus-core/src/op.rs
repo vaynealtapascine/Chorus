@@ -158,27 +158,61 @@ pub struct KindSpec {
 }
 
 const MEMBER_FIELDS: &[&str] = &[
-    "name", "display_name", "pronouns", "description", "description_entities", "color",
-    "avatar_blob", "banner_blob", "birthday", "sigils", "proxy_tags", "pinned_post_id", "sort_key",
-    "is_locked", "visibility", "field_visibility", "notify_policy", "short_id", "pk_id", "is_self",
+    "name",
+    "display_name",
+    "pronouns",
+    "description",
+    "description_entities",
+    "color",
+    "avatar_blob",
+    "banner_blob",
+    "birthday",
+    "sigils",
+    "proxy_tags",
+    "pinned_post_id",
+    "sort_key",
+    "is_locked",
+    "visibility",
+    "field_visibility",
+    "notify_policy",
+    "short_id",
+    "pk_id",
+    "is_self",
 ];
 const SYSTEM_FIELDS: &[&str] =
     &["name", "tag", "description", "description_entities", "color", "timezone", "terminology"];
 const ACCOUNT_FIELDS: &[&str] = &["display_name", "handle", "avatar_blob", "settings"];
 const GROUP_FIELDS: &[&str] = &[
-    "kind", "parent_id", "name", "description", "description_entities", "color", "icon",
-    "avatar_blob", "can_front", "sort_key", "visibility",
+    "kind",
+    "parent_id",
+    "name",
+    "description",
+    "description_entities",
+    "color",
+    "icon",
+    "avatar_blob",
+    "can_front",
+    "sort_key",
+    "visibility",
 ];
 const STATE_FIELDS: &[&str] = &["name", "description", "color", "icon", "sort_key"];
 const FIELD_DEF_FIELDS: &[&str] = &["name", "type", "options", "default_visibility", "sort_key"];
 const SPACE_FIELDS: &[&str] = &["kind", "name", "icon", "color", "description", "settings"];
 const CHANNEL_FIELDS: &[&str] = &[
-    "space_id", "kind", "category", "name", "topic", "icon", "color", "parent_message_id",
-    "member_ids", "settings", "sort_key",
+    "space_id",
+    "kind",
+    "category",
+    "name",
+    "topic",
+    "icon",
+    "color",
+    "parent_message_id",
+    "member_ids",
+    "settings",
+    "sort_key",
 ];
 const RELTYPE_FIELDS: &[&str] = &["name", "inverse_name", "is_symmetric", "color", "icon"];
-const REL_FIELDS: &[&str] =
-    &["from_member_id", "to_kind", "to_id", "to_label", "type_id", "note", "visibility"];
+const REL_FIELDS: &[&str] = &["from_member_id", "to_kind", "to_id", "to_label", "type_id", "note", "visibility"];
 const LIST_FIELDS: &[&str] = &["name", "description", "visibility"];
 const FEED_FIELDS: &[&str] = &["name", "description", "query", "query_ast", "visibility"];
 const BUCKET_FIELDS: &[&str] = &["name", "color", "sort_key", "ceiling"];
@@ -190,13 +224,34 @@ const POST_SET_FIELDS: &[&str] = &["visibility"];
 
 macro_rules! k {
     ($kind:literal, $table:literal, $scope:ident, $action:ident) => {
-        KindSpec { kind: $kind, table: $table, scope: ScopeKind::$scope, action: Action::$action, fields: &[], create_only: &[] }
+        KindSpec {
+            kind: $kind,
+            table: $table,
+            scope: ScopeKind::$scope,
+            action: Action::$action,
+            fields: &[],
+            create_only: &[],
+        }
     };
     ($kind:literal, $table:literal, $scope:ident, $action:ident, $fields:expr) => {
-        KindSpec { kind: $kind, table: $table, scope: ScopeKind::$scope, action: Action::$action, fields: $fields, create_only: &[] }
+        KindSpec {
+            kind: $kind,
+            table: $table,
+            scope: ScopeKind::$scope,
+            action: Action::$action,
+            fields: $fields,
+            create_only: &[],
+        }
     };
     ($kind:literal, $table:literal, $scope:ident, $action:ident, $fields:expr, $co:expr) => {
-        KindSpec { kind: $kind, table: $table, scope: ScopeKind::$scope, action: Action::$action, fields: $fields, create_only: $co }
+        KindSpec {
+            kind: $kind,
+            table: $table,
+            scope: ScopeKind::$scope,
+            action: Action::$action,
+            fields: $fields,
+            create_only: $co,
+        }
     };
 }
 
@@ -355,13 +410,15 @@ pub fn validate(op: &Op) -> Result<Known, OpError> {
     }
     let scope = Scope::parse(&op.scope).ok_or_else(|| OpError::BadScope(op.scope.clone()))?;
     if let Some(e) = &op.entity_id
-        && !is_valid_id(e) {
-            return Err(OpError::BadId(e.clone()));
-        }
+        && !is_valid_id(e)
+    {
+        return Err(OpError::BadId(e.clone()));
+    }
     if let Some(m) = &op.member_id
-        && !is_valid_id(m) {
-            return Err(OpError::BadId(m.clone()));
-        }
+        && !is_valid_id(m)
+    {
+        return Err(OpError::BadId(m.clone()));
+    }
     if !(op.payload.is_object() || op.payload.is_null()) {
         return Err(OpError::PayloadNotObject);
     }
@@ -377,7 +434,9 @@ pub fn validate(op: &Op) -> Result<Known, OpError> {
     }
     let scope_ok = matches!(
         (spec.scope, &scope),
-        (ScopeKind::Server, Scope::Server) | (ScopeKind::Account, Scope::Account(_)) | (ScopeKind::Space, Scope::Space(_))
+        (ScopeKind::Server, Scope::Server)
+            | (ScopeKind::Account, Scope::Account(_))
+            | (ScopeKind::Space, Scope::Space(_))
     );
     if !scope_ok {
         return Err(OpError::WrongScope { kind: op.kind.clone(), scope: op.scope.clone() });

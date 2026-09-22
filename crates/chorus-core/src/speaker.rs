@@ -170,7 +170,11 @@ impl Matcher<'_> {
                     && s.is_char_boundary(s.len() - t.suffix.len())
                     && {
                         let tail = &s[s.len() - t.suffix.len()..];
-                        if self.opts.tags_case_sensitive { tail == t.suffix } else { tail.eq_ignore_ascii_case(&t.suffix) }
+                        if self.opts.tags_case_sensitive {
+                            tail == t.suffix
+                        } else {
+                            tail.eq_ignore_ascii_case(&t.suffix)
+                        }
                     };
                 let len = t.prefix.len() + t.suffix.len();
                 if ok && best.is_none_or(|(_, b)| len > b.prefix.len() + b.suffix.len()) {
@@ -183,7 +187,13 @@ impl Matcher<'_> {
 }
 
 /// Compose a message from what was typed.
-pub fn compose(src: &str, speakers: &[Speaker], opts: Options, default_authors: &[String], r: &dyn Resolver) -> Composed {
+pub fn compose(
+    src: &str,
+    speakers: &[Speaker],
+    opts: Options,
+    default_authors: &[String],
+    r: &dyn Resolver,
+) -> Composed {
     let m = Matcher { speakers, opts };
     // Split into (authors, body markup) segments.
     let mut segs: Vec<(Vec<String>, String)> = Vec::new();
@@ -216,7 +226,8 @@ pub fn compose(src: &str, speakers: &[Speaker], opts: Options, default_authors: 
         }
     }
     // Suffix pair around the whole message, when nothing else named an author.
-    if !explicit && segs.len() == 1
+    if !explicit
+        && segs.len() == 1
         && let Some((member, inner)) = m.pair(src.trim())
     {
         segs = vec![(vec![member], inner)];

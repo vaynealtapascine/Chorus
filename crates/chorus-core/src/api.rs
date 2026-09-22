@@ -98,11 +98,20 @@ fn yes() -> bool {
 }
 
 /// What was typed → `{"rich", "segments", "authors", "explicit"}` (SPEC.md §5.2).
-pub fn compose(src: &str, speakers_json: &str, options_json: &str, default_authors_json: &str, names_json: &str) -> Result<String, String> {
+pub fn compose(
+    src: &str,
+    speakers_json: &str,
+    options_json: &str,
+    default_authors_json: &str,
+    names_json: &str,
+) -> Result<String, String> {
     let sp: Vec<SpeakerIn> = parse("speakers", speakers_json)?;
-    let speakers: Vec<Speaker> =
-        sp.into_iter().map(|s| Speaker { member_id: s.member_id, sigils: s.sigils, proxy_tags: s.proxy_tags }).collect();
-    let o: OptionsIn = if options_json.trim().is_empty() { parse("options", "{}")? } else { parse("options", options_json)? };
+    let speakers: Vec<Speaker> = sp
+        .into_iter()
+        .map(|s| Speaker { member_id: s.member_id, sigils: s.sigils, proxy_tags: s.proxy_tags })
+        .collect();
+    let o: OptionsIn =
+        if options_json.trim().is_empty() { parse("options", "{}")? } else { parse("options", options_json)? };
     let opts = Options { sigils: o.sigils, segments: o.segments, tags_case_sensitive: o.tags_case_sensitive };
     let defaults: Vec<String> = parse("default authors", default_authors_json)?;
     Ok(js(&speaker::compose(src, &speakers, opts, &defaults, &names(names_json)?)))
@@ -179,7 +188,8 @@ mod tests {
 
     #[test]
     fn json_api_smoke() {
-        let r = parse_markup("hi **@kai**", r#"{"mentions":{"kai":{"target_type":"member","target_id":"m1"}}}"#).unwrap();
+        let r =
+            parse_markup("hi **@kai**", r#"{"mentions":{"kai":{"target_type":"member","target_id":"m1"}}}"#).unwrap();
         assert!(r.contains(r#""type":"mention""#) && r.contains(r#""type":"bold""#));
         assert_eq!(to_markup(&r).unwrap(), "hi **@kai**");
         let c = compose("🌌 hello", r#"[{"member_id":"sky","sigils":["🌌"]}]"#, "", r#"["def"]"#, "").unwrap();

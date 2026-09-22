@@ -54,11 +54,7 @@ impl FromStr for Hlc {
                 Err(err())
             }
         };
-        Ok(Hlc {
-            pt: hex(&s[0..12])?,
-            c: hex(&s[13..17])? as u16,
-            node: hex(&s[18..26])? as u32,
-        })
+        Ok(Hlc { pt: hex(&s[0..12])?, c: hex(&s[13..17])? as u16, node: hex(&s[18..26])? as u32 })
     }
 }
 
@@ -94,11 +90,7 @@ impl HlcClock {
     /// Clock for a new local event.
     pub fn tick(&mut self, now_ms: u64) -> Hlc {
         let now = now_ms.min(MAX_PT);
-        let (pt, c) = if now > self.last.pt {
-            (now, 0)
-        } else {
-            bump(self.last.pt, self.last.c)
-        };
+        let (pt, c) = if now > self.last.pt { (now, 0) } else { bump(self.last.pt, self.last.c) };
         self.last = Hlc { pt, c, node: self.node };
         self.last
     }

@@ -125,7 +125,12 @@ impl World {
             server,
             devices,
             scopes: vec![vec![sa, si, ss.clone()], vec![sb, ss]],
-            pools: Pools { members: vec![vec![], vec![]], groups: vec![vec![], vec![]], front_ops: vec![vec![], vec![]], ..Pools::default() },
+            pools: Pools {
+                members: vec![vec![], vec![]],
+                groups: vec![vec![], vec![]],
+                front_ops: vec![vec![], vec![]],
+                ..Pools::default()
+            },
             restored: false,
         }
     }
@@ -138,7 +143,9 @@ impl World {
         let acct = self.devices[d].account;
         let own_scope = self.scopes[acct][0].clone();
         let spaces: Vec<String> = self.scopes[acct][1..].to_vec();
-        let member = |w: &mut World| w.rng.pick(&w.pools.members[acct]).cloned().unwrap_or_else(|| "00000000-0000-7000-8000-000000000000".into());
+        let member = |w: &mut World| {
+            w.rng.pick(&w.pools.members[acct]).cloned().unwrap_or_else(|| "00000000-0000-7000-8000-000000000000".into())
+        };
         let roll = self.rng.below(100);
         let entity: Option<String>;
         let (kind, scope, payload): (&str, String, Value) = match roll {
@@ -150,12 +157,21 @@ impl World {
             }
             10..=17 => {
                 entity = Some(member(self));
-                let p = if self.rng.chance(50) { json!({"name": format!("n{}", self.rng.below(99))}) } else { json!({"color": format!("#{:06x}", self.rng.below(0xffffff))}) };
+                let p = if self.rng.chance(50) {
+                    json!({"name": format!("n{}", self.rng.below(99))})
+                } else {
+                    json!({"color": format!("#{:06x}", self.rng.below(0xffffff))})
+                };
                 ("member.set", own_scope, p)
             }
             18..=20 => {
                 entity = Some(member(self));
-                (["member.delete", "member.restore", "member.archive", "member.unarchive"][self.rng.below(4) as usize], own_scope, json!({}))
+                (
+                    ["member.delete", "member.restore", "member.archive", "member.unarchive"]
+                        [self.rng.below(4) as usize],
+                    own_scope,
+                    json!({}),
+                )
             }
             21..=23 => {
                 let id = self.new_id();
@@ -186,10 +202,16 @@ impl World {
                         ("front.add", json!({"entry": e(self, primary)}))
                     }
                     3 => ("front.remove", json!({"subject_type": "member", "subject_id": member(self)})),
-                    4 => ("front.update", json!({"subject_type": "member", "subject_id": member(self), "is_primary": true})),
+                    4 => (
+                        "front.update",
+                        json!({"subject_type": "member", "subject_id": member(self), "is_primary": true}),
+                    ),
                     5 => {
                         let t = self.rng.pick(&self.pools.front_ops[acct]).cloned().unwrap_or_else(|| id.clone());
-                        (if self.rng.chance(70) { "front.retract" } else { "front.unretract" }, json!({"target_op_id": t}))
+                        (
+                            if self.rng.chance(70) { "front.retract" } else { "front.unretract" },
+                            json!({"target_op_id": t}),
+                        )
                     }
                     _ => {
                         let t = self.rng.pick(&self.pools.front_ops[acct]).cloned().unwrap_or_else(|| id.clone());
@@ -206,7 +228,11 @@ impl World {
                 entity = Some(id.clone());
                 let at = self.now;
                 self.pools.messages.entry(scope.clone()).or_default().push((id, at));
-                ("message.send", scope, json!({"channel_id": "c1", "authors": [member(self)], "text": format!("hi {}", self.rng.below(100)), "entities": []}))
+                (
+                    "message.send",
+                    scope,
+                    json!({"channel_id": "c1", "authors": [member(self)], "text": format!("hi {}", self.rng.below(100)), "entities": []}),
+                )
             }
             63..=78 => {
                 let scope = self.rng.pick(&spaces).cloned().unwrap_or_default();
@@ -214,18 +240,38 @@ impl World {
                 let (mid, mat) = self.rng.pick(&msgs).cloned().unwrap_or_else(|| (self.new_id(), 0));
                 entity = Some(mid.clone());
                 match self.rng.below(7) {
-                    0 => ("message.edit", scope, json!({"message_id": mid, "text": format!("edit {}", self.rng.below(100)), "entities": []})),
+                    0 => (
+                        "message.edit",
+                        scope,
+                        json!({"message_id": mid, "text": format!("edit {}", self.rng.below(100)), "entities": []}),
+                    ),
                     1 => ("message.delete", scope, json!({})),
                     2 => ("message.restore", scope, json!({})),
                     3 => ("message.pin", scope, json!({})),
-                    4 => ("reaction.add", scope, json!({"target_type": "message", "target_id": mid, "emoji": "💜", "member_id": member(self)})),
-                    5 => ("reaction.remove", scope, json!({"target_type": "message", "target_id": mid, "emoji": "💜", "member_id": member(self)})),
-                    _ => ("read.mark", scope, json!({"channel_id": "c1", "message_id": mid, "message_at": mat, "reader_member_id": ""})),
+                    4 => (
+                        "reaction.add",
+                        scope,
+                        json!({"target_type": "message", "target_id": mid, "emoji": "💜", "member_id": member(self)}),
+                    ),
+                    5 => (
+                        "reaction.remove",
+                        scope,
+                        json!({"target_type": "message", "target_id": mid, "emoji": "💜", "member_id": member(self)}),
+                    ),
+                    _ => (
+                        "read.mark",
+                        scope,
+                        json!({"channel_id": "c1", "message_id": mid, "message_at": mat, "reader_member_id": ""}),
+                    ),
                 }
             }
             79..=84 => {
                 entity = None;
-                ("field.set_value", own_scope, json!({"member_id": member(self), "field_id": "f1", "value": self.rng.below(10)}))
+                (
+                    "field.set_value",
+                    own_scope,
+                    json!({"member_id": member(self), "field_id": "f1", "value": self.rng.below(10)}),
+                )
             }
             85..=89 => {
                 // invalid: a field the kind may not set → must be rejected, not lost silently
@@ -274,7 +320,11 @@ impl World {
 
     fn clock_reading(&self, d: usize) -> ClockReading {
         let dev = &self.devices[d];
-        ClockReading { wall: self.now + dev.skew, mono: Some(self.now - 1_789_000_000_000), boot_id: Some(dev.boot.to_string()) }
+        ClockReading {
+            wall: self.now + dev.skew,
+            mono: Some(self.now - 1_789_000_000_000),
+            boot_id: Some(dev.boot.to_string()),
+        }
     }
 
     fn connect(&mut self, d: usize) {
@@ -306,9 +356,10 @@ impl World {
         let id = self.devices[d].engine.device_id.clone();
         for (dest, frame) in self.server.on_frame(&id, f, self.now) {
             if let Some(dd) = self.devices.iter_mut().find(|x| x.engine.device_id == dest)
-                && dd.connected {
-                    dd.to_device.push_back(frame);
-                }
+                && dd.connected
+            {
+                dd.to_device.push_back(frame);
+            }
         }
         true
     }
@@ -431,7 +482,8 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
         // 3. per scope: same op set and digest as the server
         let scopes = &w.scopes[dev.account];
         for s in scopes {
-            let mine: BTreeSet<&str> = dev.store.confirmed().filter(|o| &scope_for(o) == s).map(|o| o.id.as_str()).collect();
+            let mine: BTreeSet<&str> =
+                dev.store.confirmed().filter(|o| &scope_for(o) == s).map(|o| o.id.as_str()).collect();
             let theirs: BTreeSet<&str> = w.server.log.iter().filter(|o| &o.scope == s).map(|o| o.id.as_str()).collect();
             if mine != theirs {
                 let missing: Vec<_> = theirs.difference(&mine).take(3).collect();
@@ -469,7 +521,11 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
     if std::env::var("CHORUS_SIM_STATS").is_ok() {
         let rejected: usize = w.devices.iter().map(|d| d.store.rejected.len()).sum();
         let repairs: u64 = w.devices.iter().map(|d| d.engine.repairs).sum();
-        eprintln!("seed {seed}: ops {} rejected {rejected} repairs {repairs} restored {}", w.server.log.len(), w.restored);
+        eprintln!(
+            "seed {seed}: ops {} rejected {rejected} repairs {repairs} restored {}",
+            w.server.log.len(),
+            w.restored
+        );
     }
     // 6. the invalid and forbidden ops were rejected, not accepted
     for o in &w.server.log {

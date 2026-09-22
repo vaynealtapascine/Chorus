@@ -69,7 +69,10 @@ enum Tok {
     Or,
     Not,
     /// key:value or bare word; `quoted` marks a quoted value/word.
-    Term { key: Option<String>, value: String },
+    Term {
+        key: Option<String>,
+        value: String,
+    },
 }
 
 fn tokenize(src: &str) -> Result<Vec<(usize, Tok)>, ParseError> {
@@ -334,7 +337,9 @@ pub fn eval(e: &Expr, item: &Item, ctx: &dyn Context) -> bool {
         Expr::Mood { value } => item.mood.as_ref().is_some_and(|m| &m.to_lowercase() == value),
         Expr::Has { value } => item.has.contains(value),
         Expr::Reply { value } => item.is_reply == *value,
-        Expr::In { value } => item.channel.as_ref().is_some_and(|(id, name)| id == value || name.eq_ignore_ascii_case(value)),
+        Expr::In { value } => {
+            item.channel.as_ref().is_some_and(|(id, name)| id == value || name.eq_ignore_ascii_case(value))
+        }
         Expr::Since { at } => resolve(at, ctx).is_some_and(|t| item.occurred_at >= t),
         Expr::Until { at } => resolve(at, ctx).is_some_and(|t| item.occurred_at < t),
         Expr::Fronting { value } => item.author_fronting == *value,
@@ -410,7 +415,10 @@ mod tests {
     #[test]
     fn free_text_and_quoted() {
         let e = parse(r#""good day" tea"#).unwrap();
-        assert_eq!(e, Expr::And { args: vec![Expr::Text { value: "good day".into() }, Expr::Text { value: "tea".into() }] });
+        assert_eq!(
+            e,
+            Expr::And { args: vec![Expr::Text { value: "good day".into() }, Expr::Text { value: "tea".into() }] }
+        );
         // unknown key-looking words are text
         assert_eq!(parse("http://x").unwrap(), Expr::Text { value: "http://x".into() });
     }

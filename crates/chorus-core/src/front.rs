@@ -443,7 +443,10 @@ pub fn fold(ops: &[FrontOp]) -> FoldResult {
     let mut items: Vec<Item> = ops
         .iter()
         .filter(|o| {
-            matches!(o.action, FrontAction::Switch(_) | FrontAction::Add(_) | FrontAction::Remove(_) | FrontAction::Update(_))
+            matches!(
+                o.action,
+                FrontAction::Switch(_) | FrontAction::Add(_) | FrontAction::Remove(_) | FrontAction::Update(_)
+            )
         })
         .map(|o| {
             let am = amend.get(o.id.as_str()).map(|(_, a)| *a);
@@ -678,13 +681,33 @@ mod tests {
         }
     }
     fn sw(id: &str, at: i64, entries: Vec<Entry>) -> FrontOp {
-        fop(id, at, 1, FrontAction::Switch(SwitchPayload { entries, based_on: None, note: None, notify: Notify::Default }))
+        fop(
+            id,
+            at,
+            1,
+            FrontAction::Switch(SwitchPayload { entries, based_on: None, note: None, notify: Notify::Default }),
+        )
     }
     fn add(id: &str, at: i64, e: Entry) -> FrontOp {
-        fop(id, at, 1, FrontAction::Add(AddPayload { entry: e, position: None, based_on: None, notify: Notify::Default }))
+        fop(
+            id,
+            at,
+            1,
+            FrontAction::Add(AddPayload { entry: e, position: None, based_on: None, notify: Notify::Default }),
+        )
     }
     fn rm(id: &str, at: i64, who: &str) -> FrontOp {
-        fop(id, at, 1, FrontAction::Remove(RemovePayload { subject_type: SubjectType::Member, subject_id: who.into(), based_on: None, notify: Notify::Default }))
+        fop(
+            id,
+            at,
+            1,
+            FrontAction::Remove(RemovePayload {
+                subject_type: SubjectType::Member,
+                subject_id: who.into(),
+                based_on: None,
+                notify: Notify::Default,
+            }),
+        )
     }
     fn names(f: &Front) -> Vec<&str> {
         f.iter().map(|e| e.subject_id.as_str()).collect()
@@ -719,7 +742,19 @@ mod tests {
             sw("a", 100, vec![p("kai"), m("june")]),
             add("b", 150, lvl("rin", Level::Cocon)),
             rm("c", 170, "june"),
-            fop("d", 180, 2, FrontAction::Update(UpdatePayload { subject_type: SubjectType::Member, subject_id: "rin".into(), level: Some(Level::Front), is_primary: Some(true), position: None, based_on: None })),
+            fop(
+                "d",
+                180,
+                2,
+                FrontAction::Update(UpdatePayload {
+                    subject_type: SubjectType::Member,
+                    subject_id: "rin".into(),
+                    level: Some(Level::Front),
+                    is_primary: Some(true),
+                    position: None,
+                    based_on: None,
+                }),
+            ),
             fop("e", 190, 3, FrontAction::Retract(TargetPayload { target_op_id: "c".into() })),
         ];
         let base = fold(&ops);
@@ -747,7 +782,17 @@ mod tests {
         let ops = [
             sw("s1", 100, vec![p("kai")]),
             sw("s2", 300, vec![p("june")]),
-            fop("a1", 400, 1, FrontAction::Amend(AmendPayload { target_op_id: "s2".into(), occurred_at: Some(50), entries: Some(vec![p("rin")]), note: Some(Some("oops".into())) })),
+            fop(
+                "a1",
+                400,
+                1,
+                FrontAction::Amend(AmendPayload {
+                    target_op_id: "s2".into(),
+                    occurred_at: Some(50),
+                    entries: Some(vec![p("rin")]),
+                    note: Some(Some("oops".into())),
+                }),
+            ),
         ];
         let r = fold(&ops);
         // s2 now happens at 50 (as rin), before s1 → kai is current
@@ -772,8 +817,32 @@ mod tests {
     fn primary_change_splits_interval_order_change_does_not() {
         let ops = [
             sw("s1", 100, vec![p("kai"), m("june")]),
-            fop("u1", 200, 1, FrontAction::Update(UpdatePayload { subject_type: SubjectType::Member, subject_id: "june".into(), level: None, is_primary: Some(true), position: None, based_on: None })),
-            fop("u2", 300, 1, FrontAction::Update(UpdatePayload { subject_type: SubjectType::Member, subject_id: "kai".into(), level: None, is_primary: None, position: Some(1), based_on: None })),
+            fop(
+                "u1",
+                200,
+                1,
+                FrontAction::Update(UpdatePayload {
+                    subject_type: SubjectType::Member,
+                    subject_id: "june".into(),
+                    level: None,
+                    is_primary: Some(true),
+                    position: None,
+                    based_on: None,
+                }),
+            ),
+            fop(
+                "u2",
+                300,
+                1,
+                FrontAction::Update(UpdatePayload {
+                    subject_type: SubjectType::Member,
+                    subject_id: "kai".into(),
+                    level: None,
+                    is_primary: None,
+                    position: Some(1),
+                    based_on: None,
+                }),
+            ),
         ];
         let r = fold(&ops);
         let kai: Vec<_> = r.intervals.iter().filter(|i| i.subject_id == "kai").collect();
@@ -783,8 +852,18 @@ mod tests {
 
     #[test]
     fn subsystem_and_state_subjects() {
-        let g = Entry { subject_type: SubjectType::Group, subject_id: "stars".into(), level: Level::Front, is_primary: true };
-        let s = Entry { subject_type: SubjectType::State, subject_id: "blurry".into(), level: Level::Cocon, is_primary: false };
+        let g = Entry {
+            subject_type: SubjectType::Group,
+            subject_id: "stars".into(),
+            level: Level::Front,
+            is_primary: true,
+        };
+        let s = Entry {
+            subject_type: SubjectType::State,
+            subject_id: "blurry".into(),
+            level: Level::Cocon,
+            is_primary: false,
+        };
         let r = fold(&[sw("s1", 100, vec![s.clone(), g.clone()])]);
         assert_eq!(r.current, vec![g, s]);
     }
@@ -793,11 +872,17 @@ mod tests {
     fn daily_split_across_midnight_with_offset() {
         let day = 86_400_000;
         let iv = Interval {
-            id: "x".into(), subject_type: SubjectType::Member, subject_id: "kai".into(), level: Level::Front,
-            is_primary: true, position: 0,
+            id: "x".into(),
+            subject_type: SubjectType::Member,
+            subject_id: "kai".into(),
+            level: Level::Front,
+            is_primary: true,
+            position: 0,
             start_at: day - 3_600_000 - 2 * 3_600_000, // 21:00 UTC day 0 = 23:00 local (+2h)
             end_at: Some(day + 3_600_000 - 2 * 3_600_000), // 23:00 UTC = 01:00 local day 1
-            start_switch_id: "s".into(), end_switch_id: None, start_tz_offset_min: 120,
+            start_switch_id: "s".into(),
+            end_switch_id: None,
+            start_tz_offset_min: 120,
         };
         let rows = daily(&[iv], 0, |_| 120);
         assert_eq!(rows.len(), 2);
@@ -839,7 +924,9 @@ mod tests {
 
     #[test]
     fn payload_json_shapes() {
-        let o: SwitchPayload = serde_json::from_str(r#"{"entries":[{"subject_type":"member","subject_id":"k","is_primary":true}]}"#).unwrap();
+        let o: SwitchPayload =
+            serde_json::from_str(r#"{"entries":[{"subject_type":"member","subject_id":"k","is_primary":true}]}"#)
+                .unwrap();
         assert_eq!(o.entries[0].level, Level::Front);
         let a: AmendPayload = serde_json::from_str(r#"{"target_op_id":"x","note":null}"#).unwrap();
         assert_eq!(a.note, Some(None));

@@ -36,9 +36,12 @@ fn call(f: &str, a: &[Value]) -> Result<String, String> {
         "validate_op" => api::validate_op(&s(a, 0)).map(|k| json!(k).to_string()),
         "feed_parse" => api::feed_parse(&s(a, 0)),
         "adapt_color" => Ok(api::adapt_color(&s(a, 0), a[1].as_bool().unwrap_or(false), &s(a, 2))),
-        "hlc_tick" => api::hlc_tick(&s(a, 0), a[1].as_u64().unwrap_or(0) as u32, a[2].as_u64().unwrap_or(0)).map(|h| json!(h).to_string()),
-        "hlc_observe" => api::hlc_observe(&s(a, 0), a[1].as_u64().unwrap_or(0) as u32, &s(a, 2), a[3].as_u64().unwrap_or(0))
+        "hlc_tick" => api::hlc_tick(&s(a, 0), a[1].as_u64().unwrap_or(0) as u32, a[2].as_u64().unwrap_or(0))
             .map(|h| json!(h).to_string()),
+        "hlc_observe" => {
+            api::hlc_observe(&s(a, 0), a[1].as_u64().unwrap_or(0) as u32, &s(a, 2), a[3].as_u64().unwrap_or(0))
+                .map(|h| json!(h).to_string())
+        }
         other => Err(format!("unknown fn {other}")),
     }
 }
@@ -81,7 +84,8 @@ fn fixtures_pass() {
             continue;
         }
         let expect = &case["expect"];
-        let ok = if expect.get("error") == Some(&Value::Bool(true)) { got.get("error").is_some() } else { &got == expect };
+        let ok =
+            if expect.get("error") == Some(&Value::Bool(true)) { got.get("error").is_some() } else { &got == expect };
         if !ok {
             failures.push(format!("{}\n  expected {expect}\n  got      {got}", path.display()));
         }

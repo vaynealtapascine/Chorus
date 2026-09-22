@@ -179,9 +179,16 @@ pub fn project<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Projection {
     }
     for (key, (marks, manual)) in reads {
         let floor = manual.as_ref().map(|m| m.2);
-        let best_mark = marks.into_iter().filter(|m| floor.is_none_or(|f| m.2 > f)).max_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+        let best_mark =
+            marks.into_iter().filter(|m| floor.is_none_or(|f| m.2 > f)).max_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
         let effective = match (best_mark, manual) {
-            (Some(m), Some(s)) => if (m.0, &m.1) > (s.0, &s.1) { m } else { s },
+            (Some(m), Some(s)) => {
+                if (m.0, &m.1) > (s.0, &s.1) {
+                    m
+                } else {
+                    s
+                }
+            }
             (Some(m), None) => m,
             (None, Some(s)) => s,
             (None, None) => continue,
@@ -195,12 +202,7 @@ pub fn project<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Projection {
     p
 }
 
-fn special(
-    p: &mut Projection,
-    o: &Op,
-    payload: &Map<String, Value>,
-    reads: &mut Reads,
-) {
+fn special(p: &mut Projection, o: &Op, payload: &Map<String, Value>, reads: &mut Reads) {
     let entity = o.entity().unwrap_or("");
     let acct = o.account_id.clone().unwrap_or_default();
     match o.kind.as_str() {

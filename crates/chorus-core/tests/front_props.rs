@@ -18,26 +18,33 @@ fn entry() -> impl Strategy<Value = Entry> {
 fn action(n_prev: usize) -> impl Strategy<Value = FrontAction> {
     let target = move |i: usize| format!("op{}", i % n_prev.max(1));
     prop_oneof![
-        proptest::collection::vec(entry(), 0..4)
-            .prop_map(|entries| FrontAction::Switch(SwitchPayload { entries, based_on: None, note: None, notify: Notify::Default })),
-        (entry(), proptest::option::of(0usize..3))
-            .prop_map(|(entry, position)| FrontAction::Add(AddPayload { entry, position, based_on: None, notify: Notify::Default })),
+        proptest::collection::vec(entry(), 0..4).prop_map(|entries| FrontAction::Switch(SwitchPayload {
+            entries,
+            based_on: None,
+            note: None,
+            notify: Notify::Default
+        })),
+        (entry(), proptest::option::of(0usize..3)).prop_map(|(entry, position)| FrontAction::Add(AddPayload {
+            entry,
+            position,
+            based_on: None,
+            notify: Notify::Default
+        })),
         (0usize..5).prop_map(|m| FrontAction::Remove(RemovePayload {
             subject_type: SubjectType::Member,
             subject_id: MEMBERS[m].into(),
             based_on: None,
             notify: Notify::Default
         })),
-        (0usize..5, proptest::option::of(0u8..3), proptest::option::of(any::<bool>()), proptest::option::of(0usize..3)).prop_map(
-            |(m, l, p, pos)| FrontAction::Update(UpdatePayload {
+        (0usize..5, proptest::option::of(0u8..3), proptest::option::of(any::<bool>()), proptest::option::of(0usize..3))
+            .prop_map(|(m, l, p, pos)| FrontAction::Update(UpdatePayload {
                 subject_type: SubjectType::Member,
                 subject_id: MEMBERS[m].into(),
                 level: l.map(|l| [Level::Front, Level::Cocon, Level::Present][l as usize]),
                 is_primary: p,
                 position: pos,
                 based_on: None
-            })
-        ),
+            })),
         (0usize..50).prop_map(move |i| FrontAction::Retract(TargetPayload { target_op_id: target(i) })),
         (0usize..50).prop_map(move |i| FrontAction::Unretract(TargetPayload { target_op_id: target(i) })),
         (0usize..50, proptest::option::of(0i64..1000)).prop_map(move |(i, at)| FrontAction::Amend(AmendPayload {

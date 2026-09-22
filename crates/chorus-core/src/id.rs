@@ -7,10 +7,7 @@ use uuid::{Builder, Uuid};
 
 /// A new UUIDv7 as a lowercase hyphenated string.
 pub fn new_id(unix_ms: u64, random: [u8; 10]) -> String {
-    Builder::from_unix_timestamp_millis(unix_ms, &random)
-        .into_uuid()
-        .hyphenated()
-        .to_string()
+    Builder::from_unix_timestamp_millis(unix_ms, &random).into_uuid().hyphenated().to_string()
 }
 
 /// True if `s` is a lowercase hyphenated UUID (any version). Ops from older importers may carry

@@ -503,8 +503,12 @@ impl ClientStore for MemStore {
             .collect()
     }
     fn demote_for_restore(&mut self, scope: &str) {
-        let mut ids: Vec<(i64, String)> =
-            self.ops.values().filter(|o| o.scope == scope && o.seq.is_some()).map(|o| (o.seq.unwrap_or(0), o.id.clone())).collect();
+        let mut ids: Vec<(i64, String)> = self
+            .ops
+            .values()
+            .filter(|o| o.scope == scope && o.seq.is_some())
+            .map(|o| (o.seq.unwrap_or(0), o.id.clone()))
+            .collect();
         ids.sort();
         for (_, id) in ids {
             if let Some(o) = self.ops.get_mut(&id) {
@@ -606,8 +610,14 @@ impl MemServer {
     fn catch_up(&self, scope: &str, after: i64) -> Vec<Frame> {
         let ops: Vec<Op> = self.scope_ops(scope, after).cloned().collect();
         let to = self.max_seq(scope);
-        let mut out: Vec<Frame> =
-            ops.chunks(PAGE_OPS).map(|c| Frame::Ops { scope: scope.into(), ops: c.to_vec(), to: c.last().and_then(|o| o.seq).unwrap_or(to) }).collect();
+        let mut out: Vec<Frame> = ops
+            .chunks(PAGE_OPS)
+            .map(|c| Frame::Ops {
+                scope: scope.into(),
+                ops: c.to_vec(),
+                to: c.last().and_then(|o| o.seq).unwrap_or(to),
+            })
+            .collect();
         out.push(Frame::Caught { scope: scope.into(), to, digest: self.digest(scope) });
         out
     }
@@ -641,7 +651,12 @@ impl MemServer {
         }
         o.seq = Some(self.log.len() as i64 + 1);
         if !preserved {
-            let t = time::OpTime { device_at: o.device_at, mono: o.mono, boot_id: o.boot_id.clone(), time_source: o.time_source };
+            let t = time::OpTime {
+                device_at: o.device_at,
+                mono: o.mono,
+                boot_id: o.boot_id.clone(),
+                time_source: o.time_source,
+            };
             o.occurred_at = Some(time::correct(&t, &conn.sample, now).occurred_at);
             o.account_id = Some(conn.account.clone());
             o.device_id = Some(device.into());
@@ -658,12 +673,21 @@ impl MemServer {
         match frame {
             Frame::Hello { epoch, cursors, clock, .. } => {
                 let Some(account) = self.devices.get(device).cloned() else {
-                    out.push((device.into(), Frame::Error { code: "unauthenticated".into(), message: "unknown device".into() }));
+                    out.push((
+                        device.into(),
+                        Frame::Error { code: "unauthenticated".into(), message: "unknown device".into() },
+                    ));
                     return out;
                 };
-                let scopes: Vec<String> = self.access.get(&account).map(|s| s.iter().cloned().collect()).unwrap_or_default();
+                let scopes: Vec<String> =
+                    self.access.get(&account).map(|s| s.iter().cloned().collect()).unwrap_or_default();
                 let offset = now - clock.wall;
-                let sample = ClockSample { server_time: now, mono: clock.mono, boot_id: clock.boot_id.clone(), offset_ms: offset };
+                let sample = ClockSample {
+                    server_time: now,
+                    mono: clock.mono,
+                    boot_id: clock.boot_id.clone(),
+                    offset_ms: offset,
+                };
                 let max_seq: BTreeMap<String, i64> = scopes.iter().map(|s| (s.clone(), self.max_seq(s))).collect();
                 let reconcile = epoch.as_ref().is_some_and(|e| *e != self.epoch_str())
                     || cursors.iter().any(|(s, c)| *c > *max_seq.get(s).unwrap_or(&0));

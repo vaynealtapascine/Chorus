@@ -43,7 +43,9 @@ pub enum EntityKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         language: Option<String>,
     },
-    TextLink { url: String },
+    TextLink {
+        url: String,
+    },
     Bold,
     Italic,
     Underline,
@@ -56,7 +58,9 @@ pub enum EntityKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         target_id: Option<String>,
     },
-    CustomEmoji { emoji_id: String },
+    CustomEmoji {
+        emoji_id: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -76,14 +80,23 @@ impl Entity {
 /// Canonical order: by offset, then longer first, then kind. Parsers and projections store
 /// entities in this order so equal content compares equal.
 pub fn sort_entities(e: &mut [Entity]) {
-    e.sort_by(|a, b| (a.offset, std::cmp::Reverse(a.length), &a.kind).cmp(&(b.offset, std::cmp::Reverse(b.length), &b.kind)));
+    e.sort_by(|a, b| {
+        (a.offset, std::cmp::Reverse(a.length), &a.kind).cmp(&(b.offset, std::cmp::Reverse(b.length), &b.kind))
+    });
 }
 
 /// Canonical form: overlapping or touching ranges of the same simple style (bold, italic,
 /// underline, strikethrough, spoiler) merge into one, then entities are sorted.
 pub fn normalize_entities(e: &mut Vec<Entity>) {
     let simple = |k: &EntityKind| {
-        matches!(k, EntityKind::Bold | EntityKind::Italic | EntityKind::Underline | EntityKind::Strikethrough | EntityKind::Spoiler)
+        matches!(
+            k,
+            EntityKind::Bold
+                | EntityKind::Italic
+                | EntityKind::Underline
+                | EntityKind::Strikethrough
+                | EntityKind::Spoiler
+        )
     };
     let mut others: Vec<Entity> = e.iter().filter(|x| !simple(&x.kind)).cloned().collect();
     let mut styled: Vec<Entity> = e.iter().filter(|x| simple(&x.kind)).cloned().collect();
@@ -266,28 +279,31 @@ impl P<'_> {
                 continue;
             }
             // pre block
-            if self.depth == 0 && self.at(i, "```")
-                && let Some(end) = self.find_fence(i + 3, to) {
-                    self.pre(i + 3, end);
-                    i = end + 3;
-                    continue;
-                }
+            if self.depth == 0
+                && self.at(i, "```")
+                && let Some(end) = self.find_fence(i + 3, to)
+            {
+                self.pre(i + 3, end);
+                i = end + 3;
+                continue;
+            }
             if c == '`'
                 && let Some(end) = self.find_code_end(i + 1, to)
-                    && end > i + 1 {
-                        let start = self.u16;
-                        let mut j = i + 1;
-                        while j < end {
-                            if self.s[j] == '\\' && matches!(self.s.get(j + 1), Some('`' | '\\')) {
-                                j += 1;
-                            }
-                            self.push(self.s[j]);
-                            j += 1;
-                        }
-                        self.ents.push(Entity { kind: EntityKind::Code, offset: start, length: self.u16 - start });
-                        i = end + 1;
-                        continue;
+                && end > i + 1
+            {
+                let start = self.u16;
+                let mut j = i + 1;
+                while j < end {
+                    if self.s[j] == '\\' && matches!(self.s.get(j + 1), Some('`' | '\\')) {
+                        j += 1;
                     }
+                    self.push(self.s[j]);
+                    j += 1;
+                }
+                self.ents.push(Entity { kind: EntityKind::Code, offset: start, length: self.u16 - start });
+                i = end + 1;
+                continue;
+            }
             let mut matched = false;
             for (delim, kind) in [
                 ("**", EntityKind::Bold),
@@ -322,12 +338,13 @@ impl P<'_> {
                 continue;
             }
             if c == '['
-                && let Some((label_end, url_start, url_end)) = self.find_link(i, to) {
-                    let url: String = self.s[url_start..url_end].iter().collect();
-                    self.wrap(EntityKind::TextLink { url }, i + 1, label_end);
-                    i = url_end + 1;
-                    continue;
-                }
+                && let Some((label_end, url_start, url_end)) = self.find_link(i, to)
+            {
+                let url: String = self.s[url_start..url_end].iter().collect();
+                self.wrap(EntityKind::TextLink { url }, i + 1, label_end);
+                i = url_end + 1;
+                continue;
+            }
             if c == '@' && word_start {
                 let mut j = i + 1;
                 while j < to && (is_word(self.s[j]) || matches!(self.s[j], '_' | '.' | '-')) {
@@ -342,7 +359,11 @@ impl P<'_> {
                         let start = self.u16;
                         self.push('@');
                         self.push_str(&name);
-                        self.ents.push(Entity { kind: EntityKind::Mention { target_type, target_id }, offset: start, length: self.u16 - start });
+                        self.ents.push(Entity {
+                            kind: EntityKind::Mention { target_type, target_id },
+                            offset: start,
+                            length: self.u16 - start,
+                        });
                         i = j;
                         continue;
                     }
@@ -350,7 +371,10 @@ impl P<'_> {
             }
             if c == ':' {
                 let mut j = i + 1;
-                while j < to && j - i <= 33 && (self.s[j].is_ascii_lowercase() || self.s[j].is_ascii_digit() || self.s[j] == '_') {
+                while j < to
+                    && j - i <= 33
+                    && (self.s[j].is_ascii_lowercase() || self.s[j].is_ascii_digit() || self.s[j] == '_')
+                {
                     j += 1;
                 }
                 if j < to && self.s[j] == ':' && j - i > 2 {
@@ -360,7 +384,11 @@ impl P<'_> {
                         self.push(':');
                         self.push_str(&name);
                         self.push(':');
-                        self.ents.push(Entity { kind: EntityKind::CustomEmoji { emoji_id }, offset: start, length: self.u16 - start });
+                        self.ents.push(Entity {
+                            kind: EntityKind::CustomEmoji { emoji_id },
+                            offset: start,
+                            length: self.u16 - start,
+                        });
                         i = j + 1;
                         continue;
                     }
@@ -471,7 +499,8 @@ impl P<'_> {
             return None;
         }
         let url: String = self.s[url_start..url_end].iter().collect();
-        let ok = ["https://", "http://", "mailto:", "chorus://"].iter().any(|p| url.starts_with(p) && url.len() > p.len());
+        let ok =
+            ["https://", "http://", "mailto:", "chorus://"].iter().any(|p| url.starts_with(p) && url.len() > p.len());
         ok.then_some((j, url_start, url_end))
     }
 }
@@ -560,7 +589,8 @@ pub fn parse(src: &str, r: &dyn Resolver) -> Rich {
                 }
                 let length = p.u16 - start;
                 if length > 0 {
-                    let kind = if kind == LineKind::Quote { EntityKind::Blockquote } else { EntityKind::ExpandableBlockquote };
+                    let kind =
+                        if kind == LineKind::Quote { EntityKind::Blockquote } else { EntityKind::ExpandableBlockquote };
                     p.ents.push(Entity { kind, offset: start, length });
                 }
             }
@@ -589,15 +619,20 @@ fn open_tok(k: &EntityKind) -> String {
 }
 
 fn is_delim(k: &EntityKind) -> bool {
-    matches!(k, EntityKind::Bold | EntityKind::Italic | EntityKind::Underline | EntityKind::Strikethrough | EntityKind::Spoiler)
+    matches!(
+        k,
+        EntityKind::Bold | EntityKind::Italic | EntityKind::Underline | EntityKind::Strikethrough | EntityKind::Spoiler
+    )
 }
 
 /// Append a delimiter token, separating it from an identical delimiter char with `\&`.
 fn push_tok(out: &mut String, tok: &str) {
     if let (Some(last), Some(first)) = (out.chars().last(), tok.chars().next())
-        && last == first && matches!(first, '*' | '_' | '~' | '|' | '`') {
-            out.push_str("\\&");
-        }
+        && last == first
+        && matches!(first, '*' | '_' | '~' | '|' | '`')
+    {
+        out.push_str("\\&");
+    }
     out.push_str(tok);
 }
 
@@ -620,7 +655,8 @@ pub fn to_markup(rich: &Rich) -> String {
     let is_quote = |k: &EntityKind| matches!(k, EntityKind::Blockquote | EntityKind::ExpandableBlockquote);
     let is_literal = |k: &EntityKind| matches!(k, EntityKind::Code | EntityKind::Pre { .. });
     let quotes: Vec<&Entity> = ents.iter().copied().filter(|e| is_quote(&e.kind)).collect();
-    let inline: Vec<&Entity> = ents.iter().copied().filter(|e| !is_quote(&e.kind) && !open_tok(&e.kind).is_empty()).collect();
+    let inline: Vec<&Entity> =
+        ents.iter().copied().filter(|e| !is_quote(&e.kind) && !open_tok(&e.kind).is_empty()).collect();
 
     let mut out = String::new();
     let mut stack: Vec<&Entity> = Vec::new();
@@ -648,7 +684,8 @@ pub fn to_markup(rich: &Rich) -> String {
     // single-line code blocks without a language use the inline ```x``` form, which also works
     // inside quotes
     let inline_pre = |e: &Entity| {
-        matches!(&e.kind, EntityKind::Pre { language: None }) && !utf16_slice(&rich.text, e.offset, e.length).contains('\n')
+        matches!(&e.kind, EntityKind::Pre { language: None })
+            && !utf16_slice(&rich.text, e.offset, e.length).contains('\n')
     };
     let open_of = |e: &Entity| if inline_pre(e) { "```".to_string() } else { open_tok(&e.kind) };
     let close_of = |e: &Entity| if inline_pre(e) { "```".to_string() } else { close_tok(&e.kind) };
@@ -700,15 +737,13 @@ pub fn to_markup(rich: &Rich) -> String {
         // auto-detected urls run to whitespace; stop them where the entity stopped
         let token_opens_here = literal_depth == 0 && inline.iter().any(|e| e.offset == u);
         let continues_atom = rich.entities.iter().any(|e| {
-            e.end() == u
-                && token_opens_here
-                && matches!(e.kind, EntityKind::Url | EntityKind::Mention { .. })
+            e.end() == u && token_opens_here && matches!(e.kind, EntityKind::Url | EntityKind::Mention { .. })
                 || e.end() == u
-                && match e.kind {
-                    EntityKind::Url => !c.is_whitespace(),
-                    EntityKind::Mention { .. } => is_word(c) || matches!(c, '_' | '.' | '-'),
-                    _ => false,
-                }
+                    && match e.kind {
+                        EntityKind::Url => !c.is_whitespace(),
+                        EntityKind::Mention { .. } => is_word(c) || matches!(c, '_' | '.' | '-'),
+                        _ => false,
+                    }
         });
         if continues_atom {
             out.push_str("\\&");
@@ -752,15 +787,22 @@ pub fn to_markup(rich: &Rich) -> String {
             });
             // a '>' that would start a markup line must not read as a quote
             let quote_like = c == '>' && line_start && quote_at(u).is_none() && out.len() == len_before_tokens;
-            let escape = quote_like || !in_atom && match c {
-                '\\' | '*' | '_' | '~' | '|' | '`' | '[' | ']' => true,
-                '@' => prev.is_none_or(|p| !is_word(p)) && next.is_some_and(|n| is_word(n) || n == '_')
-                    && !in_entity(&|k| matches!(k, EntityKind::Mention { .. })),
-                ':' => next.is_some_and(|n| n.is_ascii_lowercase() || n.is_ascii_digit() || n == '_')
-                    && !in_entity(&|k| matches!(k, EntityKind::CustomEmoji { .. } | EntityKind::Url)),
-                '(' | ')' => stack.iter().any(|e| matches!(e.kind, EntityKind::TextLink { .. })),
-                _ => false,
-            };
+            let escape = quote_like
+                || !in_atom
+                    && match c {
+                        '\\' | '*' | '_' | '~' | '|' | '`' | '[' | ']' => true,
+                        '@' => {
+                            prev.is_none_or(|p| !is_word(p))
+                                && next.is_some_and(|n| is_word(n) || n == '_')
+                                && !in_entity(&|k| matches!(k, EntityKind::Mention { .. }))
+                        }
+                        ':' => {
+                            next.is_some_and(|n| n.is_ascii_lowercase() || n.is_ascii_digit() || n == '_')
+                                && !in_entity(&|k| matches!(k, EntityKind::CustomEmoji { .. } | EntityKind::Url))
+                        }
+                        '(' | ')' => stack.iter().any(|e| matches!(e.kind, EntityKind::TextLink { .. })),
+                        _ => false,
+                    };
             if escape {
                 out.push('\\');
             }
@@ -867,7 +909,11 @@ mod tests {
         assert_eq!(r.text, "one\ntwo\nplain\nmore");
         assert_eq!(
             r.entities,
-            vec![e(EntityKind::Blockquote, 0, 7), e(EntityKind::Bold, 4, 3), e(EntityKind::ExpandableBlockquote, 14, 4)]
+            vec![
+                e(EntityKind::Blockquote, 0, 7),
+                e(EntityKind::Bold, 4, 3),
+                e(EntityKind::ExpandableBlockquote, 14, 4)
+            ]
         );
     }
 
@@ -908,15 +954,25 @@ mod tests {
 
     #[test]
     fn crossing_entities_are_split() {
-        let rich = Rich { text: "abcdef".into(), entities: vec![e(EntityKind::Bold, 0, 4), e(EntityKind::Italic, 2, 4)] };
+        let rich =
+            Rich { text: "abcdef".into(), entities: vec![e(EntityKind::Bold, 0, 4), e(EntityKind::Italic, 2, 4)] };
         let m = to_markup(&rich);
         let back = parse(&m, &NoNames);
         assert_eq!(back.text, "abcdef");
         // same formatting coverage, possibly split into more pieces
-        let covered = |r: &Rich, k: EntityKind, i: u32| r.entities.iter().any(|x| x.kind == k && x.offset <= i && i < x.end());
+        let covered =
+            |r: &Rich, k: EntityKind, i: u32| r.entities.iter().any(|x| x.kind == k && x.offset <= i && i < x.end());
         for i in 0..6 {
-            assert_eq!(covered(&rich, EntityKind::Bold, i), covered(&back, EntityKind::Bold, i), "bold at {i}, markup {m}");
-            assert_eq!(covered(&rich, EntityKind::Italic, i), covered(&back, EntityKind::Italic, i), "italic at {i}, markup {m}");
+            assert_eq!(
+                covered(&rich, EntityKind::Bold, i),
+                covered(&back, EntityKind::Bold, i),
+                "bold at {i}, markup {m}"
+            );
+            assert_eq!(
+                covered(&rich, EntityKind::Italic, i),
+                covered(&back, EntityKind::Italic, i),
+                "italic at {i}, markup {m}"
+            );
         }
     }
 }

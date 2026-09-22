@@ -32,7 +32,13 @@ pub fn to_markup(rich_json: String) -> Result<String, CoreError> {
 }
 
 #[uniffi::export]
-pub fn compose(src: String, speakers_json: String, options_json: String, default_authors_json: String, names_json: String) -> Result<String, CoreError> {
+pub fn compose(
+    src: String,
+    speakers_json: String,
+    options_json: String,
+    default_authors_json: String,
+    names_json: String,
+) -> Result<String, CoreError> {
     wrap(api::compose(&src, &speakers_json, &options_json, &default_authors_json, &names_json))
 }
 
