@@ -39,8 +39,8 @@ default the owner has not contradicted; these may be revisited if implementation
 | D-050 | Stage mode may show **fake names and fake timestamps** (view-only overrides, never stored on real data). | Owner (Q8) |
 | D-051 | Android distribution: APK download from the server, in-app update check, and silent OTA over the tailnet where Android permits (`USER_ACTION_NOT_REQUIRED` after the first self-update). | Owner (Q9) |
 | D-052 | Follows are account-to-account; name/icon as proposed; Insights shows no rankings by default. | Owner (Q7, Q10, Q11) |
-| D-054 | **Custom emoji**: one server-wide set of uploaded image emoji (`:name:`), usable in messages, posts, display names/bios and reactions. Managed by admins (server setting can let every account add). No per-space/per-account sets, no stickers. | Owner (Q6) |
 | D-053 | **Permanent server copies.** Retention is forever; deletes are tombstones; local eviction never deletes; everything deleted is restorable from Trash on Android or web. True erase only via server admin CLI `purge`. | Owner (Q12) |
+| D-054 | **Custom emoji**: one server-wide set of uploaded image emoji (`:name:`), usable in messages, posts, display names/bios and reactions. Managed by admins (server setting can let every account add). No per-space/per-account sets, no stickers. | Owner (Q6) |
 
 ## Architecture
 
