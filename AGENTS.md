@@ -29,7 +29,7 @@ same commit and note it in the log.
 
 ## Handoff protocol
 
-- **Starting a task:** edit `PROGRESS.md` → *Now* (task id, your name, date, next concrete step),
+- **Starting a task:** `python scripts/board.py start <id> <you> "<next step>"` (or edit `PROGRESS.md` → *Now* (task id, your name, date, next concrete step),
   mark it `[~]`, commit (`chore(progress): start M1.3`).
 - **Finishing an atomic piece:** tick it `[x]`, add a log line, commit together with the work.
 - **Stopping mid-task:** update *Now* → *Next concrete step* + *Notes* with: files touched, what is

@@ -5,3 +5,4 @@
 
 pub mod hlc;
 pub mod id;
+pub mod time;
