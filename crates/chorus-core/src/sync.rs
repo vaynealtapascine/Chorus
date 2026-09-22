@@ -423,25 +423,52 @@ impl ClientEngine {
     }
 }
 
-/// In-memory client store (tests, simulator, and a reference for real implementations).
-#[derive(Clone, Debug, Default)]
+/// In-memory client store: the simulator's store, and the replica the apps keep in memory while
+/// persisting changes write-behind (see [`crate::replica`]).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct MemStore {
     pub epoch: Option<String>,
     pub cursors: BTreeMap<String, i64>,
     pub scopes: Vec<String>,
     /// All ops this device knows, by id. Pending ones have `seq == None`.
+    #[serde(skip)]
     pub ops: BTreeMap<String, Op>,
-    /// Creation order of local ops.
+    /// Creation order of local ops not yet confirmed (compacted by [`MemStore::compact`]).
     pub local_order: Vec<String>,
     pub rejected: BTreeMap<String, AckError>,
     /// Ops being restored to a restored server (demoted from confirmed).
     pub restoring: Vec<String>,
+    /// Op ids changed since the last [`MemStore::take_dirty`].
+    #[serde(skip)]
+    pub dirty: BTreeSet<String>,
+    /// Cursors/epoch/scopes/queues changed since the last take.
+    #[serde(skip)]
+    pub meta_dirty: bool,
 }
 
 impl MemStore {
     pub fn add_local(&mut self, op: Op) {
         self.local_order.push(op.id.clone());
+        self.dirty.insert(op.id.clone());
+        self.meta_dirty = true;
         self.ops.insert(op.id.clone(), op);
+    }
+
+    /// Drop confirmed ids from the local order queue.
+    pub fn compact(&mut self) {
+        let ops = &self.ops;
+        let before = self.local_order.len();
+        self.local_order.retain(|id| ops.get(id).is_some_and(|o| o.seq.is_none()));
+        if self.local_order.len() != before {
+            self.meta_dirty = true;
+        }
+    }
+
+    /// Changed ops (current versions) and whether the meta changed, clearing the flags.
+    pub fn take_dirty(&mut self) -> (Vec<Op>, bool) {
+        let ids = std::mem::take(&mut self.dirty);
+        let meta = std::mem::replace(&mut self.meta_dirty, false);
+        (ids.iter().filter_map(|id| self.ops.get(id).cloned()).collect(), meta)
     }
 
     /// Confirmed ops for projection/comparison.
@@ -461,33 +488,44 @@ impl ClientStore for MemStore {
     }
     fn set_epoch(&mut self, epoch: &str) {
         self.epoch = Some(epoch.into());
+        self.meta_dirty = true;
     }
     fn cursor(&self, scope: &str) -> i64 {
         *self.cursors.get(scope).unwrap_or(&0)
     }
     fn set_cursor(&mut self, scope: &str, seq: i64) {
         self.cursors.insert(scope.into(), seq);
+        self.meta_dirty = true;
     }
     fn scopes(&self) -> Vec<String> {
         self.scopes.clone()
     }
     fn set_scopes(&mut self, scopes: &[String]) {
         self.scopes = scopes.to_vec();
+        self.meta_dirty = true;
     }
     fn put_remote(&mut self, op: Op) {
-        self.rejected.remove(&op.id);
-        self.restoring.retain(|id| *id != op.id);
+        if self.rejected.remove(&op.id).is_some() || self.restoring.contains(&op.id) {
+            self.restoring.retain(|id| *id != op.id);
+            self.meta_dirty = true;
+        }
+        self.dirty.insert(op.id.clone());
         self.ops.insert(op.id.clone(), op);
     }
     fn ack(&mut self, id: &str, stamp: &Stamp) {
         if let Some(o) = self.ops.get_mut(id) {
             stamp.apply(o);
+            self.dirty.insert(id.into());
         }
-        self.restoring.retain(|x| x != id);
+        if self.restoring.iter().any(|x| x == id) {
+            self.restoring.retain(|x| x != id);
+            self.meta_dirty = true;
+        }
     }
     fn reject(&mut self, id: &str, error: AckError) {
         if self.ops.get(id).is_some_and(|o| o.seq.is_none()) {
             self.rejected.insert(id.into(), error);
+            self.meta_dirty = true;
         }
     }
     fn pending(&self, skip: &BTreeSet<String>, limit: usize, restore: bool) -> Vec<Op> {
@@ -514,14 +552,17 @@ impl ClientStore for MemStore {
             if let Some(o) = self.ops.get_mut(&id) {
                 o.seq = None;
             }
+            self.dirty.insert(id.clone());
             self.restoring.push(id);
         }
+        self.meta_dirty = true;
     }
     fn digest(&self, scope: &str) -> Digest {
         Digest::of(self.ops.values().filter(|o| o.scope == scope && o.seq.is_some()).map(|o| o.id.as_str()))
     }
     fn reset_scope(&mut self, scope: &str) {
         self.cursors.insert(scope.into(), 0);
+        self.meta_dirty = true;
     }
 }
 

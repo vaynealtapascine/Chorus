@@ -182,6 +182,74 @@ pub fn echo_json(v: &str) -> Result<String, String> {
     Ok(js(&x))
 }
 
+// ─── replica (JSON facade shared by the wasm and UniFFI bindings) ────────────
+
+/// JSON facade over [`crate::replica::Replica`].
+pub struct JsonReplica(pub crate::replica::Replica);
+
+fn rand10(bytes: &[u8]) -> Result<[u8; 10], String> {
+    bytes.get(..10).and_then(|b| b.try_into().ok()).ok_or_else(|| "need 10 random bytes".to_string())
+}
+
+impl JsonReplica {
+    pub fn new(device_id: &str, node: u32) -> JsonReplica {
+        JsonReplica(crate::replica::Replica::new(device_id, node))
+    }
+
+    /// `meta_json` / `hlc_last` may be empty strings when nothing was persisted yet.
+    pub fn restore(
+        device_id: &str,
+        node: u32,
+        meta_json: &str,
+        ops_json: &str,
+        hlc_last: &str,
+    ) -> Result<JsonReplica, String> {
+        let meta = if meta_json.trim().is_empty() { None } else { Some(parse("meta", meta_json)?) };
+        let ops: Vec<Op> = if ops_json.trim().is_empty() { vec![] } else { parse("ops", ops_json)? };
+        let hlc = if hlc_last.is_empty() { None } else { Some(hlc_last.parse().map_err(|e| format!("{e}"))?) };
+        Ok(JsonReplica(crate::replica::Replica::restore(device_id, node, meta, ops, hlc)))
+    }
+
+    /// → `{"op": …, "frames": […]}`
+    pub fn create(&mut self, new_op_json: &str, device_now_json: &str, random: &[u8]) -> Result<String, String> {
+        let n: crate::replica::NewOp = parse("new op", new_op_json)?;
+        let d: crate::replica::DeviceNow = parse("device now", device_now_json)?;
+        let (o, frames) = self.0.create(n, &d, rand10(random)?).map_err(|e| e.to_string())?;
+        Ok(js(&serde_json::json!({"op": o, "frames": frames})))
+    }
+
+    pub fn connect(&mut self, clock_json: &str, token: &str) -> Result<String, String> {
+        let c: crate::sync::ClockReading = parse("clock", clock_json)?;
+        Ok(js(&self.0.connect(c, token)))
+    }
+
+    /// Frame in → frames to send (JSON array).
+    pub fn on_frame(&mut self, frame_json: &str, now: i64) -> Result<String, String> {
+        let f: crate::sync::Frame = parse("frame", frame_json)?;
+        Ok(js(&self.0.on_frame(f, now)))
+    }
+
+    pub fn disconnect(&mut self) {
+        self.0.disconnect();
+    }
+
+    pub fn take_changes(&mut self) -> String {
+        js(&self.0.take_changes())
+    }
+
+    pub fn projection(&self) -> String {
+        js(&self.0.projection().canonical())
+    }
+
+    pub fn state(&self) -> String {
+        format!("{:?}", self.0.state()).to_lowercase()
+    }
+
+    pub fn rejected(&self) -> String {
+        js(&self.0.store.rejected)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -76,3 +76,66 @@ pub fn hlc_tick(last: String, node: u32, now_ms: u64) -> Result<String, CoreErro
 pub fn hlc_observe(last: String, node: u32, remote: String, now_ms: u64) -> Result<String, CoreError> {
     wrap(api::hlc_observe(&last, node, &remote, now_ms))
 }
+
+/// The device's replica (engine + in-memory store + clock). See `chorus_core::replica`.
+#[derive(uniffi::Object)]
+pub struct CoreReplica(std::sync::Mutex<api::JsonReplica>);
+
+impl CoreReplica {
+    fn lock(&self) -> std::sync::MutexGuard<'_, api::JsonReplica> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+#[uniffi::export]
+impl CoreReplica {
+    #[uniffi::constructor]
+    pub fn new(device_id: String, node: u32) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(CoreReplica(std::sync::Mutex::new(api::JsonReplica::new(&device_id, node))))
+    }
+
+    #[uniffi::constructor]
+    pub fn restore(
+        device_id: String,
+        node: u32,
+        meta_json: String,
+        ops_json: String,
+        hlc_last: String,
+    ) -> Result<std::sync::Arc<Self>, CoreError> {
+        let r = api::JsonReplica::restore(&device_id, node, &meta_json, &ops_json, &hlc_last)
+            .map_err(|reason| CoreError::Invalid { reason })?;
+        Ok(std::sync::Arc::new(CoreReplica(std::sync::Mutex::new(r))))
+    }
+
+    pub fn create(&self, new_op_json: String, device_now_json: String, random: Vec<u8>) -> Result<String, CoreError> {
+        wrap(self.lock().create(&new_op_json, &device_now_json, &random))
+    }
+
+    pub fn connect(&self, clock_json: String, token: String) -> Result<String, CoreError> {
+        wrap(self.lock().connect(&clock_json, &token))
+    }
+
+    pub fn on_frame(&self, frame_json: String, now: i64) -> Result<String, CoreError> {
+        wrap(self.lock().on_frame(&frame_json, now))
+    }
+
+    pub fn disconnect(&self) {
+        self.lock().disconnect();
+    }
+
+    pub fn take_changes(&self) -> String {
+        self.lock().take_changes()
+    }
+
+    pub fn projection(&self) -> String {
+        self.lock().projection()
+    }
+
+    pub fn state(&self) -> String {
+        self.lock().state()
+    }
+
+    pub fn rejected(&self) -> String {
+        self.lock().rejected()
+    }
+}
