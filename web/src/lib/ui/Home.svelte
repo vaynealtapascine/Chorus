@@ -1,10 +1,10 @@
 <script lang="ts">
   import { core } from '../core';
-  import { sync, type Projection, type Status } from '../sync/client';
+  import { sync, type Projection } from '../sync/client';
   import FrontCard from './FrontCard.svelte';
   import type { FrontEntry, Member } from './types';
 
-  let { projection, status, dark }: { projection: Projection; status: Status; dark: boolean } = $props();
+  let { projection, dark }: { projection: Projection; dark: boolean } = $props();
 
   const members: Member[] = $derived(
     Object.entries(projection.rows.member ?? {})
@@ -49,26 +49,14 @@
     newSigil = '';
     adding = false;
   }
-
-  const statusLabel: Record<Status, string> = {
-    live: 'Live',
-    connecting: 'Connecting…',
-    offline: 'Offline · saved on this device',
-    'no-device': '',
-  };
 </script>
 
-<main>
-  <header>
-    <h1 class="display">Chorus</h1>
-    <span class="status" data-status={status}>{statusLabel[status]}</span>
-  </header>
-
+<div class="home">
   <FrontCard {members} {front} {since} {dark} />
 
-  <section aria-label="Members">
+  <section aria-label="Quick switch">
     <div class="section-head">
-      <h2>Members</h2>
+      <h2>Quick switch</h2>
       <button class="ghost" onclick={() => (adding = !adding)}>{adding ? 'Cancel' : 'Add member'}</button>
     </div>
     {#if adding}
@@ -93,35 +81,17 @@
       {/each}
     </div>
   </section>
-</main>
+</div>
 
 <style>
-  main {
-    max-width: 640px;
-    margin: 0 auto;
-    padding: var(--s-6) var(--s-4) var(--s-12);
+  .home {
     display: grid;
     gap: var(--s-6);
-  }
-  header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-  }
-  h1 {
-    font-size: var(--fs-2xl);
   }
   h2 {
     font-size: var(--fs-sm);
     font-weight: 600;
     color: var(--ink-2);
-  }
-  .status {
-    font-size: var(--fs-xs);
-    color: var(--ink-3);
-  }
-  .status[data-status='live'] {
-    color: var(--ok);
   }
   .section-head {
     display: flex;
