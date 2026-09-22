@@ -16,8 +16,11 @@ fn setup() -> (Connection, String, String) {
     let a = new_id(1, [1; 10]);
     let b = new_id(1, [2; 10]);
     for (id, admin) in [(&a, true), (&b, false)] {
-        c.execute("INSERT INTO account(id, kind, created_at, is_admin) VALUES (?1, 'system', 0, ?2)", rusqlite::params![id, admin])
-            .unwrap();
+        c.execute(
+            "INSERT INTO account(id, kind, created_at, is_admin) VALUES (?1, 'system', 0, ?2)",
+            rusqlite::params![id, admin],
+        )
+        .unwrap();
         ingest::grant(&c, id, &format!("account:{id}")).unwrap();
     }
     (c, a, b)
@@ -103,7 +106,13 @@ fn restore_window_preserves_stamps_only_while_open() {
         ingest::grant(&c, acct, &shared).unwrap();
     }
     // an op B wrote in an earlier epoch, re-pushed by A's device
-    let mut o = op(6, "message.send", &shared, json!({"channel_id": "c", "authors": [], "text": "hi", "entities": []}), NOW - 1000);
+    let mut o = op(
+        6,
+        "message.send",
+        &shared,
+        json!({"channel_id": "c", "authors": [], "text": "hi", "entities": []}),
+        NOW - 1000,
+    );
     o.account_id = Some(b.clone());
     o.device_id = Some("b-phone".into());
     o.occurred_at = Some(NOW - 999);
@@ -130,7 +139,8 @@ fn enrolment_ops_are_readable_through_the_log() {
     use base64::Engine as _;
     use p256::pkcs8::EncodePublicKey;
     let sk = p256::ecdsa::SigningKey::from_slice(&[5; 32]).unwrap();
-    let pk = base64::engine::general_purpose::STANDARD.encode(sk.verifying_key().to_public_key_der().unwrap().as_bytes());
+    let pk =
+        base64::engine::general_purpose::STANDARD.encode(sk.verifying_key().to_public_key_der().unwrap().as_bytes());
     let e = auth::redeem(
         &mut c,
         &code,

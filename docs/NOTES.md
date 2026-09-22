@@ -20,3 +20,14 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   `-`). Use `$x = @(if (...) { '--release' })`. Also avoid naming a variable `$profile`.
 - 2026-09-23 claude-opus-5.5 — web — The browser pane's colour-scheme emulation doesn't fire
   `matchMedia` change events; reload after switching it when testing theme-dependent colours.
+- 2026-09-23 claude-opus-5.5 — server — Projections re-project the touched entity through
+  `chorus_core::model` (SQL = model by construction; `tests/projection.rs` checks 40 scrambled
+  seeds and that `rebuild` is byte-identical). Known shortcuts to revisit when they cost:
+  (1) the front is refolded in full per front op (fine for thousands of switches; make it
+  incremental from the op's time when accounts reach tens of thousands);
+  (2) `front_daily` uses the account's latest UTC offset, not the system's IANA timezone (add
+  `jiff` with tzdb on the server when DST-exact local days matter);
+  (3) digests are computed per Hello by scanning a scope's op ids (cache per scope if slow).
+- 2026-09-23 claude-opus-5.5 — server — FTS5 tables are plain (own copy of the text, rowid =
+  message rowid), not external-content: a projection rewrite can't supply the old text that
+  external-content deletes need.

@@ -353,7 +353,9 @@ CREATE TABLE item_attachment (
   PRIMARY KEY (owner_type, owner_id, attachment_id)
 );
 
-CREATE VIRTUAL TABLE message_fts USING fts5(text, cw, content='message', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2');
+-- FTS tables keep their own copy (rowid = message.rowid), so a projection rewrite can replace a
+-- row without knowing its old text.
+CREATE VIRTUAL TABLE message_fts USING fts5(text, cw, tokenize='unicode61 remove_diacritics 2');
 
 -- ─── posts, profiles, social ────────────────────────────────────────────
 CREATE TABLE post (
@@ -369,7 +371,7 @@ CREATE TABLE post (
   clocks TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX post_account_time ON post(account_id, occurred_at);
-CREATE VIRTUAL TABLE post_fts USING fts5(title, text, tags, content='post', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2');
+CREATE VIRTUAL TABLE post_fts USING fts5(title, text, tags, tokenize='unicode61 remove_diacritics 2');
 
 CREATE TABLE post_author (post_id TEXT NOT NULL, member_id TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY (post_id, member_id));
 CREATE TABLE post_revision (post_id TEXT NOT NULL, rev INTEGER NOT NULL, title TEXT, text TEXT NOT NULL, entities TEXT NOT NULL, edited_at INTEGER NOT NULL, hlc TEXT NOT NULL, PRIMARY KEY (post_id, rev));

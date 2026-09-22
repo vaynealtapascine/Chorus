@@ -25,6 +25,8 @@ enum Cmd {
     Migrate,
     /// Integrity check and a short status report.
     Check,
+    /// Rebuild every projection from the op log.
+    Rebuild,
     /// Create an invite link for a new system, person or device.
     Invite {
         #[arg(long, value_enum, default_value = "system")]
@@ -62,6 +64,12 @@ fn main() -> anyhow::Result<()> {
             let ok: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
             let ops: i64 = conn.query_row("SELECT count(*) FROM op", [], |r| r.get(0)).unwrap_or(0);
             println!("integrity: {ok}\nschema version: {}\nops: {ops}", db::schema_version(&conn)?);
+        }
+        Cmd::Rebuild => {
+            let mut conn = chorus_server::open_and_migrate(&cfg)?;
+            let t = std::time::Instant::now();
+            let n = chorus_server::project::rebuild(&mut conn)?;
+            println!("re-projected {n} ops in {:.1?}", t.elapsed());
         }
         Cmd::Invite { kind, account, days, uses } => {
             use chorus_server::auth::{self, InviteKind};
