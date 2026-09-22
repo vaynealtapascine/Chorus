@@ -45,7 +45,15 @@ def main():
 
     gradlew = os.path.join(ROOT, 'android', 'gradlew.bat' if os.name == 'nt' else 'gradlew')
     if android and os.path.exists(gradlew):
-        run([gradlew, 'lint', 'testDebugUnitTest'], cwd=os.path.join(ROOT, 'android'))
+        # JVM unit tests load the host debug build of chorus-ffi (core-bridge/build.gradle.kts)
+        run(['cargo', 'build', '-p', 'chorus-ffi'])
+        env = {}
+        jbr = r'C:\Program Files\Android\Android Studio\jbr'
+        if os.name == 'nt' and os.path.isdir(jbr):
+            env['JAVA_HOME'] = jbr
+        if os.name == 'nt' and os.path.isdir(r'F:\DunBuild\gradle'):
+            env['GRADLE_USER_HOME'] = r'F:\DunBuild\gradle'
+        run([gradlew, 'lint', 'testDebugUnitTest', '--console=plain'], cwd=os.path.join(ROOT, 'android'), env=env)
     elif android:
         print('\n(android: no gradlew yet)')
 

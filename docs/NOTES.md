@@ -31,3 +31,6 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
 - 2026-09-23 claude-opus-5.5 — server — FTS5 tables are plain (own copy of the text, rowid =
   message rowid), not external-content: a projection rewrite can't supply the old text that
   external-content deletes need.
+- 2026-09-23 claude-opus-5.5 — android — UniFFI: an error variant field named `message` clashes with
+  Kotlin's `Throwable.message` ("overload resolution ambiguity"); name it `reason`. Changing any
+  exported type changes UniFFI checksums, so rebuild the .so and the bindings together.

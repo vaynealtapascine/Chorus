@@ -8,12 +8,12 @@ use chorus_core::api;
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum CoreError {
-    #[error("{message}")]
-    Invalid { message: String },
+    #[error("{reason}")]
+    Invalid { reason: String },
 }
 
 fn wrap(r: Result<String, String>) -> Result<String, CoreError> {
-    r.map_err(|message| CoreError::Invalid { message })
+    r.map_err(|reason| CoreError::Invalid { reason })
 }
 
 #[uniffi::export]
