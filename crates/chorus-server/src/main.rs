@@ -21,6 +21,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Run the server (what the service runs).
+    Serve,
     /// Run pending schema migrations (also done automatically by `serve`).
     Migrate,
     /// Integrity check and a short status report.
@@ -54,6 +56,23 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let cfg = if cli.dev { Config::dev() } else { Config::load(Some(&cli.config))? };
     match cli.cmd {
+        Cmd::Serve => {
+            let conn = chorus_server::open_and_migrate(&cfg)?;
+            if cli.dev && conn.query_row("SELECT count(*) = 0 FROM account", [], |r| r.get::<_, bool>(0))? {
+                let code = chorus_server::auth::create_invite(
+                    &conn,
+                    chorus_server::auth::InviteKind::System,
+                    None,
+                    "dev",
+                    7 * 86_400_000,
+                    10,
+                    chorus_server::now_ms(),
+                )?;
+                println!("dev invite: {}/i/{code}", cfg.server.public_url.trim_end_matches('/'));
+            }
+            let state = chorus_server::app::Shared::new(conn, cfg)?;
+            tokio::runtime::Runtime::new()?.block_on(chorus_server::app::serve(state))?;
+        }
         Cmd::Migrate => {
             let conn = chorus_server::open_and_migrate(&cfg)?;
             println!("schema version {}", db::schema_version(&conn)?);

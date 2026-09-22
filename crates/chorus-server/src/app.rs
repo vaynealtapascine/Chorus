@@ -1,0 +1,376 @@
+//! HTTP + WebSocket server (docs/API.md, docs/SYNC.md §6).
+
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::{Arc, Mutex};
+
+use axum::extract::State;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use chorus_core::op::Op;
+use chorus_core::sync::{Frame, PAGE_OPS};
+use chorus_core::time::ClockSample;
+use rusqlite::Connection;
+use serde::Deserialize;
+use serde_json::json;
+use tokio::sync::mpsc;
+
+use crate::auth::{self, AuthError};
+use crate::config::Config;
+use crate::{db, ingest, now_ms, oplog};
+
+/// A connected device.
+struct Peer {
+    account: String,
+    scopes: BTreeSet<String>,
+    tx: mpsc::UnboundedSender<Frame>,
+}
+
+pub struct Shared {
+    pub db: Mutex<Connection>,
+    pub cfg: Config,
+    pub instance_id: String,
+    peers: Mutex<HashMap<String, Peer>>,
+}
+
+pub type AppState = Arc<Shared>;
+
+impl Shared {
+    pub fn new(conn: Connection, cfg: Config) -> anyhow::Result<AppState> {
+        let instance_id = db::meta(&conn, "instance_id")?.unwrap_or_default();
+        Ok(Arc::new(Shared { db: Mutex::new(conn), cfg, instance_id, peers: Mutex::new(HashMap::new()) }))
+    }
+
+    fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.db.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn session_ttl(&self) -> i64 {
+        self.cfg.limits.session_days as i64 * 86_400_000
+    }
+
+    fn epoch(&self, conn: &Connection) -> String {
+        let e = db::meta(conn, "epoch").ok().flatten().unwrap_or_else(|| "1".into());
+        format!("{}:{e}", self.instance_id)
+    }
+}
+
+pub fn router(state: AppState) -> Router {
+    let api = Router::new()
+        .route("/server", get(server_info))
+        .route("/auth/redeem", post(redeem))
+        .route("/auth/challenge", post(challenge))
+        .route("/auth/session", post(session))
+        .route("/sync", get(sync_ws));
+    let mut app = Router::new().nest("/api/v1", api).with_state(state.clone());
+    if let Some(dir) = state.cfg.server.web_dir.clone() {
+        let index = dir.join("index.html");
+        app = app.fallback_service(
+            tower_http::services::ServeDir::new(dir).fallback(tower_http::services::ServeFile::new(index)),
+        );
+    }
+    app
+}
+
+// ─── errors ──────────────────────────────────────────────────────────────────
+
+pub struct ApiError(StatusCode, &'static str, String);
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (self.0, Json(json!({"error": {"code": self.1, "message": self.2, "retry": self.0.is_server_error()}})))
+            .into_response()
+    }
+}
+
+impl From<AuthError> for ApiError {
+    fn from(e: AuthError) -> Self {
+        let (s, c) = match &e {
+            AuthError::BadInvite | AuthError::BadRequest(_) | AuthError::BadKey => {
+                (StatusCode::BAD_REQUEST, "bad_request")
+            }
+            AuthError::HandleTaken => (StatusCode::CONFLICT, "conflict"),
+            AuthError::BadSignature | AuthError::BadSession => (StatusCode::UNAUTHORIZED, "unauthenticated"),
+            AuthError::UnknownDevice => (StatusCode::FORBIDDEN, "forbidden"),
+            AuthError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
+        };
+        if matches!(e, AuthError::Internal(_)) {
+            tracing::error!(error = %e, "internal error");
+        }
+        ApiError(s, c, e.to_string())
+    }
+}
+
+impl From<anyhow::Error> for ApiError {
+    fn from(e: anyhow::Error) -> Self {
+        tracing::error!(error = %e, "internal error");
+        ApiError(StatusCode::INTERNAL_SERVER_ERROR, "internal", "internal error".into())
+    }
+}
+
+// ─── http ────────────────────────────────────────────────────────────────────
+
+async fn server_info(State(s): State<AppState>) -> Json<serde_json::Value> {
+    Json(json!({
+        "name": "Chorus",
+        "version": env!("CARGO_PKG_VERSION"),
+        "core": chorus_core::api::version(),
+        "instance_id": s.instance_id,
+        "core_min": "0.1.0",
+    }))
+}
+
+#[derive(Deserialize)]
+struct RedeemIn {
+    code: String,
+    device: auth::DeviceIn,
+    #[serde(default)]
+    account: Option<auth::AccountIn>,
+}
+
+async fn redeem(State(s): State<AppState>, Json(b): Json<RedeemIn>) -> Result<Response, ApiError> {
+    let e = {
+        let mut conn = s.db();
+        auth::redeem(&mut conn, &b.code, &b.device, b.account.as_ref(), now_ms(), s.session_ttl())?
+    };
+    Ok((StatusCode::CREATED, Json(e)).into_response())
+}
+
+#[derive(Deserialize)]
+struct ChallengeIn {
+    device_id: String,
+}
+
+async fn challenge(State(s): State<AppState>, Json(b): Json<ChallengeIn>) -> Result<Json<serde_json::Value>, ApiError> {
+    let nonce = auth::challenge(&s.db(), &b.device_id, now_ms())?;
+    Ok(Json(json!({"nonce": nonce, "instance_id": s.instance_id})))
+}
+
+#[derive(Deserialize)]
+struct SessionIn {
+    device_id: String,
+    nonce: String,
+    signature: String,
+}
+
+async fn session(State(s): State<AppState>, Json(b): Json<SessionIn>) -> Result<Json<serde_json::Value>, ApiError> {
+    let ttl = s.session_ttl();
+    let now = now_ms();
+    let token = auth::verify(&s.db(), &b.device_id, &b.nonce, &b.signature, &s.instance_id, now, ttl)?;
+    Ok(Json(json!({"session": token, "expires_at": now + ttl})))
+}
+
+// ─── sync socket ─────────────────────────────────────────────────────────────
+
+async fn sync_ws(State(s): State<AppState>, ws: WebSocketUpgrade) -> Response {
+    ws.max_message_size(8 << 20).on_upgrade(move |socket| run_socket(s, socket))
+}
+
+fn send(tx: &mpsc::UnboundedSender<Frame>, f: Frame) {
+    let _ = tx.send(f);
+}
+
+/// Catch-up for one scope, queued on `tx` (caller holds the db lock, so nothing can interleave).
+fn catch_up(conn: &Connection, tx: &mpsc::UnboundedSender<Frame>, scope: &str, after: i64) -> anyhow::Result<()> {
+    let mut cursor = after;
+    loop {
+        let ops = oplog::scope_after(conn, scope, cursor, PAGE_OPS)?;
+        let Some(last) = ops.last().and_then(|o| o.seq) else { break };
+        cursor = last;
+        let n = ops.len();
+        send(tx, Frame::Ops { scope: scope.into(), ops, to: last });
+        if n < PAGE_OPS {
+            break;
+        }
+    }
+    let to = oplog::max_seq(conn, scope)?;
+    send(tx, Frame::Caught { scope: scope.into(), to, digest: oplog::digest(conn, scope)? });
+    Ok(())
+}
+
+async fn run_socket(s: AppState, socket: WebSocket) {
+    use futures_util::{SinkExt, StreamExt};
+    let (mut sink, mut stream) = socket.split();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Frame>();
+    let writer = tokio::spawn(async move {
+        while let Some(f) = rx.recv().await {
+            let Ok(text) = serde_json::to_string(&f) else { continue };
+            if sink.send(Message::Text(text.into())).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let mut me: Option<(String, ingest::Session)> = None; // (device, session)
+    while let Some(Ok(msg)) = stream.next().await {
+        let text = match msg {
+            Message::Text(t) => t.to_string(),
+            Message::Close(_) => break,
+            _ => continue,
+        };
+        let frame: Frame = match serde_json::from_str(&text) {
+            Ok(f) => f,
+            Err(e) => {
+                send(&tx, Frame::Error { code: "bad_request".into(), message: format!("bad frame: {e}") });
+                continue;
+            }
+        };
+        let result = match (&me, frame) {
+            (None, Frame::Hello { token, epoch, cursors, clock, .. }) => {
+                match hello(&s, &tx, &token, epoch, cursors, clock) {
+                    Ok(session) => {
+                        me = Some((session.device_id.clone(), session));
+                        Ok(())
+                    }
+                    Err(e) => {
+                        let code = if matches!(e, AuthError::Internal(_)) { "internal" } else { "unauthenticated" };
+                        send(&tx, Frame::Error { code: code.into(), message: e.to_string() });
+                        break;
+                    }
+                }
+            }
+            (None, _) => {
+                send(&tx, Frame::Error { code: "unauthenticated".into(), message: "send hello first".into() });
+                break;
+            }
+            (Some((_, sess)), Frame::Push { batch, ops, restore }) => push(&s, &tx, sess, batch, ops, restore),
+            (Some((_, sess)), Frame::Pull { scope, after }) => {
+                let conn = s.db();
+                if ingest::can_access(&conn, &sess.account_id, &scope).unwrap_or(false) {
+                    catch_up(&conn, &tx, &scope, after)
+                } else {
+                    Ok(())
+                }
+            }
+            (Some(_), Frame::Ping { .. }) => {
+                send(&tx, Frame::Pong { server_time: now_ms() });
+                Ok(())
+            }
+            (Some(_), _) => Ok(()),
+        };
+        if let Err(e) = result {
+            tracing::error!(error = %e, "sync error");
+            send(&tx, Frame::Error { code: "internal".into(), message: "internal error".into() });
+        }
+    }
+    if let Some((device, _)) = me {
+        s.peers.lock().unwrap_or_else(|e| e.into_inner()).remove(&device);
+    }
+    drop(tx);
+    let _ = writer.await;
+}
+
+fn hello(
+    s: &AppState,
+    tx: &mpsc::UnboundedSender<Frame>,
+    token: &str,
+    epoch: Option<String>,
+    cursors: BTreeMap<String, i64>,
+    clock: chorus_core::sync::ClockReading,
+) -> Result<ingest::Session, AuthError> {
+    let now = now_ms();
+    let conn = s.db();
+    let who = auth::authenticate(&conn, token, now, s.session_ttl())?;
+    let scopes = ingest::scopes_of(&conn, &who.account_id)?;
+    let offset = now - clock.wall;
+    conn.execute("UPDATE device SET clock_offset_ms = ?2 WHERE id = ?1", rusqlite::params![who.device_id, offset])?;
+    let mut max_seq = BTreeMap::new();
+    for sc in &scopes {
+        max_seq.insert(sc.clone(), oplog::max_seq(&conn, sc)?);
+    }
+    let server_epoch = s.epoch(&conn);
+    let reconcile = epoch.as_ref().is_some_and(|e| *e != server_epoch)
+        || cursors.iter().any(|(sc, c)| *c > *max_seq.get(sc).unwrap_or(&0));
+    send(
+        tx,
+        Frame::Welcome {
+            server_time: now,
+            epoch: server_epoch,
+            account_id: who.account_id.clone(),
+            offset_ms: offset,
+            scopes: scopes.clone(),
+            max_seq,
+            reconcile,
+            core_min: "0.1.0".into(),
+        },
+    );
+    if !reconcile {
+        for sc in &scopes {
+            catch_up(&conn, tx, sc, *cursors.get(sc).unwrap_or(&0))?;
+        }
+    }
+    // registered while still holding the db lock: live ops can't overtake the catch-up
+    s.peers.lock().unwrap_or_else(|e| e.into_inner()).insert(
+        who.device_id.clone(),
+        Peer { account: who.account_id.clone(), scopes: scopes.into_iter().collect(), tx: tx.clone() },
+    );
+    Ok(ingest::Session {
+        account_id: who.account_id,
+        device_id: who.device_id,
+        sample: ClockSample { server_time: now, mono: clock.mono, boot_id: clock.boot_id, offset_ms: offset },
+    })
+}
+
+fn push(
+    s: &AppState,
+    tx: &mpsc::UnboundedSender<Frame>,
+    sess: &ingest::Session,
+    batch: String,
+    ops: Vec<Op>,
+    restore: bool,
+) -> anyhow::Result<()> {
+    let now = now_ms();
+    let mut conn = s.db();
+    let t = conn.transaction()?;
+    let mut results = Vec::with_capacity(ops.len());
+    let mut fresh: Vec<Op> = Vec::new();
+    for o in ops {
+        let (r, new) = ingest::accept(&t, sess, o, now, restore)?;
+        results.push(r);
+        fresh.extend(new);
+    }
+    t.commit()?;
+    send(tx, Frame::Ack { batch, results });
+    if fresh.is_empty() {
+        return Ok(());
+    }
+    // Fan out under the db lock so per-connection order matches seq order.
+    let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
+    for (device, p) in peers.iter_mut() {
+        // scope changes (e.g. someone was added to a space)
+        let now_scopes: BTreeSet<String> = ingest::scopes_of(&conn, &p.account)?.into_iter().collect();
+        if now_scopes != p.scopes {
+            let add: Vec<String> = now_scopes.difference(&p.scopes).cloned().collect();
+            let remove: Vec<String> = p.scopes.difference(&now_scopes).cloned().collect();
+            p.scopes = now_scopes;
+            send(&p.tx, Frame::Scope { add, remove });
+        }
+        if *device == sess.device_id {
+            continue;
+        }
+        let mut by_scope: BTreeMap<&str, Vec<Op>> = BTreeMap::new();
+        for o in fresh.iter().filter(|o| p.scopes.contains(&o.scope)) {
+            by_scope.entry(o.scope.as_str()).or_default().push(o.clone());
+        }
+        for (scope, ops) in by_scope {
+            let to = ops.last().and_then(|o| o.seq).unwrap_or(0);
+            send(&p.tx, Frame::Ops { scope: scope.into(), ops, to });
+        }
+    }
+    Ok(())
+}
+
+/// Bind and serve until Ctrl-C.
+pub async fn serve(state: AppState) -> anyhow::Result<()> {
+    let addr = state.cfg.server.listen.clone();
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    tracing::info!(%addr, "chorus-server listening");
+    axum::serve(listener, router(state))
+        .with_graceful_shutdown(async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .await?;
+    Ok(())
+}

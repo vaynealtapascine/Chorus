@@ -14,10 +14,10 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M2.5
+- **In progress:** M0.3
 - **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** sync WebSocket in crates/chorus-server/src/sync_ws.rs: hello/welcome/push/ack/ops/caught/pull/ping, fan-out to connected devices; axum app + serve command; e2e test with ClientEngine over a real socket
-- **Notes:** Order change: doing M2 (server) before M0.3 (Android skeleton) so clients have something to sync with; M0.3 is still next after M2.5.
+- **Next concrete step:** android/: Gradle (version catalog), app + core-bridge (JNA + generated UniFFI bindings + jniLibs) + designsystem modules; prove coreVersion() on the emulator
+- **Notes:** Server M2.1–M2.5 done. Known gaps for later milestones: creating a NEW shared space needs ingest to grant the creator access to an unknown space scope (M6.2); blobs (M2.6), REST reads (M2.7), backups CLI (M2.8) still open.
 
 ---
 
@@ -44,7 +44,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 - [x] M0.1 Cargo workspace: `crates/chorus-core`, `crates/chorus-server`; rust-toolchain pinned
 - [x] M0.2 `web/` Svelte 5 + Vite + TS skeleton (PWA plugin, strict TS)
-- [ ] M0.3 `android/` Kotlin + Compose skeleton (Gradle version catalog, minSdk 29, targetSdk 36)
+- [~] M0.3 `android/` Kotlin + Compose skeleton (Gradle version catalog, minSdk 29, targetSdk 36)
 - [x] M0.4 `fixtures/` conformance vector format + runner in Rust (see SYNC.md §9)
 - [x] M0.5 `scripts/verify` (fmt, clippy, tests, svelte-check, gradle lint/test) + CI workflow
 
@@ -67,7 +67,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M2.2 Accounts, devices, invites, key-based auth, sessions
 - [x] M2.3 Op ingestion: validate → permission → append → project (single writer task)
 - [x] M2.4 Projections for all tables + rebuild-from-log command
-- [~] M2.5 Sync WebSocket (hello/push/pull/ack/snapshot/hash) per SYNC.md
+- [x] M2.5 Sync WebSocket (hello/push/pull/ack/snapshot/hash) per SYNC.md
 - [ ] M2.6 Blob store (content-addressed, resumable upload)
 - [ ] M2.7 Read API (REST) + follower views
 - [ ] M2.8 Nightly backups + `chorus-server backup|restore|rebuild|export` CLI
@@ -185,3 +185,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M2.2 auth.rs: invites (hashed, TTL, uses), redeem → account (+internal space & #general as server ops) + device + session, sliding sessions, P-256 challenge/verify (raw or DER sigs), revoke; first account is admin; invite CLI
 - 2026-09-23 claude-opus-5.5 — M2.3 ingest.rs accept (validate → scope/admin checks → time correction → insert → project hook) + server_op; tests: stamping/offset, idempotency, invalid, forbidden, server-scope admin-only, restore window
 - 2026-09-23 claude-opus-5.5 — M2.4 project.rs: entity re-projection via core model, element sets, account front (switch/intervals/daily/reviews), specials (pins, follows, field values, prefs, permissions, roles, reviews, read states), group cycle guard, message authors/segments/mentions/FTS, space membership → scope access, rebuild CLI; tests/projection.rs SQL==model
+- 2026-09-23 claude-opus-5.5 — M2.5 app.rs: axum router (/server, /auth/redeem|challenge|session, /sync WS, optional static web dir), socket loop (hello/welcome/catch-up/caught, push/ack, pull, ping), fan-out + live scope changes under the db lock; serve CLI (dev prints an invite); tests/sync_e2e.rs drives ClientEngine against the real server
