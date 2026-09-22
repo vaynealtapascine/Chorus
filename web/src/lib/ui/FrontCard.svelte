@@ -8,7 +8,9 @@
   const levelLabel: Record<string, string> = { front: '', cocon: 'co-con', present: 'present' };
   let now = $state(Date.now());
   $effect(() => {
-    const t = setInterval(() => (now = Date.now()), 60_000);
+    void since; // a new switch restarts the clock, so durations never go negative
+    now = Date.now();
+    const t = setInterval(() => (now = Date.now()), 30_000);
     return () => clearInterval(t);
   });
 
@@ -22,7 +24,8 @@
   );
 
   function duration(ms: number): string {
-    const m = Math.floor(ms / 60_000);
+    const m = Math.floor(Math.max(0, ms) / 60_000);
+    if (m < 1) return 'just now';
     return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
   }
   const sinceLabel = $derived(new Date(since).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
@@ -44,7 +47,11 @@
         {@const c = core.adaptColor(m.color, dark)}
         <span class="badge"><span style="color: {c.name}">{m.name}</span> · {levelLabel[f.level]}</span>
       {/each}
-      <span class="since">since {sinceLabel} · {duration(now - since)}</span>
+      {#if shown.length}
+        <span class="since">since {sinceLabel} · {duration(now - since)}</span>
+      {:else}
+        <span class="since">Tap someone below to switch in</span>
+      {/if}
     </p>
   </div>
 </section>

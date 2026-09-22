@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M3.2
+- **In progress:** M3.4
 - **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** web: IndexedDB store + worker-side sync engine. Plan: expose ClientEngine through chorus-wasm as a JS class with a JS-implemented store (JSON), or port the small engine to TS gated by the simulator scenarios
+- **Next concrete step:** members: full editor (display name, pronouns, colour, sigils, proxy tags, description), archive/delete, groups tree, custom fields; route/navigation shell (Home/Members/Chat)
 - **Notes:** Server M2.1–M2.5 done. Known gaps for later milestones: creating a NEW shared space needs ingest to grant the creator access to an unknown space scope (M6.2); blobs (M2.6), REST reads (M2.7), backups CLI (M2.8) still open.
 
 ---
@@ -75,9 +75,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M3 — Web client foundation
 
 - [ ] M3.1 Design tokens + base components (DESIGN.md)
-- [~] M3.2 Local store (IndexedDB) + outbox + sync engine (via core wasm)
-- [ ] M3.3 Onboarding (invite → device key), system setup, terminology
-- [ ] M3.4 Members list/grid, groups tree, member editor, custom fields
+- [x] M3.2 Local store (IndexedDB) + outbox + sync engine (via core wasm)
+- [x] M3.3 Onboarding (invite → device key), system setup, terminology
+- [~] M3.4 Members list/grid, groups tree, member editor, custom fields
 - [ ] M3.5 Front card, switcher, front history timeline, review cards
 
 ### M4 — Android foundation
@@ -187,3 +187,5 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M2.4 project.rs: entity re-projection via core model, element sets, account front (switch/intervals/daily/reviews), specials (pins, follows, field values, prefs, permissions, roles, reviews, read states), group cycle guard, message authors/segments/mentions/FTS, space membership → scope access, rebuild CLI; tests/projection.rs SQL==model
 - 2026-09-23 claude-opus-5.5 — M2.5 app.rs: axum router (/server, /auth/redeem|challenge|session, /sync WS, optional static web dir), socket loop (hello/welcome/catch-up/caught, push/ack, pull, ping), fan-out + live scope changes under the db lock; serve CLI (dev prints an invite); tests/sync_e2e.rs drives ClientEngine against the real server
 - 2026-09-23 claude-opus-5.5 — M0.3 android/: Gradle 8.14.3 + AGP 8.11 + Kotlin 2.0.21 + Compose; modules app/core-bridge/designsystem; generated Tokens.kt + ChorusTheme; debug APK builds; core-bridge JVM tests call the real Rust core through the generated UniFFI bindings (3/3). No emulator/device attached, so on-device launch not yet observed.
+- 2026-09-23 claude-opus-5.5 — M3.2 web sync: WebReplica (core) + IndexedDB write-behind (persist.ts) + SyncClient (WS, backoff, online event, session renewal). Verified in the browser against chorus-server --dev: live sync, reload restore, offline edits pushed on reconnect.
+- 2026-09-23 claude-opus-5.5 — M3.3 onboarding: invite link/code → WebCrypto P-256 device key (non-extractable) → redeem → live. Verified end to end.
