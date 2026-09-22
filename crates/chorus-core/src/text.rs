@@ -698,8 +698,12 @@ pub fn to_markup(rich: &Rich) -> String {
         }
         let c = chars[idx].1;
         // auto-detected urls run to whitespace; stop them where the entity stopped
+        let token_opens_here = literal_depth == 0 && inline.iter().any(|e| e.offset == u);
         let continues_atom = rich.entities.iter().any(|e| {
             e.end() == u
+                && token_opens_here
+                && matches!(e.kind, EntityKind::Url | EntityKind::Mention { .. })
+                || e.end() == u
                 && match e.kind {
                     EntityKind::Url => !c.is_whitespace(),
                     EntityKind::Mention { .. } => is_word(c) || matches!(c, '_' | '.' | '-'),
