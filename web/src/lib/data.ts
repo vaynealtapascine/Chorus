@@ -154,3 +154,98 @@ export function fuzzy(query: string, text: string): number | null {
   }
   return 100 + gaps;
 }
+
+// ─── chat ────────────────────────────────────────────────────────────────────
+
+export interface SpaceRow {
+  id: string;
+  kind: 'internal' | 'shared' | 'dm';
+  name: string;
+}
+
+export interface ChannelRow {
+  id: string;
+  space_id: string;
+  kind: 'text' | 'thread' | 'member_dm';
+  name: string;
+  topic?: string;
+  category?: string;
+  archived: boolean;
+}
+
+export interface Segment {
+  offset: number;
+  length: number;
+  authors: string[];
+}
+
+export interface MessageRow {
+  id: string;
+  channel_id: string;
+  authors: string[];
+  text: string;
+  entities: import('./core').Entity[];
+  segments: Segment[];
+  occurred_at: number;
+  account_id?: string;
+  sent_offline: boolean;
+  edited: boolean;
+  deleted: boolean;
+  pinned: boolean;
+  cw?: string;
+}
+
+export function spaces(p: Projection): SpaceRow[] {
+  return Object.entries((p.rows.space ?? {}) as Rows)
+    .filter(([, r]) => r.exists && r.fields.deleted_at == null)
+    .map(([id, r]) => ({
+      id,
+      kind: (str(r.fields.kind) ?? 'shared') as SpaceRow['kind'],
+      name: str(r.fields.name) ?? 'Space',
+    }))
+    .sort((a, b) => (a.kind === 'internal' ? -1 : b.kind === 'internal' ? 1 : a.name.localeCompare(b.name)));
+}
+
+export function channels(p: Projection, spaceId?: string): ChannelRow[] {
+  return Object.entries((p.rows.channel ?? {}) as Rows)
+    .filter(([, r]) => r.exists && r.fields.deleted_at == null)
+    .map(([id, r]) => ({
+      id,
+      space_id: str(r.fields.space_id) ?? '',
+      kind: (str(r.fields.kind) ?? 'text') as ChannelRow['kind'],
+      name: str(r.fields.name) ?? 'channel',
+      topic: str(r.fields.topic),
+      category: str(r.fields.category),
+      archived: r.fields.archived_at != null,
+    }))
+    .filter((c) => !spaceId || c.space_id === spaceId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function messages(p: Projection, channelId: string): MessageRow[] {
+  const rows = (p.rows.message ?? {}) as Record<string, { exists: boolean; fields: Record<string, unknown>; edits?: number }>;
+  return Object.entries(rows)
+    .filter(([, r]) => r.exists && r.fields.channel_id === channelId)
+    .map(([id, r]) => {
+      const f = r.fields;
+      const authors = Array.isArray(f.authors) ? (f.authors as string[]) : [];
+      const text = typeof f.text === 'string' ? f.text : '';
+      const segs = Array.isArray(f.segments) && f.segments.length ? (f.segments as Segment[]) : [{ offset: 0, length: text.length, authors }];
+      return {
+        id,
+        channel_id: channelId,
+        authors,
+        text,
+        entities: Array.isArray(f.entities) ? (f.entities as MessageRow['entities']) : [],
+        segments: segs,
+        occurred_at: typeof f.occurred_at === 'number' ? f.occurred_at : 0,
+        account_id: str(f.account_id),
+        sent_offline: f.sent_offline === true,
+        edited: (r.edits ?? 0) > 0,
+        deleted: f.deleted_at != null,
+        pinned: f.pinned_at != null,
+        cw: str(f.cw),
+      };
+    })
+    .sort((a, b) => a.occurred_at - b.occurred_at || a.id.localeCompare(b.id));
+}

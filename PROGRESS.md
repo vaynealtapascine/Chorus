@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M5.1
+- **In progress:** M5.3
 - **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** web chat: spaces rail (internal space from sync), channel list + create, message list (virtualised later), composer using core.compose (speaker chip default = primary fronter, sigils/tags/segments), message rendering with entities
+- **Next concrete step:** message actions: reply (incl. reply bar), partial/full quote, edit with history, delete→Trash/restore, pin + pinned panel, forward selection
 - **Notes:** Order: M4 (Android features) waits on an emulator or the owner's phone over adb; web chat (M5) proceeds meanwhile. Web wasm builds use scripts/build-web-core.ps1 -Debug in dev.
 
 ---
@@ -91,9 +91,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M5 — Chat (internal space)
 
-- [~] M5.1 Channels, categories, member DMs
-- [ ] M5.2 Composer: speaker chip, proxy tags, sigils, multi-author, formatting
-- [ ] M5.3 Replies (incl. cross-channel), quotes (full/partial), forwards, edits+history, deletes, pins
+- [x] M5.1 Channels, categories, member DMs
+- [x] M5.2 Composer: speaker chip, proxy tags, sigils, multi-author, formatting
+- [~] M5.3 Replies (incl. cross-channel), quotes (full/partial), forwards, edits+history, deletes, pins
 - [ ] M5.4 Reactions, mentions, read states, unread badges
 - [ ] M5.5 Threads
 - [ ] M5.6 Attachments + images (offline-queued upload)
@@ -191,3 +191,5 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M3.3 onboarding: invite link/code → WebCrypto P-256 device key (non-extractable) → redeem → live. Verified end to end.
 - 2026-09-23 claude-opus-5.5 — M3.4 web: nav shell (hash router, bottom nav on phones), Members (fuzzy search, group/archived filters, subsystem/group management), MemberEditor (identity, colour, birthday, rich description via core markup, sigils w/ clash warning, proxy tags, group toggles, custom fields incl. adding fields, archive/Trash/restore, switch in). Verified in browser + server SQL.
 - 2026-09-23 claude-opus-5.5 — M3.5 web: Switcher sheet (search, multi-select, level cycle, primary, order, subsystems, note, typed time via user_time, notify choice, switch out; Ctrl/Cmd+S), undo toast, History (24h/7d lanes, log with edit time/undo/redo), review cards (core computes reviews into the projection). Verified in browser except review cards (need two devices; core-tested).
+- 2026-09-23 claude-opus-5.5 — M5.1 web chat: internal space + channel list + create channel, message list with author grouping (5 min), multi-author avatars, segment sub-rows, offline marker, RichText renderer (UTF-16 entity pieces, safe links, click-to-reveal spoilers)
+- 2026-09-23 claude-opus-5.5 — M5.2 composer on core.compose: speaker chip (default primary fronter, picker override), live 'as …' preview, sigils/tags/joint/newline segments, @mentions via names resolver, Enter to send. Verified: server stores segments, authors, mentions, FTS.

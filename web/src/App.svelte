@@ -1,6 +1,7 @@
 <script lang="ts">
   import { router } from './lib/router.svelte';
   import { sync, type Projection, type Status } from './lib/sync/client';
+  import Chat from './lib/ui/Chat.svelte';
   import History from './lib/ui/History.svelte';
   import Home from './lib/ui/Home.svelte';
   import MemberEditor from './lib/ui/MemberEditor.svelte';
@@ -38,6 +39,7 @@
   };
   const tabs = [
     { path: '/', name: 'home', label: 'Home' },
+    { path: '/chat', name: 'chat', label: 'Chat' },
     { path: '/members', name: 'members', label: 'Members' },
     { path: '/history', name: 'history', label: 'History' },
   ];
@@ -62,6 +64,8 @@
         <Members {projection} {dark} />
       {:else if router.route.name === 'member' && router.route.id}
         <MemberEditor {projection} id={router.route.id} {dark} />
+      {:else if router.route.name === 'chat'}
+        <Chat {projection} {dark} channelId={router.route.id} />
       {:else if router.route.name === 'history'}
         <History {projection} {dark} />
       {:else}
