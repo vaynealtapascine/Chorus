@@ -68,7 +68,8 @@ CREATE INDEX op_entity ON op(entity_id);
 Rules:
 
 - Ops are never updated except `status`. Never deleted except by an explicit `admin.purge`
-  (which itself is logged, and rewrites payloads of purged ops to `{"purged":true}`).
+  from the server CLI only (logged; rewrites payloads of purged ops to `{"purged":true}`).
+  Apps cannot purge (D-053).
 - Unknown `kind` or newer `v` from a newer client: stored and forwarded, projection skips it
   (forward compatibility). Older `v` is upcast in `chorus-core` before projection.
 - `rejected` ops (permission/validation failure) stay in the log for debugging, are sent back to
@@ -126,10 +127,14 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `front.review_resolve` | `{review_id, resolution}` | LWW-F |
 | `space.create` / `space.set` / `space.delete` | | LWW-F |
 | `space.join` / `space.leave` / `space.set_role` | `{account_id, role}` | SET / LWW-F |
-| `channel.create` / `channel.set` / `channel.archive` / `channel.delete` | | LWW-F |
+| `channel.create` / `channel.set` / `channel.archive` / `channel.delete` / `channel.restore` | | LWW-F |
+| `channel.set_permission` | `{target_type: role or account, target_id, allow:[…], deny:[…]}` | LWW-F per (channel, target) |
+| `space.set_roles` | custom roles for shared spaces `{roles:[{id,name,color,perms}]}` | LWW-F |
 | `message.send` | `{channel_id, authors:[member_id], text, entities, reply_to?, quote?, forward?, cw?, visibility?, attachments?:[attachment_id], sent_offline:bool}` | APP |
 | `message.edit` | `{message_id, text, entities, cw?}` → new revision | APP (latest HLC shown) |
-| `message.delete` | `{message_id}` | LWW-F |
+| `message.delete` / `message.restore` | `{message_id}` — restore clears `deleted_at` with a newer HLC | LWW-F |
+| `message.forward` | `{channel_id, authors, items:[{message_id, offset?, length?}], comment?}` → a new message whose `forward_snapshot` holds the copied items | APP |
+| `*.restore` | `post.restore`, `member.restore`, `group.restore`, `space.restore` — same rule as messages | LWW-F |
 | `message.pin` / `message.unpin` | `{message_id}` | LWW-F |
 | `reaction.add` / `reaction.remove` | `{target_type, target_id, emoji, member_id}` | SET |
 | `read.mark` | `{channel_id, reader_member_id?, message_id}` | max-by-message-order |
@@ -228,6 +233,7 @@ CREATE TABLE member (
   visibility          TEXT NOT NULL DEFAULT '{"mode":"private"}' CHECK (json_valid(visibility)),
   field_visibility    TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(field_visibility)),
   notify_policy       TEXT NOT NULL DEFAULT '{"announce":"everyone","announce_leaving":false}' CHECK (json_valid(notify_policy)),  -- NOTIFICATIONS.md §2.4
+  short_id            TEXT NOT NULL,         -- 7 lowercase letters, unique per server; Advanced-only in UI (D-049)
   pk_id               TEXT,                  -- PluralKit 5/6-char id when imported
   created_at          INTEGER NOT NULL,
   archived_at         INTEGER,
@@ -390,8 +396,8 @@ CREATE TABLE message (
   cw               TEXT,
   reply_to_id      TEXT,                        -- may be in another channel
   quote            TEXT CHECK (quote IS NULL OR json_valid(quote)),      -- {message_id, offset, length, text}
-  forward_of_id    TEXT,
-  forward_snapshot TEXT CHECK (forward_snapshot IS NULL OR json_valid(forward_snapshot)),
+  forward_of_id    TEXT,                        -- first forwarded item, for simple queries
+  forward_snapshot TEXT CHECK (forward_snapshot IS NULL OR json_valid(forward_snapshot)),  -- [{message_id, channel_name, authors:[{id,name,color}], text, entities, offset?, length?, occurred_at}]
   visibility       TEXT CHECK (visibility IS NULL OR json_valid(visibility)),  -- {"mode":"members","member_ids":[...]} | {"mode":"system_only"}
   revision_count   INTEGER NOT NULL DEFAULT 1,
   edited_at        INTEGER,
@@ -403,6 +409,31 @@ CREATE TABLE message (
 );
 CREATE INDEX message_channel_time ON message(channel_id, occurred_at, id);
 CREATE INDEX message_reply ON message(reply_to_id);
+
+-- Segments (D-045). Every message has >= 1 segment; a joint message has exactly one.
+-- message_author is the union of segment authors in order of first appearance.
+CREATE TABLE message_segment (
+  message_id TEXT NOT NULL REFERENCES message(id),
+  idx        INTEGER NOT NULL,                  -- 0-based order
+  offset_u16 INTEGER NOT NULL, length_u16 INTEGER NOT NULL,   -- range in message.text (UTF-16, like entities)
+  text       TEXT NOT NULL,                     -- copy of that range, for easy analysis
+  PRIMARY KEY (message_id, idx)
+);
+CREATE TABLE message_segment_author (
+  message_id TEXT NOT NULL, idx INTEGER NOT NULL, member_id TEXT NOT NULL, position INTEGER NOT NULL,
+  PRIMARY KEY (message_id, idx, member_id)
+);
+CREATE INDEX msa_member ON message_segment_author(member_id);
+
+CREATE TABLE channel_permission (                -- Discord-style overrides (D-047)
+  channel_id  TEXT NOT NULL REFERENCES channel(id),
+  target_type TEXT NOT NULL CHECK (target_type IN ('role','account')),
+  target_id   TEXT NOT NULL,                     -- role id/name or account id
+  allow       TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(allow)),   -- ["view","send","react","thread","pin","manage"]
+  deny        TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(deny)),
+  hlc         TEXT NOT NULL,
+  PRIMARY KEY (channel_id, target_type, target_id)
+);
 
 CREATE TABLE message_author (
   message_id TEXT NOT NULL REFERENCES message(id),
@@ -623,6 +654,7 @@ provided in both UTC ms (`*_at`) and ISO local strings (`*_local`) for spreadshe
 | `v_current_front` | subject_name, level, is_primary, position, since_local, duration_s | Who's here now |
 | `v_front_daily` | day, subject_name, level, seconds, hours, as_primary_seconds | Day totals, local days |
 | `v_cofront_pair` | a_name, b_name, overlap_s, overlap_count | Co-front graph edges |
+| `v_message_segment` | message_id, idx, authors (names), text, char_count | Who said which part of a segmented message |
 | `v_message` | id, space_name, channel_name, occurred_local, authors (names), author_count, text, char_count, word_count, has_attachment, reply_to_id, is_edited, is_pinned, sent_offline | Message analytics |
 | `v_post` | id, kind, authors, title, text, mood, tags, occurred_local, reply_count, reaction_count | Journal analytics |
 | `v_reaction` | target, emoji, member_name, target_author_names | Who reacts to whom |

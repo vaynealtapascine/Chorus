@@ -127,7 +127,13 @@ custom order.
 
 - Spaces rail (internal space first, then shared spaces, then DMs) → categories → channels.
 - Channel settings: name, topic, icon, colour, autoproxy mode, sticky speaker, notification level,
-  who can post (shared spaces), slow-mode (Advanced), archive.
+  slow-mode (Advanced), archive, **permissions** (below).
+- **Channel permissions** (Discord-style, D-047): each space has roles (`owner`, `admin`,
+  `member`, `read_only`, plus custom roles in shared spaces); a channel can override permissions
+  per role or per account. Permissions: `view`, `send`, `react`, `thread`, `pin`, `manage`.
+  Deny beats allow at the same level; account overrides beat role overrides. This also lets a
+  system share **one internal channel** with an outside account (e.g. a partner can view
+  #announcements) without sharing the rest of the internal space.
 - **Member DMs** inside the internal space: a `member_dm` channel between two members (or more:
   "member group DM").
 - **Threads**: any message can spawn a thread (a `thread` channel with `parent_message_id`).
@@ -143,6 +149,21 @@ custom order.
   `🌌🔖❤️‍🔥 we all agree` → three authors, in that order.
 - **Consecutive tags** for multi-author: `k: a: text` (each prefix-tag consumed left to right while
   it matches; suffix tags are only honoured for single-author messages).
+- **Joint by default** (D-045): one annotation at the start = everyone in it says the whole
+  message together.
+- **Segments** (D-045): a *new line* that starts with an annotation (sigils or prefix tags, then
+  whitespace or an optional `=>`) starts a new segment spoken by those members. Lines without an
+  annotation continue the current segment. Each segment can itself be single- or multi-author:
+
+  ```
+  🌌 I think we should go
+  🔖❤️‍🔥=> we don't
+  and this line is still 🔖❤️‍🔥's
+  ```
+
+  → one message, two segments (🌌; 🔖+❤️‍🔥). The first line with no annotation uses the speaker
+  chip. A backslash before a line-start sigil escapes it. Rendered as one message with small
+  name/avatar sub-headers per segment. Toggle in Advanced (default on).
 - Parsing lives in `chorus-core` (M1.6) so all clients agree. A preview above the composer shows
   who it will be sent as before sending.
 - Autoproxy modes per channel (Advanced): `off` · `front` (primary fronter) · `latch` (last
@@ -160,9 +181,9 @@ custom order.
 | Reply elsewhere | "Reply in…" picks another channel/thread/DM; the reply shows a cross-channel reference card linking back (only rendered for readers who can see the original). |
 | Reply privately | Shortcut for replying in the DM with the author's account (shared spaces) or in a member DM (internal). |
 | Quote | Full quote, or **partial**: select text in a message → "Quote" → the quote stores message id + range + text snapshot. |
-| Forward | To any channel/space/DM the user can post in. Stores origin reference + snapshot; shows "Forwarded from Kai · #vent". |
+| Forward | To any channel/space/DM the user can post in. Stores origin reference + snapshot; shows "Forwarded from Kai · #vent". Can forward **a selection**: one message, a text range of a message, or several messages as one bundle (D-048). The snapshot is what the recipient sees, so it works even when they can't read the original — forwarding member-visible, locked or internal content outward asks for confirmation once. |
 | Edit | Keeps revisions; "edited" marker opens history. |
-| Delete | Tombstone ("message deleted" placeholder, configurable to vanish). Hard purge is Advanced. |
+| Delete | Tombstone ("message deleted" placeholder, configurable to vanish). Always **restorable** from Trash (D-053). |
 | Pin | Per channel, pinned list panel. |
 | Reactions | Emoji or custom emoji, **reacted as a member** (defaults to current speaker). Hover shows who. |
 | Mentions | `@member`, `@group` (all members in group), `@account` in shared spaces, `@front` (current fronters). Mention inbox per member. |
@@ -253,9 +274,13 @@ Enter from a channel, thread, post or profile ("Stage…").
    light/dark/custom palette; width presets (phone/square/wide).
 4. **Redaction**: blur avatars, blur or replace names ("Member A/B"), hide timestamps, hide channel
    header, blur attachments, redact selected text spans.
-5. **Capture**: the app hides its own chrome, then the user takes a native screenshot; Android
+5. **Fake names and times** (D-050): rename any author for this stage (free text, optional
+   colour/placeholder avatar), and change shown timestamps — shift all by an offset, set a start
+   time and keep gaps, or set each item by hand; also hide/replace dates and the channel name.
+   These overrides live only in the stage (and in a saved stage); they never touch real data.
+6. **Capture**: the app hides its own chrome, then the user takes a native screenshot; Android
    also offers the system long-screenshot. (Render-to-PNG is L3.)
-6. **Save stage** (optional): named, re-openable, stored as a view definition (not a copy of data).
+7. **Save stage** (optional): named, re-openable, stored as a view definition (not a copy of data).
 
 ## 8. Insights and data
 
@@ -267,6 +292,19 @@ Enter from a channel, thread, post or profile ("Stage…").
 - **Webhooks**: switch, message, post, member events; HMAC-signed.
 - **Exports**: full JSONL op log, tidy CSV per view, SQLite copy of the account's data; API tokens
   with scopes. All documented in DATA_MODEL.md §6.
+
+## 8a. Trash and permanence (D-053)
+
+The server keeps a permanent canonical copy of everything: deleting on a device is a tombstone,
+never an erase, and a device evicting old data locally to save space deletes nothing.
+
+- **Trash** screen (Settings → Data → Trash, and "Show deleted" in a channel's menu): deleted
+  messages, posts, entries, members, groups, channels — searchable, no expiry.
+- **Restore** from Android or web puts the item back exactly where it was (same id, same time,
+  revisions intact). Only the account that deleted it (or authored it) can restore it.
+- Edit history is kept forever too.
+- The only way to truly erase something is the server admin CLI (`chorus-server purge`), with a
+  confirmation and a log entry. There is no purge in the apps.
 
 ## 9. Performance budgets (requirements)
 

@@ -31,6 +31,15 @@ default the owner has not contradicted; these may be revisited if implementation
 | D-019 | Data: built-in dashboards, live API + SSE stream, webhooks, analysis-friendly exports (tidy CSV, JSONL, SQLite copy, documented SQL views). | Owner |
 | D-020 | Look: **soft & warm** — warm neutrals, rounded, member colours as gentle accents, generous spacing, subtle motion, deep warm ink for dark mode. | Owner |
 | D-021 | Per-member PIN/biometric lock for member-private content (UI gate in v1; client-side sealing later, L5). | Owner |
+| D-045 | Messages are **joint** by default (one annotation = all say it together). **Segments**: a new line starting with an annotation (sigils/prefix tags, optional `=>`) starts a segment with its own single or multiple authors. Stored as `message_segment` rows. | Owner (Q1) |
+| D-046 | Person accounts have full profiles and can write posts/journals (their single member). Friends may reply/react to visible posts; systems can turn replies off per post or account. | Owner (Q2, Q3) |
+| D-047 | Discord-style **channel permissions** (roles + per-role/per-account overrides). A single internal channel can be shared with outside accounts this way. | Owner (Q4) |
+| D-048 | Any member can forward or quote a **selection** (a message, a text range, or several messages as a bundle) to another channel/space/DM; the recipient sees a snapshot. | Owner (Q4) |
+| D-049 | Members get a 7-letter `short_id`, shown only in Advanced. | Owner (Q5) |
+| D-050 | Stage mode may show **fake names and fake timestamps** (view-only overrides, never stored on real data). | Owner (Q8) |
+| D-051 | Android distribution: APK download from the server, in-app update check, and silent OTA over the tailnet where Android permits (`USER_ACTION_NOT_REQUIRED` after the first self-update). | Owner (Q9) |
+| D-052 | Follows are account-to-account; name/icon as proposed; Insights shows no rankings by default. | Owner (Q7, Q10, Q11) |
+| D-053 | **Permanent server copies.** Retention is forever; deletes are tombstones; local eviction never deletes; everything deleted is restorable from Trash on Android or web. True erase only via server admin CLI `purge`. | Owner (Q12) |
 
 ## Architecture
 

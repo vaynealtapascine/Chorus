@@ -128,7 +128,8 @@ line illustration + one sentence + one action. No mascots.
 | **Journal** | System timeline, feeds tabs (Following, Lists, custom feeds), compose | Write |
 | **Compose post** | Author chip(s), note/entry toggle, title (entry), body, mood, tags, CW, visibility | Post |
 | **Feed editor** | Query field with syntax highlight + chips, live preview, visibility | Save |
-| **Stage** | Selection overlay, context-only/hidden toggles, filters, style presets, redaction, "Capture" | Capture |
+| **Stage** | Selection overlay, context-only/hidden toggles, filters, style presets, redaction, fake names/times, "Capture" | Capture |
+| **Trash** | Deleted items by type, search, restore | Restore |
 | **Insights** | Dashboard cards; each opens a full chart with table + CSV | — |
 | **Sharing** | Followers, requests, buckets, ceilings (presets), following + prefs | — |
 | **Notifications** | History list, per-kind settings | — |
@@ -189,7 +190,7 @@ Presets apply to the chat itself (per device) and to stage mode:
   behaviour, primary-fronter rules, "time override" default, recent-front-sets count.
 - *Widget*: per-widget scope (all / subsystem / group), columns, avatar size, label style, show
   current front header, mode-chip reset time.
-- *Chat*: autoproxy defaults, proxy tag case sensitivity, sigil parsing on/off, multi-author
+- *Chat*: segment parsing (newline annotations) on/off, autoproxy defaults, proxy tag case sensitivity, sigil parsing on/off, multi-author
   parsing on/off, strip tags, per-member read tracking, delete behaviour (placeholder/vanish),
   link handling, spoiler auto-reveal, CW auto-expand, "delay send" per space, formatting
   shortcuts on/off, slow mode.
@@ -202,8 +203,10 @@ Presets apply to the chat itself (per device) and to stage mode:
 - *Sync*: server URL, snapshot threshold, web offline window (days), metered-network behaviour,
   attachment download rules, clock-skew correction on/off, background sync interval, "sync
   now", sync log.
-- *Data*: API tokens, webhooks, exports schedule, import (PluralKit), retention/purge.
+- *Data*: API tokens, webhooks, exports schedule, import (PluralKit), Trash, local storage
+  (evict old media/messages on this device — server copy is kept).
 - *Security*: device list/revoke, Tailscale identity check, session length.
+- *Identity*: show member short ids (7 letters).
 - *Developer*: op log viewer (filter by kind/entity), digests + full projection hash, force
   re-snapshot, debug bundle export, feature flags.
 

@@ -93,7 +93,11 @@ Followers never receive `account:` ops of others. They receive **views** (§4.3)
 
 `chorus-core::visibility::can_read(account, op, state)` is the one function deciding delivery.
 Notable filters inside `space:` scopes: `system_only` messages go only to the author's account;
-reactions/edits to such messages likewise. Because different accounts see different subsets, the
+reactions/edits to such messages likewise; channel permissions (`view`, SPEC §5.1) decide which
+channels of a space an account receives — this is how a single internal channel is shared with an
+outside account. Permission resolution lives in `chorus-core::perms`. When an account gains
+`view` on a channel, the server sends that channel's ops as a mini-snapshot; when it loses it,
+the server sends an evict for the channel. Because different accounts see different subsets, the
 digest (§6.4) is computed per *(scope, account)*.
 
 ### 4.3 Views (read-only, for other accounts)
@@ -152,6 +156,13 @@ Message order in a channel: `(occurred_at, id)`. Offline messages therefore slot
 original time with `sent_offline = 1` (D-039). Unread computation uses `received_at`, not position,
 so late-arriving old messages still count as unread and the channel shows a "3 new messages above"
 jump pill.
+
+### 5.4a Deletes and restores
+
+`deleted_at` is LWW like any field: `*.delete` sets it, `*.restore` clears it; the later HLC
+wins, so a restore on one device and a delete on another resolve deterministically. Devices may
+**evict** deleted or old content locally (to save space) — eviction is local only, never an op,
+and the Trash view fetches evicted items from the server on demand.
 
 ### 5.5 Read marks
 

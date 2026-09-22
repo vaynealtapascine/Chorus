@@ -55,7 +55,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [ ] M1.3 Front fold: switch/add/remove/update/retract/amend → snapshots → intervals
 - [ ] M1.4 LWW register + LWW element-set helpers, field-level merge
 - [ ] M1.5 Text model: plain text + entities; markup parser (Telegram parity) + serializer
-- [ ] M1.6 Speaker parsing: sigils (emoji), proxy tags, multi-author prefixes
+- [ ] M1.6 Speaker parsing: sigils (emoji), proxy tags, multi-author prefixes, newline segments (D-045)
 - [ ] M1.7 Feed filter language: parser → AST → evaluator
 - [ ] M1.8 Member colour contrast adjuster (WCAG AA both themes)
 - [ ] M1.9 Convergence simulator (N devices, random partitions, projection hash equality)
@@ -99,6 +99,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [ ] M5.6 Attachments + images (offline-queued upload)
 - [ ] M5.7 Hidden messages: spoilers, CW/collapsed, member-visible, system-only
 - [ ] M5.8 Search (FTS5 server, local search on Android)
+- [ ] M5.9 Segmented messages (newline annotations) — parse, store `message_segment`, render
+- [ ] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward
+- [ ] M5.11 Forward/quote a selection (range or multi-message bundle)
+- [ ] M5.12 Trash + restore for messages, posts, members, groups, channels
 
 ### M6 — Sharing
 
@@ -126,6 +130,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [ ] M9.1 Selection, context-only/hidden, crop reply chains
 - [ ] M9.2 Style presets + redaction
 - [ ] M9.3 Saved stages
+- [ ] M9.4 Fake names and timestamps (view-only overrides)
 
 ### M10 — Data
 
@@ -141,6 +146,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 - [ ] M12.1 Deploy scripts (NSSM service, Caddy snippet, ntfy)
 - [ ] M12.2 Disclosure card, screenshots, README, publish to GitHub
+- [ ] M12.3 In-app APK updates + silent OTA (CLIENTS.md §5a)
 
 ### Later (not v1)
 
@@ -158,3 +164,4 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 
 - 2026-09-23 claude-opus-5.5 — Q&A with owner (6 rounds); wrote spec set S1–S12 (SPEC, DECISIONS, DATA_MODEL, SYNC, NOTIFICATIONS, API, DESIGN, CLIENTS, OPS, OPEN_QUESTIONS, README). Spec phase done.
+- 2026-09-23 claude-opus-5.5 — Owner answered open questions Q1–Q5, Q7–Q12 → D-045…D-053; spec docs updated; new board tasks M5.9–M5.12, M9.4, M12.3. Q6 (custom emoji) still open.

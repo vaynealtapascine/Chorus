@@ -185,6 +185,23 @@ plus everything pinned or starred. Scrolling beyond fetches from REST and caches
   reappears on tap).
 - Redacted names use stable placeholders per stage session ("Member A", "Member B") and
   placeholder avatars in neutral colours.
+- Fake names/times are a render-time override map in the stage state
+  (`{names:{member_id→{label,color}}, time:{mode:'shift'|'start'|'manual', …}}`); the renderer
+  substitutes them at display time only. Nothing is written to messages.
+
+## 5a. App updates (Android, D-051)
+
+- The server hosts release APKs (`/download/android`, plus `/api/v1/server` → `android_latest`
+  with version code, size, sha256, changelog). The server announces a new version over sync (and
+  a push tickle), so phones hear about it within seconds when on the tailnet.
+- In-app: "Update ready · 12 MB · What's new" card → downloads over the tailnet (Wi-Fi only by
+  default), verifies sha256 and signing cert, installs via a `PackageInstaller` session.
+- **OTA without prompts where Android allows it**: the first self-update needs the user's tap
+  (and "install unknown apps" permission for Chorus). After that Chorus is the installer of
+  record, and on Android 12+ it requests `USER_ACTION_NOT_REQUIRED`, so later updates install
+  silently in the background (Advanced toggle: "Install updates automatically", default on for
+  the owner's account, off for others). Falls back to a one-tap prompt when Android refuses.
+- Friends' phones get the same flow; Obtainium can also track the URL.
 
 ## 6. PluralKit import (M11)
 

@@ -84,6 +84,7 @@ chorus-server rebuild                   # rebuild all projections from the op lo
 chorus-server export --account <id> --kind full|csv|sqlite
 chorus-server check                     # integrity_check, digests, orphan blobs, config
 chorus-server reconcile-status          # devices that re-synced since last restore
+chorus-server purge --message <id> | --op <id>   # the only true erase (D-053); asks to confirm, logged
 chorus-server migrate                   # run pending schema migrations (also automatic on serve)
 ```
 
@@ -105,7 +106,9 @@ chorus-server migrate                   # run pending schema migrations (also au
 - Migrations are forward-only, run automatically on start after the pre-migration backup.
 - Android releases: signed APK built locally (`scripts/android-release.ps1`); served for friends
   at `https://chorus.vayne.garden/download/android` with an in-app "Update available" check
-  (compares `/api/v1/server` → `android_latest`). Obtainium-compatible.
+  (compares `/api/v1/server` → `android_latest`), silent OTA where Android allows it
+  (CLIENTS.md §5a). `scripts/android-release.ps1` also copies the APK to
+  `~/selfhost/chorus/app/releases/` and bumps `android_latest`. Obtainium-compatible.
 - Service install: the owner runs `install.ps1` as admin (agents never install services).
 
 ## 7. Observability
