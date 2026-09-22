@@ -227,6 +227,7 @@ CREATE TABLE member (
   is_locked           INTEGER NOT NULL DEFAULT 0,   -- has a PIN gate (the PIN itself never syncs in clear; see CLIENTS.md)
   visibility          TEXT NOT NULL DEFAULT '{"mode":"private"}' CHECK (json_valid(visibility)),
   field_visibility    TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(field_visibility)),
+  notify_policy       TEXT NOT NULL DEFAULT '{"announce":"everyone","announce_leaving":false}' CHECK (json_valid(notify_policy)),  -- NOTIFICATIONS.md §2.4
   pk_id               TEXT,                  -- PluralKit 5/6-char id when imported
   created_at          INTEGER NOT NULL,
   archived_at         INTEGER,
@@ -530,7 +531,7 @@ CREATE TABLE feed (
 );
 
 -- ─── privacy, follows, notifications ─────────────────────────────────
-CREATE TABLE bucket (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT NULL, color TEXT, sort_key TEXT, deleted_at INTEGER, clocks TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE bucket (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT NULL, color TEXT, sort_key TEXT, ceiling TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(ceiling)), deleted_at INTEGER, clocks TEXT NOT NULL DEFAULT '{}');
 CREATE TABLE bucket_assignment (bucket_id TEXT NOT NULL, follower_account_id TEXT NOT NULL, added_hlc TEXT, removed_hlc TEXT,
   is_present INTEGER GENERATED ALWAYS AS (added_hlc IS NOT NULL AND (removed_hlc IS NULL OR added_hlc > removed_hlc)) STORED,
   PRIMARY KEY (bucket_id, follower_account_id));
