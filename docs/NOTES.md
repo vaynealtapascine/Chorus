@@ -10,7 +10,13 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   lost on disconnect — demote confirmed ops into the outbox instead. Digest-mismatch repairs occur
   only around restores (race between other devices' restore pushes and Caught); they self-heal.
 - 2026-09-23 claude-opus-5.5 — text — The markup round-trip property test drove the serializer
-  design: `\&` empty separator (Telegram uses `` for the same problem), whitespace at entity
+  design: `\&` empty separator (Telegram uses `
+` for the same problem), whitespace at entity
   edges, url/mention atoms that would re-grow, code blocks only at top level, escape-aware scans.
 - 2026-09-23 claude-opus-5.5 — tooling — Git Bash here mangles backslashes in heredocs passed to
   python; for Rust source edits use the Edit tool, not sed/python.
+- 2026-09-23 claude-opus-5.5 — tooling — PowerShell: `$x = if (...) { @() } else { @('--release') }` unwraps
+  the one-element array into a string, and `@x` then splats it as single characters (cargo saw
+  `-`). Use `$x = @(if (...) { '--release' })`. Also avoid naming a variable `$profile`.
+- 2026-09-23 claude-opus-5.5 — web — The browser pane's colour-scheme emulation doesn't fire
+  `matchMedia` change events; reload after switching it when testing theme-dependent colours.

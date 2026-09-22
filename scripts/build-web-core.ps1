@@ -7,13 +7,14 @@
 param([switch]$Debug)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$profile = if ($Debug) { @() } else { @('--release') }
+# @(...) keeps it an array: a bare `if` would unwrap to a string, which splats as characters
+$cargoArgs = @(if (-not $Debug) { '--release' })
 $dir = if ($Debug) { 'debug' } else { 'release' }
 $out = Join-Path $root 'web\src\lib\core\pkg'
 
 Push-Location $root
 try {
-    cargo build -p chorus-wasm --target wasm32-unknown-unknown @profile
+    cargo build -p chorus-wasm --target wasm32-unknown-unknown @cargoArgs
     if ($LASTEXITCODE) { throw 'wasm build failed' }
     wasm-bindgen "target\wasm32-unknown-unknown\$dir\chorus_wasm.wasm" --out-dir $out --target web
     if ($LASTEXITCODE) { throw 'wasm-bindgen failed' }

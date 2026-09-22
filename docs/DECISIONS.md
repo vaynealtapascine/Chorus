@@ -83,3 +83,5 @@ Pin here as they are adopted (tool/library → version → date → why).
 | wasm-bindgen | 0.2.128 (crate) + wasm-bindgen-cli 0.2.128 | 2026-09-23 | CLI version must equal the crate version. |
 | cargo-ndk | 4.1.2 | 2026-09-23 | `cargo install cargo-ndk --locked` |
 | Android NDK | 28.2.13676358 at `F:/DunBuild/android-sdk/ndk` (shared with Dun) | 2026-09-23 | `scripts/build-android-core.ps1` finds it. |
+| Web toolchain | svelte ^5.57, vite ^8.3, @sveltejs/vite-plugin-svelte ^7.3, typescript ~6.0.3, svelte-check ^4.7, vitest ^5.0, idb ^8 | 2026-09-23 | TS 7 is rejected by svelte-check (same as Dun). |
+| Android package | `garden.vayne.chorus` | 2026-09-23 | Used by generated Kotlin tokens; matches the owner's domain. |

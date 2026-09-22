@@ -22,16 +22,17 @@ function Find-Ndk {
 
 $env:ANDROID_NDK_HOME = Find-Ndk
 Write-Host "NDK: $env:ANDROID_NDK_HOME"
-$profile = if ($Debug) { @() } else { @('--release') }
+# @(...) keeps it an array: a bare `if` would unwrap to a string, which splats as characters
+$cargoArgs = @(if (-not $Debug) { '--release' })
 $out = Join-Path $root 'android\core-bridge\src\main\jniLibs'
 New-Item -ItemType Directory -Force $out | Out-Null
 
 Push-Location $root
 try {
-    cargo ndk -t arm64-v8a -t x86_64 -o $out build -p chorus-ffi @profile
+    cargo ndk -t arm64-v8a -t x86_64 -o $out build -p chorus-ffi @cargoArgs
     if ($LASTEXITCODE) { throw 'cargo ndk failed' }
     # Bindings are generated from the host build of the same crate (library mode).
-    cargo build -p chorus-ffi @profile
+    cargo build -p chorus-ffi @cargoArgs
     if ($LASTEXITCODE) { throw 'host build failed' }
     $dir = if ($Debug) { 'debug' } else { 'release' }
     $lib = Join-Path $root "target\$dir\chorus_ffi.dll"

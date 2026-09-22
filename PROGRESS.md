@@ -43,7 +43,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M0 — Scaffolding
 
 - [x] M0.1 Cargo workspace: `crates/chorus-core`, `crates/chorus-server`; rust-toolchain pinned
-- [ ] M0.2 `web/` Svelte 5 + Vite + TS skeleton (PWA plugin, strict TS)
+- [x] M0.2 `web/` Svelte 5 + Vite + TS skeleton (PWA plugin, strict TS)
 - [ ] M0.3 `android/` Kotlin + Compose skeleton (Gradle version catalog, minSdk 29, targetSdk 36)
 - [x] M0.4 `fixtures/` conformance vector format + runner in Rust (see SYNC.md §9)
 - [x] M0.5 `scripts/verify` (fmt, clippy, tests, svelte-check, gradle lint/test) + CI workflow
@@ -180,3 +180,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M1.10 spike kept (D-056): chorus_core::api JSON layer; chorus-ffi (UniFFI) .so for arm64/x86_64 + Kotlin bindings; chorus-wasm runs in Node, 209 KB gz; build scripts
 - 2026-09-23 claude-opus-5.5 — M0.4 48 language-neutral fixtures in fixtures/<area>/ (fn + JSON args + expect) + runner tests/fixtures.rs with bless mode; generator scripts/gen-fixtures.py
 - 2026-09-23 claude-opus-5.5 — M0.5 rustfmt (max_width 120), scripts/verify.py (fmt, clippy -D warnings, tests, wasm build, web/android when present), .github/workflows/ci.yml
+- 2026-09-23 claude-opus-5.5 — M0.2 web/ Svelte 5 + Vite 8 + TS 6 skeleton: design tokens (design/tokens.json → CSS/Kotlin via scripts/gen-tokens.mjs), wasm core loader + vitest, FrontCard + quick-switch demo verified in browser (switch works; member colours adapt per theme). Fixed PowerShell array-splat bug in build scripts.
