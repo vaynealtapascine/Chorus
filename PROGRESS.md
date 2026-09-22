@@ -145,7 +145,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M12 — Ship
 
-- [ ] M12.1 Deploy scripts (NSSM service, Caddy snippet, ntfy)
+- [x] M12.1 Deploy scripts (NSSM service, Caddy snippet, ntfy)
 - [ ] M12.2 Disclosure card, screenshots, README, publish to GitHub
 - [ ] M12.3 In-app APK updates + silent OTA (CLIENTS.md §5a)
 
@@ -195,3 +195,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M5.2 composer on core.compose: speaker chip (default primary fronter, picker override), live 'as …' preview, sigils/tags/joint/newline segments, @mentions via names resolver, Enter to send. Verified: server stores segments, authors, mentions, FTS.
 - 2026-09-23 claude-opus-5.5 — M5.3 web: Message component + actions: reply (reply bar, cross-channel rendering), full/partial quote (selection), edit via markup round-trip (edited marker), delete→restore, pin/unpin + pinned panel, forward to any channel (snapshot). Verified in browser. Still to add: 'reply in another channel' picker and an edit-history viewer (revisions aren't in the client projection yet).
 - 2026-09-23 claude-opus-5.5 — M5.4 web: reactions as current speaker (palette, toggle chips, element-set keys), read marks when visible (forward-only, no op loop; headless-verified), unread badges per channel. Mention inbox still to do.
+- 2026-09-23 claude-opus-5.5 — M12.1 deploy: scripts/deploy.ps1 (release build + web + copy to ~/selfhost/chorus; binary swap w/o admin), deploy/install.ps1 (+cmd/check/README: chorus.toml, NSSM service, Caddy site, DNS hint, first invite). Deployed files to ~/selfhost/chorus; owner still needs to run install.cmd as admin + add DNS record.

@@ -34,7 +34,7 @@ def main():
     else:
         # release: the convergence simulator and proptests are CPU-heavy
         run(['cargo', 'test', '--workspace', '--release'])
-    run(['cargo', 'build', '-p', 'chorus-wasm', '--target', 'wasm32-unknown-unknown', '--release'])
+    run(['cargo', 'build', '-p', 'chorus-wasm', '--target', 'wasm32-unknown-unknown', '--profile', 'wasm'])
 
     web = os.path.join(ROOT, 'web')
     if os.path.isdir(os.path.join(web, 'node_modules')):

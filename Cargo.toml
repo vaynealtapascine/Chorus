@@ -20,3 +20,10 @@ todo = "warn"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# Web builds: the bundle budget is bytes over the wire (SPEC §9), so optimise every crate for
+# size — only in `--profile wasm` builds; the server keeps `release`.
+[profile.wasm]
+inherits = "release"
+opt-level = "z"
+panic = "abort"

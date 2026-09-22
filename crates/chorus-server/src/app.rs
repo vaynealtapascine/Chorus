@@ -362,11 +362,34 @@ fn push(
     Ok(())
 }
 
+/// When `CHORUS_RESTART_ON_CHANGE=1` (set by the service installer), exit as soon as our own
+/// executable is replaced, so the service manager starts the new build. `scripts/deploy.ps1`
+/// renames the running exe (Windows allows that) and copies the new one into its place.
+fn watch_own_binary() {
+    if std::env::var("CHORUS_RESTART_ON_CHANGE").as_deref() != Ok("1") {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else { return };
+    let stamp = |p: &std::path::Path| std::fs::metadata(p).ok().map(|m| (m.len(), m.modified().ok()));
+    let start = stamp(&exe);
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            let now = stamp(&exe);
+            if now.is_some() && now != start {
+                tracing::info!("new build deployed; exiting so the service restarts it");
+                std::process::exit(0);
+            }
+        }
+    });
+}
+
 /// Bind and serve until Ctrl-C.
 pub async fn serve(state: AppState) -> anyhow::Result<()> {
     let addr = state.cfg.server.listen.clone();
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!(%addr, "chorus-server listening");
+    watch_own_binary();
     axum::serve(listener, router(state))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;

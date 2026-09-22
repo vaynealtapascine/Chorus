@@ -8,8 +8,8 @@ param([switch]$Debug)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 # @(...) keeps it an array: a bare `if` would unwrap to a string, which splats as characters
-$cargoArgs = @(if (-not $Debug) { '--release' })
-$dir = if ($Debug) { 'debug' } else { 'release' }
+$cargoArgs = @(if (-not $Debug) { '--profile'; 'wasm' })
+$dir = if ($Debug) { 'debug' } else { 'wasm' }  # the size-optimised profile (Cargo.toml)
 $out = Join-Path $root 'web\src\lib\core\pkg'
 
 Push-Location $root

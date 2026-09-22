@@ -20,7 +20,7 @@ jobs:
       - run: cargo test --workspace --release
         env:
           CHORUS_SIM_SEEDS: "1000"
-      - run: cargo build -p chorus-wasm --target wasm32-unknown-unknown --release
+      - run: cargo build -p chorus-wasm --target wasm32-unknown-unknown --profile wasm
 
   web:
     runs-on: ubuntu-latest

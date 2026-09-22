@@ -34,3 +34,10 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
 - 2026-09-23 claude-opus-5.5 — android — UniFFI: an error variant field named `message` clashes with
   Kotlin's `Throwable.message` ("overload resolution ambiguity"); name it `reason`. Changing any
   exported type changes UniFFI checksums, so rebuild the .so and the bindings together.
+- 2026-09-23 claude-opus-5.5 — web — Wasm size: `--profile wasm` (opt-level "z", panic=abort, all
+  crates) gives ~209 KB gzipped vs ~308 KB for `release`; `wasm-opt -Oz` (binaryen 132) made the z
+  build *larger*, so it isn't used. Per-package opt-level on the wrapper crate alone does nothing —
+  the size is in chorus-core.
+- 2026-09-23 claude-opus-5.5 — ops — Deploys swap the server binary without admin rights: Windows
+  lets you rename a running exe; the server (CHORUS_RESTART_ON_CHANGE=1, set by install.ps1)
+  notices its binary changed and exits, and NSSM starts the new one.
