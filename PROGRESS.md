@@ -17,7 +17,7 @@ Rules (short form):
 - **In progress:** —
 - **Owner:** —
 - **Next concrete step:** claim the next unticked task on the board
-- **Notes:** Read AGENTS.md → DECISIONS.md → SYNC.md + DATA_MODEL.md before M0/M1. Open questions (docs/OPEN_QUESTIONS.md) have defaults; don't block on them. README disclosure card image is not generated yet (M12.2).
+- **Notes:** Order change: doing M2 (server) before M0.3 (Android skeleton) so clients have something to sync with; M0.3 is still next after M2.5.
 
 ---
 
@@ -63,7 +63,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M2 — Server
 
-- [ ] M2.1 Config (`chorus.toml`), SQLite open (WAL, pragmas), migrations
+- [x] M2.1 Config (`chorus.toml`), SQLite open (WAL, pragmas), migrations
 - [ ] M2.2 Accounts, devices, invites, key-based auth, sessions
 - [ ] M2.3 Op ingestion: validate → permission → append → project (single writer task)
 - [ ] M2.4 Projections for all tables + rebuild-from-log command
@@ -181,3 +181,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M0.4 48 language-neutral fixtures in fixtures/<area>/ (fn + JSON args + expect) + runner tests/fixtures.rs with bless mode; generator scripts/gen-fixtures.py
 - 2026-09-23 claude-opus-5.5 — M0.5 rustfmt (max_width 120), scripts/verify.py (fmt, clippy -D warnings, tests, wasm build, web/android when present), .github/workflows/ci.yml
 - 2026-09-23 claude-opus-5.5 — M0.2 web/ Svelte 5 + Vite 8 + TS 6 skeleton: design tokens (design/tokens.json → CSS/Kotlin via scripts/gen-tokens.mjs), wasm core loader + vitest, FrontCard + quick-switch demo verified in browser (switch works; member colours adapt per theme). Fixed PowerShell array-splat bug in build scripts.
+- 2026-09-23 claude-opus-5.5 — M2.1 server config (chorus.toml w/ defaults, --dev), SQLite open+pragmas, forward-only migrations with pre-migrate backup, schema 0001, migrate/check CLI

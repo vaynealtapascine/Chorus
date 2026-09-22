@@ -163,6 +163,13 @@ generated into `fixtures/schema/` so Kotlin/TS can validate.
 
 ## 4. Projected tables (server schema, SQLite)
 
+> **Authoritative DDL:** `crates/chorus-server/migrations/*.sql`. The listing below is the design
+> reference. The migration differs in a few deliberate ways: data columns are nullable (rows are
+> written by re-projecting an entity's ops through `chorus_core::model`, and validation happens
+> on ops); `op.restored` marks ops re-pushed in a restore window; server-only tables `session`,
+> `auth_nonce` and `scope_access` exist; `member_group.effective_parent_id` holds the cycle-guarded
+> parent; `space.roles` holds custom roles; `device.platform` allows `token` (API-token writes).
+
 Android's Room schema mirrors these tables for the scopes the device holds. The web client keeps
 the same shapes as IndexedDB object stores. Column names are identical everywhere.
 
