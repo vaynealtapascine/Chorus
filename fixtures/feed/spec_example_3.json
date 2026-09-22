@@ -1,0 +1,35 @@
+{
+  "args": [
+    "(from:@kai or from:@juniper) reply:false"
+  ],
+  "description": "or + parentheses",
+  "expect": {
+    "args": [
+      {
+        "args": [
+          {
+            "from": {
+              "name": "kai",
+              "type": "name"
+            },
+            "op": "from"
+          },
+          {
+            "from": {
+              "name": "juniper",
+              "type": "name"
+            },
+            "op": "from"
+          }
+        ],
+        "op": "or"
+      },
+      {
+        "op": "reply",
+        "value": false
+      }
+    ],
+    "op": "and"
+  },
+  "fn": "feed_parse"
+}

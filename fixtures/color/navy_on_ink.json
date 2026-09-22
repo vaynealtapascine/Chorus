@@ -1,0 +1,14 @@
+{
+  "args": [
+    "#1a2a6c",
+    true,
+    "vivid"
+  ],
+  "description": "lightened on dark",
+  "expect": {
+    "name": "#6b84cf",
+    "ring": "#4b62aa",
+    "tint": "#21212e"
+  },
+  "fn": "adapt_color"
+}

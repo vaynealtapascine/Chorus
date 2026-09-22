@@ -1,0 +1,19 @@
+{
+  "args": [
+    "look:\n```rust\n> not a quote\nlet x = `y`;\n```\nend",
+    ""
+  ],
+  "description": "fenced code keeps > and backticks",
+  "expect": {
+    "entities": [
+      {
+        "language": "rust",
+        "length": 26,
+        "offset": 6,
+        "type": "pre"
+      }
+    ],
+    "text": "look:\n> not a quote\nlet x = `y`;\nend"
+  },
+  "fn": "parse_markup"
+}

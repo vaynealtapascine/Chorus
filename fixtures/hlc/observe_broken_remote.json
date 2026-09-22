@@ -1,0 +1,11 @@
+{
+  "args": [
+    "",
+    7,
+    "ffffffffffff-0000-00000009",
+    1790000000000
+  ],
+  "description": "a clock days in the future is capped at now+60s",
+  "expect": "01a0c4515660-0001-00000007",
+  "fn": "hlc_observe"
+}

@@ -1,0 +1,14 @@
+{
+  "args": [
+    "#fff27a",
+    true,
+    "subtle"
+  ],
+  "description": "already fine on dark: untouched",
+  "expect": {
+    "name": "#fff27a",
+    "ring": "#fff27a",
+    "tint": "#423c27"
+  },
+  "fn": "adapt_color"
+}

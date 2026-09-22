@@ -1,0 +1,14 @@
+{
+  "args": [
+    "#c0694e",
+    false,
+    "off"
+  ],
+  "description": "names use ink",
+  "expect": {
+    "name": "#2b2521",
+    "ring": "#c0694e",
+    "tint": "#ffffff"
+  },
+  "fn": "adapt_color"
+}

@@ -1,0 +1,12 @@
+{
+  "args": [
+    "[x](javascript:alert(1))",
+    ""
+  ],
+  "description": "javascript: links stay text",
+  "expect": {
+    "entities": [],
+    "text": "[x](javascript:alert(1))"
+  },
+  "fn": "parse_markup"
+}

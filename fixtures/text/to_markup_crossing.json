@@ -1,0 +1,8 @@
+{
+  "args": [
+    "{\"text\": \"abcdef\", \"entities\": [{\"type\": \"bold\", \"offset\": 0, \"length\": 4}, {\"type\": \"italic\", \"offset\": 2, \"length\": 4}]}"
+  ],
+  "description": "crossing entities are split so markup nests",
+  "expect": "**ab*cd*\\&**\\&*ef*",
+  "fn": "to_markup"
+}

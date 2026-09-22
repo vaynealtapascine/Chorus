@@ -1,0 +1,153 @@
+{
+  "args": [
+    "[{\"id\": \"0192f8c2-0000-7000-8000-000000000001\", \"kind\": \"front.switch\", \"v\": 1, \"scope\": \"account:0192f8c2-0000-7000-8000-0000000000a1\", \"entity_id\": null, \"hlc\": \"01a0c4506c00-0000-00000001\", \"device_at\": 1790000000000, \"tz_offset_min\": 60, \"payload\": {\"entries\": [{\"subject_type\": \"member\", \"subject_id\": \"0192f8c2-0000-7000-8000-0000000000b1\", \"level\": \"front\", \"is_primary\": true}]}, \"seq\": 1, \"account_id\": \"0192f8c2-0000-7000-8000-0000000000a1\", \"device_id\": \"dev1\", \"occurred_at\": 1790000000000, \"received_at\": 1790000000000}, {\"id\": \"0192f8c2-0000-7000-8000-000000000003\", \"kind\": \"front.switch\", \"v\": 1, \"scope\": \"account:0192f8c2-0000-7000-8000-0000000000a1\", \"entity_id\": null, \"hlc\": \"01a0c454ffe0-0000-00000001\", \"device_at\": 1790000300000, \"tz_offset_min\": 60, \"payload\": {\"entries\": [{\"subject_type\": \"member\", \"subject_id\": \"0192f8c2-0000-7000-8000-0000000000b3\", \"level\": \"front\", \"is_primary\": true}]}, \"seq\": 3, \"account_id\": \"0192f8c2-0000-7000-8000-0000000000a1\", \"device_id\": \"dev1\", \"occurred_at\": 1790000300000, \"received_at\": 1790000300000}, {\"id\": \"0192f8c2-0000-7000-8000-000000000002\", \"kind\": \"front.add\", \"v\": 1, \"scope\": \"account:0192f8c2-0000-7000-8000-0000000000a1\", \"entity_id\": null, \"hlc\": \"01a0c4537940-0000-00000001\", \"device_at\": 1790000200000, \"tz_offset_min\": 60, \"payload\": {\"entry\": {\"subject_type\": \"member\", \"subject_id\": \"0192f8c2-0000-7000-8000-0000000000b2\", \"level\": \"front\", \"is_primary\": false}}, \"seq\": 4, \"account_id\": \"0192f8c2-0000-7000-8000-0000000000a1\", \"device_id\": \"dev1\", \"occurred_at\": 1790000200000, \"received_at\": 1790000200000}]"
+  ],
+  "description": "an offline add dated earlier is re-based",
+  "expect": {
+    "current": [
+      {
+        "is_primary": true,
+        "level": "front",
+        "subject_id": "0192f8c2-0000-7000-8000-0000000000b3",
+        "subject_type": "member"
+      }
+    ],
+    "intervals": [
+      {
+        "end_at": 1790000300000,
+        "end_switch_id": "0192f8c2-0000-7000-8000-000000000003",
+        "id": "10fb867ad628ff0ec0fc31b74c28e3b0",
+        "is_primary": true,
+        "level": "front",
+        "position": 0,
+        "start_at": 1790000000000,
+        "start_switch_id": "0192f8c2-0000-7000-8000-000000000001",
+        "start_tz_offset_min": 60,
+        "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+        "subject_type": "member"
+      },
+      {
+        "end_at": 1790000300000,
+        "end_switch_id": "0192f8c2-0000-7000-8000-000000000003",
+        "id": "51adc2c1fdaf399c4bb52e82fcdc9965",
+        "is_primary": false,
+        "level": "front",
+        "position": 1,
+        "start_at": 1790000200000,
+        "start_switch_id": "0192f8c2-0000-7000-8000-000000000002",
+        "start_tz_offset_min": 60,
+        "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+        "subject_type": "member"
+      },
+      {
+        "end_at": null,
+        "end_switch_id": null,
+        "id": "63416f77d2b1e8e3d654dd95323aea67",
+        "is_primary": true,
+        "level": "front",
+        "position": 0,
+        "start_at": 1790000300000,
+        "start_switch_id": "0192f8c2-0000-7000-8000-000000000003",
+        "start_tz_offset_min": 60,
+        "subject_id": "0192f8c2-0000-7000-8000-0000000000b3",
+        "subject_type": "member"
+      }
+    ],
+    "switches": [
+      {
+        "amended": false,
+        "based_on": null,
+        "device_id": "dev1",
+        "entries": [
+          {
+            "is_primary": true,
+            "level": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "id": "0192f8c2-0000-7000-8000-000000000001",
+        "kind": "switch",
+        "note": null,
+        "notify": "default",
+        "occurred_at": 1790000000000,
+        "resulting_front": [
+          {
+            "is_primary": true,
+            "level": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "retracted": false,
+        "tz_offset_min": 60,
+        "was_offline": false
+      },
+      {
+        "amended": false,
+        "based_on": null,
+        "device_id": "dev1",
+        "entries": [
+          {
+            "is_primary": false,
+            "level": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+            "subject_type": "member"
+          }
+        ],
+        "id": "0192f8c2-0000-7000-8000-000000000002",
+        "kind": "add",
+        "note": null,
+        "notify": "default",
+        "occurred_at": 1790000200000,
+        "resulting_front": [
+          {
+            "is_primary": true,
+            "level": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          },
+          {
+            "is_primary": false,
+            "level": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+            "subject_type": "member"
+          }
+        ],
+        "retracted": false,
+        "tz_offset_min": 60,
+        "was_offline": false
+      },
+      {
+        "amended": false,
+        "based_on": null,
+        "device_id": "dev1",
+        "entries": [
+          {
+            "is_primary": true,
+            "level": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b3",
+            "subject_type": "member"
+          }
+        ],
+        "id": "0192f8c2-0000-7000-8000-000000000003",
+        "kind": "switch",
+        "note": null,
+        "notify": "default",
+        "occurred_at": 1790000300000,
+        "resulting_front": [
+          {
+            "is_primary": true,
+            "level": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b3",
+            "subject_type": "member"
+          }
+        ],
+        "retracted": false,
+        "tz_offset_min": 60,
+        "was_offline": false
+      }
+    ]
+  },
+  "fn": "fold_front"
+}

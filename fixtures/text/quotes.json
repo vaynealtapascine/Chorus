@@ -1,0 +1,28 @@
+{
+  "args": [
+    "> one\n> **two**\nplain\n>> more",
+    ""
+  ],
+  "description": "quote groups and expandable quotes",
+  "expect": {
+    "entities": [
+      {
+        "length": 7,
+        "offset": 0,
+        "type": "blockquote"
+      },
+      {
+        "length": 3,
+        "offset": 4,
+        "type": "bold"
+      },
+      {
+        "length": 4,
+        "offset": 14,
+        "type": "expandable_blockquote"
+      }
+    ],
+    "text": "one\ntwo\nplain\nmore"
+  },
+  "fn": "parse_markup"
+}

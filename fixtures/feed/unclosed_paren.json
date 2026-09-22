@@ -1,0 +1,11 @@
+{
+  "args": [
+    "(from:@kai"
+  ],
+  "description": "missing )",
+  "expect": {
+    "error": true,
+    "message": "{\"message\":\"missing )\",\"pos\":10}"
+  },
+  "fn": "feed_parse"
+}

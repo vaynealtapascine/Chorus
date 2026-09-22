@@ -1,0 +1,40 @@
+{
+  "args": [
+    "🌌 go\n🔖❤️‍🔥=> no\nstill ours",
+    "[{\"member_id\": \"sky\", \"sigils\": [\"\\ud83c\\udf0c\"], \"proxy_tags\": [{\"prefix\": \"s:\", \"suffix\": \"\"}]}, {\"member_id\": \"mark\", \"sigils\": [\"\\ud83d\\udd16\"], \"proxy_tags\": [{\"prefix\": \"m:\", \"suffix\": \"\"}]}, {\"member_id\": \"fire\", \"sigils\": [\"\\u2764\\ufe0f\\u200d\\ud83d\\udd25\"], \"proxy_tags\": [{\"prefix\": \"[\", \"suffix\": \"]\"}]}]",
+    "",
+    "[\"def\"]",
+    ""
+  ],
+  "description": "newline annotations start segments; => separator",
+  "expect": {
+    "authors": [
+      "sky",
+      "mark",
+      "fire"
+    ],
+    "explicit": true,
+    "rich": {
+      "entities": [],
+      "text": "go\nno\nstill ours"
+    },
+    "segments": [
+      {
+        "authors": [
+          "sky"
+        ],
+        "length": 2,
+        "offset": 0
+      },
+      {
+        "authors": [
+          "mark",
+          "fire"
+        ],
+        "length": 13,
+        "offset": 3
+      }
+    ]
+  },
+  "fn": "compose"
+}

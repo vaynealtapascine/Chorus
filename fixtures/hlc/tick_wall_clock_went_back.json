@@ -1,0 +1,10 @@
+{
+  "args": [
+    "0000000007d0-0003-00000007",
+    7,
+    1000
+  ],
+  "description": "never goes backwards",
+  "expect": "0000000007d0-0004-00000007",
+  "fn": "hlc_tick"
+}

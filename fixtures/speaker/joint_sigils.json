@@ -1,0 +1,34 @@
+{
+  "args": [
+    "🌌🔖❤️‍🔥 we all agree",
+    "[{\"member_id\": \"sky\", \"sigils\": [\"\\ud83c\\udf0c\"], \"proxy_tags\": [{\"prefix\": \"s:\", \"suffix\": \"\"}]}, {\"member_id\": \"mark\", \"sigils\": [\"\\ud83d\\udd16\"], \"proxy_tags\": [{\"prefix\": \"m:\", \"suffix\": \"\"}]}, {\"member_id\": \"fire\", \"sigils\": [\"\\u2764\\ufe0f\\u200d\\ud83d\\udd25\"], \"proxy_tags\": [{\"prefix\": \"[\", \"suffix\": \"]\"}]}]",
+    "",
+    "[\"def\"]",
+    ""
+  ],
+  "description": "stacked sigils = joint message",
+  "expect": {
+    "authors": [
+      "sky",
+      "mark",
+      "fire"
+    ],
+    "explicit": true,
+    "rich": {
+      "entities": [],
+      "text": "we all agree"
+    },
+    "segments": [
+      {
+        "authors": [
+          "sky",
+          "mark",
+          "fire"
+        ],
+        "length": 12,
+        "offset": 0
+      }
+    ]
+  },
+  "fn": "compose"
+}

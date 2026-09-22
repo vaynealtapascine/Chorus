@@ -1,0 +1,8 @@
+{
+  "args": [
+    "{\"text\": \"bold it and\", \"entities\": [{\"type\": \"bold\", \"offset\": 0, \"length\": 7}, {\"type\": \"italic\", \"offset\": 5, \"length\": 2}]}"
+  ],
+  "description": "bold ending right after italic needs a separator",
+  "expect": "**bold *it*\\&** and",
+  "fn": "to_markup"
+}

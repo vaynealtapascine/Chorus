@@ -1,0 +1,10 @@
+{
+  "args": [
+    "",
+    7,
+    1000
+  ],
+  "description": "first clock on a device",
+  "expect": "0000000003e8-0000-00000007",
+  "fn": "hlc_tick"
+}

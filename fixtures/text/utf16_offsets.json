@@ -1,0 +1,23 @@
+{
+  "args": [
+    "🌌 **hi** ❤️‍🔥 *yo*",
+    ""
+  ],
+  "description": "offsets count UTF-16 units: emoji take 2",
+  "expect": {
+    "entities": [
+      {
+        "length": 2,
+        "offset": 3,
+        "type": "bold"
+      },
+      {
+        "length": 2,
+        "offset": 12,
+        "type": "italic"
+      }
+    ],
+    "text": "🌌 hi ❤️‍🔥 yo"
+  },
+  "fn": "parse_markup"
+}

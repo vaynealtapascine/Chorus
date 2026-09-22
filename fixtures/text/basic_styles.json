@@ -1,0 +1,43 @@
+{
+  "args": [
+    "a **b** *c* __d__ ~~e~~ ||f|| `g`",
+    ""
+  ],
+  "description": "each style once",
+  "expect": {
+    "entities": [
+      {
+        "length": 1,
+        "offset": 2,
+        "type": "bold"
+      },
+      {
+        "length": 1,
+        "offset": 4,
+        "type": "italic"
+      },
+      {
+        "length": 1,
+        "offset": 6,
+        "type": "underline"
+      },
+      {
+        "length": 1,
+        "offset": 8,
+        "type": "strikethrough"
+      },
+      {
+        "length": 1,
+        "offset": 10,
+        "type": "spoiler"
+      },
+      {
+        "length": 1,
+        "offset": 12,
+        "type": "code"
+      }
+    ],
+    "text": "a b c d e f g"
+  },
+  "fn": "parse_markup"
+}

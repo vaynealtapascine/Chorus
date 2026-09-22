@@ -1,0 +1,14 @@
+{
+  "args": [
+    "not a colour",
+    false,
+    "subtle"
+  ],
+  "description": "unparseable falls back to ink",
+  "expect": {
+    "name": "#2b2521",
+    "ring": "#2b2521",
+    "tint": "#ffffff"
+  },
+  "fn": "adapt_color"
+}

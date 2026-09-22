@@ -1,0 +1,8 @@
+{
+  "args": [
+    "{\"id\": \"0192f8c2-0000-7000-8000-000000000001\", \"kind\": \"future.feature\", \"v\": 1, \"scope\": \"account:0192f8c2-0000-7000-8000-0000000000a1\", \"entity_id\": \"0192f8c2-0000-7000-8000-0000000000b1\", \"hlc\": \"01a0c4506c00-0000-00000001\", \"device_at\": 1790000000000, \"tz_offset_min\": 60, \"payload\": {}, \"seq\": 1, \"account_id\": \"0192f8c2-0000-7000-8000-0000000000a1\", \"device_id\": \"dev1\", \"occurred_at\": 1790000000000, \"received_at\": 1790000000000}"
+  ],
+  "description": "unknown kinds are stored, not rejected",
+  "expect": "opaque",
+  "fn": "validate_op"
+}

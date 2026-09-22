@@ -1,0 +1,30 @@
+{
+  "args": [
+    "🌌 a\n🔖 b",
+    "[{\"member_id\": \"sky\", \"sigils\": [\"\\ud83c\\udf0c\"], \"proxy_tags\": [{\"prefix\": \"s:\", \"suffix\": \"\"}]}, {\"member_id\": \"mark\", \"sigils\": [\"\\ud83d\\udd16\"], \"proxy_tags\": [{\"prefix\": \"m:\", \"suffix\": \"\"}]}, {\"member_id\": \"fire\", \"sigils\": [\"\\u2764\\ufe0f\\u200d\\ud83d\\udd25\"], \"proxy_tags\": [{\"prefix\": \"[\", \"suffix\": \"]\"}]}]",
+    "{\"segments\": false}",
+    "[\"def\"]",
+    ""
+  ],
+  "description": "segments can be turned off",
+  "expect": {
+    "authors": [
+      "sky"
+    ],
+    "explicit": true,
+    "rich": {
+      "entities": [],
+      "text": "a\n🔖 b"
+    },
+    "segments": [
+      {
+        "authors": [
+          "sky"
+        ],
+        "length": 6,
+        "offset": 0
+      }
+    ]
+  },
+  "fn": "compose"
+}

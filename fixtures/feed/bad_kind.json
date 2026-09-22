@@ -1,0 +1,11 @@
+{
+  "args": [
+    "tag:art kind:banana"
+  ],
+  "description": "errors carry a position",
+  "expect": {
+    "error": true,
+    "message": "{\"message\":\"kind is one of note, entry, message\",\"pos\":8}"
+  },
+  "fn": "feed_parse"
+}

@@ -1,0 +1,14 @@
+{
+  "args": [
+    "#fff27a",
+    false,
+    "subtle"
+  ],
+  "description": "darkened to 4.5:1",
+  "expect": {
+    "name": "#7d7200",
+    "ring": "#9c901b",
+    "tint": "#fffef2"
+  },
+  "fn": "adapt_color"
+}

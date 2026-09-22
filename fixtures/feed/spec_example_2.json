@@ -1,0 +1,23 @@
+{
+  "args": [
+    "from:list:\"close friends\" has:image"
+  ],
+  "description": "lists with quoted names",
+  "expect": {
+    "args": [
+      {
+        "from": {
+          "name": "close friends",
+          "type": "list"
+        },
+        "op": "from"
+      },
+      {
+        "op": "has",
+        "value": "image"
+      }
+    ],
+    "op": "and"
+  },
+  "fn": "feed_parse"
+}

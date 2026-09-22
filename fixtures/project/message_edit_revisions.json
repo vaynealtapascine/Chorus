@@ -1,0 +1,31 @@
+{
+  "args": [
+    "[{\"id\": \"0192f8c2-0000-7000-8000-000000000001\", \"kind\": \"message.send\", \"v\": 1, \"scope\": \"space:0192f8c2-0000-7000-8000-0000000000d1\", \"entity_id\": \"0192f8c2-0000-7000-8000-0000000000e1\", \"hlc\": \"01a0c4506c00-0000-00000001\", \"device_at\": 1790000000000, \"tz_offset_min\": 60, \"payload\": {\"channel_id\": \"c1\", \"authors\": [\"0192f8c2-0000-7000-8000-0000000000b1\"], \"text\": \"hi\", \"entities\": []}, \"seq\": 1, \"account_id\": \"0192f8c2-0000-7000-8000-0000000000a1\", \"device_id\": \"dev1\", \"occurred_at\": 1790000000000, \"received_at\": 1790000000000}, {\"id\": \"0192f8c2-0000-7000-8000-000000000002\", \"kind\": \"message.edit\", \"v\": 1, \"scope\": \"space:0192f8c2-0000-7000-8000-0000000000d1\", \"entity_id\": \"0192f8c2-0000-7000-8000-0000000000e1\", \"hlc\": \"01a0c4506c0a-0000-00000001\", \"device_at\": 1790000000010, \"tz_offset_min\": 60, \"payload\": {\"message_id\": \"0192f8c2-0000-7000-8000-0000000000e1\", \"text\": \"hello\", \"entities\": []}, \"seq\": 2, \"account_id\": \"0192f8c2-0000-7000-8000-0000000000a1\", \"device_id\": \"dev1\", \"occurred_at\": 1790000000010, \"received_at\": 1790000000010}, {\"id\": \"0192f8c2-0000-7000-8000-000000000003\", \"kind\": \"message.edit\", \"v\": 1, \"scope\": \"space:0192f8c2-0000-7000-8000-0000000000d1\", \"entity_id\": \"0192f8c2-0000-7000-8000-0000000000e1\", \"hlc\": \"01a0c4506c05-0000-00000002\", \"device_at\": 1790000000005, \"tz_offset_min\": 60, \"payload\": {\"message_id\": \"0192f8c2-0000-7000-8000-0000000000e1\", \"text\": \"hey\", \"entities\": []}, \"seq\": 3, \"account_id\": \"0192f8c2-0000-7000-8000-0000000000a1\", \"device_id\": \"dev1\", \"occurred_at\": 1790000000005, \"received_at\": 1790000000005}]"
+  ],
+  "description": "latest edit shown, revisions counted",
+  "expect": {
+    "fronts": {},
+    "opaque": 0,
+    "rows": {
+      "message": {
+        "0192f8c2-0000-7000-8000-0000000000e1": {
+          "edits": 2,
+          "exists": true,
+          "fields": {
+            "account_id": "0192f8c2-0000-7000-8000-0000000000a1",
+            "authors": [
+              "0192f8c2-0000-7000-8000-0000000000b1"
+            ],
+            "channel_id": "c1",
+            "edited_at": 1790000000010,
+            "entities": [],
+            "occurred_at": 1790000000000,
+            "text": "hello"
+          }
+        }
+      }
+    },
+    "sets": {}
+  },
+  "fn": "project"
+}

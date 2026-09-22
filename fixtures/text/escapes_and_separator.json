@@ -1,0 +1,12 @@
+{
+  "args": [
+    "\\*not\\* a\\&b",
+    ""
+  ],
+  "description": "backslash escapes; \\& separates",
+  "expect": {
+    "entities": [],
+    "text": "*not* ab"
+  },
+  "fn": "parse_markup"
+}

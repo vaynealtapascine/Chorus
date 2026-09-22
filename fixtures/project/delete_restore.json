@@ -1,0 +1,23 @@
+{
+  "args": [
+    "[{\"id\": \"0192f8c2-0000-7000-8000-000000000001\", \"kind\": \"member.create\", \"v\": 1, \"scope\": \"account:0192f8c2-0000-7000-8000-0000000000a1\", \"entity_id\": \"0192f8c2-0000-7000-8000-0000000000b1\", \"hlc\": \"01a0c4506c00-0000-00000001\", \"device_at\": 1790000000000, \"tz_offset_min\": 60, \"payload\": {\"name\": \"Kai\"}, \"seq\": 1, \"account_id\": \"0192f8c2-0000-7000-8000-0000000000a1\", \"device_id\": \"dev1\", \"occurred_at\": 1790000000000, \"received_at\": 1790000000000}, {\"id\": \"0192f8c2-0000-7000-8000-000000000002\", \"kind\": \"member.delete\", \"v\": 1, \"scope\": \"account:0192f8c2-0000-7000-8000-0000000000a1\", \"entity_id\": \"0192f8c2-0000-7000-8000-0000000000b1\", \"hlc\": \"01a0c4506c0a-0000-00000001\", \"device_at\": 1790000000010, \"tz_offset_min\": 60, \"payload\": {}, \"seq\": 2, \"account_id\": \"0192f8c2-0000-7000-8000-0000000000a1\", \"device_id\": \"dev1\", \"occurred_at\": 1790000000010, \"received_at\": 1790000000010}, {\"id\": \"0192f8c2-0000-7000-8000-000000000003\", \"kind\": \"member.restore\", \"v\": 1, \"scope\": \"account:0192f8c2-0000-7000-8000-0000000000a1\", \"entity_id\": \"0192f8c2-0000-7000-8000-0000000000b1\", \"hlc\": \"01a0c4506c14-0000-00000001\", \"device_at\": 1790000000020, \"tz_offset_min\": 60, \"payload\": {}, \"seq\": 3, \"account_id\": \"0192f8c2-0000-7000-8000-0000000000a1\", \"device_id\": \"dev1\", \"occurred_at\": 1790000000020, \"received_at\": 1790000000020}]"
+  ],
+  "description": "restore after delete brings it back",
+  "expect": {
+    "fronts": {},
+    "opaque": 0,
+    "rows": {
+      "member": {
+        "0192f8c2-0000-7000-8000-0000000000b1": {
+          "exists": true,
+          "fields": {
+            "deleted_at": null,
+            "name": "Kai"
+          }
+        }
+      }
+    },
+    "sets": {}
+  },
+  "fn": "project"
+}

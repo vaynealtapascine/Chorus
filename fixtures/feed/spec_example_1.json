@@ -1,0 +1,41 @@
+{
+  "args": [
+    "from:@stars kind:entry mood:tired -tag:vent since:30d"
+  ],
+  "description": "SPEC §6.4",
+  "expect": {
+    "args": [
+      {
+        "from": {
+          "name": "stars",
+          "type": "name"
+        },
+        "op": "from"
+      },
+      {
+        "op": "kind",
+        "value": "entry"
+      },
+      {
+        "op": "mood",
+        "value": "tired"
+      },
+      {
+        "arg": {
+          "op": "tag",
+          "value": "vent"
+        },
+        "op": "not"
+      },
+      {
+        "at": {
+          "ms": 2592000000,
+          "type": "ago"
+        },
+        "op": "since"
+      }
+    ],
+    "op": "and"
+  },
+  "fn": "feed_parse"
+}

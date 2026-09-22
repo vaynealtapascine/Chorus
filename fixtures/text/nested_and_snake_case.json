@@ -1,0 +1,23 @@
+{
+  "args": [
+    "**bold _it_** and some_snake_case",
+    ""
+  ],
+  "description": "underscores inside words are text",
+  "expect": {
+    "entities": [
+      {
+        "length": 7,
+        "offset": 0,
+        "type": "bold"
+      },
+      {
+        "length": 2,
+        "offset": 5,
+        "type": "italic"
+      }
+    ],
+    "text": "bold it and some_snake_case"
+  },
+  "fn": "parse_markup"
+}

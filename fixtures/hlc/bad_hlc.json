@@ -1,0 +1,13 @@
+{
+  "args": [
+    "nope",
+    7,
+    1000
+  ],
+  "description": "malformed clock is an error",
+  "expect": {
+    "error": true,
+    "message": "invalid HLC string: \"nope\""
+  },
+  "fn": "hlc_tick"
+}

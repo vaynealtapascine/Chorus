@@ -1,0 +1,50 @@
+{
+  "args": [
+    "[docs](https://x.org/a) @kai @stars @front @nobody :kai_wave: https://a.b/c.",
+    "{\"mentions\": {\"kai\": {\"target_type\": \"member\", \"target_id\": \"0192f8c2-0000-7000-8000-0000000000b1\"}, \"stars\": {\"target_type\": \"group\", \"target_id\": \"0192f8c2-0000-7000-8000-0000000000c1\"}}, \"emoji\": {\"kai_wave\": \"e-kai-wave\"}}"
+  ],
+  "description": "atoms",
+  "expect": {
+    "entities": [
+      {
+        "length": 4,
+        "offset": 0,
+        "type": "text_link",
+        "url": "https://x.org/a"
+      },
+      {
+        "length": 4,
+        "offset": 5,
+        "target_id": "0192f8c2-0000-7000-8000-0000000000b1",
+        "target_type": "member",
+        "type": "mention"
+      },
+      {
+        "length": 6,
+        "offset": 10,
+        "target_id": "0192f8c2-0000-7000-8000-0000000000c1",
+        "target_type": "group",
+        "type": "mention"
+      },
+      {
+        "length": 6,
+        "offset": 17,
+        "target_type": "front",
+        "type": "mention"
+      },
+      {
+        "emoji_id": "e-kai-wave",
+        "length": 10,
+        "offset": 32,
+        "type": "custom_emoji"
+      },
+      {
+        "length": 13,
+        "offset": 43,
+        "type": "url"
+      }
+    ],
+    "text": "docs @kai @stars @front @nobody :kai_wave: https://a.b/c."
+  },
+  "fn": "parse_markup"
+}
