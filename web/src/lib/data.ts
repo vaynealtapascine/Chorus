@@ -193,6 +193,16 @@ export interface MessageRow {
   deleted: boolean;
   pinned: boolean;
   cw?: string;
+  reply_to?: string;
+  quote?: { message_id: string; offset: number; length: number; text: string };
+  forward_snapshot?: {
+    message_id: string;
+    channel_name?: string;
+    authors: string[];
+    text: string;
+    entities: import('./core').Entity[];
+    occurred_at: number;
+  }[];
 }
 
 export function spaces(p: Projection): SpaceRow[] {
@@ -245,7 +255,20 @@ export function messages(p: Projection, channelId: string): MessageRow[] {
         deleted: f.deleted_at != null,
         pinned: f.pinned_at != null,
         cw: str(f.cw),
+        reply_to: str(f.reply_to),
+        quote: f.quote && typeof f.quote === 'object' ? (f.quote as MessageRow['quote']) : undefined,
+        forward_snapshot: Array.isArray(f.forward_snapshot) ? (f.forward_snapshot as MessageRow['forward_snapshot']) : undefined,
       };
     })
     .sort((a, b) => a.occurred_at - b.occurred_at || a.id.localeCompare(b.id));
+}
+
+/** Any message by id, across channels (for replies elsewhere and forwards). */
+export function messageById(p: Projection, id: string): (MessageRow & { channel_name?: string }) | undefined {
+  const r = (p.rows.message ?? {})[id];
+  if (!r?.exists) return undefined;
+  const ch = String(r.fields.channel_id ?? '');
+  const m = messages(p, ch).find((x) => x.id === id);
+  const name = (p.rows.channel ?? {})[ch]?.fields?.name;
+  return m ? { ...m, channel_name: typeof name === 'string' ? name : undefined } : undefined;
 }

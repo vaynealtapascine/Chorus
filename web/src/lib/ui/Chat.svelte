@@ -1,9 +1,9 @@
 <script lang="ts">
   import { core, type Composed } from '../core';
-  import { channels, members, messages, spaces, type MessageRow } from '../data';
+  import { channels, members, messageById, messages, spaces, type MessageRow } from '../data';
   import { router } from '../router.svelte';
   import { sync, type Projection } from '../sync/client';
-  import RichText from './RichText.svelte';
+  import Message, { type Quote } from './Message.svelte';
 
   let { projection, dark, channelId }: { projection: Projection; dark: boolean; channelId?: string } = $props();
 
@@ -14,7 +14,8 @@
   const spaceChannels = $derived(allChannels.filter((c) => c.space_id === space?.id && !c.archived));
   const msgs = $derived(current ? messages(projection, current.id) : []);
   const people = $derived(new Map(members(projection).map((m) => [m.id, m])));
-  const scope = $derived(space ? `space:${space.id}` : '');
+  const scopeOf = (spaceId: string) => `space:${spaceId}`;
+  const scope = $derived(space ? scopeOf(space.id) : '');
 
   // who speaks by default: the primary fronter, else the first one fronting (SPEC §5.2)
   const fronting = $derived(projection.fronts[sync.accountId]?.current ?? []);
@@ -22,13 +23,10 @@
     (fronting.find((e) => e.is_primary && e.subject_type === 'member') ??
       fronting.find((e) => e.level === 'front' && e.subject_type === 'member'))?.subject_id,
   );
-  let chosen = $state<string | null>(null); // speaker chip override for the next message
+  let chosen = $state<string | null>(null);
   const speaker = $derived(chosen ?? defaultSpeaker ?? null);
-
   const speakers = $derived(
-    [...people.values()]
-      .filter((m) => !m.deleted)
-      .map((m) => ({ member_id: m.id, sigils: m.sigils, proxy_tags: m.proxy_tags })),
+    [...people.values()].filter((m) => !m.deleted).map((m) => ({ member_id: m.id, sigils: m.sigils, proxy_tags: m.proxy_tags })),
   );
   const names = $derived({
     mentions: Object.fromEntries(
@@ -37,25 +35,42 @@
   });
 
   let draft = $state('');
+  let replyTo = $state<MessageRow | null>(null);
+  let quoting = $state<Quote | null>(null);
+  let editing = $state<MessageRow | null>(null);
+  let forwarding = $state<MessageRow | null>(null);
+  let showPins = $state(false);
+  let picking = $state(false);
+  let box: HTMLTextAreaElement | undefined = $state();
+
   const preview: Composed | null = $derived(draft.trim() ? core.compose(draft, speakers, {}, speaker ? [speaker] : [], names) : null);
   const previewNames = $derived(
     preview ? preview.segments.map((s) => s.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')).join(' → ') : '',
   );
-  let picking = $state(false);
 
   function send() {
-    if (!current || !preview || !preview.rich.text.trim()) return;
-    if (!preview.authors.length) return;
+    if (!current || !preview) return;
+    if (editing) {
+      sync.create('message.edit', scope, editing.id, { message_id: editing.id, text: preview.rich.text, entities: preview.rich.entities });
+      editing = null;
+      draft = '';
+      return;
+    }
+    if (!preview.rich.text.trim() || !preview.authors.length) return;
     sync.create('message.send', scope, sync.newId(), {
       channel_id: current.id,
       authors: preview.authors,
       text: preview.rich.text,
       entities: preview.rich.entities,
       ...(preview.segments.length > 1 ? { segments: preview.segments } : {}),
+      ...(replyTo ? { reply_to: replyTo.id } : {}),
+      ...(quoting ? { quote: quoting } : {}),
       sent_offline: sync.status !== 'live',
     });
     draft = '';
     chosen = null;
+    replyTo = null;
+    quoting = null;
   }
 
   function onkey(e: KeyboardEvent) {
@@ -63,6 +78,38 @@
       e.preventDefault();
       send();
     }
+    if (e.key === 'Escape') cancel();
+  }
+
+  function cancel() {
+    if (editing) draft = ''; // leaving an edit drops the edited text
+    replyTo = quoting = editing = null;
+  }
+
+  function startEdit(m: MessageRow) {
+    editing = m;
+    replyTo = quoting = null;
+    // edit in markup, re-parsed on save (the authors stay as they were)
+    draft = core.toMarkup({ text: m.text, entities: m.entities });
+    box?.focus();
+  }
+
+  function forwardTo(targetId: string) {
+    const target = allChannels.find((c) => c.id === targetId);
+    const m = forwarding;
+    if (!target || !m) return;
+    sync.create('message.forward', scopeOf(target.space_id), sync.newId(), {
+      channel_id: target.id,
+      authors: speaker ? [speaker] : m.authors,
+      text: '',
+      entities: [],
+      forward_of_id: m.id,
+      forward_snapshot: [
+        { message_id: m.id, channel_name: current?.name, authors: m.authors, text: m.text, entities: m.entities, occurred_at: m.occurred_at },
+      ],
+    });
+    forwarding = null;
+    router.go(`/chat/${target.id}`);
   }
 
   let newChannel = $state('');
@@ -76,17 +123,15 @@
     router.go(`/chat/${id}`);
   }
 
-  // group consecutive messages by the same authors within 5 minutes
   const grouped = $derived(
     msgs.map((m, i) => {
       const prev = msgs[i - 1];
       const cont =
-        prev && !prev.deleted && prev.authors.join() === m.authors.join() && m.occurred_at - prev.occurred_at < 300_000 && m.segments.length === 1;
+        !!prev && !prev.deleted && prev.authors.join() === m.authors.join() && m.occurred_at - prev.occurred_at < 300_000 && m.segments.length === 1;
       return { m, cont };
     }),
   );
-  const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const authorNames = (ids: string[]) => ids.map((a) => people.get(a)?.display_name ?? people.get(a)?.name ?? 'Someone');
+  const pinned = $derived(msgs.filter((m) => m.pinned && !m.deleted));
   const color = (id: string) => core.adaptColor(people.get(id)?.color ?? '#A09184', dark);
 
   let list: HTMLElement | undefined = $state();
@@ -94,13 +139,6 @@
     void msgs.length;
     queueMicrotask(() => list?.scrollTo({ top: list.scrollHeight }));
   });
-
-  function segText(m: MessageRow, s: MessageRow['segments'][number]) {
-    const ents = m.entities
-      .filter((e) => e.offset >= s.offset && e.offset + e.length <= s.offset + s.length)
-      .map((e) => ({ ...e, offset: e.offset - s.offset }));
-    return { text: m.text.slice(s.offset, s.offset + s.length), entities: ents };
-  }
 </script>
 
 <div class="chat">
@@ -117,45 +155,60 @@
   </aside>
 
   <section class="room" aria-label={current ? `#${current.name}` : 'Chat'}>
-    <header><h1># {current?.name ?? '…'}</h1>{#if current?.topic}<span class="topic">{current.topic}</span>{/if}</header>
+    <header>
+      <h1># {current?.name ?? '…'}</h1>
+      {#if current?.topic}<span class="topic">{current.topic}</span>{/if}
+      <button class="pins" class:on={showPins} onclick={() => (showPins = !showPins)}>📌 {pinned.length}</button>
+    </header>
+
+    {#if showPins}
+      <div class="pinned">
+        {#each pinned as p (p.id)}
+          <div class="pin"><strong>{p.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')}</strong> {p.text.slice(0, 140)}</div>
+        {:else}
+          <p class="muted">Nothing pinned yet.</p>
+        {/each}
+      </div>
+    {/if}
+
     <div class="list" bind:this={list}>
       {#each grouped as { m, cont } (m.id)}
-        {#if m.deleted}
-          <div class="msg deleted">Message deleted</div>
-        {:else if m.segments.length > 1}
-          <div class="msg">
-            <div class="meta"><time>{time(m.occurred_at)}</time></div>
-            {#each m.segments as s, i (i)}
-              {@const seg = segText(m, s)}
-              <div class="segment">
-                <span class="who" style="color: {color(s.authors[0] ?? '').name}">{authorNames(s.authors).join(' & ')}</span>
-                <RichText text={seg.text} entities={seg.entities} />
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="msg" class:cont>
-            {#if !cont}
-              <div class="head">
-                <span class="avatars">
-                  {#each m.authors.slice(0, 3) as a (a)}
-                    <span class="avatar" style="--ring: {color(a).ring}">{people.get(a)?.sigils[0] ?? people.get(a)?.name[0] ?? '?'}</span>
-                  {/each}
-                </span>
-                <span class="who">
-                  {#each m.authors as a, i (a)}{#if i}<span class="amp">{' & '}</span>{/if}<span style="color: {color(a).name}">{authorNames([a])[0]}</span>{/each}
-                </span>
-                <time>{time(m.occurred_at)}</time>
-                {#if m.sent_offline}<span class="offline" title="Composed offline, synced later">sent offline</span>{/if}
-              </div>
-            {/if}
-            <div class="body"><RichText text={m.text} entities={m.entities} />{#if m.edited}<span class="edited"> (edited)</span>{/if}</div>
-          </div>
-        {/if}
+        <Message
+          {m}
+          {cont}
+          {people}
+          {dark}
+          lookup={(id) => messageById(projection, id)}
+          mine={m.account_id === sync.accountId}
+          onreply={() => { replyTo = m; quoting = null; editing = null; box?.focus(); }}
+          onquote={(q) => { quoting = q; replyTo = m; box?.focus(); }}
+          onedit={() => startEdit(m)}
+          ondelete={() => sync.create('message.delete', scope, m.id, {})}
+          onrestore={() => sync.create('message.restore', scope, m.id, {})}
+          onpin={() => sync.create(m.pinned ? 'message.unpin' : 'message.pin', scope, m.id, {}, { memberId: speaker ?? undefined })}
+          onforward={() => (forwarding = m)}
+        />
       {:else}
         <p class="empty">Say hello — messages here are only for your system.</p>
       {/each}
     </div>
+
+    {#if forwarding}
+      <div class="bar">
+        Forward to
+        <select onchange={(e) => forwardTo((e.currentTarget as HTMLSelectElement).value)} aria-label="Forward to channel">
+          <option value="">choose…</option>
+          {#each allChannels.filter((c) => !c.archived) as c (c.id)}<option value={c.id}># {c.name}</option>{/each}
+        </select>
+        <button class="x" onclick={() => (forwarding = null)} aria-label="Cancel forward">✕</button>
+      </div>
+    {/if}
+    {#if replyTo || quoting || editing}
+      <div class="bar">
+        {#if editing}Editing message{:else if quoting}Quoting “{quoting.text.slice(0, 60)}”{:else if replyTo}Replying to {replyTo.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')}{/if}
+        <button class="x" onclick={cancel} aria-label="Cancel">✕</button>
+      </div>
+    {/if}
 
     <div class="composer">
       <div class="chip-wrap">
@@ -175,8 +228,9 @@
         {/if}
       </div>
       <div class="input">
-        {#if preview}<span class="as">as {previewNames || 'no one — pick a speaker'}</span>{/if}
+        {#if preview && !editing}<span class="as">as {previewNames || 'no one — pick a speaker'}</span>{/if}
         <textarea
+          bind:this={box}
           bind:value={draft}
           onkeydown={onkey}
           rows="1"
@@ -184,7 +238,7 @@
           aria-label="Message"
         ></textarea>
       </div>
-      <button class="send" onclick={send} disabled={!preview?.authors.length}>Send</button>
+      <button class="send" onclick={send} disabled={!preview || (!editing && !preview.authors.length)}>{editing ? 'Save' : 'Send'}</button>
     </div>
   </section>
 </div>
@@ -247,7 +301,7 @@
   }
   .room {
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto auto 1fr auto auto auto;
     min-height: 0;
     background: var(--surface);
     border: 1px solid var(--line);
@@ -267,77 +321,65 @@
     color: var(--ink-3);
     font-size: var(--fs-sm);
   }
-  .list {
-    overflow-y: auto;
-    padding: var(--s-3) var(--s-4);
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .msg {
-    padding-top: var(--s-3);
-  }
-  .msg.cont {
-    padding-top: 0;
-  }
-  .msg.deleted {
+  .pins {
+    margin-left: auto;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--r-full);
+    cursor: pointer;
     color: var(--ink-3);
-    font-style: italic;
+  }
+  .pins.on {
+    border-color: var(--line);
+    color: var(--ink);
+  }
+  .pinned {
+    border-bottom: 1px solid var(--line);
+    padding: var(--s-2) var(--s-4);
+    max-height: 30vh;
+    overflow: auto;
+    display: grid;
+    gap: var(--s-1);
     font-size: var(--fs-sm);
   }
-  .head {
-    display: flex;
-    align-items: center;
-    gap: var(--s-2);
-  }
-  .who {
-    font-weight: 600;
-  }
-  .amp {
+  .muted {
     color: var(--ink-3);
-    font-weight: 400;
+    margin: 0;
   }
-  time,
-  .offline,
-  .edited {
-    font-size: var(--fs-xs);
-    color: var(--ink-3);
-  }
-  .offline {
-    border: 1px solid var(--line);
-    border-radius: var(--r-full);
-    padding: 0 var(--s-2);
-  }
-  .body {
-    padding-left: calc(28px + var(--s-2));
-  }
-  .segment {
-    display: grid;
-    gap: 2px;
-    padding: var(--s-1) 0 var(--s-1) var(--s-3);
-    border-left: 2px solid var(--line);
-    margin-top: var(--s-1);
-  }
-  .avatars {
+  .list {
+    overflow-y: auto;
+    padding: var(--s-2) var(--s-2);
     display: flex;
-  }
-  .avatar {
-    width: 28px;
-    height: 28px;
-    flex: none;
-    display: grid;
-    place-items: center;
-    font-size: 14px;
-    border-radius: 50%;
-    background: var(--surface-2);
-    box-shadow: 0 0 0 2px var(--ring, var(--line)), 0 0 0 3px var(--surface);
-  }
-  .avatars .avatar + .avatar {
-    margin-left: -8px;
+    flex-direction: column;
+    min-height: 0;
   }
   .empty {
     color: var(--ink-3);
     margin: auto;
+  }
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    font-size: var(--fs-sm);
+    color: var(--ink-2);
+    padding: var(--s-2) var(--s-4);
+    border-top: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .bar select {
+    font: inherit;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+  }
+  .x {
+    margin-left: auto;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    color: var(--ink-3);
   }
   .composer {
     display: flex;
@@ -354,6 +396,16 @@
     border: 0;
     padding: var(--s-1);
     cursor: pointer;
+  }
+  .avatar {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+    border-radius: 50%;
+    background: var(--surface-2);
+    box-shadow: 0 0 0 2px var(--ring, var(--line));
   }
   .picker {
     position: absolute;

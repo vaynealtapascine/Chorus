@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M5.3
+- **In progress:** M5.4
 - **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** message actions: reply (incl. reply bar), partial/full quote, edit with history, delete→Trash/restore, pin + pinned panel, forward selection
+- **Next concrete step:** reactions (message scope, as current speaker), read marks + unread badges per channel, mention inbox
 - **Notes:** Order: M4 (Android features) waits on an emulator or the owner's phone over adb; web chat (M5) proceeds meanwhile. Web wasm builds use scripts/build-web-core.ps1 -Debug in dev.
 
 ---
@@ -93,8 +93,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 - [x] M5.1 Channels, categories, member DMs
 - [x] M5.2 Composer: speaker chip, proxy tags, sigils, multi-author, formatting
-- [~] M5.3 Replies (incl. cross-channel), quotes (full/partial), forwards, edits+history, deletes, pins
-- [ ] M5.4 Reactions, mentions, read states, unread badges
+- [x] M5.3 Replies (incl. cross-channel), quotes (full/partial), forwards, edits+history, deletes, pins
+- [~] M5.4 Reactions, mentions, read states, unread badges
 - [ ] M5.5 Threads
 - [ ] M5.6 Attachments + images (offline-queued upload)
 - [ ] M5.7 Hidden messages: spoilers, CW/collapsed, member-visible, system-only
@@ -193,3 +193,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M3.5 web: Switcher sheet (search, multi-select, level cycle, primary, order, subsystems, note, typed time via user_time, notify choice, switch out; Ctrl/Cmd+S), undo toast, History (24h/7d lanes, log with edit time/undo/redo), review cards (core computes reviews into the projection). Verified in browser except review cards (need two devices; core-tested).
 - 2026-09-23 claude-opus-5.5 — M5.1 web chat: internal space + channel list + create channel, message list with author grouping (5 min), multi-author avatars, segment sub-rows, offline marker, RichText renderer (UTF-16 entity pieces, safe links, click-to-reveal spoilers)
 - 2026-09-23 claude-opus-5.5 — M5.2 composer on core.compose: speaker chip (default primary fronter, picker override), live 'as …' preview, sigils/tags/joint/newline segments, @mentions via names resolver, Enter to send. Verified: server stores segments, authors, mentions, FTS.
+- 2026-09-23 claude-opus-5.5 — M5.3 web: Message component + actions: reply (reply bar, cross-channel rendering), full/partial quote (selection), edit via markup round-trip (edited marker), delete→restore, pin/unpin + pinned panel, forward to any channel (snapshot). Verified in browser. Still to add: 'reply in another channel' picker and an edit-history viewer (revisions aren't in the client projection yet).
