@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M2.3
+- **In progress:** M2.4
 - **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** ingest.rs is written (accept + server_op); add tests: idempotent, invalid, forbidden, server scope admin-only, restore window
+- **Next concrete step:** project.rs: re-project touched entities via chorus_core::model into SQL rows; front fold per account; rebuild command; test SQL == model
 - **Notes:** Order change: doing M2 (server) before M0.3 (Android skeleton) so clients have something to sync with; M0.3 is still next after M2.5.
 
 ---
@@ -65,8 +65,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 - [x] M2.1 Config (`chorus.toml`), SQLite open (WAL, pragmas), migrations
 - [x] M2.2 Accounts, devices, invites, key-based auth, sessions
-- [~] M2.3 Op ingestion: validate → permission → append → project (single writer task)
-- [ ] M2.4 Projections for all tables + rebuild-from-log command
+- [x] M2.3 Op ingestion: validate → permission → append → project (single writer task)
+- [~] M2.4 Projections for all tables + rebuild-from-log command
 - [ ] M2.5 Sync WebSocket (hello/push/pull/ack/snapshot/hash) per SYNC.md
 - [ ] M2.6 Blob store (content-addressed, resumable upload)
 - [ ] M2.7 Read API (REST) + follower views
@@ -183,3 +183,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M0.2 web/ Svelte 5 + Vite 8 + TS 6 skeleton: design tokens (design/tokens.json → CSS/Kotlin via scripts/gen-tokens.mjs), wasm core loader + vitest, FrontCard + quick-switch demo verified in browser (switch works; member colours adapt per theme). Fixed PowerShell array-splat bug in build scripts.
 - 2026-09-23 claude-opus-5.5 — M2.1 server config (chorus.toml w/ defaults, --dev), SQLite open+pragmas, forward-only migrations with pre-migrate backup, schema 0001, migrate/check CLI
 - 2026-09-23 claude-opus-5.5 — M2.2 auth.rs: invites (hashed, TTL, uses), redeem → account (+internal space & #general as server ops) + device + session, sliding sessions, P-256 challenge/verify (raw or DER sigs), revoke; first account is admin; invite CLI
+- 2026-09-23 claude-opus-5.5 — M2.3 ingest.rs accept (validate → scope/admin checks → time correction → insert → project hook) + server_op; tests: stamping/offset, idempotency, invalid, forbidden, server-scope admin-only, restore window
