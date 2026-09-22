@@ -14,10 +14,10 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** S3–S12 (writing spec docs)
-- **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** write the next unticked S doc
-- **Notes:** Spec phase complete once S-tasks are ticked; implementation starts at M0.
+- **In progress:** — (nothing; spec phase done)
+- **Owner:** — (next agent: claim M0.1)
+- **Next concrete step:** M0.1 — create the Cargo workspace (`Cargo.toml` at repo root, `crates/chorus-core`, `crates/chorus-server`), pin the toolchain in `rust-toolchain.toml`, record versions in DECISIONS §Versions.
+- **Notes:** Read AGENTS.md → DECISIONS.md → SYNC.md + DATA_MODEL.md before M0/M1. Open questions (docs/OPEN_QUESTIONS.md) have defaults; don't block on them. README disclosure card image is not generated yet (M12.2).
 
 ---
 
@@ -29,16 +29,16 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 - [x] S1 Q&A with the user (answers recorded in docs/DECISIONS.md)
 - [x] S2 Repo created, license, handoff files (this file, AGENTS.md, CLAUDE.md)
-- [ ] S3 docs/SPEC.md — product spec, feature scope, v1 vs later
-- [ ] S4 docs/DATA_MODEL.md — SQLite schema, op catalogue, analysis views
-- [ ] S5 docs/SYNC.md — offline-first sync protocol, clocks, conflict rules, test harness
-- [ ] S6 docs/API.md — REST, sync socket, stream, webhooks, exports
-- [ ] S7 docs/NOTIFICATIONS.md — switch notifications, privacy ceilings, delay/fuzz/digest
-- [ ] S8 docs/DESIGN.md — visual system, screens, Basic vs Advanced settings
-- [ ] S9 docs/CLIENTS.md — Android app, widget, web PWA specifics
-- [ ] S10 docs/OPS.md — deploy on the PC, Caddy, ntfy, backups
-- [ ] S11 docs/OPEN_QUESTIONS.md — non-blocking questions for the user
-- [ ] S12 README skeleton (house standard; disclosure card still to generate)
+- [x] S3 docs/SPEC.md — product spec, feature scope, v1 vs later
+- [x] S4 docs/DATA_MODEL.md — SQLite schema, op catalogue, analysis views
+- [x] S5 docs/SYNC.md — offline-first sync protocol, clocks, conflict rules, test harness
+- [x] S6 docs/API.md — REST, sync socket, stream, webhooks, exports
+- [x] S7 docs/NOTIFICATIONS.md — switch notifications, privacy ceilings, delay/fuzz/digest
+- [x] S8 docs/DESIGN.md — visual system, screens, Basic vs Advanced settings
+- [x] S9 docs/CLIENTS.md — Android app, widget, web PWA specifics
+- [x] S10 docs/OPS.md — deploy on the PC, Caddy, ntfy, backups
+- [x] S11 docs/OPEN_QUESTIONS.md — non-blocking questions for the user
+- [x] S12 README skeleton (house standard; disclosure card still to generate)
 
 ### M0 — Scaffolding
 
@@ -157,4 +157,4 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 
-- 2026-09-23 claude-opus-5.5 — Q&A with user (6 rounds), wrote full spec set S1–S12.
+- 2026-09-23 claude-opus-5.5 — Q&A with owner (6 rounds); wrote spec set S1–S12 (SPEC, DECISIONS, DATA_MODEL, SYNC, NOTIFICATIONS, API, DESIGN, CLIENTS, OPS, OPEN_QUESTIONS, README). Spec phase done.
