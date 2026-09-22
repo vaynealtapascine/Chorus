@@ -1,6 +1,6 @@
 <script lang="ts">
   import { core, type Composed } from '../core';
-  import { channels, members, messageById, messages, spaces, type MessageRow } from '../data';
+  import { channels, lastRead, members, messageById, messages, reactions, spaces, unread, type MessageRow } from '../data';
   import { router } from '../router.svelte';
   import { sync, type Projection } from '../sync/client';
   import Message, { type Quote } from './Message.svelte';
@@ -132,6 +132,38 @@
     }),
   );
   const pinned = $derived(msgs.filter((m) => m.pinned && !m.deleted));
+  const reacts = $derived(reactions(projection));
+
+  function react(m: MessageRow, emoji: string, on: boolean) {
+    if (!speaker) return;
+    // add and remove must carry the identical element key (LWW element set)
+    sync.create(on ? 'reaction.add' : 'reaction.remove', scope, m.id, {
+      target_type: 'message',
+      target_id: m.id,
+      emoji,
+      member_id: speaker,
+    });
+  }
+
+  // reading the channel moves the read mark forward (never backward, SYNC.md §5.5); only while
+  // the page is actually visible, and again when it becomes visible
+  let visible = $state(!document.hidden);
+  $effect(() => {
+    const on = () => (visible = !document.hidden);
+    document.addEventListener('visibilitychange', on);
+    return () => document.removeEventListener('visibilitychange', on);
+  });
+  $effect(() => {
+    if (!current || !visible) return;
+    const latest = msgs.findLast((m) => !m.deleted);
+    if (!latest || latest.occurred_at <= lastRead(projection, current.id, sync.accountId)) return;
+    sync.create('read.mark', scope, null, {
+      channel_id: current.id,
+      message_id: latest.id,
+      message_at: latest.occurred_at,
+      reader_member_id: '',
+    });
+  });
   const color = (id: string) => core.adaptColor(people.get(id)?.color ?? '#A09184', dark);
 
   let list: HTMLElement | undefined = $state();
@@ -145,7 +177,10 @@
   <aside class="channels" aria-label="Channels">
     <p class="space">{space?.name ?? 'No spaces yet'}</p>
     {#each spaceChannels as c (c.id)}
-      <a href="#/chat/{c.id}" class:on={c.id === current?.id}># {c.name}</a>
+      {@const n = c.id === current?.id ? 0 : unread(projection, c.id, sync.accountId)}
+      <a href="#/chat/{c.id}" class:on={c.id === current?.id} class:unread={n > 0}
+        ># {c.name}{#if n}<span class="badge">{n}</span>{/if}</a
+      >
     {/each}
     {#if space}
       <form onsubmit={addChannel}>
@@ -187,6 +222,9 @@
           onrestore={() => sync.create('message.restore', scope, m.id, {})}
           onpin={() => sync.create(m.pinned ? 'message.unpin' : 'message.pin', scope, m.id, {}, { memberId: speaker ?? undefined })}
           onforward={() => (forwarding = m)}
+          reacts={reacts.get(m.id)}
+          {speaker}
+          onreact={(emoji, on) => react(m, emoji, on)}
         />
       {:else}
         <p class="empty">Say hello — messages here are only for your system.</p>
@@ -287,6 +325,16 @@
   .channels a.on {
     background: var(--surface-3);
     color: var(--ink);
+  }
+  .channels a.unread {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .badge {
+    margin-left: var(--s-2);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    color: var(--accent);
   }
   .channels input {
     margin-top: var(--s-2);

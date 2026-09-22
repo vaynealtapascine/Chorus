@@ -32,6 +32,9 @@
     onrestore,
     onpin,
     onforward,
+    reacts,
+    speaker,
+    onreact,
   }: {
     m: MessageRow & { reply_to?: string; quote?: Quote; forward_snapshot?: Forwarded[] };
     cont: boolean;
@@ -46,7 +49,13 @@
     onrestore: () => void;
     onpin: () => void;
     onforward: () => void;
+    reacts: Map<string, string[]> | undefined;
+    speaker: string | null;
+    onreact: (emoji: string, on: boolean) => void;
   } = $props();
+
+  const PALETTE = ['💜', '👍', '😂', '🥹', '🎉', '😢', '👀', '🔥'];
+  let palette = $state(false);
 
   const color = (id: string) => core.adaptColor(people.get(id)?.color ?? '#A09184', dark);
   const nameOf = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
@@ -121,8 +130,26 @@
         <RichText text={m.text} entities={m.entities} />
       {/if}
       {#if m.edited}<span class="edited"> (edited)</span>{/if}
+      {#if reacts?.size}
+        <div class="reacts">
+          {#each [...reacts] as [emoji, who] (emoji)}
+            {@const mine = !!speaker && who.includes(speaker)}
+            <button class="react" class:mine onclick={() => onreact(emoji, !mine)} title={who.map(nameOf).join(', ')}>
+              {emoji} <span>{who.length}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
     </div>
+    {#if palette}
+      <div class="palette" role="listbox" aria-label="React">
+        {#each PALETTE as e (e)}
+          <button onclick={() => { onreact(e, true); palette = false; }}>{e}</button>
+        {/each}
+      </div>
+    {/if}
     <div class="actions" role="toolbar" aria-label="Message actions">
+      <button onclick={() => (palette = !palette)} title="React" disabled={!speaker}>☺</button>
       <button onclick={onreply} title="Reply">↩</button>
       <button onclick={quote} title="Quote (select text first to quote part)">❝</button>
       <button onclick={onforward} title="Forward">↗</button>
@@ -247,6 +274,43 @@
   }
   .avatars .avatar + .avatar {
     margin-left: -8px;
+  }
+  .reacts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-1);
+    margin-top: var(--s-1);
+  }
+  .react {
+    font: inherit;
+    font-size: var(--fs-sm);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-full);
+    padding: 0 var(--s-2);
+    cursor: pointer;
+  }
+  .react.mine {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .react span {
+    color: var(--ink-2);
+    font-size: var(--fs-xs);
+  }
+  .palette {
+    display: flex;
+    gap: 2px;
+    margin: var(--s-1) 0 0 calc(28px + var(--s-2));
+  }
+  .palette button {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    font-size: 18px;
+    width: 34px;
+    height: 34px;
   }
   .actions {
     position: absolute;

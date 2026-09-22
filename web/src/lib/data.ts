@@ -263,6 +263,34 @@ export function messages(p: Projection, channelId: string): MessageRow[] {
     .sort((a, b) => a.occurred_at - b.occurred_at || a.id.localeCompare(b.id));
 }
 
+/** message id → emoji → member ids (LWW element set, DATA_MODEL `reaction`). */
+export function reactions(p: Projection): Map<string, Map<string, string[]>> {
+  const out = new Map<string, Map<string, string[]>>();
+  for (const [key, present] of Object.entries(p.sets.reaction ?? {})) {
+    if (!present) continue;
+    const r = JSON.parse(key.slice(key.indexOf('|') + 1)) as { target_id: string; emoji: string; member_id: string };
+    if (!out.has(r.target_id)) out.set(r.target_id, new Map());
+    const byEmoji = out.get(r.target_id)!;
+    byEmoji.set(r.emoji, [...(byEmoji.get(r.emoji) ?? []), r.member_id]);
+  }
+  return out;
+}
+
+/** Last read message time for a channel (account-level read state). Pending local marks have no
+ *  account id yet, so both keys are checked. */
+export function lastRead(p: Projection, channelId: string, accountId: string): number {
+  const rows = (p.rows.read_state ?? {}) as Rows;
+  const vals = [rows[`${channelId}|${accountId}|`], rows[`${channelId}||`]]
+    .map((r) => (r?.fields?.last_read_message_at as number | undefined) ?? 0);
+  return Math.max(0, ...vals);
+}
+
+export function unread(p: Projection, channelId: string, accountId: string): number {
+  const since = lastRead(p, channelId, accountId);
+  // a message without an account id is still pending on this device, so it's ours
+  return messages(p, channelId).filter((m) => !m.deleted && m.occurred_at > since && m.account_id && m.account_id !== accountId).length;
+}
+
 /** Any message by id, across channels (for replies elsewhere and forwards). */
 export function messageById(p: Projection, id: string): (MessageRow & { channel_name?: string }) | undefined {
   const r = (p.rows.message ?? {})[id];
