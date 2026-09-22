@@ -1,0 +1,22 @@
+[package]
+name = "chorus-ffi"
+description = "UniFFI bindings of chorus-core for the Android app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "chorus_ffi"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[dependencies]
+chorus-core = { path = "../chorus-core" }
+serde_json = "1"
+thiserror = "2"
+uniffi = { version = "0.32.1", features = ["cli"] }

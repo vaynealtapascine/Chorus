@@ -15,3 +15,4 @@ pub mod feed;
 pub mod color;
 pub mod model;
 pub mod sync;
+pub mod api;

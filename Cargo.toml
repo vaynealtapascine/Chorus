@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/chorus-core", "crates/chorus-server"]
+members = ["crates/chorus-core", "crates/chorus-ffi", "crates/chorus-server", "crates/chorus-wasm"]
 
 [workspace.package]
 version = "0.1.0"

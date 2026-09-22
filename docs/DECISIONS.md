@@ -61,6 +61,9 @@ default the owner has not contradicted; these may be revisited if implementation
 | D-042 | IDs are **UUIDv7** as lowercase TEXT; times are **INTEGER milliseconds UTC** in columns ending `_at`, plus `tz_offset_min` where local time matters. | Spec |
 | D-043 | Backups: nightly SQLite snapshots with rotation (keep N), phone keeps a full replica of the owner's own system, export on demand. No offsite in v1. | Owner |
 | D-044 | Repo: `source/repos/Chorus`, public GitHub, MIT, owner's house README standard. | Owner |
+| D-055 | Snapshots/catch-up are **op pages**, not table rows: every device is an op replica for its scopes (needed for `reproject` and for restoring a server). Table-row snapshots may be added later as an optimization. | Spec (M1.9) |
+| D-056 | M1.10 spike **kept** the shared-core plan: `chorus-ffi` (UniFFI 0.32, JSON-string API over `chorus_core::api`) builds for arm64-v8a (0.96 MB) and x86_64; Kotlin bindings generate in library mode; `chorus-wasm` builds, runs in Node, 209 KB gzipped without wasm-opt (budget 300 KB). The on-device call is verified in M0.3. | Spec (M1.10) |
+| D-057 | After a server restore, a **restore window** lets devices re-push ops with their original author and times (SYNC.md §7.3); it is closed by the admin with `chorus-server reconcile-close`. Outside it, pushes are always stamped as the pusher's. | Spec (M1.9) |
 
 ## Versions
 
@@ -76,3 +79,8 @@ Pin here as they are adopted (tool/library → version → date → why).
 | sha2 | 0.10 | 2026-09-23 | Digests, blob hashes. |
 | thiserror | 2.x | 2026-09-23 | |
 | proptest | 1.x (dev) | 2026-09-23 | Convergence simulator. |
+| uniffi | 0.32.1 (proc-macro, library-mode bindgen; bin `uniffi-bindgen` in chorus-ffi) | 2026-09-23 | Kotlin bindings need JNA on Android (`net.java.dev.jna:jna:5.x@aar`). |
+| wasm-bindgen | 0.2.128 (crate) + wasm-bindgen-cli 0.2.128 | 2026-09-23 | CLI version must equal the crate version. |
+| cargo-ndk | 4.1.2 | 2026-09-23 | `cargo install cargo-ndk --locked` |
+| Android NDK | 28.2.13676358 at `F:\DunBuildndroid-sdk
+dk` (shared with Dun) | 2026-09-23 | `scripts/build-android-core.ps1` finds it. |

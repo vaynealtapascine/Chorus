@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M1.10
+- **In progress:** M0.4
 - **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** spike: crates/chorus-ffi with UniFFI (android .so via cargo-ndk) + chorus-wasm (wasm-bindgen); prove build + one call each
+- **Next concrete step:** fixtures/ dir + runner test in chorus-core (tests/fixtures.rs) reading JSON cases per area
 - **Notes:** Read AGENTS.md → DECISIONS.md → SYNC.md + DATA_MODEL.md before M0/M1. Open questions (docs/OPEN_QUESTIONS.md) have defaults; don't block on them. README disclosure card image is not generated yet (M12.2).
 
 ---
@@ -45,7 +45,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M0.1 Cargo workspace: `crates/chorus-core`, `crates/chorus-server`; rust-toolchain pinned
 - [ ] M0.2 `web/` Svelte 5 + Vite + TS skeleton (PWA plugin, strict TS)
 - [ ] M0.3 `android/` Kotlin + Compose skeleton (Gradle version catalog, minSdk 29, targetSdk 36)
-- [ ] M0.4 `fixtures/` conformance vector format + runner in Rust (see SYNC.md §9)
+- [~] M0.4 `fixtures/` conformance vector format + runner in Rust (see SYNC.md §9)
 - [ ] M0.5 `scripts/verify` (fmt, clippy, tests, svelte-check, gradle lint/test) + CI workflow
 
 ### M1 — Core (pure Rust, no IO)
@@ -59,7 +59,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M1.7 Feed filter language: parser → AST → evaluator
 - [x] M1.8 Member colour contrast adjuster (WCAG AA both themes)
 - [x] M1.9 Convergence simulator (N devices, random partitions, projection hash equality)
-- [~] M1.10 Spike: UniFFI build for Android (arm64-v8a, x86_64) + wasm-bindgen build for web. Decide keep/fallback (DECISIONS D-040)
+- [x] M1.10 Spike: UniFFI build for Android (arm64-v8a, x86_64) + wasm-bindgen build for web. Decide keep/fallback (DECISIONS D-040)
 
 ### M2 — Server
 
@@ -177,3 +177,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M1.7 feed filter language (core/src/feed.rs): tokenizer, precedence parser with error positions, JSON AST, evaluator
 - 2026-09-23 claude-opus-5.5 — M1.8 member colour adaptation (core/src/color.rs): OKLCH, WCAG contrast, name/ring/tint per theme; proptest over all colours
 - 2026-09-23 claude-opus-5.5 — M1.9 reference projection (model.rs), sans-IO sync engine + MemServer (sync.rs), convergence simulator (tests/converge.rs): 3000 seeds green; found & fixed 3 protocol bugs (see NOTES)
+- 2026-09-23 claude-opus-5.5 — M1.10 spike kept (D-056): chorus_core::api JSON layer; chorus-ffi (UniFFI) .so for arm64/x86_64 + Kotlin bindings; chorus-wasm runs in Node, 209 KB gz; build scripts
