@@ -1,0 +1,23 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 2f72cc317a64862a5fc40ce90892c465c92e07102d77d58f670ec01f2b02af8c # shrinks to s = "> \n> "
+cc 6be2ef62515747184632680a1d4005ffea43d61902f5b196950fa107b6f98373 # shrinks to s = "é\\&https://x.y/z"
+cc 9ebb43efb4fecfd9558107b9bd6f6694612814d350e213aedfbb30af57f484d3 # shrinks to s = "__> *__"
+cc c328aee7c96f95008d682a1a60d5e327610320c55692d9194e6bf255d2b12a0b # shrinks to s = "||\\> \\&||"
+cc 72fe8c679081aee1e881cd7e2f63297c34e2b385c9b346feb8fac024bdf1ba0c # shrinks to s = "__\\](https://a.b):wave:__https://x.y/z"
+cc 7b9048c25723d025859f266edc641b3f071ec78cef456624de6c682e69b6849c # shrinks to s = "[``` ```](https://a.b)"
+cc c396442f21af202fe7e09e11c938c3b3f6e5f1124c8cc38bd663b909ba6b76f9 # shrinks to s = "](https://a.b)é\\@kai"
+cc 1d6764372269602707b7e095154989177002a542222d5402119d073e9c24dafc # shrinks to s = "> ```*```"
+cc 4934ecea6cb972900dad2640361e8c3710a227228c14f0c6ebc7431ef0ae10d6 # shrinks to s = "`\\```"
+cc 9a214d39351e338bfc54e205cb124753496c5f721958392a8bba09a2dccd305a # shrinks to s = "_*___*_"
+cc 499638764ec9f39c722b37c6418de209b43f695bb5565dcc61a402a8d41a2a0e # shrinks to s = "@kai\\&é"
+cc 497ae0bb23e84e5fcd2603c3eaa5f0d5009461dfb47dca559264ea8ee933421a # shrinks to s = "*[\\:wave:](https://a.b)"
+cc 700d33b768be36feadb3be6520236ddf57217e60e1436e1766014efe59184110 # shrinks to s = "[\\\n](https://a.b)"
+cc bf3a7d0347471587c073b66b6a00099c3fc91159ef640b8efab72a7876f3879e # shrinks to s = "[[https://x.y/z]](https://a.b)"
+cc b643e39db9ba474500bbafdfadfe76b2c9275d7d1e822a997a403d022c2c3609 # shrinks to s = "````*\\````\n> @kai"
+cc c28249d30059df792e6f7484f55f649ac8d24cb18aa48ad57845b526f3d5b09d # shrinks to s = "[[`]`](https://a.b)"
+cc 21f2c40be9d50187c4ae13d89da5caa31925c18eb6babe1d5c2623da161261f4 # shrinks to s = ">> rust\n>> \n"

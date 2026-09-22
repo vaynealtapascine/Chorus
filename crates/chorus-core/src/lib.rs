@@ -9,3 +9,4 @@ pub mod time;
 pub mod op;
 pub mod lww;
 pub mod front;
+pub mod text;

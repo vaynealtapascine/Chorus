@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M1.5
+- **In progress:** M1.6
 - **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** core/src/text: entity model (UTF-16 offsets), markup parser, serializer
+- **Next concrete step:** core/src/speaker.rs: sigils, proxy tags, multi-author, newline segments (SPEC §5.2, D-045)
 - **Notes:** Read AGENTS.md → DECISIONS.md → SYNC.md + DATA_MODEL.md before M0/M1. Open questions (docs/OPEN_QUESTIONS.md) have defaults; don't block on them. README disclosure card image is not generated yet (M12.2).
 
 ---
@@ -54,8 +54,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M1.2 Op envelope + op catalogue types (serde, versioned)
 - [x] M1.3 Front fold: switch/add/remove/update/retract/amend → snapshots → intervals
 - [x] M1.4 LWW register + LWW element-set helpers, field-level merge
-- [~] M1.5 Text model: plain text + entities; markup parser (Telegram parity) + serializer
-- [ ] M1.6 Speaker parsing: sigils (emoji), proxy tags, multi-author prefixes, newline segments (D-045)
+- [x] M1.5 Text model: plain text + entities; markup parser (Telegram parity) + serializer
+- [~] M1.6 Speaker parsing: sigils (emoji), proxy tags, multi-author prefixes, newline segments (D-045)
 - [ ] M1.7 Feed filter language: parser → AST → evaluator
 - [ ] M1.8 Member colour contrast adjuster (WCAG AA both themes)
 - [ ] M1.9 Convergence simulator (N devices, random partitions, projection hash equality)
@@ -172,3 +172,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M1.2 op envelope, scope parsing, catalogue as data (core/src/op.rs), structural validation
 - 2026-09-23 claude-opus-5.5 — M1.4 field-level LWW + LWW element set (core/src/lww.rs), order-independence proptest
 - 2026-09-23 claude-opus-5.5 — M1.3 front fold (core/src/front.rs): switch/add/remove/update/retract/unretract/amend → switch rows, intervals, daily split, review detection; order-independence proptests
+- 2026-09-23 claude-opus-5.5 — M1.5 rich text (core/src/text.rs): Telegram-parity entities (UTF-16), Chorus markup parser + serializer with \& separator; 20k-case round-trip proptest
