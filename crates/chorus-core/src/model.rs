@@ -38,6 +38,10 @@ pub struct Projection {
     pub sets: BTreeMap<String, BTreeMap<String, bool>>,
     /// account id → folded front
     pub fronts: BTreeMap<String, front::FoldResult>,
+    /// account id → concurrent-switch review cards (SYNC.md §5.7); resolutions are in
+    /// `rows.front_review`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub reviews: BTreeMap<String, Vec<front::Review>>,
     /// ops that weren't projected (unknown kind / newer version / bad payload)
     pub opaque: usize,
     /// LWW element-set clocks while projecting; cleared at the end.
@@ -175,7 +179,12 @@ pub fn project<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Projection {
     }
 
     for (acct, ops) in front_ops {
-        p.fronts.insert(acct, front::fold(&ops));
+        let folded = front::fold(&ops);
+        let reviews = front::reviews(&ops, &folded, front::DEFAULT_REVIEW_WINDOW_MS);
+        if !reviews.is_empty() {
+            p.reviews.insert(acct.clone(), reviews);
+        }
+        p.fronts.insert(acct, folded);
     }
     for (key, (marks, manual)) in reads {
         let floor = manual.as_ref().map(|m| m.2);
