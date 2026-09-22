@@ -390,10 +390,20 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!(%addr, "chorus-server listening");
     watch_own_binary();
-    axum::serve(listener, router(state))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+    let server = axum::serve(listener, router(state)).with_graceful_shutdown(async {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("stopping");
+        let _ = stop_tx.send(());
+    });
+    // Open sync sockets would hold a graceful shutdown forever; give them a moment, then go.
+    let deadline = async {
+        let _ = stop_rx.await;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    };
+    tokio::select! {
+        r = server => r?,
+        _ = deadline => tracing::info!("sockets still open after 2 s; exiting anyway"),
+    }
     Ok(())
 }

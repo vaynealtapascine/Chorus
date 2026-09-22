@@ -116,7 +116,18 @@ if (-not (Test-Path $Toml)) {
 $exists = [bool](Get-Service $Service -ErrorAction SilentlyContinue)
 if ($exists) {
   Write-Host 'Updating the Chorus service...'
-  & $Nssm stop $Service | Out-Null
+  # `nssm stop` can hang, and NSSM itself can get stuck in STOP_PENDING; wait a bounded time,
+  # then end the service host so the SCM marks it stopped.
+  $stop = Start-Process $Nssm -ArgumentList @('stop', $Service) -WindowStyle Hidden -PassThru
+  for ($i = 0; $i -lt 30 -and (Get-Service $Service).Status -ne 'Stopped'; $i++) { Start-Sleep -Milliseconds 500 }
+  if ((Get-Service $Service).Status -ne 'Stopped') {
+    Write-Host 'The old service did not stop; ending it.' -ForegroundColor Yellow
+    $svcPid = (Get-CimInstance Win32_Service -Filter "Name='$Service'").ProcessId
+    if ($svcPid) { Stop-Process -Id $svcPid -Force -ErrorAction SilentlyContinue }
+    Get-Process chorus-server -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Stop-Process -Force -ErrorAction SilentlyContinue
+    for ($i = 0; $i -lt 20 -and (Get-Service $Service).Status -ne 'Stopped'; $i++) { Start-Sleep -Milliseconds 500 }
+  }
+  if (-not $stop.HasExited) { $stop.Kill() }
 } else {
   Write-Host 'Installing the Chorus service...'
   & $Nssm install $Service $Exe | Out-Null
@@ -132,7 +143,9 @@ if ($exists) {
 & $Nssm set $Service AppStdout (Join-Path $Data 'chorus.log') | Out-Null
 & $Nssm set $Service AppStderr (Join-Path $Data 'chorus.log') | Out-Null
 & $Nssm set $Service AppRotateFiles 1 | Out-Null
-& $Nssm set $Service AppRotateOnline 1 | Out-Null
+# online rotation keeps a pipe-reader thread in NSSM that left the service stuck in STOP_PENDING
+& $Nssm set $Service AppRotateOnline 0 | Out-Null
+& $Nssm set $Service AppStopMethodConsole 3000 | Out-Null
 & $Nssm set $Service AppRotateBytes 1048576 | Out-Null
 # the server exits when deploy.ps1 swaps its binary; NSSM brings up the new one
 & $Nssm set $Service AppEnvironmentExtra 'CHORUS_RESTART_ON_CHANGE=1' 'RUST_LOG=info' | Out-Null
@@ -143,9 +156,11 @@ $ErrorActionPreference = $previous
 & $Nssm start $Service | Out-Null
 
 $healthy = $false
-for ($i = 0; $i -lt 20 -and -not $healthy; $i++) {
+Write-Host 'Waiting for the server to answer...'
+for ($i = 0; $i -lt 15 -and -not $healthy; $i++) {
   Start-Sleep -Milliseconds 500
-  try { $h = Invoke-RestMethod "http://127.0.0.1:$Port/api/v1/server" -TimeoutSec 2; $healthy = $true } catch { }
+  # (a refused connection shows up as a timeout here: Windows retries refused SYNs for ~2 s)
+  try { $h = Invoke-RestMethod "http://127.0.0.1:$Port/api/v1/server" -TimeoutSec 3; $healthy = $true } catch { }
 }
 if (-not $healthy) {
   Write-Host "The service didn't answer on http://127.0.0.1:$Port. Last lines of its log:" -ForegroundColor Red
