@@ -483,6 +483,10 @@ enum LineKind {
     Expandable,
 }
 
+pub(crate) fn count_fences_str(line: &str) -> usize {
+    count_fences(&line.chars().collect::<Vec<_>>())
+}
+
 /// Unescaped ``` runs in a line (for tracking code fences across lines).
 fn count_fences(line: &[char]) -> usize {
     let (mut i, mut n) = (0, 0);

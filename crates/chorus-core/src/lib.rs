@@ -10,3 +10,4 @@ pub mod op;
 pub mod lww;
 pub mod front;
 pub mod text;
+pub mod speaker;
