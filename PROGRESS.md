@@ -14,10 +14,10 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** —
-- **Owner:** —
-- **Next concrete step:** claim the next unticked task on the board
-- **Notes:** Order: M4 (Android features) waits on an emulator or the owner's phone over adb; web chat (M5) proceeds meanwhile. Web wasm builds use scripts/build-web-core.ps1 -Debug in dev.
+- **In progress:** M11.1
+- **Owner:** claude-opus-5.5, 2026-09-23
+- **Next concrete step:** PluralKit import: core/src/import.rs maps a PK v2 export to planned ops with deterministic uuidv5 ids (re-import = no duplicates); Replica applies them; web Members page gets 'Import from PluralKit' (file) with a preview
+- **Notes:** State 2026-09-23: core+server+web usable end to end (members, groups, fields, switching, history, chat with segments/replies/quotes/edits/pins/forwards/reactions/read marks). Deployed files in ~/selfhost/chorus (owner runs install.cmd). Android is a skeleton (no device attached). Next priorities after M11.1: M2.6+M5.6 attachments, M6 sharing (friends/follows), M8 notifications, M7 journals, M9 stage mode, then Android M4.
 
 ---
 
@@ -141,7 +141,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M11 — Import
 
-- [ ] M11.1 PluralKit import (export file + API token)
+- [~] M11.1 PluralKit import (export file + API token)
 
 ### M12 — Ship
 
