@@ -52,6 +52,11 @@ CREATE TABLE op (
   occurred_at    INTEGER NOT NULL,              -- corrected time (SYNC.md §3)
   device_at      INTEGER NOT NULL,              -- raw device wall clock at creation
   tz_offset_min  INTEGER NOT NULL,              -- device UTC offset at creation
+  mono           INTEGER,                       -- device monotonic ms at creation (Android)
+  boot_id        TEXT,                          -- device boot id, makes mono comparable
+  time_source    TEXT NOT NULL DEFAULT 'auto' CHECK (time_source IN ('auto','user')),
+  time_suspect   INTEGER NOT NULL DEFAULT 0,    -- clock looked broken (SYNC.md §3.2)
+  seen_seq       INTEGER NOT NULL DEFAULT 0,    -- device's cursor for this scope at creation (SYNC.md §5.7)
   received_at    INTEGER NOT NULL,              -- server arrival
   status         TEXT NOT NULL DEFAULT 'applied'
                  CHECK (status IN ('applied','rejected','superseded'))
@@ -78,9 +83,13 @@ Rules:
   "v": 1,
   "scope": "account:0192...",
   "entity_id": "0192f8c2-...",
-  "hlc": "0192f8c27d1e-0000-a1b2c3d4",
+  "hlc": "01a0c27d1e3f-0000-a1b2c3d4",
   "device_at": 1790000000000,
   "tz_offset_min": 120,
+  "mono": 81234567,
+  "boot_id": "41",
+  "time_source": "auto",
+  "seen_seq": 1233,
   "member_id": null,
   "payload": { }
 }
@@ -126,7 +135,7 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `read.mark` | `{channel_id, reader_member_id?, message_id}` | max-by-message-order |
 | `attachment.create` | `{blob_hash, filename, mime, size, width?, height?, duration_ms?, alt_text?}` | APP |
 | `attachment.set` | `{alt_text?, is_spoiler?}` | LWW-F |
-| `post.create` | `{kind:'note'|'entry', authors, title?, text, entities, mood?, tags?, cw?, visibility, reply_to?, quote?, repost_of?, attachments?}` | APP |
+| `post.create` | `{kind: note or entry, authors, title?, text, entities, mood?, tags?, cw?, visibility, reply_to?, quote?, repost_of?, attachments?}` | APP |
 | `post.edit` / `post.delete` / `post.set_visibility` | | APP / LWW-F |
 | `draft.set` / `draft.delete` | composer drafts (per channel or post), synced | LWW-F |
 | `highlight.add` / `highlight.remove` / `highlight.reorder` | `{profile_member_id, post_id, sort_key}` | SET + LWW-F |
