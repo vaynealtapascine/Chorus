@@ -2,3 +2,6 @@
 //!
 //! This crate is pure — no IO, no clocks, no randomness. Callers pass in the current time and
 //! random bytes. See `docs/SYNC.md` and `docs/DATA_MODEL.md`.
+
+pub mod hlc;
+pub mod id;
