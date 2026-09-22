@@ -354,16 +354,14 @@ pub fn validate(op: &Op) -> Result<Known, OpError> {
         return Err(OpError::BadId(op.id.clone()));
     }
     let scope = Scope::parse(&op.scope).ok_or_else(|| OpError::BadScope(op.scope.clone()))?;
-    if let Some(e) = &op.entity_id {
-        if !is_valid_id(e) {
+    if let Some(e) = &op.entity_id
+        && !is_valid_id(e) {
             return Err(OpError::BadId(e.clone()));
         }
-    }
-    if let Some(m) = &op.member_id {
-        if !is_valid_id(m) {
+    if let Some(m) = &op.member_id
+        && !is_valid_id(m) {
             return Err(OpError::BadId(m.clone()));
         }
-    }
     if !(op.payload.is_object() || op.payload.is_null()) {
         return Err(OpError::PayloadNotObject);
     }

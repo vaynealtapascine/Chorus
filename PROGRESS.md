@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M1.3
+- **In progress:** M1.5
 - **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** core/src/front.rs: payload types, fold, intervals, daily split, review detection
+- **Next concrete step:** core/src/text: entity model (UTF-16 offsets), markup parser, serializer
 - **Notes:** Read AGENTS.md → DECISIONS.md → SYNC.md + DATA_MODEL.md before M0/M1. Open questions (docs/OPEN_QUESTIONS.md) have defaults; don't block on them. README disclosure card image is not generated yet (M12.2).
 
 ---
@@ -52,9 +52,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 - [x] M1.1 IDs (UUIDv7), HLC type + string encoding, time types
 - [x] M1.2 Op envelope + op catalogue types (serde, versioned)
-- [~] M1.3 Front fold: switch/add/remove/update/retract/amend → snapshots → intervals
+- [x] M1.3 Front fold: switch/add/remove/update/retract/amend → snapshots → intervals
 - [x] M1.4 LWW register + LWW element-set helpers, field-level merge
-- [ ] M1.5 Text model: plain text + entities; markup parser (Telegram parity) + serializer
+- [~] M1.5 Text model: plain text + entities; markup parser (Telegram parity) + serializer
 - [ ] M1.6 Speaker parsing: sigils (emoji), proxy tags, multi-author prefixes, newline segments (D-045)
 - [ ] M1.7 Feed filter language: parser → AST → evaluator
 - [ ] M1.8 Member colour contrast adjuster (WCAG AA both themes)
@@ -171,3 +171,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M1.1 ids, HLC, occurred_at correction (core: id.rs, hlc.rs, time.rs)
 - 2026-09-23 claude-opus-5.5 — M1.2 op envelope, scope parsing, catalogue as data (core/src/op.rs), structural validation
 - 2026-09-23 claude-opus-5.5 — M1.4 field-level LWW + LWW element set (core/src/lww.rs), order-independence proptest
+- 2026-09-23 claude-opus-5.5 — M1.3 front fold (core/src/front.rs): switch/add/remove/update/retract/unretract/amend → switch rows, intervals, daily split, review detection; order-independence proptests
