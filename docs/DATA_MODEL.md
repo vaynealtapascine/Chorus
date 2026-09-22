@@ -150,6 +150,7 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `feed.set` / `feed.delete` | `{name, query, visibility}` | LWW-F |
 | `bucket.set` / `bucket.delete` / `bucket.assign` / `bucket.unassign` | | LWW-F / SET |
 | `follow.request` / `follow.accept` / `follow.set_ceiling` / `follow.set_prefs` / `follow.end` | NOTIFICATIONS.md | LWW-F |
+| `emoji.create` / `emoji.set` / `emoji.delete` / `emoji.restore` | `{name, aliases, category, blob_hash, is_animated}` | LWW-F |
 | `stage.save` / `stage.delete` | stage view definitions | LWW-F |
 | `pref.set` | per-account or per-device preferences (`{scope:'account'|'device', key, value}`) | LWW-F |
 | `admin.*` | invites, device revoke, purge | server-only |
@@ -596,6 +597,23 @@ CREATE TABLE follower_front_view (
   PRIMARY KEY (follower_account_id, target_account_id)
 );
 
+-- ─── custom emoji (server-wide, D-054) ───────────────────────────────
+CREATE TABLE custom_emoji (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,                     -- unique among non-deleted (enforced in core + partial index)
+  aliases     TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(aliases)),
+  category    TEXT,
+  blob_hash   TEXT NOT NULL,                     -- 128 px PNG/WebP/GIF
+  is_animated INTEGER NOT NULL DEFAULT 0,
+  created_by  TEXT NOT NULL,                     -- account id
+  created_at  INTEGER NOT NULL,
+  deleted_at  INTEGER,
+  clocks      TEXT NOT NULL DEFAULT '{}'
+);
+CREATE UNIQUE INDEX custom_emoji_name ON custom_emoji(name) WHERE deleted_at IS NULL;
+-- In text: entity {"type":"custom_emoji","offset":…,"length":…,"emoji_id":"…"} over the `:name:`
+-- text (so plain `text` stays readable). In reactions: reaction.emoji = "custom:<emoji_id>".
+
 -- ─── misc ────────────────────────────────────────────────────────────
 CREATE TABLE draft (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, context TEXT NOT NULL, authors TEXT, text TEXT NOT NULL, entities TEXT NOT NULL DEFAULT '[]', updated_at INTEGER NOT NULL, clocks TEXT NOT NULL DEFAULT '{}');
 CREATE TABLE stage (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL CHECK (json_valid(definition)), created_at INTEGER NOT NULL, deleted_at INTEGER, clocks TEXT NOT NULL DEFAULT '{}');
@@ -657,7 +675,8 @@ provided in both UTC ms (`*_at`) and ISO local strings (`*_local`) for spreadshe
 | `v_message_segment` | message_id, idx, authors (names), text, char_count | Who said which part of a segmented message |
 | `v_message` | id, space_name, channel_name, occurred_local, authors (names), author_count, text, char_count, word_count, has_attachment, reply_to_id, is_edited, is_pinned, sent_offline | Message analytics |
 | `v_post` | id, kind, authors, title, text, mood, tags, occurred_local, reply_count, reaction_count | Journal analytics |
-| `v_reaction` | target, emoji, member_name, target_author_names | Who reacts to whom |
+| `v_reaction` | target, emoji (custom ones as `:name:`), member_name, target_author_names | Who reacts to whom |
+| `v_emoji_usage` | emoji, is_custom, uses_in_text, uses_as_reaction, by_member | Emoji stats |
 | `v_mention` | source, author_names, mentioned_name | Mention graph |
 | `v_relationship` | from_name, type, to_name, mutual | Relationship graph |
 

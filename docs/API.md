@@ -96,6 +96,7 @@ GET  /lists  /lists/{id}/timeline
 GET  /feeds  /feeds/{id}/items?before=     evaluates the feed query
 POST /feeds/preview {query}                → parsed AST + first 20 items (for the editor)
 
+GET  /emoji                                the server-wide custom emoji set
 GET  /accounts/{id}/view                   follower view of another account (privacy-filtered, §5 NOTIFICATIONS)
 GET  /follows                               following + followers
 GET  /notifications?before=

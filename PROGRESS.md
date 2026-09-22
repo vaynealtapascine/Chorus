@@ -103,6 +103,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [ ] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward
 - [ ] M5.11 Forward/quote a selection (range or multi-message bundle)
 - [ ] M5.12 Trash + restore for messages, posts, members, groups, channels
+- [ ] M5.13 Custom emoji: server-wide set, upload/crop, picker + `:name:` autocomplete, reactions (D-054)
 
 ### M6 — Sharing
 
@@ -165,3 +166,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 
 - 2026-09-23 claude-opus-5.5 — Q&A with owner (6 rounds); wrote spec set S1–S12 (SPEC, DECISIONS, DATA_MODEL, SYNC, NOTIFICATIONS, API, DESIGN, CLIENTS, OPS, OPEN_QUESTIONS, README). Spec phase done.
 - 2026-09-23 claude-opus-5.5 — Owner answered open questions Q1–Q5, Q7–Q12 → D-045…D-053; spec docs updated; new board tasks M5.9–M5.12, M9.4, M12.3. Q6 (custom emoji) still open.
+- 2026-09-23 claude-opus-5.5 — Q6 answered: server-wide custom emoji, no stickers (D-054); docs + M5.13 added. No open questions remain.

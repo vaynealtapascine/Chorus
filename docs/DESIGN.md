@@ -129,6 +129,7 @@ line illustration + one sentence + one action. No mascots.
 | **Compose post** | Author chip(s), note/entry toggle, title (entry), body, mood, tags, CW, visibility | Post |
 | **Feed editor** | Query field with syntax highlight + chips, live preview, visibility | Save |
 | **Stage** | Selection overlay, context-only/hidden toggles, filters, style presets, redaction, fake names/times, "Capture" | Capture |
+| **Emoji** (Settings → Server) | Server-wide custom emoji: upload with crop, name, aliases, category, retire | Upload |
 | **Trash** | Deleted items by type, search, restore | Restore |
 | **Insights** | Dashboard cards; each opens a full chart with table + CSV | — |
 | **Sharing** | Followers, requests, buckets, ceilings (presets), following + prefs | — |

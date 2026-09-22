@@ -170,7 +170,7 @@ custom order.
   explicit speaker) · `member` (locked to one member).
 - Formatting parity with Telegram: **bold**, *italic*, underline, ~~strike~~, spoiler, `code`,
   pre blocks with language, links with custom text, blockquote, expandable blockquote, mentions,
-  custom emoji (server emoji set). Input via markdown-like shortcuts *and* a selection toolbar;
+  custom emoji (the server-wide set, §5.5). Input via markdown-like shortcuts *and* a selection toolbar;
   stored as text + entities (D-041).
 
 ### 5.3 Message features
@@ -203,6 +203,21 @@ custom order.
 - **System-only aside**: in a shared space, a message only the sending system sees (e.g. members
   talking among themselves in context).
 - **Stage hiding**: see §7; not stored on the message.
+
+### 5.5 Custom emoji (D-054)
+
+- One **server-wide** set of small uploaded images, used as `:name:` anywhere text is written
+  (messages, posts, bios, display names) and as reactions. No per-space sets, no stickers.
+- Upload: PNG/WebP/GIF (animated allowed), square-cropped in the uploader, stored at 128 px
+  (≤ 256 KB). Names are unique, `a-z0-9_`, 2–32 chars; optional aliases and a category.
+- Who manages: server admins. Server setting (Advanced): "Everyone can add emoji" (off by
+  default); adders can edit/delete their own.
+- Picker: tabs for recent, custom (by category), then standard emoji; search matches names and
+  aliases. Typing `:ka` autocompletes.
+- Deleting an emoji is a tombstone like everything else: old messages keep rendering it (greyed in
+  the picker under "Retired"); restorable from Trash.
+- Offline: the emoji set syncs to every device (it's small), so rendering and the picker work
+  offline; new uploads queue like attachments.
 
 ## 6. Profiles and journals
 

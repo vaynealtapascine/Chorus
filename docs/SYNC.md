@@ -85,6 +85,7 @@ Every op belongs to exactly one scope:
 | Scope | Contains | Replicated to |
 | --- | --- | --- |
 | `account:<id>` | members, groups, states, fields, front ops, posts, relationships, lists, feeds, buckets, follows (as target), prefs, drafts, stages | that account's devices only |
+| `server` | custom emoji set (D-054) | every device |
 | `space:<id>` | channels, messages, reactions, read marks, attachments of that space (incl. the internal space) | devices of accounts that are present members of the space |
 
 Followers never receive `account:` ops of others. They receive **views** (§4.3).
