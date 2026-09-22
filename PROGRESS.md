@@ -14,10 +14,10 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M3.5
+- **In progress:** M5.1
 - **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** web: Switcher (search, multi-select, level cycling, primary, note, time override, co-front add) + front history timeline + review cards; Home quick switch uses it
-- **Notes:** Server M2.1–M2.5 done. Known gaps for later milestones: creating a NEW shared space needs ingest to grant the creator access to an unknown space scope (M6.2); blobs (M2.6), REST reads (M2.7), backups CLI (M2.8) still open.
+- **Next concrete step:** web chat: spaces rail (internal space from sync), channel list + create, message list (virtualised later), composer using core.compose (speaker chip default = primary fronter, sigils/tags/segments), message rendering with entities
+- **Notes:** Order: M4 (Android features) waits on an emulator or the owner's phone over adb; web chat (M5) proceeds meanwhile. Web wasm builds use scripts/build-web-core.ps1 -Debug in dev.
 
 ---
 
@@ -78,7 +78,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M3.2 Local store (IndexedDB) + outbox + sync engine (via core wasm)
 - [x] M3.3 Onboarding (invite → device key), system setup, terminology
 - [x] M3.4 Members list/grid, groups tree, member editor, custom fields
-- [~] M3.5 Front card, switcher, front history timeline, review cards
+- [x] M3.5 Front card, switcher, front history timeline, review cards
 
 ### M4 — Android foundation
 
@@ -91,7 +91,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M5 — Chat (internal space)
 
-- [ ] M5.1 Channels, categories, member DMs
+- [~] M5.1 Channels, categories, member DMs
 - [ ] M5.2 Composer: speaker chip, proxy tags, sigils, multi-author, formatting
 - [ ] M5.3 Replies (incl. cross-channel), quotes (full/partial), forwards, edits+history, deletes, pins
 - [ ] M5.4 Reactions, mentions, read states, unread badges
@@ -190,3 +190,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M3.2 web sync: WebReplica (core) + IndexedDB write-behind (persist.ts) + SyncClient (WS, backoff, online event, session renewal). Verified in the browser against chorus-server --dev: live sync, reload restore, offline edits pushed on reconnect.
 - 2026-09-23 claude-opus-5.5 — M3.3 onboarding: invite link/code → WebCrypto P-256 device key (non-extractable) → redeem → live. Verified end to end.
 - 2026-09-23 claude-opus-5.5 — M3.4 web: nav shell (hash router, bottom nav on phones), Members (fuzzy search, group/archived filters, subsystem/group management), MemberEditor (identity, colour, birthday, rich description via core markup, sigils w/ clash warning, proxy tags, group toggles, custom fields incl. adding fields, archive/Trash/restore, switch in). Verified in browser + server SQL.
+- 2026-09-23 claude-opus-5.5 — M3.5 web: Switcher sheet (search, multi-select, level cycle, primary, order, subsystems, note, typed time via user_time, notify choice, switch out; Ctrl/Cmd+S), undo toast, History (24h/7d lanes, log with edit time/undo/redo), review cards (core computes reviews into the projection). Verified in browser except review cards (need two devices; core-tested).

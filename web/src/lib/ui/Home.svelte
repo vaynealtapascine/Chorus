@@ -1,10 +1,13 @@
 <script lang="ts">
   import { core } from '../core';
   import { sync, type Projection } from '../sync/client';
+  import { groups } from '../data';
+  import { doSwitch } from '../front.svelte';
   import FrontCard from './FrontCard.svelte';
+  import Reviews from './Reviews.svelte';
   import type { FrontEntry, Member } from './types';
 
-  let { projection, dark }: { projection: Projection; dark: boolean } = $props();
+  let { projection, dark, onswitch }: { projection: Projection; dark: boolean; onswitch: () => void } = $props();
 
   const members: Member[] = $derived(
     Object.entries(projection.rows.member ?? {})
@@ -18,6 +21,11 @@
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
   );
+  // the front card can show subsystems fronting as a unit, not only members
+  const subjects: Member[] = $derived([
+    ...members,
+    ...groups(projection).map((g) => ({ id: g.id, name: g.name, color: g.color ?? '#A09184', sigil: '◌' })),
+  ]);
   const fold = $derived(projection.fronts[sync.accountId]);
   const front: FrontEntry[] = $derived(
     (fold?.current ?? []).map((e) => ({ id: e.subject_id, level: e.level, primary: e.is_primary })),
@@ -28,9 +36,8 @@
   });
 
   function switchTo(id: string) {
-    sync.create('front.switch', sync.accountScope, sync.newId(), {
-      entries: [{ subject_type: 'member', subject_id: id, level: 'front', is_primary: true }],
-    });
+    const name = members.find((m) => m.id === id)?.name ?? 'someone';
+    doSwitch([{ subject_type: 'member', subject_id: id, level: 'front', is_primary: true }], `Switched to ${name}`);
   }
 
   let adding = $state(false);
@@ -52,7 +59,10 @@
 </script>
 
 <div class="home">
-  <FrontCard {members} {front} {since} {dark} />
+  <Reviews {projection} />
+  <button class="card-button" onclick={onswitch} aria-label="Change who's here">
+    <FrontCard members={subjects} {front} {since} {dark} />
+  </button>
 
   <section aria-label="Quick switch">
     <div class="section-head">
@@ -87,6 +97,16 @@
   .home {
     display: grid;
     gap: var(--s-6);
+  }
+  .card-button {
+    all: unset;
+    display: block;
+    cursor: pointer;
+    border-radius: var(--r-lg);
+  }
+  .card-button:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent);
+    outline-offset: 2px;
   }
   h2 {
     font-size: var(--fs-sm);

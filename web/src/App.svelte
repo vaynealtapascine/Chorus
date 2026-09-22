@@ -1,10 +1,21 @@
 <script lang="ts">
   import { router } from './lib/router.svelte';
   import { sync, type Projection, type Status } from './lib/sync/client';
+  import History from './lib/ui/History.svelte';
   import Home from './lib/ui/Home.svelte';
   import MemberEditor from './lib/ui/MemberEditor.svelte';
   import Members from './lib/ui/Members.svelte';
   import Onboarding from './lib/ui/Onboarding.svelte';
+  import Switcher from './lib/ui/Switcher.svelte';
+  import UndoToast from './lib/ui/UndoToast.svelte';
+
+  let switching = $state(false);
+  addEventListener('keydown', (e: KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && sync.device) {
+      e.preventDefault();
+      switching = true;
+    }
+  });
 
   const media = window.matchMedia('(prefers-color-scheme: dark)');
   let dark = $state(media.matches);
@@ -28,6 +39,7 @@
   const tabs = [
     { path: '/', name: 'home', label: 'Home' },
     { path: '/members', name: 'members', label: 'Members' },
+    { path: '/history', name: 'history', label: 'History' },
   ];
   const active = $derived(router.route.name === 'member' ? 'members' : router.route.name);
 </script>
@@ -50,11 +62,17 @@
         <Members {projection} {dark} />
       {:else if router.route.name === 'member' && router.route.id}
         <MemberEditor {projection} id={router.route.id} {dark} />
+      {:else if router.route.name === 'history'}
+        <History {projection} {dark} />
       {:else}
-        <Home {projection} {dark} />
+        <Home {projection} {dark} onswitch={() => (switching = true)} />
       {/if}
     </main>
   </div>
+  {#if switching}
+    <Switcher {projection} {dark} onclose={() => (switching = false)} />
+  {/if}
+  <UndoToast />
 {/if}
 
 <style>

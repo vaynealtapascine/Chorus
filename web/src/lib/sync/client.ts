@@ -1,6 +1,7 @@
 // The web sync client: owns the core replica, talks to /api/v1/sync, persists write-behind.
 // All protocol logic is in chorus-core (WebReplica); this file only moves bytes and timers.
 import { WebReplica, newId } from '../core/pkg/chorus_wasm.js';
+import type { SwitchRow } from '../front.svelte';
 import { load, save, type Changes, type DeviceRecord } from './persist';
 import { renew } from './device';
 
@@ -9,7 +10,8 @@ export type Status = 'offline' | 'connecting' | 'live' | 'no-device';
 export interface Projection {
   rows: Record<string, Record<string, { exists: boolean; fields: Record<string, unknown>; edits?: number }>>;
   sets: Record<string, Record<string, boolean>>;
-  fronts: Record<string, { current: FrontEntry[]; switches: unknown[]; intervals: Interval[] }>;
+  fronts: Record<string, { current: FrontEntry[]; switches: SwitchRow[]; intervals: Interval[] }>;
+  reviews?: Record<string, { id: string; switch_a: string; switch_b: string }[]>;
   opaque: number;
 }
 export interface FrontEntry {
@@ -19,8 +21,10 @@ export interface FrontEntry {
   is_primary: boolean;
 }
 export interface Interval {
+  subject_type: string;
   subject_id: string;
   level: string;
+  is_primary: boolean;
   start_at: number;
   end_at: number | null;
 }
@@ -92,11 +96,24 @@ export class SyncClient {
   }
 
   /** Create a local op; syncs when connected. Throws on validation errors. */
-  create(kind: string, scope: string, entityId: string | null, payload: unknown, memberId?: string): string {
+  create(
+    kind: string,
+    scope: string,
+    entityId: string | null,
+    payload: unknown,
+    opts: { memberId?: string; userTime?: number } = {},
+  ): string {
     if (!this.replica) throw new Error('not set up');
     const out = JSON.parse(
       this.replica.create(
-        JSON.stringify({ kind, scope, entity_id: entityId, payload, member_id: memberId ?? null }),
+        JSON.stringify({
+          kind,
+          scope,
+          entity_id: entityId,
+          payload,
+          member_id: opts.memberId ?? null,
+          user_time: opts.userTime ?? null,
+        }),
         JSON.stringify({ now: Date.now(), tz_offset_min: -new Date().getTimezoneOffset() }),
         randomBytes(),
       ),
