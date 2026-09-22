@@ -216,11 +216,11 @@ pub fn compose(src: &str, speakers: &[Speaker], opts: Options, default_authors: 
         }
     }
     // Suffix pair around the whole message, when nothing else named an author.
-    if !explicit && segs.len() == 1 {
-        if let Some((member, inner)) = m.pair(src.trim()) {
-            segs = vec![(vec![member], inner)];
-            explicit = true;
-        }
+    if !explicit && segs.len() == 1
+        && let Some((member, inner)) = m.pair(src.trim())
+    {
+        segs = vec![(vec![member], inner)];
+        explicit = true;
     }
     // Parse each segment's markup and concatenate.
     let mut rich = Rich::default();

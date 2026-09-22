@@ -21,3 +21,4 @@ cc bf3a7d0347471587c073b66b6a00099c3fc91159ef640b8efab72a7876f3879e # shrinks to
 cc b643e39db9ba474500bbafdfadfe76b2c9275d7d1e822a997a403d022c2c3609 # shrinks to s = "````*\\````\n> @kai"
 cc c28249d30059df792e6f7484f55f649ac8d24cb18aa48ad57845b526f3d5b09d # shrinks to s = "[[`]`](https://a.b)"
 cc 21f2c40be9d50187c4ae13d89da5caa31925c18eb6babe1d5c2623da161261f4 # shrinks to s = ">> rust\n>> \n"
+cc a2d661b1f52df268566b4d600e26e062db911c6432a8c2ca4cd6682518a02893 # shrinks to s = "@kai\\&__~~__"

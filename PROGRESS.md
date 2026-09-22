@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M1.8
-- **Owner:** claude-opus-5.5, 2026-09-23
-- **Next concrete step:** core/src/color.rs: OKLCH conversion, WCAG contrast, adapt(color, theme) → name/ring/tint
+- **In progress:** —
+- **Owner:** —
+- **Next concrete step:** claim the next unticked task on the board
 - **Notes:** Read AGENTS.md → DECISIONS.md → SYNC.md + DATA_MODEL.md before M0/M1. Open questions (docs/OPEN_QUESTIONS.md) have defaults; don't block on them. README disclosure card image is not generated yet (M12.2).
 
 ---
@@ -57,7 +57,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M1.5 Text model: plain text + entities; markup parser (Telegram parity) + serializer
 - [x] M1.6 Speaker parsing: sigils (emoji), proxy tags, multi-author prefixes, newline segments (D-045)
 - [x] M1.7 Feed filter language: parser → AST → evaluator
-- [~] M1.8 Member colour contrast adjuster (WCAG AA both themes)
+- [x] M1.8 Member colour contrast adjuster (WCAG AA both themes)
 - [ ] M1.9 Convergence simulator (N devices, random partitions, projection hash equality)
 - [ ] M1.10 Spike: UniFFI build for Android (arm64-v8a, x86_64) + wasm-bindgen build for web. Decide keep/fallback (DECISIONS D-040)
 
@@ -175,3 +175,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M1.5 rich text (core/src/text.rs): Telegram-parity entities (UTF-16), Chorus markup parser + serializer with \& separator; 20k-case round-trip proptest
 - 2026-09-23 claude-opus-5.5 — M1.6 speaker parsing (core/src/speaker.rs): sigils, prefix tags, consecutive tags, suffix pairs, joint authors, newline segments, escapes, fences
 - 2026-09-23 claude-opus-5.5 — M1.7 feed filter language (core/src/feed.rs): tokenizer, precedence parser with error positions, JSON AST, evaluator
+- 2026-09-23 claude-opus-5.5 — M1.8 member colour adaptation (core/src/color.rs): OKLCH, WCAG contrast, name/ring/tint per theme; proptest over all colours

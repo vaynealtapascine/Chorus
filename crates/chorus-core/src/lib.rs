@@ -12,3 +12,4 @@ pub mod front;
 pub mod text;
 pub mod speaker;
 pub mod feed;
+pub mod color;
