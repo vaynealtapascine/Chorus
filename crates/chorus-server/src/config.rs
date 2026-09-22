@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub server: Server,
@@ -56,18 +56,6 @@ pub struct Security {
     pub webhooks_allow_external: bool,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            server: Server::default(),
-            push: Push::default(),
-            backup: Backup::default(),
-            limits: Limits::default(),
-            security: Security::default(),
-        }
-    }
-}
-
 impl Default for Server {
     fn default() -> Self {
         Server {
@@ -99,7 +87,7 @@ impl Config {
             return Ok(Config::default());
         }
         let text = std::fs::read_to_string(path)?;
-        Ok(toml::from_str(&text).map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?)
+        toml::from_str(&text).map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))
     }
 
     /// Development profile (docs/OPS.md §8): port 5251, data in ./data-dev.
