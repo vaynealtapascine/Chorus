@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** —
-- **Owner:** —
-- **Next concrete step:** claim the next unticked task on the board
+- **In progress:** M1.9
+- **Owner:** claude-opus-5.5, 2026-09-23
+- **Next concrete step:** 1) core/src/model.rs reference projection f(op set) 2) core/src/sync.rs frames + client engine + in-memory server (sans-IO) 3) tests/converge.rs simulator
 - **Notes:** Read AGENTS.md → DECISIONS.md → SYNC.md + DATA_MODEL.md before M0/M1. Open questions (docs/OPEN_QUESTIONS.md) have defaults; don't block on them. README disclosure card image is not generated yet (M12.2).
 
 ---
@@ -58,7 +58,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M1.6 Speaker parsing: sigils (emoji), proxy tags, multi-author prefixes, newline segments (D-045)
 - [x] M1.7 Feed filter language: parser → AST → evaluator
 - [x] M1.8 Member colour contrast adjuster (WCAG AA both themes)
-- [ ] M1.9 Convergence simulator (N devices, random partitions, projection hash equality)
+- [~] M1.9 Convergence simulator (N devices, random partitions, projection hash equality)
 - [ ] M1.10 Spike: UniFFI build for Android (arm64-v8a, x86_64) + wasm-bindgen build for web. Decide keep/fallback (DECISIONS D-040)
 
 ### M2 — Server
