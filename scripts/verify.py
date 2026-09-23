@@ -27,6 +27,8 @@ def main():
     quick = '--quick' in sys.argv
     android = '--android' in sys.argv
 
+    if shutil.which('node'):
+        run(['node', 'scripts/gen-tokens.mjs', '--check'])
     run(['cargo', 'fmt', '--all', '--check'])
     run(['cargo', 'clippy', '--workspace', '--all-targets', '--', '-D', 'warnings'])
     if quick:

@@ -74,7 +74,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M3 — Web client foundation
 
-- [ ] M3.1 Design tokens + base components (DESIGN.md)
+- [x] M3.1 Design tokens + base components (DESIGN.md)
 - [x] M3.2 Local store (IndexedDB) + outbox + sync engine (via core wasm)
 - [x] M3.3 Onboarding (invite → device key), system setup, terminology
 - [x] M3.4 Members list/grid, groups tree, member editor, custom fields
@@ -82,7 +82,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M4 — Android foundation
 
-- [ ] M4.1 Theme + components mirroring DESIGN.md
+- [x] M4.1 Theme + components mirroring DESIGN.md
 - [~] M4.2 Room (SQLCipher) + outbox + sync engine (via core UniFFI) + WorkManager
 - [~] M4.3 Onboarding via invite link / QR — the web "Link another device" now shows a QR of the one-use link (server qr.rs, decoded with OpenCV); in-app camera scanning not needed while the phone camera opens the link
 - [ ] M4.4 Members, groups, switcher, front history
@@ -221,3 +221,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M8.4 own-account chat pings: mentions/@front/member DMs in the internal space under per-member rules (pref notify_member:<id>), writing device skipped (push::prepare_except); member editor "Chat notifications"; test + browser check (Moss mentioning Kai reached the inbox)
 - 2026-09-23 claude-opus-5.5 — M8.4 own switches from other devices (opt-in notify_chat.own_switch): settle-delayed, superseded, dropped on retract, text from the front at delivery; People checkbox; test + browser check ("Front changed on Browser: Rin")
 - 2026-09-23 claude-opus-5.5 — M8.4 Android inline reply: RemoteInput action on chat notifications → queued message.send (reply_to) as the primary fronter; ReplyReceiver; ReplyTest; assembleDebug + unit tests pass, not run on a device yet
+- 2026-09-23 claude-opus-5.5 — M3.1 + M4.1 ticked after an audit: design/tokens.json → tokens.css + base.css (web) and Tokens.kt + ChorusTheme (Android) have been in place since M0; verify.py now fails on token drift (gen-tokens.mjs --check)
