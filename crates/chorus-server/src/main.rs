@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use chorus_server::{config::Config, db};
+use chorus_server::{backup, config::Config, db};
 
 #[derive(Parser)]
 #[command(name = "chorus-server", version, about = "Chorus server")]
@@ -29,6 +29,19 @@ enum Cmd {
     Check,
     /// Rebuild every projection from the op log.
     Rebuild,
+    /// Take an online SQLite and blob snapshot.
+    Backup {
+        /// Snapshot parent directory (defaults to backup.dir).
+        #[arg(long)]
+        to: Option<PathBuf>,
+    },
+    /// Verify a snapshot and restore it into a directory that does not exist yet.
+    Restore {
+        #[arg(long)]
+        from: PathBuf,
+        #[arg(long)]
+        into: PathBuf,
+    },
     /// Create an invite link for a new system, person or device.
     Invite {
         #[arg(long, value_enum, default_value = "system")]
@@ -89,6 +102,17 @@ fn main() -> anyhow::Result<()> {
             let t = std::time::Instant::now();
             let n = chorus_server::project::rebuild(&mut conn)?;
             println!("re-projected {n} ops in {:.1?}", t.elapsed());
+        }
+        Cmd::Backup { to } => {
+            let snapshot = backup::create(&cfg, to.as_deref())?;
+            println!("{}", snapshot.display());
+            if to.is_none() {
+                backup::rotate(&cfg)?;
+            }
+        }
+        Cmd::Restore { from, into } => {
+            backup::restore(&from, &into)?;
+            println!("restored to {}", into.display());
         }
         Cmd::Invite { kind, account, days, uses } => {
             use chorus_server::auth::{self, InviteKind};

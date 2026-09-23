@@ -87,10 +87,16 @@ pub fn backup_to(conn: &Connection, dest: &Path) -> anyhow::Result<()> {
     if let Some(dir) = dest.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    if dest.exists() {
-        std::fs::remove_file(dest)?;
+    anyhow::ensure!(!dest.exists(), "backup destination already exists: {}", dest.display());
+    let mut target = Connection::open(dest)?;
+    let backup = rusqlite::backup::Backup::new(conn, &mut target)?;
+    let result = backup.run_to_completion(100, std::time::Duration::from_millis(25), None);
+    drop(backup);
+    drop(target);
+    if let Err(error) = result {
+        let _ = std::fs::remove_file(dest);
+        return Err(error.into());
     }
-    conn.execute("VACUUM INTO ?1", [dest.to_string_lossy()])?;
     Ok(())
 }
 

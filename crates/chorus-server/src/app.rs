@@ -595,6 +595,7 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     tracing::info!(%addr, "chorus-server listening");
     watch_own_binary();
     run_notifier(state.clone());
+    crate::backup::start_nightly(state.cfg.clone())?;
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     let server = axum::serve(listener, router(state)).with_graceful_shutdown(async {
         let _ = tokio::signal::ctrl_c().await;

@@ -206,3 +206,10 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 - Ran Playwright on the isolated 5261/5262 servers: created a Close bucket, renamed it, selected Private as account default, reloaded and saw both persist; selected "Only selected buckets" for a member, checked the bucket, reloaded and saw the policy persist. Follower assignment checkboxes compiled and the server exercised the underlying assignment ops, but the checkbox was not clicked in the browser because the dev account has no followers.
 - Audit first: follower assignment UI with a real second account, especially the account-ID payload; preset matching after sync; account `settings` replacement when two devices edit different settings concurrently. Newly accepted followers now use `{}` to inherit the account default rather than an unconditional Gentle override.
 - No core semantics changed. No proposed decision.
+
+### Batch 3
+
+#### T6 · doing (pre-merge WIP)
+- Replaced `VACUUM INTO` with rusqlite's online backup API and drafted a snapshot/manifest, restore verification, rotation and nightly scheduler. This is intentionally a WIP before merging Claude's main branch; CLI commands and restore tests still need to be completed and run.
+- `cargo check -p chorus-server --offline` passed. Next: run the required quick verifier, commit this WIP, merge main, rebuild generated cores, run verifier and Android build, then read `docs/handoff/sol-batch-3.md` and do A1–A4 before resuming T6.
+- Audit first: restore staging cleanup, checksum validation, projection comparison, retention policy, and OPS format alignment. No core semantics changed and no proposed decision yet.

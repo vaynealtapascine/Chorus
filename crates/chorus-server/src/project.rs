@@ -641,7 +641,7 @@ fn read_state(conn: &Connection, o: &Op) -> anyhow::Result<()> {
 // ─── rebuild ─────────────────────────────────────────────────────────────────
 
 /// Tables `rebuild` clears (everything derived from the op log).
-const DERIVED: &[&str] = &[
+pub(crate) const DERIVED: &[&str] = &[
     "system",
     "member",
     "member_group",
