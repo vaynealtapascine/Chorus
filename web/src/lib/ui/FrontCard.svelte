@@ -1,6 +1,7 @@
 <script lang="ts">
   import { core } from '../core';
   import type { FrontEntry, Member } from './types';
+  import AvatarImage from './AvatarImage.svelte';
 
   let { members, front, since, dark }: { members: Member[]; front: FrontEntry[]; since: number; dark: boolean } =
     $props();
@@ -36,7 +37,7 @@
     {#each shown as { f, m }, i (m.id)}
       {@const c = core.adaptColor(m.color, dark)}
       <span class="avatar" class:primary={f.primary} style="--ring: {c.ring}; z-index: {10 - i}" title={m.name}>
-        {m.sigil ?? m.name[0]}
+        <AvatarImage hash={m.avatarBlob} glyph={m.sigil ?? m.name[0]} name={m.name} />
       </span>
     {/each}
   </div>

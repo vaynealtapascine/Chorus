@@ -16,6 +16,7 @@ export interface MemberRow {
   proxy_tags: ProxyTag[];
   description?: string;
   birthday?: string;
+  avatar_blob?: string;
   archived: boolean;
   deleted: boolean;
   created_at?: number;
@@ -27,6 +28,7 @@ export interface GroupRow {
   kind: 'subsystem' | 'group';
   parent_id?: string;
   color?: string;
+  avatar_blob?: string;
   deleted: boolean;
 }
 
@@ -42,6 +44,70 @@ export interface FieldDef {
 type Rows = Record<string, { exists: boolean; fields: Record<string, unknown> }>;
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
+
+export interface EmojiRow {
+  id: string;
+  name: string;
+  aliases: string[];
+  category: string;
+  blob_hash: string;
+  is_animated: boolean;
+  deleted: boolean;
+}
+
+export interface BucketRow {
+  id: string;
+  name: string;
+  ceiling: Record<string, unknown>;
+}
+
+export function buckets(p: Projection): BucketRow[] {
+  return Object.entries((p.rows.bucket ?? {}) as Rows)
+    .filter(([, row]) => row.exists && row.fields.deleted_at == null)
+    .map(([id, row]) => ({
+      id,
+      name: str(row.fields.name) ?? 'Untitled',
+      ceiling: row.fields.ceiling && typeof row.fields.ceiling === 'object' && !Array.isArray(row.fields.ceiling)
+        ? row.fields.ceiling as Record<string, unknown> : {},
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** bucket ID → follower account IDs from the LWW assignment set. */
+export function bucketAssignments(p: Projection): Map<string, Set<string>> {
+  const result = new Map<string, Set<string>>();
+  for (const [key, present] of Object.entries(p.sets.bucket_assignment ?? {})) {
+    if (!present) continue;
+    const bar = key.indexOf('|');
+    if (bar < 0) continue;
+    try {
+      const follower = (JSON.parse(key.slice(bar + 1)) as { follower_account_id?: unknown }).follower_account_id;
+      if (typeof follower !== 'string') continue;
+      const bucket = key.slice(0, bar);
+      const members = result.get(bucket) ?? new Set<string>();
+      members.add(follower);
+      result.set(bucket, members);
+    } catch { /* an invalid set key cannot grant access */ }
+  }
+  return result;
+}
+
+/** Keep retired rows so old messages can still resolve their stable emoji IDs. */
+export function customEmojis(p: Projection): EmojiRow[] {
+  return Object.entries((p.rows.custom_emoji ?? {}) as Rows)
+    .filter(([, row]) => row.exists)
+    .map(([id, row]) => ({
+      id,
+      name: str(row.fields.name) ?? '',
+      aliases: Array.isArray(row.fields.aliases) ? row.fields.aliases.filter((a): a is string => typeof a === 'string') : [],
+      category: str(row.fields.category) ?? 'Custom',
+      blob_hash: str(row.fields.blob_hash) ?? '',
+      is_animated: row.fields.is_animated === true,
+      deleted: row.fields.deleted_at != null,
+    }))
+    .filter((row) => !!row.blob_hash)
+    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+}
 
 export function members(p: Projection): MemberRow[] {
   const rows = (p.rows.member ?? {}) as Rows;
@@ -59,6 +125,7 @@ export function members(p: Projection): MemberRow[] {
         proxy_tags: Array.isArray(f.proxy_tags) ? (f.proxy_tags as ProxyTag[]) : [],
         description: str(f.description),
         birthday: str(f.birthday),
+        avatar_blob: str(f.avatar_blob),
         archived: f.archived_at != null,
         deleted: f.deleted_at != null,
         created_at: typeof f.created_at === 'number' ? f.created_at : undefined,
@@ -77,6 +144,7 @@ export function groups(p: Projection): GroupRow[] {
       kind: r.fields.kind === 'group' ? 'group' : 'subsystem',
       parent_id: str(r.fields.parent_id),
       color: str(r.fields.color),
+      avatar_blob: str(r.fields.avatar_blob),
       deleted: r.fields.deleted_at != null,
     }))
     .filter((g) => !g.deleted)
@@ -211,6 +279,18 @@ export interface MessageRow {
   reply_to?: string;
   quote?: QuoteValue;
   forward_snapshot?: SnapshotItem[];
+  attachments: AttachmentRow[];
+}
+
+export interface AttachmentRow {
+  id: string;
+  blob_hash: string;
+  thumb_blob_hash?: string;
+  filename: string;
+  mime: string;
+  size: number;
+  alt_text: string;
+  is_spoiler: boolean;
 }
 
 export interface TextRange { message_id: string; offset: number; length: number; text: string }
@@ -223,6 +303,7 @@ export interface SnapshotItem {
   authors: string[];
   entities: import('./core').Entity[];
   occurred_at: number;
+  attachments?: AttachmentRow[];
 }
 export type QuoteValue = TextRange | { items: SnapshotItem[] };
 
@@ -331,6 +412,19 @@ export function threadSummaries(p: Projection): Map<string, ThreadSummary> {
 
 export function messages(p: Projection, channelId: string): MessageRow[] {
   const rows = (p.rows.message ?? {}) as Record<string, { exists: boolean; fields: Record<string, unknown>; edits?: number }>;
+  const attachmentRows = p.rows.attachment ?? {};
+  const attachment = (id: string): AttachmentRow | null => {
+    const r = attachmentRows[id];
+    if (!r?.exists) return null;
+    const f = r.fields;
+    const blob_hash = str(f.blob_hash);
+    if (!blob_hash) return null;
+    return {
+      id, blob_hash, thumb_blob_hash: str(f.thumb_blob_hash), filename: str(f.filename) ?? 'file',
+      mime: str(f.mime) ?? 'application/octet-stream', size: Number(f.size ?? 0),
+      alt_text: str(f.alt_text) ?? '', is_spoiler: f.is_spoiler === true,
+    };
+  };
   return Object.entries(rows)
     .filter(([, r]) => r.exists && r.fields.channel_id === channelId)
     .map(([id, r]) => {
@@ -356,6 +450,7 @@ export function messages(p: Projection, channelId: string): MessageRow[] {
         reply_to: str(f.reply_to),
         quote: f.quote && typeof f.quote === 'object' ? (f.quote as QuoteValue) : undefined,
         forward_snapshot: Array.isArray(f.forward_snapshot) ? (f.forward_snapshot as MessageRow['forward_snapshot']) : undefined,
+        attachments: Array.isArray(f.attachments) ? (f.attachments as string[]).map(attachment).filter((a): a is AttachmentRow => !!a) : [],
       };
     })
     .sort((a, b) => a.occurred_at - b.occurred_at || a.id.localeCompare(b.id));

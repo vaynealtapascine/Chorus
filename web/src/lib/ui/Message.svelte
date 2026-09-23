@@ -1,8 +1,11 @@
 <script lang="ts">
   import { core } from '../core';
-  import type { MemberRow, MessageRow, SnapshotItem, TextRange, ThreadSummary } from '../data';
+  import type { EmojiRow, MemberRow, MessageRow, SnapshotItem, TextRange, ThreadSummary } from '../data';
   import { segmentRich } from '../segments';
   import RichText from './RichText.svelte';
+  import AttachmentView from './AttachmentView.svelte';
+  import AvatarImage from './AvatarImage.svelte';
+  import EmojiImage from './EmojiImage.svelte';
 
   export type Quote = TextRange;
   export type Forwarded = SnapshotItem;
@@ -29,6 +32,7 @@
     reacts,
     speaker,
     onreact,
+    emojiById,
   }: {
     m: MessageRow;
     cont: boolean;
@@ -51,6 +55,7 @@
     reacts: Map<string, string[]> | undefined;
     speaker: string | null;
     onreact: (emoji: string, on: boolean) => void;
+    emojiById: Map<string, EmojiRow>;
   } = $props();
 
   const PALETTE = ['💜', '👍', '😂', '🥹', '🎉', '😢', '👀', '🔥'];
@@ -107,7 +112,7 @@
         {#if selecting}<button class="select-toggle" aria-label={selected ? 'Deselect message' : 'Select message'} aria-pressed={selected} onclick={onselect}>{selected ? '☑' : '□'}</button>{/if}
         <span class="avatars">
           {#each m.authors.slice(0, 3) as a (a)}
-            <span class="avatar" style="--ring: {color(a).ring}">{people.get(a)?.sigils[0] ?? nameOf(a)[0]}</span>
+            <span class="avatar" style="--ring: {color(a).ring}"><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></span>
           {/each}
         </span>
         <span class="who">
@@ -122,7 +127,9 @@
       {#if m.quote}
         {#if 'items' in m.quote}
           {#each m.quote.items as q, i (`${q.message_id}:${i}`)}
-            <blockquote><span>{q.authors.map(nameOf).join(' & ')}{q.channel_name ? ` · #${q.channel_name}` : ''}</span><RichText text={q.text} entities={q.entities} /></blockquote>
+            <blockquote><span>{q.authors.map(nameOf).join(' & ')}{q.channel_name ? ` · #${q.channel_name}` : ''}</span><RichText text={q.text} entities={q.entities} emoji={emojiById} />
+              {#each q.attachments ?? [] as a (a.id)}<AttachmentView attachment={a} />{/each}
+            </blockquote>
           {/each}
         {:else}
           <blockquote>{m.quote.text}</blockquote>
@@ -131,7 +138,8 @@
       {#each m.forward_snapshot ?? [] as f (f.message_id)}
         <div class="forward">
           <span class="fwd">Forwarded from {f.authors.map(nameOf).join(' & ')}{f.channel_name ? ` · #${f.channel_name}` : ''}</span>
-          <RichText text={f.text} entities={f.entities} />
+          <RichText text={f.text} entities={f.entities} emoji={emojiById} />
+          {#each f.attachments ?? [] as a (a.id)}<AttachmentView attachment={a} />{/each}
         </div>
       {/each}
       {#if m.segments.length > 1}
@@ -141,16 +149,19 @@
             <span class="segment-head">
               <span class="segment-avatars">
                 {#each s.authors as author (author)}
-                  <span class="segment-avatar" style="--ring: {color(author).ring}" title={nameOf(author)}>{people.get(author)?.sigils[0] ?? nameOf(author)[0]}</span>
+                  <span class="segment-avatar" style="--ring: {color(author).ring}" title={nameOf(author)}><AvatarImage hash={people.get(author)?.avatar_blob} glyph={people.get(author)?.sigils[0] ?? nameOf(author)[0]} name={nameOf(author)} /></span>
                 {/each}
               </span>
               <span class="who" style="color: {color(s.authors[0] ?? '').name}">{s.authors.map(nameOf).join(' & ')}</span>
             </span>
-            <span class="selectable" data-message-offset={s.offset}><RichText text={seg.text} entities={seg.entities} /></span>
+            <span class="selectable" data-message-offset={s.offset}><RichText text={seg.text} entities={seg.entities} emoji={emojiById} /></span>
           </div>
         {/each}
       {:else if m.text}
-        <span class="selectable" data-message-offset="0"><RichText text={m.text} entities={m.entities} /></span>
+        <span class="selectable" data-message-offset="0"><RichText text={m.text} entities={m.entities} emoji={emojiById} /></span>
+      {/if}
+      {#if m.attachments.length && !m.forward_snapshot?.some((f) => f.attachments?.length)}
+        <div class="attachments">{#each m.attachments as a (a.id)}<AttachmentView attachment={a} />{/each}</div>
       {/if}
       {#if m.edited}<span class="edited"> (edited)</span>{/if}
       {#if reacts?.size}
@@ -158,7 +169,10 @@
           {#each [...reacts] as [emoji, who] (emoji)}
             {@const mine = !!speaker && who.includes(speaker)}
             <button class="react" class:mine onclick={() => onreact(emoji, !mine)} title={who.map(nameOf).join(', ')}>
-              {emoji} <span>{who.length}</span>
+              {#if emoji.startsWith('custom:') && emojiById.has(emoji.slice(7))}
+                {@const custom = emojiById.get(emoji.slice(7))!}
+                <EmojiImage hash={custom.blob_hash} name={custom.name} />
+              {:else}{emoji}{/if} <span>{who.length}</span>
             </button>
           {/each}
         </div>
@@ -167,7 +181,7 @@
         <button class="thread-preview" onclick={onthread}>
           <span class="thread-avatars">
             {#each thread.lastRepliers as id (id)}
-              <span class="thread-avatar" style="--ring: {color(id).ring}" title={nameOf(id)}>{people.get(id)?.sigils[0] ?? nameOf(id)[0]}</span>
+              <span class="thread-avatar" style="--ring: {color(id).ring}" title={nameOf(id)}><AvatarImage hash={people.get(id)?.avatar_blob} glyph={people.get(id)?.sigils[0] ?? nameOf(id)[0]} name={nameOf(id)} /></span>
             {/each}
           </span>
           <span>{thread.replyCount ? `${thread.replyCount} ${thread.replyCount === 1 ? 'reply' : 'replies'}` : 'Thread started'} · Open thread</span>
@@ -178,6 +192,9 @@
       <div class="palette" role="listbox" aria-label="React">
         {#each PALETTE as e (e)}
           <button onclick={() => { onreact(e, true); palette = false; }}>{e}</button>
+        {/each}
+        {#each [...emojiById.values()].filter((e) => !e.deleted) as e (e.id)}
+          <button onclick={() => { onreact(`custom:${e.id}`, true); palette = false; }} title={`:${e.name}:`}><EmojiImage hash={e.blob_hash} name={e.name} /></button>
         {/each}
       </div>
     {/if}

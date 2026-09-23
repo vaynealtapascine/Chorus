@@ -183,6 +183,63 @@ const TABLES: &[&str] = &[
 ];
 
 #[test]
+fn message_attachment_links_survive_out_of_order_delivery_and_rebuild() {
+    let (mut c, account, _, scope) = setup();
+    let attachment = new_id(1, [71; 10]);
+    let message = new_id(1, [72; 10]);
+    let session = ingest::Session {
+        account_id: account,
+        device_id: "d".into(),
+        sample: ClockSample { server_time: T, mono: None, boot_id: None, offset_ms: 0 },
+    };
+    for (i, (kind, entity, payload)) in [
+        (
+            "message.send",
+            message.as_str(),
+            json!({"channel_id":"c", "authors":[], "text":"", "entities":[], "attachments":[attachment]}),
+        ),
+        (
+            "attachment.create",
+            attachment.as_str(),
+            json!({"blob_hash":"0".repeat(64), "filename":"a.png", "mime":"image/png", "size":1}),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let op = Op {
+            id: new_id((T + i as i64) as u64, [i as u8 + 41; 10]),
+            kind: kind.into(),
+            v: 1,
+            scope: scope.clone(),
+            entity_id: Some(entity.into()),
+            hlc: Hlc::new((T + i as i64) as u64, 0, 1),
+            device_at: T + i as i64,
+            tz_offset_min: 0,
+            mono: None,
+            boot_id: None,
+            time_source: TimeSource::Auto,
+            seen_seq: 0,
+            member_id: None,
+            payload,
+            seq: None,
+            account_id: None,
+            device_id: None,
+            occurred_at: None,
+            received_at: None,
+        };
+        let (ack, _) = ingest::accept(&c, &session, op, T + i as i64, false).unwrap();
+        assert!(ack.error.is_none(), "{:?}", ack.error);
+    }
+    let sql = "SELECT owner_type, owner_id, attachment_id, position FROM item_attachment";
+    let before = dump(&c, sql);
+    assert_eq!(before.len(), 1);
+    assert!(before[0].contains(&attachment));
+    project::rebuild(&mut c).unwrap();
+    assert_eq!(dump(&c, sql), before);
+}
+
+#[test]
 fn sql_matches_model_and_rebuild_is_identical() {
     for seed in 1..=40u64 {
         let (mut c, a, acct, space) = setup();

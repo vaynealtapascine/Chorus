@@ -463,6 +463,12 @@ pub fn validate(op: &Op) -> Result<Known, OpError> {
                 return Err(OpError::CreateOnly(key.clone()));
             }
         }
+        if matches!(op.kind.as_str(), "emoji.create" | "emoji.set")
+            && (op.kind == "emoji.create" || obj.contains_key("name"))
+            && !obj.get("name").and_then(Value::as_str).is_some_and(crate::emoji::valid_name)
+        {
+            return Err(OpError::BadPayload("emoji name must be 2–32 lowercase letters, digits or underscores".into()));
+        }
     }
     Ok(Known::Yes(spec))
 }
@@ -531,6 +537,14 @@ mod tests {
         assert!(matches!(validate(&o), Err(OpError::WrongScope { .. })));
         let o = op("emoji.create", "server", json!({"name": "kai_wave"}));
         assert!(matches!(validate(&o), Ok(Known::Yes(_))));
+    }
+
+    #[test]
+    fn emoji_name_shape_is_checked_by_the_core() {
+        assert!(matches!(validate(&op("emoji.create", "server", json!({"name":"ok_2"}))), Ok(Known::Yes(_))));
+        for payload in [json!({}), json!({"name":"Nope"}), json!({"name":"x"})] {
+            assert!(matches!(validate(&op("emoji.create", "server", payload)), Err(OpError::BadPayload(_))));
+        }
     }
 
     #[test]

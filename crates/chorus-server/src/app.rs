@@ -3,9 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
-use axum::extract::Path;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::{DefaultBodyLimit, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
@@ -21,7 +21,7 @@ use tokio::sync::mpsc;
 use crate::auth::{self, AuthError};
 use crate::config::Config;
 use crate::follows::{self, FollowError};
-use crate::{db, ingest, now_ms, oplog};
+use crate::{blobs, db, ingest, now_ms, oplog};
 
 /// A connected device.
 struct Peer {
@@ -72,7 +72,15 @@ pub fn router(state: AppState) -> Router {
         .route("/devices/push", put(push_register).delete(push_unregister))
         .route("/android/latest", get(android_latest))
         .route("/notifications", get(notifications))
+        .route("/emoji", get(emoji_list))
         .route("/accounts/{id}/view", get(account_view))
+        .route(
+            "/blobs/{hash}",
+            get(blobs::get_blob)
+                .head(blobs::head_blob)
+                .put(blobs::put_blob)
+                .layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
+        )
         .route("/sync", get(sync_ws));
     let mut app =
         Router::new().nest("/api/v1", api).route("/download/android", get(android_download)).with_state(state.clone());
@@ -170,7 +178,15 @@ async fn session(State(s): State<AppState>, Json(b): Json<SessionIn>) -> Result<
     let ttl = s.session_ttl();
     let now = now_ms();
     let token = auth::verify(&s.db(), &b.device_id, &b.nonce, &b.signature, &s.instance_id, now, ttl)?;
-    Ok(Json(json!({"session": token, "expires_at": now + ttl})))
+    let is_admin: bool = s
+        .db()
+        .query_row(
+            "SELECT a.is_admin FROM account a JOIN device d ON d.account_id = a.id WHERE d.id = ?1",
+            [&b.device_id],
+            |r| r.get(0),
+        )
+        .map_err(anyhow::Error::from)?;
+    Ok(Json(json!({"session": token, "expires_at": now + ttl, "is_admin": is_admin})))
 }
 
 fn bearer(headers: &axum::http::HeaderMap) -> Result<&str, ApiError> {
@@ -179,6 +195,37 @@ fn bearer(headers: &axum::http::HeaderMap) -> Result<&str, ApiError> {
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or_else(|| ApiError(StatusCode::UNAUTHORIZED, "unauthenticated", "missing session".into()))
+}
+
+/// Server-wide active emoji for clients and integrations that do not read the sync log.
+async fn emoji_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    auth::authenticate(&conn, bearer(&headers)?, now_ms(), s.session_ttl())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, aliases, category, blob_hash, is_animated FROM custom_emoji
+         WHERE deleted_at IS NULL ORDER BY coalesce(category, ''), name",
+        )
+        .map_err(anyhow::Error::from)?;
+    let rows = stmt
+        .query_map([], |r| {
+            let aliases: String = r.get(2)?;
+            Ok(json!({
+                "id": r.get::<_, String>(0)?,
+                "name": r.get::<_, String>(1)?,
+                "aliases": serde_json::from_str::<serde_json::Value>(&aliases).unwrap_or_else(|_| json!([])),
+                "category": r.get::<_, Option<String>>(3)?,
+                "blob_hash": r.get::<_, String>(4)?,
+                "is_animated": r.get::<_, bool>(5)?,
+            }))
+        })
+        .map_err(anyhow::Error::from)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(anyhow::Error::from)?;
+    Ok(Json(json!({"emoji": rows})))
 }
 
 /// A one-use, 1-day invite that links another device to the caller's account (API.md §2.1).

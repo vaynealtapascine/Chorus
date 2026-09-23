@@ -1,8 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { fuzzy, groupPath, membership, segmentParsing, threadSummaries, type GroupRow } from './data';
+import { bucketAssignments, buckets, customEmojis, fuzzy, groupPath, membership, messages, segmentParsing, threadSummaries, type GroupRow } from './data';
 import type { Projection } from './sync/client';
 
 describe('data helpers', () => {
+  it('reads live buckets and only present follower assignments', () => {
+    const p = { rows: { bucket: {
+      close: { exists: true, fields: { name: 'Close', ceiling: { delay: { min_s: 0, max_s: 0 } } } },
+      retired: { exists: true, fields: { name: 'Old', deleted_at: 1 } },
+    } }, sets: { bucket_assignment: {
+      'close|{"follower_account_id":"friend"}': true,
+      'close|{"follower_account_id":"gone"}': false,
+    } }, fronts: {}, opaque: 0 } as unknown as Projection;
+    expect(buckets(p).map((b) => b.name)).toEqual(['Close']);
+    expect([...bucketAssignments(p).get('close')!]).toEqual(['friend']);
+  });
+  it('keeps retired emoji addressable while excluding them from the active picker', () => {
+    const p = { rows: { custom_emoji: {
+      live: { exists: true, fields: { name: 'wave', aliases: ['hi'], blob_hash: 'one' } },
+      retired: { exists: true, fields: { name: 'old', blob_hash: 'two', deleted_at: 1 } },
+    } }, sets: {}, fronts: {}, opaque: 0 } as unknown as Projection;
+    expect(customEmojis(p).map((e) => [e.name, e.deleted])).toEqual([['old', true], ['wave', false]]);
+  });
   it('fuzzy prefers direct substrings', () => {
     expect(fuzzy('ka', 'Kai')).toBe(0);
     expect(fuzzy('ki', 'Kai')).toBeGreaterThanOrEqual(100);
@@ -18,6 +36,20 @@ describe('data helpers', () => {
       sets: { group_membership: { 'g1|{"member_id":"m1"}': true, 'g1|{"member_id":"m2"}': false } },
     } as unknown as Projection;
     expect([...membership(p).get('g1')!]).toEqual(['m1']);
+  });
+
+  it('resolves message attachments from the replica, preserving alt text and spoilers', () => {
+    const row = (fields: Record<string, unknown>) => ({ exists: true, fields });
+    const p = {
+      rows: {
+        message: { m: row({ channel_id: 'c', authors: ['kai'], text: '', attachments: ['a', 'missing'] }) },
+        attachment: { a: row({ blob_hash: 'abcd', thumb_blob_hash: 'efgh', mime: 'image/png', filename: 'pic.png', alt_text: 'A cat', is_spoiler: true }) },
+      }, fronts: {}, sets: {}, opaque: 0,
+    } as unknown as Projection;
+    expect(messages(p, 'c')[0].attachments).toEqual([{
+      id: 'a', blob_hash: 'abcd', thumb_blob_hash: 'efgh', mime: 'image/png', filename: 'pic.png',
+      size: 0, alt_text: 'A cat', is_spoiler: true,
+    }]);
   });
 
   it('builds subsystem paths and survives cycles', () => {

@@ -178,7 +178,7 @@ private fun tiles(model: Model, query: String, folder: String?): List<Tile> {
     val members = model.active
     if (query.isNotBlank()) {
         val ms = members.mapNotNull { m ->
-            fuzzy(query, listOfNotNull(m.name, m.displayName, m.pronouns, *m.sigils.toTypedArray()).joinToString(" "))?.let { it to Tile.One(Subject("member", m.id, m.shownName, m.color, m.glyph)) }
+            fuzzy(query, listOfNotNull(m.name, m.displayName, m.pronouns, *m.sigils.toTypedArray()).joinToString(" "))?.let { it to Tile.One(Subject("member", m.id, m.shownName, m.color, m.glyph, m.avatarBlob)) }
         }
         val gs = model.groups.filter { it.isSubsystem }.mapNotNull { g ->
             fuzzy(query, g.name)?.let { (it + 1) to Tile.One(Subject("group", g.id, g.name, g.color ?: "#A09184", "◌"), whole = true) }
@@ -193,15 +193,15 @@ private fun tiles(model: Model, query: String, folder: String?): List<Tile> {
         val order = { id: String -> recent.indexOf(id).let { if (it < 0) Int.MAX_VALUE else it } }
         return listOf<Tile>(Tile.One(Subject("group", g.id, g.name, g.color ?: "#A09184", "◌"), whole = true)) +
             subsystems.filter { it.parentId == folder }.map { Tile.Folder(it.id, it.name, it.color, model.membership[it.id]?.size ?: 0) } +
-            members.filter { it.id in inside }.sortedBy { order(it.id) }.map { Tile.One(Subject("member", it.id, it.shownName, it.color, it.glyph)) }
+            members.filter { it.id in inside }.sortedBy { order(it.id) }.map { Tile.One(Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob)) }
     }
     val recents = model.recents(8)
     val byId = members.associateBy { it.id }
     val first = recents.mapNotNull { byId[it] }
     val rest = members.filter { it.id !in recents }
-    return first.map { Tile.One(Subject("member", it.id, it.shownName, it.color, it.glyph)) } +
+    return first.map { Tile.One(Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob)) } +
         subsystems.filter { it.parentId == null }.map { Tile.Folder(it.id, it.name, it.color, model.membership[it.id]?.size ?: 0) } +
-        rest.map { Tile.One(Subject("member", it.id, it.shownName, it.color, it.glyph)) }
+        rest.map { Tile.One(Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob)) }
 }
 
 @Composable
@@ -231,7 +231,7 @@ private fun SubjectTile(s: Subject, here: Boolean, caption: String?, onTap: () -
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Avatar(s.glyph, s.color, 44.dp)
+        Avatar(s.glyph, s.color, 44.dp, avatarBlob = s.avatarBlob)
         Text(s.name, color = t.name, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
         if (caption != null) Text(caption, color = p.ink3, fontSize = 11.sp, maxLines = 1)
     }
@@ -270,7 +270,7 @@ fun FrontCard(model: Model) {
     ) {
         Box(Modifier.width((52 + 22 * (fronting.size.coerceAtMost(4) - 1).coerceAtLeast(0)).dp)) {
             if (fronting.isEmpty()) Avatar("·", "#A09184", 52.dp)
-            fronting.take(4).forEachIndexed { i, s -> Avatar(s.glyph, s.color, 52.dp, Modifier.offset(x = (22 * i).dp)) }
+            fronting.take(4).forEachIndexed { i, s -> Avatar(s.glyph, s.color, 52.dp, Modifier.offset(x = (22 * i).dp), s.avatarBlob) }
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {

@@ -5,6 +5,7 @@ import type { SwitchRow } from '../front.svelte';
 import { load, save, type Changes, type DeviceRecord } from './persist';
 import { renew } from './device';
 import { applyDelta, type Delta } from './delta';
+import { flushUploads } from './uploads';
 
 export type Status = 'offline' | 'connecting' | 'live' | 'no-device';
 
@@ -58,6 +59,10 @@ export class SyncClient {
       this.status = 'no-device';
       this.emit();
       return;
+    }
+    // Older saved devices predate the admin capability in the enrolment response.
+    if (this.device.is_admin === undefined && navigator.onLine) {
+      try { this.device = await renew(this.device); } catch { /* reconnect will retry auth later */ }
     }
     this.replica = WebReplica.restore(
       this.device.device_id,
@@ -202,6 +207,7 @@ export class SyncClient {
       if (frame.t === 'welcome') {
         this.status = 'live';
         this.backoff = 1000;
+        void flushUploads(this.device);
       }
       const out = JSON.parse(this.replica!.onFrame(ev.data as string, Date.now())) as unknown[];
       this.sendAll(out);

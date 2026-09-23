@@ -5,6 +5,7 @@
 
 pub mod api;
 pub mod color;
+pub mod emoji;
 pub mod feed;
 pub mod front;
 pub mod hlc;

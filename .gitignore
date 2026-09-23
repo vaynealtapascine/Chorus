@@ -7,3 +7,5 @@ build/
 local.properties
 *.iml
 .idea/
+/data-dev-sol
+/sol-dev.toml

@@ -16,6 +16,7 @@ export function snapshot(message: MessageRow, channelName: string, range?: TextR
     text: message.text.slice(start, end),
     entities,
     occurred_at: message.occurred_at,
+    ...(range ? {} : { attachments: message.attachments }),
     ...(range ? { offset: start, length: range.length } : { offset: 0, length: message.text.length }),
   };
 }

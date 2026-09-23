@@ -101,6 +101,36 @@ pub fn accept(
             ));
         }
     }
+    // The SQL partial unique index is the last line of defense. Return a normal rejected ack
+    // before inserting the op so concurrent admin edits cannot abort the ingest transaction.
+    if matches!(o.kind.as_str(), "emoji.create" | "emoji.set" | "emoji.restore") {
+        let candidate = if let Some(name) = o.payload.get("name").and_then(serde_json::Value::as_str) {
+            Some(name.to_string())
+        } else if o.kind == "emoji.restore" {
+            conn.query_row("SELECT name FROM custom_emoji WHERE id = ?1", [o.entity().unwrap_or_default()], |r| {
+                r.get(0)
+            })
+            .optional()?
+        } else {
+            None
+        };
+        if let Some(name) = candidate {
+            let mut stmt = conn
+                .prepare_cached("SELECT id, name, deleted_at IS NOT NULL FROM custom_emoji WHERE name IS NOT NULL")?;
+            let rows: Vec<(String, String, bool)> =
+                stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
+            if !chorus_core::emoji::name_available(
+                &name,
+                o.entity().unwrap_or_default(),
+                rows.iter().map(|r| (r.0.as_str(), r.1.as_str(), r.2)),
+            ) {
+                return Ok((
+                    AckResult::err(o.id, "conflict", format!("emoji name :{name}: is already in use"), false),
+                    None,
+                ));
+            }
+        }
+    }
     let mut suspect = false;
     if !preserved {
         let t = time::OpTime {

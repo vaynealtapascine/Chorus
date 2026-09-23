@@ -3,6 +3,7 @@
   import { fuzzy, groups, members } from '../data';
   import { doSwitch, LEVEL_LABEL, LEVELS, type Entry, type Notify } from '../front.svelte';
   import { sync, type Projection } from '../sync/client';
+  import AvatarImage from './AvatarImage.svelte';
 
   let { projection, dark, onclose }: { projection: Projection; dark: boolean; onclose: () => void } = $props();
 
@@ -12,15 +13,16 @@
     name: string;
     color: string;
     glyph: string;
+    avatarBlob?: string;
   }
 
   const cands: Cand[] = $derived([
     ...members(projection)
       .filter((m) => !m.deleted && !m.archived)
-      .map((m) => ({ type: 'member' as const, id: m.id, name: m.display_name ?? m.name, color: m.color, glyph: m.sigils[0] ?? m.name[0] })),
+      .map((m) => ({ type: 'member' as const, id: m.id, name: m.display_name ?? m.name, color: m.color, glyph: m.sigils[0] ?? m.name[0], avatarBlob: m.avatar_blob })),
     ...groups(projection)
       .filter((g) => g.kind === 'subsystem')
-      .map((g) => ({ type: 'group' as const, id: g.id, name: g.name, color: g.color ?? '#A09184', glyph: '◌' })),
+      .map((g) => ({ type: 'group' as const, id: g.id, name: g.name, color: g.color ?? '#A09184', glyph: '◌', avatarBlob: g.avatar_blob })),
   ]);
   const byKey = $derived(new Map(cands.map((c) => [`${c.type}:${c.id}`, c])));
 
@@ -106,7 +108,7 @@
         {@const c = byKey.get(key(e))}
         {@const col = core.adaptColor(c?.color ?? '#A09184', dark)}
         <li style="--ring: {col.ring}">
-          <span class="avatar small" aria-hidden="true">{c?.glyph ?? '?'}</span>
+          <span class="avatar small" aria-hidden="true"><AvatarImage hash={c?.avatarBlob} glyph={c?.glyph ?? '?'} name={c?.name} /></span>
           <span class="nm" style="color: {col.name}">{c?.name ?? 'Unknown'}</span>
           <button class="lvl" data-level={e.level} onclick={() => cycleLevel(i)} title="Change level">{LEVEL_LABEL[e.level]}</button>
           <button class="icon" class:on={e.is_primary} onclick={() => makePrimary(i)} title="Primary" aria-label="Make primary">★</button>
@@ -126,7 +128,7 @@
       {@const col = core.adaptColor(c.color, dark)}
       {@const on = selected.some((e) => key(e) === `${c.type}:${c.id}`)}
       <button class="cand" class:on style="--ring: {col.ring}; --tint: {col.tint}" onclick={() => toggle(c)}>
-        <span class="avatar" aria-hidden="true">{c.glyph}</span>
+        <span class="avatar" aria-hidden="true"><AvatarImage hash={c.avatarBlob} glyph={c.glyph} name={c.name} /></span>
         <span style="color: {col.name}">{c.name}</span>
         {#if c.type === 'group'}<span class="tagline">subsystem</span>{/if}
       </button>

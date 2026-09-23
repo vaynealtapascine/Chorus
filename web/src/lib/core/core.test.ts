@@ -16,6 +16,12 @@ describe('chorus-core in the browser build', () => {
     expect(core.toMarkup(r)).toBe('hi **@kai**');
   });
 
+  it('resolves custom emoji to a stable ID while retaining the typed name', () => {
+    const rich = core.parseMarkup('hi :wave:', { emoji: { wave: 'emoji-id' } });
+    expect(rich.text).toBe('hi :wave:');
+    expect(rich.entities).toEqual([{ type: 'custom_emoji', offset: 3, length: 6, emoji_id: 'emoji-id' }]);
+  });
+
   it('composes segments', () => {
     const c = core.compose('🌌 go\n🔖=> no', [{ member_id: 'sky', sigils: ['🌌'] }, { member_id: 'mark', sigils: ['🔖'] }], {}, ['def']);
     expect(c.segments.map((s) => s.authors)).toEqual([['sky'], ['mark']]);

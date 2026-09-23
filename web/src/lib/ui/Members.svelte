@@ -4,6 +4,7 @@
   import { router } from '../router.svelte';
   import { sync, type Projection } from '../sync/client';
   import PkImport from './PkImport.svelte';
+  import AvatarImage from './AvatarImage.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
 
@@ -110,7 +111,7 @@
     {#each shown as m (m.id)}
       {@const c = core.adaptColor(m.color, dark)}
       <a class="member" href="#/members/{m.id}" style="--ring: {c.ring}; --tint: {c.tint}">
-        <span class="avatar" aria-hidden="true">{m.sigils[0] ?? m.name[0]}</span>
+        <span class="avatar" aria-hidden="true"><AvatarImage hash={m.avatar_blob} glyph={m.sigils[0] ?? m.name[0]} name={m.name} /></span>
         <span class="name" style="color: {c.name}">{m.display_name ?? m.name}</span>
         {#if m.pronouns}<span class="pronouns">{m.pronouns}</span>{/if}
       </a>

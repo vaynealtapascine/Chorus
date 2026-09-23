@@ -1,11 +1,15 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { core, type Composed } from '../core';
-  import { channels, lastRead, members, messageById, messages, reactions, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
+  import { channels, customEmojis, lastRead, members, messageById, messages, reactions, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
   import { router } from '../router.svelte';
   import { snapshot } from '../selection';
   import { editedSegments, segmentMarkup } from '../segments';
   import { sync, type Projection } from '../sync/client';
+  import { flushUploads, imageThumbnail, stageBlob } from '../sync/uploads';
   import Message from './Message.svelte';
+  import AvatarImage from './AvatarImage.svelte';
+  import EmojiImage from './EmojiImage.svelte';
 
   let { projection, dark, channelId }: { projection: Projection; dark: boolean; channelId?: string } = $props();
 
@@ -23,6 +27,9 @@
   });
   const parentChannel = $derived(allChannels.find((c) => c.id === threadParent?.channel_id));
   const people = $derived(new Map(members(projection).map((m) => [m.id, m])));
+  const emojiRows = $derived(customEmojis(projection));
+  const emojiById = $derived(new Map(emojiRows.map((e) => [e.id, e])));
+  const activeEmoji = $derived(emojiRows.filter((e) => !e.deleted));
   const scopeOf = (spaceId: string) => `space:${spaceId}`;
   const scope = $derived(space ? scopeOf(space.id) : '');
   const parseSegments = $derived(segmentParsing(projection, sync.accountId));
@@ -42,9 +49,16 @@
     mentions: Object.fromEntries(
       [...people.values()].filter((m) => !m.deleted).map((m) => [m.name.toLowerCase(), { target_type: 'member', target_id: m.id }]),
     ),
+    emoji: Object.fromEntries([
+      ...activeEmoji.flatMap((e) => e.aliases.map((alias) => [alias, e.id])),
+      ...activeEmoji.map((e) => [e.name, e.id]), // a primary name wins over an alias collision
+    ]),
   });
 
   let draft = $state('');
+  let pending = $state<{ file: File; alt: string; spoiler: boolean }[]>([]);
+  let uploadError = $state('');
+  let fileInput: HTMLInputElement | undefined = $state();
   let replyTo = $state<MessageRow | null>(null);
   let quoting = $state<QuoteValue | null>(null);
   let editing = $state<MessageRow | null>(null);
@@ -59,6 +73,90 @@
   let showPins = $state(false);
   let picking = $state(false);
   let box: HTMLTextAreaElement | undefined = $state();
+  let emojiPicker = $state(false);
+  let emojiFile: File | null = $state(null);
+  let emojiName = $state('');
+  let emojiAliases = $state('');
+  let emojiCategory = $state('Custom');
+  let emojiError = $state('');
+  let emojiBitmap: ImageBitmap | null = null;
+  let emojiCropReady = $state(false);
+  let emojiCanvas: HTMLCanvasElement | undefined = $state();
+  let emojiZoom = $state(1);
+  let emojiX = $state(0);
+  let emojiY = $state(0);
+  onDestroy(() => emojiBitmap?.close());
+  async function chooseEmoji(file: File | null) {
+    emojiBitmap?.close(); emojiBitmap = null; emojiCropReady = false;
+    emojiFile = file;
+    if (!file || file.type === 'image/gif') return;
+    try {
+      emojiBitmap = await createImageBitmap(file);
+      emojiZoom = 1; emojiX = emojiY = 0; emojiCropReady = true;
+    } catch { emojiError = 'Could not read this image.'; }
+  }
+  $effect(() => {
+    void emojiCropReady;
+    const image = emojiBitmap;
+    const canvas = emojiCanvas;
+    if (!image || !canvas) return;
+    const scale = Math.max(128 / image.width, 128 / image.height) * emojiZoom;
+    const width = image.width * scale;
+    const height = image.height * scale;
+    const x = (128 - width) / 2 + emojiX * (width - 128) / 2;
+    const y = (128 - height) / 2 + emojiY * (height - 128) / 2;
+    const context = canvas.getContext('2d');
+    context?.clearRect(0, 0, 128, 128);
+    context?.drawImage(image, x, y, width, height);
+  });
+  const completion = $derived.by(() => {
+    const before = draft.slice(0, box?.selectionStart ?? draft.length);
+    const match = before.match(/(?:^|\s):([a-z0-9_]{1,32})$/);
+    return match ? activeEmoji.filter((e) => [e.name, ...e.aliases].some((name) => name.startsWith(match[1]))).slice(0, 8) : [];
+  });
+
+  function insertEmoji(name: string) {
+    const at = box?.selectionStart ?? draft.length;
+    const before = draft.slice(0, at);
+    const match = before.match(/(?:^|\s):([a-z0-9_]{1,32})$/);
+    const from = match ? at - match[1].length - 1 : at;
+    draft = `${draft.slice(0, from)}:${name}: ${draft.slice(at)}`;
+    emojiPicker = false;
+    queueMicrotask(() => { box?.focus(); box?.setSelectionRange(from + name.length + 3, from + name.length + 3); });
+  }
+
+  async function addEmoji() {
+    emojiError = '';
+    const name = emojiName.trim();
+    if (!emojiFile || !/^[a-z0-9_]{2,32}$/.test(name)) { emojiError = 'Choose an image and a 2–32 character lowercase name.'; return; }
+    if (activeEmoji.some((e) => e.name === name)) { emojiError = 'That emoji name is already in use.'; return; }
+    if (!['image/png', 'image/webp', 'image/gif'].includes(emojiFile.type)) { emojiError = 'Use PNG, WebP, or GIF.'; return; }
+    try {
+      let blob: Blob;
+      if (emojiFile.type === 'image/gif') {
+        const image = await createImageBitmap(emojiFile);
+        if (image.width !== image.height || image.width > 128) throw new Error('Animated GIFs must already be square and at most 128 px.');
+        image.close();
+        blob = emojiFile;
+      } else {
+        if (!emojiCropReady || !emojiCanvas) throw new Error('Image crop is not ready yet.');
+        blob = await new Promise<Blob>((resolve, reject) => emojiCanvas!.toBlob((value) => value ? resolve(value) : reject(new Error('Image crop failed')), 'image/webp', 0.85));
+      }
+      if (blob.size > 256 * 1024) throw new Error('Cropped emoji exceeds 256 KB.');
+      const staged = await stageBlob(blob, blob.type, sync.accountId);
+      sync.create('emoji.create', 'server', sync.newId(), {
+        name,
+        aliases: emojiAliases.split(',').map((a) => a.trim()).filter((a) => /^[a-z0-9_]{2,32}$/.test(a)),
+        category: emojiCategory.trim() || 'Custom',
+        blob_hash: staged.hash,
+        is_animated: emojiFile.type === 'image/gif',
+      });
+      if (sync.status === 'live') void flushUploads(sync.device);
+      emojiName = emojiAliases = '';
+      emojiFile = null;
+      emojiBitmap?.close(); emojiBitmap = null; emojiCropReady = false;
+    } catch (error) { emojiError = String(error); }
+  }
   let activeChannelId: string | undefined;
   $effect(() => {
     if (current?.id === activeChannelId) return;
@@ -77,7 +175,24 @@
     preview ? preview.segments.map((s) => s.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')).join(' → ') : '',
   );
 
-  function send() {
+  function addFiles(files: FileList | File[]) {
+    pending = [...pending, ...[...files].map((file) => ({ file, alt: '', spoiler: false }))];
+  }
+
+  function dropFiles(e: DragEvent) {
+    if (!e.dataTransfer?.files.length) return;
+    e.preventDefault();
+    addFiles(e.dataTransfer.files);
+  }
+
+  function pasteFiles(e: ClipboardEvent) {
+    const files = [...(e.clipboardData?.files ?? [])];
+    if (!files.length) return;
+    e.preventDefault();
+    addFiles(files);
+  }
+
+  async function send() {
     if (!current) return;
     if (editing) {
       const result = editingParts
@@ -93,19 +208,42 @@
       draft = '';
       return;
     }
-    if (!preview) return;
-    if (!preview.rich.text.trim() || !preview.authors.length) return;
+    if (!preview && !pending.length) return;
+    const authors = preview?.authors ?? (speaker ? [speaker] : []);
+    if (!authors.length) return;
+    const attachmentIds: string[] = [];
+    try {
+      for (const item of pending) {
+        const original = await stageBlob(item.file, item.file.type, sync.accountId);
+        const thumb = await imageThumbnail(item.file);
+        const thumbnail = thumb ? await stageBlob(thumb, thumb.type, sync.accountId) : null;
+        const id = sync.newId();
+        sync.create('attachment.create', scope, id, {
+          blob_hash: original.hash, filename: item.file.name, mime: original.mime, size: item.file.size,
+          ...(thumbnail ? { thumb_blob_hash: thumbnail.hash } : {}),
+          alt_text: item.alt, is_spoiler: item.spoiler,
+        });
+        attachmentIds.push(id);
+      }
+      uploadError = '';
+    } catch (error) {
+      uploadError = `Could not queue the attachment: ${String(error)}`;
+      return;
+    }
     sync.create('message.send', scope, sync.newId(), {
       channel_id: current.id,
-      authors: preview.authors,
-      text: preview.rich.text,
-      entities: preview.rich.entities,
-      ...(preview.segments.length > 1 ? { segments: preview.segments } : {}),
+      authors,
+      text: preview?.rich.text ?? '',
+      entities: preview?.rich.entities ?? [],
+      ...(preview && preview.segments.length > 1 ? { segments: preview.segments } : {}),
+      ...(attachmentIds.length ? { attachments: attachmentIds } : {}),
       ...(replyTo ? { reply_to: replyTo.id } : {}),
       ...(quoting ? { quote: quoting } : {}),
       sent_offline: sync.status !== 'live',
     });
     draft = '';
+    pending = [];
+    if (sync.status === 'live') void flushUploads(sync.device);
     chosen = null;
     replyTo = null;
     quoting = null;
@@ -114,9 +252,10 @@
   }
 
   function onkey(e: KeyboardEvent) {
+    if (e.key === 'Escape' && (emojiPicker || completion.length)) { emojiPicker = false; e.preventDefault(); return; }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      send();
+      void send();
     }
     if (e.key === 'Escape') cancel();
   }
@@ -195,13 +334,23 @@
     if (!target || target.archived || !items || !speaker || !current) return;
     if (sharingOutward(target.id, target.space_id, current.space_id, forwardingSensitive) &&
         !confirm('This forward shares a snapshot of the selected content with another channel. Continue?')) return;
-    sync.create('message.forward', scopeOf(target.space_id), sync.newId(), {
+    const targetScope = scopeOf(target.space_id);
+    const attachments = items.flatMap((item) => item.attachments ?? []).map((a) => {
+      const id = sync.newId();
+      sync.create('attachment.create', targetScope, id, {
+        blob_hash: a.blob_hash, thumb_blob_hash: a.thumb_blob_hash, filename: a.filename,
+        mime: a.mime, size: a.size, alt_text: a.alt_text, is_spoiler: a.is_spoiler,
+      });
+      return id;
+    });
+    sync.create('message.forward', targetScope, sync.newId(), {
       channel_id: target.id,
       authors: [speaker],
       text: '',
       entities: [],
       forward_of_id: items[0].message_id,
       forward_snapshot: items,
+      ...(attachments.length ? { attachments } : {}),
     });
     forwarding = null;
     router.go(`/chat/${target.id}`);
@@ -298,7 +447,7 @@
     {/if}
   </aside>
 
-  <section class="room" aria-label={current ? `#${current.name}` : 'Chat'}>
+  <section class="room" aria-label={current ? `#${current.name}` : 'Chat'} ondragover={(e) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); }} ondrop={dropFiles}>
     <header>
       {#if current?.kind === 'thread'}
         <a class="thread-back" href="#/chat/{parentChannel?.id ?? ''}">‹ #{parentChannel?.name ?? 'channel'}</a>
@@ -364,6 +513,7 @@
           onthread={() => openThread(m)}
           reacts={reacts.get(m.id)}
           {speaker}
+          {emojiById}
           onreact={(emoji, on) => react(m, emoji, on)}
         />
       {:else}
@@ -411,12 +561,56 @@
         })} /> Parse speaker annotations on new lines</label>
       </details>
     {/if}
+    {#if sync.device?.is_admin}
+      <details class="chat-advanced emoji-manager">
+        <summary>Manage custom emoji</summary>
+        <div class="emoji-form">
+          <input type="file" accept="image/png,image/webp,image/gif" aria-label="Emoji image" onchange={(e) => void chooseEmoji(e.currentTarget.files?.[0] ?? null)} />
+          <input bind:value={emojiName} placeholder="name" aria-label="Emoji name" />
+          <input bind:value={emojiAliases} placeholder="aliases, comma separated" aria-label="Emoji aliases" />
+          <input bind:value={emojiCategory} placeholder="category" aria-label="Emoji category" />
+          <button onclick={() => void addEmoji()}>Add emoji</button>
+        </div>
+        {#if emojiCropReady}
+          <div class="emoji-crop">
+            <canvas width="128" height="128" bind:this={emojiCanvas} aria-label="Emoji crop preview"></canvas>
+            <label>Zoom <input type="range" min="1" max="3" step="0.05" bind:value={emojiZoom} /></label>
+            <label>Left/right <input type="range" min="-1" max="1" step="0.05" bind:value={emojiX} /></label>
+            <label>Up/down <input type="range" min="-1" max="1" step="0.05" bind:value={emojiY} /></label>
+          </div>
+        {/if}
+        <p class="hint">PNG and WebP use the 128 px crop shown above. Animated GIFs must already be square and at most 128 px. Limit: 256 KB.</p>
+        {#if emojiError}<p role="alert">{emojiError}</p>{/if}
+        <div class="emoji-existing">
+          {#each activeEmoji as e (e.id)}
+            <span><EmojiImage hash={e.blob_hash} name={e.name} /> :{e.name}: <button onclick={() => sync.create('emoji.delete', 'server', e.id, {})} aria-label={`Retire ${e.name}`}>Retire</button></span>
+          {/each}
+        </div>
+      </details>
+    {/if}
 
+    {#if pending.length}
+      <div class="pending-files" aria-label="Attachments ready to send">
+        {#each pending as item, i (item.file.name + i)}
+          <div class="pending-file">
+            <strong>{item.file.name}</strong>
+            <input placeholder="Alt text" aria-label={`Alt text for ${item.file.name}`} bind:value={item.alt} />
+            <label><input type="checkbox" bind:checked={item.spoiler} /> Spoiler</label>
+            <button onclick={() => (pending = pending.filter((_, n) => n !== i))} aria-label={`Remove ${item.file.name}`}>✕</button>
+          </div>
+        {/each}
+      </div>
+    {/if}
+    {#if uploadError}<p class="upload-error" role="alert">{uploadError}</p>{/if}
     <div class="composer">
+      {#if !editing}
+        <input class="file-input" type="file" multiple bind:this={fileInput} onchange={(e) => { addFiles(e.currentTarget.files ?? []); e.currentTarget.value = ''; }} aria-label="Choose attachments" />
+        <button class="attach" onclick={() => fileInput?.click()} title="Attach files">＋</button>
+      {/if}
       {#if !editing}<div class="chip-wrap">
         <button class="chip" onclick={() => (picking = !picking)} title="Speaking as">
           {#if speaker}
-            <span class="avatar" style="--ring: {color(speaker).ring}">{people.get(speaker)?.sigils[0] ?? people.get(speaker)?.name[0]}</span>
+            <span class="avatar" style="--ring: {color(speaker).ring}"><AvatarImage hash={people.get(speaker)?.avatar_blob} glyph={people.get(speaker)?.sigils[0] ?? people.get(speaker)?.name[0] ?? '?'} name={people.get(speaker)?.name} /></span>
           {:else}
             <span class="avatar">?</span>
           {/if}
@@ -443,18 +637,52 @@
             bind:this={box}
             bind:value={draft}
             onkeydown={onkey}
+            onpaste={pasteFiles}
             rows="1"
             placeholder={current ? `Message #${current.name}` : ''}
             aria-label="Message"
           ></textarea>
         {/if}
+        {#if completion.length && !editing}
+          <div class="emoji-suggestions" role="listbox" aria-label="Emoji autocomplete">
+            {#each completion as e (e.id)}
+              <button onclick={() => insertEmoji(e.name)}><EmojiImage hash={e.blob_hash} name={e.name} /> :{e.name}:</button>
+            {/each}
+          </div>
+        {/if}
       </div>
-      <button class="send" onclick={send} disabled={editing ? (editingParts ? !editingParts.some((part) => part.trim()) : !draft.trim()) : !preview || !preview.authors.length}>{editing ? 'Save' : 'Send'}</button>
+      {#if !editing}<div class="chip-wrap">
+        <button class="chip" onclick={() => (emojiPicker = !emojiPicker)} title="Custom emoji" aria-label="Custom emoji">☺</button>
+        {#if emojiPicker}
+          <div class="picker emoji-pick" role="listbox" aria-label="Custom emoji">
+            {#each activeEmoji as e (e.id)}
+              <button onclick={() => insertEmoji(e.name)}><EmojiImage hash={e.blob_hash} name={e.name} /> :{e.name}: <small>{e.category}</small></button>
+            {/each}
+          </div>
+        {/if}
+      </div>{/if}
+      <button class="send" onclick={() => void send()} disabled={editing ? (editingParts ? !editingParts.some((part) => part.trim()) : !draft.trim()) : (!preview && !pending.length) || (!preview?.authors.length && !speaker)}>{editing ? 'Save' : 'Send'}</button>
     </div>
   </section>
 </div>
 
 <style>
+  .emoji-form, .emoji-existing { display: flex; flex-wrap: wrap; gap: var(--s-2); padding: var(--s-2) 0; }
+  .emoji-crop { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); }
+  .emoji-crop canvas { width: 128px; height: 128px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .emoji-crop label { display: inline-flex; align-items: center; gap: var(--s-1); }
+  .emoji-form input { min-width: 10ch; max-width: 22ch; }
+  .emoji-existing span { display: inline-flex; align-items: center; gap: var(--s-1); }
+  .hint { color: var(--ink-3); font-size: var(--fs-xs); }
+  .emoji-suggestions { display: flex; flex-wrap: wrap; gap: var(--s-1); padding: var(--s-1); }
+  .emoji-suggestions button, .emoji-pick button { display: inline-flex; align-items: center; gap: var(--s-1); }
+  .file-input { display: none; }
+  .pending-files { display: grid; gap: var(--s-1); padding: var(--s-2); background: var(--surface-2); border-radius: var(--r-md); }
+  .pending-file { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); font-size: var(--fs-sm); }
+  .pending-file strong { max-width: 20ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pending-file input:not([type='checkbox']) { min-width: 10ch; flex: 1; }
+  .pending-file button, .attach { border: 0; background: none; color: var(--accent); cursor: pointer; }
+  .upload-error { color: var(--danger, #b33); font-size: var(--fs-sm); }
   .chat {
     display: grid;
     grid-template-columns: 180px 1fr;
