@@ -1,6 +1,7 @@
 package garden.vayne.chorus.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -22,19 +28,25 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.Chorus
+import garden.vayne.chorus.data.Front
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.launch
 
 /** The switch log, newest first (web History, compact). */
 @Composable
-fun History(model: Model) {
+fun History(chorus: Chorus, model: Model) {
     val p = LocalChorusPalette.current
+    val actions = rememberCoroutineScope()
+    var error by remember { mutableStateOf<String?>(null) }
     val rows = model.switches.asReversed()
     val day = DateFormat.getDateInstance(DateFormat.MEDIUM)
     val time = DateFormat.getTimeInstance(DateFormat.SHORT)
     LazyColumn(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         item { Spacer(Modifier.height(8.dp)) }
+        error?.let { message -> item { Text(message, color = p.danger) } }
         if (rows.isEmpty()) item { Text("No switches yet.", color = p.ink3, modifier = Modifier.padding(vertical = 24.dp)) }
         var lastDay = ""
         rows.forEach { s ->
@@ -64,7 +76,13 @@ fun History(model: Model) {
                         )
                         s.note?.let { Text(it, color = p.ink2, fontSize = 12.sp) }
                     }
-                    Text(time.format(Date(s.occurredAt)) + if (s.retracted) " · undone" else "", color = p.ink3, fontSize = 12.sp)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(time.format(Date(s.occurredAt)) + if (s.retracted) " · undone" else "", color = p.ink3, fontSize = 12.sp)
+                        Text(if (s.retracted) "Redo" else "Undo", color = p.accent, fontSize = 12.sp,
+                            modifier = Modifier.clickable {
+                                actions.launch { try { Front.retract(chorus, s.id, redo = s.retracted); error = null } catch (e: Exception) { error = e.message } }
+                            }.padding(top = 6.dp))
+                    }
                 }
             }
         }

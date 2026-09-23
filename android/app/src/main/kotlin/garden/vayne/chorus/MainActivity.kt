@@ -39,6 +39,7 @@ import garden.vayne.chorus.designsystem.ChorusTheme
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.ui.History
 import garden.vayne.chorus.ui.Home
+import garden.vayne.chorus.ui.DeviceLink
 import garden.vayne.chorus.ui.Members
 import garden.vayne.chorus.ui.Onboarding
 
@@ -89,6 +90,8 @@ private fun App(chorus: Chorus, invite: String?) {
     val status by chorus.status.collectAsState()
     val model by chorus.model.collectAsState()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
+    var linking by rememberSaveable { mutableStateOf(false) }
+    if (linking && status != Status.NoDevice && status != Status.Loading) DeviceLink(chorus) { linking = false }
 
     when (status) {
         Status.Loading -> Box(Modifier.fillMaxSize().background(p.bg))
@@ -103,6 +106,8 @@ private fun App(chorus: Chorus, invite: String?) {
             ) {
                 Text("Chorus", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = p.ink)
                 Spacer(Modifier.weight(1f))
+                Text("Link device", fontSize = 12.sp, color = p.accent,
+                    modifier = Modifier.clickable { linking = true }.padding(horizontal = 10.dp, vertical = 6.dp))
                 val (dot, label) = when (status) {
                     Status.Live -> p.ok to "live"
                     Status.Connecting -> p.warn to "connecting"
@@ -116,7 +121,7 @@ private fun App(chorus: Chorus, invite: String?) {
                 when (tab) {
                     Tab.Home -> Home(chorus, model)
                     Tab.Members -> Members(chorus, model)
-                    Tab.History -> History(model)
+                    Tab.History -> History(chorus, model)
                 }
             }
             Row(

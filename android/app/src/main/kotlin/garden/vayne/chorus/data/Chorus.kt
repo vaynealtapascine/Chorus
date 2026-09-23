@@ -184,6 +184,22 @@ class Chorus private constructor(private val ctx: Context) {
     /** The signed-in device, after the replica has loaded. */
     suspend fun awaitDevice(): DeviceRecord? = withContext(dispatcher) { device }
 
+    /** Create a one-use invite for another device, renewing the signed session if needed. */
+    suspend fun deviceInvite(): String = withContext(dispatcher) {
+        var dev = device ?: error("not set up")
+        if (dev.expiresAt <= System.currentTimeMillis() + 60_000) {
+            check(renewSession()) { "Could not renew the device session." }
+            dev = device ?: error("not set up")
+        }
+        try {
+            Api.post(dev.base, "/devices/invite", JSONObject(), dev.session).getString("url")
+        } catch (e: ApiException) {
+            if (e.code != "unauthenticated" || !renewSession()) throw e
+            dev = device ?: error("not set up")
+            Api.post(dev.base, "/devices/invite", JSONObject(), dev.session).getString("url")
+        }
+    }
+
     /** A fresh model, waiting for the replica to load (for the widget in a cold process). */
     suspend fun awaitModel(): Model = withContext(dispatcher) {
         val r = replica ?: return@withContext Model.Empty

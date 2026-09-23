@@ -38,16 +38,25 @@ object Front {
     }
 
     /** Record a full switch (the switcher sheet). */
-    suspend fun switch(chorus: Chorus, entries: List<Entry>, label: String, at: Long? = null) {
-        val arr = JSONArray().also { a -> entries.forEach { a.put(it.toJson()) } }
-        val id = chorus.create("front.switch", chorus.newId(), JSONObject().put("entries", arr), userTime = at)
+    suspend fun switch(chorus: Chorus, entries: List<Entry>, label: String, at: Long? = null, note: String = "", notify: String = "default") {
+        val id = chorus.create("front.switch", chorus.newId(), switchPayload(entries, note, notify), userTime = at)
         _undo.value = Undo(id, label, System.currentTimeMillis())
+    }
+
+    fun switchPayload(entries: List<Entry>, note: String = "", notify: String = "default"): JSONObject = JSONObject()
+        .put("entries", JSONArray().also { a -> entries.forEach { a.put(it.toJson()) } })
+        .also { if (note.isNotBlank()) it.put("note", note.trim()) }
+        .also { if (notify != "default") it.put("notify", notify) }
+
+    suspend fun retract(chorus: Chorus, opId: String, redo: Boolean = false) {
+        chorus.create(if (redo) "front.unretract" else "front.retract", chorus.newId(), JSONObject().put("target_op_id", opId))
+        dismiss(opId)
     }
 
     suspend fun undo(chorus: Chorus): Boolean {
         val u = _undo.value ?: return false
         if (System.currentTimeMillis() - u.at > 30_000) return false
-        chorus.create("front.retract", chorus.newId(), JSONObject().put("target_op_id", u.opId))
+        retract(chorus, u.opId)
         _undo.value = null
         return true
     }
