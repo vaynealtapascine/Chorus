@@ -12,6 +12,10 @@
   import Stage from './lib/ui/Stage.svelte';
   import Search from './lib/ui/Search.svelte';
   import Insights from './lib/ui/Insights.svelte';
+  import Journal from './lib/ui/Journal.svelte';
+  import Profile from './lib/ui/Profile.svelte';
+  import PostStage from './lib/ui/PostStage.svelte';
+  import More from './lib/ui/More.svelte';
   import Switcher from './lib/ui/Switcher.svelte';
   import Trash from './lib/ui/Trash.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
@@ -48,11 +52,12 @@
     { path: '/', name: 'home', label: 'Home' },
     { path: '/chat', name: 'chat', label: 'Chat' },
     { path: '/members', name: 'members', label: 'Members' },
-    { path: '/history', name: 'history', label: 'History' },
-    { path: '/insights', name: 'insights', label: 'Insights' },
-    { path: '/people', name: 'people', label: 'People' },
+    { path: '/journal', name: 'journal', label: 'Journal' },
+    { path: '/more', name: 'more', label: 'More' },
   ];
-  const active = $derived(router.route.name === 'member' ? 'members' : router.route.name === 'stage' ? 'chat' : router.route.name);
+  const active = $derived(router.route.name === 'member' || router.route.name === 'profile' ? 'members' :
+    router.route.name === 'stage' ? 'chat' : router.route.name === 'post-stage' ? 'journal' :
+    ['history', 'insights', 'people', 'data', 'search', 'trash'].includes(router.route.name) ? 'more' : router.route.name);
 </script>
 
 {#if status === 'no-device'}
@@ -73,6 +78,14 @@
         <Members {projection} {dark} />
       {:else if router.route.name === 'member' && router.route.id}
         <MemberEditor {projection} id={router.route.id} {dark} />
+      {:else if router.route.name === 'profile' && router.route.id}
+        <Profile {projection} id={router.route.id} {dark} />
+      {:else if router.route.name === 'journal'}
+        <Journal {projection} {dark} />
+      {:else if router.route.name === 'post-stage' && router.route.id}
+        <PostStage {projection} id={router.route.id} />
+      {:else if router.route.name === 'more'}
+        <More />
       {:else if router.route.name === 'chat'}
         <Chat {projection} {dark} channelId={router.route.id} focusId={router.route.messageId} />
       {:else if router.route.name === 'search'}

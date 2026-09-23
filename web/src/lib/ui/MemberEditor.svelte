@@ -157,6 +157,7 @@
           <p class="muted">{m.pronouns ?? ''}{m.archived ? ' · archived' : ''}{m.deleted ? ' · in Trash' : ''}</p>
         </div>
       </div>
+      <a class="back" href="#/profile/{id}">View profile</a>
       <button class="primary" onclick={switchIn}>Switch in</button>
     </header>
 

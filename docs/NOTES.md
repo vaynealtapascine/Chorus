@@ -87,3 +87,8 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   transitions in its wasm adapter, and lets core assign each segment to a local day. This keeps
   DST handling outside the pure core; clients using `front::daily` need the same transition-aware
   adapter to produce matching charts.
+- 2026-09-23 gpt-6-sol — journals — Post ops and the core model call the parent field `reply_to`,
+  while the SQLite projection column is `reply_to_id`; the server projector must map it explicitly.
+  The existing server still has no `GET /posts` or follower post view, so a post's visibility is
+  stored but cross-account publication is not yet served. Any future route must apply the
+  follower-view privacy ceiling before returning posts or reactions.
