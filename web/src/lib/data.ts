@@ -20,6 +20,8 @@ export interface MemberRow {
   archived: boolean;
   deleted: boolean;
   created_at?: number;
+  /** The one member of a person account (D-003). */
+  is_self?: boolean;
 }
 
 export interface GroupRow {
@@ -129,9 +131,16 @@ export function members(p: Projection): MemberRow[] {
         archived: f.archived_at != null,
         deleted: f.deleted_at != null,
         created_at: typeof f.created_at === 'number' ? f.created_at : undefined,
+        is_self: f.is_self === true || f.is_self === 1,
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** A person account's self member (D-003); present means this account is a person, whose member
+ *  and switching UI is hidden. Only the server creates it, at enrolment. */
+export function selfMember(p: Projection): MemberRow | undefined {
+  return members(p).find((m) => m.is_self && !m.deleted);
 }
 
 export function groups(p: Projection): GroupRow[] {

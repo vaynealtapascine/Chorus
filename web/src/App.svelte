@@ -13,10 +13,11 @@
   import Switcher from './lib/ui/Switcher.svelte';
   import Trash from './lib/ui/Trash.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
+  import { selfMember } from './lib/data';
 
   let switching = $state(false);
   addEventListener('keydown', (e: KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && sync.device) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && sync.device && !person) {
       e.preventDefault();
       switching = true;
     }
@@ -42,13 +43,16 @@
     offline: 'Offline · saved on this device',
     'no-device': '',
   };
-  const tabs = [
+  // a person account has one member, themself, and no front to switch (D-003)
+  const person = $derived(!!projection && !!selfMember(projection));
+  const allTabs = [
     { path: '/', name: 'home', label: 'Home' },
     { path: '/chat', name: 'chat', label: 'Chat' },
     { path: '/members', name: 'members', label: 'Members' },
     { path: '/history', name: 'history', label: 'History' },
     { path: '/people', name: 'people', label: 'People' },
   ];
+  const tabs = $derived(person ? allTabs.filter((t) => t.name !== 'members' && t.name !== 'history') : allTabs);
   const active = $derived(router.route.name === 'member' ? 'members' : router.route.name === 'stage' ? 'chat' : router.route.name);
 </script>
 
@@ -66,7 +70,9 @@
       <span class="status" data-status={status}>{statusLabel[status]}</span>
     </header>
     <main>
-      {#if router.route.name === 'members'}
+      {#if person && (router.route.name === 'members' || router.route.name === 'history')}
+        <Home {projection} {dark} onswitch={() => {}} />
+      {:else if router.route.name === 'members'}
         <Members {projection} {dark} />
       {:else if router.route.name === 'member' && router.route.id}
         <MemberEditor {projection} id={router.route.id} {dark} />

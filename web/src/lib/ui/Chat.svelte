@@ -12,7 +12,7 @@
   import EmojiImage from './EmojiImage.svelte';
   import SpaceRail from './SpaceRail.svelte';
   import { authorCards, listSpaces, spaceTitle, type SpaceInfo } from '../spaces';
-  import type { MemberRow } from '../data';
+  import { selfMember, type MemberRow } from '../data';
 
   let { projection, dark, channelId }: { projection: Projection; dark: boolean; channelId?: string } = $props();
 
@@ -49,9 +49,12 @@
 
   // who speaks by default: the primary fronter, else the first one fronting (SPEC §5.2)
   const fronting = $derived(projection.fronts[sync.accountId]?.current ?? []);
+  // a person account always speaks as its self member (D-003)
+  const self = $derived(selfMember(projection));
   const defaultSpeaker = $derived(
-    (fronting.find((e) => e.is_primary && e.subject_type === 'member') ??
-      fronting.find((e) => e.level === 'front' && e.subject_type === 'member'))?.subject_id,
+    self?.id ??
+      (fronting.find((e) => e.is_primary && e.subject_type === 'member') ??
+        fronting.find((e) => e.level === 'front' && e.subject_type === 'member'))?.subject_id,
   );
   let chosen = $state<string | null>(null);
   const speaker = $derived(chosen ?? defaultSpeaker ?? null);
