@@ -3,10 +3,12 @@
 //! system's own internal space: mentions of a member (or `@front`) and member DMs, each under that
 //! member's rule, pushed to the account's *other* devices only.
 //!
-//! Queued on live ingest of `message.send` (never on rebuild), delivered by the notifier loop
-//! within seconds, as an inbox row plus an encrypted push. The author's own account is never
-//! notified. Messages with a restricted `visibility` are skipped entirely until hidden messages
-//! (M5.7) define who may see them — better silent than leaking.
+//! Also, if asked for, the account's own switches made on another device.
+//!
+//! Queued on live ingest of `message.send` and `front.*` (never on rebuild), delivered by the
+//! notifier loop within seconds, as an inbox row plus an encrypted push. In a shared space the
+//! author's own account is never notified. Messages with a restricted `visibility` are skipped
+//! entirely until hidden messages (M5.7) define who may see them — better silent than leaking.
 
 use std::collections::BTreeMap;
 
