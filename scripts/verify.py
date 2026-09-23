@@ -41,6 +41,10 @@ def bundle_budgets(assets):
 
 
 def main():
+    # the owner's C: is nearly full: build on F: there unless told otherwise (NOTES, PROGRESS)
+    roomy = r'F:\DunBuild\chorus-target'
+    if os.name == 'nt' and 'CARGO_TARGET_DIR' not in os.environ and os.path.isdir(roomy):
+        os.environ['CARGO_TARGET_DIR'] = roomy
     quick = '--quick' in sys.argv
     android = '--android' in sys.argv
 

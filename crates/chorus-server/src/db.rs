@@ -10,6 +10,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_init", include_str!("../migrations/0001_init.sql")),
     ("0002_push_keys", include_str!("../migrations/0002_push_keys.sql")),
     ("0003_follower_history", include_str!("../migrations/0003_follower_history.sql")),
+    ("0004_incremental_projections", include_str!("../migrations/0004_incremental_projections.sql")),
 ];
 
 pub fn open(path: &Path) -> anyhow::Result<Connection> {

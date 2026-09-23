@@ -2,7 +2,9 @@
 //!
 //! Every accepted op re-projects what it touches by running `chorus_core::model` over the ops of
 //! that entity (or element set, or account front). The SQL rows are therefore the reference
-//! model's output by construction; `tests/projection.rs` checks it on random op sets.
+//! model's output by construction; `tests/projection.rs` checks it on random op sets. Two paths
+//! go one op at a time instead, through the same core functions (SPEC §9 ingest budget): a switch
+//! that extends the timeline (`front::append`), and read states (`model::read_best`).
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -20,7 +22,7 @@ use crate::{ingest, oplog};
 pub fn after_insert(conn: &Connection, o: &Op) -> anyhow::Result<()> {
     let Ok(Known::Yes(spec)) = op::validate(o) else { return Ok(()) };
     match spec.action {
-        Action::Front => account_front(conn, &o.scope),
+        Action::Front => front_op(conn, o),
         Action::SetAdd | Action::SetRemove => element_set(conn, spec.table, o),
         Action::Special => special(conn, o),
         Action::Admin => Ok(()),
@@ -430,70 +432,154 @@ fn space_access(conn: &Connection, o: &Op, account: &str, present: bool) -> anyh
 
 // ─── front ───────────────────────────────────────────────────────────────────
 
-/// Rewrite an account's switch log, intervals, daily totals and review cards. Full refold: fine
-/// at thousands of switches; see NOTES for the incremental plan when it isn't.
-pub fn account_front(conn: &Connection, scope: &str) -> anyhow::Result<()> {
-    let Some(account) = account_of(scope) else { return Ok(()) };
-    let ops: Vec<FrontOp> =
-        oplog::for_scope_kinds(conn, scope, "front.")?.iter().filter_map(|o| FrontOp::from_op(o).ok()).collect();
-    let folded = front::fold(&ops);
-    conn.execute("DELETE FROM switch WHERE account_id = ?1", [account])?;
-    conn.execute("DELETE FROM front_interval WHERE account_id = ?1", [account])?;
-    conn.execute("DELETE FROM front_daily WHERE account_id = ?1", [account])?;
-    {
-        let mut ins = conn.prepare_cached(
-            "INSERT INTO switch (id, account_id, kind, occurred_at, tz_offset_min, device_id, based_on, entries,
-                resulting_front, note, notify, was_offline, retracted, amended)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-        )?;
-        for s in &folded.switches {
-            ins.execute(params![
-                s.id,
-                account,
-                s.kind,
-                s.occurred_at,
-                s.tz_offset_min,
-                s.device_id,
-                s.based_on,
-                serde_json::to_string(&s.entries)?,
-                serde_json::to_string(&s.resulting_front)?,
-                s.note,
-                serde_json::to_value(s.notify)?.as_str().unwrap_or("default"),
-                s.was_offline,
-                s.retracted,
-                s.amended,
-            ])?;
-        }
-        let mut ins = conn.prepare_cached(
-            "INSERT INTO front_interval (id, account_id, subject_type, subject_id, level, is_primary, position,
-                start_at, end_at, start_switch_id, end_switch_id, start_tz_offset_min)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-        )?;
-        for i in &folded.intervals {
-            ins.execute(params![
-                i.id,
-                account,
-                i.subject_type.as_str(),
-                i.subject_id,
-                i.level.as_str(),
-                i.is_primary,
-                i.position as i64,
-                i.start_at,
-                i.end_at,
-                i.start_switch_id,
-                i.end_switch_id,
-                i.start_tz_offset_min,
-            ])?;
-        }
+thread_local! {
+    static FRONT_FAST_PATH: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+/// Tests only: turn the one-step front path off on this thread (every front op refolds), to
+/// compare against it.
+#[doc(hidden)]
+pub fn set_front_fast_path(on: bool) {
+    FRONT_FAST_PATH.with(|c| c.set(on));
+}
+
+/// Re-project the account front after `o`: one fold step when it simply extends the timeline (a
+/// live switch, the common case), else a full refold.
+fn front_op(conn: &Connection, o: &Op) -> anyhow::Result<()> {
+    if !FRONT_FAST_PATH.with(std::cell::Cell::get) || !append_front(conn, o)? {
+        account_front(conn, &o.scope)?;
     }
-    // Local days: the account's most recent UTC offset (no tz database in core; D-058 note).
-    let tz = folded.switches.last().map(|s| s.tz_offset_min).unwrap_or(0);
+    Ok(())
+}
+
+fn insert_switch(conn: &Connection, account: &str, s: &front::SwitchRow) -> anyhow::Result<()> {
+    let mut ins = conn.prepare_cached(
+        "INSERT INTO switch (id, account_id, kind, occurred_at, tz_offset_min, device_id, based_on, entries,
+            resulting_front, note, notify, was_offline, retracted, amended)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+    )?;
+    ins.execute(params![
+        s.id,
+        account,
+        s.kind,
+        s.occurred_at,
+        s.tz_offset_min,
+        s.device_id,
+        s.based_on,
+        serde_json::to_string(&s.entries)?,
+        serde_json::to_string(&s.resulting_front)?,
+        s.note,
+        serde_json::to_value(s.notify)?.as_str().unwrap_or("default"),
+        s.was_offline,
+        s.retracted,
+        s.amended,
+    ])?;
+    Ok(())
+}
+
+fn insert_interval(conn: &Connection, account: &str, i: &front::Interval) -> anyhow::Result<()> {
+    let mut ins = conn.prepare_cached(
+        "INSERT INTO front_interval (id, account_id, subject_type, subject_id, level, is_primary, position,
+            start_at, end_at, start_switch_id, end_switch_id, start_tz_offset_min)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+    )?;
+    ins.execute(params![
+        i.id,
+        account,
+        i.subject_type.as_str(),
+        i.subject_id,
+        i.level.as_str(),
+        i.is_primary,
+        i.position as i64,
+        i.start_at,
+        i.end_at,
+        i.start_switch_id,
+        i.end_switch_id,
+        i.start_tz_offset_min,
+    ])?;
+    Ok(())
+}
+
+/// Intervals from `front_interval`: the open ones, or (with `open_only` false) also every closed
+/// one that ends after `after`.
+fn load_intervals(
+    conn: &Connection,
+    account: &str,
+    open_only: bool,
+    after: i64,
+) -> anyhow::Result<Vec<front::Interval>> {
+    let mut st = conn.prepare_cached(
+        "SELECT id, subject_type, subject_id, level, is_primary, position, start_at, end_at, start_switch_id,
+                end_switch_id, start_tz_offset_min
+         FROM front_interval WHERE account_id = ?1 AND end_at IS NULL
+         UNION ALL
+         SELECT id, subject_type, subject_id, level, is_primary, position, start_at, end_at, start_switch_id,
+                end_switch_id, start_tz_offset_min
+         FROM front_interval WHERE ?2 = 0 AND account_id = ?1 AND end_at > ?3",
+    )?;
+    type Raw = (String, String, String, String, bool, i64, i64, Option<i64>, String, Option<String>, i32);
+    let rows: Vec<Raw> = st
+        .query_map(params![account, open_only, after], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+                r.get(8)?,
+                r.get(9)?,
+                r.get(10)?,
+            ))
+        })?
+        .collect::<Result<_, _>>()?;
+    let mut out = Vec::with_capacity(rows.len());
+    for (id, st, sid, level, primary, pos, start, end, start_sw, end_sw, tz) in rows {
+        out.push(front::Interval {
+            id,
+            subject_type: serde_json::from_value(Value::String(st))?,
+            subject_id: sid,
+            level: serde_json::from_value(Value::String(level))?,
+            is_primary: primary,
+            position: pos as usize,
+            start_at: start,
+            end_at: end,
+            start_switch_id: start_sw,
+            end_switch_id: end_sw,
+            start_tz_offset_min: tz,
+        });
+    }
+    Ok(out)
+}
+
+/// Write `front_daily` for the local days from the one starting at `from_day_start` (the UTC
+/// instant of a local midnight), replacing what was there; `None` rewrites every day.
+fn write_daily(conn: &Connection, account: &str, tz: i32, from_day_start: Option<i64>) -> anyhow::Result<()> {
+    const DAY: i64 = 86_400_000;
     let now = crate::now_ms();
+    let intervals = match from_day_start {
+        None => {
+            conn.execute("DELETE FROM front_daily WHERE account_id = ?1", [account])?;
+            load_intervals(conn, account, false, i64::MIN)?
+        }
+        Some(t0) => {
+            let day = front::civil_date((t0 + i64::from(tz) * 60_000).div_euclid(DAY));
+            conn.execute("DELETE FROM front_daily WHERE account_id = ?1 AND day >= ?2", params![account, day])?;
+            // only what falls on those days: daily() splits at the same local midnights
+            let mut v = load_intervals(conn, account, false, t0)?;
+            for iv in &mut v {
+                iv.start_at = iv.start_at.max(t0);
+            }
+            v
+        }
+    };
     let mut ins = conn.prepare_cached(
         "INSERT INTO front_daily (account_id, day, subject_type, subject_id, level, seconds, as_primary_seconds)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     )?;
-    for d in front::daily(&folded.intervals, now, |_| tz) {
+    for d in front::daily(&intervals, now, |_| tz) {
         ins.execute(params![
             account,
             d.day,
@@ -504,6 +590,112 @@ pub fn account_front(conn: &Connection, scope: &str) -> anyhow::Result<()> {
             d.as_primary_seconds
         ])?;
     }
+    Ok(())
+}
+
+/// The fast path of [`front_op`]: `o` is a switch-like op that sorts after every folded one and
+/// that nothing amends or retracts yet, so the fold needs only one more step (`front::append`,
+/// property-tested against `fold`). Returns false when a full refold is needed instead.
+fn append_front(conn: &Connection, o: &Op) -> anyhow::Result<bool> {
+    const DAY: i64 = 86_400_000;
+    let Some(account) = account_of(&o.scope) else { return Ok(false) };
+    let Ok(fo) = FrontOp::from_op(o) else { return Ok(false) };
+    // the last row in fold order: time, then HLC, then id
+    let last: Option<(i64, i32, String)> = conn
+        .query_row(
+            "SELECT s.occurred_at, s.tz_offset_min, s.resulting_front FROM switch s JOIN op ON op.id = s.id
+             WHERE s.account_id = ?1 AND s.occurred_at = (SELECT max(occurred_at) FROM switch WHERE account_id = ?1)
+             ORDER BY op.hlc DESC, s.id DESC LIMIT 1",
+            [account],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    if last.as_ref().is_some_and(|(at, _, _)| *at >= fo.occurred_at) {
+        return Ok(false);
+    }
+    let targeted: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM op WHERE kind IN ('front.retract', 'front.unretract', 'front.amend')
+           AND +scope = ?1 AND status = 'applied' AND json_extract(payload, '$.target_op_id') = ?2)",
+        params![o.scope, o.id],
+        |r| r.get(0),
+    )?;
+    if targeted {
+        return Ok(false);
+    }
+    let current: front::Front = match &last {
+        Some((_, _, f)) => serde_json::from_str(f)?,
+        None => Vec::new(),
+    };
+    let open = load_intervals(conn, account, true, 0)?;
+    let earliest_open = open.iter().map(|i| i.start_at).min();
+    let Some(a) = front::append(&current, open, &fo) else { return Ok(false) };
+
+    insert_switch(conn, account, &a.row)?;
+    for c in &a.closed {
+        conn.execute(
+            "UPDATE front_interval SET end_at = ?2, end_switch_id = ?3 WHERE id = ?1",
+            params![c.id, c.end_at, c.end_switch_id],
+        )?;
+    }
+    for n in &a.opened {
+        insert_interval(conn, account, n)?;
+    }
+
+    // Daily totals change from the first day of anything open until now; every day if the
+    // offset moved (days are local to the latest switch's offset).
+    let tz = fo.tz_offset_min;
+    if last.as_ref().is_none_or(|(_, prev, _)| *prev != tz) {
+        write_daily(conn, account, tz, None)?;
+    } else {
+        let from = earliest_open.map_or(fo.occurred_at, |e| e.min(fo.occurred_at));
+        let off = i64::from(tz) * 60_000;
+        write_daily(conn, account, tz, Some((from + off).div_euclid(DAY) * DAY - off))?;
+    }
+
+    // review cards pair the new switch with the earlier ones inside the window
+    let now = crate::now_ms();
+    let earlier: Vec<(String, String)> = {
+        let mut st = conn.prepare_cached(
+            "SELECT id, resulting_front FROM switch WHERE account_id = ?1 AND retracted = 0 AND id <> ?2
+               AND occurred_at >= ?3",
+        )?;
+        st.query_map(params![account, fo.id, fo.occurred_at - front::DEFAULT_REVIEW_WINDOW_MS], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?
+        .collect::<Result<_, _>>()?
+    };
+    for (id, f) in earlier {
+        let Some(other) = oplog::by_id(conn, &id)?.and_then(|op| FrontOp::from_op(&op).ok()) else { continue };
+        let other_front: front::Front = serde_json::from_str(&f)?;
+        if let Some(r) = front::review_of((&other, &other_front), (&fo, &a.row.resulting_front)) {
+            conn.execute(
+                "INSERT OR IGNORE INTO front_review (id, account_id, switch_a, switch_b, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![r.id, account, r.switch_a, r.switch_b, now],
+            )?;
+        }
+    }
+    Ok(true)
+}
+
+/// Rewrite an account's switch log, intervals, daily totals and review cards from all its front
+/// ops: a full refold, for amends, retracts and switches that arrive out of order.
+pub fn account_front(conn: &Connection, scope: &str) -> anyhow::Result<()> {
+    let Some(account) = account_of(scope) else { return Ok(()) };
+    let ops: Vec<FrontOp> =
+        oplog::for_scope_kinds(conn, scope, "front.")?.iter().filter_map(|o| FrontOp::from_op(o).ok()).collect();
+    let folded = front::fold(&ops);
+    conn.execute("DELETE FROM switch WHERE account_id = ?1", [account])?;
+    conn.execute("DELETE FROM front_interval WHERE account_id = ?1", [account])?;
+    for s in &folded.switches {
+        insert_switch(conn, account, s)?;
+    }
+    for i in &folded.intervals {
+        insert_interval(conn, account, i)?;
+    }
+    // Local days: the account's most recent UTC offset (no tz database in core; D-058 note).
+    let tz = folded.switches.last().map(|s| s.tz_offset_min).unwrap_or(0);
+    write_daily(conn, account, tz, None)?;
+    let now = crate::now_ms();
     for r in front::reviews(&ops, &folded, front::DEFAULT_REVIEW_WINDOW_MS) {
         conn.execute(
             "INSERT OR IGNORE INTO front_review (id, account_id, switch_a, switch_b, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -616,35 +808,82 @@ fn lww_keyed(conn: &Connection, o: &Op, table: &str, key: &[(&str, String)], fie
     upsert(conn, table, &key_cols, &names, vals)
 }
 
-/// Read states: all read ops for (channel, account, reader) through the model (SYNC.md §5.5).
+/// Read states (SYNC.md §5.5), one op at a time: a mark folds into the stored best mark
+/// (`model::read_best`), a newer manual `read.set` raises the floor and rescans that key's marks.
 fn read_state(conn: &Connection, o: &Op) -> anyhow::Result<()> {
+    type Stored = (Option<i64>, Option<String>, Option<String>, Option<i64>, Option<String>, Option<String>, bool);
     let channel = o.payload.get("channel_id").and_then(Value::as_str).unwrap_or("");
     let reader = o.payload.get("reader_member_id").and_then(Value::as_str).unwrap_or("");
     let account = o.account_id.clone().unwrap_or_default();
+    let stored: Option<Stored> = conn
+        .query_row(
+            "SELECT mark_at, mark_id, mark_hlc, set_at, set_id, set_hlc, state_ok FROM read_state
+             WHERE channel_id = ?1 AND account_id = ?2 AND reader_member_id = ?3",
+            params![channel, account, reader],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+        )
+        .optional()?;
+    let mark = |at: Option<i64>, id: Option<String>, hlc: Option<String>| -> Option<model::ReadMark> {
+        Some((at?, id?, hlc?.parse().ok()?))
+    };
+    let this = model::read_mark_of(o);
+    let (best, manual) = match stored {
+        // from before migration 0004: rebuild this key from the log
+        Some((.., false)) => read_state_scan(conn, &account, channel, reader)?,
+        Some((ma, mi, mh, sa, si, sh, true)) => {
+            let (best, manual) = (mark(ma, mi, mh), mark(sa, si, sh));
+            if o.kind == "read.mark" {
+                (model::read_best(best.into_iter().chain([this]), manual.as_ref()), manual)
+            } else if manual.as_ref().is_none_or(|m| this.2 > m.2) {
+                read_state_scan(conn, &account, channel, reader)?
+            } else {
+                return Ok(());
+            }
+        }
+        None if o.kind == "read.mark" => (Some(this), None),
+        None => (None, Some(this)),
+    };
+    let Some(effective) = model::read_effective(best.clone(), manual.clone()) else { return Ok(()) };
+    let parts = |m: &Option<model::ReadMark>| {
+        (m.as_ref().map(|m| m.0), m.as_ref().map(|m| m.1.clone()), m.as_ref().map(|m| m.2.to_string()))
+    };
+    let ((ma, mi, mh), (sa, si, sh)) = (parts(&best), parts(&manual));
+    conn.execute(
+        "INSERT INTO read_state (channel_id, account_id, reader_member_id, last_read_message_id, last_read_message_at,
+            mark_at, mark_id, mark_hlc, set_at, set_id, set_hlc, state_ok)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1)
+         ON CONFLICT(channel_id, account_id, reader_member_id) DO UPDATE SET
+           last_read_message_id = excluded.last_read_message_id, last_read_message_at = excluded.last_read_message_at,
+           mark_at = excluded.mark_at, mark_id = excluded.mark_id, mark_hlc = excluded.mark_hlc,
+           set_at = excluded.set_at, set_id = excluded.set_id, set_hlc = excluded.set_hlc, state_ok = 1",
+        params![channel, account, reader, effective.1, effective.0, ma, mi, mh, sa, si, sh],
+    )?;
+    Ok(())
+}
+
+/// Best mark and latest manual set for one read-state key, from every read op in the log.
+fn read_state_scan(
+    conn: &Connection,
+    account: &str,
+    channel: &str,
+    reader: &str,
+) -> anyhow::Result<(Option<model::ReadMark>, Option<model::ReadMark>)> {
     let mut st = conn.prepare_cached(
-        "SELECT id FROM op WHERE kind IN ('read.mark','read.set') AND account_id = ?1
+        "SELECT id FROM op WHERE kind IN ('read.mark','read.set') AND account_id = ?1 AND status = 'applied'
             AND json_extract(payload, '$.channel_id') = ?2 AND coalesce(json_extract(payload, '$.reader_member_id'), '') = ?3",
     )?;
     let ids: Vec<String> = st.query_map(params![account, channel, reader], |r| r.get(0))?.collect::<Result<_, _>>()?;
-    let ops: Vec<Op> = ids.iter().filter_map(|i| oplog::by_id(conn, i).ok().flatten()).collect();
-    let proj = model::project(ops.iter());
-    let key = format!("{channel}|{account}|{reader}");
-    if let Some(row) = proj.row("read_state", &key) {
-        conn.execute(
-            "INSERT INTO read_state (channel_id, account_id, reader_member_id, last_read_message_id, last_read_message_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(channel_id, account_id, reader_member_id) DO UPDATE SET
-               last_read_message_id = excluded.last_read_message_id, last_read_message_at = excluded.last_read_message_at",
-            params![
-                channel,
-                account,
-                reader,
-                row.fields.get("last_read_message_id").and_then(Value::as_str).unwrap_or(""),
-                row.fields.get("last_read_message_at").and_then(Value::as_i64).unwrap_or(0)
-            ],
-        )?;
+    let mut marks = Vec::new();
+    let mut manual: Option<model::ReadMark> = None;
+    for o in ids.iter().filter_map(|i| oplog::by_id(conn, i).ok().flatten()) {
+        let m = model::read_mark_of(&o);
+        if o.kind == "read.mark" {
+            marks.push(m);
+        } else if manual.as_ref().is_none_or(|cur| m.2 > cur.2) {
+            manual = Some(m);
+        }
     }
-    Ok(())
+    Ok((model::read_best(marks, manual.as_ref()), manual))
 }
 
 // ─── rebuild ─────────────────────────────────────────────────────────────────
