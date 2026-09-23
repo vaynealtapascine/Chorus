@@ -131,6 +131,7 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
     match table {
         "message" => {
             message_extras(conn, id, row.fields.get("authors"), &row.fields)?;
+            item_attachments(conn, "message", id, row.fields.get("attachments"))?;
             refresh_thread_link(conn, id)?;
         }
         "channel" => {
@@ -141,7 +142,10 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
                 refresh_thread_link(conn, &parent)?;
             }
         }
-        "post" => authors(conn, "post_author", "post_id", id, row.fields.get("authors"))?,
+        "post" => {
+            authors(conn, "post_author", "post_id", id, row.fields.get("authors"))?;
+            item_attachments(conn, "post", id, row.fields.get("attachments"))?;
+        }
         "member_group" => {
             group_parents(conn, account_of(&first.map(|f| f.scope.clone()).unwrap_or_default()).unwrap_or(""))?
         }
@@ -203,6 +207,19 @@ fn authors(conn: &Connection, table: &str, key: &str, id: &str, a: Option<&Value
 }
 
 /// Authors, segments (D-045), mentions and the FTS index for a message.
+fn item_attachments(conn: &Connection, owner_type: &str, owner_id: &str, ids: Option<&Value>) -> anyhow::Result<()> {
+    conn.execute("DELETE FROM item_attachment WHERE owner_type = ?1 AND owner_id = ?2", params![owner_type, owner_id])?;
+    for (position, id) in ids.and_then(Value::as_array).into_iter().flatten().enumerate() {
+        if let Some(id) = id.as_str() {
+            conn.execute(
+                "INSERT OR IGNORE INTO item_attachment(owner_type, owner_id, attachment_id, position) VALUES (?1, ?2, ?3, ?4)",
+                params![owner_type, owner_id, id, position as i64],
+            )?;
+        }
+    }
+    Ok(())
+}
+
 fn message_extras(
     conn: &Connection,
     id: &str,
