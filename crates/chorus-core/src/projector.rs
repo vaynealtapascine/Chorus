@@ -180,11 +180,13 @@ impl Projector {
             }
             for k in &keys {
                 self.by_key.entry(k.clone()).or_default().insert((o.hlc, o.id.clone()));
+                // a reader that already saw an (empty) projection needs these as a delta
+                self.changed.insert(k.clone());
             }
             self.op_keys.insert(o.id.clone(), keys);
             self.ops.insert(o.id.clone(), o.clone());
         }
-        // everything is new to a reader: the first delta says "full"
+        self.proj.opaque = self.opaque.len();
     }
 
     fn insert_op(&mut self, o: Op, dirty: &mut BTreeSet<Key>) {
