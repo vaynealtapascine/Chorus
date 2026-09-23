@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -160,8 +161,8 @@ class Chorus private constructor(private val ctx: Context) {
 
     private fun storageFailed(e: Exception) {
         Log.e(TAG, "local replica unavailable", e)
-        _status.value = Status.StorageError
         syncReady.value = false
+        _status.value = Status.StorageError
         main.post { ws?.close(1000, "storage unavailable"); ws = null; main.removeCallbacks(retry) }
     }
 
@@ -175,15 +176,16 @@ class Chorus private constructor(private val ctx: Context) {
 
     /** WorkManager waits for catch-up and the outbox to drain, then releases its socket lease. */
     suspend fun syncOnce(): Boolean {
-        val ready = withTimeoutOrNull(25_000) { status.first { it != Status.Loading } } ?: return false
-        if (ready == Status.NoDevice) return true
-        if (ready == Status.StorageError) return false
         withContext(Dispatchers.Main) {
             workLeases++
             reconnectNow()
         }
         return try {
-            withTimeoutOrNull(25_000) { syncReady.first { it } } != null
+            val result = withTimeoutOrNull(25_000) {
+                status.combine(syncReady) { state, synced -> state to synced }
+                    .first { (state, synced) -> state == Status.NoDevice || state == Status.StorageError || synced }
+            }
+            result?.let { (state, synced) -> state == Status.NoDevice || state != Status.StorageError && synced } ?: false
         } finally {
             withContext(NonCancellable + Dispatchers.Main) {
                 workLeases--
