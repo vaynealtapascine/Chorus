@@ -156,7 +156,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [ ] L3 Render stage to PNG in-app
 - [ ] L4 Quick Settings tile, Wear OS
 - [ ] L5 Sealed (client-encrypted) member-private entries
-- [ ] L6 Web push for the PWA
+- [~] L6 Web push for the PWA — server VAPID + service-worker push/click handlers + People-page opt-in (D-061); not yet tried against a real browser push service; owner to confirm Q13
 
 ---
 
@@ -209,3 +209,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M10.2 webhooks (webhooks.rs): signed POSTs (HMAC-SHA256 of t.body) for front.switch/member.created/member.updated/follow.requested, test ping, retries 1m…12h then off with the reason, tailnet-only URLs (resolved on save and per delivery); web Your data section. E2E test + verified in the browser against a local receiver. Also freed C: (0 MB free blocked writes) by cargo-cleaning the stale Chorus\target (17 GB of build output).
 - 2026-09-23 claude-opus-5.5 — M2.7 more reads (api_reads.rs): /me, /members/{id} (groups + field values), /groups, /fields, /states, /front/daily, /front/reviews; scope-checked for tokens. E2E test.
 - 2026-09-23 claude-opus-5.5 — write:front tokens + POST /front/switch (api_writes.rs; ingest::op_as generalises server_op): entries by id or by member/group/state name, typed time, note, notify; attributed to token:<id>; web Your data scope + example. E2E test; verified in the browser (switch posted with a token appears live in History).
+- 2026-09-23 claude-opus-5.5 — L6 Web Push (D-061, Q13): VAPID key in server_meta + GET /push/vapid, RFC 8292 header for web devices only, SW push/notificationclick handlers, web/src/lib/push.ts + People-page opt-in. Unit tests (JWT verifies, web-only VAPID) + SW handlers run in a Node harness; real browser push not tried (the pane has notifications denied).

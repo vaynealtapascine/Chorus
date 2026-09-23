@@ -47,6 +47,10 @@ pub type AppState = Arc<Shared>;
 impl Shared {
     pub fn new(conn: Connection, cfg: Config) -> anyhow::Result<AppState> {
         let instance_id = db::meta(&conn, "instance_id")?.unwrap_or_default();
+        // browser push services want to know how to reach the operator (RFC 8292 `sub`)
+        let url = &cfg.server.public_url;
+        let sub = if url.starts_with("https://") { url.clone() } else { crate::push::DEFAULT_SUBJECT.into() };
+        db::set_meta(&conn, "push_subject", &sub)?;
         let (events, _) = tokio::sync::broadcast::channel(256);
         let (hooks, hook_rx) = mpsc::unbounded_channel();
         Ok(Arc::new(Shared {
@@ -88,6 +92,7 @@ pub fn router(state: AppState) -> Router {
         .route("/follows/{id}/prefs", put(follow_prefs))
         .route("/follows/{id}", delete(follow_end))
         .route("/devices/push", put(push_register).delete(push_unregister))
+        .route("/push/vapid", get(push_vapid))
         .route("/android/latest", get(android_latest))
         .route("/notifications", get(notifications))
         .route("/tokens", get(tokens_list).post(tokens_create))
@@ -377,6 +382,11 @@ async fn push_register(
     crate::push::register(&conn, &me.device_id, &b)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "bad_request", e.to_string()))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// The server's VAPID public key, for a browser's `pushManager.subscribe` (push.rs).
+async fn push_vapid(State(s): State<AppState>) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(json!({"public_key": crate::push::vapid_public(&s.db())?})))
 }
 
 async fn push_unregister(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<StatusCode, ApiError> {

@@ -1,13 +1,17 @@
-//! Push delivery to devices through UnifiedPush (NOTIFICATIONS.md §1).
+//! Push delivery to devices through UnifiedPush and Web Push (NOTIFICATIONS.md §1).
 //!
 //! Each Android device registers an endpoint from its distributor (the ntfy app pointed at the
-//! owner's ntfy server) plus Web Push keys. The server encrypts every payload with RFC 8291
-//! (`aes128gcm`), so ntfy only ever relays ciphertext, and POSTs it to the endpoint.
+//! owner's ntfy server) plus Web Push keys; a browser registers its Push API subscription the same
+//! way. The server encrypts every payload with RFC 8291 (`aes128gcm`), so ntfy or the browser's
+//! push service only ever relays ciphertext, and POSTs it to the endpoint. Browser push services
+//! also want a VAPID signature (RFC 8292): web devices get one, signed with a server key kept in
+//! `server_meta`; UnifiedPush endpoints don't (ntfy reads `Authorization` as its own auth).
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes128Gcm, Nonce};
 use base64::Engine as _;
 use hkdf::Hkdf;
+use p256::ecdsa::signature::Signer;
 use p256::elliptic_curve::sec1::ToSec1Point;
 use p256::{PublicKey, SecretKey};
 use rusqlite::{Connection, params};
@@ -83,16 +87,56 @@ pub fn encrypt_with(
 
 /// Encrypt for a device with a fresh sender key and salt.
 pub fn encrypt(ua_public: &[u8], auth_secret: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, PushError> {
-    let mut seed = [0u8; 32];
-    let secret = loop {
-        rand::fill(&mut seed);
-        if let Ok(k) = SecretKey::from_slice(&seed) {
-            break k;
-        }
-    };
+    let secret = random_secret();
     let mut salt = [0u8; 16];
     rand::fill(&mut salt);
     encrypt_with(ua_public, auth_secret, plaintext, &secret, &salt)
+}
+
+// ─── VAPID (RFC 8292) ───────────────────────────────────────────────────────
+
+fn random_secret() -> SecretKey {
+    let mut seed = [0u8; 32];
+    loop {
+        rand::fill(&mut seed);
+        if let Ok(k) = SecretKey::from_slice(&seed) {
+            return k;
+        }
+    }
+}
+
+/// The server's VAPID key, made on first use and kept in `server_meta`.
+pub fn vapid_key(conn: &Connection) -> anyhow::Result<SecretKey> {
+    if let Some(k) = crate::db::meta(conn, "vapid_private")?.and_then(|s| unb64url(&s))
+        && let Ok(k) = SecretKey::from_slice(&k)
+    {
+        return Ok(k);
+    }
+    let k = random_secret();
+    crate::db::set_meta(conn, "vapid_private", &b64url(&k.to_bytes()))?;
+    Ok(k)
+}
+
+/// The public half for `pushManager.subscribe({applicationServerKey})` (uncompressed, base64url).
+pub fn vapid_public(conn: &Connection) -> anyhow::Result<String> {
+    Ok(b64url(vapid_key(conn)?.public_key().to_sec1_point(false).as_bytes()))
+}
+
+/// VAPID `sub` when the server has no https public URL (`push_subject` in `server_meta`, set at
+/// start-up from `server.public_url`).
+pub const DEFAULT_SUBJECT: &str = "mailto:chorus@localhost";
+
+/// `Authorization: vapid t=<JWT>, k=<public key>` for one endpoint (the JWT's `aud` is its
+/// origin). `sub` is how the push service can reach the operator (a mailto: or https: URL).
+pub fn vapid_header(key: &SecretKey, endpoint: &str, sub: &str, now_s: i64) -> Option<String> {
+    let u = reqwest::Url::parse(endpoint).ok()?;
+    let aud = u.origin().ascii_serialization();
+    let header = b64url(br#"{"typ":"JWT","alg":"ES256"}"#);
+    let claims = b64url(serde_json::json!({"aud": aud, "exp": now_s + 12 * 3600, "sub": sub}).to_string().as_bytes());
+    let signing = p256::ecdsa::SigningKey::from(key);
+    let sig: p256::ecdsa::Signature = signing.sign(format!("{header}.{claims}").as_bytes());
+    let k = b64url(key.public_key().to_sec1_point(false).as_bytes());
+    Some(format!("vapid t={header}.{claims}.{}, k={k}", b64url(&sig.to_bytes())))
 }
 
 // ─── registration (API.md §2) ───────────────────────────────────────────────
@@ -137,6 +181,8 @@ pub struct Outbound {
     pub device_id: String,
     pub endpoint: String,
     pub body: Vec<u8>,
+    /// The VAPID `Authorization` header (browsers only).
+    pub vapid: Option<String>,
 }
 
 /// Encrypt `payload` (JSON) for every registered device of `account`. A payload that is too big
@@ -147,16 +193,27 @@ pub fn prepare(conn: &Connection, account: &str, payload: &serde_json::Value) ->
         text = br#"{"t":"sync"}"#.to_vec();
     }
     let mut st = conn.prepare_cached(
-        "SELECT id, push_endpoint, push_p256dh, push_auth FROM device
+        "SELECT id, push_endpoint, push_p256dh, push_auth, platform = 'web' FROM device
          WHERE account_id = ?1 AND revoked_at IS NULL AND push_endpoint IS NOT NULL",
     )?;
-    let rows: Vec<(String, String, String, String)> =
-        st.query_map([account], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<Result<_, _>>()?;
+    let rows: Vec<(String, String, String, String, bool)> = st
+        .query_map([account], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+        .collect::<Result<_, _>>()?;
     let mut out = Vec::new();
-    for (device_id, endpoint, key, auth) in rows {
+    let mut signer: Option<(SecretKey, String)> = None;
+    for (device_id, endpoint, key, auth, web) in rows {
         let (Some(key), Some(auth)) = (unb64url(&key), unb64url(&auth)) else { continue };
+        let vapid = if web {
+            if signer.is_none() {
+                let sub = crate::db::meta(conn, "push_subject")?.unwrap_or_else(|| DEFAULT_SUBJECT.into());
+                signer = Some((vapid_key(conn)?, sub));
+            }
+            signer.as_ref().and_then(|(k, sub)| vapid_header(k, &endpoint, sub, crate::now_ms() / 1000))
+        } else {
+            None
+        };
         match encrypt(&key, &auth, &text) {
-            Ok(body) => out.push(Outbound { device_id, endpoint, body }),
+            Ok(body) => out.push(Outbound { device_id, endpoint, body, vapid }),
             Err(e) => tracing::warn!(device = %device_id, error = %e, "push: can't encrypt"),
         }
     }
@@ -172,15 +229,16 @@ pub enum Sent {
 }
 
 pub async fn send(http: &reqwest::Client, o: &Outbound) -> Sent {
-    let r = http
+    let mut req = http
         .post(&o.endpoint)
         .header("Content-Encoding", "aes128gcm")
         .header("Content-Type", "application/octet-stream")
         .header("TTL", "86400")
-        .header("Urgency", "normal")
-        .body(o.body.clone())
-        .send()
-        .await;
+        .header("Urgency", "normal");
+    if let Some(v) = &o.vapid {
+        req = req.header("Authorization", v);
+    }
+    let r = req.body(o.body.clone()).send().await;
     match r {
         Ok(r) if r.status().is_success() => Sent::Ok,
         Ok(r) if matches!(r.status().as_u16(), 404 | 410) => Sent::Gone,
@@ -274,6 +332,45 @@ mod tests {
         // and the receiver's private key from the RFC decrypts it
         let ua_secret = SecretKey::from_slice(&d("q1dXpw3UpT5VOmu_cf_v6ih07Aems3njxI-JWgLcM94")).unwrap();
         assert_eq!(decrypt(&ua_secret, &auth, &out).unwrap(), b"When I grow up, I want to be a watermelon");
+    }
+
+    #[test]
+    fn vapid_jwt_verifies_with_the_public_key() {
+        use p256::ecdsa::signature::Verifier;
+        let k = key(5);
+        let h = vapid_header(&k, "https://fcm.googleapis.com/fcm/send/abc", "mailto:a@b.c", 1_000).unwrap();
+        let (t, kpart) = h.strip_prefix("vapid t=").unwrap().split_once(", k=").unwrap();
+        assert_eq!(kpart, b64url(k.public_key().to_sec1_point(false).as_bytes()));
+        let parts: Vec<&str> = t.split('.').collect();
+        let claims: serde_json::Value = serde_json::from_slice(&unb64url(parts[1]).unwrap()).unwrap();
+        assert_eq!(claims["aud"], "https://fcm.googleapis.com");
+        assert_eq!(claims["exp"], 1_000 + 12 * 3600);
+        let sig = p256::ecdsa::Signature::from_slice(&unb64url(parts[2]).unwrap()).unwrap();
+        let vk = p256::ecdsa::VerifyingKey::from(k.public_key());
+        assert!(vk.verify(format!("{}.{}", parts[0], parts[1]).as_bytes(), &sig).is_ok());
+    }
+
+    #[test]
+    fn web_devices_get_vapid_and_others_dont() {
+        let mut conn = crate::db::open_memory().unwrap();
+        crate::db::migrate(&mut conn).unwrap();
+        let ua = key(7).public_key().to_sec1_point(false);
+        conn.execute("INSERT INTO account (id, kind, created_at) VALUES ('acct', 'system', 0)", []).unwrap();
+        for (id, platform) in [("w", "web"), ("a", "android")] {
+            conn.execute(
+                "INSERT INTO device (id, account_id, short_id, name, platform, public_key, created_at,
+                   push_endpoint, push_p256dh, push_auth)
+                 VALUES (?1, 'acct', ?1, ?1, ?2, 'k', 0, 'https://push.example/x', ?3, ?4)",
+                params![id, platform, b64url(ua.as_bytes()), b64url(&[1; 16])],
+            )
+            .unwrap();
+        }
+        let out = prepare(&conn, "acct", &serde_json::json!({"title": "Kai"})).unwrap();
+        let by = |id: &str| out.iter().find(|o| o.device_id == id).unwrap();
+        assert!(by("w").vapid.as_deref().unwrap().starts_with("vapid t="));
+        assert!(by("a").vapid.is_none());
+        // the key is stable across calls
+        assert_eq!(vapid_public(&conn).unwrap(), vapid_public(&conn).unwrap());
     }
 
     #[test]

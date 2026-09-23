@@ -8,6 +8,7 @@
   import { sync, type Projection } from '../sync/client';
   import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
   import AvatarImage from './AvatarImage.svelte';
+  import { disablePush, enablePush, pushActive, pushSupported } from '../push';
 
   let { projection }: { projection: Projection } = $props();
 
@@ -31,6 +32,10 @@
   let notes = $state<Note[]>([]);
   let seenNotes = new Set<string>();
   let canNotify = $state(typeof Notification !== 'undefined' && Notification.permission === 'granted');
+  // Web Push: notifications even with no Chorus tab open (only in the built app)
+  let pushOn = $state(false);
+  let pushNote = $state('');
+  pushActive().then((on) => (pushOn = on));
   let following = $state<FollowRow[]>([]);
   let followers = $state<FollowRow[]>([]);
   let target = $state('');
@@ -115,7 +120,7 @@
     const j = await api('/notifications');
     const fresh = (j.items as Note[]).filter((n) => !seenNotes.has(n.id));
     // a desktop notification for anything new while this page is open (not on first load)
-    if (seenNotes.size && canNotify && document.hidden) {
+    if (seenNotes.size && canNotify && !pushOn && document.hidden) {
       for (const n of fresh) new Notification(noteTitle(n), { body: n.text, tag: n.id });
     }
     for (const n of j.items as Note[]) seenNotes.add(n.id);
@@ -128,7 +133,21 @@
   });
 
   async function enableNotifications() {
+    if (pushSupported()) {
+      const err = await enablePush();
+      pushOn = !err;
+      pushNote = err ?? '';
+      if (!err) {
+        canNotify = true;
+        return;
+      }
+    }
     canNotify = (await Notification.requestPermission()) === 'granted';
+  }
+
+  async function turnOffPush() {
+    await disablePush();
+    pushOn = false;
   }
 
   function viewLine(v: View | undefined): string {
@@ -321,10 +340,13 @@
   {#if notes.length || following.length}
     <div class="notes-head">
       <h2>Recent</h2>
-      {#if typeof Notification !== 'undefined' && !canNotify}
+      {#if pushOn}
+        <button class="ghost" onclick={turnOffPush}>Stop notifying this browser</button>
+      {:else if typeof Notification !== 'undefined' && (!canNotify || pushSupported())}
         <button class="ghost" onclick={enableNotifications}>Notify me in this browser</button>
       {/if}
     </div>
+    {#if pushNote}<p class="muted">{pushNote} Notifications will show while this page is open.</p>{/if}
     <ul>
       {#each notes as n (n.id)}
         <li class="note">

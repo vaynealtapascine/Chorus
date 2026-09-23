@@ -18,7 +18,11 @@ Two families:
   would be larger, the server sends a **tickle** (`{"t":"sync"}`) and the app syncs, then renders.
 - Fallbacks (Settings → Advanced → Delivery): persistent foreground WebSocket service; or
   WorkManager poll every 15 min.
-- Web PWA: in-page notifications while open; Web Push is L6.
+- **Web PWA:**
+  - In-page notifications while it is open.
+  - **Web Push** (D-061) once "Notify me in this browser" is on. It works in the built app only,
+    since dev builds have no service worker. The payload is the same encrypted one, delivered
+    through the browser's push service with a VAPID signature.
 - Every notification is also a row in `notification` (history, debugging, "Notifications" screen).
 
 ## 2. The switch-notification pipeline

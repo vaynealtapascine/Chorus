@@ -28,6 +28,31 @@ self.addEventListener('fetch', (e) => {
   }
   e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request)));
 });
+
+// Web Push (push.rs): switch and chat notifications while no Chorus tab is open. The server
+// encrypts; the browser decrypts before we see e.data. {"t":"sync"} means "too big, come look".
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) {}
+  const tickle = d.t === 'sync';
+  const url = d.channel_id ? '/#/chat/' + d.channel_id : '/#/people';
+  e.waitUntil(self.registration.showNotification(tickle ? 'Chorus' : (d.title || 'Chorus'), {
+    body: tickle ? 'Something new is waiting in Chorus.' : (d.text || ''),
+    tag: d.id || undefined,
+    icon: '/icon.svg',
+    data: { url },
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || '/';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((tabs) => {
+    const tab = tabs.find((t) => 'focus' in t);
+    if (tab) return tab.navigate(url).then((t) => (t || tab).focus());
+    return self.clients.openWindow(url);
+  }));
+});
 `;
 
 export function serviceWorker(): Plugin {
