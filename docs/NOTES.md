@@ -100,6 +100,16 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   What's left is `member.set` at 8 ms (every `.set` re-runs the model over all ops of that entity,
   ~500 edits per member here) and `front.switch` at 1.1 ms. Next step: apply a `Set` op straight
   onto the stored row's LWW `clocks` when the row exists (same `lww::apply_fields` as the model).
+  Later on 2026-09-24 (commits 91a3ea5, ec96958, c3c5676): `.set` applied in place; projection
+  statements cached (rusqlite re-prepares on every `conn.execute`; the cache is now 256); fresh
+  entities skip clearing derived rows; rebuild loads ops in one query per page, fills
+  `message_fts` in one pass and runs with a 256 MB page cache. Perf test ops are 30 s apart
+  (~90 switches a day). **At 1M ops: ingest 4 465 ops/s (slowest 10k window 3 613): met.
+  Rebuild 89.8 s: still 1.5× the 60 s budget** (message projection 57 s at 68 µs each, commit
+  11 s, search index 5 s). Next: in a rebuild, count ops per entity up front and project
+  single-op entities from the op in hand (no `for_entity` query + JSON parse); consider rebuilding
+  into fresh tables instead of DELETE + INSERT (halves the WAL). The 1M test needs ~5 GB free
+  for the database and its WAL; F: ran out, so run it with `CHORUS_PERF_DIR` on a roomier drive.
   **Still over budget: rebuild** (~26 s per 100k, so ~4–5× the 60 s for 1M), because it replays
   `after_insert` op by op, each one re-running the model over its entity. A batch rebuild
   (project whole scopes in memory, bulk insert) is the fix. Clients' core projector still
