@@ -170,3 +170,11 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 ## Log
 
 (Append below: `### Tn · status` then bullets.)
+
+### T1 · done
+- Commit: `42ff76a` (`feat(server): add resumable content-addressed blob store`).
+- Added real HTTP server tests in `crates/chorus-server/tests/blobs.rs`: partial HEAD and resume, hash mismatch cleanup, range GET, size limit, stranger 403, and a follower avatar denied until its member is revealed.
+- Ran those HTTP tests (3 passed) and `python scripts/verify.py --quick` (passed: Rust fmt, clippy, workspace tests, wasm build, Svelte check, web tests). This verifies request behaviour through a listening server, not just compilation.
+- Access checks cover the uploader, own account/member/group/attachment references, shared message attachments via `scope_access`, custom emoji, and member avatars after follower reveal. Audit this SQL first, especially visibility when T8 adds system-only asides.
+- The API's optional `?thumb=480` server fallback is not implemented; T2 produces client thumbnails. GET currently buffers up to the configured 100 MB limit in memory. Consider streaming if large blob traffic warrants it.
+- The ignored wasm package was absent in the isolated worktree, so `pwsh scripts/build-web-core.ps1` was run before the passing verifier. No core semantics changed. No proposed decision.
