@@ -82,3 +82,8 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   setting every newly accepted follower to the Gentle preset would mask
   `account.settings.follow_ceiling`. Bucket assignments use follower **account IDs** in the
   element-set payload, while follow IDs are used only for per-follow ceiling ops.
+- 2026-09-23 gpt-6-sol — insights — `front::daily` expects a caller-supplied UTC offset. The web
+  dashboard derives the account system's IANA zone with `Intl`, splits intervals at offset
+  transitions in its wasm adapter, and lets core assign each segment to a local day. This keeps
+  DST handling outside the pure core; clients using `front::daily` need the same transition-aware
+  adapter to produce matching charts.

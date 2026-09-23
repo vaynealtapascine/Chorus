@@ -537,6 +537,7 @@
         <h1>{space?.kind === 'dm' ? spaceTitle(space, directory.get(space.id), sync.accountId) : `# ${current?.name ?? '…'}`}</h1>
       {/if}
       {#if current?.topic}<span class="topic">{current.topic}</span>{/if}
+      <a class="search-link" href="#/search">Search</a>
       {#if space?.kind === 'internal'}
         <label class="view-as">Viewing as
           <select aria-label="Viewing as member" value={viewingAs ?? ''} onchange={(e) => (viewingAs = e.currentTarget.value || null)}>
@@ -792,6 +793,7 @@
 </div>
 
 <style>
+  .search-link { color: var(--accent); font-size: var(--fs-sm); text-decoration: none; }
   .history-message { display: grid; gap: var(--s-2); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
   .history-message button { width: fit-content; font: inherit; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: var(--s-2); cursor: pointer; }
   .history-message p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }

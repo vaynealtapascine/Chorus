@@ -48,6 +48,8 @@ export const core = {
       wasm.compose(src, JSON.stringify(speakers), JSON.stringify(options), JSON.stringify(defaults), JSON.stringify(names)),
     ),
   foldFront: (ops: Json[]): Json => JSON.parse(wasm.foldFront(JSON.stringify(ops))),
+  frontDaily: (intervals: Json, now: number, offsets: [number, number][]): Json =>
+    JSON.parse(wasm.frontDaily(JSON.stringify(intervals), now, JSON.stringify(offsets))),
   feedParse: (q: string): Json => JSON.parse(wasm.feedParse(q)),
   adaptColor: (color: string, dark: boolean, intensity: 'off' | 'subtle' | 'vivid' = 'subtle'): MemberColors =>
     JSON.parse(wasm.adaptColor(color, dark, intensity)),

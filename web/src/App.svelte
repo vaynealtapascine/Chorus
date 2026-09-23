@@ -11,6 +11,7 @@
   import DataPage from './lib/ui/DataPage.svelte';
   import Stage from './lib/ui/Stage.svelte';
   import Search from './lib/ui/Search.svelte';
+  import Insights from './lib/ui/Insights.svelte';
   import Switcher from './lib/ui/Switcher.svelte';
   import Trash from './lib/ui/Trash.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
@@ -46,9 +47,9 @@
   const tabs = [
     { path: '/', name: 'home', label: 'Home' },
     { path: '/chat', name: 'chat', label: 'Chat' },
-    { path: '/search', name: 'search', label: 'Search' },
     { path: '/members', name: 'members', label: 'Members' },
     { path: '/history', name: 'history', label: 'History' },
+    { path: '/insights', name: 'insights', label: 'Insights' },
     { path: '/people', name: 'people', label: 'People' },
   ];
   const active = $derived(router.route.name === 'member' ? 'members' : router.route.name === 'stage' ? 'chat' : router.route.name);
@@ -78,6 +79,8 @@
         <Search {projection} />
       {:else if router.route.name === 'history'}
         <History {projection} {dark} />
+      {:else if router.route.name === 'insights'}
+        <Insights {projection} />
       {:else if router.route.name === 'stage' && router.route.id}
         <Stage {projection} {dark} channelId={router.route.id} />
       {:else if router.route.name === 'data'}
@@ -143,6 +146,9 @@
       position: fixed;
       inset: auto 0 0 0;
       justify-content: space-around;
+      overflow-x: auto;
+      white-space: nowrap;
+      gap: var(--s-3);
       background: var(--surface);
       border-top: 1px solid var(--line);
       padding: var(--s-3) var(--s-4) calc(var(--s-3) + env(safe-area-inset-bottom));
@@ -150,6 +156,7 @@
     }
     nav a {
       border: 0;
+      flex-shrink: 0;
     }
     nav a.on {
       color: var(--accent);
