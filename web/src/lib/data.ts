@@ -16,6 +16,7 @@ export interface MemberRow {
   proxy_tags: ProxyTag[];
   description?: string;
   birthday?: string;
+  avatar_blob?: string;
   archived: boolean;
   deleted: boolean;
   created_at?: number;
@@ -27,6 +28,7 @@ export interface GroupRow {
   kind: 'subsystem' | 'group';
   parent_id?: string;
   color?: string;
+  avatar_blob?: string;
   deleted: boolean;
 }
 
@@ -59,6 +61,7 @@ export function members(p: Projection): MemberRow[] {
         proxy_tags: Array.isArray(f.proxy_tags) ? (f.proxy_tags as ProxyTag[]) : [],
         description: str(f.description),
         birthday: str(f.birthday),
+        avatar_blob: str(f.avatar_blob),
         archived: f.archived_at != null,
         deleted: f.deleted_at != null,
         created_at: typeof f.created_at === 'number' ? f.created_at : undefined,
@@ -77,6 +80,7 @@ export function groups(p: Projection): GroupRow[] {
       kind: r.fields.kind === 'group' ? 'group' : 'subsystem',
       parent_id: str(r.fields.parent_id),
       color: str(r.fields.color),
+      avatar_blob: str(r.fields.avatar_blob),
       deleted: r.fields.deleted_at != null,
     }))
     .filter((g) => !g.deleted)

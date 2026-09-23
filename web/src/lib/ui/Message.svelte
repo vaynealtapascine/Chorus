@@ -4,6 +4,7 @@
   import { segmentRich } from '../segments';
   import RichText from './RichText.svelte';
   import AttachmentView from './AttachmentView.svelte';
+  import AvatarImage from './AvatarImage.svelte';
 
   export type Quote = TextRange;
   export type Forwarded = SnapshotItem;
@@ -108,7 +109,7 @@
         {#if selecting}<button class="select-toggle" aria-label={selected ? 'Deselect message' : 'Select message'} aria-pressed={selected} onclick={onselect}>{selected ? '☑' : '□'}</button>{/if}
         <span class="avatars">
           {#each m.authors.slice(0, 3) as a (a)}
-            <span class="avatar" style="--ring: {color(a).ring}">{people.get(a)?.sigils[0] ?? nameOf(a)[0]}</span>
+            <span class="avatar" style="--ring: {color(a).ring}"><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></span>
           {/each}
         </span>
         <span class="who">
@@ -145,7 +146,7 @@
             <span class="segment-head">
               <span class="segment-avatars">
                 {#each s.authors as author (author)}
-                  <span class="segment-avatar" style="--ring: {color(author).ring}" title={nameOf(author)}>{people.get(author)?.sigils[0] ?? nameOf(author)[0]}</span>
+                  <span class="segment-avatar" style="--ring: {color(author).ring}" title={nameOf(author)}><AvatarImage hash={people.get(author)?.avatar_blob} glyph={people.get(author)?.sigils[0] ?? nameOf(author)[0]} name={nameOf(author)} /></span>
                 {/each}
               </span>
               <span class="who" style="color: {color(s.authors[0] ?? '').name}">{s.authors.map(nameOf).join(' & ')}</span>
@@ -174,7 +175,7 @@
         <button class="thread-preview" onclick={onthread}>
           <span class="thread-avatars">
             {#each thread.lastRepliers as id (id)}
-              <span class="thread-avatar" style="--ring: {color(id).ring}" title={nameOf(id)}>{people.get(id)?.sigils[0] ?? nameOf(id)[0]}</span>
+              <span class="thread-avatar" style="--ring: {color(id).ring}" title={nameOf(id)}><AvatarImage hash={people.get(id)?.avatar_blob} glyph={people.get(id)?.sigils[0] ?? nameOf(id)[0]} name={nameOf(id)} /></span>
             {/each}
           </span>
           <span>{thread.replyCount ? `${thread.replyCount} ${thread.replyCount === 1 ? 'reply' : 'replies'}` : 'Thread started'} · Open thread</span>

@@ -7,6 +7,7 @@
   import Reviews from './Reviews.svelte';
   import LinkDevice from './LinkDevice.svelte';
   import type { FrontEntry, Member } from './types';
+  import AvatarImage from './AvatarImage.svelte';
 
   let { projection, dark, onswitch }: { projection: Projection; dark: boolean; onswitch: () => void } = $props();
 
@@ -19,13 +20,14 @@
         pronouns: r.fields.pronouns as string | undefined,
         color: String(r.fields.color ?? '#A09184'),
         sigil: (r.fields.sigils as string[] | undefined)?.[0],
+        avatarBlob: r.fields.avatar_blob as string | undefined,
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
   );
   // the front card can show subsystems fronting as a unit, not only members
   const subjects: Member[] = $derived([
     ...members,
-    ...groups(projection).map((g) => ({ id: g.id, name: g.name, color: g.color ?? '#A09184', sigil: '◌' })),
+    ...groups(projection).map((g) => ({ id: g.id, name: g.name, color: g.color ?? '#A09184', sigil: '◌', avatarBlob: g.avatar_blob })),
   ]);
   const fold = $derived(projection.fronts[sync.accountId]);
   const front: FrontEntry[] = $derived(
@@ -86,7 +88,7 @@
         {@const c = core.adaptColor(m.color, dark)}
         {@const here = front.some((f) => f.id === m.id)}
         <button class="member" class:here style="--ring: {c.ring}; --tint: {c.tint}" onclick={() => switchTo(m.id)}>
-          <span class="avatar" aria-hidden="true">{m.sigil ?? m.name[0]}</span>
+          <span class="avatar" aria-hidden="true"><AvatarImage hash={m.avatarBlob} glyph={m.sigil ?? m.name[0]} name={m.name} /></span>
           <span class="name" style="color: {c.name}">{m.name}</span>
         </button>
       {/each}

@@ -4,6 +4,7 @@ export interface Member {
   pronouns?: string;
   color: string;
   sigil?: string;
+  avatarBlob?: string;
 }
 
 export interface FrontEntry {

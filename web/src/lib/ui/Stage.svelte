@@ -11,6 +11,7 @@
   import { sync, type Projection } from '../sync/client';
   import RichText from './RichText.svelte';
   import AttachmentView from './AttachmentView.svelte';
+  import AvatarImage from './AvatarImage.svelte';
 
   let { projection, channelId, dark }: { projection: Projection; channelId: string; dark: boolean } = $props();
 
@@ -262,7 +263,7 @@
           onclick={() => toggle(m.id)}
         >
           {#if def.render.style !== 'transcript' && def.render.style !== 'minimal'}
-            <span class="avatar" aria-hidden="true">{glyphOf(lead)}</span>
+            <span class="avatar" aria-hidden="true"><AvatarImage hash={plan.names[lead] ? undefined : people.get(lead)?.avatar_blob} glyph={glyphOf(lead)} name={nameOf(lead)} /></span>
           {/if}
           <div class="body">
             {#if reply}

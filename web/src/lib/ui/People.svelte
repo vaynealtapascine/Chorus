@@ -6,13 +6,14 @@
   import { apiBase } from '../sync/device';
   import { sync, type Projection } from '../sync/client';
   import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
+  import AvatarImage from './AvatarImage.svelte';
 
   let { projection }: { projection: Projection } = $props();
 
-  interface Person { id: string; handle: string | null; display_name: string | null; kind: string }
+  interface Person { id: string; handle: string | null; display_name: string | null; kind: string; avatar_blob?: string | null }
   interface FollowRow { id: string; account: Person; status: string; created_at: number }
 
-  interface ViewEntry { t: string; name: string; level: string; color?: string | null; glyph?: string | null }
+  interface ViewEntry { t: string; name: string; level: string; color?: string | null; glyph?: string | null; avatar_blob?: string | null }
   interface View { entries: ViewEntry[]; since: number | null; time?: { mode?: string }; shared?: boolean }
   interface Note {
     id: string;
@@ -167,8 +168,9 @@
     <h2>Requests</h2>
     <ul>
       {#each followers.filter((f) => f.status === 'requested') as f (f.id)}
-        <li class="card">
-          <div class="who"><strong>{name(f.account)}</strong><span>wants to follow you</span></div>
+      <li class="card">
+        <span class="person-avatar"><AvatarImage hash={f.account.avatar_blob} glyph={(f.account.display_name ?? f.account.handle ?? '?')[0]} name={name(f.account)} /></span>
+        <div class="who"><strong>{name(f.account)}</strong><span>wants to follow you</span></div>
           <label class="preset">
             <span>They'll see switches</span>
             <select value={choice[f.id] ?? 'gentle'} onchange={(e) => (choice[f.id] = e.currentTarget.value)}>
@@ -190,6 +192,7 @@
     {#each followers.filter((f) => f.status === 'active') as f (f.id)}
       {@const current = ceilingOf(f.id)}
       <li class="card">
+        <span class="person-avatar"><AvatarImage hash={f.account.avatar_blob} glyph={(f.account.display_name ?? f.account.handle ?? '?')[0]} name={name(f.account)} /></span>
         <div class="who"><strong>{name(f.account)}</strong>{#if f.account.handle}<span>@{f.account.handle}</span>{/if}</div>
         <label class="preset">
           <span>Sees switches</span>
@@ -209,9 +212,17 @@
   <ul>
     {#each following as f (f.id)}
       <li class="card">
+        <span class="person-avatar"><AvatarImage hash={f.account.avatar_blob} glyph={(f.account.display_name ?? f.account.handle ?? '?')[0]} name={name(f.account)} /></span>
         <div class="who">
           <strong>{name(f.account)}</strong>
           <span>{f.status === 'requested' ? 'waiting for them to accept' : viewLine(views[f.account.id]) || (f.account.handle ? `@${f.account.handle}` : '')}</span>
+          {#if views[f.account.id]?.entries?.length}
+            <span class="front-avatars">
+              {#each views[f.account.id].entries.filter((e) => e.t === 'subject') as e, i (`${e.name}:${i}`)}
+                <span class="front-avatar" title={e.name}><AvatarImage hash={e.avatar_blob} glyph={e.glyph ?? e.name[0]} name={e.name} /></span>
+              {/each}
+            </span>
+          {/if}
         </div>
         <div class="actions">
           <button class="ghost" onclick={() => unfollow(f.id)}>{f.status === 'requested' ? 'Cancel' : 'Unfollow'}</button>
@@ -244,6 +255,10 @@
 </section>
 
 <style>
+  .person-avatar, .front-avatar { display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: var(--surface-2); color: var(--ink-2); flex: none; }
+  .person-avatar { width: 40px; height: 40px; }
+  .front-avatar { width: 28px; height: 28px; }
+  .front-avatars { display: flex; gap: var(--s-1); margin-top: var(--s-1); }
   .page { display: grid; gap: var(--s-4); }
   h1 { font-size: var(--fs-2xl); }
   h2 { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); margin: var(--s-2) 0 0; }

@@ -7,6 +7,7 @@
   import { sync, type Projection } from '../sync/client';
   import { flushUploads, imageThumbnail, stageBlob } from '../sync/uploads';
   import Message from './Message.svelte';
+  import AvatarImage from './AvatarImage.svelte';
 
   let { projection, dark, channelId }: { projection: Projection; dark: boolean; channelId?: string } = $props();
 
@@ -487,7 +488,7 @@
       {#if !editing}<div class="chip-wrap">
         <button class="chip" onclick={() => (picking = !picking)} title="Speaking as">
           {#if speaker}
-            <span class="avatar" style="--ring: {color(speaker).ring}">{people.get(speaker)?.sigils[0] ?? people.get(speaker)?.name[0]}</span>
+            <span class="avatar" style="--ring: {color(speaker).ring}"><AvatarImage hash={people.get(speaker)?.avatar_blob} glyph={people.get(speaker)?.sigils[0] ?? people.get(speaker)?.name[0] ?? '?'} name={people.get(speaker)?.name} /></span>
           {:else}
             <span class="avatar">?</span>
           {/if}

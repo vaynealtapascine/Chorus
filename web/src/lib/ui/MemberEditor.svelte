@@ -1,8 +1,11 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { core } from '../core';
   import { fieldDefs, fieldValues, groupPath, groups, members, membership, type FieldDef, type ProxyTag } from '../data';
   import { router } from '../router.svelte';
   import { sync, type Projection } from '../sync/client';
+  import AvatarImage from './AvatarImage.svelte';
+  import { flushUploads, stageBlob } from '../sync/uploads';
 
   let { projection, id, dark }: { projection: Projection; id: string; dark: boolean } = $props();
 
@@ -14,6 +17,52 @@
   const defs = $derived(fieldDefs(projection));
   const values = $derived(fieldValues(projection).get(id) ?? new Map());
   const colors = $derived(m ? core.adaptColor(m.color, dark) : null);
+
+  let cropBitmap: ImageBitmap | null = null;
+  let cropReady = $state(false);
+  let cropCanvas: HTMLCanvasElement | undefined = $state();
+  let cropZoom = $state(1);
+  let cropX = $state(0);
+  let cropY = $state(0);
+  let avatarError = $state('');
+  onDestroy(() => cropBitmap?.close());
+  async function chooseAvatar(e: Event) {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    try {
+      cropBitmap?.close();
+      cropBitmap = await createImageBitmap(file);
+      cropZoom = 1; cropX = 0; cropY = 0;
+      cropReady = true;
+      avatarError = '';
+    } catch { avatarError = 'This image could not be opened.'; }
+  }
+  $effect(() => {
+    void cropReady;
+    const bitmap = cropBitmap;
+    const canvas = cropCanvas;
+    if (!bitmap || !canvas) return;
+    const scale = Math.max(256 / bitmap.width, 256 / bitmap.height) * cropZoom;
+    const width = bitmap.width * scale;
+    const height = bitmap.height * scale;
+    const dx = (256 - width) / 2 + cropX * (width - 256) / 2;
+    const dy = (256 - height) / 2 + cropY * (height - 256) / 2;
+    const ctx = canvas.getContext('2d');
+    ctx?.clearRect(0, 0, 256, 256);
+    ctx?.drawImage(bitmap, dx, dy, width, height);
+  });
+  async function saveAvatar() {
+    if (!cropCanvas) return;
+    try {
+      const blob = await new Promise<Blob | null>((resolve) => cropCanvas!.toBlob(resolve, 'image/webp', 0.9));
+      if (!blob) throw new Error('Could not encode cropped image');
+      const upload = await stageBlob(blob, blob.type, sync.accountId);
+      set({ avatar_blob: upload.hash });
+      if (sync.status === 'live') void flushUploads(sync.device);
+      cropBitmap?.close(); cropBitmap = null; cropReady = false;
+      avatarError = '';
+    } catch (error) { avatarError = String(error); }
+  }
 
   /** Send only fields that changed (field-level LWW merges them with other devices' edits). */
   function set(fields: Record<string, unknown>) {
@@ -91,7 +140,7 @@
     <header>
       <a class="back" href="#/members" aria-label="Back to members">‹ Members</a>
       <div class="identity">
-        <span class="avatar" aria-hidden="true">{m.sigils[0] ?? m.name[0]}</span>
+        <span class="avatar" aria-hidden="true"><AvatarImage hash={m.avatar_blob} glyph={m.sigils[0] ?? m.name[0]} name={m.name} /></span>
         <div>
           <h1 class="display" style="color: {colors?.name}">{m.display_name ?? m.name}</h1>
           <p class="muted">{m.pronouns ?? ''}{m.archived ? ' · archived' : ''}{m.deleted ? ' · in Trash' : ''}</p>
@@ -103,6 +152,19 @@
     <section>
       <h2>About</h2>
       <div class="fields">
+        <div class="wide avatar-picker">
+          <label>Avatar <input type="file" accept="image/*" onchange={chooseAvatar} aria-label="Choose member avatar" /></label>
+          {#if cropReady}
+            <div class="crop-controls">
+              <canvas width="256" height="256" bind:this={cropCanvas} aria-label="Avatar crop preview"></canvas>
+              <label>Zoom <input type="range" min="1" max="3" step="0.05" bind:value={cropZoom} /></label>
+              <label>Left/right <input type="range" min="-1" max="1" step="0.05" bind:value={cropX} /></label>
+              <label>Up/down <input type="range" min="-1" max="1" step="0.05" bind:value={cropY} /></label>
+              <button class="primary" onclick={saveAvatar}>Use this crop</button>
+            </div>
+          {/if}
+          {#if avatarError}<p role="alert">{avatarError}</p>{/if}
+        </div>
         <label>Name <input value={m.name} onchange={(e) => set({ name: text(e).trim() || m!.name })} /></label>
         <label>Display name <input value={m.display_name ?? ''} onchange={(e) => set({ display_name: opt(text(e)) })} /></label>
         <label>Pronouns <input value={m.pronouns ?? ''} onchange={(e) => set({ pronouns: opt(text(e)) })} /></label>
@@ -227,6 +289,10 @@
 {/if}
 
 <style>
+  .avatar-picker { display: grid; gap: var(--s-2); }
+  .crop-controls { display: grid; gap: var(--s-2); justify-items: start; }
+  .crop-controls canvas { width: 192px; height: 192px; border-radius: var(--r-md); border: 1px solid var(--line); }
+  .crop-controls label { display: flex; align-items: center; gap: var(--s-2); }
   .editor {
     display: grid;
     gap: var(--s-6);

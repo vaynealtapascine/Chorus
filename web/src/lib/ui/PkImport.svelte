@@ -2,6 +2,7 @@
   // Import from PluralKit (D-005): members, groups and switch history from `pk;export`.
   import { planPluralkit } from '../core/pkg/chorus_wasm.js';
   import { sync } from '../sync/client';
+  import { flushUploads, stageBlob } from '../sync/uploads';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -9,6 +10,9 @@
   let plan = $state<{ members: number; groups: number; switches: number; warnings: string[] } | null>(null);
   let error = $state('');
   let done = $state<number | null>(null);
+  let busy = $state(false);
+  let avatarNotes = $state<string[]>([]);
+  const notes = $derived([...(plan?.warnings ?? []).filter((w) => done === null || !w.includes('avatar not imported yet')), ...avatarNotes]);
 
   async function pick(e: Event) {
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
@@ -24,11 +28,36 @@
     }
   }
 
-  function run() {
+  async function run() {
+    busy = true;
+    avatarNotes = [];
     try {
       done = sync.importPluralkit(text);
+      const exported = JSON.parse(text) as { members?: { id?: string; avatar_url?: string }[] };
+      const rows = sync.projection()?.rows.member ?? {};
+      const byPkId = new Map(Object.entries(rows).map(([id, row]) => [row.fields.pk_id, id]));
+      for (const member of exported.members ?? []) {
+        if (!member.id || !member.avatar_url) continue;
+        try {
+          const url = new URL(member.avatar_url);
+          if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported URL');
+          const response = await fetch(url.href, { mode: 'cors' });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const blob = await response.blob();
+          if (!blob.type.startsWith('image/')) throw new Error('not an image');
+          const id = byPkId.get(member.id);
+          if (!id) throw new Error('member not found after import');
+          const upload = await stageBlob(blob, blob.type, sync.accountId);
+          sync.create('member.set', sync.accountScope, id, { avatar_blob: upload.hash });
+        } catch (err) {
+          avatarNotes = [...avatarNotes, `${member.id}: avatar could not be fetched (${String(err)}). You can add it in the member editor.`];
+        }
+      }
+      if (sync.status === 'live') void flushUploads(sync.device);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
     }
   }
 </script>
@@ -47,16 +76,16 @@
       <li><strong>{plan.groups}</strong> groups</li>
       <li><strong>{plan.switches}</strong> switches (imported silently — no notifications)</li>
     </ul>
-    {#if plan.warnings.length}
+    {#if notes.length}
       <details>
-        <summary>{plan.warnings.length} notes</summary>
-        <ul>{#each plan.warnings as w (w)}<li>{w}</li>{/each}</ul>
+        <summary>{notes.length} notes</summary>
+        <ul>{#each notes as w (w)}<li>{w}</li>{/each}</ul>
       </details>
     {/if}
     {#if done !== null}
       <p class="ok">Imported {done} new item{done === 1 ? '' : 's'}.{done === 0 ? ' Everything was already here.' : ''}</p>
     {/if}
-    <button class="primary" onclick={run}>{done === null ? 'Import' : 'Import again'}</button>
+    <button class="primary" onclick={() => void run()} disabled={busy}>{busy ? 'Importing avatars…' : done === null ? 'Import' : 'Import again'}</button>
   {/if}
 </div>
 
