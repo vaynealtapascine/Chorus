@@ -1,6 +1,6 @@
 <script lang="ts">
   import { core } from '../core';
-  import type { MemberRow, MessageRow } from '../data';
+  import type { MemberRow, MessageRow, ThreadSummary } from '../data';
   import RichText from './RichText.svelte';
 
   export interface Quote {
@@ -32,6 +32,8 @@
     onrestore,
     onpin,
     onforward,
+    thread,
+    onthread,
     reacts,
     speaker,
     onreact,
@@ -49,6 +51,8 @@
     onrestore: () => void;
     onpin: () => void;
     onforward: () => void;
+    thread?: ThreadSummary;
+    onthread: () => void;
     reacts: Map<string, string[]> | undefined;
     speaker: string | null;
     onreact: (emoji: string, on: boolean) => void;
@@ -83,6 +87,7 @@
 {#if m.deleted}
   <div class="msg deleted">
     Message deleted{#if mine}<button class="link" onclick={onrestore}>Restore</button>{/if}
+    {#if thread}<button class="link" onclick={onthread}>Open thread · {thread.replyCount} {thread.replyCount === 1 ? 'reply' : 'replies'}</button>{/if}
   </div>
 {:else}
   <div class="msg" class:cont class:pinned={m.pinned}>
@@ -140,6 +145,16 @@
           {/each}
         </div>
       {/if}
+      {#if thread}
+        <button class="thread-preview" onclick={onthread}>
+          <span class="thread-avatars">
+            {#each thread.lastRepliers as id (id)}
+              <span class="thread-avatar" style="--ring: {color(id).ring}" title={nameOf(id)}>{people.get(id)?.sigils[0] ?? nameOf(id)[0]}</span>
+            {/each}
+          </span>
+          <span>{thread.replyCount ? `${thread.replyCount} ${thread.replyCount === 1 ? 'reply' : 'replies'}` : 'Thread started'} · Open thread</span>
+        </button>
+      {/if}
     </div>
     {#if palette}
       <div class="palette" role="listbox" aria-label="React">
@@ -153,6 +168,7 @@
       <button onclick={onreply} title="Reply">↩</button>
       <button onclick={quote} title="Quote (select text first to quote part)">❝</button>
       <button onclick={onforward} title="Forward">↗</button>
+      <button onclick={onthread} title={thread ? 'Open thread' : 'Start thread'} aria-label={thread ? 'Open thread' : 'Start thread'}>☷</button>
       <button onclick={onpin} title={m.pinned ? 'Unpin' : 'Pin'}>{m.pinned ? '⊘' : '📌'}</button>
       {#if mine}
         <button onclick={onedit} title="Edit">✎</button>
@@ -298,6 +314,32 @@
     color: var(--ink-2);
     font-size: var(--fs-xs);
   }
+  .thread-preview {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    margin-top: var(--s-2);
+    padding: var(--s-1) var(--s-2);
+    font: inherit;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 0;
+    border-radius: var(--r-full);
+    cursor: pointer;
+  }
+  .thread-avatars { display: flex; }
+  .thread-avatar {
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--surface);
+    box-shadow: 0 0 0 1px var(--ring, var(--line));
+  }
+  .thread-avatar + .thread-avatar { margin-left: -5px; }
   .palette {
     display: flex;
     gap: 2px;

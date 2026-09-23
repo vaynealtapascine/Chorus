@@ -261,3 +261,92 @@ fn sql_matches_model_and_rebuild_is_identical() {
         }
     }
 }
+
+#[test]
+fn thread_reverse_link_survives_arrival_order_and_rebuild() {
+    let (mut c, account, _, scope) = setup();
+    let space_id = scope.strip_prefix("space:").unwrap();
+    let channel = new_id(1, [211; 10]);
+    let parent = new_id(1, [212; 10]);
+    let later_parent = new_id(1, [213; 10]);
+    let author = new_id(1, [214; 10]);
+    let link = |db: &Connection, id: &str| -> Option<String> {
+        db.query_row("SELECT thread_channel_id FROM message WHERE id = ?1", [id], |r| r.get(0)).unwrap()
+    };
+
+    ingest::server_op(
+        &c,
+        &account,
+        "space.create",
+        &scope,
+        Some(space_id),
+        json!({"kind":"internal","name":"Home"}),
+        T,
+    )
+    .unwrap();
+    ingest::server_op(
+        &c,
+        &account,
+        "channel.create",
+        &scope,
+        Some(&channel),
+        json!({"space_id":space_id,"kind":"text","name":"general"}),
+        T + 1,
+    )
+    .unwrap();
+    // The thread can arrive before its parent message. Reusing the parent's UUID makes a
+    // concurrent Start thread action converge on one channel across devices.
+    ingest::server_op(
+        &c,
+        &account,
+        "channel.create",
+        &scope,
+        Some(&parent),
+        json!({"space_id":space_id,"kind":"thread","name":"Thread","parent_message_id":parent}),
+        T + 2,
+    )
+    .unwrap();
+    ingest::server_op(
+        &c,
+        &account,
+        "message.send",
+        &scope,
+        Some(&parent),
+        json!({"channel_id":channel,"authors":[author],"text":"parent","entities":[]}),
+        T + 3,
+    )
+    .unwrap();
+    assert_eq!(link(&c, &parent), Some(parent.clone()));
+
+    ingest::server_op(
+        &c,
+        &account,
+        "message.send",
+        &scope,
+        Some(&later_parent),
+        json!({"channel_id":channel,"authors":[author],"text":"later","entities":[]}),
+        T + 4,
+    )
+    .unwrap();
+    assert_eq!(link(&c, &later_parent), None);
+    ingest::server_op(
+        &c,
+        &account,
+        "channel.create",
+        &scope,
+        Some(&later_parent),
+        json!({"space_id":space_id,"kind":"thread","name":"Thread","parent_message_id":later_parent}),
+        T + 5,
+    )
+    .unwrap();
+    assert_eq!(link(&c, &later_parent), Some(later_parent.clone()));
+
+    ingest::server_op(&c, &account, "channel.archive", &scope, Some(&parent), json!({}), T + 6).unwrap();
+    assert_eq!(link(&c, &parent), None);
+    ingest::server_op(&c, &account, "channel.unarchive", &scope, Some(&parent), json!({}), T + 7).unwrap();
+    assert_eq!(link(&c, &parent), Some(parent.clone()));
+
+    project::rebuild(&mut c).unwrap();
+    assert_eq!(link(&c, &parent), Some(parent));
+    assert_eq!(link(&c, &later_parent), Some(later_parent));
+}

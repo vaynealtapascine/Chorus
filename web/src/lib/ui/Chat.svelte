@@ -1,6 +1,6 @@
 <script lang="ts">
   import { core, type Composed } from '../core';
-  import { channels, lastRead, members, messageById, messages, reactions, spaces, unread, type MessageRow } from '../data';
+  import { channels, lastRead, members, messageById, messages, reactions, spaces, threadSummaries, unread, type MessageRow } from '../data';
   import { router } from '../router.svelte';
   import { sync, type Projection } from '../sync/client';
   import Message, { type Quote } from './Message.svelte';
@@ -9,10 +9,17 @@
 
   const ss = $derived(spaces(projection));
   const allChannels = $derived(channels(projection));
-  const current = $derived(allChannels.find((c) => c.id === channelId) ?? allChannels.find((c) => !c.archived));
+  const current = $derived(allChannels.find((c) => c.id === channelId) ?? allChannels.find((c) => !c.archived && c.kind !== 'thread'));
   const space = $derived(ss.find((s) => s.id === current?.space_id) ?? ss[0]);
-  const spaceChannels = $derived(allChannels.filter((c) => c.space_id === space?.id && !c.archived));
+  const spaceChannels = $derived(allChannels.filter((c) => c.space_id === space?.id && !c.archived && c.kind !== 'thread'));
   const msgs = $derived(current ? messages(projection, current.id) : []);
+  const threads = $derived(threadSummaries(projection));
+  const threadParent = $derived.by(() => {
+    if (current?.kind !== 'thread' || !current.parent_message_id) return undefined;
+    const parent = messageById(projection, current.parent_message_id);
+    return allChannels.some((c) => c.id === parent?.channel_id && c.space_id === current.space_id) ? parent : undefined;
+  });
+  const parentChannel = $derived(allChannels.find((c) => c.id === threadParent?.channel_id));
   const people = $derived(new Map(members(projection).map((m) => [m.id, m])));
   const scopeOf = (spaceId: string) => `space:${spaceId}`;
   const scope = $derived(space ? scopeOf(space.id) : '');
@@ -42,6 +49,13 @@
   let showPins = $state(false);
   let picking = $state(false);
   let box: HTMLTextAreaElement | undefined = $state();
+  let activeChannelId: string | undefined;
+  $effect(() => {
+    if (current?.id === activeChannelId) return;
+    activeChannelId = current?.id;
+    replyTo = quoting = editing = forwarding = null;
+    chosen = null;
+  });
 
   const preview: Composed | null = $derived(draft.trim() ? core.compose(draft, speakers, {}, speaker ? [speaker] : [], names) : null);
   const previewNames = $derived(
@@ -123,6 +137,20 @@
     router.go(`/chat/${id}`);
   }
 
+  function openThread(m: MessageRow) {
+    if (!current) return;
+    const existing = allChannels.find((c) => c.kind === 'thread' && c.space_id === current.space_id && c.parent_message_id === m.id);
+    const id = existing?.id ?? m.id; // one stable channel id per parent, even across devices
+    if (existing?.archived) sync.create('channel.unarchive', scope, id, {});
+    else if (!existing) sync.create('channel.create', scope, id, {
+      space_id: current.space_id,
+      kind: 'thread',
+      name: 'Thread',
+      parent_message_id: m.id,
+    });
+    router.go(`/chat/${id}`);
+  }
+
   const grouped = $derived(
     msgs.map((m, i) => {
       const prev = msgs[i - 1];
@@ -191,7 +219,12 @@
 
   <section class="room" aria-label={current ? `#${current.name}` : 'Chat'}>
     <header>
-      <h1># {current?.name ?? '…'}</h1>
+      {#if current?.kind === 'thread'}
+        <a class="thread-back" href="#/chat/{parentChannel?.id ?? ''}">‹ #{parentChannel?.name ?? 'channel'}</a>
+        <h1>Thread</h1>
+      {:else}
+        <h1># {current?.name ?? '…'}</h1>
+      {/if}
       {#if current?.topic}<span class="topic">{current.topic}</span>{/if}
       <button class="pins" class:on={showPins} onclick={() => (showPins = !showPins)}>📌 {pinned.length}</button>
     </header>
@@ -203,6 +236,18 @@
         {:else}
           <p class="muted">Nothing pinned yet.</p>
         {/each}
+      </div>
+    {/if}
+
+    {#if current?.kind === 'thread'}
+      <div class="thread-origin">
+        <span>Original message</span>
+        {#if threadParent}
+          <strong>{threadParent.authors.map((a) => people.get(a)?.name ?? 'Someone').join(' & ')}</strong>
+          <p>{threadParent.deleted ? 'Message deleted' : threadParent.text.slice(0, 240)}</p>
+        {:else}
+          <p>Original message unavailable</p>
+        {/if}
       </div>
     {/if}
 
@@ -222,6 +267,8 @@
           onrestore={() => sync.create('message.restore', scope, m.id, {})}
           onpin={() => sync.create(m.pinned ? 'message.unpin' : 'message.pin', scope, m.id, {}, { memberId: speaker ?? undefined })}
           onforward={() => (forwarding = m)}
+          thread={threads.get(m.id)}
+          onthread={() => openThread(m)}
           reacts={reacts.get(m.id)}
           {speaker}
           onreact={(emoji, on) => react(m, emoji, on)}
@@ -348,8 +395,8 @@
     padding: var(--s-1) var(--s-3);
   }
   .room {
-    display: grid;
-    grid-template-rows: auto auto 1fr auto auto auto;
+    display: flex;
+    flex-direction: column;
     min-height: 0;
     background: var(--surface);
     border: 1px solid var(--line);
@@ -369,6 +416,17 @@
     color: var(--ink-3);
     font-size: var(--fs-sm);
   }
+  .thread-back { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
+  .thread-origin {
+    display: grid;
+    gap: 2px;
+    padding: var(--s-3) var(--s-4);
+    border-bottom: 1px solid var(--line);
+    color: var(--ink-2);
+    font-size: var(--fs-sm);
+  }
+  .thread-origin span { color: var(--ink-3); font-size: var(--fs-xs); }
+  .thread-origin p { margin: 0; white-space: pre-wrap; }
   .pins {
     margin-left: auto;
     background: none;
@@ -395,6 +453,7 @@
     margin: 0;
   }
   .list {
+    flex: 1;
     overflow-y: auto;
     padding: var(--s-2) var(--s-2);
     display: flex;

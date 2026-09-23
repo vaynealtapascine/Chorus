@@ -78,6 +78,7 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
     let Some(row) = proj.row(table, id).filter(|r| r.exists) else {
         return Ok(()); // not created yet (fields wait in the log until the create arrives)
     };
+    let old_thread_parent = if table == "channel" { thread_parent(conn, id)? } else { None };
     let first = ops.iter().min_by_key(|o| (o.hlc, o.id.clone()));
     let mut vals: BTreeMap<String, Value> = row.fields.clone().into_iter().collect();
     vals.insert("id".into(), Value::String(id.into()));
@@ -108,13 +109,48 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
         vals.iter().filter(|(k, _)| cols.contains(k)).map(|(k, v)| (k.clone(), to_sql(v))).unzip();
     upsert(conn, table, &["id"], &names, values)?;
     match table {
-        "message" => message_extras(conn, id, row.fields.get("authors"), &row.fields)?,
+        "message" => {
+            message_extras(conn, id, row.fields.get("authors"), &row.fields)?;
+            refresh_thread_link(conn, id)?;
+        }
+        "channel" => {
+            if let Some(parent) = old_thread_parent {
+                refresh_thread_link(conn, &parent)?;
+            }
+            if let Some(parent) = thread_parent(conn, id)? {
+                refresh_thread_link(conn, &parent)?;
+            }
+        }
         "post" => authors(conn, "post_author", "post_id", id, row.fields.get("authors"))?,
         "member_group" => {
             group_parents(conn, account_of(&first.map(|f| f.scope.clone()).unwrap_or_default()).unwrap_or(""))?
         }
         _ => {}
     }
+    Ok(())
+}
+
+fn thread_parent(conn: &Connection, channel_id: &str) -> anyhow::Result<Option<String>> {
+    Ok(conn
+        .query_row("SELECT parent_message_id FROM channel WHERE id = ?1 AND kind = 'thread'", [channel_id], |r| {
+            r.get(0)
+        })
+        .optional()?
+        .flatten())
+}
+
+/// A thread is a channel, and its parent message keeps a reverse pointer for read APIs. Refresh
+/// on both channel and message projection so offline ops converge in either arrival order.
+fn refresh_thread_link(conn: &Connection, parent_id: &str) -> anyhow::Result<()> {
+    conn.execute(
+        "UPDATE message SET thread_channel_id = (
+           SELECT t.id FROM channel t JOIN channel source ON source.id = message.channel_id
+           WHERE t.kind = 'thread' AND t.parent_message_id = message.id AND t.space_id = source.space_id
+             AND t.deleted_at IS NULL AND t.archived_at IS NULL
+           ORDER BY t.created_at, t.id LIMIT 1
+         ) WHERE id = ?1",
+        [parent_id],
+    )?;
     Ok(())
 }
 

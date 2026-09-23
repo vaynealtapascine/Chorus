@@ -14,10 +14,10 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M5.5
-- **Owner:** gpt-6-sol, 2026-09-23
-- **Next concrete step:** implement thread channels linked to parent messages, previews, navigation, and reply composer; verify core/server/web.
-- **Notes:** The owner asked for M5 work while M4.2 waits for a physical Android device. M4.2 remains `[~]` solely for the fresh install, plaintext migration, offline op, foreground catch-up, and WorkManager catch-up checks listed in the preceding commit; no device is attached. M5.5 is now the active code task. Use `CARGO_TARGET_DIR=F:\DunBuild\chorus-target` on this machine because C: has almost no free space (see NOTES).
+- **In progress:** —
+- **Owner:** —
+- **Next concrete step:** claim the next unticked task on the board
+- **Notes:** M4.2 remains [~] pending the physical-device checks documented in its handoff commit; no device is attached. M5.5 is complete. M5.6 needs the M2.6 blob store, so the next independent M5 task is M5.9 segmented-message completion. Use CARGO_TARGET_DIR=F:\DunBuild\chorus-target because C: is nearly full (see NOTES).
 
 ---
 
@@ -95,7 +95,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M5.2 Composer: speaker chip, proxy tags, sigils, multi-author, formatting
 - [x] M5.3 Replies (incl. cross-channel), quotes (full/partial), forwards, edits+history, deletes, pins
 - [x] M5.4 Reactions, mentions, read states, unread badges
-- [~] M5.5 Threads
+- [x] M5.5 Threads
 - [ ] M5.6 Attachments + images (offline-queued upload)
 - [ ] M5.7 Hidden messages: spoilers, CW/collapsed, member-visible, system-only
 - [ ] M5.8 Search (FTS5 server, local search on Android)
@@ -200,3 +200,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 gpt-6-sol — recovered Opus's uncommitted Android first pass and device-linking flow; regenerated UniFFI bridge, fixed invite deep-link handling and auth renewal, built debug APK, recorded M4.2 as WIP.
 - 2026-09-23 gpt-6-sol — M4.2 continued: encrypted Room replica with Keystore key and checked plaintext migration; durable-before-send local writes; serial socket persistence; bounded foreground/WorkManager sync. APK, bridge JVM tests, Android lint/unit tests, and full Rust/web verifier pass; device test pending.
 - 2026-09-23 gpt-6-sol — M4.2 follow-up: background WorkManager now acquires the socket lease before awaiting startup, so a fresh process can connect without an Activity. APK, Android lint/unit tests, and full verifier pass again.
+- 2026-09-23 gpt-6-sol — M5.5 thread channels, parent reverse links, reply previews, and thread navigation/composer; server arrival-order/rebuild and 50k-reply web tests pass

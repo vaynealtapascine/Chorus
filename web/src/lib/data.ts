@@ -170,7 +170,14 @@ export interface ChannelRow {
   name: string;
   topic?: string;
   category?: string;
+  parent_message_id?: string;
   archived: boolean;
+}
+
+export interface ThreadSummary {
+  channel: ChannelRow;
+  replyCount: number;
+  lastRepliers: string[];
 }
 
 export interface Segment {
@@ -226,10 +233,49 @@ export function channels(p: Projection, spaceId?: string): ChannelRow[] {
       name: str(r.fields.name) ?? 'channel',
       topic: str(r.fields.topic),
       category: str(r.fields.category),
+      parent_message_id: str(r.fields.parent_message_id),
       archived: r.fields.archived_at != null,
     }))
     .filter((c) => !spaceId || c.space_id === spaceId)
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** One pass over messages for the previews under thread parents. */
+export function threadSummaries(p: Projection): Map<string, ThreadSummary> {
+  const summaries = new Map<string, ThreadSummary>();
+  const byChannel = new Map<string, { summary: ThreadSummary; latestByAuthor: Map<string, { at: number; id: string; position: number }> }>();
+  const allChannels = channels(p);
+  const channelById = new Map(allChannels.map((channel) => [channel.id, channel]));
+  const messageRows = (p.rows.message ?? {}) as Rows;
+  for (const channel of allChannels) {
+    if (channel.kind !== 'thread' || channel.archived || !channel.parent_message_id) continue;
+    const parent = messageRows[channel.parent_message_id];
+    if (!parent?.exists || channelById.get(str(parent.fields.channel_id) ?? '')?.space_id !== channel.space_id) continue;
+    const summary: ThreadSummary = { channel, replyCount: 0, lastRepliers: [] };
+    summaries.set(channel.parent_message_id, summary);
+    byChannel.set(channel.id, { summary, latestByAuthor: new Map() });
+  }
+  for (const [id, row] of Object.entries(messageRows)) {
+    if (!row.exists || row.fields.deleted_at != null) continue;
+    const entry = byChannel.get(str(row.fields.channel_id) ?? '');
+    if (!entry) continue;
+    entry.summary.replyCount++;
+    const at = typeof row.fields.occurred_at === 'number' ? row.fields.occurred_at : 0;
+    const authors = Array.isArray(row.fields.authors) ? row.fields.authors : [];
+    for (const [position, author] of authors.entries()) {
+      if (typeof author !== 'string') continue;
+      const previous = entry.latestByAuthor.get(author);
+      if (!previous || at > previous.at || (at === previous.at && id > previous.id)) {
+        entry.latestByAuthor.set(author, { at, id, position });
+      }
+    }
+  }
+  for (const { summary, latestByAuthor } of byChannel.values()) {
+    summary.lastRepliers = [...latestByAuthor.entries()]
+      .sort((a, b) => b[1].at - a[1].at || b[1].id.localeCompare(a[1].id) || a[1].position - b[1].position)
+      .slice(0, 3).map(([author]) => author);
+  }
+  return summaries;
 }
 
 export function messages(p: Projection, channelId: string): MessageRow[] {
