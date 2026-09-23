@@ -835,6 +835,100 @@ async fn friends_share_spaces_and_dms() {
     let list: Value = http.get(url("/spaces")).bearer_auth(tok(&friend)).send().await.unwrap().json().await.unwrap();
     assert!(list["items"].as_array().unwrap().iter().any(|i| i["id"] == dm.as_str() && i["kind"] == "dm"));
 
+    // An aside and its pre-send attachment metadata stay on Stars' devices. A public send
+    // backfills its attachment op to Alex; a fresh catch-up has the same filtered digest.
+    let private_attachment = new_id(3, [91; 10]);
+    phone
+        .create(
+            "attachment.create",
+            &scope,
+            &private_attachment,
+            json!({"blob_hash": avatar_hash, "filename": "aside.png", "mime": "image/png", "size": avatar.len()}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    assert!(!laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(private_attachment.as_str())));
+    let aside = new_id(3, [92; 10]);
+    phone
+        .create(
+            "message.send",
+            &scope,
+            &aside,
+            json!({"channel_id": chan, "authors": [kai], "text": "system-only aside", "entities": [],
+               "visibility": {"mode": "system_only"}, "attachments": [private_attachment]}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    assert!(phone.store.confirmed().any(|o| o.entity_id.as_deref() == Some(aside.as_str())));
+    assert!(!laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(aside.as_str())));
+    assert!(!laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(private_attachment.as_str())));
+    laptop
+        .create("message.edit", &scope, &aside, json!({"message_id": aside, "text": "guessed edit", "entities": []}))
+        .await;
+    laptop.drain(Q).await;
+    let stored: String =
+        s.state.db.lock().unwrap().query_row("SELECT text FROM message WHERE id=?1", [&aside], |r| r.get(0)).unwrap();
+    assert_eq!(stored, "system-only aside", "a guessed id cannot change another account's aside");
+    phone
+        .create("message.edit", &scope, &aside, json!({"message_id": aside, "text": "aside revised", "entities": []}))
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    assert!(!laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(aside.as_str())));
+
+    let public_attachment = new_id(3, [93; 10]);
+    phone
+        .create(
+            "attachment.create",
+            &scope,
+            &public_attachment,
+            json!({"blob_hash": avatar_hash, "filename": "hello.png", "mime": "image/png", "size": avatar.len()}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    assert!(!laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(public_attachment.as_str())));
+    let public = new_id(3, [94; 10]);
+    phone
+        .create(
+            "message.send",
+            &scope,
+            &public,
+            json!({"channel_id": chan, "authors": [kai], "text": "public with image", "entities": [],
+               "visibility": {"mode": "all"}, "attachments": [public_attachment]}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(public.as_str())));
+    assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(public_attachment.as_str())));
+
+    laptop.disconnect();
+    let later_aside = new_id(3, [95; 10]);
+    phone
+        .create(
+            "message.send",
+            &scope,
+            &later_aside,
+            json!({"channel_id": chan, "authors": [kai], "text": "offline aside", "entities": [],
+               "visibility": {"mode": "system_only"}}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.connect(&s).await;
+    laptop.drain(Q).await;
+    assert!(!laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(later_aside.as_str())));
+    assert_eq!(laptop.engine.repairs, 0, "visible digest must match the received ops");
+    let sys_id = id_of(&sys);
+    let second = enrol(&s, auth::InviteKind::Device, Some(&sys_id), 89, "").await;
+    let mut other_device = Device::new(&second, 89);
+    other_device.connect(&s).await;
+    other_device.drain(Q).await;
+    assert!(other_device.store.confirmed().any(|o| o.entity_id.as_deref() == Some(aside.as_str())));
+    assert!(other_device.store.confirmed().any(|o| o.entity_id.as_deref() == Some(later_aside.as_str())));
+
     // a shared space: only its owner adds people, and the owner can't leave it
     let (st, club) =
         post(url("/spaces"), tok(&sys), json!({"kind": "shared", "name": "Book club", "accounts": []})).await;

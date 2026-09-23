@@ -1015,20 +1015,39 @@ fn send(tx: &mpsc::UnboundedSender<Frame>, f: Frame) {
 }
 
 /// Catch-up for one scope, queued on `tx` (caller holds the db lock, so nothing can interleave).
-fn catch_up(conn: &Connection, tx: &mpsc::UnboundedSender<Frame>, scope: &str, after: i64) -> anyhow::Result<()> {
+fn catch_up(
+    conn: &Connection,
+    tx: &mpsc::UnboundedSender<Frame>,
+    account: &str,
+    scope: &str,
+    after: i64,
+) -> anyhow::Result<()> {
     let mut cursor = after;
     loop {
         let ops = oplog::scope_after(conn, scope, cursor, PAGE_OPS)?;
         let Some(last) = ops.last().and_then(|o| o.seq) else { break };
         cursor = last;
         let n = ops.len();
-        send(tx, Frame::Ops { scope: scope.into(), ops, to: last });
+        let visible = ops
+            .into_iter()
+            .filter_map(|o| match crate::visibility::op_visible_to(conn, account, &o) {
+                Ok(true) => Some(Ok(o)),
+                Ok(false) => None,
+                Err(e) => Some(Err(e)),
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        if !visible.is_empty() {
+            send(tx, Frame::Ops { scope: scope.into(), ops: visible, to: last });
+        }
         if n < PAGE_OPS {
             break;
         }
     }
     let to = oplog::max_seq(conn, scope)?;
-    send(tx, Frame::Caught { scope: scope.into(), to, digest: oplog::digest(conn, scope)? });
+    send(
+        tx,
+        Frame::Caught { scope: scope.into(), to, digest: crate::visibility::visible_digest(conn, account, scope)? },
+    );
     Ok(())
 }
 
@@ -1081,7 +1100,7 @@ async fn run_socket(s: AppState, socket: WebSocket) {
             (Some((_, sess)), Frame::Pull { scope, after }) => {
                 let conn = s.db();
                 if ingest::can_access(&conn, &sess.account_id, &scope).unwrap_or(false) {
-                    catch_up(&conn, &tx, &scope, after)
+                    catch_up(&conn, &tx, &sess.account_id, &scope, after)
                 } else {
                     Ok(())
                 }
@@ -1140,7 +1159,7 @@ fn hello(
     );
     if !reconcile {
         for sc in &scopes {
-            catch_up(&conn, tx, sc, *cursors.get(sc).unwrap_or(&0))?;
+            catch_up(&conn, tx, &who.account_id, sc, *cursors.get(sc).unwrap_or(&0))?;
         }
     }
     // registered while still holding the db lock: live ops can't overtake the catch-up
@@ -1205,6 +1224,14 @@ pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Optio
         }),
         Err(e) => tracing::error!(error = %e, "webhooks: can't build deliveries"),
     }
+    let mut deliver: BTreeMap<i64, Op> = fresh.iter().filter_map(|o| o.seq.map(|seq| (seq, o.clone()))).collect();
+    for o in fresh {
+        for earlier in crate::visibility::backfill_for_public_send(conn, o)? {
+            if let Some(seq) = earlier.seq {
+                deliver.entry(seq).or_insert(earlier);
+            }
+        }
+    }
     let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
     for (device, p) in peers.iter_mut() {
         // scope changes (e.g. someone was added to a space)
@@ -1219,8 +1246,10 @@ pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Optio
             continue;
         }
         let mut by_scope: BTreeMap<&str, Vec<Op>> = BTreeMap::new();
-        for o in fresh.iter().filter(|o| p.scopes.contains(&o.scope)) {
-            by_scope.entry(o.scope.as_str()).or_default().push(o.clone());
+        for o in deliver.values().filter(|o| p.scopes.contains(&o.scope)) {
+            if crate::visibility::op_visible_to(conn, &p.account, o)? {
+                by_scope.entry(o.scope.as_str()).or_default().push(o.clone());
+            }
         }
         for (scope, ops) in by_scope {
             let to = ops.last().and_then(|o| o.seq).unwrap_or(0);
