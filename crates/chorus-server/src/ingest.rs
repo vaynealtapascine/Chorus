@@ -126,6 +126,9 @@ pub fn accept(
     {
         crate::notifier::on_front_change(conn, account, now)?;
     }
+    if !preserved {
+        crate::activity::on_op(conn, &o, now)?;
+    }
     Ok((AckResult::ok(&o), Some(o)))
 }
 

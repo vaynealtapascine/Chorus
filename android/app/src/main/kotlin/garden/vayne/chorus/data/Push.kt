@@ -34,6 +34,7 @@ object Push {
     const val UNREGISTERED = "org.unifiedpush.android.connector.UNREGISTERED"
     const val REGISTRATION_FAILED = "org.unifiedpush.android.connector.REGISTRATION_FAILED"
     const val CHANNEL_SWITCHES = "switches"
+    const val CHANNEL_MESSAGES = "messages"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -165,23 +166,27 @@ object Push {
         }
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL_SWITCHES, "Switches", NotificationManager.IMPORTANCE_DEFAULT))
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_MESSAGES, "Mentions, replies and DMs", NotificationManager.IMPORTANCE_HIGH))
+        val isMessage = p.optString("t") == "message"
         val open = PendingIntent.getActivity(
             ctx, 0, Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE,
         )
         val time = p.optJSONObject("time")
         val at = time?.optLong("at", 0L)?.takeIf { it > 0 && time.optString("precision") != "none" }
-        val n = NotificationCompat.Builder(ctx, CHANNEL_SWITCHES)
+        val n = NotificationCompat.Builder(ctx, if (isMessage) CHANNEL_MESSAGES else CHANNEL_SWITCHES)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(p.optString("title", "Chorus"))
             .setContentText(p.optString("text"))
             .setAutoCancel(true)
             .setContentIntent(open)
-            .setGroup("switches:" + p.optString("account_id"))
+            .setGroup(if (isMessage) "messages:" + p.optString("channel_id") else "switches:" + p.optString("account_id"))
             // the shown time is the fuzzed one the follower may know, never the real switch time
             .apply { if (at != null) setWhen(at).setShowWhen(true) else setShowWhen(false) }
             .build()
         if (NotificationManagerCompat.from(ctx).areNotificationsEnabled()) {
-            runCatching { NotificationManagerCompat.from(ctx).notify(p.optString("account_id").hashCode(), n) }
+            // one notification per followed account (latest state wins); one per message
+            val key = if (isMessage) p.optString("message_id") else p.optString("account_id")
+            runCatching { NotificationManagerCompat.from(ctx).notify(key.hashCode(), n) }
         }
     }
 }

@@ -1,5 +1,6 @@
 //! Chorus server: op log, projections, sync, API (docs/SYNC.md, docs/API.md).
 
+pub mod activity;
 pub mod app;
 pub mod auth;
 pub mod config;

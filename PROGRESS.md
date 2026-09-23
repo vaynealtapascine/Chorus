@@ -124,7 +124,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [~] M8.1 ntfy/UnifiedPush plumbing (server publisher, Android distributor registration) — server encrypt+send and Android connector/decrypt/notification done (D-059); needs a device check with the ntfy app installed and pointed at ntfy.vayne.garden
 - [~] M8.2 Rule resolution: per-switch × per-member × system ceiling × recipient prefs — core + server scheduler done (notifier.rs: queue on front change, reveal/deliver loop, GET /notifications); push delivery is M8.1
 - [~] M8.3 Random delay, time fuzzing, supersede/collapse, digests, quiet hours — core rules + property tests done; server pending (digest text too)
-- [ ] M8.4 Chat notifications (mentions, DMs, replies), inline reply
+- [~] M8.4 Chat notifications (mentions, DMs, replies), inline reply — cross-account mentions/replies/DMs queued on ingest, inbox + push (activity.rs); per-channel/per-member settings and inline reply not yet; hidden messages skipped until M5.7
 
 ### M9 — Stage (screenshot) mode
 

@@ -514,6 +514,7 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
         }
         pushes.extend(deliver(conn, &first_id, &follower, &mut summary, now)?);
     }
+    pushes.extend(crate::activity::process_due(conn, now)?);
     Ok(Processed { handled: n, pushes })
 }
 
@@ -604,8 +605,33 @@ fn precision_of(d: &Option<notify::Displayed>) -> Value {
         .unwrap_or(json!({"at": null, "precision": Precision::None}))
 }
 
-/// The follower's delivered switch notifications, newest first.
+/// Delivered notifications for `follower`, newest first: switches of accounts they follow, and
+/// activity (mentions, DMs, replies) from shared spaces.
 pub fn list(conn: &Connection, follower: &str, limit: i64) -> anyhow::Result<Value> {
+    let mut items = switch_items(conn, follower, limit)?;
+    let mut st = conn.prepare_cached(
+        "SELECT id, kind, payload, delivered_at FROM notification
+         WHERE recipient_account_id = ?1 AND kind IN ('mention', 'dm', 'reply') AND delivered_at IS NOT NULL
+         ORDER BY delivered_at DESC, id DESC LIMIT ?2",
+    )?;
+    let rows = st.query_map(params![follower, limit], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?))
+    })?;
+    for r in rows {
+        let (id, kind, payload, delivered) = r?;
+        let p: Value = serde_json::from_str(&payload).unwrap_or(json!({}));
+        items.push(json!({
+            "id": id, "kind": kind, "title": p["title"], "text": p["text"],
+            "channel_id": p["channel_id"], "message_id": p["message_id"],
+            "time": {"at": delivered, "precision": "exact"}, "delivered_at": delivered,
+        }));
+    }
+    items.sort_by_key(|i| std::cmp::Reverse(i["delivered_at"].as_i64().unwrap_or(0)));
+    items.truncate(limit as usize);
+    Ok(json!({"items": items}))
+}
+
+fn switch_items(conn: &Connection, follower: &str, limit: i64) -> anyhow::Result<Vec<Value>> {
     let mut st = conn.prepare_cached(
         "SELECT n.id, n.payload, n.delivered_at, a.id, a.handle, a.display_name FROM notification n
          JOIN account a ON a.id = json_extract(n.payload, '$.target_account_id')
@@ -635,7 +661,7 @@ pub fn list(conn: &Connection, follower: &str, limit: i64) -> anyhow::Result<Val
             "account": {"id": aid, "handle": handle, "display_name": display},
         }));
     }
-    Ok(json!({"items": items}))
+    Ok(items)
 }
 
 /// What `follower` may see of `target` right now (only what has been revealed).

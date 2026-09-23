@@ -16,10 +16,14 @@
   interface View { entries: ViewEntry[]; since: number | null; time?: { mode?: string }; shared?: boolean }
   interface Note {
     id: string;
+    kind: 'switch' | 'mention' | 'dm' | 'reply';
     text: string;
+    title?: string;
+    channel_id?: string;
     time: { at: number | null; precision: Precision; part?: Part | null };
-    account: { handle: string | null; display_name: string | null };
+    account?: { handle: string | null; display_name: string | null };
   }
+  const noteTitle = (n: Note) => n.account?.display_name ?? (n.account?.handle ? `@${n.account.handle}` : (n.title ?? 'Chorus'));
 
   let views = $state<Record<string, View>>({});
   let notes = $state<Note[]>([]);
@@ -77,7 +81,7 @@
     const fresh = (j.items as Note[]).filter((n) => !seenNotes.has(n.id));
     // a desktop notification for anything new while this page is open (not on first load)
     if (seenNotes.size && canNotify && document.hidden) {
-      for (const n of fresh) new Notification(n.account.display_name ?? 'Chorus', { body: n.text, tag: n.id });
+      for (const n of fresh) new Notification(noteTitle(n), { body: n.text, tag: n.id });
     }
     for (const n of j.items as Note[]) seenNotes.add(n.id);
     notes = j.items;
@@ -224,7 +228,7 @@
 
   {#if notes.length || following.length}
     <div class="notes-head">
-      <h2>Recent switches</h2>
+      <h2>Recent</h2>
       {#if typeof Notification !== 'undefined' && !canNotify}
         <button class="ghost" onclick={enableNotifications}>Notify me in this browser</button>
       {/if}
@@ -232,8 +236,12 @@
     <ul>
       {#each notes as n (n.id)}
         <li class="note">
-          <strong>{n.account.display_name ?? `@${n.account.handle}`}</strong>
-          <span>{n.text}</span>
+          <strong>{noteTitle(n)}</strong>
+          {#if n.kind !== 'switch' && n.channel_id}
+            <a href="#/chat/{n.channel_id}">{n.text}</a>
+          {:else}
+            <span>{n.text}</span>
+          {/if}
           <time>{fuzzyWhen(n.time.at, n.time.precision, n.time.part)}</time>
         </li>
       {:else}
