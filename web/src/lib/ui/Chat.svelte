@@ -675,7 +675,7 @@
             onkeydown={onkey}
             onpaste={pasteFiles}
             rows="1"
-            placeholder={current ? `Message #${current.name}` : ''}
+            placeholder={!current ? '' : space?.kind === 'dm' ? `Message ${spaceTitle(space, directory.get(space.id), sync.accountId)}` : `Message #${current.name}`}
             aria-label="Message"
           ></textarea>
         {/if}
@@ -728,10 +728,13 @@
   @media (max-width: 640px) {
     .chat {
       grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
       height: calc(100dvh - 190px);
     }
-    .channels {
+    /* `.chat .channels` so this beats the base rule below (same specificity would lose to it) */
+    .chat .channels {
       display: flex;
+      align-items: center;
       gap: var(--s-2);
       overflow-x: auto;
     }
