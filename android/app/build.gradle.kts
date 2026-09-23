@@ -46,6 +46,7 @@ dependencies {
     implementation(libs.sqlcipher)
     implementation(libs.androidx.sqlite)
     implementation(libs.work.runtime)
+    testImplementation(libs.junit)
 }
 
 kapt {

@@ -155,8 +155,20 @@ class Chorus private constructor(private val ctx: Context) {
             rebuildPending.set(false)
             val r = replica ?: return@launch
             val dev = device ?: return@launch
-            _model.value = Model.parse(r.projection(), dev.accountId)
+            val next = Model.parse(r.projection(), dev.accountId)
+            _model.value = next
+            onModel?.invoke(next)
         }
+    }
+
+    /** Called on the store thread after each model rebuild (the widget refreshes itself here). */
+    @Volatile var onModel: ((Model) -> Unit)? = null
+
+    /** A fresh model, waiting for the replica to load (for the widget in a cold process). */
+    suspend fun awaitModel(): Model = withContext(dispatcher) {
+        val r = replica ?: return@withContext Model.Empty
+        val dev = device ?: return@withContext Model.Empty
+        Model.parse(r.projection(), dev.accountId)
     }
 
     private fun storageFailed(e: Exception) {

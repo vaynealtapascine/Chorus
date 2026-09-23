@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Static app shortcuts (CLIENTS.md §2.4). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:shortcutId="switch"
+        android:shortcutShortLabel="@string/shortcut_switch">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="garden.vayne.chorus.SearchActivity"
+            android:targetPackage="garden.vayne.chorus" />
+    </shortcut>
+</shortcuts>

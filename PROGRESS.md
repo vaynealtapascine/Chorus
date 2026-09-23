@@ -86,8 +86,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [~] M4.2 Room (SQLCipher) + outbox + sync engine (via core UniFFI) + WorkManager
 - [ ] M4.3 Onboarding via invite link / QR
 - [ ] M4.4 Members, groups, switcher, front history
-- [ ] M4.5 Quick-switch widget (Glance): pinned+recent grid, folders, mode chip, undo
-- [ ] M4.6 Search launcher activity + app shortcuts
+- [~] M4.5 Quick-switch widget (RemoteViews, D-058): recent grid, folders, mode chip, undo — built + unit-tested; needs a device check; pins not done
+- [~] M4.6 Search launcher activity + app shortcuts — SearchActivity + static "Switch…" shortcut; dynamic pinned shortcuts not done; needs a device check
 
 ### M5 — Chat (internal space)
 

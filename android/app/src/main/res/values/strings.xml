@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_name">Quick switch</string>
+    <string name="widget_description">Switch who\'s fronting with one tap</string>
+    <string name="shortcut_switch">Switch…</string>
+</resources>

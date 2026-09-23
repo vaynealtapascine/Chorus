@@ -64,6 +64,7 @@ default the owner has not contradicted; these may be revisited if implementation
 | D-055 | Snapshots/catch-up are **op pages**, not table rows: every device is an op replica for its scopes (needed for `reproject` and for restoring a server). Table-row snapshots may be added later as an optimization. | Spec (M1.9) |
 | D-056 | M1.10 spike **kept** the shared-core plan: `chorus-ffi` (UniFFI 0.32, JSON-string API over `chorus_core::api`) builds for arm64-v8a (0.96 MB) and x86_64; Kotlin bindings generate in library mode; `chorus-wasm` builds, runs in Node, 209 KB gzipped without wasm-opt (budget 300 KB). The on-device call is verified in M0.3. | Spec (M1.10) |
 | D-057 | After a server restore, a **restore window** lets devices re-push ops with their original author and times (SYNC.md §7.3); it is closed by the admin with `chorus-server reconcile-close`. Outside it, pushes are always stamped as the pusher's. | Spec (M1.9) |
+| D-058 | The quick-switch widget uses plain **RemoteViews** (`AppWidgetProvider` + `RemoteViewsService` grid), not Glance: no extra dependency (dl.google.com was unreachable for builds), full control over redraw cost, and the same behaviour as CLIENTS.md §3. Mode, per-widget folder and the last switch for Undo live in SharedPreferences so taps work in a cold process. Pins are not implemented yet (recents lead the grid). | claude-opus-5.5 (M4.5) |
 
 ## Versions
 

@@ -84,7 +84,7 @@ android/
 See NOTIFICATIONS.md §7. Avatars for `Person` icons are pre-rendered circular bitmaps with the
 member ring, cached by `(blob_hash, color)`.
 
-## 3. The quick-switch widget (Glance)
+## 3. The quick-switch widget (RemoteViews, D-058)
 
 ### 3.1 Layout
 
