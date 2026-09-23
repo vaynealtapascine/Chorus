@@ -426,6 +426,7 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
     let rows: Vec<(String, String, String)> =
         st.query_map([now], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
     let n = rows.len();
+    let mut digests: BTreeMap<(String, String), Vec<(String, Queued)>> = BTreeMap::new();
     for (id, follower, payload) in rows {
         let Ok(mut q) = serde_json::from_str::<Queued>(&payload) else {
             conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
@@ -470,7 +471,8 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
                 diff_empty,
                 sent_today: sent_today(conn, &follower, &q.target_account_id, now)?,
                 tz_offset_min: q.tz_offset_min,
-                digest_draw: q.draws.late.rotate_left(29),
+                // one stable spread per (follower, account), so a day's items share one digest
+                digest_draw: digest_draw(&follower, &q.target_account_id),
                 ceiling: &ceiling,
                 prefs: &prefs,
             });
@@ -487,11 +489,72 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
                 }
             }
         } else {
-            // held by quiet hours, or a digest item: its time has come
-            pushes.extend(deliver(conn, &id, &follower, &mut q, now)?);
+            if q.state == "digest" {
+                digests.entry((follower.clone(), q.target_account_id.clone())).or_default().push((id, q));
+            } else {
+                // held by quiet hours: its time has come
+                pushes.extend(deliver(conn, &id, &follower, &mut q, now)?);
+            }
         }
     }
+    // §2.11: everything due for one (follower, account) digest goes out as one summary
+    for ((follower, _), mut items) in digests {
+        let Some((first_id, _)) = items.first().cloned() else { continue };
+        let text = digest_text(&items);
+        let (_, head) = items.last_mut().expect("non-empty");
+        let mut summary = head.clone();
+        summary.text = Some(text);
+        for (id, _) in &items {
+            if *id != first_id {
+                conn.execute(
+                    "UPDATE notification SET cancelled_at = ?2, collapsed_into = ?3 WHERE id = ?1",
+                    params![id, now, first_id],
+                )?;
+            }
+        }
+        pushes.extend(deliver(conn, &first_id, &follower, &mut summary, now)?);
+    }
     Ok(Processed { handled: n, pushes })
+}
+
+fn digest_draw(follower: &str, target: &str) -> u64 {
+    use sha2::Digest as _;
+    let h = sha2::Sha256::digest(format!("digest|{follower}|{target}").as_bytes());
+    u64::from_be_bytes(h[..8].try_into().unwrap_or_default())
+}
+
+/// "Kai (morning) · June & Rin (evening)": who arrived, with the fuzzed part of day.
+fn digest_text(items: &[(String, Queued)]) -> String {
+    let parts: Vec<String> = items
+        .iter()
+        .filter_map(|(_, q)| {
+            let who: Vec<String> = q
+                .diff_arrived
+                .iter()
+                .filter(|s| s.level() == Level::Front)
+                .map(|s| match s {
+                    Seen::Subject { subject_id, .. } => {
+                        q.names.get(subject_id).map(|n| n.0.clone()).unwrap_or_else(|| "Someone".into())
+                    }
+                    Seen::Someone { .. } => "Someone".into(),
+                })
+                .collect();
+            if who.is_empty() {
+                return None;
+            }
+            let when = q.displayed.and_then(|d| d.part).map(|p| match p {
+                notify::PartOfDay::Night => "night",
+                notify::PartOfDay::Morning => "morning",
+                notify::PartOfDay::Afternoon => "afternoon",
+                notify::PartOfDay::Evening => "evening",
+            });
+            Some(match when {
+                Some(w) => format!("{} ({w})", join_names(&who)),
+                None => join_names(&who),
+            })
+        })
+        .collect();
+    if parts.is_empty() { "Switches today".into() } else { parts.join(" · ") }
 }
 
 fn hold(conn: &Connection, id: &str, q: &mut Queued, state: &str, at: i64) -> anyhow::Result<()> {

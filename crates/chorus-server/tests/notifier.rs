@@ -209,3 +209,24 @@ fn delivery_pushes_the_inbox_text_encrypted_to_the_followers_devices() {
         w.c.query_row("SELECT push_endpoint FROM device WHERE id = 'phone'", [], |r| r.get(0)).unwrap();
     assert!(left.is_none());
 }
+
+#[test]
+fn a_digest_follower_gets_one_summary_for_the_day() {
+    let (mut w, kai, june, _) = world();
+    let follow: String = w.c.query_row("SELECT id FROM follow", [], |r| r.get(0)).unwrap();
+    let ceiling = json!({"delay": {"min_s": 60, "max_s": 60}, "time": {"mode": "part_of_day"},
+                         "levels": ["front"], "digest_only": true});
+    w.push("follow.set_ceiling", &follow, json!({"ceiling": ceiling}), NOW - 2_000);
+    let day = NOW - NOW.rem_euclid(86_400_000) + 86_400_000; // next UTC midnight (tz offset 0)
+    let h = 3_600_000;
+    w.switch(&[&kai], day + 9 * h);
+    notifier::process_due(&w.c, day + 9 * h + SETTLE + DELAY).unwrap(); // revealed, held for the digest
+    w.switch(&[&june], day + 19 * h);
+    notifier::process_due(&w.c, day + 19 * h + SETTLE + DELAY).unwrap();
+    assert!(w.inbox().is_empty(), "nothing before the digest");
+    assert_eq!(w.view(), ["June"], "the view is still revealed on schedule");
+    // the digest goes out at 20:00 plus a stable 0–20 min spread
+    let out = notifier::process_due(&w.c, day + 20 * h + 20 * 60_000).unwrap();
+    assert_eq!(w.inbox(), ["Kai (morning) · June (evening)"]);
+    assert_eq!(out.handled, 2, "both items were due in the same pass");
+}
