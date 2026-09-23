@@ -215,7 +215,11 @@ Implemented (M8.4, `activity.rs`), for other accounts in shared spaces and DMs:
   `fronting`. The authors of the message never ping themselves. Channel levels apply here too
   (internal channels default to `mentions`), and so does `notify_chat` (with a `member_dm` kind).
   The push skips the device the message was written on. The member editor sets both rules.
-- Not yet: own switches from other devices, and Android inline reply.
+- Own switches from other devices: off unless `notify_chat.own_switch` is `true` (a checkbox under
+  People → Recent). Queued after the 15 s settle; a newer switch replaces a pending one, an undone
+  (retracted) switch is dropped, silent switches never ping, and the text is the front as it is at
+  delivery ("Front changed on <device>: Kai & June · co-con Rin"). The writing device is skipped.
+- Not yet: Android inline reply.
 
 Android: MessagingStyle notifications with member avatars as `Person`s, grouped per channel;
 inline reply (`RemoteInput`) sends as the current primary fronter (or the member the notification

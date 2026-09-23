@@ -3,7 +3,7 @@
   // Follows live in the followed account's scope, so accepting and the privacy preset are ordinary
   // ops; asking to follow, unfollowing and your own prefs go through /api/v1/follows.
   import { notifyPreset } from '../core/pkg/chorus_wasm.js';
-  import { bucketAssignments, buckets } from '../data';
+  import { bucketAssignments, buckets, selfMember } from '../data';
   import { apiBase } from '../sync/device';
   import { sync, type Projection } from '../sync/client';
   import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
@@ -29,7 +29,7 @@
   }
   interface Note {
     id: string;
-    kind: 'switch' | 'mention' | 'dm' | 'reply' | 'message' | 'member_dm';
+    kind: 'switch' | 'mention' | 'dm' | 'reply' | 'message' | 'member_dm' | 'own_switch';
     text: string;
     title?: string;
     channel_id?: string;
@@ -176,6 +176,7 @@
     const v = (rows[`${sync.accountId}||notify_chat`] ?? rows['||notify_chat'])?.fields.value;
     return (v && typeof v === 'object' ? v : {}) as Record<string, boolean>;
   });
+  const isSystem = $derived(!selfMember(projection));
   function setChatKind(kind: string, on: boolean) {
     sync.create('pref.set', sync.accountScope, null, { device: '', key: 'notify_chat', value: { ...chatKinds, [kind]: on } });
   }
@@ -500,7 +501,7 @@
     </form>
   {/if}
 
-  {#if notes.length || following.length}
+  {#if notes.length || following.length || isSystem}
     <div class="notes-head">
       <h2>Recent</h2>
       {#if pushOn}
@@ -510,6 +511,12 @@
       {/if}
     </div>
     {#if pushNote}<p class="muted">{pushNote} Notifications will show while this page is open.</p>{/if}
+    {#if isSystem}
+      <label class="check">
+        <input type="checkbox" checked={chatKinds.own_switch === true} onchange={(e) => setChatKind('own_switch', e.currentTarget.checked)} />
+        Ping my other devices when the front changes
+      </label>
+    {/if}
     <ul>
       {#each notes as n (n.id)}
         <li class="note">

@@ -18,6 +18,7 @@ struct W {
     b: String,
     space: String,
     n: u8,
+    last_op: String,
 }
 
 impl W {
@@ -36,7 +37,7 @@ impl W {
             ingest::grant(&c, id, &format!("account:{id}")).unwrap();
             ingest::grant(&c, id, &space).unwrap();
         }
-        W { c, a, b, space, n: 0 }
+        W { c, a, b, space, n: 0, last_op: String::new() }
     }
 
     fn push(&mut self, who: &str, kind: &str, scope: &str, entity: &str, payload: Value) {
@@ -68,6 +69,7 @@ impl W {
             device_id: "d".into(),
             sample: ClockSample { server_time: at, mono: None, boot_id: None, offset_ms: 0 },
         };
+        self.last_op = o.id.clone();
         let (r, _) = ingest::accept(&self.c, &s, o, at, false).unwrap();
         assert!(r.error.is_none(), "{kind}: {:?}", r.error);
     }
@@ -236,4 +238,41 @@ fn own_internal_chat_follows_each_members_rule() {
     send(&mut w, &general, "@front hi", json!([{"type": "mention", "offset": 0, "length": 6, "target_type": "front"}]));
     assert_eq!(w.inbox(&a)[0], ("mention".to_string(), "@front hi".to_string()));
     assert!(w.inbox(&w.b.clone()).is_empty(), "nothing leaves the internal space");
+}
+
+#[test]
+fn own_switches_ping_only_when_asked_and_not_when_undone() {
+    let mut w = W::new();
+    let a = w.a.clone();
+    let acct = format!("account:{a}");
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    w.push(&a, "member.create", &acct, &kai, json!({"name": "Kai"}));
+    w.push(&a, "member.create", &acct, &june, json!({"name": "June"}));
+    let switch = |w: &mut W, m: &str, n: u8| -> String {
+        let id = new_id(NOW as u64, [n; 10]);
+        w.push(
+            &a,
+            "front.switch",
+            &acct,
+            &id,
+            json!({"entries": [{"subject_type": "member", "subject_id": m, "level": "front"}]}),
+        );
+        w.last_op.clone()
+    };
+
+    // off by default
+    switch(&mut w, &kai, 70);
+    assert!(w.inbox(&a).is_empty());
+
+    let p = new_id(NOW as u64, [80; 10]);
+    w.push(&a, "pref.set", &acct, &p, json!({"device": "", "key": "notify_chat", "value": {"own_switch": true}}));
+    switch(&mut w, &june, 71);
+    assert_eq!(w.inbox(&a), [("own_switch".to_string(), "June".to_string())]);
+
+    // undone before it settles: nothing new
+    let sw = switch(&mut w, &kai, 72);
+    let r = new_id(NOW as u64, [73; 10]);
+    w.push(&a, "front.retract", &acct, &r, json!({"target_op_id": sw}));
+    assert_eq!(w.inbox(&a).len(), 1);
 }
