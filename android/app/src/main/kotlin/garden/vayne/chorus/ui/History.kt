@@ -49,7 +49,7 @@ fun History(model: Model) {
                     Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(14.dp)).padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Avatar(lead?.glyph ?: "·", lead?.color ?: "#A09184", 32.dp)
+                    Avatar(lead?.glyph ?: "·", lead?.color ?: "#A09184", 32.dp, avatarBlob = lead?.avatarBlob)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         val what = when (s.kind) {

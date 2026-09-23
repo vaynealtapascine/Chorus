@@ -85,7 +85,7 @@ fun Members(chorus: Chorus, model: Model) {
                     .border(1.dp, p.line, RoundedCornerShape(14.dp)).clickable { editing = m.id }.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Avatar(m.glyph, m.color, 40.dp)
+                Avatar(m.glyph, m.color, 40.dp, avatarBlob = m.avatarBlob)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(m.shownName, color = tonesOf(m.color).name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -143,7 +143,7 @@ private fun MemberEditor(chorus: Chorus, m: Member?, onDone: () -> Unit) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("‹ Members", color = p.accent, modifier = Modifier.clickable(onClick = onDone).padding(vertical = 4.dp))
             Spacer(Modifier.weight(1f))
-            Avatar(sigil.ifBlank { name.take(1).uppercase().ifEmpty { "·" } }, color.takeIf { it.length == 7 } ?: "#A09184", 44.dp)
+            Avatar(sigil.ifBlank { name.take(1).uppercase().ifEmpty { "·" } }, color.takeIf { it.length == 7 } ?: "#A09184", 44.dp, avatarBlob = m?.avatarBlob)
         }
         OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(display, { display = it }, label = { Text("Display name") }, singleLine = true, modifier = Modifier.fillMaxWidth())

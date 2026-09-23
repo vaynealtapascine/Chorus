@@ -14,6 +14,7 @@ data class Member(
     val sigils: List<String>,
     val description: String?,
     val archived: Boolean,
+    val avatarBlob: String? = null,
 ) {
     val shownName: String get() = displayName ?: name
     val glyph: String get() = sigils.firstOrNull() ?: name.take(1).uppercase()
@@ -39,7 +40,7 @@ data class SwitchRow(
 )
 
 /** One subject that can front: a member or a subsystem acting as one. */
-data class Subject(val type: String, val id: String, val name: String, val color: String, val glyph: String)
+data class Subject(val type: String, val id: String, val name: String, val color: String, val glyph: String, val avatarBlob: String? = null)
 
 class Model(
     val members: List<Member>,
@@ -57,7 +58,7 @@ class Model(
     fun group(id: String) = groupById[id]
 
     fun subject(type: String, id: String): Subject? = when (type) {
-        "member" -> memberById[id]?.let { Subject("member", it.id, it.shownName, it.color, it.glyph) }
+        "member" -> memberById[id]?.let { Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob) }
         "group" -> groupById[id]?.let { Subject("group", it.id, it.name, it.color ?: "#A09184", "◌") }
         else -> null
     }
@@ -127,6 +128,7 @@ class Model(
                         id, f.str("name") ?: "Unnamed", f.str("display_name"), f.str("pronouns"),
                         f.str("color") ?: "#A09184", strings(f.optJSONArray("sigils")), f.str("description"),
                         f.present("archived_at"),
+                        f.str("avatar_blob"),
                     )
                 }
                 .sortedBy { it.shownName.lowercase() }

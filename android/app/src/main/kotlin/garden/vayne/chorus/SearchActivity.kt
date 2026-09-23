@@ -74,7 +74,7 @@ class SearchActivity : ComponentActivity() {
 /** Members and subsystems matching `query`, best first. */
 fun searchSubjects(model: Model, query: String): List<Subject> {
     val members = model.active.map { m ->
-        Subject("member", m.id, m.shownName, m.color, m.glyph) to listOfNotNull(m.name, m.displayName, m.pronouns, *m.sigils.toTypedArray()).joinToString(" ")
+        Subject("member", m.id, m.shownName, m.color, m.glyph, m.avatarBlob) to listOfNotNull(m.name, m.displayName, m.pronouns, *m.sigils.toTypedArray()).joinToString(" ")
     }
     val groups = model.groups.filter { it.isSubsystem }.map { g ->
         Subject("group", g.id, g.name, g.color ?: "#A09184", "◌") to g.name
@@ -150,7 +150,7 @@ private fun ResultRow(s: Subject, onTap: () -> Unit) {
         Modifier.fillMaxWidth().clickable(onClick = onTap).padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Avatar(s.glyph, s.color, 36.dp)
+        Avatar(s.glyph, s.color, 36.dp, avatarBlob = s.avatarBlob)
         Spacer(Modifier.width(12.dp))
         Text(s.name, color = tonesOf(s.color).name, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
         if (s.type == "group") Text("whole subsystem", color = p.ink3, fontSize = 12.sp)
