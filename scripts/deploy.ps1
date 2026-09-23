@@ -44,7 +44,9 @@ $exe = Join-Path $app 'chorus-server.exe'
 $old = Join-Path $app 'chorus-server.old.exe'
 if (Test-Path $old) { Remove-Item $old -Force -ErrorAction SilentlyContinue }
 if (Test-Path $exe) { Rename-Item $exe 'chorus-server.old.exe' }
-Copy-Item (Join-Path $root 'target\release\chorus-server.exe') $exe
+# honour CARGO_TARGET_DIR (builds may live off the small C: drive, see NOTES)
+$targetRoot = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $root 'target' }
+Copy-Item (Join-Path $targetRoot 'release\chorus-server.exe') $exe
 
 $up = $false
 foreach ($i in 1..20) {
