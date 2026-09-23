@@ -115,6 +115,13 @@ Merge note (for whoever merges): `main`'s People page now has "share history" an
 toggles (`setSharing`, M6.3), and `setDefault` keeps them. Both still write through `account.set`
 settings. When merging e97b698, move both to your `pref.set` `follow_ceiling` value.
 
+Second merge note: `main`'s chat now renders only the newest pages (`Chat.svelte` `PAGE`,
+`shown`, `first`; older pages load on scroll-up), and `data.ts` `messages()` is cached per
+channel and patched from deltas (`sync/delta.ts` `patchedFrom`). Your `focusId` jump (ec92235)
+scrolls to `[data-message-id]`, which may not be rendered. When merging, widen the window first,
+for example `shown = Math.max(shown, msgs.length - msgs.findIndex((m) => m.id === focusId) + PAGE / 2)`,
+then scroll after `tick()`.
+
 ## Then continue
 
 Continue with **T6 (finish) → T7 → T8 (with A2) → T9 → T10 → T11 → T12 → T13** as written in

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { core, type Composed } from '../core';
   import { channels, customEmojis, lastRead, members, messageById, messages, reactions, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
   import { router } from '../router.svelte';
@@ -397,14 +397,32 @@
     router.go(`/chat/${id}`);
   }
 
+  // only the newest pages are in the DOM; scrolling up adds older ones (SPEC §9: pages of 100)
+  const PAGE = 100;
+  let shown = $state(PAGE);
+  let shownFor = '';
+  $effect.pre(() => {
+    if (current?.id !== shownFor) {
+      shownFor = current?.id ?? '';
+      shown = PAGE;
+    }
+  });
+  const first = $derived(Math.max(0, msgs.length - shown));
   const grouped = $derived(
-    msgs.map((m, i) => {
-      const prev = msgs[i - 1];
+    msgs.slice(first).map((m, j) => {
+      const prev = msgs[first + j - 1];
       const cont =
         !!prev && !prev.deleted && prev.authors.join() === m.authors.join() && m.occurred_at - prev.occurred_at < 300_000 && m.segments.length === 1;
       return { m, cont };
     }),
   );
+  function showOlder() {
+    if (!list || !first) return;
+    const fromBottom = list.scrollHeight - list.scrollTop;
+    shown += PAGE;
+    // keep what the reader was looking at in place once the older page renders
+    void tick().then(() => list && (list.scrollTop = list.scrollHeight - fromBottom));
+  }
   const pinned = $derived(msgs.filter((m) => m.pinned && !m.deleted));
   const reacts = $derived(reactions(projection));
 
@@ -550,7 +568,10 @@
       </div>
     {/if}
 
-    <div class="list" bind:this={list}>
+    <div class="list" bind:this={list} onscroll={() => { if (list && list.scrollTop < 200) showOlder(); }}>
+      {#if first}
+        <button class="ghost older" onclick={showOlder}>Show older messages ({first})</button>
+      {/if}
       {#each grouped as { m, cont } (m.id)}
         <Message
           {m}
@@ -867,6 +888,7 @@
     color: var(--ink-3);
     margin: 0;
   }
+  .older { display: block; margin: 0 auto var(--s-2); font-size: var(--fs-sm); }
   .list {
     flex: 1;
     overflow-y: auto;

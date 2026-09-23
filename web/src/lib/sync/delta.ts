@@ -12,12 +12,17 @@ export interface Delta {
   full: boolean;
 }
 
+/** For a patched table: the table it came from and the keys that changed, so derived indexes
+ *  (data.ts `messages`) can be patched instead of rebuilt. */
+export const patchedFrom = new WeakMap<object, { prev: object; keys: string[] }>();
+
 function patch<T>(table: Record<string, T> | undefined, changes: Record<string, T | null>): Record<string, T> | undefined {
   const next: Record<string, T> = { ...(table ?? {}) };
   for (const [k, v] of Object.entries(changes)) {
     if (v === null) delete next[k];
     else next[k] = v;
   }
+  if (table) patchedFrom.set(next, { prev: table, keys: Object.keys(changes) });
   return Object.keys(next).length ? next : undefined;
 }
 
