@@ -140,6 +140,7 @@
   <section class="card">
     <h2>Export your data</h2>
     <button class="ghost" onclick={() => download('/exports/ops.jsonl', 'ops.jsonl')}>Download op log (JSONL)</button>
+    <button class="ghost" onclick={() => download('/exports/account.sqlite', 'account.sqlite')}>Download SQLite copy</button>
     <div class="actions">
       {#each CSV_EXPORTS as table (table)}
         <button class="ghost" onclick={() => download(`/exports/csv/${table}`, `${table}.csv`)}>{table.replaceAll('_', ' ')} CSV</button>

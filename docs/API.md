@@ -181,6 +181,12 @@ GET  /jobs/{id}         progress, result URL
 POST /invites           (admin) {kind, expires_in_s, max_uses}  → {url, qr_svg}
 ```
 
+**Direct exports (M10.3):** `GET /exports/ops.jsonl`, `GET /exports/csv/{name}` (seven names
+in DATA_MODEL.md §7.1), and `GET /exports/account.sqlite` accept a device session or an API
+token with the `export` scope. Each contains only the principal account's authored data. They
+return attachment filenames. The `POST /exports` job protocol above is planned for larger
+archives and is not yet served.
+
 `format: "markup"` parses Chorus markup with the same core parser the apps use.
 
 **`POST /front/switch`** is implemented (`api_writes.rs`). The body is

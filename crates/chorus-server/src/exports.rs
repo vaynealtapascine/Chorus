@@ -1,9 +1,15 @@
 //! Account-owned exports. Every query is anchored to the authenticated account id.
 
 use anyhow::Context;
-use rusqlite::{Connection, types::ValueRef};
+use std::fs;
+use std::path::{Path, PathBuf};
 
-use crate::oplog;
+use rusqlite::{
+    Connection, params_from_iter,
+    types::{Value, ValueRef},
+};
+
+use crate::{db, oplog, project};
 
 /// Applied operations authored by this account, in server sequence order. The op envelope is
 /// preserved so a later importer can replay it without inferring fields from projections.
@@ -30,14 +36,14 @@ const CSV: &[CsvSpec] = &[
         name: "members",
         columns: &["id", "name", "display_name", "pronouns", "color", "is_archived", "created_at", "created_local"],
         sql: "SELECT id,name,display_name,pronouns,color,(archived_at IS NOT NULL),created_at,
-              strftime('%Y-%m-%dT%H:%M:%S',created_at/1000,'unixepoch')
+              strftime('%Y-%m-%dT%H:%M:%S',created_at/1000,'unixepoch','localtime')
               FROM member WHERE account_id=?1 ORDER BY created_at,id",
     },
     CsvSpec {
         name: "groups",
         columns: &["id", "kind", "parent_id", "name", "color", "created_at", "created_local"],
         sql: "SELECT id,kind,parent_id,name,color,created_at,
-              strftime('%Y-%m-%dT%H:%M:%S',created_at/1000,'unixepoch')
+              strftime('%Y-%m-%dT%H:%M:%S',created_at/1000,'unixepoch','localtime')
               FROM member_group WHERE account_id=?1 ORDER BY created_at,id",
     },
     CsvSpec {
@@ -173,4 +179,64 @@ pub fn csv(conn: &Connection, account: &str, name: &str) -> anyhow::Result<Optio
         csv_row(&mut out, &fields);
     }
     Ok(Some(out))
+}
+
+fn copy_owned_rows(
+    source: &Connection,
+    target: &Connection,
+    table: &str,
+    filter: &str,
+    account: &str,
+) -> anyhow::Result<()> {
+    // Table and predicate are fixed call-site constants; the account id is always bound.
+    let mut select = source.prepare(&format!("SELECT * FROM {table} WHERE {filter}"))?;
+    let columns: Vec<String> = select.column_names().iter().map(|s| (*s).to_string()).collect();
+    let marks = (1..=columns.len()).map(|i| format!("?{i}")).collect::<Vec<_>>().join(",");
+    let insert = format!("INSERT INTO {table} ({}) VALUES ({marks})", columns.join(","));
+    let mut rows = select.query([account])?;
+    while let Some(row) = rows.next()? {
+        let values = (0..columns.len()).map(|i| row.get::<_, Value>(i)).collect::<Result<Vec<_>, _>>()?;
+        target.execute(&insert, params_from_iter(values))?;
+    }
+    Ok(())
+}
+
+struct TemporaryCopy(PathBuf);
+
+impl Drop for TemporaryCopy {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+/// A newly built, single-account database. Only the owner's primary account/device records and
+/// applied authored ops enter the file; projections are replayed from those ops. No full-server
+/// pages are copied, so SQLite's free pages cannot retain another account's data.
+pub fn sqlite_copy(source: &Connection, account: &str, work_dir: &Path) -> anyhow::Result<Vec<u8>> {
+    fs::create_dir_all(work_dir)?;
+    let path = work_dir.join(format!("export-{:016x}.sqlite", rand::random::<u64>()));
+    let _cleanup = TemporaryCopy(path.clone());
+    let mut target = db::open(&path)?;
+    db::migrate(&mut target)?;
+    copy_owned_rows(source, &target, "account", "id=?1", account)?;
+    copy_owned_rows(source, &target, "device", "account_id=?1", account)?;
+    copy_owned_rows(source, &target, "op", "account_id=?1 AND status='applied'", account)?;
+    project::rebuild(&mut target)?;
+    for spec in CSV {
+        let view = match spec.name {
+            "members" => "v_member",
+            "groups" => "v_group",
+            "switches" => "v_switch",
+            "front_intervals" => "v_front_interval",
+            "front_daily" => "v_front_daily",
+            "messages" => "v_message",
+            "posts" => "v_post",
+            _ => unreachable!(),
+        };
+        let query = spec.sql.replace("account_id=?1", "account_id=(SELECT id FROM account LIMIT 1)");
+        target.execute_batch(&format!("CREATE VIEW {view} ({}) AS {query};", spec.columns.join(",")))?;
+    }
+    target.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;")?;
+    drop(target);
+    Ok(fs::read(&path)?)
 }

@@ -99,6 +99,7 @@ pub fn router(state: AppState) -> Router {
         .route("/tokens/{id}", delete(tokens_revoke))
         .route("/exports/ops.jsonl", get(export_ops))
         .route("/exports/csv/{name}", get(export_csv))
+        .route("/exports/account.sqlite", get(export_sqlite))
         .route("/webhooks", get(webhooks_list).post(webhooks_create))
         .route("/webhooks/{id}", put(webhooks_update).delete(webhooks_remove))
         .route("/webhooks/{id}/test", post(webhooks_test))
@@ -500,6 +501,23 @@ async fn export_csv(
             .map_err(anyhow::Error::from)?,
     );
     Ok(response)
+}
+
+async fn export_sqlite(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    if !p.allows("export") {
+        return Err(crate::api_data::DataError::Scope("export").into());
+    }
+    let bytes = crate::exports::sqlite_copy(&conn, &p.account_id, &s.cfg.server.data_dir.join("export-work"))?;
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "application/vnd.sqlite3"),
+            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"account.sqlite\""),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 #[derive(Deserialize)]
