@@ -55,6 +55,43 @@ export interface EmojiRow {
   deleted: boolean;
 }
 
+export interface BucketRow {
+  id: string;
+  name: string;
+  ceiling: Record<string, unknown>;
+}
+
+export function buckets(p: Projection): BucketRow[] {
+  return Object.entries((p.rows.bucket ?? {}) as Rows)
+    .filter(([, row]) => row.exists && row.fields.deleted_at == null)
+    .map(([id, row]) => ({
+      id,
+      name: str(row.fields.name) ?? 'Untitled',
+      ceiling: row.fields.ceiling && typeof row.fields.ceiling === 'object' && !Array.isArray(row.fields.ceiling)
+        ? row.fields.ceiling as Record<string, unknown> : {},
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** bucket ID → follower account IDs from the LWW assignment set. */
+export function bucketAssignments(p: Projection): Map<string, Set<string>> {
+  const result = new Map<string, Set<string>>();
+  for (const [key, present] of Object.entries(p.sets.bucket_assignment ?? {})) {
+    if (!present) continue;
+    const bar = key.indexOf('|');
+    if (bar < 0) continue;
+    try {
+      const follower = (JSON.parse(key.slice(bar + 1)) as { follower_account_id?: unknown }).follower_account_id;
+      if (typeof follower !== 'string') continue;
+      const bucket = key.slice(0, bar);
+      const members = result.get(bucket) ?? new Set<string>();
+      members.add(follower);
+      result.set(bucket, members);
+    } catch { /* an invalid set key cannot grant access */ }
+  }
+  return result;
+}
+
 /** Keep retired rows so old messages can still resolve their stable emoji IDs. */
 export function customEmojis(p: Projection): EmojiRow[] {
   return Object.entries((p.rows.custom_emoji ?? {}) as Rows)

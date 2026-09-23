@@ -185,3 +185,60 @@ fn unfollowing_drops_pending_notifications() {
     assert!(w.inbox().is_empty());
     assert!(notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().is_none());
 }
+
+#[test]
+fn bucket_ceiling_inherits_and_folds_while_member_policy_restricts_reveal() {
+    let mut w = World::new();
+    let sys = w.sys.clone();
+    let friend = w.friend.clone();
+    let close = new_id(2, [31; 10]);
+    let inherited = new_id(2, [32; 10]);
+    let restricted = w.member("Restricted", json!({"announce": {"buckets": [close]}}));
+    let open = w.member("Open", json!({"announce": "everyone"}));
+    w.push(
+        "account.set",
+        &sys,
+        json!({"settings": {"follow_ceiling": {
+            "delay": {"min_s": 120, "max_s": 120}, "time": {"mode": "part_of_day"}
+        }}}),
+        NOW - 9_000,
+    );
+    w.push(
+        "bucket.set",
+        &close,
+        json!({"name": "Close", "ceiling": {
+            "delay": {"min_s": 0, "max_s": 0}, "time": {"mode": "exact"}
+        }}),
+        NOW - 8_000,
+    );
+    w.push("bucket.set", &inherited, json!({"name": "Inherited", "ceiling": {}}), NOW - 7_000);
+    let (follow, _) = follows::request(&w.c, &w.friend, "@stars", NOW - 5_000).unwrap();
+    w.push("follow.accept", &follow, json!({}), NOW - 4_000);
+
+    // A restricted member is hidden until this follower is assigned to its bucket.
+    w.switch(&[&restricted], NOW);
+    notifier::process_due(&w.c, NOW + SETTLE + 120_000).unwrap();
+    assert!(w.view().is_empty());
+    assert!(w.inbox().is_empty());
+
+    w.push("bucket.assign", &close, json!({"follower_account_id": friend}), NOW + 200_000);
+    w.push("bucket.assign", &inherited, json!({"follower_account_id": friend}), NOW + 201_000);
+    let t = NOW + 220_000;
+    w.switch(&[&open, &restricted], t);
+    notifier::process_due(&w.c, t + SETTLE).unwrap();
+    assert_eq!(w.view(), ["Restricted", "Open"]);
+    let v = notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().unwrap();
+    assert_eq!(v["since"], t);
+    assert_eq!(v["time"]["mode"], "exact");
+
+    // The remaining empty bucket inherits the account's 120-second, fuzzy default.
+    w.push("bucket.unassign", &close, json!({"follower_account_id": friend}), t + 20_000);
+    let later = t + 40_000;
+    w.switch(&[&open], later);
+    notifier::process_due(&w.c, later + SETTLE + 119_999).unwrap();
+    assert_eq!(w.view(), ["Restricted", "Open"]);
+    notifier::process_due(&w.c, later + SETTLE + 120_000).unwrap();
+    assert_eq!(w.view(), ["Open"]);
+    let v = notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().unwrap();
+    assert_eq!(v["time"]["mode"], "part_of_day");
+}

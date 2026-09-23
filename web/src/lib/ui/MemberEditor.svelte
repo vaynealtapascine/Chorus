@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { core } from '../core';
-  import { fieldDefs, fieldValues, groupPath, groups, members, membership, type FieldDef, type ProxyTag } from '../data';
+  import { buckets, fieldDefs, fieldValues, groupPath, groups, members, membership, type FieldDef, type ProxyTag } from '../data';
   import { router } from '../router.svelte';
   import { sync, type Projection } from '../sync/client';
   import AvatarImage from './AvatarImage.svelte';
@@ -14,6 +14,7 @@
   const raw = $derived((projection.rows.member?.[id]?.fields ?? {}) as Record<string, unknown>);
   const gs = $derived(groups(projection));
   const inGroup = $derived(membership(projection));
+  const sharingBuckets = $derived(buckets(projection));
   const defs = $derived(fieldDefs(projection));
   const values = $derived(fieldValues(projection).get(id) ?? new Map());
   const colors = $derived(m ? core.adaptColor(m.color, dark) : null);
@@ -109,11 +110,21 @@
   // who hears when this member fronts (NOTIFICATIONS.md §2.4; "nobody" hides them from follower views)
   const announce = $derived.by(() => {
     const p = raw.notify_policy as { announce?: unknown } | undefined;
-    return p?.announce === 'nobody' ? 'nobody' : 'everyone';
+    return p?.announce === 'nobody' ? 'nobody' : typeof p?.announce === 'object' ? 'buckets' : 'everyone';
+  });
+  const announceBucketIds = $derived.by(() => {
+    const p = raw.notify_policy as { announce?: { buckets?: unknown } } | undefined;
+    return Array.isArray(p?.announce?.buckets) ? p.announce.buckets.filter((id): id is string => typeof id === 'string') : [];
   });
   function setAnnounce(v: string) {
     const p = (raw.notify_policy as Record<string, unknown> | undefined) ?? {};
-    set({ notify_policy: { ...p, announce: v } });
+    set({ notify_policy: { ...p, announce: v === 'buckets' ? { buckets: announceBucketIds } : v } });
+  }
+  function setAnnounceBucket(bucketId: string, enabled: boolean) {
+    const p = (raw.notify_policy as Record<string, unknown> | undefined) ?? {};
+    const ids = new Set(announceBucketIds);
+    if (enabled) ids.add(bucketId); else ids.delete(bucketId);
+    set({ notify_policy: { ...p, announce: { buckets: [...ids] } } });
   }
 
   let newField = $state('');
@@ -184,9 +195,18 @@
           Followers hear when {m.name} fronts
           <select value={announce} onchange={(e) => setAnnounce(e.currentTarget.value)}>
             <option value="everyone">Yes, as your follower settings allow</option>
+            {#if sharingBuckets.length}<option value="buckets">Only selected buckets</option>{/if}
             <option value="nobody">No, keep {m.name} private</option>
           </select>
         </label>
+        {#if announce === 'buckets'}
+          <div class="wide checks" aria-label={`Announce ${m.name} to buckets`}>
+            {#each sharingBuckets as bucket (bucket.id)}
+              <label class="check"><input type="checkbox" checked={announceBucketIds.includes(bucket.id)} onchange={(e) => setAnnounceBucket(bucket.id, e.currentTarget.checked)} /> {bucket.name}</label>
+            {/each}
+            {#if !sharingBuckets.length}<span class="hint">Create a sharing bucket on the People page first.</span>{/if}
+          </div>
+        {/if}
       </div>
     </section>
 

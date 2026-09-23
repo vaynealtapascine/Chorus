@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { customEmojis, fuzzy, groupPath, membership, messages, segmentParsing, threadSummaries, type GroupRow } from './data';
+import { bucketAssignments, buckets, customEmojis, fuzzy, groupPath, membership, messages, segmentParsing, threadSummaries, type GroupRow } from './data';
 import type { Projection } from './sync/client';
 
 describe('data helpers', () => {
+  it('reads live buckets and only present follower assignments', () => {
+    const p = { rows: { bucket: {
+      close: { exists: true, fields: { name: 'Close', ceiling: { delay: { min_s: 0, max_s: 0 } } } },
+      retired: { exists: true, fields: { name: 'Old', deleted_at: 1 } },
+    } }, sets: { bucket_assignment: {
+      'close|{"follower_account_id":"friend"}': true,
+      'close|{"follower_account_id":"gone"}': false,
+    } }, fronts: {}, opaque: 0 } as unknown as Projection;
+    expect(buckets(p).map((b) => b.name)).toEqual(['Close']);
+    expect([...bucketAssignments(p).get('close')!]).toEqual(['friend']);
+  });
   it('keeps retired emoji addressable while excluding them from the active picker', () => {
     const p = { rows: { custom_emoji: {
       live: { exists: true, fields: { name: 'wave', aliases: ['hi'], blob_hash: 'one' } },
