@@ -209,9 +209,12 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 
 ### Batch 3
 
-#### T6 · doing (pre-merge WIP)
-- Commit `a06942c` replaced `VACUUM INTO` with rusqlite's online backup API and drafted a snapshot/manifest, restore verification, rotation and nightly scheduler. This is intentionally a WIP; CLI command tests and restore checks still need to be completed and run. `cargo check -p chorus-server --offline` and `verify.py --quick` passed before the WIP commit.
-- Audit first: restore staging cleanup, checksum validation, projection comparison, retention policy, and OPS format alignment. No core semantics changed and no proposed decision yet.
+#### T6 · done (format decision proposed)
+- Commit `a06942c` replaced `VACUUM INTO` with rusqlite's online backup API and drafted a snapshot/manifest, restore verification, rotation and nightly scheduler. That commit was WIP; `cargo check -p chorus-server --offline` and `verify.py --quick` passed before it.
+- This finish commit adds a CLI integration test running `backup` and `restore` on an on-disk migrated database with an immutable blob. It verifies manifest and copied bytes, unchanged account data, epoch increment, `restore_open`, refusal to overwrite, rejection of a corrupted blob, rejection of a checksum-valid database whose projection differs from its op log, and cleanup after failed restores. A rotation test verifies configurable daily retention while preserving the shared blob pool.
+- Ran the actual commands against `data-dev-sol/chorus.db` (40 ops): created a snapshot under `data-dev-sol/backup-run`, restored into a new directory, and the CLI's SQLite integrity and projection-rebuild checks passed. The Rust CLI integration and rotation tests passed; the server's scheduler was compiled and the rotation algorithm was unit tested, but a clock-triggered nightly run was not observed.
+- Proposed decision **D-S2-2**: keep the manifest-versioned snapshot directory (`chorus.db` plus `manifest.json`, immutable blobs pooled at `backups/blobs`) as the backup format for v1. OPS.md currently says `.db.zst`; no zstd library or executable is pinned in the offline toolchain. The directory format gives a consistent online copy and incremental blobs now, and a future compressed format can be introduced under another manifest version. This is an OPS format discrepancy for the owner/auditor to settle before deployment; no OPS spec text was silently changed.
+- Audit first: decide D-S2-2 and align OPS.md or add compression; inspect the nightly catch-up rule after a missed backup time and the pre-migration `.db` backup distinction. No core semantics changed.
 
 #### Step 0 · done
 - Merge commit `a4778fa` brought main `c548c9b` into `sol/batch-2`. The only conflict was `chorus-server/Cargo.toml`; retained main's `reqwest` dependency and the branch's rusqlite `backup` feature. No branch switch or rebase.

@@ -299,3 +299,33 @@ pub fn start_nightly(cfg: Config) -> anyhow::Result<()> {
     });
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rotation_keeps_configured_daily_count_and_never_touches_blob_pool() {
+        let target = std::env::var_os("CARGO_TARGET_DIR").expect("test requires CARGO_TARGET_DIR on F:");
+        let root = PathBuf::from(target).join(format!("backup-rotation-test-{:016x}", rand::random::<u64>()));
+        fs::create_dir_all(root.join("blobs")).unwrap();
+        fs::write(root.join("blobs/keep"), b"immutable").unwrap();
+        for day in 1..=4 {
+            let snapshot = root.join(format!("chorus-202601{day:02}-040000-00000001"));
+            fs::create_dir(&snapshot).unwrap();
+            fs::write(snapshot.join("manifest.json"), b"{}").unwrap();
+        }
+        let mut cfg = Config::default();
+        cfg.backup.dir = Some(root.clone());
+        cfg.backup.keep_daily = 2;
+        cfg.backup.keep_weekly = 0;
+        cfg.backup.keep_monthly = 0;
+        rotate(&cfg).unwrap();
+        assert!(!root.join("chorus-20260101-040000-00000001").exists());
+        assert!(!root.join("chorus-20260102-040000-00000001").exists());
+        assert!(root.join("chorus-20260103-040000-00000001").exists());
+        assert!(root.join("chorus-20260104-040000-00000001").exists());
+        assert_eq!(fs::read(root.join("blobs/keep")).unwrap(), b"immutable");
+        fs::remove_dir_all(root).unwrap();
+    }
+}
