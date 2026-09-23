@@ -211,6 +211,18 @@ export interface MessageRow {
   reply_to?: string;
   quote?: QuoteValue;
   forward_snapshot?: SnapshotItem[];
+  attachments: AttachmentRow[];
+}
+
+export interface AttachmentRow {
+  id: string;
+  blob_hash: string;
+  thumb_blob_hash?: string;
+  filename: string;
+  mime: string;
+  size: number;
+  alt_text: string;
+  is_spoiler: boolean;
 }
 
 export interface TextRange { message_id: string; offset: number; length: number; text: string }
@@ -223,6 +235,7 @@ export interface SnapshotItem {
   authors: string[];
   entities: import('./core').Entity[];
   occurred_at: number;
+  attachments?: AttachmentRow[];
 }
 export type QuoteValue = TextRange | { items: SnapshotItem[] };
 
@@ -331,6 +344,19 @@ export function threadSummaries(p: Projection): Map<string, ThreadSummary> {
 
 export function messages(p: Projection, channelId: string): MessageRow[] {
   const rows = (p.rows.message ?? {}) as Record<string, { exists: boolean; fields: Record<string, unknown>; edits?: number }>;
+  const attachmentRows = p.rows.attachment ?? {};
+  const attachment = (id: string): AttachmentRow | null => {
+    const r = attachmentRows[id];
+    if (!r?.exists) return null;
+    const f = r.fields;
+    const blob_hash = str(f.blob_hash);
+    if (!blob_hash) return null;
+    return {
+      id, blob_hash, thumb_blob_hash: str(f.thumb_blob_hash), filename: str(f.filename) ?? 'file',
+      mime: str(f.mime) ?? 'application/octet-stream', size: Number(f.size ?? 0),
+      alt_text: str(f.alt_text) ?? '', is_spoiler: f.is_spoiler === true,
+    };
+  };
   return Object.entries(rows)
     .filter(([, r]) => r.exists && r.fields.channel_id === channelId)
     .map(([id, r]) => {
@@ -356,6 +382,7 @@ export function messages(p: Projection, channelId: string): MessageRow[] {
         reply_to: str(f.reply_to),
         quote: f.quote && typeof f.quote === 'object' ? (f.quote as QuoteValue) : undefined,
         forward_snapshot: Array.isArray(f.forward_snapshot) ? (f.forward_snapshot as MessageRow['forward_snapshot']) : undefined,
+        attachments: Array.isArray(f.attachments) ? (f.attachments as string[]).map(attachment).filter((a): a is AttachmentRow => !!a) : [],
       };
     })
     .sort((a, b) => a.occurred_at - b.occurred_at || a.id.localeCompare(b.id));

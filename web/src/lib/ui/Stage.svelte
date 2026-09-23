@@ -10,6 +10,7 @@
   import { segmentRich } from '../segments';
   import { sync, type Projection } from '../sync/client';
   import RichText from './RichText.svelte';
+  import AttachmentView from './AttachmentView.svelte';
 
   let { projection, channelId, dark }: { projection: Projection; channelId: string; dark: boolean } = $props();
 
@@ -19,6 +20,7 @@
     theme: 'auto' | 'light' | 'dark';
     width: 'phone' | 'square' | 'wide';
     blur_avatars: boolean;
+    blur_attachments: boolean;
     hide_header: boolean;
     hide_reply_bars: boolean;
   }
@@ -43,7 +45,7 @@
     redact_names: false,
     fake_names: {},
     time: { mode: 'real' },
-    render: { style: 'chorus', theme: 'auto', width: 'phone', blur_avatars: false, hide_header: false, hide_reply_bars: false },
+    render: { style: 'chorus', theme: 'auto', width: 'phone', blur_avatars: false, blur_attachments: false, hide_header: false, hide_reply_bars: false },
   });
 
   let def = $state<Def>(fresh());
@@ -191,6 +193,7 @@
         <span class="label">Hide</span>
         <label class="check"><input type="checkbox" bind:checked={def.redact_names} /> real names</label>
         <label class="check"><input type="checkbox" bind:checked={def.render.blur_avatars} /> avatars</label>
+        <label class="check"><input type="checkbox" bind:checked={def.render.blur_attachments} /> attachments</label>
         <label class="check"><input type="checkbox" bind:checked={def.render.hide_header} /> channel name</label>
         <label class="check"><input type="checkbox" bind:checked={def.render.hide_reply_bars} /> reply bars</label>
       </div>
@@ -269,6 +272,22 @@
               <span class="who">{m.authors.map(nameOf).join(' & ')}{def.render.style === 'transcript' ? ':' : ''}</span>
               {#if row.at != null && def.render.style !== 'transcript'}<time>{clock(row.at)}</time>{/if}
             </div>
+            {#if m.quote}
+              <blockquote>
+                {#if 'items' in m.quote}
+                  {#each m.quote.items as q, j (`${q.message_id}:${j}`)}
+                    <div>{q.authors.map(nameOf).join(' & ')}: <RichText text={q.text} entities={q.entities} />
+                      {#each q.attachments ?? [] as a (a.id)}<AttachmentView attachment={a} blur={def.render.blur_attachments} revealable={false} />{/each}
+                    </div>
+                  {/each}
+                {:else}{m.quote.text}{/if}
+              </blockquote>
+            {/if}
+            {#each m.forward_snapshot ?? [] as f (f.message_id)}
+              <div class="forward">Forwarded from {f.authors.map(nameOf).join(' & ')}: <RichText text={f.text} entities={f.entities} />
+                {#each f.attachments ?? [] as a (a.id)}<AttachmentView attachment={a} blur={def.render.blur_attachments} revealable={false} />{/each}
+              </div>
+            {/each}
             {#if m.segments.length > 1}
               {#each m.segments as s, j (j)}
                 {@const seg = segmentRich(m, s)}
@@ -276,6 +295,9 @@
               {/each}
             {:else}
               <div class="text"><RichText text={m.text} entities={m.entities} /></div>
+            {/if}
+            {#if m.attachments.length && !m.forward_snapshot?.some((f) => f.attachments?.length)}
+              <div class="attachments">{#each m.attachments as a (a.id)}<AttachmentView attachment={a} blur={def.render.blur_attachments} revealable={false} />{/each}</div>
             {/if}
           </div>
         </div>
@@ -344,6 +366,7 @@
   .text, .segment { color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
   .seg-who { font-weight: 600; font-size: var(--fs-sm); }
   .reply { color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  blockquote, .forward { margin: var(--s-1) 0; padding: var(--s-2); border-left: 2px solid var(--line); color: var(--ink-2); font-size: var(--fs-sm); }
   .context {
     justify-self: center; color: var(--ink-3); font-size: var(--fs-xs); background: var(--surface-2);
     border-radius: var(--r-full); padding: 2px var(--s-3); margin: var(--s-1) 0;

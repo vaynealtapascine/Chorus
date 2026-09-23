@@ -5,6 +5,7 @@
   import { snapshot } from '../selection';
   import { editedSegments, segmentMarkup } from '../segments';
   import { sync, type Projection } from '../sync/client';
+  import { flushUploads, imageThumbnail, stageBlob } from '../sync/uploads';
   import Message from './Message.svelte';
 
   let { projection, dark, channelId }: { projection: Projection; dark: boolean; channelId?: string } = $props();
@@ -45,6 +46,9 @@
   });
 
   let draft = $state('');
+  let pending = $state<{ file: File; alt: string; spoiler: boolean }[]>([]);
+  let uploadError = $state('');
+  let fileInput: HTMLInputElement | undefined = $state();
   let replyTo = $state<MessageRow | null>(null);
   let quoting = $state<QuoteValue | null>(null);
   let editing = $state<MessageRow | null>(null);
@@ -77,7 +81,24 @@
     preview ? preview.segments.map((s) => s.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')).join(' → ') : '',
   );
 
-  function send() {
+  function addFiles(files: FileList | File[]) {
+    pending = [...pending, ...[...files].map((file) => ({ file, alt: '', spoiler: false }))];
+  }
+
+  function dropFiles(e: DragEvent) {
+    if (!e.dataTransfer?.files.length) return;
+    e.preventDefault();
+    addFiles(e.dataTransfer.files);
+  }
+
+  function pasteFiles(e: ClipboardEvent) {
+    const files = [...(e.clipboardData?.files ?? [])];
+    if (!files.length) return;
+    e.preventDefault();
+    addFiles(files);
+  }
+
+  async function send() {
     if (!current) return;
     if (editing) {
       const result = editingParts
@@ -93,19 +114,42 @@
       draft = '';
       return;
     }
-    if (!preview) return;
-    if (!preview.rich.text.trim() || !preview.authors.length) return;
+    if (!preview && !pending.length) return;
+    const authors = preview?.authors ?? (speaker ? [speaker] : []);
+    if (!authors.length) return;
+    const attachmentIds: string[] = [];
+    try {
+      for (const item of pending) {
+        const original = await stageBlob(item.file, item.file.type, sync.accountId);
+        const thumb = await imageThumbnail(item.file);
+        const thumbnail = thumb ? await stageBlob(thumb, thumb.type, sync.accountId) : null;
+        const id = sync.newId();
+        sync.create('attachment.create', scope, id, {
+          blob_hash: original.hash, filename: item.file.name, mime: original.mime, size: item.file.size,
+          ...(thumbnail ? { thumb_blob_hash: thumbnail.hash } : {}),
+          alt_text: item.alt, is_spoiler: item.spoiler,
+        });
+        attachmentIds.push(id);
+      }
+      uploadError = '';
+    } catch (error) {
+      uploadError = `Could not queue the attachment: ${String(error)}`;
+      return;
+    }
     sync.create('message.send', scope, sync.newId(), {
       channel_id: current.id,
-      authors: preview.authors,
-      text: preview.rich.text,
-      entities: preview.rich.entities,
-      ...(preview.segments.length > 1 ? { segments: preview.segments } : {}),
+      authors,
+      text: preview?.rich.text ?? '',
+      entities: preview?.rich.entities ?? [],
+      ...(preview && preview.segments.length > 1 ? { segments: preview.segments } : {}),
+      ...(attachmentIds.length ? { attachments: attachmentIds } : {}),
       ...(replyTo ? { reply_to: replyTo.id } : {}),
       ...(quoting ? { quote: quoting } : {}),
       sent_offline: sync.status !== 'live',
     });
     draft = '';
+    pending = [];
+    if (sync.status === 'live') void flushUploads(sync.device);
     chosen = null;
     replyTo = null;
     quoting = null;
@@ -116,7 +160,7 @@
   function onkey(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      send();
+      void send();
     }
     if (e.key === 'Escape') cancel();
   }
@@ -195,13 +239,23 @@
     if (!target || target.archived || !items || !speaker || !current) return;
     if (sharingOutward(target.id, target.space_id, current.space_id, forwardingSensitive) &&
         !confirm('This forward shares a snapshot of the selected content with another channel. Continue?')) return;
-    sync.create('message.forward', scopeOf(target.space_id), sync.newId(), {
+    const targetScope = scopeOf(target.space_id);
+    const attachments = items.flatMap((item) => item.attachments ?? []).map((a) => {
+      const id = sync.newId();
+      sync.create('attachment.create', targetScope, id, {
+        blob_hash: a.blob_hash, thumb_blob_hash: a.thumb_blob_hash, filename: a.filename,
+        mime: a.mime, size: a.size, alt_text: a.alt_text, is_spoiler: a.is_spoiler,
+      });
+      return id;
+    });
+    sync.create('message.forward', targetScope, sync.newId(), {
       channel_id: target.id,
       authors: [speaker],
       text: '',
       entities: [],
       forward_of_id: items[0].message_id,
       forward_snapshot: items,
+      ...(attachments.length ? { attachments } : {}),
     });
     forwarding = null;
     router.go(`/chat/${target.id}`);
@@ -298,7 +352,7 @@
     {/if}
   </aside>
 
-  <section class="room" aria-label={current ? `#${current.name}` : 'Chat'}>
+  <section class="room" aria-label={current ? `#${current.name}` : 'Chat'} ondragover={(e) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); }} ondrop={dropFiles}>
     <header>
       {#if current?.kind === 'thread'}
         <a class="thread-back" href="#/chat/{parentChannel?.id ?? ''}">‹ #{parentChannel?.name ?? 'channel'}</a>
@@ -412,7 +466,24 @@
       </details>
     {/if}
 
+    {#if pending.length}
+      <div class="pending-files" aria-label="Attachments ready to send">
+        {#each pending as item, i (item.file.name + i)}
+          <div class="pending-file">
+            <strong>{item.file.name}</strong>
+            <input placeholder="Alt text" aria-label={`Alt text for ${item.file.name}`} bind:value={item.alt} />
+            <label><input type="checkbox" bind:checked={item.spoiler} /> Spoiler</label>
+            <button onclick={() => (pending = pending.filter((_, n) => n !== i))} aria-label={`Remove ${item.file.name}`}>✕</button>
+          </div>
+        {/each}
+      </div>
+    {/if}
+    {#if uploadError}<p class="upload-error" role="alert">{uploadError}</p>{/if}
     <div class="composer">
+      {#if !editing}
+        <input class="file-input" type="file" multiple bind:this={fileInput} onchange={(e) => { addFiles(e.currentTarget.files ?? []); e.currentTarget.value = ''; }} aria-label="Choose attachments" />
+        <button class="attach" onclick={() => fileInput?.click()} title="Attach files">＋</button>
+      {/if}
       {#if !editing}<div class="chip-wrap">
         <button class="chip" onclick={() => (picking = !picking)} title="Speaking as">
           {#if speaker}
@@ -443,18 +514,26 @@
             bind:this={box}
             bind:value={draft}
             onkeydown={onkey}
+            onpaste={pasteFiles}
             rows="1"
             placeholder={current ? `Message #${current.name}` : ''}
             aria-label="Message"
           ></textarea>
         {/if}
       </div>
-      <button class="send" onclick={send} disabled={editing ? (editingParts ? !editingParts.some((part) => part.trim()) : !draft.trim()) : !preview || !preview.authors.length}>{editing ? 'Save' : 'Send'}</button>
+      <button class="send" onclick={() => void send()} disabled={editing ? (editingParts ? !editingParts.some((part) => part.trim()) : !draft.trim()) : (!preview && !pending.length) || (!preview?.authors.length && !speaker)}>{editing ? 'Save' : 'Send'}</button>
     </div>
   </section>
 </div>
 
 <style>
+  .file-input { display: none; }
+  .pending-files { display: grid; gap: var(--s-1); padding: var(--s-2); background: var(--surface-2); border-radius: var(--r-md); }
+  .pending-file { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); font-size: var(--fs-sm); }
+  .pending-file strong { max-width: 20ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pending-file input:not([type='checkbox']) { min-width: 10ch; flex: 1; }
+  .pending-file button, .attach { border: 0; background: none; color: var(--accent); cursor: pointer; }
+  .upload-error { color: var(--danger, #b33); font-size: var(--fs-sm); }
   .chat {
     display: grid;
     grid-template-columns: 180px 1fr;

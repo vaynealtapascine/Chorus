@@ -3,6 +3,7 @@
   import type { MemberRow, MessageRow, SnapshotItem, TextRange, ThreadSummary } from '../data';
   import { segmentRich } from '../segments';
   import RichText from './RichText.svelte';
+  import AttachmentView from './AttachmentView.svelte';
 
   export type Quote = TextRange;
   export type Forwarded = SnapshotItem;
@@ -122,7 +123,9 @@
       {#if m.quote}
         {#if 'items' in m.quote}
           {#each m.quote.items as q, i (`${q.message_id}:${i}`)}
-            <blockquote><span>{q.authors.map(nameOf).join(' & ')}{q.channel_name ? ` · #${q.channel_name}` : ''}</span><RichText text={q.text} entities={q.entities} /></blockquote>
+            <blockquote><span>{q.authors.map(nameOf).join(' & ')}{q.channel_name ? ` · #${q.channel_name}` : ''}</span><RichText text={q.text} entities={q.entities} />
+              {#each q.attachments ?? [] as a (a.id)}<AttachmentView attachment={a} />{/each}
+            </blockquote>
           {/each}
         {:else}
           <blockquote>{m.quote.text}</blockquote>
@@ -132,6 +135,7 @@
         <div class="forward">
           <span class="fwd">Forwarded from {f.authors.map(nameOf).join(' & ')}{f.channel_name ? ` · #${f.channel_name}` : ''}</span>
           <RichText text={f.text} entities={f.entities} />
+          {#each f.attachments ?? [] as a (a.id)}<AttachmentView attachment={a} />{/each}
         </div>
       {/each}
       {#if m.segments.length > 1}
@@ -151,6 +155,9 @@
         {/each}
       {:else if m.text}
         <span class="selectable" data-message-offset="0"><RichText text={m.text} entities={m.entities} /></span>
+      {/if}
+      {#if m.attachments.length && !m.forward_snapshot?.some((f) => f.attachments?.length)}
+        <div class="attachments">{#each m.attachments as a (a.id)}<AttachmentView attachment={a} />{/each}</div>
       {/if}
       {#if m.edited}<span class="edited"> (edited)</span>{/if}
       {#if reacts?.size}

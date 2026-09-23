@@ -4,6 +4,7 @@ import { WebReplica, newId } from '../core/pkg/chorus_wasm.js';
 import type { SwitchRow } from '../front.svelte';
 import { load, save, type Changes, type DeviceRecord } from './persist';
 import { renew } from './device';
+import { flushUploads } from './uploads';
 
 export type Status = 'offline' | 'connecting' | 'live' | 'no-device';
 
@@ -191,6 +192,7 @@ export class SyncClient {
       if (frame.t === 'welcome') {
         this.status = 'live';
         this.backoff = 1000;
+        void flushUploads(this.device);
       }
       const out = JSON.parse(this.replica!.onFrame(ev.data as string, Date.now())) as unknown[];
       this.sendAll(out);
