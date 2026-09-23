@@ -6,7 +6,8 @@
   import { onDestroy } from 'svelte';
   import { stagePlan } from '../core/pkg/chorus_wasm.js';
   import { core } from '../core';
-  import { channels, members, messages, type MemberRow, type MessageRow } from '../data';
+  import { channels, members, messages, spaces, type MemberRow, type MessageRow } from '../data';
+  import { activeViewers, memberVisible } from '../hidden';
   import { segmentRich } from '../segments';
   import { sync, type Projection } from '../sync/client';
   import RichText from './RichText.svelte';
@@ -53,9 +54,13 @@
   let capturing = $state(false);
   let saveName = $state('');
   let pillVisible = $state(true);
+  let viewingAs = $state<string | null>(null);
+  let shownCw = $state(new Set<string>());
 
   const channel = $derived(channels(projection).find((c) => c.id === channelId));
-  const list = $derived(messages(projection, channelId).filter((m) => !m.deleted));
+  const space = $derived(spaces(projection).find((s) => s.id === channel?.space_id));
+  const activeMembers = $derived(activeViewers(projection.fronts[sync.accountId]?.current ?? []));
+  const list = $derived(messages(projection, channelId).filter((m) => !m.deleted && memberVisible(m, space?.kind, activeMembers, viewingAs)));
   const byId = $derived(new Map(list.map((m) => [m.id, m])));
   const people = $derived(new Map(members(projection).map((m) => [m.id, m])));
   const authorsHere = $derived([...new Set(list.flatMap((m) => m.authors))].map((id) => people.get(id)).filter(Boolean) as MemberRow[]);
@@ -198,6 +203,19 @@
         <label class="check"><input type="checkbox" bind:checked={def.render.hide_header} /> channel name</label>
         <label class="check"><input type="checkbox" bind:checked={def.render.hide_reply_bars} /> reply bars</label>
       </div>
+      {#if space?.kind === 'internal'}
+        <div class="group wide">
+          <label class="check">Viewing as
+            <select aria-label="Stage viewing as member" value={viewingAs ?? ''} onchange={(e) => (viewingAs = e.currentTarget.value || null)}>
+              <option value="">Current front</option>
+              {#each members(projection).filter((m) => !m.deleted && !m.archived) as person (person.id)}
+                <option value={person.id}>{person.display_name ?? person.name}</option>
+              {/each}
+            </select>
+          </label>
+          <span class="hint">Member visibility is a view filter inside your system, not a security boundary.</span>
+        </div>
+      {/if}
       <div class="group">
         <span class="label">Times</span>
         <select value={def.time.mode} onchange={(e) => setTime(e.currentTarget.value)} aria-label="Times">
@@ -267,12 +285,21 @@
           {/if}
           <div class="body">
             {#if reply}
-              <div class="reply">↳ {reply.authors.map(nameOf).join(' & ')}: {reply.text.slice(0, 60)}</div>
+              <div class="reply">↳ {reply.authors.map(nameOf).join(' & ')}: {reply.cw ? `Content warning: ${reply.cw}` : reply.text.slice(0, 60)}</div>
             {/if}
             <div class="head">
               <span class="who">{m.authors.map(nameOf).join(' & ')}{def.render.style === 'transcript' ? ':' : ''}</span>
               {#if row.at != null && def.render.style !== 'transcript'}<time>{clock(row.at)}</time>{/if}
             </div>
+            {#if m.cw}
+              <button class="cw-toggle" aria-expanded={shownCw.has(m.id)} onclick={(e) => {
+                e.stopPropagation();
+                const next = new Set(shownCw);
+                if (next.has(m.id)) next.delete(m.id); else next.add(m.id);
+                shownCw = next;
+              }}>Content warning: {m.cw} · {shownCw.has(m.id) ? 'Hide content' : 'Show content'}</button>
+            {/if}
+            {#if !m.cw || shownCw.has(m.id)}
             {#if m.quote}
               <blockquote>
                 {#if 'items' in m.quote}
@@ -300,6 +327,7 @@
             {#if m.attachments.length && !m.forward_snapshot?.some((f) => f.attachments?.length)}
               <div class="attachments">{#each m.attachments as a (a.id)}<AttachmentView attachment={a} blur={def.render.blur_attachments} revealable={false} />{/each}</div>
             {/if}
+            {/if}
           </div>
         </div>
       {/if}
@@ -316,6 +344,7 @@
 </div>
 
 <style>
+  .cw-toggle { display: block; padding: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); cursor: pointer; text-align: left; font: inherit; }
   .stage-page { display: grid; gap: var(--s-3); }
   .top { display: flex; align-items: center; gap: var(--s-3); }
   .top h1 { font-size: var(--fs-2xl); margin-right: auto; }

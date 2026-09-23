@@ -63,10 +63,10 @@
     {@const cls = classes(p.marks)}
     {@const customId = p.marks.find((mark) => mark.type === 'custom_emoji')?.emoji_id}
     {@const custom = typeof customId === 'string' ? emoji.get(customId) : undefined}
-    {#if url}
-      <a class={cls} href={url} target="_blank" rel="noopener noreferrer">{p.text}</a>
-    {:else if cls.includes('spoiler') && !revealed.has(i)}
+    {#if cls.includes('spoiler') && !revealed.has(i)}
       <button class="{cls} hidden" onclick={() => (revealed = new Set(revealed).add(i))} aria-label="Reveal spoiler">{p.text}</button>
+    {:else if url}
+      <a class={cls} href={url} target="_blank" rel="noopener noreferrer">{p.text}</a>
     {:else if custom}
       <span class="emoji-token">{p.text}</span>
       <EmojiImage hash={custom.blob_hash} name={custom.name} />

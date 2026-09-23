@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { core, type Composed } from '../core';
-  import { channels, customEmojis, lastRead, members, messageById, messages, reactions, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
+  import { channels, contentWarningsAutoExpand, customEmojis, lastRead, members, messageById, messages, reactions, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
+  import { activeViewers, memberVisible } from '../hidden';
   import { router } from '../router.svelte';
   import { snapshot } from '../selection';
   import { editedSegments, segmentMarkup } from '../segments';
@@ -46,9 +47,13 @@
   const scopeOf = (spaceId: string) => `space:${spaceId}`;
   const scope = $derived(space ? scopeOf(space.id) : '');
   const parseSegments = $derived(segmentParsing(projection, sync.accountId));
+  const cwAutoExpand = $derived(contentWarningsAutoExpand(projection, sync.accountId));
 
   // who speaks by default: the primary fronter, else the first one fronting (SPEC §5.2)
   const fronting = $derived(projection.fronts[sync.accountId]?.current ?? []);
+  let viewingAs = $state<string | null>(null);
+  const activeMembers = $derived(activeViewers(fronting));
+  const visibleMsgs = $derived(msgs.filter((m) => memberVisible(m, space?.kind, activeMembers, viewingAs)));
   const defaultSpeaker = $derived(
     (fronting.find((e) => e.is_primary && e.subject_type === 'member') ??
       fronting.find((e) => e.level === 'front' && e.subject_type === 'member'))?.subject_id,
@@ -69,6 +74,9 @@
   });
 
   let draft = $state('');
+  let cw = $state('');
+  let visibilityMode = $state<'all' | 'members' | 'system_only'>('all');
+  let visibleTo = $state<string[]>([]);
   let pending = $state<{ file: File; alt: string; spoiler: boolean }[]>([]);
   let uploadError = $state('');
   let fileInput: HTMLInputElement | undefined = $state();
@@ -181,6 +189,10 @@
     selecting = false;
     selectedIds = new Set();
     chosen = null;
+    viewingAs = null;
+    cw = '';
+    visibilityMode = 'all';
+    visibleTo = [];
   });
 
   const preview: Composed | null = $derived(draft.trim() && !editing ? core.compose(draft, speakers, { segments: parseSegments }, speaker ? [speaker] : [], names) : null);
@@ -222,6 +234,7 @@
       return;
     }
     if (!preview && !pending.length) return;
+    if (visibilityMode === 'members' && !visibleTo.length) return;
     const authors = preview?.authors ?? (speaker ? [speaker] : []);
     if (!authors.length) return;
     const attachmentIds: string[] = [];
@@ -252,9 +265,15 @@
       ...(attachmentIds.length ? { attachments: attachmentIds } : {}),
       ...(replyTo ? { reply_to: replyTo.id } : {}),
       ...(quoting ? { quote: quoting } : {}),
+      ...(cw.trim() ? { cw: cw.trim() } : {}),
+      ...(visibilityMode === 'members' ? { visibility: { mode: 'members', member_ids: visibleTo } } :
+        visibilityMode === 'system_only' ? { visibility: { mode: 'system_only' } } : {}),
       sent_offline: sync.status !== 'live',
     });
     draft = '';
+    cw = '';
+    visibilityMode = 'all';
+    visibleTo = [];
     pending = [];
     if (sync.status === 'live') void flushUploads(sync.device);
     chosen = null;
@@ -297,7 +316,7 @@
   }
 
   function selectedMessages(): MessageRow[] {
-    return msgs.filter((m) => selectedIds.has(m.id) && !m.deleted);
+    return visibleMsgs.filter((m) => selectedIds.has(m.id) && !m.deleted);
   }
 
   function quoteSelected() {
@@ -395,14 +414,14 @@
   }
 
   const grouped = $derived(
-    msgs.map((m, i) => {
-      const prev = msgs[i - 1];
+    visibleMsgs.map((m, i) => {
+      const prev = visibleMsgs[i - 1];
       const cont =
         !!prev && !prev.deleted && prev.authors.join() === m.authors.join() && m.occurred_at - prev.occurred_at < 300_000 && m.segments.length === 1;
       return { m, cont };
     }),
   );
-  const pinned = $derived(msgs.filter((m) => m.pinned && !m.deleted));
+  const pinned = $derived(visibleMsgs.filter((m) => m.pinned && !m.deleted));
   const reacts = $derived(reactions(projection));
 
   function react(m: MessageRow, emoji: string, on: boolean) {
@@ -426,7 +445,7 @@
   });
   $effect(() => {
     if (!current || !visible) return;
-    const latest = msgs.findLast((m) => !m.deleted);
+    const latest = visibleMsgs.findLast((m) => !m.deleted);
     if (!latest || latest.occurred_at <= lastRead(projection, current.id, sync.accountId)) return;
     sync.create('read.mark', scope, null, {
       channel_id: current.id,
@@ -447,7 +466,7 @@
   // author cards: fetched when entering a shared space or DM, and again when someone new speaks
   const strangers = $derived(
     space && space.kind !== 'internal'
-      ? [...new Set(msgs.flatMap((m) => m.authors))].filter((a) => !people.has(a)).sort().join(',')
+      ? [...new Set(visibleMsgs.flatMap((m) => m.authors))].filter((a) => !people.has(a)).sort().join(',')
       : '',
   );
   let cardsFor = '';
@@ -492,6 +511,16 @@
         <h1>{space?.kind === 'dm' ? spaceTitle(space, directory.get(space.id), sync.accountId) : `# ${current?.name ?? '…'}`}</h1>
       {/if}
       {#if current?.topic}<span class="topic">{current.topic}</span>{/if}
+      {#if space?.kind === 'internal'}
+        <label class="view-as">Viewing as
+          <select aria-label="Viewing as member" value={viewingAs ?? ''} onchange={(e) => (viewingAs = e.currentTarget.value || null)}>
+            <option value="">Current front</option>
+            {#each members(projection).filter((m) => !m.deleted && !m.archived) as person (person.id)}
+              <option value={person.id}>{person.display_name ?? person.name}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
       <button class="pins" class:on={showPins} onclick={() => (showPins = !showPins)}>📌 {pinned.length}</button>
       {#if current}
         <details class="room-menu">
@@ -507,7 +536,7 @@
     {#if showPins}
       <div class="pinned">
         {#each pinned as p (p.id)}
-          <div class="pin"><strong>{p.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')}</strong> {p.text.slice(0, 140)}</div>
+          <div class="pin"><strong>{p.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')}</strong> {p.cw ? `Content warning: ${p.cw}` : p.text.slice(0, 140)}</div>
         {:else}
           <p class="muted">Nothing pinned yet.</p>
         {/each}
@@ -517,9 +546,9 @@
     {#if current?.kind === 'thread'}
       <div class="thread-origin">
         <span>Original message</span>
-        {#if threadParent}
+        {#if threadParent && memberVisible(threadParent, space?.kind, activeMembers, viewingAs)}
           <strong>{threadParent.authors.map((a) => people.get(a)?.name ?? 'Someone').join(' & ')}</strong>
-          <p>{threadParent.deleted ? 'Message deleted' : threadParent.text.slice(0, 240)}</p>
+          <p>{threadParent.deleted ? 'Message deleted' : threadParent.cw ? `Content warning: ${threadParent.cw}` : threadParent.text.slice(0, 240)}</p>
         {:else}
           <p>Original message unavailable</p>
         {/if}
@@ -533,7 +562,7 @@
           {cont}
           {people}
           {dark}
-          lookup={(id) => messageById(projection, id)}
+          lookup={(id) => { const found = messageById(projection, id); return found && memberVisible(found, space?.kind, activeMembers, viewingAs) ? found : undefined; }}
           mine={m.account_id === sync.accountId}
           onreply={() => { replyTo = m; quoting = null; editing = null; editingParts = null; box?.focus(); }}
           onquote={(q) => { quoting = q; forwarding = null; quoteSourceSpaceId = current?.space_id ?? ''; quoteSensitive = !!m.visibility && m.visibility.mode !== 'all'; replyTo = m; editing = null; editingParts = null; box?.focus(); }}
@@ -550,6 +579,7 @@
           reacts={reacts.get(m.id)}
           {speaker}
           {emojiById}
+          {cwAutoExpand}
           onreact={(emoji, on) => react(m, emoji, on)}
         />
       {:else}
@@ -595,6 +625,28 @@
         <label><input type="checkbox" checked={parseSegments} onchange={(e) => sync.create('pref.set', sync.accountScope, null, {
           device: '', key: 'chat.segment_parsing', value: (e.currentTarget as HTMLInputElement).checked,
         })} /> Parse speaker annotations on new lines</label>
+        <label><input type="checkbox" checked={cwAutoExpand} onchange={(e) => sync.create('pref.set', sync.accountScope, null, {
+          device: '', key: 'chat.cw_auto_expand', value: e.currentTarget.checked,
+        })} /> Auto-expand content warnings on this account</label>
+        <label>Content warning <input aria-label="Content warning" bind:value={cw} placeholder="Optional label" /></label>
+        <label>Visibility
+          <select aria-label="Message visibility" bind:value={visibilityMode}>
+            <option value="all">Everyone in this space</option>
+            {#if space?.kind === 'internal'}<option value="members">Chosen members</option>{/if}
+            {#if space?.kind !== 'internal'}<option value="system_only">Only my system</option>{/if}
+          </select>
+        </label>
+        {#if visibilityMode === 'members'}
+          <p class="hint">This is a view filter within your system, not a security boundary. Members fronting or co-conscious can see it.</p>
+          <div class="visibility-members" aria-label="Members who can view this message">
+            {#each members(projection).filter((m) => !m.deleted && !m.archived) as person (person.id)}
+              <label><input type="checkbox" checked={visibleTo.includes(person.id)} onchange={(e) => {
+                visibleTo = e.currentTarget.checked ? [...visibleTo, person.id] : visibleTo.filter((id) => id !== person.id);
+              }} /> {person.display_name ?? person.name}</label>
+            {/each}
+          </div>
+          {#if !visibleTo.length}<p class="hint" role="alert">Choose at least one member.</p>{/if}
+        {/if}
       </details>
     {/if}
     {#if sync.device?.is_admin}
@@ -697,12 +749,15 @@
           </div>
         {/if}
       </div>{/if}
-      <button class="send" onclick={() => void send()} disabled={editing ? (editingParts ? !editingParts.some((part) => part.trim()) : !draft.trim()) : (!preview && !pending.length) || (!preview?.authors.length && !speaker)}>{editing ? 'Save' : 'Send'}</button>
+      <button class="send" onclick={() => void send()} disabled={editing ? (editingParts ? !editingParts.some((part) => part.trim()) : !draft.trim()) : (!preview && !pending.length) || (!preview?.authors.length && !speaker) || (visibilityMode === 'members' && !visibleTo.length)}>{editing ? 'Save' : 'Send'}</button>
     </div>
   </section>
 </div>
 
 <style>
+  .view-as { display: flex; gap: var(--s-1); align-items: center; color: var(--ink-3); font-size: var(--fs-xs); }
+  .view-as select, .chat-advanced select, .chat-advanced input:not([type='checkbox']) { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-1); }
+  .visibility-members { display: flex; flex-wrap: wrap; gap: var(--s-2); max-height: 8rem; overflow: auto; }
   .emoji-form, .emoji-existing { display: flex; flex-wrap: wrap; gap: var(--s-2); padding: var(--s-2) 0; }
   .emoji-crop { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); }
   .emoji-crop canvas { width: 128px; height: 128px; border: 1px solid var(--line); border-radius: var(--r-sm); }

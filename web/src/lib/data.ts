@@ -255,6 +255,12 @@ export function segmentParsing(p: Projection, accountId: string): boolean {
   return row?.fields.value !== false;
 }
 
+export function contentWarningsAutoExpand(p: Projection, accountId: string): boolean {
+  const prefs = (p.rows.pref ?? {}) as Rows;
+  const row = prefs['||chat.cw_auto_expand'] ?? prefs[`${accountId}||chat.cw_auto_expand`];
+  return row?.fields.value === true;
+}
+
 export interface Segment {
   offset: number;
   length: number;
