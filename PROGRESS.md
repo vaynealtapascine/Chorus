@@ -69,7 +69,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M2.4 Projections for all tables + rebuild-from-log command
 - [x] M2.5 Sync WebSocket (hello/push/pull/ack/snapshot/hash) per SYNC.md
 - [x] M2.6 Blob store (content-addressed, resumable upload) — gpt-6-sol batch 2 T1 (merged 18e4d6e)
-- [ ] M2.7 Read API (REST) + follower views
+- [~] M2.7 Read API (REST) + follower views — /front, /front/switches, /front/intervals, /members, /accounts/{id}/view done; messages/posts/profiles reads not yet
 - [ ] M2.8 Nightly backups + `chorus-server backup|restore|rebuild|export` CLI
 
 ### M3 — Web client foundation
@@ -136,7 +136,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M10 — Data
 
 - [ ] M10.1 Insights dashboards
-- [ ] M10.2 API tokens, SSE stream, webhooks
+- [~] M10.2 API tokens, SSE stream, webhooks — tokens (web "Your data" page), front/members reads, SSE front stream, OBS overlay done; webhooks not yet
 - [ ] M10.3 Exports (JSONL op log, tidy CSVs, SQLite copy), documented views
 
 ### M11 — Import

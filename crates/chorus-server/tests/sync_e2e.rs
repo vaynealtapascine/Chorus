@@ -378,3 +378,80 @@ async fn the_server_hosts_the_android_update() {
     assert_eq!(r.bytes().await.unwrap().as_ref(), b"PK fake apk");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn api_tokens_read_the_front_and_stream_switches() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 41, "stars").await;
+    let mut phone = Device::new(&sys, 41);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct = phone.scope("account:");
+    let kai = new_id(1, [42; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai", "color": "#C0694E"})).await;
+    phone.drain(Q).await;
+
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let session = sys["session"].as_str().unwrap().to_string();
+    let r = http
+        .post(url("/tokens"))
+        .bearer_auth(&session)
+        .json(&json!({"name": "obs", "scopes": ["read:front", "stream"]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+    let created: Value = r.json().await.unwrap();
+    let token = created["token"].as_str().unwrap().to_string();
+    assert!(token.starts_with("chorus_"));
+    // tokens can't mint tokens, and scopes are enforced
+    let r = http
+        .post(url("/tokens"))
+        .bearer_auth(&token)
+        .json(&json!({"name": "x", "scopes": ["stream"]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    assert_eq!(http.get(url("/members")).bearer_auth(&token).send().await.unwrap().status(), 403);
+    let front: Value = http.get(url("/front")).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
+    assert_eq!(front["front"].as_array().unwrap().len(), 0);
+
+    // the stream: first event is the current front, then a live switch from the phone
+    let mut sse = http.get(url(&format!("/stream?token={token}"))).send().await.unwrap();
+    assert_eq!(sse.status(), 200);
+    let mut buf = String::new();
+    async fn until(sse: &mut reqwest::Response, buf: &mut String, needle: &str) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while !buf.contains(needle) {
+            let chunk =
+                tokio::time::timeout_at(deadline, sse.chunk()).await.expect("stream timed out").unwrap().unwrap();
+            buf.push_str(&String::from_utf8_lossy(&chunk));
+        }
+    }
+    until(&mut sse, &mut buf, "\n\n").await;
+    assert!(buf.starts_with("event: front"), "{buf}");
+    let sw = new_id(2, [43; 10]);
+    phone
+        .create(
+            "front.switch",
+            &acct,
+            &sw,
+            json!({"entries": [{"subject_type": "member", "subject_id": kai, "level": "front", "is_primary": true}]}),
+        )
+        .await;
+    phone.drain(Q).await;
+    until(&mut sse, &mut buf, "\"Kai\"").await;
+    let front: Value = http.get(url("/front")).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
+    assert_eq!(front["front"][0]["name"], "Kai");
+    let switches: Value =
+        http.get(url("/front/switches")).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
+    assert_eq!(switches["items"].as_array().unwrap().len(), 1);
+
+    // revoke: the token stops working
+    let list: Value = http.get(url("/tokens")).bearer_auth(&session).send().await.unwrap().json().await.unwrap();
+    let id = list["items"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(http.delete(url(&format!("/tokens/{id}"))).bearer_auth(&session).send().await.unwrap().status(), 204);
+    assert_eq!(http.get(url("/front")).bearer_auth(&token).send().await.unwrap().status(), 401);
+}

@@ -8,6 +8,7 @@
   import Members from './lib/ui/Members.svelte';
   import Onboarding from './lib/ui/Onboarding.svelte';
   import People from './lib/ui/People.svelte';
+  import DataPage from './lib/ui/DataPage.svelte';
   import Stage from './lib/ui/Stage.svelte';
   import Switcher from './lib/ui/Switcher.svelte';
   import Trash from './lib/ui/Trash.svelte';
@@ -75,6 +76,8 @@
         <History {projection} {dark} />
       {:else if router.route.name === 'stage' && router.route.id}
         <Stage {projection} {dark} channelId={router.route.id} />
+      {:else if router.route.name === 'data'}
+        <DataPage />
       {:else if router.route.name === 'people'}
         <People {projection} />
       {:else if router.route.name === 'trash'}

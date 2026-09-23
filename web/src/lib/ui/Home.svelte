@@ -98,6 +98,7 @@
   <section class="data-links" aria-label="Data">
     <h2>Data</h2>
     <a href="#/trash">Trash · deleted items</a>
+    <a href="#/data">API tokens · overlays</a>
   </section>
 </div>
 
@@ -106,6 +107,7 @@
     display: grid;
     gap: var(--s-6);
   }
+  .data-links { display: grid; gap: var(--s-1); justify-items: start; }
   .data-links a { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
   .card-button {
     all: unset;

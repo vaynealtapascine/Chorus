@@ -35,6 +35,8 @@ pub struct Shared {
     pub cfg: Config,
     pub instance_id: String,
     peers: Mutex<HashMap<String, Peer>>,
+    /// Live events for `/api/v1/stream`: (account id, event JSON).
+    pub events: tokio::sync::broadcast::Sender<(String, serde_json::Value)>,
 }
 
 pub type AppState = Arc<Shared>;
@@ -42,7 +44,8 @@ pub type AppState = Arc<Shared>;
 impl Shared {
     pub fn new(conn: Connection, cfg: Config) -> anyhow::Result<AppState> {
         let instance_id = db::meta(&conn, "instance_id")?.unwrap_or_default();
-        Ok(Arc::new(Shared { db: Mutex::new(conn), cfg, instance_id, peers: Mutex::new(HashMap::new()) }))
+        let (events, _) = tokio::sync::broadcast::channel(256);
+        Ok(Arc::new(Shared { db: Mutex::new(conn), cfg, instance_id, peers: Mutex::new(HashMap::new()), events }))
     }
 
     fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -72,6 +75,13 @@ pub fn router(state: AppState) -> Router {
         .route("/devices/push", put(push_register).delete(push_unregister))
         .route("/android/latest", get(android_latest))
         .route("/notifications", get(notifications))
+        .route("/tokens", get(tokens_list).post(tokens_create))
+        .route("/tokens/{id}", delete(tokens_revoke))
+        .route("/front", get(front_now))
+        .route("/front/switches", get(front_switches))
+        .route("/front/intervals", get(front_intervals))
+        .route("/members", get(members_list))
+        .route("/stream", get(stream))
         .route("/emoji", get(emoji_list))
         .route("/accounts/{id}/view", get(account_view))
         .route(
@@ -82,8 +92,11 @@ pub fn router(state: AppState) -> Router {
                 .layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
         )
         .route("/sync", get(sync_ws));
-    let mut app =
-        Router::new().nest("/api/v1", api).route("/download/android", get(android_download)).with_state(state.clone());
+    let mut app = Router::new()
+        .nest("/api/v1", api)
+        .route("/download/android", get(android_download))
+        .route("/overlay/front", get(overlay_front))
+        .with_state(state.clone());
     if let Some(dir) = state.cfg.server.web_dir.clone() {
         let index = dir.join("index.html");
         app = app.fallback_service(
@@ -378,6 +391,160 @@ async fn android_download(State(s): State<AppState>) -> Result<Response, ApiErro
         .into_response())
 }
 
+// ─── your data: tokens, reads, stream (api_data.rs) ─────────────────────────
+
+impl From<crate::api_data::DataError> for ApiError {
+    fn from(e: crate::api_data::DataError) -> Self {
+        use crate::api_data::DataError as D;
+        let (s, c) = match &e {
+            D::Unauthenticated => (StatusCode::UNAUTHORIZED, "unauthenticated"),
+            D::Scope(_) => (StatusCode::FORBIDDEN, "forbidden"),
+            D::Bad(_) => (StatusCode::BAD_REQUEST, "bad_request"),
+            D::Internal(e) => {
+                tracing::error!(error = %e, "internal error");
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal")
+            }
+        };
+        ApiError(s, c, e.to_string())
+    }
+}
+
+fn principal(
+    s: &AppState,
+    conn: &Connection,
+    headers: &axum::http::HeaderMap,
+) -> Result<crate::api_data::Principal, ApiError> {
+    Ok(crate::api_data::principal(conn, bearer(headers)?, now_ms(), s.session_ttl())?)
+}
+
+#[derive(Deserialize)]
+struct TokenIn {
+    name: String,
+    scopes: Vec<String>,
+}
+
+async fn tokens_create(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<TokenIn>,
+) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    let v = crate::api_data::create_token(&conn, &p, &b.name, &b.scopes, now_ms())?;
+    Ok((StatusCode::CREATED, Json(v)).into_response())
+}
+
+async fn tokens_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_data::list_tokens(&conn, &p)?))
+}
+
+async fn tokens_revoke(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    crate::api_data::revoke_token(&conn, &p, &id, now_ms())?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize, Default)]
+struct Range {
+    from: Option<i64>,
+    to: Option<i64>,
+    limit: Option<i64>,
+    /// EventSource can't send headers, so the stream (only) also takes `?token=`.
+    token: Option<String>,
+}
+
+async fn front_now(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_data::current_front(&conn, &p)?))
+}
+
+async fn front_switches(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<Range>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_data::switches(&conn, &p, q.from, q.to, q.limit)?))
+}
+
+async fn front_intervals(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<Range>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_data::intervals(&conn, &p, q.from, q.to)?))
+}
+
+async fn members_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_data::members(&conn, &p)?))
+}
+
+/// Server-sent events of the caller's own front (`stream` + `read:front`). The first event is the
+/// current front, then one per change.
+async fn stream(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<Range>,
+) -> Result<Response, ApiError> {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    let (account, first) = {
+        let conn = s.db();
+        let p = match q.token.as_deref() {
+            Some(t) => crate::api_data::principal(&conn, t, now_ms(), s.session_ttl())?,
+            None => principal(&s, &conn, &headers)?,
+        };
+        if !(p.allows("stream") && p.allows("read:front")) {
+            return Err(crate::api_data::DataError::Scope("stream").into());
+        }
+        let v = crate::api_data::current_front(&conn, &p)?;
+        (p.account_id.clone(), json!({"type": "front", "at": now_ms(), "front": v["front"], "since": v["since"]}))
+    };
+    let rx = s.events.subscribe();
+    let first = futures_util::stream::once(async move {
+        Ok::<_, std::convert::Infallible>(Event::default().event("front").data(first.to_string()))
+    });
+    let rest = futures_util::stream::unfold((rx, account), |(mut rx, account)| async move {
+        loop {
+            match rx.recv().await {
+                Ok((a, v)) if a == account => {
+                    return Some((Ok(Event::default().event("front").data(v.to_string())), (rx, account)));
+                }
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => return None,
+            }
+        }
+    });
+    Ok(Sse::new(futures_util::StreamExt::chain(first, rest)).keep_alive(KeepAlive::default()).into_response())
+}
+
+/// A transparent "who's fronting" pill for OBS: `/overlay/front?token=chorus_…` (API.md §6).
+async fn overlay_front() -> Response {
+    ([(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")], include_str!("../assets/overlay-front.html"))
+        .into_response()
+}
+
 async fn notifications(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -609,6 +776,20 @@ fn push(
 /// whose scopes changed). Call it while still holding the db lock so per-connection order matches
 /// seq order. `skip` is the device that pushed them (it already has them).
 pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Option<&str>) -> anyhow::Result<()> {
+    // the owner's live stream: one front event per account that just changed
+    let changed: BTreeSet<&str> = fresh
+        .iter()
+        .filter(|o| o.kind.starts_with("front."))
+        .filter_map(|o| o.scope.strip_prefix("account:"))
+        .collect();
+    for account in changed {
+        if s.events.receiver_count() > 0
+            && let Ok(v) = crate::api_data::current_front(conn, &crate::api_data::Principal::owner(account))
+        {
+            let event = json!({"type": "front", "at": now_ms(), "front": v["front"], "since": v["since"]});
+            let _ = s.events.send((account.to_string(), event));
+        }
+    }
     let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
     for (device, p) in peers.iter_mut() {
         // scope changes (e.g. someone was added to a space)

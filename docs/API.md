@@ -79,6 +79,12 @@ from the endpoint clears the registration.
 
 Writes through tokens are turned into ops server-side with the token's pseudo-device id.
 
+Implemented so far (M10.2, `api_data.rs`): scopes `read:front`, `read:members`, `stream`;
+`POST /tokens {name, scopes}` → `{id, token}` (shown once), `GET /tokens`, `DELETE /tokens/{id}` —
+from a signed-in device only (tokens can't mint tokens). Reads: `GET /front`, `/front/switches`,
+`/front/intervals`, `/members`. `GET /stream` sends `event: front` (current front first, then each
+change); EventSource clients pass `?token=`. `/overlay/front?token=…` is a transparent OBS pill.
+
 ## 3. Read endpoints
 
 ```
