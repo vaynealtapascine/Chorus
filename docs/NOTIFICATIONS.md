@@ -201,6 +201,16 @@ follower surface to its `surfaces` closure. A mutation that reveals one minute e
 | Own switches from other devices | off | "Switched to Kai (from phone)" on the PC browser. |
 | Sync issues | on | Rejected ops. |
 
+Implemented (M8.4, `activity.rs`), for other accounts in shared spaces and DMs:
+
+- The recipient's `pref` key `notify_channel:<channel id>` = `all` / `mentions` / `none` sets the
+  channel level. DMs default to `all`, other channels to `mentions`, and `all` adds a `message`
+  kind for plain messages.
+- `notify_chat` = `{mention, dm, reply, message}` holds the per-kind switches, all on by default.
+- The web sets the level in each channel's ⋯ menu, and the kinds under People.
+- Not yet: your own account's internal-space activity (member DMs, own switches from other
+  devices), per-member mention rules, and Android inline reply.
+
 Android: MessagingStyle notifications with member avatars as `Person`s, grouped per channel;
 inline reply (`RemoteInput`) sends as the current primary fronter (or the member the notification
 mentions, if Advanced "reply as mentioned member" is on) and works offline (queued op).
