@@ -109,6 +109,53 @@ async fn resume_range_and_stranger_denied() {
 }
 
 #[tokio::test]
+async fn shared_attachment_requires_public_structured_visibility() {
+    let s = Server::new().await;
+    let client = reqwest::Client::new();
+    let bytes = b"shared attachment";
+    let digest = hash(bytes);
+    let url = format!("{}/{digest}", s.base);
+    assert_eq!(
+        client
+            .put(&url)
+            .bearer_auth("alice-token")
+            .header("content-range", "bytes 0-16/17")
+            .body(bytes.as_slice())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        201
+    );
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("INSERT INTO space(id,owner_account_id,kind,created_at) VALUES ('s','alice','shared',0)", [])
+            .unwrap();
+        c.execute("INSERT INTO channel(id,space_id,kind,created_at) VALUES ('ch','s','text',0)", []).unwrap();
+        c.execute("INSERT INTO scope_access(account_id,scope) VALUES ('bob','space:s')", []).unwrap();
+        c.execute(
+            "INSERT INTO message(id,channel_id,account_id,occurred_at,text) VALUES ('m','ch','alice',0,'hello')",
+            [],
+        )
+        .unwrap();
+        c.execute("INSERT INTO attachment(id,account_id,blob_hash,created_at) VALUES ('a','alice',?1,0)", [&digest])
+            .unwrap();
+        c.execute(
+            "INSERT INTO item_attachment(owner_type,owner_id,attachment_id,position) VALUES ('message','m','a',0)",
+            [],
+        )
+        .unwrap();
+    }
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 200);
+    for (rule, expected) in
+        [(r#"{"mode":"all"}"#, 200), (r#"{"mode":"system_only"}"#, 403), (r#"{"mode":"members","member_ids":[]}"#, 403)]
+    {
+        s.state.db.lock().unwrap().execute("UPDATE message SET visibility=?1 WHERE id='m'", [rule]).unwrap();
+        assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), expected, "{rule}");
+    }
+}
+
+#[tokio::test]
 async fn mismatch_discards_only_partial_and_limit_is_enforced() {
     let s = Server::new().await;
     let client = reqwest::Client::new();

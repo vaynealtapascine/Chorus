@@ -239,21 +239,27 @@ fn accounts_in(conn: &Connection, space: &str) -> rusqlite::Result<Vec<Value>> {
 
 /// Author cards for a space the reader is in: its accounts, and the members of *other* accounts
 /// who wrote a message everyone in the space can read.
-const PUBLIC_AUTHOR_SOURCE: &str = "FROM channel c
- JOIN message m ON m.channel_id = c.id AND m.deleted_at IS NULL AND m.visibility IS NULL
+fn public_author_source() -> String {
+    format!(
+        "FROM channel c
+ JOIN message m ON m.channel_id = c.id AND m.deleted_at IS NULL AND {}
  JOIN (SELECT message_id, member_id FROM message_author
        UNION SELECT message_id, member_id FROM message_segment_author) au ON au.message_id = m.id
  JOIN member mb ON mb.id = au.member_id AND mb.deleted_at IS NULL
- WHERE c.deleted_at IS NULL";
+ WHERE c.deleted_at IS NULL",
+        crate::visibility::PUBLIC_MESSAGE_SQL
+    )
+}
 
 /// Match the author-card rule when deciding whether a reader may fetch another account's avatar.
 pub fn author_avatar_visible(conn: &Connection, viewer: &str, hash: &str) -> rusqlite::Result<bool> {
     conn.query_row(
         &format!(
-            "SELECT EXISTS(SELECT 1 {PUBLIC_AUTHOR_SOURCE}
+            "SELECT EXISTS(SELECT 1 {}
           AND mb.avatar_blob = ?1 AND mb.account_id != ?2
           AND EXISTS (SELECT 1 FROM scope_access sa
-                      WHERE sa.scope = 'space:' || c.space_id AND sa.account_id = ?2))"
+                      WHERE sa.scope = 'space:' || c.space_id AND sa.account_id = ?2))",
+            public_author_source()
         ),
         params![hash, viewer],
         |r| r.get(0),
@@ -266,7 +272,7 @@ pub fn authors(conn: &Connection, me: &str, space: &str) -> Result<Value, SpaceE
     }
     let mut st = conn.prepare_cached(&format!(
         "SELECT DISTINCT mb.id, mb.account_id, mb.name, mb.display_name, mb.pronouns, mb.color, mb.sigils, mb.avatar_blob
-         {PUBLIC_AUTHOR_SOURCE} AND c.space_id = ?1 AND mb.account_id != ?2"
+         {} AND c.space_id = ?1 AND mb.account_id != ?2", public_author_source()
     ))?;
     let members: Vec<Value> = st
         .query_map([space, me], |r| {

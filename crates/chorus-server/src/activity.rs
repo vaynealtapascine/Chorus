@@ -3,8 +3,7 @@
 //!
 //! Queued on live ingest of `message.send` (never on rebuild), delivered by the notifier loop
 //! within seconds, as an inbox row plus an encrypted push. The author's own account is never
-//! notified. Messages with a restricted `visibility` are skipped entirely until hidden messages
-//! (M5.7) define who may see them — better silent than leaking.
+//! notified. Restricted messages never create cross-account notifications.
 
 use std::collections::BTreeMap;
 
@@ -32,7 +31,7 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     }
     let Some(author) = o.account_id.as_deref() else { return Ok(()) };
     let p = &o.payload;
-    if p.get("visibility").is_some_and(|v| !v.is_null()) {
+    if !crate::visibility::is_public(p.get("visibility")) {
         return Ok(());
     }
     let channel_id = p.get("channel_id").and_then(Value::as_str).unwrap_or_default();

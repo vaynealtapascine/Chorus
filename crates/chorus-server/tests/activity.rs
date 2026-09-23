@@ -120,4 +120,22 @@ fn mentions_and_replies_notify_the_other_account_only() {
     hidden["visibility"] = json!({"mode": "members", "member_ids": [kai]});
     w.push(&a, "message.send", &space, &m4, hidden);
     assert_eq!(w.inbox(&b).len(), 1);
+
+    // Explicitly public visibility is as readable as the legacy unset value.
+    let m5 = new_id(NOW as u64, [54; 10]);
+    let ent = json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": june}]);
+    let mut public = msg("@June hello", &[&kai], ent);
+    public["visibility"] = json!({"mode": "all"});
+    w.push(&a, "message.send", &space, &m5, public);
+    assert_eq!(w.inbox(&b).len(), 2);
+
+    let m6 = new_id(NOW as u64, [55; 10]);
+    let mut aside = msg(
+        "@June aside",
+        &[&kai],
+        json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": june}]),
+    );
+    aside["visibility"] = json!({"mode": "system_only"});
+    w.push(&a, "message.send", &space, &m6, aside);
+    assert_eq!(w.inbox(&b).len(), 2);
 }

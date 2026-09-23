@@ -105,7 +105,7 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
         return Ok(true);
     }
     conn.query_row(
-        "SELECT EXISTS (
+        &format!("SELECT EXISTS (
            SELECT 1 FROM custom_emoji e WHERE e.blob_hash = ?1
            UNION ALL SELECT 1 FROM account a WHERE a.avatar_blob = ?1 AND a.id = ?2
            UNION ALL SELECT 1 FROM account a JOIN follow f ON
@@ -123,7 +123,7 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
               JOIN channel c ON c.id = m.channel_id AND c.deleted_at IS NULL
               JOIN scope_access sa ON sa.scope = 'space:' || c.space_id AND sa.account_id = ?2
               WHERE (a.blob_hash = ?1 OR a.thumb_blob_hash = ?1)
-                AND (m.visibility IS NULL OR m.visibility NOT LIKE '%system_only%')
+                AND {}
            UNION ALL SELECT 1 FROM member m
               JOIN follower_front_view fv ON fv.target_account_id = m.account_id AND fv.follower_account_id = ?2
               JOIN follow f ON f.target_account_id = m.account_id AND f.follower_account_id = ?2 AND f.status = 'active'
@@ -131,7 +131,7 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
                 AND EXISTS (SELECT 1 FROM json_each(fv.entries) je
                     WHERE json_extract(je.value, '$.subject_type') = 'member'
                       AND json_extract(je.value, '$.subject_id') = m.id)
-         )",
+         )", crate::visibility::PUBLIC_MESSAGE_SQL),
         params![hash, account],
         |r| r.get(0),
     )
