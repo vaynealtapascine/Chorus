@@ -164,6 +164,14 @@ class Chorus private constructor(private val ctx: Context) {
     /** Called on the store thread after each model rebuild (the widget refreshes itself here). */
     @Volatile var onModel: ((Model) -> Unit)? = null
 
+    /** A small private setting in the encrypted store (push keys and similar). */
+    suspend fun setting(key: String): String? = withContext(dispatcher) { store.get(key) }
+
+    suspend fun putSetting(key: String, value: String) = withContext(dispatcher) { store.put(key, value) }
+
+    /** The signed-in device, after the replica has loaded. */
+    suspend fun awaitDevice(): DeviceRecord? = withContext(dispatcher) { device }
+
     /** A fresh model, waiting for the replica to load (for the widget in a cold process). */
     suspend fun awaitModel(): Model = withContext(dispatcher) {
         val r = replica ?: return@withContext Model.Empty

@@ -23,8 +23,11 @@ object Api {
     private val JSON = "application/json".toMediaType()
 
     suspend fun post(base: String, path: String, body: JSONObject, bearer: String? = null): JSONObject =
+        call("POST", base, path, body, bearer)
+
+    suspend fun call(method: String, base: String, path: String, body: JSONObject?, bearer: String? = null): JSONObject =
         withContext(Dispatchers.IO) {
-            val req = Request.Builder().url("$base/api/v1$path").post(body.toString().toRequestBody(JSON))
+            val req = Request.Builder().url("$base/api/v1$path").method(method, body?.toString()?.toRequestBody(JSON))
             if (bearer != null) req.header("Authorization", "Bearer $bearer")
             http.newCall(req.build()).execute().use { r ->
                 val text = r.body?.string().orEmpty()
