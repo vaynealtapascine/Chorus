@@ -70,6 +70,10 @@ fn main() -> anyhow::Result<()> {
                 )?;
                 println!("dev invite: {}/i/{code}", cfg.server.public_url.trim_end_matches('/'));
             }
+            let fixed = chorus_server::auth::backfill_self_members(&conn, chorus_server::now_ms())?;
+            if fixed > 0 {
+                tracing::info!(accounts = fixed, "gave person accounts their self member (D-003)");
+            }
             let state = chorus_server::app::Shared::new(conn, cfg)?;
             tokio::runtime::Runtime::new()?.block_on(chorus_server::app::serve(state))?;
         }

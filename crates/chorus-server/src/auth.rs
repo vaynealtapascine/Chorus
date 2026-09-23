@@ -108,6 +108,8 @@ pub struct AccountIn {
 #[derive(Clone, Debug, Serialize)]
 pub struct Enrolled {
     pub account_id: String,
+    /// `system` or `person` (clients hide the member UI for a person, D-003).
+    pub kind: String,
     pub is_admin: bool,
     pub device_id: String,
     pub short_id: String,
@@ -205,6 +207,11 @@ pub fn redeem(
                 json!({"space_id": space, "kind": "text", "name": "general"}),
                 now,
             )?;
+        } else {
+            // A person account has exactly one member, themself (D-003), so authorship is always a
+            // member id; its member UI is hidden.
+            let name = a.display_name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| handle.clone());
+            ensure_self_member(&tx, &id, &name, now)?;
         }
         id
     };
@@ -223,9 +230,49 @@ pub fn redeem(
         params![device_id, account_id, short_id, device.name, device.platform, device.public_key, now],
     )?;
     let session = new_session(&tx, &device_id, now, session_ttl_ms)?;
-    let is_admin = tx.query_row("SELECT is_admin FROM account WHERE id = ?1", [&account_id], |r| r.get(0))?;
+    let (is_admin, kind) = tx
+        .query_row("SELECT is_admin, kind FROM account WHERE id = ?1", [&account_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
     tx.commit()?;
-    Ok(Enrolled { account_id, is_admin, device_id, short_id, session, expires_at: now + session_ttl_ms })
+    Ok(Enrolled { account_id, kind, is_admin, device_id, short_id, session, expires_at: now + session_ttl_ms })
+}
+
+/// Give a person account its self member if it has none (enrolment, and at start-up for accounts
+/// made before D-003 was implemented). Returns whether one was created.
+pub fn ensure_self_member(conn: &Connection, account: &str, name: &str, now: i64) -> anyhow::Result<bool> {
+    let has: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM member WHERE account_id = ?1 AND is_self AND deleted_at IS NULL)",
+        [account],
+        |r| r.get(0),
+    )?;
+    if has {
+        return Ok(false);
+    }
+    let member = id::new_id(now as u64, rand::random());
+    let name = if name.trim().is_empty() { "Me" } else { name.trim() };
+    ingest::server_op(
+        conn,
+        account,
+        "member.create",
+        &format!("account:{account}"),
+        Some(&member),
+        json!({"name": name, "is_self": true, "color": "#A07A5F"}),
+        now,
+    )?;
+    Ok(true)
+}
+
+/// Start-up repair: person accounts without their self member get one.
+pub fn backfill_self_members(conn: &Connection, now: i64) -> anyhow::Result<usize> {
+    let mut st = conn.prepare(
+        "SELECT a.id, COALESCE(NULLIF(trim(a.display_name), ''), a.handle, '') FROM account a
+         WHERE a.kind = 'person'
+           AND NOT EXISTS (SELECT 1 FROM member m WHERE m.account_id = a.id AND m.is_self AND m.deleted_at IS NULL)",
+    )?;
+    let rows: Vec<(String, String)> = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
+    for (id, name) in &rows {
+        ensure_self_member(conn, id, name, now)?;
+    }
+    Ok(rows.len())
 }
 
 fn new_session(conn: &Connection, device_id: &str, now: i64, ttl_ms: i64) -> anyhow::Result<String> {
@@ -350,6 +397,38 @@ pub(crate) mod tests {
         let mut c = crate::db::open_memory().unwrap();
         crate::db::migrate(&mut c).unwrap();
         c
+    }
+
+    #[test]
+    fn a_person_gets_exactly_one_self_member() {
+        let mut c = db();
+        let now = 1_790_000_000_000;
+        let code = create_invite(&c, InviteKind::Person, None, "cli", INVITE_TTL_MS, 1, now).unwrap();
+        let (_, pk) = key(3);
+        let dev = DeviceIn { name: "Phone".into(), platform: "android".into(), public_key: pk };
+        let acct = AccountIn { display_name: Some("Alex".into()), handle: Some("alex".into()) };
+        let e = redeem(&mut c, &code, &dev, Some(&acct), now, 1000).unwrap();
+        assert_eq!(e.kind, "person");
+        let selves = |c: &Connection| -> Vec<(String, bool)> {
+            c.prepare("SELECT name, is_self FROM member WHERE account_id = ?1")
+                .unwrap()
+                .query_map([&e.account_id], |r| Ok((r.get(0)?, r.get(1)?)))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect()
+        };
+        assert_eq!(selves(&c), [("Alex".to_string(), true)]);
+        // the start-up repair leaves it alone, and fixes an account that predates it
+        assert_eq!(backfill_self_members(&c, now).unwrap(), 0);
+        let old = id::new_id(now as u64, [4; 10]);
+        c.execute("INSERT INTO account (id, kind, handle, created_at) VALUES (?1, 'person', 'sam', 0)", [&old])
+            .unwrap();
+        ingest::grant(&c, &old, &format!("account:{old}")).unwrap();
+        assert_eq!(backfill_self_members(&c, now).unwrap(), 1);
+        assert_eq!(backfill_self_members(&c, now).unwrap(), 0);
+        let name: String =
+            c.query_row("SELECT name FROM member WHERE account_id = ?1 AND is_self", [&old], |r| r.get(0)).unwrap();
+        assert_eq!(name, "sam");
     }
 
     #[test]
