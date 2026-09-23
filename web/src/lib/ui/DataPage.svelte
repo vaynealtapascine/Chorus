@@ -10,6 +10,7 @@
     { id: 'read:front', label: 'Who is fronting, switches and front history' },
     { id: 'read:members', label: 'Member list' },
     { id: 'stream', label: 'Live stream (overlays)' },
+    { id: 'write:front', label: 'Log switches (NFC tags, Tasker, Home Assistant)' },
   ];
 
   let tokens = $state<Token[]>([]);
@@ -117,8 +118,8 @@
   <a class="back" href="#/">‹ Home</a>
   <h1 class="display">Your data</h1>
   <p class="hint">
-    Tokens let your own scripts, spreadsheets, Grafana or a stream overlay read <em>your</em> front history.
-    They're read-only and never see anyone else's data.
+    Tokens let your own scripts, spreadsheets, Grafana or a stream overlay read <em>your</em> front history,
+    and an NFC tag or Tasker log a switch. They only ever reach your own account.
   </p>
 
   <form class="card" onsubmit={create}>
@@ -141,6 +142,9 @@
         <span>OBS browser source: <code>{overlay(fresh.token)}</code></span>
       {/if}
       <span class="hint">Scripts: <code>curl -H "Authorization: Bearer {fresh.token.slice(0, 12)}…" {apiBase()}/front</code></span>
+      {#if fresh.scopes.includes('write:front')}
+        <span class="hint">Switch: <code>POST {apiBase()}/front/switch {'{"entries": [{"member": "Kai"}]}'}</code> (empty entries = switch out)</span>
+      {/if}
     </div>
   {/if}
 

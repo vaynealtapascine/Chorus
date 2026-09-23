@@ -14,18 +14,20 @@ use serde_json::{Value, json};
 
 use crate::auth;
 
-pub const SCOPES: &[&str] = &["read:front", "read:members", "stream"];
+pub const SCOPES: &[&str] = &["read:front", "read:members", "stream", "write:front"];
 
 /// Who is calling: a device session (everything) or an API token (its scopes).
 pub struct Principal {
     pub account_id: String,
     scopes: Option<Vec<String>>,
+    /// The API token's id, when it is one (writes are attributed to `token:<id>`).
+    pub token_id: Option<String>,
 }
 
 impl Principal {
     /// The account itself (server-internal use, e.g. building stream events).
     pub fn owner(account_id: &str) -> Principal {
-        Principal { account_id: account_id.into(), scopes: None }
+        Principal { account_id: account_id.into(), scopes: None, token_id: None }
     }
 
     pub fn allows(&self, scope: &str) -> bool {
@@ -64,20 +66,20 @@ impl From<rusqlite::Error> for DataError {
 /// Resolve a bearer credential: an API token (`chorus_…`) or a device session.
 pub fn principal(conn: &Connection, bearer: &str, now: i64, session_ttl: i64) -> Result<Principal, DataError> {
     if bearer.starts_with("chorus_") {
-        let row: Option<(String, String)> = conn
+        let row: Option<(String, String, String)> = conn
             .query_row(
-                "SELECT account_id, scopes FROM api_token WHERE token_hash = ?1 AND revoked_at IS NULL",
+                "SELECT account_id, scopes, id FROM api_token WHERE token_hash = ?1 AND revoked_at IS NULL",
                 [auth::hash(bearer)],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
-        let (account_id, scopes) = row.ok_or(DataError::Unauthenticated)?;
+        let (account_id, scopes, id) = row.ok_or(DataError::Unauthenticated)?;
         conn.execute("UPDATE api_token SET last_used_at = ?2 WHERE token_hash = ?1", params![auth::hash(bearer), now])?;
         let scopes: Vec<String> = serde_json::from_str(&scopes).unwrap_or_default();
-        return Ok(Principal { account_id, scopes: Some(scopes) });
+        return Ok(Principal { account_id, scopes: Some(scopes), token_id: Some(id) });
     }
     let who = auth::authenticate(conn, bearer, now, session_ttl).map_err(|_| DataError::Unauthenticated)?;
-    Ok(Principal { account_id: who.account_id, scopes: None })
+    Ok(Principal { account_id: who.account_id, scopes: None, token_id: None })
 }
 
 fn random_token() -> String {

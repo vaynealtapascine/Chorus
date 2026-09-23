@@ -103,6 +103,7 @@ pub fn router(state: AppState) -> Router {
         .route("/groups", get(groups_list))
         .route("/fields", get(fields_list))
         .route("/states", get(states_list))
+        .route("/front/switch", post(front_switch))
         .route("/front/daily", get(front_daily))
         .route("/front/reviews", get(front_reviews))
         .route("/me", get(me))
@@ -524,6 +525,23 @@ async fn members_list(
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
     Ok(Json(crate::api_data::members(&conn, &p)?))
+}
+
+/// Log a switch from a script, NFC tag or Tasker (`write:front`, api_writes.rs).
+async fn front_switch(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<crate::api_writes::SwitchIn>,
+) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    let o = crate::api_writes::switch(&conn, &p, &b, now_ms())?;
+    fan_out(&s, &conn, std::slice::from_ref(&o), None)?;
+    let mut v = json!({"switch_id": o.entity_id, "op_id": o.id, "occurred_at": o.occurred_at});
+    if p.allows("read:front") {
+        v["front"] = crate::api_data::current_front(&conn, &p)?["front"].take();
+    }
+    Ok((StatusCode::CREATED, Json(v)).into_response())
 }
 
 // ─── more reads (api_reads.rs) ───────────────────────────────────────────────

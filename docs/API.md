@@ -79,7 +79,8 @@ from the endpoint clears the registration.
 
 Writes through tokens are turned into ops server-side with the token's pseudo-device id.
 
-Implemented so far (M10.2, `api_data.rs`): scopes `read:front`, `read:members`, `stream`;
+Implemented so far (M10.2, `api_data.rs`): scopes `read:front`, `read:members`, `stream`,
+`write:front` (see §4);
 `POST /tokens {name, scopes}` → `{id, token}` (shown once), `GET /tokens`, `DELETE /tokens/{id}` —
 from a signed-in device only (tokens can't mint tokens). Reads: `GET /front`, `/front/switches`,
 `/front/intervals`, `/members`. `GET /stream` sends `event: front` (current front first, then each
@@ -161,6 +162,21 @@ POST /invites           (admin) {kind, expires_in_s, max_uses}  → {url, qr_svg
 ```
 
 `format: "markup"` parses Chorus markup with the same core parser the apps use.
+
+**`POST /front/switch`** is implemented (`api_writes.rs`). The body is
+`{entries, occurred_at?, note?, notify?}`:
+
+- **Entries:** each entry is `{subject_type, subject_id}` or, for scripts, exactly one of
+  `{member: "Kai"}`, `{group: "…"}` or `{state: "…"}`. Names match case-insensitively on name or
+  display name, and an ambiguous name is a 400. Each entry may also give `level` (default `front`)
+  and `is_primary`; the first fronting entry becomes primary if none is.
+- **Switching out:** empty `entries`.
+- **`occurred_at`:** a typed time (`TimeSource::User`), at most a minute ahead.
+
+The switch becomes an ordinary `front.switch` op attributed to `token:<token id>` (or to `server`
+from a session), so devices, followers, the stream and webhooks see it like a switch from the app.
+The answer is `201 {switch_id, op_id, occurred_at}`, plus `front` if the caller may `read:front`.
+`POST /channels/{id}/messages` waits for M5.7 visibility.
 
 ## 5. Blobs
 

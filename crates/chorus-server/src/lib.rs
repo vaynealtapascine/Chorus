@@ -3,6 +3,7 @@
 pub mod activity;
 pub mod api_data;
 pub mod api_reads;
+pub mod api_writes;
 pub mod app;
 pub mod auth;
 pub mod blobs;

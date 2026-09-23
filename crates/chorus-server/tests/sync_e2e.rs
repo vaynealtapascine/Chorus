@@ -657,3 +657,71 @@ async fn rest_reads_cover_members_groups_fields_and_days() {
     assert_eq!(me["scopes"], json!(["read:members"]));
     assert!(me["devices"].is_null());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_write_token_logs_switches_by_name() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 71, "stars").await;
+    let mut phone = Device::new(&sys, 71);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct = phone.scope("account:");
+    let kai = new_id(1, [72; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    phone.create("member.create", &acct, &new_id(2, [73; 10]), json!({"name": "Rin"})).await;
+    phone.create("member.create", &acct, &new_id(3, [74; 10]), json!({"name": "rin"})).await;
+    phone.drain(Q).await;
+
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let session = sys["session"].as_str().unwrap().to_string();
+    let mint = |scopes: Value| {
+        let (http, url, session) = (http.clone(), url("/tokens"), session.clone());
+        async move {
+            let v: Value = http
+                .post(url)
+                .bearer_auth(session)
+                .json(&json!({"name": "nfc", "scopes": scopes}))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            v["token"].as_str().unwrap().to_string()
+        }
+    };
+    let writer = mint(json!(["write:front"])).await;
+    let reader = mint(json!(["read:front"])).await;
+    let post = |token: String, body: Value| {
+        let (http, url) = (http.clone(), url("/front/switch"));
+        async move {
+            let r = http.post(url).bearer_auth(token).json(&body).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap_or(Value::Null))
+        }
+    };
+
+    assert_eq!(post(reader.clone(), json!({"entries": [{"member": "Kai"}]})).await.0, 403);
+    assert_eq!(post(writer.clone(), json!({"entries": [{"member": "Nobody"}]})).await.0, 400);
+    assert_eq!(post(writer.clone(), json!({"entries": [{"member": "RIN"}]})).await.0, 400, "ambiguous");
+    assert_eq!(post(writer.clone(), json!({"entries": [{"subject_type": "member", "subject_id": "x"}]})).await.0, 400);
+    let future = chorus_server::now_ms() + 3_600_000;
+    assert_eq!(post(writer.clone(), json!({"entries": [], "occurred_at": future})).await.0, 400);
+
+    let (st, v) = post(writer.clone(), json!({"entries": [{"member": "kai"}], "note": "tapped the tag"})).await;
+    assert_eq!(st, 201);
+    assert!(v.get("front").is_none(), "a write-only token doesn't read the front back");
+    // the phone gets it like any other switch, attributed to the token's pseudo-device
+    phone.drain(Q).await;
+    let op = phone.store.confirmed().find(|o| o.kind == "front.switch").unwrap().clone();
+    assert!(op.device_id.as_deref().unwrap().starts_with("token:"));
+    assert_eq!(op.payload["entries"][0]["subject_id"], kai.as_str());
+    assert_eq!(op.payload["entries"][0]["is_primary"], true);
+    let front: Value = http.get(url("/front")).bearer_auth(&reader).send().await.unwrap().json().await.unwrap();
+    assert_eq!(front["front"][0]["name"], "Kai");
+
+    // a device session may switch out through the same endpoint and reads the result
+    let (st, v) = post(session.clone(), json!({"entries": []})).await;
+    assert_eq!(st, 201);
+    assert_eq!(v["front"].as_array().unwrap().len(), 0);
+}
