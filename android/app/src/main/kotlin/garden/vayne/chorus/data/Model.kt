@@ -119,8 +119,32 @@ class Model(
             Entry(e.getString("subject_type"), e.getString("subject_id"), e.optString("level", "front"), e.optBoolean("is_primary"))
         }
 
-        fun parse(json: String, accountId: String): Model {
-            val p = JSONObject(json)
+        fun parse(json: String, accountId: String): Model = parse(JSONObject(json), accountId)
+
+        /**
+         * Apply a projection delta (core projector.rs `Delta`) to a cached projection object in
+         * place: only changed rows/sets/fronts travel across the FFI (SPEC §9).
+         */
+        fun applyDelta(p: JSONObject, d: JSONObject) {
+            for (section in listOf("rows", "sets")) {
+                val changes = d.optJSONObject(section) ?: continue
+                val target = p.optJSONObject(section) ?: JSONObject().also { p.put(section, it) }
+                for (table in changes.keys()) {
+                    val c = changes.getJSONObject(table)
+                    val t = target.optJSONObject(table) ?: JSONObject().also { target.put(table, it) }
+                    for (k in c.keys()) if (c.isNull(k)) t.remove(k) else t.put(k, c.get(k))
+                    if (t.length() == 0) target.remove(table)
+                }
+            }
+            for (section in listOf("fronts", "reviews")) {
+                val changes = d.optJSONObject(section) ?: continue
+                val target = p.optJSONObject(section) ?: JSONObject().also { p.put(section, it) }
+                for (k in changes.keys()) if (changes.isNull(k)) target.remove(k) else target.put(k, changes.get(k))
+            }
+            p.put("opaque", d.optInt("opaque"))
+        }
+
+        fun parse(p: JSONObject, accountId: String): Model {
             val members = rows(p, "member")
                 .filter { (_, f) -> !f.present("deleted_at") }
                 .map { (id, f) ->

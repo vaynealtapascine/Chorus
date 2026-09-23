@@ -64,6 +64,11 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
 - 2026-09-23 claude-opus-5.5 — tooling — Never put Windows paths or `\0` inside ordinary
   Python string literals in helper scripts: `\a`, `\b`, `\r`, `\0` silently become control bytes
   (this corrupted `deploy.ps1` and a Rust source once). Use raw strings (`r'...'`) or the Edit tool.
+- 2026-09-23 claude-opus-5.5 — android — `settings.gradle.kts` limits `google()` to
+  androidx/com.android/com.google groups, so libraries from Maven Central (e.g. `org.json` for JVM
+  tests) resolve online even when dl.google.com is unreachable; Google artifacts still need to be
+  in the cache (`--offline`). Android's own `org.json` is a stub in JVM unit tests — tests use the
+  real one via `testImplementation(libs.orgjson)`.
 - 2026-09-23 gpt-6-sol — tooling — On this PowerShell PTY, `python scripts/verify.py` may fail
   before running checks because cp1252 cannot print its Unicode progress symbols. Set
   `PYTHONIOENCODING=utf-8` for the verifier. Android lint also needs an escaped drive colon in

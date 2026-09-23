@@ -155,11 +155,23 @@ class Chorus private constructor(private val ctx: Context) {
             rebuildPending.set(false)
             val r = replica ?: return@launch
             val dev = device ?: return@launch
-            val next = Model.parse(r.projection(), dev.accountId)
+            // only what changed crosses the FFI; the first time, the whole projection
+            val d = JSONObject(r.projectionDelta())
+            val cached = projectionCache
+            val p = if (cached == null || d.optBoolean("full")) {
+                JSONObject(r.projection()).also { r.projectionDelta() }
+            } else {
+                cached.also { Model.applyDelta(it, d) }
+            }
+            projectionCache = p
+            val next = Model.parse(p, dev.accountId)
             _model.value = next
             onModel?.invoke(next)
         }
     }
+
+    /** The projection as last applied (store thread only). */
+    private var projectionCache: JSONObject? = null
 
     /** Called on the store thread after each model rebuild (the widget refreshes itself here). */
     @Volatile var onModel: ((Model) -> Unit)? = null

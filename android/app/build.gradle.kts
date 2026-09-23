@@ -52,6 +52,8 @@ dependencies {
     implementation(libs.androidx.sqlite)
     implementation(libs.work.runtime)
     testImplementation(libs.junit)
+    // the real org.json for JVM tests (Android's is a stub there)
+    testImplementation(libs.orgjson)
 }
 
 kapt {
