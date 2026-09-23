@@ -9,3 +9,4 @@ local.properties
 .idea/
 /data-dev-sol
 /sol-dev.toml
+/crates/chorus-server/data/
