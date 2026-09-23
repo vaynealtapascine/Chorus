@@ -757,9 +757,8 @@ pub fn follower_view_at(conn: &Connection, follower: &str, target: &str, now: i6
     Ok(Some(v))
 }
 
-/// One revealed state: when it was revealed, its (fuzzed) start, and who was shown.
+/// One revealed state: its (fuzzed) start and who was shown.
 struct Logged {
-    revealed_at: i64,
     displayed: notify::Displayed,
     entries: Vec<Shown>,
 }
@@ -770,22 +769,22 @@ const HISTORY_ITEMS: usize = 50;
 
 fn revealed_log(conn: &Connection, follower: &str, target: &str) -> anyhow::Result<Vec<Logged>> {
     let mut st = conn.prepare_cached(
-        "SELECT revealed_at, displayed, entries FROM follower_front_log
+        "SELECT displayed, entries FROM follower_front_log
          WHERE follower_account_id = ?1 AND target_account_id = ?2
            AND revealed_at >= (SELECT max(revealed_at) FROM follower_front_log
                                WHERE follower_account_id = ?1 AND target_account_id = ?2) - ?3
          ORDER BY revealed_at, rowid",
     )?;
     let rows = st.query_map(params![follower, target, HISTORY_DAYS * 86_400_000], |r| {
-        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
     })?;
     let mut out = Vec::new();
     for r in rows {
-        let (revealed_at, displayed, entries) = r?;
+        let (displayed, entries) = r?;
         let (Ok(displayed), Ok(entries)) = (serde_json::from_str(&displayed), serde_json::from_str(&entries)) else {
             continue;
         };
-        out.push(Logged { revealed_at, displayed, entries });
+        out.push(Logged { displayed, entries });
     }
     Ok(out)
 }
@@ -803,7 +802,7 @@ fn history_of(log: &[Logged]) -> Value {
         if last.as_ref() == Some(&key) {
             continue;
         }
-        items.push(json!({"entries": names(&l.entries), "time": precision_of(&Some(l.displayed.clone()))}));
+        items.push(json!({"entries": names(&l.entries), "time": precision_of(&Some(l.displayed))}));
         last = Some(key);
     }
     items.reverse();
