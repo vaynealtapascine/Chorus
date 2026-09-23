@@ -61,3 +61,8 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   before running checks because cp1252 cannot print its Unicode progress symbols. Set
   `PYTHONIOENCODING=utf-8` for the verifier. Android lint also needs an escaped drive colon in
   ignored `android/local.properties`, such as `sdk.dir=C\:/Users/pcuser/AppData/Local/Android/Sdk`.
+- 2026-09-23 gpt-6-sol — emoji — Retired custom emoji still need their blob readable to every
+  authenticated account: text entities and reactions store a stable emoji ID and must keep
+  rendering after a name is retired or reused. The active `/emoji` catalogue excludes retired
+  rows, while sync keeps the tombstoned row. Existing web device records lack `is_admin`; the
+  client renews their signed session once to learn it before showing the emoji manager.
