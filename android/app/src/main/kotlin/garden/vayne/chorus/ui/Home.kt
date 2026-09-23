@@ -84,6 +84,8 @@ fun Home(chorus: Chorus, model: Model) {
     val undo by Front.undo.collectAsState()
     val actions = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
+    var switcherOpen by remember { mutableStateOf(false) }
+    if (switcherOpen) Switcher(chorus, model) { switcherOpen = false }
 
     // the mode resets to Replace 30 s after last use (CLIENTS.md §3.2)
     LaunchedEffect(modeUsed) {
@@ -108,7 +110,13 @@ fun Home(chorus: Chorus, model: Model) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.padding(horizontal = 16.dp),
     ) {
-        item(span = { GridItemSpan(maxLineSpan) }) { FrontCard(model) }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Column {
+                FrontCard(model)
+                Text("Open switcher…", color = p.accent, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clickable { switcherOpen = true }.padding(vertical = 10.dp))
+            }
+        }
         item(span = { GridItemSpan(maxLineSpan) }) {
             undo?.let { u ->
                 Row(

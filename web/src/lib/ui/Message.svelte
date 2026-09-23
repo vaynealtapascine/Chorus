@@ -33,6 +33,7 @@
     speaker,
     onreact,
     emojiById,
+    cwAutoExpand,
   }: {
     m: MessageRow;
     cont: boolean;
@@ -56,10 +57,13 @@
     speaker: string | null;
     onreact: (emoji: string, on: boolean) => void;
     emojiById: Map<string, EmojiRow>;
+    cwAutoExpand: boolean;
   } = $props();
 
   const PALETTE = ['💜', '👍', '😂', '🥹', '🎉', '😢', '👀', '🔥'];
   let palette = $state(false);
+  let cwExpanded = $state<boolean | null>(null);
+  const showBody = $derived(!m.cw || (cwExpanded ?? cwAutoExpand));
 
   const color = (id: string) => core.adaptColor(people.get(id)?.color ?? '#A09184', dark);
   const nameOf = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
@@ -94,20 +98,20 @@
 </script>
 
 {#if m.deleted}
-  <div class="msg deleted">
+  <div class="msg deleted" data-message-id={m.id}>
     Message deleted{#if mine}<button class="link" onclick={onrestore}>Restore</button>{/if}
     {#if thread}<button class="link" onclick={onthread}>Open thread · {thread.replyCount} {thread.replyCount === 1 ? 'reply' : 'replies'}</button>{/if}
   </div>
 {:else}
-  <div class="msg" class:cont class:pinned={m.pinned} class:selected>
+  <div class="msg" class:cont class:pinned={m.pinned} class:selected data-message-id={m.id}>
     {#if replied}
       <div class="replybar">
         ↪ <span style="color: {color(replied.authors[0] ?? '').name}">{replied.authors.map(nameOf).join(' & ')}</span>
         {#if replied.channel_id !== m.channel_id && replied.channel_name}<span class="elsewhere">in #{replied.channel_name}</span>{/if}
-        <span class="snip">{replied.deleted ? 'deleted message' : replied.text.slice(0, 80)}</span>
+        <span class="snip">{replied.deleted ? 'deleted message' : replied.cw ? `Content warning: ${replied.cw}` : replied.text.slice(0, 80)}</span>
       </div>
     {/if}
-    {#if !cont || replied || selecting}
+    {#if !cont || replied || selecting || m.cw}
       <div class="head">
         {#if selecting}<button class="select-toggle" aria-label={selected ? 'Deselect message' : 'Select message'} aria-pressed={selected} onclick={onselect}>{selected ? '☑' : '□'}</button>{/if}
         <span class="avatars">
@@ -123,7 +127,12 @@
         {#if m.pinned}<span class="tag">pinned</span>{/if}
       </div>
     {/if}
-    <div class="body" bind:this={body}>
+    {#if m.cw}
+      <button class="cw-toggle" aria-expanded={showBody} onclick={() => (cwExpanded = !showBody)}>
+        Content warning: {m.cw} · {showBody ? 'Hide content' : 'Show content'}
+      </button>
+    {/if}
+    {#if showBody}<div class="body" bind:this={body}>
       {#if m.quote}
         {#if 'items' in m.quote}
           {#each m.quote.items as q, i (`${q.message_id}:${i}`)}
@@ -187,7 +196,7 @@
           <span>{thread.replyCount ? `${thread.replyCount} ${thread.replyCount === 1 ? 'reply' : 'replies'}` : 'Thread started'} · Open thread</span>
         </button>
       {/if}
-    </div>
+    </div>{/if}
     {#if palette}
       <div class="palette" role="listbox" aria-label="React">
         {#each PALETTE as e (e)}
@@ -215,6 +224,7 @@
 {/if}
 
 <style>
+  .cw-toggle { display: block; margin: var(--s-2) 0; padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); cursor: pointer; text-align: left; font: inherit; }
   .msg {
     position: relative;
     padding: var(--s-3) var(--s-2) 2px;

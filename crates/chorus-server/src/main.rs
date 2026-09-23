@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use chorus_server::{config::Config, db};
+use chorus_server::{backup, config::Config, db, exports};
 
 #[derive(Parser)]
 #[command(name = "chorus-server", version, about = "Chorus server")]
@@ -29,6 +29,29 @@ enum Cmd {
     Check,
     /// Rebuild every projection from the op log.
     Rebuild,
+    /// Take an online SQLite and blob snapshot.
+    Backup {
+        /// Snapshot parent directory (defaults to backup.dir).
+        #[arg(long)]
+        to: Option<PathBuf>,
+    },
+    /// Verify a snapshot and restore it into a directory that does not exist yet.
+    Restore {
+        #[arg(long)]
+        from: PathBuf,
+        #[arg(long)]
+        into: PathBuf,
+    },
+    /// Export one account's op log, CSV tables or filtered SQLite copy.
+    Export {
+        #[arg(long)]
+        account: String,
+        #[arg(long, value_enum)]
+        kind: ExportKind,
+        /// Output directory; defaults to a new directory under data/exports.
+        #[arg(long)]
+        to: Option<PathBuf>,
+    },
     /// Create an invite link for a new system, person or device.
     Invite {
         #[arg(long, value_enum, default_value = "system")]
@@ -49,6 +72,13 @@ enum InviteArg {
     System,
     Person,
     Device,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum ExportKind {
+    Full,
+    Csv,
+    Sqlite,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -93,6 +123,54 @@ fn main() -> anyhow::Result<()> {
             let t = std::time::Instant::now();
             let n = chorus_server::project::rebuild(&mut conn)?;
             println!("re-projected {n} ops in {:.1?}", t.elapsed());
+        }
+        Cmd::Backup { to } => {
+            let snapshot = backup::create(&cfg, to.as_deref())?;
+            println!("{}", snapshot.display());
+            if to.is_none() {
+                backup::rotate(&cfg)?;
+            }
+        }
+        Cmd::Restore { from, into } => {
+            backup::restore(&from, &into)?;
+            println!("restored to {}", into.display());
+        }
+        Cmd::Export { account, kind, to } => {
+            let conn = db::open(&cfg.db_path())?;
+            let exists: bool =
+                conn.query_row("SELECT EXISTS(SELECT 1 FROM account WHERE id = ?1)", [&account], |r| r.get(0))?;
+            anyhow::ensure!(exists, "account does not exist: {account}");
+            let out = to.unwrap_or_else(|| {
+                cfg.server.data_dir.join("exports").join(format!(
+                    "{}-{}-{:08x}",
+                    account,
+                    chorus_server::now_ms(),
+                    rand::random::<u32>()
+                ))
+            });
+            std::fs::create_dir_all(&out)?;
+            let write = |name: &str, bytes: Vec<u8>| -> anyhow::Result<()> {
+                use std::io::Write as _;
+                let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(out.join(name))?;
+                file.write_all(&bytes)?;
+                file.sync_all()?;
+                Ok(())
+            };
+            match kind {
+                ExportKind::Full => write("ops.jsonl", exports::ops_jsonl(&conn, &account)?)?,
+                ExportKind::Csv => {
+                    for name in exports::CSV_NAMES {
+                        write(&format!("{name}.csv"), exports::csv(&conn, &account, name)?.expect("known CSV"))?;
+                    }
+                }
+                ExportKind::Sqlite => {
+                    write(
+                        "account.sqlite",
+                        exports::sqlite_copy(&conn, &account, &cfg.server.data_dir.join("export-work"))?,
+                    )?;
+                }
+            }
+            println!("{}", out.display());
         }
         Cmd::Invite { kind, account, days, uses } => {
             use chorus_server::auth::{self, InviteKind};

@@ -98,6 +98,9 @@ pub fn router(state: AppState) -> Router {
         .route("/notifications", get(notifications))
         .route("/tokens", get(tokens_list).post(tokens_create))
         .route("/tokens/{id}", delete(tokens_revoke))
+        .route("/exports/ops.jsonl", get(export_ops))
+        .route("/exports/csv/{name}", get(export_csv))
+        .route("/exports/account.sqlite", get(export_sqlite))
         .route("/webhooks", get(webhooks_list).post(webhooks_create))
         .route("/webhooks/{id}", put(webhooks_update).delete(webhooks_remove))
         .route("/webhooks/{id}/test", post(webhooks_test))
@@ -112,6 +115,10 @@ pub fn router(state: AppState) -> Router {
         .route("/front/switch", post(front_switch))
         .route("/front/daily", get(front_daily))
         .route("/front/reviews", get(front_reviews))
+        .route("/search/messages", get(search_messages))
+        .route("/messages/{id}", get(search_message))
+        .route("/posts", get(posts_list))
+        .route("/posts/{id}", get(post_one))
         .route("/me", get(me))
         .route("/stream", get(stream))
         .route("/spaces", get(spaces_list).post(spaces_create))
@@ -486,6 +493,64 @@ fn principal(
     Ok(crate::api_data::principal(conn, bearer(headers)?, now_ms(), s.session_ttl())?)
 }
 
+async fn export_ops(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    if !p.allows("export") {
+        return Err(crate::api_data::DataError::Scope("export").into());
+    }
+    let bytes = crate::exports::ops_jsonl(&conn, &p.account_id)?;
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "application/x-ndjson"),
+            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"ops.jsonl\""),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+async fn export_csv(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(name): Path<String>,
+) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    if !p.allows("export") {
+        return Err(crate::api_data::DataError::Scope("export").into());
+    }
+    let bytes = crate::exports::csv(&conn, &p.account_id, &name)?
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "unknown CSV export".into()))?;
+    let mut response = bytes.into_response();
+    response
+        .headers_mut()
+        .insert(axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("text/csv; charset=utf-8"));
+    response.headers_mut().insert(
+        axum::http::header::CONTENT_DISPOSITION,
+        axum::http::HeaderValue::from_str(&format!("attachment; filename=\"{name}.csv\""))
+            .map_err(anyhow::Error::from)?,
+    );
+    Ok(response)
+}
+
+async fn export_sqlite(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    if !p.allows("export") {
+        return Err(crate::api_data::DataError::Scope("export").into());
+    }
+    let bytes = crate::exports::sqlite_copy(&conn, &p.account_id, &s.cfg.server.data_dir.join("export-work"))?;
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "application/vnd.sqlite3"),
+            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"account.sqlite\""),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
 #[derive(Deserialize)]
 struct TokenIn {
     name: String,
@@ -570,6 +635,59 @@ async fn members_list(
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
     Ok(Json(crate::api_data::members(&conn, &p)?))
+}
+
+async fn search_messages(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<crate::search::MessageQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::search::messages(&conn, &p, &q)?))
+}
+
+async fn search_message(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    let message = crate::search::message_by_id(&conn, &p, &id)?
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "message unavailable".into()))?;
+    Ok(Json(message))
+}
+
+/// Posts are account-scoped data with an explicit audience. Only signed-in devices can use the
+/// cross-account view; API tokens remain limited to their own-account data APIs.
+async fn posts_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<crate::posts::PostQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    Ok(Json(crate::posts::list(&conn, &me.account_id, &q)?))
+}
+
+#[derive(Deserialize)]
+struct PostDetailQuery {
+    depth: Option<usize>,
+}
+
+async fn post_one(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<PostDetailQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let mut item = crate::posts::one(&conn, &me.account_id, &id)?
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "post unavailable".into()))?;
+    item["replies"] = json!(crate::posts::replies(&conn, &me.account_id, &id, q.depth.unwrap_or(1).min(3))?);
+    Ok(Json(item))
 }
 
 /// Log a switch from a script, NFC tag or Tasker (`write:front`, api_writes.rs).
@@ -981,20 +1099,39 @@ fn send(tx: &mpsc::UnboundedSender<Frame>, f: Frame) {
 }
 
 /// Catch-up for one scope, queued on `tx` (caller holds the db lock, so nothing can interleave).
-fn catch_up(conn: &Connection, tx: &mpsc::UnboundedSender<Frame>, scope: &str, after: i64) -> anyhow::Result<()> {
+fn catch_up(
+    conn: &Connection,
+    tx: &mpsc::UnboundedSender<Frame>,
+    account: &str,
+    scope: &str,
+    after: i64,
+) -> anyhow::Result<()> {
     let mut cursor = after;
     loop {
         let ops = oplog::scope_after(conn, scope, cursor, PAGE_OPS)?;
         let Some(last) = ops.last().and_then(|o| o.seq) else { break };
         cursor = last;
         let n = ops.len();
-        send(tx, Frame::Ops { scope: scope.into(), ops, to: last });
+        let visible = ops
+            .into_iter()
+            .filter_map(|o| match crate::visibility::op_visible_to(conn, account, &o) {
+                Ok(true) => Some(Ok(o)),
+                Ok(false) => None,
+                Err(e) => Some(Err(e)),
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        if !visible.is_empty() {
+            send(tx, Frame::Ops { scope: scope.into(), ops: visible, to: last });
+        }
         if n < PAGE_OPS {
             break;
         }
     }
     let to = oplog::max_seq(conn, scope)?;
-    send(tx, Frame::Caught { scope: scope.into(), to, digest: oplog::digest(conn, scope)? });
+    send(
+        tx,
+        Frame::Caught { scope: scope.into(), to, digest: crate::visibility::visible_digest(conn, account, scope)? },
+    );
     Ok(())
 }
 
@@ -1054,7 +1191,7 @@ async fn run_socket(s: AppState, socket: WebSocket) {
             (Some((_, sess)), Frame::Pull { scope, after }) => {
                 let conn = s.db();
                 if ingest::can_access(&conn, &sess.account_id, &scope).unwrap_or(false) {
-                    catch_up(&conn, &tx, &scope, after)
+                    catch_up(&conn, &tx, &sess.account_id, &scope, after)
                 } else {
                     Ok(())
                 }
@@ -1113,7 +1250,7 @@ fn hello(
     );
     if !reconcile {
         for sc in &scopes {
-            catch_up(&conn, tx, sc, *cursors.get(sc).unwrap_or(&0))?;
+            catch_up(&conn, tx, &who.account_id, sc, *cursors.get(sc).unwrap_or(&0))?;
         }
     }
     // registered while still holding the db lock: live ops can't overtake the catch-up
@@ -1178,6 +1315,14 @@ pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Optio
         }),
         Err(e) => tracing::error!(error = %e, "webhooks: can't build deliveries"),
     }
+    let mut deliver: BTreeMap<i64, Op> = fresh.iter().filter_map(|o| o.seq.map(|seq| (seq, o.clone()))).collect();
+    for o in fresh {
+        for earlier in crate::visibility::backfill_for_public_send(conn, o)? {
+            if let Some(seq) = earlier.seq {
+                deliver.entry(seq).or_insert(earlier);
+            }
+        }
+    }
     let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
     for (device, p) in peers.iter_mut() {
         // scope changes (e.g. someone was added to a space)
@@ -1192,8 +1337,10 @@ pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Optio
             continue;
         }
         let mut by_scope: BTreeMap<&str, Vec<Op>> = BTreeMap::new();
-        for o in fresh.iter().filter(|o| p.scopes.contains(&o.scope)) {
-            by_scope.entry(o.scope.as_str()).or_default().push(o.clone());
+        for o in deliver.values().filter(|o| p.scopes.contains(&o.scope)) {
+            if crate::visibility::op_visible_to(conn, &p.account, o)? {
+                by_scope.entry(o.scope.as_str()).or_default().push(o.clone());
+            }
         }
         for (scope, ops) in by_scope {
             let to = ops.last().and_then(|o| o.seq).unwrap_or(0);
@@ -1232,6 +1379,7 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     tracing::info!(%addr, "chorus-server listening");
     watch_own_binary();
     run_notifier(state.clone());
+    crate::backup::start_nightly(state.cfg.clone())?;
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     let server = axum::serve(listener, router(state)).with_graceful_shutdown(async {
         let _ = tokio::signal::ctrl_c().await;

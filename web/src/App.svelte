@@ -10,6 +10,12 @@
   import People from './lib/ui/People.svelte';
   import DataPage from './lib/ui/DataPage.svelte';
   import Stage from './lib/ui/Stage.svelte';
+  import Search from './lib/ui/Search.svelte';
+  import Insights from './lib/ui/Insights.svelte';
+  import Journal from './lib/ui/Journal.svelte';
+  import Profile from './lib/ui/Profile.svelte';
+  import PostStage from './lib/ui/PostStage.svelte';
+  import More from './lib/ui/More.svelte';
   import Switcher from './lib/ui/Switcher.svelte';
   import Trash from './lib/ui/Trash.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
@@ -49,11 +55,13 @@
     { path: '/', name: 'home', label: 'Home' },
     { path: '/chat', name: 'chat', label: 'Chat' },
     { path: '/members', name: 'members', label: 'Members' },
-    { path: '/history', name: 'history', label: 'History' },
-    { path: '/people', name: 'people', label: 'People' },
+    { path: '/journal', name: 'journal', label: 'Journal' },
+    { path: '/more', name: 'more', label: 'More' },
   ];
-  const tabs = $derived(person ? allTabs.filter((t) => t.name !== 'members' && t.name !== 'history') : allTabs);
-  const active = $derived(router.route.name === 'member' ? 'members' : router.route.name === 'stage' ? 'chat' : router.route.name);
+  const tabs = $derived(person ? allTabs.filter((t) => t.name !== 'members') : allTabs);
+  const active = $derived(router.route.name === 'member' || router.route.name === 'profile' ? 'members' :
+    router.route.name === 'stage' ? 'chat' : router.route.name === 'post-stage' ? 'journal' :
+    ['history', 'insights', 'people', 'data', 'search', 'trash'].includes(router.route.name) ? 'more' : router.route.name);
 </script>
 
 {#if status === 'no-device'}
@@ -76,10 +84,22 @@
         <Members {projection} {dark} />
       {:else if router.route.name === 'member' && router.route.id}
         <MemberEditor {projection} id={router.route.id} {dark} />
+      {:else if router.route.name === 'profile' && router.route.id}
+        <Profile {projection} id={router.route.id} {dark} />
+      {:else if router.route.name === 'journal'}
+        <Journal {projection} {dark} />
+      {:else if router.route.name === 'post-stage' && router.route.id}
+        <PostStage {projection} id={router.route.id} />
+      {:else if router.route.name === 'more'}
+        <More />
       {:else if router.route.name === 'chat'}
-        <Chat {projection} {dark} channelId={router.route.id} />
+        <Chat {projection} {dark} channelId={router.route.id} focusId={router.route.messageId} />
+      {:else if router.route.name === 'search'}
+        <Search {projection} />
       {:else if router.route.name === 'history'}
         <History {projection} {dark} />
+      {:else if router.route.name === 'insights'}
+        <Insights {projection} />
       {:else if router.route.name === 'stage' && router.route.id}
         <Stage {projection} {dark} channelId={router.route.id} />
       {:else if router.route.name === 'data'}
@@ -145,6 +165,9 @@
       position: fixed;
       inset: auto 0 0 0;
       justify-content: space-around;
+      overflow-x: auto;
+      white-space: nowrap;
+      gap: var(--s-3);
       background: var(--surface);
       border-top: 1px solid var(--line);
       padding: var(--s-3) var(--s-4) calc(var(--s-3) + env(safe-area-inset-bottom));
@@ -152,6 +175,7 @@
     }
     nav a {
       border: 0;
+      flex-shrink: 0;
     }
     nav a.on {
       color: var(--accent);

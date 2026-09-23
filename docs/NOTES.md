@@ -104,3 +104,17 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   `after_insert` op by op, each one re-running the model over its entity. A batch rebuild
   (project whole scopes in memory, bulk insert) is the fix. Clients' core projector still
   refolds the front per front op (fine at their sizes; `front::append` is there when needed).
+- 2026-09-23 gpt-6-sol — insights — `front::daily` expects a caller-supplied UTC offset. The web
+  dashboard derives the account system's IANA zone with `Intl`, splits intervals at offset
+  transitions in its wasm adapter, and lets core assign each segment to a local day. This keeps
+  DST handling outside the pure core; clients using `front::daily` need the same transition-aware
+  adapter to produce matching charts.
+- 2026-09-23 gpt-6-sol — journals — Post ops and the core model call the parent field `reply_to`,
+  while the SQLite projection column is `reply_to_id`; the server projector must map it explicitly.
+  The existing server still has no `GET /posts` or follower post view, so a post's visibility is
+  stored but cross-account publication is not yet served. Any future route must apply the
+  follower-view privacy ceiling before returning posts or reactions.
+- 2026-09-23 gpt-6-sol — journals — The later `GET /posts` and `/posts/{id}` implementation now
+  checks the stored post audience against active follows and live bucket assignments on every
+  read. It omits `front_snapshot`, which could disclose an unrevealed front state even on an
+  otherwise visible post. This read API does not yet serve post attachments or reaction detail.

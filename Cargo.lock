@@ -432,6 +432,7 @@ dependencies = [
  "futures-util",
  "hkdf 0.12.4",
  "p256",
+ "proptest",
  "rand 0.10.3",
  "reqwest",
  "rusqlite",

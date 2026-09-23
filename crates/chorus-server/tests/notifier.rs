@@ -6,7 +6,7 @@ use chorus_core::hlc::Hlc;
 use chorus_core::id::new_id;
 use chorus_core::op::Op;
 use chorus_core::time::{ClockSample, TimeSource};
-use chorus_server::{db, follows, ingest, notifier};
+use chorus_server::{db, follows, ingest, notifier, project};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
@@ -39,6 +39,10 @@ impl World {
 
     /// Accept an op from the system's phone at `at` (device and server clocks agree).
     fn push(&mut self, kind: &str, entity: &str, payload: Value, at: i64) -> Op {
+        self.push_from("phone", kind, entity, payload, at)
+    }
+
+    fn push_from(&mut self, device: &str, kind: &str, entity: &str, payload: Value, at: i64) -> Op {
         self.n += 1;
         let o = Op {
             id: new_id(at as u64, [self.n; 10]),
@@ -63,7 +67,7 @@ impl World {
         };
         let s = ingest::Session {
             account_id: self.sys.clone(),
-            device_id: "phone".into(),
+            device_id: device.into(),
             sample: ClockSample { server_time: at, mono: None, boot_id: None, offset_ms: 0 },
         };
         let (r, new) = ingest::accept(&self.c, &s, o, at, false).unwrap();
@@ -110,6 +114,39 @@ fn world() -> (World, String, String, String) {
     let ceiling = json!({"delay": {"min_s": DELAY / 1000, "max_s": DELAY / 1000}, "time": {"mode": "exact"}, "levels": ["front"]});
     w.push("follow.set_ceiling", &follow, json!({"ceiling": ceiling}), NOW - 3_000);
     (w, kai, june, secret)
+}
+
+#[test]
+fn two_devices_can_edit_different_account_prefs_without_clobbering() {
+    let mut w = World::new();
+    let sys = w.sys.clone();
+    let friend = w.friend.clone();
+    let (follow, _) = follows::request(&w.c, &friend, "@stars", NOW - 5_000).unwrap();
+    w.push("follow.accept", &follow, json!({}), NOW - 4_000);
+
+    let ceiling = json!({"time": {"mode": "exact"}, "delay": {"min_s": 0, "max_s": 0}});
+    w.push_from("phone", "pref.set", &sys, json!({"device": "", "key": "follow_ceiling", "value": ceiling}), NOW);
+    w.push_from("laptop", "pref.set", &sys, json!({"device": "", "key": "ui.density", "value": "compact"}), NOW);
+
+    let saved: Vec<(String, String)> =
+        w.c.prepare("SELECT key, value FROM pref WHERE account_id = ?1 ORDER BY key")
+            .unwrap()
+            .query_map([&sys], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+    assert_eq!(saved.len(), 2);
+    assert_eq!(saved[0].0, "follow_ceiling");
+    assert_eq!(serde_json::from_str::<Value>(&saved[0].1).unwrap(), ceiling);
+    assert_eq!(saved[1], ("ui.density".into(), "\"compact\"".into()));
+    let view = notifier::follower_view(&w.c, &friend, &sys).unwrap().unwrap();
+    assert_eq!(view["time"]["mode"], "exact");
+
+    project::rebuild(&mut w.c).unwrap();
+    let rebuilt: i64 = w.c.query_row("SELECT count(*) FROM pref WHERE account_id = ?1", [&sys], |r| r.get(0)).unwrap();
+    assert_eq!(rebuilt, 2);
+    let view = notifier::follower_view(&w.c, &friend, &sys).unwrap().unwrap();
+    assert_eq!(view["time"]["mode"], "exact");
 }
 
 #[test]

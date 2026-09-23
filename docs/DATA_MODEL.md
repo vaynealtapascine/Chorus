@@ -724,3 +724,32 @@ SELECT strftime('%H', occurred_local) AS hour, count(*) FROM v_switch GROUP BY h
 | PluralKit-compatible | `pluralkit.json` (members, groups, switches) | Escape hatch. |
 
 Exports run as background jobs; the app shows progress and notifies when ready.
+
+### 7.1 Current account-scoped direct exports (M10.3)
+
+`GET /api/v1/exports/ops.jsonl` contains applied ops **authored by the requesting account** in
+server sequence order, including its authored ops in shared spaces. It does not include another
+account's ops. `GET /api/v1/exports/csv/<name>` returns the seven tidy tables below. All seven
+filter on `account_id`; messages and posts omit rows with a deletion tombstone. CSV is UTF-8 with
+CRLF row endings, a header row, and RFC 4180 escaping. Time numbers are UTC milliseconds;
+`*_local` values are ISO wall times (switch/message/post time uses the stored offset; member and
+group creation uses the server's local timezone in CSV, or the reader's local timezone in the
+SQLite views, because those rows have no stored offset).
+
+| CSV name | Columns, in order |
+| --- | --- |
+| `members` | id, name, display_name, pronouns, color, is_archived, created_at, created_local |
+| `groups` | id, kind, parent_id, name, color, created_at, created_local |
+| `switches` | id, occurred_at, occurred_local, kind, entries, resulting_front, note, was_offline, device_id |
+| `front_intervals` | id, subject_type, subject_id, level, is_primary, position, start_at, end_at, start_local, end_local, duration_s |
+| `front_daily` | day, subject_type, subject_id, level, seconds, hours, as_primary_seconds |
+| `messages` | id, channel_id, occurred_at, occurred_local, text, cw, reply_to_id, revision_count, sent_offline |
+| `posts` | id, kind, title, text, mood, occurred_at, occurred_local, reply_to_id, revision_count |
+
+`GET /api/v1/exports/account.sqlite` builds a fresh database from that account's record, devices
+and applied authored ops, then rebuilds projections. It includes `v_member`, `v_group`,
+`v_switch`, `v_front_interval`, `v_front_daily`, `v_message`, and `v_post` views with the CSV
+columns above. No full-server pages are copied into the file. The CLI uses
+`chorus-server export --account ID --kind full|csv|sqlite [--to DIR]`; `full` currently writes
+`ops.jsonl`, `csv` writes seven files, and `sqlite` writes `account.sqlite`. The archive with
+blobs and the job-progress protocol in §7 remain later work.

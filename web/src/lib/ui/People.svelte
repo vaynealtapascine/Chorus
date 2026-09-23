@@ -27,6 +27,10 @@
     history?: { entries: { name: string }[]; time: When }[];
     stats?: { days: number; members: { name: string; share_pct: number }[] };
   }
+  interface SharedPost {
+    id: string; kind: 'note' | 'entry'; title: string | null; text: string; cw: string | null;
+    occurred_at: number; author_cards: { id: string; name: string | null; display_name: string | null }[];
+  }
   interface Note {
     id: string;
     kind: 'switch' | 'mention' | 'dm' | 'reply' | 'message' | 'member_dm' | 'own_switch';
@@ -39,6 +43,7 @@
   const noteTitle = (n: Note) => n.account?.display_name ?? (n.account?.handle ? `@${n.account.handle}` : (n.title ?? 'Chorus'));
 
   let views = $state<Record<string, View>>({});
+  let sharedPosts = $state<Record<string, SharedPost[]>>({});
   let notes = $state<Note[]>([]);
   let seenNotes = new Set<string>();
   let canNotify = $state(typeof Notification !== 'undefined' && Notification.permission === 'granted');
@@ -63,7 +68,12 @@
   const ownBuckets = $derived(buckets(projection));
   const assignments = $derived(bucketAssignments(projection));
   const accountSettings = $derived((projection.rows.account?.[sync.accountId]?.fields.settings ?? {}) as Record<string, unknown>);
-  const defaultCeiling = $derived((accountSettings.follow_ceiling ?? {}) as Record<string, unknown>);
+  const defaultCeiling = $derived((
+    projection.rows.pref?.[`||follow_ceiling`]?.fields.value
+    ?? projection.rows.pref?.[`${sync.accountId}||follow_ceiling`]?.fields.value
+    ?? accountSettings.follow_ceiling
+    ?? {}
+  ) as Record<string, unknown>);
   const defaultPreset = $derived(presetOf(defaultCeiling));
   let newBucket = $state('');
   let newBucketPreset = $state('gentle');
@@ -80,15 +90,16 @@
   }
 
   function setDefault(preset: string) {
+    // one pref per setting (D-S2-1), so another device's edit of a different key can't clobber it
     const keep = Object.fromEntries(SHARING.filter((k) => k in defaultCeiling).map((k) => [k, defaultCeiling[k]]));
-    sync.create('account.set', sync.accountScope, sync.accountId, {
-      settings: { ...accountSettings, follow_ceiling: { ...JSON.parse(presetJson[preset]), ...keep } },
+    sync.create('pref.set', sync.accountScope, null, {
+      device: '', key: 'follow_ceiling', value: { ...JSON.parse(presetJson[preset]), ...keep },
     });
   }
 
   function setSharing(key: (typeof SHARING)[number], on: boolean) {
-    sync.create('account.set', sync.accountScope, sync.accountId, {
-      settings: { ...accountSettings, follow_ceiling: { ...defaultCeiling, [key]: on } },
+    sync.create('pref.set', sync.accountScope, null, {
+      device: '', key: 'follow_ceiling', value: { ...defaultCeiling, [key]: on },
     });
   }
 
@@ -184,14 +195,22 @@
   /** What we may see of the accounts we follow, and our switch notifications (polled). */
   async function loadViews() {
     const next: Record<string, View> = {};
+    const nextPosts: Record<string, SharedPost[]> = {};
     for (const f of following.filter((x) => x.status === 'active')) {
       try {
         next[f.account.id] = await api(`/accounts/${f.account.id}/view`);
       } catch {
         /* not shared (yet) */
       }
+      try {
+        const result = await api(`/posts?account=${encodeURIComponent(f.account.id)}&limit=5`);
+        nextPosts[f.account.id] = result.items as SharedPost[];
+      } catch {
+        /* older server or temporarily offline */
+      }
     }
     views = next;
+    sharedPosts = nextPosts;
     const j = await api('/notifications');
     const fresh = (j.items as Note[]).filter((n) => !seenNotes.has(n.id));
     // a desktop notification for anything new while this page is open (not on first load)
@@ -313,6 +332,8 @@
   }
 
   const name = (p: Person) => p.display_name ?? (p.handle ? `@${p.handle}` : 'Someone');
+  const postAuthors = (p: SharedPost, fallback: Person) =>
+    p.author_cards.map((a) => a.display_name ?? a.name ?? 'Someone').join(' & ') || name(fallback);
   let choice = $state<Record<string, string>>({});
 </script>
 
@@ -458,6 +479,23 @@
           {#if f.status === 'active'}<button class="ghost" onclick={() => message(f.account.id)}>Message</button>{/if}
           <button class="ghost" onclick={() => unfollow(f.id)}>{f.status === 'requested' ? 'Cancel' : 'Unfollow'}</button>
         </div>
+        {#if f.status === 'active' && (sharedPosts[f.account.id]?.length ?? 0) > 0}
+          <div class="shared-posts" aria-label={`Posts from ${name(f.account)}`}>
+            <strong>Shared posts</strong>
+            {#each sharedPosts[f.account.id] as post (post.id)}
+              <article class="shared-post">
+                <div class="post-meta"><span>{postAuthors(post, f.account)} · {post.kind}</span><time>{new Date(post.occurred_at).toLocaleString()}</time></div>
+                {#if post.cw}
+                  <details><summary>Content warning: {post.cw}</summary>
+                    {#if post.title}<strong>{post.title}</strong>{/if}<p>{post.text}</p>
+                  </details>
+                {:else}
+                  {#if post.title}<strong>{post.title}</strong>{/if}<p>{post.text}</p>
+                {/if}
+              </article>
+            {/each}
+          </div>
+        {/if}
       </li>
     {:else}
       <li class="muted">You're not following anyone yet.</li>
@@ -584,4 +622,10 @@
   .notes-head { display: flex; justify-content: space-between; align-items: baseline; }
   .note { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: baseline; padding: var(--s-2) 0; border-bottom: 1px solid var(--line); }
   .note time { margin-left: auto; color: var(--ink-3); font-size: var(--fs-sm); }
+  .shared-posts { width: 100%; display: grid; gap: var(--s-2); border-top: 1px solid var(--line); padding-top: var(--s-2); }
+  .shared-post { display: grid; gap: var(--s-1); padding: var(--s-2); background: var(--surface-2); border-radius: var(--r-sm); min-width: 0; }
+  .shared-post p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .shared-post details { display: grid; gap: var(--s-1); }
+  .shared-post summary { cursor: pointer; color: var(--accent); }
+  .post-meta { display: flex; flex-wrap: wrap; gap: var(--s-2); color: var(--ink-3); font-size: var(--fs-xs); }
 </style>

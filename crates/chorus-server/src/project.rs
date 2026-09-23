@@ -102,6 +102,10 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
             vals.insert("tz_offset_min".into(), Value::from(f.tz_offset_min));
             vals.insert("revision_count".into(), Value::from(row.edits + 1));
         }
+        if table == "post" {
+            // The op/model field is `reply_to`; the SQL column is `reply_to_id`.
+            vals.insert("reply_to_id".into(), row.fields.get("reply_to").cloned().unwrap_or(Value::Null));
+        }
     }
     if table == "custom_emoji" {
         vals.entry("created_by".into()).or_insert(Value::from(first.and_then(|f| f.account_id.clone())));
@@ -889,7 +893,7 @@ fn read_state_scan(
 // ─── rebuild ─────────────────────────────────────────────────────────────────
 
 /// Tables `rebuild` clears (everything derived from the op log).
-const DERIVED: &[&str] = &[
+pub(crate) const DERIVED: &[&str] = &[
     "system",
     "member",
     "member_group",

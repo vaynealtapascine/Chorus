@@ -91,8 +91,8 @@ from the endpoint clears the registration.
 
 Writes through tokens are turned into ops server-side with the token's pseudo-device id.
 
-Implemented so far (M10.2, `api_data.rs`): scopes `read:front`, `read:members`, `stream`,
-`write:front` (see §4);
+Implemented so far (M10.2 and M5.8, `api_data.rs`): scopes `read:front`, `read:members`,
+`read:messages`, `stream`, `write:front`, `export` (see §4);
 `POST /tokens {name, scopes}` → `{id, token}` (shown once), `GET /tokens`, `DELETE /tokens/{id}` —
 from a signed-in device only (tokens can't mint tokens). Reads: `GET /front`, `/front/switches`,
 `/front/intervals`, `/members`. `GET /stream` sends `event: front` (current front first, then each
@@ -120,12 +120,26 @@ GET  /spaces
 GET  /spaces/{id}/channels
 GET  /channels/{id}/messages?before=&after=&around=&limit=
 GET  /messages/{id}                        incl. revisions if ?revisions=1
+  The current read-only history view returns the same scoped message fields as search;
+  revisions are reserved for a later API pass.
 GET  /messages/{id}/thread
 GET  /search/messages?q=&in=&from=&before=&after=&has=
+  → {items:[{id,channel_id,space_id,account_id,occurred_at,text,cw,visibility,authors}]}
+  Uses FTS5; `in` accepts a channel id/name, `from` a member id/name, before/after are
+  exclusive epoch milliseconds, and `has` is attachment/image/file. Results are capped at
+  100 and limited to accessible spaces plus public or own messages. API tokens need
+  `read:messages`; device sessions inherit access.
 GET  /pins?channel=
 
 GET  /posts?author=&kind=&before=&limit=
 GET  /posts/{id}                           with replies ?depth=
+  Device-session reads now return posts visible to the caller: own posts, server-visible posts,
+  posts shared with active followers, and posts for an assigned, live bucket. `account=` narrows
+  the list to one account. `before` is an exclusive occurred-at millisecond value; `limit` is
+  clamped to 1–100. Detail replies are filtered by the same rule (`depth` 0–3, at most 50 per
+  level). Hidden/deleted posts return 404. Responses omit `front_snapshot` and remove unreadable
+  parent/repost links. Authors include ordered member ids and small author cards. API tokens do
+  not use these cross-account routes.
 GET  /timeline?before=&limit=              combined system timeline
 GET  /profiles/{member_id}                 profile bundle (fields, stats, highlights, relationships)
 GET  /lists  /lists/{id}/timeline
@@ -175,7 +189,7 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
     display name, pronouns, colour, sigils, avatar) for other accounts' members who wrote a message
     everyone in the space can read.
   - A space you aren't in is a 404.
-- **Not yet:** messages, posts, profiles, feeds and insights, which come with
+- **Not yet:** message list/thread reads, profiles, feeds and insights, which come with
   M5.7/M5.8/M7/M10.1.
 
 ## 4. Writes (non-sync)
@@ -188,6 +202,12 @@ POST /exports           {kind:"full"|"csv"|"sqlite"|"pluralkit", from?, to?} →
 GET  /jobs/{id}         progress, result URL
 POST /invites           (admin) {kind, expires_in_s, max_uses}  → {url, qr_svg}
 ```
+
+**Direct exports (M10.3):** `GET /exports/ops.jsonl`, `GET /exports/csv/{name}` (seven names
+in DATA_MODEL.md §7.1), and `GET /exports/account.sqlite` accept a device session or an API
+token with the `export` scope. Each contains only the principal account's authored data. They
+return attachment filenames. The `POST /exports` job protocol above is planned for larger
+archives and is not yet served.
 
 `format: "markup"` parses Chorus markup with the same core parser the apps use.
 
@@ -216,7 +236,9 @@ GET  /blobs/{sha256}?thumb=480        server-side fallback thumbnail if client d
 ```
 
 Max blob size: 100 MB default (Advanced). Access check: the caller must be able to read at least
-one attachment/avatar referencing the blob.
+one attachment/avatar referencing the blob. Post attachments (including thumbnail blobs) follow
+the post's current private, follower, bucket, or server audience; deleting the post or ending a
+follow revokes that access.
 
 ## 6. Live stream (SSE)
 

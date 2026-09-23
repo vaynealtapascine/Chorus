@@ -310,7 +310,7 @@ impl World {
                     ),
                 }
             }
-            79..=84 => {
+            79..=83 => {
                 entity = None;
                 (
                     "field.set_value",
@@ -318,12 +318,35 @@ impl World {
                     json!({"member_id": member(self), "field_id": "f1", "value": self.rng.below(10)}),
                 )
             }
-            85..=89 => {
+            84..=90 => {
+                // A tiny key universe forces concurrent first writes and updates to tables
+                // whose `.set` creates a row (rather than requiring a preceding `.create`).
+                let choice = self.rng.below(7) as u8;
+                let slot = self.rng.below(2) as u8;
+                entity = Some(new_id(1_700_000_000_000, [choice + 40, acct as u8, slot, 0, 0, 0, 0, 0, 0, 1]));
+                let (kind, payload) = match choice {
+                    0 => ("bucket.set", json!({"name": format!("bucket{slot}"), "ceiling": {}})),
+                    1 => ("stage.save", json!({"name": format!("card{slot}"), "definition": {"selected": []}})),
+                    2 => ("feed.set", json!({"name": format!("feed{slot}"), "query": "kind:entry"})),
+                    3 => (
+                        "draft.set",
+                        json!({"context": "post", "authors": [member(self)], "text": "draft", "entities": []}),
+                    ),
+                    4 => ("list.set", json!({"name": format!("list{slot}")})),
+                    5 => ("reltype.set", json!({"name": format!("friend{slot}")})),
+                    _ => (
+                        "relationship.set",
+                        json!({"from_member_id": member(self), "to_kind": "external", "to_label": "Friend"}),
+                    ),
+                };
+                (kind, own_scope, payload)
+            }
+            91..=94 => {
                 // invalid: a field the kind may not set → must be rejected, not lost silently
                 entity = Some(member(self));
                 ("member.set", own_scope, json!({"account_id": "evil"}))
             }
-            90..=93 => {
+            95..=97 => {
                 // forbidden: writing into the other account's scope
                 let other = self.scopes[1 - acct][0].clone();
                 entity = Some(self.new_id());

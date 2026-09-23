@@ -6,17 +6,22 @@ pub mod api_reads;
 pub mod api_writes;
 pub mod app;
 pub mod auth;
+pub mod backup;
 pub mod blobs;
 pub mod config;
 pub mod db;
+pub mod exports;
 pub mod follows;
 pub mod ingest;
 pub mod notifier;
 pub mod oplog;
+pub mod posts;
 pub mod project;
 pub mod push;
 pub mod qr;
+pub mod search;
 pub mod spaces;
+pub mod visibility;
 pub mod webhooks;
 
 use rusqlite::Connection;
@@ -27,7 +32,7 @@ pub fn open_and_migrate(cfg: &config::Config) -> anyhow::Result<Connection> {
     let existed = path.exists();
     let mut conn = db::open(&path)?;
     if existed && db::schema_version(&conn)? > 0 && db::pending_migrations(&conn)? > 0 {
-        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis();
         let dest = cfg.backup_dir().join(format!("pre-migrate-{stamp}.db"));
         db::backup_to(&conn, &dest)?;
         tracing::info!(backup = %dest.display(), "backed up before migrating");

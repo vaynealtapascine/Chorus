@@ -41,6 +41,62 @@ pub fn fold_front(ops_json: &str) -> Result<String, JsError> {
     wrap(api::fold_front(ops_json))
 }
 
+/// The web supplies local-time UTC offset transitions; core owns the day split and totals.
+#[wasm_bindgen(js_name = frontDaily)]
+pub fn front_daily(intervals_json: &str, now: f64, offsets_json: &str) -> Result<String, JsError> {
+    use chorus_core::front::{self, Interval, Level, SubjectType};
+    use serde_json::Value;
+
+    let raw: Vec<Value> = serde_json::from_str(intervals_json).map_err(|e| JsError::new(&e.to_string()))?;
+    let mut intervals = Vec::with_capacity(raw.len());
+    for (position, v) in raw.into_iter().enumerate() {
+        let subject_type: SubjectType =
+            serde_json::from_value(v["subject_type"].clone()).map_err(|e| JsError::new(&e.to_string()))?;
+        let level: Level = serde_json::from_value(v["level"].clone()).map_err(|e| JsError::new(&e.to_string()))?;
+        let start_at = v["start_at"].as_i64().ok_or_else(|| JsError::new("interval start_at missing"))?;
+        intervals.push(Interval {
+            id: v["id"].as_str().unwrap_or("").into(),
+            subject_type,
+            subject_id: v["subject_id"].as_str().unwrap_or("").into(),
+            level,
+            is_primary: v["is_primary"].as_bool().unwrap_or(false),
+            position,
+            start_at,
+            end_at: v["end_at"].as_i64(),
+            start_switch_id: String::new(),
+            end_switch_id: None,
+            start_tz_offset_min: 0,
+        });
+    }
+    let mut offsets: Vec<(i64, i32)> = serde_json::from_str(offsets_json).map_err(|e| JsError::new(&e.to_string()))?;
+    offsets.sort_by_key(|x| x.0);
+    let at = |t: i64| {
+        let idx = offsets.partition_point(|(start, _)| *start <= t);
+        offsets.get(idx.saturating_sub(1)).map_or(0, |(_, offset)| *offset)
+    };
+    // Split at offset changes so a DST transition inside a day cannot be charged to the
+    // preceding offset's day boundary. This only prepares intervals for core::front::daily.
+    let mut split = Vec::new();
+    for interval in intervals {
+        let end = interval.end_at.unwrap_or(now as i64);
+        let mut start = interval.start_at;
+        for &(transition, _) in &offsets {
+            if transition <= start || transition >= end {
+                continue;
+            }
+            let mut piece = interval.clone();
+            piece.start_at = start;
+            piece.end_at = Some(transition);
+            split.push(piece);
+            start = transition;
+        }
+        let mut piece = interval;
+        piece.start_at = start;
+        split.push(piece);
+    }
+    serde_json::to_string(&front::daily(&split, now as i64, at)).map_err(|e| JsError::new(&e.to_string()))
+}
+
 #[wasm_bindgen]
 pub fn project(ops_json: &str) -> Result<String, JsError> {
     wrap(api::project(ops_json))

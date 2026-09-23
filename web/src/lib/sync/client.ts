@@ -32,6 +32,7 @@ export interface Interval {
 }
 
 type Listener = () => void;
+type ProjectionListener = (projection: Projection, delta: Delta) => void;
 
 function nodeOf(shortId: string): number {
   return parseInt(shortId, 16) >>> 0;
@@ -49,6 +50,7 @@ export class SyncClient {
   private backoff = 1000;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<Listener>();
+  private projectionListeners = new Set<ProjectionListener>();
   private cached: Projection | null = null;
   private saving: Promise<void> = Promise.resolve();
 
@@ -91,6 +93,12 @@ export class SyncClient {
     return () => this.listeners.delete(fn);
   }
 
+  /** Changed projection keys, delivered after the same delta updates the cached view. */
+  subscribeProjection(fn: ProjectionListener): () => void {
+    this.projectionListeners.add(fn);
+    return () => this.projectionListeners.delete(fn);
+  }
+
   projection(): Projection | null {
     if (!this.replica) return null;
     if (!this.cached) {
@@ -105,6 +113,7 @@ export class SyncClient {
     if (!this.replica || !this.cached) return;
     const d = JSON.parse(this.replica.projectionDelta()) as Delta;
     this.cached = d.full ? (JSON.parse(this.replica.projection()) as Projection) : applyDelta(this.cached, d);
+    for (const listener of this.projectionListeners) listener(this.cached, d);
   }
 
   get accountId(): string {

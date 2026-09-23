@@ -1,4 +1,6 @@
 use chorus_server::{app, auth, config::Config, db, follows};
+use proptest::prelude::*;
+use proptest::test_runner::{Config as PropConfig, TestCaseError, TestRunner};
 use sha2::{Digest, Sha256};
 
 struct Server {
@@ -57,6 +59,66 @@ fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+async fn resume_case(bytes: Vec<u8>, chunks: Vec<usize>) -> Result<(), TestCaseError> {
+    let s = Server::new().await;
+    let client = reqwest::Client::new();
+    let url = format!("{}/{}", s.base, hash(&bytes));
+    let mut offset = 0usize;
+    for wanted in chunks.into_iter().chain(std::iter::once(bytes.len())) {
+        if offset == bytes.len() {
+            break;
+        }
+        let end = (offset + wanted.max(1)).min(bytes.len());
+        let range = format!("bytes {}-{}/{}", offset, end - 1, bytes.len());
+        let response = client
+            .put(&url)
+            .bearer_auth("alice-token")
+            .header("content-range", &range)
+            .body(bytes[offset..end].to_vec())
+            .send()
+            .await
+            .unwrap();
+        prop_assert_eq!(response.status().as_u16(), if end == bytes.len() { 201 } else { 202 });
+        if end < bytes.len() {
+            let head = client.head(&url).bearer_auth("alice-token").send().await.unwrap();
+            prop_assert_eq!(head.status().as_u16(), 206);
+            prop_assert_eq!(head.headers()["upload-offset"].to_str().unwrap(), end.to_string());
+            // A duplicate or stale chunk must not advance the cursor or alter the bytes.
+            let stale = client
+                .put(&url)
+                .bearer_auth("alice-token")
+                .header("content-range", &range)
+                .body(bytes[offset..end].to_vec())
+                .send()
+                .await
+                .unwrap();
+            prop_assert_eq!(stale.status().as_u16(), 409);
+            let head = client.head(&url).bearer_auth("alice-token").send().await.unwrap();
+            prop_assert_eq!(head.headers()["upload-offset"].to_str().unwrap(), end.to_string());
+        }
+        offset = end;
+    }
+    prop_assert_eq!(offset, bytes.len());
+    let response = client.get(&url).bearer_auth("alice-token").send().await.unwrap();
+    prop_assert_eq!(response.status().as_u16(), 200);
+    let downloaded = response.bytes().await.unwrap();
+    prop_assert_eq!(downloaded.as_ref(), bytes.as_slice());
+    prop_assert_eq!(client.head(&url).bearer_auth("alice-token").send().await.unwrap().status().as_u16(), 200);
+    Ok(())
+}
+
+#[test]
+fn arbitrary_chunk_partitions_resume_without_duplication() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let mut runner = TestRunner::new(PropConfig::with_cases(30));
+    runner
+        .run(
+            &(prop::collection::vec(any::<u8>(), 2..2048), prop::collection::vec(1usize..512, 1..12)),
+            |(bytes, chunks)| runtime.block_on(resume_case(bytes, chunks)),
+        )
+        .unwrap();
+}
+
 #[tokio::test]
 async fn emoji_catalogue_needs_auth_and_excludes_retired_rows() {
     let s = Server::new().await;
@@ -106,6 +168,155 @@ async fn resume_range_and_stranger_denied() {
     assert!(r.headers()["cache-control"].to_str().unwrap().contains("immutable"));
     assert_eq!(r.bytes().await.unwrap(), "chorus");
     assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 403);
+}
+
+#[tokio::test]
+async fn shared_attachment_requires_public_structured_visibility() {
+    let s = Server::new().await;
+    let client = reqwest::Client::new();
+    let bytes = b"shared attachment";
+    let digest = hash(bytes);
+    let url = format!("{}/{digest}", s.base);
+    assert_eq!(
+        client
+            .put(&url)
+            .bearer_auth("alice-token")
+            .header("content-range", "bytes 0-16/17")
+            .body(bytes.as_slice())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        201
+    );
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("INSERT INTO space(id,owner_account_id,kind,created_at) VALUES ('s','alice','shared',0)", [])
+            .unwrap();
+        c.execute("INSERT INTO channel(id,space_id,kind,created_at) VALUES ('ch','s','text',0)", []).unwrap();
+        c.execute("INSERT INTO scope_access(account_id,scope) VALUES ('bob','space:s')", []).unwrap();
+        c.execute(
+            "INSERT INTO message(id,channel_id,account_id,occurred_at,text) VALUES ('m','ch','alice',0,'hello')",
+            [],
+        )
+        .unwrap();
+        c.execute("INSERT INTO attachment(id,account_id,blob_hash,created_at) VALUES ('a','alice',?1,0)", [&digest])
+            .unwrap();
+        c.execute(
+            "INSERT INTO item_attachment(owner_type,owner_id,attachment_id,position) VALUES ('message','m','a',0)",
+            [],
+        )
+        .unwrap();
+    }
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 200);
+    for (rule, expected) in
+        [(r#"{"mode":"all"}"#, 200), (r#"{"mode":"system_only"}"#, 403), (r#"{"mode":"members","member_ids":[]}"#, 403)]
+    {
+        s.state.db.lock().unwrap().execute("UPDATE message SET visibility=?1 WHERE id='m'", [rule]).unwrap();
+        assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), expected, "{rule}");
+    }
+}
+
+#[tokio::test]
+async fn post_attachment_tracks_current_post_audience() {
+    let s = Server::new().await;
+    let client = reqwest::Client::new();
+    let bytes = b"journal attachment";
+    let digest = hash(bytes);
+    let url = format!("{}/{digest}", s.base);
+    assert_eq!(
+        client
+            .put(&url)
+            .bearer_auth("alice-token")
+            .header("content-range", format!("bytes 0-{}/{}", bytes.len() - 1, bytes.len()))
+            .body(bytes.as_slice())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        201
+    );
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute(
+            "INSERT INTO post(id,account_id,device_id,kind,text,visibility,occurred_at)
+                   VALUES ('p','alice','alice-device','note','hi','{\"mode\":\"private\"}',0)",
+            [],
+        )
+        .unwrap();
+        c.execute("INSERT INTO attachment(id,account_id,blob_hash,created_at) VALUES ('a','alice',?1,0)", [&digest])
+            .unwrap();
+        c.execute(
+            "INSERT INTO item_attachment(owner_type,owner_id,attachment_id,position)
+                   VALUES ('post','p','a',0)",
+            [],
+        )
+        .unwrap();
+    }
+    let read = || client.get(&url).bearer_auth("bob-token");
+    assert_eq!(read().send().await.unwrap().status(), 403);
+    assert_eq!(client.head(&url).bearer_auth("bob-token").send().await.unwrap().status(), 403);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE post SET visibility='{\"mode\":\"server\"}' WHERE id='p'", []).unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 200);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE post SET visibility='{\"mode\":\"followers\"}' WHERE id='p'", []).unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 403);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute(
+            "INSERT INTO follow(id,follower_account_id,target_account_id,status,created_at)
+                   VALUES ('f','bob','alice','active',0)",
+            [],
+        )
+        .unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 200);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE follow SET status='ended' WHERE id='f'", []).unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 403);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE follow SET status='active' WHERE id='f'", []).unwrap();
+    }
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("INSERT INTO bucket(id,account_id,name) VALUES ('b','alice','Close')", []).unwrap();
+        c.execute("UPDATE post SET visibility='{\"mode\":\"buckets\",\"bucket_ids\":[\"b\"]}' WHERE id='p'", [])
+            .unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 403);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute(
+            "INSERT INTO bucket_assignment(bucket_id,follower_account_id,added_hlc)
+                   VALUES ('b','bob','1:0:1')",
+            [],
+        )
+        .unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 200);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE bucket_assignment SET removed_hlc='2:0:1' WHERE bucket_id='b'", []).unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 403);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE post SET visibility='not-json' WHERE id='p'", []).unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 403);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE post SET visibility='{\"mode\":\"server\"}',deleted_at=1 WHERE id='p'", []).unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 403);
 }
 
 #[tokio::test]

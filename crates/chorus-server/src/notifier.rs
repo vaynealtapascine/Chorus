@@ -132,14 +132,20 @@ fn active_follows(conn: &Connection, account: &str) -> anyhow::Result<Vec<Follow
 
 /// The follower's effective ceiling and the buckets they're in.
 fn ceiling_for(conn: &Connection, account: &str, follow: &Follow) -> anyhow::Result<(Ceiling, BTreeSet<String>)> {
-    let default: Value = conn
+    let saved_pref: Option<String> = conn
+        .query_row(
+            "SELECT value FROM pref WHERE account_id = ?1 AND device_id = '' AND key = 'follow_ceiling'",
+            [account],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let legacy_setting: Option<String> = conn
         .query_row("SELECT json_extract(settings, '$.follow_ceiling') FROM account WHERE id = ?1", [account], |r| {
             r.get::<_, Option<String>>(0)
         })
         .optional()?
-        .flatten()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or(json!({}));
+        .flatten();
+    let default: Value = saved_pref.or(legacy_setting).and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({}));
     let mut st = conn.prepare_cached(
         "SELECT b.id, b.ceiling FROM bucket b JOIN bucket_assignment a ON a.bucket_id = b.id
          WHERE b.account_id = ?1 AND a.follower_account_id = ?2 AND a.is_present = 1 AND b.deleted_at IS NULL",
