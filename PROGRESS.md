@@ -107,7 +107,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M6 — Sharing
 
-- [ ] M6.1 Person accounts, follows, privacy buckets
+- [~] M6.1 Person accounts, follows, privacy buckets — follows done end to end (server-written requests/prefs, REST, web People page with presets); bucket UI + per-member announce policy UI still to do
 - [ ] M6.2 Shared spaces + DMs between accounts
 - [ ] M6.3 Follower views (delayed/fuzzed front state per NOTIFICATIONS.md §5)
 

@@ -79,6 +79,14 @@ pub fn accept(
     if !allowed {
         return Ok((AckResult::err(o.id, "forbidden", format!("{} not writable", o.scope), false), None));
     }
+    // Follow requests and a follower's prefs are written by the server on the follower's behalf
+    // (follows.rs); a client forging one could make someone else receive its switches.
+    if !preserved && matches!(o.kind.as_str(), "follow.request" | "follow.set_prefs") && s.device_id != SERVER_DEVICE {
+        return Ok((
+            AckResult::err(o.id, "forbidden", format!("{} goes through /api/v1/follows", o.kind), false),
+            None,
+        ));
+    }
     if !preserved && o.kind.ends_with(".restore") {
         let related = oplog::for_entity(conn, o.entity().unwrap_or_default())?;
         if !restore::allowed(&o.kind, &o.scope, o.entity().unwrap_or_default(), &author, related.iter()) {

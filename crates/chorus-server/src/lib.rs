@@ -4,6 +4,7 @@ pub mod app;
 pub mod auth;
 pub mod config;
 pub mod db;
+pub mod follows;
 pub mod ingest;
 pub mod oplog;
 pub mod project;

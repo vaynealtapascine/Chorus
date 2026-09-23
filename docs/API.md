@@ -105,7 +105,10 @@ POST /feeds/preview {query}                → parsed AST + first 20 items (for 
 
 GET  /emoji                                the server-wide custom emoji set
 GET  /accounts/{id}/view                   follower view of another account (privacy-filtered, §5 NOTIFICATIONS)
-GET  /follows                               following + followers
+GET  /follows                               following + followers ({following:[…], followers:[…]}, open ones)
+POST /follows {target:"@handle"|account_id}  ask to follow (201; 200 with the open follow's id if one exists)
+PUT  /follows/{id}/prefs {…}                 the follower's own prefs (NOTIFICATIONS.md §4)
+DELETE /follows/{id}                         unfollow (follower) or remove (target)
 GET  /notifications?before=
 GET  /insights/{chart}?from=&to=           dashboard data (same numbers as the views)
 ```

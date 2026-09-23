@@ -3,11 +3,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
+use axum::extract::Path;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use chorus_core::op::Op;
 use chorus_core::sync::{Frame, PAGE_OPS};
@@ -19,6 +20,7 @@ use tokio::sync::mpsc;
 
 use crate::auth::{self, AuthError};
 use crate::config::Config;
+use crate::follows::{self, FollowError};
 use crate::{db, ingest, now_ms, oplog};
 
 /// A connected device.
@@ -64,6 +66,9 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/challenge", post(challenge))
         .route("/auth/session", post(session))
         .route("/devices/invite", post(device_invite))
+        .route("/follows", get(follows_list).post(follow_request))
+        .route("/follows/{id}/prefs", put(follow_prefs))
+        .route("/follows/{id}", delete(follow_end))
         .route("/sync", get(sync_ws));
     let mut app = Router::new().nest("/api/v1", api).with_state(state.clone());
     if let Some(dir) = state.cfg.server.web_dir.clone() {
@@ -190,6 +195,84 @@ async fn device_invite(
     )?;
     let url = format!("{}/i/{code}", s.cfg.server.public_url.trim_end_matches('/'));
     Ok(Json(json!({"code": code, "url": url, "expires_at": now + 86_400_000})))
+}
+
+// ─── follows (API.md §3) ────────────────────────────────────────────────────
+
+impl From<FollowError> for ApiError {
+    fn from(e: FollowError) -> Self {
+        let (s, c) = match &e {
+            FollowError::NoSuchAccount | FollowError::NotFound => (StatusCode::NOT_FOUND, "not_found"),
+            FollowError::SelfFollow | FollowError::BadPrefs(_) => (StatusCode::BAD_REQUEST, "bad_request"),
+            FollowError::NotFollower => (StatusCode::FORBIDDEN, "forbidden"),
+            FollowError::Internal(e) => {
+                tracing::error!(error = %e, "internal error");
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal")
+            }
+        };
+        ApiError(s, c, e.to_string())
+    }
+}
+
+fn who(s: &AppState, conn: &Connection, headers: &axum::http::HeaderMap) -> Result<auth::Authed, ApiError> {
+    Ok(auth::authenticate(conn, bearer(headers)?, now_ms(), s.session_ttl())?)
+}
+
+async fn follows_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    Ok(Json(follows::list(&conn, &me.account_id)?))
+}
+
+#[derive(Deserialize)]
+struct FollowIn {
+    /// A handle (`@stars`) or account id.
+    target: String,
+}
+
+async fn follow_request(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<FollowIn>,
+) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let (id, op) = follows::request(&conn, &me.account_id, &b.target, now_ms())?;
+    let created = op.is_some();
+    if let Some(o) = op {
+        fan_out(&s, &conn, &[o], None)?;
+    }
+    let status = if created { StatusCode::CREATED } else { StatusCode::OK };
+    Ok((status, Json(json!({"id": id}))).into_response())
+}
+
+async fn follow_prefs(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    Json(prefs): Json<serde_json::Value>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let o = follows::set_prefs(&conn, &me.account_id, &id, prefs, now_ms())?;
+    fan_out(&s, &conn, &[o], None)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn follow_end(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    if let Some(o) = follows::end(&conn, &me.account_id, &id, now_ms())? {
+        fan_out(&s, &conn, &[o], None)?;
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ─── sync socket ─────────────────────────────────────────────────────────────
@@ -366,18 +449,24 @@ fn push(
     if fresh.is_empty() {
         return Ok(());
     }
-    // Fan out under the db lock so per-connection order matches seq order.
+    fan_out(s, &conn, &fresh, Some(&sess.device_id))
+}
+
+/// Send freshly accepted ops to every connected device that reads their scope (and tell devices
+/// whose scopes changed). Call it while still holding the db lock so per-connection order matches
+/// seq order. `skip` is the device that pushed them (it already has them).
+pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Option<&str>) -> anyhow::Result<()> {
     let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
     for (device, p) in peers.iter_mut() {
         // scope changes (e.g. someone was added to a space)
-        let now_scopes: BTreeSet<String> = ingest::scopes_of(&conn, &p.account)?.into_iter().collect();
+        let now_scopes: BTreeSet<String> = ingest::scopes_of(conn, &p.account)?.into_iter().collect();
         if now_scopes != p.scopes {
             let add: Vec<String> = now_scopes.difference(&p.scopes).cloned().collect();
             let remove: Vec<String> = p.scopes.difference(&now_scopes).cloned().collect();
             p.scopes = now_scopes;
             send(&p.tx, Frame::Scope { add, remove });
         }
-        if *device == sess.device_id {
+        if skip == Some(device.as_str()) {
             continue;
         }
         let mut by_scope: BTreeMap<&str, Vec<Op>> = BTreeMap::new();

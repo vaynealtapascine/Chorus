@@ -16,7 +16,9 @@ Push-Location $root
 try {
     cargo build -p chorus-wasm --target wasm32-unknown-unknown @cargoArgs
     if ($LASTEXITCODE) { throw 'wasm build failed' }
-    wasm-bindgen "target\wasm32-unknown-unknown\$dir\chorus_wasm.wasm" --out-dir $out --target web
+    # honour CARGO_TARGET_DIR, or bindgen silently reads a stale build from .\target
+    $targetRoot = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $root 'target' }
+    wasm-bindgen (Join-Path $targetRoot "wasm32-unknown-unknown\$dir\chorus_wasm.wasm") --out-dir $out --target web
     if ($LASTEXITCODE) { throw 'wasm-bindgen failed' }
     $wasm = Join-Path $out 'chorus_wasm_bg.wasm'
     Write-Host ("wasm: {0:N0} bytes" -f (Get-Item $wasm).Length)

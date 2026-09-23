@@ -272,3 +272,80 @@ async fn a_device_links_another_device_to_its_account() {
     let r = http.post(format!("http://{}/api/v1/auth/redeem", s.base)).json(&body).send().await.unwrap();
     assert_eq!(r.status(), 400);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_friend_follows_a_system() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 31, "stars").await;
+    let friend = enrol(&s, auth::InviteKind::Person, None, 32, "alex").await;
+    let mut phone = Device::new(&sys, 31);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct_scope = phone.scope("account:");
+
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+
+    // the friend asks; the system's connected phone sees the request live
+    let r =
+        http.post(url("/follows")).bearer_auth(tok(&friend)).json(&json!({"target": "@Stars"})).send().await.unwrap();
+    assert_eq!(r.status(), 201);
+    let id = r.json::<Value>().await.unwrap()["id"].as_str().unwrap().to_string();
+    // asking again while open returns the same follow
+    let again: Value = http
+        .post(url("/follows"))
+        .bearer_auth(tok(&friend))
+        .json(&json!({"target": "stars"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(again["id"], id.as_str());
+    phone.drain(Q).await;
+    let p = model::project(phone.store.confirmed());
+    let row = &p.rows["follow"][&id];
+    assert_eq!(row.fields["status"], "requested");
+    assert_eq!(row.fields["follower_account_id"], friend["account_id"]);
+
+    // the system accepts from its own device
+    phone.create("follow.accept", &acct_scope, &id, json!({})).await;
+    phone.drain(Q).await;
+    let list: Value = http.get(url("/follows")).bearer_auth(tok(&friend)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(list["following"][0]["status"], "active");
+    assert_eq!(list["following"][0]["account"]["handle"], "stars");
+    let list: Value = http.get(url("/follows")).bearer_auth(tok(&sys)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(list["followers"][0]["account"]["handle"], "alex");
+
+    // prefs: only the follower, and they must parse
+    let prefs = json!({"levels": ["front"], "quiet_hours": {"from": "23:00", "to": "08:00"}});
+    let r = http.put(url(&format!("/follows/{id}/prefs"))).bearer_auth(tok(&sys)).json(&prefs).send().await.unwrap();
+    assert_eq!(r.status(), 403);
+    let r = http
+        .put(url(&format!("/follows/{id}/prefs")))
+        .bearer_auth(tok(&friend))
+        .json(&json!({"levels": 3}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    let r = http.put(url(&format!("/follows/{id}/prefs"))).bearer_auth(tok(&friend)).json(&prefs).send().await.unwrap();
+    assert_eq!(r.status(), 204);
+
+    // a client can't forge a follow request into its own scope for someone else
+    let forged = phone
+        .create("follow.request", &acct_scope, &new_id(9, [9; 10]), json!({"follower_account_id": "someone-else"}))
+        .await;
+    phone.drain(Q).await;
+    assert!(phone.store.rejected.iter().any(|(op, _)| *op == forged));
+
+    // unfollow
+    let r = http.delete(url(&format!("/follows/{id}"))).bearer_auth(tok(&friend)).send().await.unwrap();
+    assert_eq!(r.status(), 204);
+    phone.drain(Q).await;
+    assert_eq!(model::project(phone.store.confirmed()).rows["follow"][&id].fields["status"], "ended");
+    let list: Value = http.get(url("/follows")).bearer_auth(tok(&friend)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(list["following"].as_array().unwrap().len(), 0);
+}

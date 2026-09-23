@@ -277,8 +277,12 @@ fn special(p: &mut Projection, o: &Op, payload: &Map<String, Value>, reads: &mut
             set_fields(p, "highlight_order", &id, o.hlc, &one("sort_key", v));
         }
         "follow.request" => {
+            // Written by the server into the *target's* scope on the follower's behalf
+            // (POST /follows), so the follower comes from the payload; the author otherwise.
             let mut f = payload.clone();
-            f.insert("follower_account_id".into(), json!(acct));
+            if !f.get("follower_account_id").is_some_and(Value::is_string) {
+                f.insert("follower_account_id".into(), json!(acct));
+            }
             f.insert("status".into(), json!("requested"));
             set_fields(p, "follow", entity, o.hlc, &f).exists = true;
         }

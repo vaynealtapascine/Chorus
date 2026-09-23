@@ -67,6 +67,10 @@ export class SyncClient {
     );
     this.emit();
     addEventListener('online', () => this.reconnectNow());
+    // coming back to the tab: don't wait out a long backoff (e.g. after a server restart)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this.reconnectNow();
+    });
     this.connect();
   }
 

@@ -176,6 +176,11 @@ fn clock(last: &str, node: u32) -> Result<HlcClock, String> {
     }
 }
 
+/// A follower-ceiling preset (NOTIFICATIONS.md §3): close | gentle | private | digest | off.
+pub fn notify_preset(name: &str) -> Result<String, String> {
+    crate::notify::preset(name).map(|v| js(&v)).ok_or_else(|| format!("unknown preset {name}"))
+}
+
 /// Echo for binding smoke tests.
 pub fn echo_json(v: &str) -> Result<String, String> {
     let x: Value = parse("value", v)?;

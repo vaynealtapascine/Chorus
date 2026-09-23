@@ -88,7 +88,10 @@ Every op belongs to exactly one scope:
 | `server` | custom emoji set (D-054) | every device |
 | `space:<id>` | channels, messages, reactions, read marks, attachments of that space (incl. the internal space) | devices of accounts that are present members of the space |
 
-Followers never receive `account:` ops of others. They receive **views** (§4.3).
+Followers never receive `account:` ops of others. They receive **views** (§4.3). A follow lives
+in the target's scope; `follow.request` and `follow.set_prefs` are written there by the server on
+the follower's behalf (`POST /follows`, `PUT /follows/{id}/prefs`) and are refused from clients,
+so nobody can sign someone else up for their switches.
 
 ### 4.2 Filtering inside a scope
 

@@ -137,6 +137,12 @@ pub fn new_id(now_ms: f64, random: &[u8]) -> Result<String, JsError> {
     Ok(chorus_core::id::new_id(now_ms as u64, r))
 }
 
+/// A follower-ceiling preset: close | gentle | private | digest | off.
+#[wasm_bindgen(js_name = notifyPreset)]
+pub fn notify_preset(name: &str) -> Result<String, JsError> {
+    wrap(api::notify_preset(name))
+}
+
 /// Preview a PluralKit import: `{"members", "groups", "switches", "warnings"}`.
 #[wasm_bindgen(js_name = planPluralkit)]
 pub fn plan_pluralkit(export_json: &str, scope: &str) -> Result<String, JsError> {

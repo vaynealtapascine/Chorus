@@ -7,6 +7,7 @@
   import MemberEditor from './lib/ui/MemberEditor.svelte';
   import Members from './lib/ui/Members.svelte';
   import Onboarding from './lib/ui/Onboarding.svelte';
+  import People from './lib/ui/People.svelte';
   import Switcher from './lib/ui/Switcher.svelte';
   import Trash from './lib/ui/Trash.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
@@ -43,6 +44,7 @@
     { path: '/chat', name: 'chat', label: 'Chat' },
     { path: '/members', name: 'members', label: 'Members' },
     { path: '/history', name: 'history', label: 'History' },
+    { path: '/people', name: 'people', label: 'People' },
   ];
   const active = $derived(router.route.name === 'member' ? 'members' : router.route.name);
 </script>
@@ -69,6 +71,8 @@
         <Chat {projection} {dark} channelId={router.route.id} />
       {:else if router.route.name === 'history'}
         <History {projection} {dark} />
+      {:else if router.route.name === 'people'}
+        <People {projection} />
       {:else if router.route.name === 'trash'}
         <Trash {projection} channelId={router.route.id} />
       {:else}
