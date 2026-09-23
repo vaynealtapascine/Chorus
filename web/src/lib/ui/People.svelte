@@ -54,7 +54,12 @@
   const ownBuckets = $derived(buckets(projection));
   const assignments = $derived(bucketAssignments(projection));
   const accountSettings = $derived((projection.rows.account?.[sync.accountId]?.fields.settings ?? {}) as Record<string, unknown>);
-  const defaultCeiling = $derived((accountSettings.follow_ceiling ?? {}) as Record<string, unknown>);
+  const defaultCeiling = $derived((
+    projection.rows.pref?.[`||follow_ceiling`]?.fields.value
+    ?? projection.rows.pref?.[`${sync.accountId}||follow_ceiling`]?.fields.value
+    ?? accountSettings.follow_ceiling
+    ?? {}
+  ) as Record<string, unknown>);
   const defaultPreset = $derived(presetOf(defaultCeiling));
   let newBucket = $state('');
   let newBucketPreset = $state('gentle');
@@ -65,8 +70,8 @@
   }
 
   function setDefault(preset: string) {
-    sync.create('account.set', sync.accountScope, sync.accountId, {
-      settings: { ...accountSettings, follow_ceiling: JSON.parse(presetJson[preset]) },
+    sync.create('pref.set', sync.accountScope, null, {
+      device: '', key: 'follow_ceiling', value: JSON.parse(presetJson[preset]),
     });
   }
 

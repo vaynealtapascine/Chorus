@@ -223,3 +223,8 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 
 #### A2 · deferred to T8
 - The attachment string match and activity notification skip are tied to the T8 visibility JSON shape. They remain unchanged for now; T8 must replace both with one structured visibility rule and test readable messages plus system-only asides.
+
+#### A3 · done
+- Proposed decision **D-S2-1**: write account preferences by key with the existing account-scoped `pref.set` op (`device: ''`), reserving `account.settings` as a legacy read fallback. This avoids whole-object LWW clobbering without a schema migration or new op kind. The web default follow ceiling now reads/writes `pref.follow_ceiling`; `notifier::ceiling_for` reads that value first, then the legacy account setting.
+- A server integration test ingested two same-time edits from phone and laptop for different keys, confirmed both SQL rows and the effective follower time rule, rebuilt projections, and confirmed both rows and the rule again. This ran behaviour through ingest, projector and notifier. `npm run check` passed; the web control itself has not yet been clicked after this change.
+- Audit first: ensure any future account setting editor also uses one `pref.set` key per independently editable setting; confirm migrated accounts keep their legacy default until explicitly changed.
