@@ -409,8 +409,16 @@ fn follow_prefs_and_ceiling(conn: &Connection, q: &Queued) -> anyhow::Result<Opt
     Ok(Some((c, f.prefs)))
 }
 
-/// Reveal and deliver everything due at `now`. Returns how many rows were handled.
-pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<usize> {
+/// What one pass produced: rows handled, and encrypted pushes to send once the lock is released.
+#[derive(Default)]
+pub struct Processed {
+    pub handled: usize,
+    pub pushes: Vec<crate::push::Outbound>,
+}
+
+/// Reveal and deliver everything due at `now`.
+pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
+    let mut pushes = Vec::new();
     let mut st = conn.prepare_cached(
         "SELECT id, recipient_account_id, payload FROM notification
          WHERE kind = 'switch' AND delivered_at IS NULL AND cancelled_at IS NULL AND due_at <= ?1 ORDER BY due_at, id LIMIT 500",
@@ -467,7 +475,7 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<usize> {
                 prefs: &prefs,
             });
             match route {
-                Route::Deliver { at } if at <= now => deliver(conn, &id, &mut q, now)?,
+                Route::Deliver { at } if at <= now => pushes.extend(deliver(conn, &id, &follower, &mut q, now)?),
                 Route::Deliver { at } => hold(conn, &id, &mut q, "held", at)?,
                 Route::Digest { at } => hold(conn, &id, &mut q, "digest", at)?,
                 Route::RevealOnly => {
@@ -480,10 +488,10 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<usize> {
             }
         } else {
             // held by quiet hours, or a digest item: its time has come
-            deliver(conn, &id, &mut q, now)?;
+            pushes.extend(deliver(conn, &id, &follower, &mut q, now)?);
         }
     }
-    Ok(n)
+    Ok(Processed { handled: n, pushes })
 }
 
 fn hold(conn: &Connection, id: &str, q: &mut Queued, state: &str, at: i64) -> anyhow::Result<()> {
@@ -495,14 +503,35 @@ fn hold(conn: &Connection, id: &str, q: &mut Queued, state: &str, at: i64) -> an
     Ok(())
 }
 
-fn deliver(conn: &Connection, id: &str, q: &mut Queued, now: i64) -> anyhow::Result<()> {
+fn deliver(
+    conn: &Connection,
+    id: &str,
+    follower: &str,
+    q: &mut Queued,
+    now: i64,
+) -> anyhow::Result<Vec<crate::push::Outbound>> {
     q.state = "delivered".into();
     let at = q.displayed.and_then(|d| d.at);
     conn.execute(
         "UPDATE notification SET delivered_at = ?2, displayed_time = ?3, payload = ?4 WHERE id = ?1",
         params![id, now, at, serde_json::to_string(q)?],
     )?;
-    Ok(())
+    // the push carries exactly what the inbox shows: already filtered and fuzzed
+    let title: Option<String> = conn
+        .query_row("SELECT COALESCE(display_name, handle) FROM account WHERE id = ?1", [&q.target_account_id], |r| {
+            r.get(0)
+        })
+        .optional()?
+        .flatten();
+    let payload = json!({
+        "t": "switch",
+        "id": id,
+        "account_id": q.target_account_id,
+        "title": title.unwrap_or_else(|| "Chorus".into()),
+        "text": q.text,
+        "time": precision_of(&q.displayed),
+    });
+    crate::push::prepare(conn, follower, &payload)
 }
 
 // ─── reads for the follower (API.md §3) ─────────────────────────────────────

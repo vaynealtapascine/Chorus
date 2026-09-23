@@ -37,6 +37,16 @@ POST /devices/invite            Authorization: Bearer <session>
 → 200 { "code":"…", "url":"https://chorus.…/i/<code>", "expires_at":… }
 ```
 
+Register this device for push (UnifiedPush endpoint + Web Push keys, NOTIFICATIONS.md §1):
+
+```
+PUT    /devices/push {endpoint, p256dh: <b64url uncompressed P-256>, auth: <b64url 16 bytes>}  → 204
+DELETE /devices/push                                                                          → 204
+```
+
+Payloads are RFC 8291 `aes128gcm`, one record, ≤ 3 KB plaintext (else `{"t":"sync"}`). A 404/410
+from the endpoint clears the registration.
+
 ### 2.2 Sessions
 
 - Session token: opaque random 256-bit, stored hashed, 30-day sliding expiry, bound to a device.

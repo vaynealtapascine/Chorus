@@ -172,3 +172,40 @@ fn unfollowing_drops_pending_notifications() {
     assert!(w.inbox().is_empty());
     assert!(notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().is_none());
 }
+
+#[test]
+fn delivery_pushes_the_inbox_text_encrypted_to_the_followers_devices() {
+    use chorus_server::push;
+    use p256::elliptic_curve::sec1::ToSec1Point;
+    let (mut w, kai, _, _) = world();
+    // the friend's phone registers its UnifiedPush endpoint and keys
+    w.c.execute(
+        "INSERT INTO device (id, account_id, short_id, name, platform, public_key, created_at)
+         VALUES ('phone', ?1, 'aabbccdd', 'Phone', 'android', 'k', 0)",
+        [&w.friend],
+    )
+    .unwrap();
+    let ua = p256::SecretKey::from_slice(&[5; 32]).unwrap();
+    let reg = push::Registration {
+        endpoint: "https://ntfy.example/upABC?up=1".into(),
+        p256dh: push::b64url(ua.public_key().to_sec1_point(false).as_bytes()),
+        auth: push::b64url(&[8; 16]),
+    };
+    push::register(&w.c, "phone", &reg).unwrap();
+
+    w.switch(&[&kai], NOW);
+    let early = notifier::process_due(&w.c, NOW + SETTLE + DELAY - 1).unwrap();
+    assert!(early.pushes.is_empty(), "nothing may be pushed before the reveal");
+    let out = notifier::process_due(&w.c, NOW + SETTLE + DELAY).unwrap();
+    assert_eq!(out.pushes.len(), 1);
+    assert_eq!(out.pushes[0].endpoint, reg.endpoint);
+    let plain = push::decrypt(&ua, &[8; 16], &out.pushes[0].body).expect("decrypts with the device key");
+    let v: Value = serde_json::from_slice(&plain).unwrap();
+    assert_eq!(v["text"], "Kai is fronting");
+    assert_eq!(v["title"], "stars");
+    // a gone endpoint is forgotten
+    push::record(&w.c, "phone", &push::Sent::Gone).unwrap();
+    let left: Option<String> =
+        w.c.query_row("SELECT push_endpoint FROM device WHERE id = 'phone'", [], |r| r.get(0)).unwrap();
+    assert!(left.is_none());
+}

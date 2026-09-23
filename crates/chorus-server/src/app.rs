@@ -69,6 +69,7 @@ pub fn router(state: AppState) -> Router {
         .route("/follows", get(follows_list).post(follow_request))
         .route("/follows/{id}/prefs", put(follow_prefs))
         .route("/follows/{id}", delete(follow_end))
+        .route("/devices/push", put(push_register).delete(push_unregister))
         .route("/notifications", get(notifications))
         .route("/accounts/{id}/view", get(account_view))
         .route("/sync", get(sync_ws));
@@ -277,6 +278,26 @@ async fn follow_end(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// This device's UnifiedPush endpoint and Web Push keys (NOTIFICATIONS.md §1).
+async fn push_register(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<crate::push::Registration>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    crate::push::register(&conn, &me.device_id, &b)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "bad_request", e.to_string()))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn push_unregister(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    crate::push::unregister(&conn, &me.device_id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn notifications(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -302,12 +323,26 @@ async fn account_view(
 /// Reveal and deliver due follower notifications every few seconds (notifier.rs).
 fn run_notifier(state: AppState) {
     tokio::spawn(async move {
+        let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap_or_default();
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
         loop {
             tick.tick().await;
-            let conn = state.db();
-            if let Err(e) = crate::notifier::process_due(&conn, now_ms()) {
-                tracing::error!(error = %e, "notifier failed");
+            let pushes = {
+                let conn = state.db();
+                match crate::notifier::process_due(&conn, now_ms()) {
+                    Ok(p) => p.pushes,
+                    Err(e) => {
+                        tracing::error!(error = %e, "notifier failed");
+                        continue;
+                    }
+                }
+            };
+            // send without holding the database lock
+            for o in pushes {
+                let sent = crate::push::send(&http, &o).await;
+                if let Err(e) = crate::push::record(&state.db(), &o.device_id, &sent) {
+                    tracing::error!(error = %e, "push: can't record outcome");
+                }
             }
         }
     });

@@ -9,6 +9,7 @@ pub mod ingest;
 pub mod notifier;
 pub mod oplog;
 pub mod project;
+pub mod push;
 
 use rusqlite::Connection;
 
