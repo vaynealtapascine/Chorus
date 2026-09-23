@@ -355,6 +355,12 @@ pub static CATALOGUE: &[KindSpec] = &[
     k!("emoji.restore", "custom_emoji", Server, Restore),
 ];
 
+/// Tables with no create op (drafts, buckets, stages, feeds…): their `.set` is an upsert, so the
+/// first set makes the row exist.
+pub fn set_upserts(table: &str) -> bool {
+    !CATALOGUE.iter().any(|k| k.table == table && matches!(k.action, Action::Create | Action::Append))
+}
+
 pub fn spec(kind: &str) -> Option<&'static KindSpec> {
     CATALOGUE.iter().find(|k| k.kind == kind)
 }

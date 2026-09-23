@@ -128,10 +128,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M9 — Stage (screenshot) mode
 
-- [ ] M9.1 Selection, context-only/hidden, crop reply chains
-- [ ] M9.2 Style presets + redaction
-- [ ] M9.3 Saved stages
-- [ ] M9.4 Fake names and timestamps (view-only overrides)
+- [x] M9.1 Selection, context-only/hidden, crop reply chains (web; core `stage::plan`; reply bars only point at items on stage — N-level crop not done)
+- [x] M9.2 Style presets + redaction (web: 6 styles, theme, width, redacted names, blurred avatars, hide header/reply bars)
+- [x] M9.3 Saved stages (web)
+- [x] M9.4 Fake names and timestamps (view-only overrides) (web; Android renderer not yet)
 
 ### M10 — Data
 

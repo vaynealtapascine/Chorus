@@ -136,7 +136,10 @@ pub fn project<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Projection {
                 row.exists = true;
             }
             Action::Set => {
-                set_fields(&mut p, spec.table, entity, o.hlc, &payload);
+                let row = set_fields(&mut p, spec.table, entity, o.hlc, &payload);
+                if op::set_upserts(spec.table) {
+                    row.exists = true;
+                }
             }
             Action::Revise => {
                 let mut fields = payload.clone();

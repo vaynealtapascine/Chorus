@@ -1,0 +1,41 @@
+{
+  "args": [
+    "[{\"id\": \"0192f8c2-0000-7000-8000-000000000001\", \"kind\": \"stage.save\", \"v\": 1, \"scope\": \"account:0192f8c2-0000-7000-8000-0000000000a1\", \"entity_id\": \"0192f8c2-0000-7000-8000-0000000000f1\", \"hlc\": \"01a0c4506c00-0000-00000001\", \"device_at\": 1790000000000, \"tz_offset_min\": 0, \"payload\": {\"name\": \"Agree\", \"definition\": {\"selected\": [\"m1\"]}}, \"seq\": 1, \"account_id\": \"0192f8c2-0000-7000-8000-0000000000a1\", \"device_id\": \"dev1\", \"occurred_at\": 1790000000000, \"received_at\": 1790000000000}, {\"id\": \"0192f8c2-0000-7000-8000-000000000002\", \"kind\": \"stage.save\", \"v\": 1, \"scope\": \"account:0192f8c2-0000-7000-8000-0000000000a1\", \"entity_id\": \"0192f8c2-0000-7000-8000-0000000000f1\", \"hlc\": \"01a0c4506c0a-0000-00000001\", \"device_at\": 1790000000010, \"tz_offset_min\": 0, \"payload\": {\"name\": \"Agree thread\"}, \"seq\": 2, \"account_id\": \"0192f8c2-0000-7000-8000-0000000000a1\", \"device_id\": \"dev1\", \"occurred_at\": 1790000000010, \"received_at\": 1790000000010}, {\"id\": \"0192f8c2-0000-7000-8000-000000000003\", \"kind\": \"bucket.set\", \"v\": 1, \"scope\": \"account:0192f8c2-0000-7000-8000-0000000000a1\", \"entity_id\": \"0192f8c2-0000-7000-8000-0000000000f2\", \"hlc\": \"01a0c4506c14-0000-00000001\", \"device_at\": 1790000000020, \"tz_offset_min\": 0, \"payload\": {\"name\": \"Close friends\", \"ceiling\": {\"delay\": {\"min_s\": 0, \"max_s\": 0}}}, \"seq\": 3, \"account_id\": \"0192f8c2-0000-7000-8000-0000000000a1\", \"device_id\": \"dev1\", \"occurred_at\": 1790000000020, \"received_at\": 1790000000020}]"
+  ],
+  "description": "tables with no create op: the first .set creates the row (upsert)",
+  "expect": {
+    "fronts": {},
+    "opaque": 0,
+    "rows": {
+      "bucket": {
+        "0192f8c2-0000-7000-8000-0000000000f2": {
+          "exists": true,
+          "fields": {
+            "ceiling": {
+              "delay": {
+                "max_s": 0,
+                "min_s": 0
+              }
+            },
+            "name": "Close friends"
+          }
+        }
+      },
+      "stage": {
+        "0192f8c2-0000-7000-8000-0000000000f1": {
+          "exists": true,
+          "fields": {
+            "definition": {
+              "selected": [
+                "m1"
+              ]
+            },
+            "name": "Agree thread"
+          }
+        }
+      }
+    },
+    "sets": {}
+  },
+  "fn": "project"
+}

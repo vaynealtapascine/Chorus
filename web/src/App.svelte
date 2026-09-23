@@ -8,6 +8,7 @@
   import Members from './lib/ui/Members.svelte';
   import Onboarding from './lib/ui/Onboarding.svelte';
   import People from './lib/ui/People.svelte';
+  import Stage from './lib/ui/Stage.svelte';
   import Switcher from './lib/ui/Switcher.svelte';
   import Trash from './lib/ui/Trash.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
@@ -46,7 +47,7 @@
     { path: '/history', name: 'history', label: 'History' },
     { path: '/people', name: 'people', label: 'People' },
   ];
-  const active = $derived(router.route.name === 'member' ? 'members' : router.route.name);
+  const active = $derived(router.route.name === 'member' ? 'members' : router.route.name === 'stage' ? 'chat' : router.route.name);
 </script>
 
 {#if status === 'no-device'}
@@ -71,6 +72,8 @@
         <Chat {projection} {dark} channelId={router.route.id} />
       {:else if router.route.name === 'history'}
         <History {projection} {dark} />
+      {:else if router.route.name === 'stage' && router.route.id}
+        <Stage {projection} {dark} channelId={router.route.id} />
       {:else if router.route.name === 'people'}
         <People {projection} />
       {:else if router.route.name === 'trash'}
@@ -143,5 +146,11 @@
     nav a.on {
       color: var(--accent);
     }
+  }
+  /* stage Capture (Stage.svelte): only the canvas stays */
+  :global(body.capture) header,
+  :global(body.capture) nav,
+  :global(body.capture .toast) {
+    display: none !important;
   }
 </style>

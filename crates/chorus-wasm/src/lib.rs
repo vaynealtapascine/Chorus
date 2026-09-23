@@ -137,6 +137,12 @@ pub fn new_id(now_ms: f64, random: &[u8]) -> Result<String, JsError> {
     Ok(chorus_core::id::new_id(now_ms as u64, r))
 }
 
+/// Stage plan (screenshot view): items + definition → `{"rows", "names"}`.
+#[wasm_bindgen(js_name = stagePlan)]
+pub fn stage_plan(items_json: &str, definition_json: &str) -> Result<String, JsError> {
+    wrap(api::stage_plan(items_json, definition_json))
+}
+
 /// A follower-ceiling preset: close | gentle | private | digest | off.
 #[wasm_bindgen(js_name = notifyPreset)]
 pub fn notify_preset(name: &str) -> Result<String, JsError> {

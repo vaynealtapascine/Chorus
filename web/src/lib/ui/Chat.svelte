@@ -311,7 +311,10 @@
       {#if current}
         <details class="room-menu">
           <summary aria-label="Channel menu">⋯</summary>
-          <a href="#/trash/{current.id}">Show deleted</a>
+          <div class="menu-items">
+            <a href="#/stage/{current.id}">Stage… (screenshot)</a>
+            <a href="#/trash/{current.id}">Show deleted</a>
+          </div>
         </details>
       {/if}
     </header>
@@ -542,7 +545,8 @@
   .thread-back { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
   .room-menu { position: relative; color: var(--ink-3); }
   .room-menu summary { cursor: pointer; list-style: none; }
-  .room-menu a { position: absolute; right: 0; top: 100%; z-index: 2; width: max-content; padding: var(--s-2) var(--s-3); color: var(--accent); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); text-decoration: none; font-size: var(--fs-sm); }
+  .menu-items { position: absolute; right: 0; top: 100%; z-index: 2; width: max-content; display: grid; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .room-menu a { padding: var(--s-2) var(--s-3); color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
   .thread-origin {
     display: grid;
     gap: 2px;

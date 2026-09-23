@@ -181,6 +181,17 @@ pub fn notify_preset(name: &str) -> Result<String, String> {
     crate::notify::preset(name).map(|v| js(&v)).ok_or_else(|| format!("unknown preset {name}"))
 }
 
+/// Stage plan: items (JSON array, display order) + definition → `{"rows", "names"}`.
+pub fn stage_plan(items_json: &str, definition_json: &str) -> Result<String, String> {
+    let items: Vec<crate::stage::Item> = parse("stage items", items_json)?;
+    let def: crate::stage::Definition = if definition_json.trim().is_empty() {
+        Default::default()
+    } else {
+        parse("stage definition", definition_json)?
+    };
+    Ok(js(&crate::stage::plan(&items, &def)))
+}
+
 /// Echo for binding smoke tests.
 pub fn echo_json(v: &str) -> Result<String, String> {
     let x: Value = parse("value", v)?;

@@ -77,6 +77,12 @@ pub fn hlc_observe(last: String, node: u32, remote: String, now_ms: u64) -> Resu
     wrap(api::hlc_observe(&last, node, &remote, now_ms))
 }
 
+/// Stage plan (screenshot view): items + definition → `{"rows", "names"}`.
+#[uniffi::export]
+pub fn stage_plan(items_json: String, definition_json: String) -> Result<String, CoreError> {
+    wrap(api::stage_plan(&items_json, &definition_json))
+}
+
 /// A new UUIDv7 id (`random` = 10 bytes).
 #[uniffi::export]
 pub fn new_id(now_ms: u64, random: Vec<u8>) -> Result<String, CoreError> {

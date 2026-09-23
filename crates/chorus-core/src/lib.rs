@@ -17,6 +17,7 @@ pub mod op;
 pub mod replica;
 pub mod restore;
 pub mod speaker;
+pub mod stage;
 pub mod sync;
 pub mod text;
 pub mod time;

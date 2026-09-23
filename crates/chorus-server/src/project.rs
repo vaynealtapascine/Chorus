@@ -107,7 +107,27 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
     let cols = writable(conn, table)?;
     let (names, values): (Vec<String>, Vec<Sql>) =
         vals.iter().filter(|(k, _)| cols.contains(k)).map(|(k, v)| (k.clone(), to_sql(v))).unzip();
-    upsert(conn, table, &["id"], &names, values)?;
+    match table {
+        // one row per account, keyed by it
+        "system" => upsert(conn, table, &["account_id"], &names, values)?,
+        // created by the server at enrolment; `account.set` only updates it
+        "account" => {
+            let sets: Vec<String> = names
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| !matches!(n.as_str(), "id" | "created_at"))
+                .map(|(i, n)| format!("{n} = ?{}", i + 1))
+                .collect();
+            let id_at = names.iter().position(|n| n == "id").map_or(0, |i| i + 1);
+            if !sets.is_empty() && id_at > 0 {
+                conn.execute(
+                    &format!("UPDATE account SET {} WHERE id = ?{id_at}", sets.join(", ")),
+                    params_from_iter(values),
+                )?;
+            }
+        }
+        _ => upsert(conn, table, &["id"], &names, values)?,
+    }
     match table {
         "message" => {
             message_extras(conn, id, row.fields.get("authors"), &row.fields)?;
