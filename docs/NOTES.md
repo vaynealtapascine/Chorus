@@ -66,3 +66,7 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   rendering after a name is retired or reused. The active `/emoji` catalogue excludes retired
   rows, while sync keeps the tombstoned row. Existing web device records lack `is_admin`; the
   client renews their signed session once to learn it before showing the emoji manager.
+- 2026-09-23 gpt-6-sol — sharing — `follow.ceiling = {}` is an intentional "inherit default";
+  setting every newly accepted follower to the Gentle preset would mask
+  `account.settings.follow_ceiling`. Bucket assignments use follower **account IDs** in the
+  element-set payload, while follow IDs are used only for per-follow ceiling ops.
