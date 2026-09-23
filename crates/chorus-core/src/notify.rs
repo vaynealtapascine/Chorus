@@ -313,6 +313,10 @@ pub struct Prefs {
     pub quiet_hours: Option<QuietHours>,
     pub quiet_behaviour: QuietBehaviour,
     pub mute_until: Option<i64>,
+    /// The follower's UTC offset (minutes) for their own `quiet_hours` and `digest_time`, set by
+    /// their client when it saves prefs. Without it, the switch's (system's) offset is used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tz_offset_min: Option<i32>,
 }
 
 impl Default for Prefs {
@@ -327,6 +331,7 @@ impl Default for Prefs {
             quiet_hours: None,
             quiet_behaviour: QuietBehaviour::Hold,
             mute_until: None,
+            tz_offset_min: None,
         }
     }
 }
@@ -612,17 +617,18 @@ pub fn route(r: &RouteIn) -> Route {
     if p.mute_until.is_some_and(|m| m > r.due_at) {
         return Route::RevealOnly;
     }
+    // the ceiling's windows are the system's local time; the follower's own are theirs
+    let follower_tz = p.tz_offset_min.unwrap_or(r.tz_offset_min);
     let daily = matches!(p.delivery, Delivery::DigestDaily) || c.digest_only;
     let over_cap = c.max_per_day.is_some_and(|m| r.sent_today >= m);
     if daily || over_cap || matches!(p.delivery, Delivery::DigestHourly) {
-        let at = next_digest(r.due_at, daily || over_cap, &p.digest_time, r.tz_offset_min, r.digest_draw);
+        let at = next_digest(r.due_at, daily || over_cap, &p.digest_time, follower_tz, r.digest_draw);
         return Route::Digest { at };
     }
     // the stricter of the two quiet windows wins: hold until the later end
-    let hold = [c.quiet_hours.as_ref(), p.quiet_hours.as_ref()]
+    let hold = [(c.quiet_hours.as_ref(), r.tz_offset_min), (p.quiet_hours.as_ref(), follower_tz)]
         .into_iter()
-        .flatten()
-        .filter_map(|q| quiet_until(r.due_at, q, r.tz_offset_min))
+        .filter_map(|(q, tz)| quiet_until(r.due_at, q?, tz))
         .max();
     match hold {
         Some(_) if p.quiet_behaviour == QuietBehaviour::Drop => Route::RevealOnly,
@@ -866,8 +872,32 @@ mod tests {
         assert_eq!(r(&capped, &p, Notify::Default, false, 3), Route::Digest { at: 10 * DAY + 20 * HOUR });
         let quiet = Prefs { quiet_hours: Some(QuietHours { from: "11:00".into(), to: "13:00".into() }), ..p.clone() };
         assert_eq!(r(&c, &quiet, Notify::Default, false, 0), Route::Deliver { at: 10 * DAY + 13 * HOUR });
-        let drop = Prefs { quiet_behaviour: QuietBehaviour::Drop, ..quiet };
+        let drop = Prefs { quiet_behaviour: QuietBehaviour::Drop, ..quiet.clone() };
         assert_eq!(r(&c, &drop, Notify::Default, false, 0), Route::RevealOnly);
+
+        // the follower is 9 hours ahead: 12:00 for the system is 21:00 for them, so their
+        // "23:00–08:00" doesn't apply yet, while "20:00–22:00" holds it until 22:00 their time
+        let night = |from: &str, to: &str| Prefs {
+            quiet_hours: Some(QuietHours { from: from.into(), to: to.into() }),
+            tz_offset_min: Some(9 * 60),
+            ..p.clone()
+        };
+        assert_eq!(
+            r(&c, &night("23:00", "08:00"), Notify::Default, false, 0),
+            Route::Deliver { at: 10 * DAY + 12 * HOUR }
+        );
+        assert_eq!(
+            r(&c, &night("20:00", "22:00"), Notify::Default, false, 0),
+            Route::Deliver { at: 10 * DAY + 13 * HOUR }
+        );
+        // the ceiling's window stays in the system's time, even with a follower offset
+        let sys_quiet =
+            Ceiling { quiet_hours: Some(QuietHours { from: "11:00".into(), to: "13:00".into() }), ..c.clone() };
+        let tz_only = Prefs { tz_offset_min: Some(9 * 60), ..p.clone() };
+        assert_eq!(r(&sys_quiet, &tz_only, Notify::Default, false, 0), Route::Deliver { at: 10 * DAY + 13 * HOUR });
+        // and their daily digest comes at 20:00 their time (11:00 for the system)
+        let digest = Prefs { delivery: Delivery::DigestDaily, tz_offset_min: Some(9 * 60), ..p.clone() };
+        assert_eq!(r(&c, &digest, Notify::Default, false, 0), Route::Digest { at: 11 * DAY + 11 * HOUR });
     }
 
     #[test]

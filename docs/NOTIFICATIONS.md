@@ -125,9 +125,14 @@ fuzzing hides the exact time afterwards — use both for real privacy.*
   "quiet_hours": { "from": "23:00", "to": "08:00" },
   "quiet_behaviour": "hold",              // hold | drop
   "mute_until": null,
+  "tz_offset_min": 540,                   // the follower's UTC offset, sent by their client
   "channel": "switches"                   // Android channel/sound choice
 }
 ```
+
+`quiet_hours` and `digest_time` here are the **follower's** local time, using `tz_offset_min`.
+Clients send their current offset whenever they save prefs. Without it, the switch's (system's)
+offset is used, as it always is for the ceiling's own `quiet_hours`.
 
 ## 5. The follower-view invariant (D-016)
 
@@ -155,6 +160,10 @@ Rules:
 Tests (M8): for random switch sequences and ceilings, assert that the sequence of follower-visible
 states over time (from every surface) equals the sequence of revealed states, and that no surface
 changes between reveal times.
+
+Implemented as `follower_surfaces_only_change_at_reveal_times` in
+`crates/chorus-server/tests/notifier.rs`. It covers the follower view and the inbox; add any new
+follower surface to its `surfaces` closure. A mutation that reveals one minute early fails it.
 
 ## 6. Late arrivals and server downtime
 

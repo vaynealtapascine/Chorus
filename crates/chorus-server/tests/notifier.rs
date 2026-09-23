@@ -300,3 +300,100 @@ fn bucket_ceiling_inherits_and_folds_while_member_policy_restricts_reveal() {
     let v = notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().unwrap();
     assert_eq!(v["time"]["mode"], "part_of_day");
 }
+
+#[test]
+fn a_followers_quiet_hours_are_in_their_own_time_zone() {
+    let (mut w, kai, _, _) = world();
+    let follow: String = w.c.query_row("SELECT id FROM follow", [], |r| r.get(0)).unwrap();
+    // NOW is 14:13 UTC; the follower is at UTC+9, where it's 23:13 and "23:00–08:00" applies
+    let prefs = json!({"quiet_hours": {"from": "23:00", "to": "08:00"}, "tz_offset_min": 540});
+    follows::set_prefs(&w.c, &w.friend, &follow, prefs, NOW - 1_000).unwrap();
+    w.switch(&[&kai], NOW);
+    let due = NOW + SETTLE + DELAY;
+    notifier::process_due(&w.c, due).unwrap();
+    assert_eq!(w.view(), ["Kai"], "quiet hours hold the ping, not the reveal");
+    assert!(w.inbox().is_empty());
+    let morning = NOW - NOW.rem_euclid(86_400_000) + 23 * 3_600_000; // 08:00 at UTC+9
+    notifier::process_due(&w.c, morning - 1).unwrap();
+    assert!(w.inbox().is_empty());
+    notifier::process_due(&w.c, morning).unwrap();
+    assert_eq!(w.inbox(), ["Kai is fronting"]);
+}
+
+/// NOTIFICATIONS.md §5 over random switch sequences: recording a switch never changes what the
+/// follower can see; anything they see changes only in a pass that handled something due; what
+/// the view shows is a real past state at least settle + minimum delay old, in order; and a hidden
+/// member is never named anywhere.
+#[test]
+fn follower_surfaces_only_change_at_reveal_times() {
+    let tick = 30_000;
+    let mut total_reveals = 0;
+    for seed in 1..=12u64 {
+        let (mut w, kai, june, secret) = world();
+        let follow: String = w.c.query_row("SELECT id FROM follow", [], |r| r.get(0)).unwrap();
+        let max_s = [60, 300, 900][(seed % 3) as usize];
+        let stacking = if seed % 4 == 0 { "sequence" } else { "collapse" };
+        let ceiling = json!({"delay": {"min_s": 60, "max_s": max_s}, "time": {"mode": "exact"},
+                             "levels": ["front"], "stacking": stacking});
+        w.push("follow.set_ceiling", &follow, json!({"ceiling": ceiling}), NOW - 2_000);
+
+        let mut rng = seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
+        let mut next = move || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            rng
+        };
+        let surfaces = |w: &World| {
+            let v = notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap();
+            let l = notifier::list(&w.c, &w.friend, 200).unwrap();
+            serde_json::to_string(&(v, l)).unwrap()
+        };
+        let named = |w: &World| -> Vec<String> {
+            let mut v = w.view();
+            v.sort();
+            v
+        };
+        let who = [(kai.as_str(), Some("Kai")), (june.as_str(), Some("June")), (secret.as_str(), None)];
+        // what really happened: (time, the names a follower may know about, sorted)
+        let mut history: Vec<(i64, Vec<String>)> = vec![(NOW - 60_000, Vec::new())];
+        let mut matched = 0;
+        let mut reveals = 0;
+        let mut t = NOW;
+        for _ in 0..240 {
+            t += tick;
+            if next() % 8 == 0 {
+                let at = t - (next() % tick as u64) as i64;
+                let chosen: Vec<_> = who.iter().filter(|_| next() % 2 == 0).collect();
+                let ids: Vec<&str> = chosen.iter().map(|(id, _)| *id).collect();
+                let mut names: Vec<String> = chosen.iter().filter_map(|(_, n)| n.map(str::to_string)).collect();
+                names.sort();
+                let before = surfaces(&w);
+                w.switch(&ids, at);
+                assert_eq!(surfaces(&w), before, "seed {seed}: recording a switch changed a follower surface");
+                history.push((at, names));
+            }
+            let before = surfaces(&w);
+            let p = notifier::process_due(&w.c, t).unwrap();
+            let after = surfaces(&w);
+            assert!(!after.contains("Secret"), "seed {seed}: a hidden member was named");
+            if after != before {
+                reveals += 1;
+                assert!(p.handled > 0, "seed {seed}: a surface changed with nothing due at {t}");
+            }
+            let shown = named(&w);
+            let old_enough = t - SETTLE - 60_000;
+            let at = (matched..history.len()).find(|&i| history[i].0 <= old_enough && history[i].1 == shown);
+            let Some(i) = at else {
+                panic!(
+                    "seed {seed}: at {t} the view shows {shown:?}, not a past state old enough, in order: {history:?}"
+                );
+            };
+            matched = i;
+        }
+        assert!(history.len() >= 12, "seed {seed}: only {} switches", history.len());
+        total_reveals += reveals;
+    }
+    // delays are drawn on the server, so count reveals across all seeds, not per seed
+    assert!(total_reveals >= 40, "too few reveals overall: {total_reveals}");
+}
