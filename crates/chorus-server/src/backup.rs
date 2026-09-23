@@ -190,9 +190,12 @@ pub fn restore(from: &Path, into: &Path) -> anyhow::Result<()> {
             fs::create_dir_all(target.parent().unwrap())?;
             fs::copy(source, target)?;
         }
-        let conn = db::open(&database)?;
+        let mut conn = db::open(&database)?;
         let integrity: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
         ensure!(integrity == "ok", "SQLite integrity check failed: {integrity}");
+        // a snapshot from an older build: bring the copy (never the snapshot) to this schema
+        // first, so the rebuild below and the server that opens it agree on the tables
+        db::migrate(&mut conn)?;
         verify_rebuild(&database)?;
         let epoch = db::meta(&conn, "epoch")?.and_then(|s| s.parse::<u64>().ok()).unwrap_or(1) + 1;
         db::set_meta(&conn, "epoch", &epoch.to_string())?;

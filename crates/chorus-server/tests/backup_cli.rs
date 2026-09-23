@@ -180,3 +180,32 @@ fn restore_accepts_time_dependent_and_pre_0004_projections() {
     let restored = fixture.run(&["restore", "--from", &snapshot, "--into", &into.to_string_lossy()]);
     assert!(restored.status.success(), "{}", String::from_utf8_lossy(&restored.stderr));
 }
+
+/// A snapshot taken by an older build (here: before migration 0004) restores with this one: the
+/// restored copy is migrated before it's verified. The snapshot itself stays as it was.
+#[test]
+fn restore_migrates_a_snapshot_from_an_older_schema() {
+    let fixture = Fixture::new();
+    {
+        let conn = db::open(&fixture.root.join("data/chorus.db")).unwrap();
+        conn.execute_batch(
+            "DROP INDEX fi_open; DROP INDEX fi_account_end;
+             ALTER TABLE read_state DROP COLUMN mark_at; ALTER TABLE read_state DROP COLUMN mark_id;
+             ALTER TABLE read_state DROP COLUMN mark_hlc; ALTER TABLE read_state DROP COLUMN set_at;
+             ALTER TABLE read_state DROP COLUMN set_id; ALTER TABLE read_state DROP COLUMN set_hlc;
+             ALTER TABLE read_state DROP COLUMN state_ok;",
+        )
+        .unwrap();
+        db::set_meta(&conn, "schema_version", "3").unwrap();
+    }
+    let backup = fixture.run(&["backup"]);
+    assert!(backup.status.success(), "{}", String::from_utf8_lossy(&backup.stderr));
+    let snapshot = PathBuf::from(String::from_utf8(backup.stdout).unwrap().trim());
+    let into = fixture.root.join("restored");
+    let restored = fixture.run(&["restore", "--from", &snapshot.to_string_lossy(), "--into", &into.to_string_lossy()]);
+    assert!(restored.status.success(), "{}", String::from_utf8_lossy(&restored.stderr));
+    let conn = Connection::open(into.join("chorus.db")).unwrap();
+    assert_eq!(db::schema_version(&conn).unwrap(), db::MIGRATIONS.len());
+    let old = Connection::open(snapshot.join("chorus.db")).unwrap();
+    assert_eq!(db::schema_version(&old).unwrap(), 3, "the snapshot itself is untouched");
+}
