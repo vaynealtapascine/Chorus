@@ -94,6 +94,8 @@ Additional notes for those tasks:
     server. On the web (`web/src/lib/data.ts` `selfMember`), its presence hides members, history,
     the front card and quick switch, and chat speaks as it. Do the same on Android. The widget
     and search launcher make no sense for a person, so show a short "for systems" note instead.
+- **Migrations:** main now has `0003_follower_history`. Number any new ones `0004` and up, and
+  keep the list in `db.rs` in order when merging.
 - **Android dependencies:** `settings.gradle.kts` now limits `google()` to Google's groups, so
   a library from **Maven Central** can be fetched online (drop `--offline` once) even while
   dl.google.com is down. Pin any you add in DECISIONS §Versions. AndroidX libraries still need
