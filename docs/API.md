@@ -86,8 +86,8 @@ from the endpoint clears the registration.
 
 Writes through tokens are turned into ops server-side with the token's pseudo-device id.
 
-Implemented so far (M10.2, `api_data.rs`): scopes `read:front`, `read:members`, `stream`,
-`write:front` (see §4);
+Implemented so far (M10.2 and M5.8, `api_data.rs`): scopes `read:front`, `read:members`,
+`read:messages`, `stream`, `write:front`, `export` (see §4);
 `POST /tokens {name, scopes}` → `{id, token}` (shown once), `GET /tokens`, `DELETE /tokens/{id}` —
 from a signed-in device only (tokens can't mint tokens). Reads: `GET /front`, `/front/switches`,
 `/front/intervals`, `/members`. `GET /stream` sends `event: front` (current front first, then each
@@ -115,6 +115,8 @@ GET  /spaces
 GET  /spaces/{id}/channels
 GET  /channels/{id}/messages?before=&after=&around=&limit=
 GET  /messages/{id}                        incl. revisions if ?revisions=1
+  The current read-only history view returns the same scoped message fields as search;
+  revisions are reserved for a later API pass.
 GET  /messages/{id}/thread
 GET  /search/messages?q=&in=&from=&before=&after=&has=
   → {items:[{id,channel_id,space_id,account_id,occurred_at,text,cw,visibility,authors}]}

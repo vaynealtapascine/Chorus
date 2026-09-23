@@ -151,4 +151,21 @@ async fn http_search_applies_account_visibility_and_filters() {
     assert_eq!(client.get(format!("{base}?q=violet")).send().await.unwrap().status(), 401);
     assert_eq!(client.get(format!("{base}?q=violet")).bearer_auth("bad").send().await.unwrap().status(), 401);
     assert_eq!(get("bob-session", "&has=unknown").send().await.unwrap().status(), 400);
+    let message_base = base.replace("/search/messages", "/messages");
+    assert_eq!(
+        client.get(format!("{message_base}/public")).bearer_auth("bob-session").send().await.unwrap().status(),
+        200
+    );
+    assert_eq!(
+        client.get(format!("{message_base}/aside")).bearer_auth("bob-session").send().await.unwrap().status(),
+        404
+    );
+    assert_eq!(
+        client.get(format!("{message_base}/aside")).bearer_auth("alice-session").send().await.unwrap().status(),
+        200
+    );
+    assert_eq!(
+        client.get(format!("{message_base}/public")).bearer_auth("outsider-session").send().await.unwrap().status(),
+        404
+    );
 }

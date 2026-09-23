@@ -13,9 +13,10 @@
   import EmojiImage from './EmojiImage.svelte';
   import SpaceRail from './SpaceRail.svelte';
   import { authorCards, listSpaces, spaceTitle, type SpaceInfo } from '../spaces';
+  import { apiBase } from '../sync/device';
   import type { MemberRow } from '../data';
 
-  let { projection, dark, channelId }: { projection: Projection; dark: boolean; channelId?: string } = $props();
+  let { projection, dark, channelId, focusId }: { projection: Projection; dark: boolean; channelId?: string; focusId?: string } = $props();
 
   const ss = $derived(spaces(projection));
   const allChannels = $derived(channels(projection));
@@ -39,6 +40,9 @@
   const parentChannel = $derived(allChannels.find((c) => c.id === threadParent?.channel_id));
   // other accounts' members in shared spaces and DMs come as author cards (spaces.ts)
   let cards = $state<MemberRow[]>([]);
+  let history = $state<(Pick<MessageRow, 'id' | 'channel_id' | 'authors' | 'text' | 'cw' | 'visibility' | 'occurred_at'> & { space_id: string }) | null>(null);
+  let historyError = $state('');
+  let historyRevealed = $state(false);
   let directory = $state(new Map<string, SpaceInfo>());
   const people = $derived(new Map([...cards, ...members(projection)].map((m) => [m.id, m])));
   const emojiRows = $derived(customEmojis(projection));
@@ -481,8 +485,30 @@
 
   let list: HTMLElement | undefined = $state();
   $effect(() => {
+    if (focusId) return;
     void msgs.length;
     queueMicrotask(() => list?.scrollTo({ top: list.scrollHeight }));
+  });
+  $effect(() => {
+    const id = focusId;
+    if (!id || visibleMsgs.some((m) => m.id === id)) { history = null; historyError = ''; return; }
+    const abort = new AbortController();
+    history = null;
+    historyRevealed = false;
+    fetch(`${apiBase()}/messages/${encodeURIComponent(id)}`, {
+      headers: { authorization: `Bearer ${sync.device?.session ?? ''}` }, signal: abort.signal,
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`History HTTP ${response.status}`);
+      return response.json() as Promise<NonNullable<typeof history>>;
+    }).then((found) => {
+      if (found.channel_id === channelId) history = found;
+      else historyError = 'This message belongs to another channel.';
+    }).catch((error) => { if (!abort.signal.aborted) historyError = String(error); });
+    return () => abort.abort();
+  });
+  $effect(() => {
+    if (!focusId || (!visibleMsgs.some((m) => m.id === focusId) && history?.id !== focusId)) return;
+    queueMicrotask(() => list?.querySelector(`[data-message-id="${CSS.escape(focusId)}"]`)?.scrollIntoView({ block: 'center' }));
   });
 </script>
 
@@ -556,6 +582,17 @@
     {/if}
 
     <div class="list" bind:this={list}>
+      {#if focusId && !visibleMsgs.some((m) => m.id === focusId)}
+        {#if history && memberVisible(history, ss.find((s) => s.id === history?.space_id)?.kind, activeMembers, viewingAs)}
+          <article class="history-message" data-message-id={history.id}>
+            <span class="hint">From server history · {new Date(history.occurred_at).toLocaleString()}</span>
+            <strong>{history.authors.map((id) => people.get(id)?.name ?? 'Someone').join(' & ')}</strong>
+            {#if history.cw && !historyRevealed}
+              <button onclick={() => (historyRevealed = true)}>Content warning: {history.cw} · Show content</button>
+            {:else}<p>{history.text}</p>{/if}
+          </article>
+        {:else if historyError}<p class="hint" role="status">{historyError}</p>{/if}
+      {/if}
       {#each grouped as { m, cont } (m.id)}
         <Message
           {m}
@@ -755,6 +792,9 @@
 </div>
 
 <style>
+  .history-message { display: grid; gap: var(--s-2); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+  .history-message button { width: fit-content; font: inherit; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: var(--s-2); cursor: pointer; }
+  .history-message p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .view-as { display: flex; gap: var(--s-1); align-items: center; color: var(--ink-3); font-size: var(--fs-xs); }
   .view-as select, .chat-advanced select, .chat-advanced input:not([type='checkbox']) { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-1); }
   .visibility-members { display: flex; flex-wrap: wrap; gap: var(--s-2); max-height: 8rem; overflow: auto; }

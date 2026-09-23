@@ -10,6 +10,7 @@
   import People from './lib/ui/People.svelte';
   import DataPage from './lib/ui/DataPage.svelte';
   import Stage from './lib/ui/Stage.svelte';
+  import Search from './lib/ui/Search.svelte';
   import Switcher from './lib/ui/Switcher.svelte';
   import Trash from './lib/ui/Trash.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
@@ -45,6 +46,7 @@
   const tabs = [
     { path: '/', name: 'home', label: 'Home' },
     { path: '/chat', name: 'chat', label: 'Chat' },
+    { path: '/search', name: 'search', label: 'Search' },
     { path: '/members', name: 'members', label: 'Members' },
     { path: '/history', name: 'history', label: 'History' },
     { path: '/people', name: 'people', label: 'People' },
@@ -71,7 +73,9 @@
       {:else if router.route.name === 'member' && router.route.id}
         <MemberEditor {projection} id={router.route.id} {dark} />
       {:else if router.route.name === 'chat'}
-        <Chat {projection} {dark} channelId={router.route.id} />
+        <Chat {projection} {dark} channelId={router.route.id} focusId={router.route.messageId} />
+      {:else if router.route.name === 'search'}
+        <Search {projection} />
       {:else if router.route.name === 'history'}
         <History {projection} {dark} />
       {:else if router.route.name === 'stage' && router.route.id}

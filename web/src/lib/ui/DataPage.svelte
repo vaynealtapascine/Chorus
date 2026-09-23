@@ -9,6 +9,7 @@
   const SCOPES = [
     { id: 'read:front', label: 'Who is fronting, switches and front history' },
     { id: 'read:members', label: 'Member list' },
+    { id: 'read:messages', label: 'Search message history' },
     { id: 'stream', label: 'Live stream (overlays)' },
     { id: 'write:front', label: 'Log switches (NFC tags, Tasker, Home Assistant)' },
     { id: 'export', label: 'Download your op log and data exports' },

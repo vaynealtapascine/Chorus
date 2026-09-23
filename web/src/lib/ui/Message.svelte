@@ -98,12 +98,12 @@
 </script>
 
 {#if m.deleted}
-  <div class="msg deleted">
+  <div class="msg deleted" data-message-id={m.id}>
     Message deleted{#if mine}<button class="link" onclick={onrestore}>Restore</button>{/if}
     {#if thread}<button class="link" onclick={onthread}>Open thread · {thread.replyCount} {thread.replyCount === 1 ? 'reply' : 'replies'}</button>{/if}
   </div>
 {:else}
-  <div class="msg" class:cont class:pinned={m.pinned} class:selected>
+  <div class="msg" class:cont class:pinned={m.pinned} class:selected data-message-id={m.id}>
     {#if replied}
       <div class="replybar">
         ↪ <span style="color: {color(replied.authors[0] ?? '').name}">{replied.authors.map(nameOf).join(' & ')}</span>

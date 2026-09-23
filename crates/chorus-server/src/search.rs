@@ -72,3 +72,34 @@ pub fn messages(conn: &Connection, principal: &Principal, query: &MessageQuery) 
     };
     Ok(json!({"items": rows.collect::<Result<Vec<_>, _>>()?}))
 }
+
+/// One history message for a jump target that is no longer in the device's local replica.
+pub fn message_by_id(conn: &Connection, principal: &Principal, id: &str) -> Result<Option<Value>, DataError> {
+    if !principal.allows("read:messages") {
+        return Err(DataError::Scope("read:messages"));
+    }
+    use rusqlite::OptionalExtension;
+    let sql = format!(
+        "SELECT m.id, m.channel_id, c.space_id, m.account_id, m.occurred_at, m.text, m.cw, m.visibility,
+                COALESCE((SELECT json_group_array(ma.member_id) FROM message_author ma WHERE ma.message_id=m.id), '[]')
+         FROM message m JOIN channel c ON c.id=m.channel_id
+         WHERE m.id=?1 AND m.deleted_at IS NULL AND c.deleted_at IS NULL
+           AND EXISTS (SELECT 1 FROM scope_access sa WHERE sa.account_id=?2 AND sa.scope='space:'||c.space_id)
+           AND (m.account_id=?2 OR {PUBLIC_MESSAGE_SQL})"
+    );
+    let row = conn
+        .query_row(&sql, params![id, principal.account_id], |r| {
+            let authors: String = r.get(8)?;
+            let visibility: Option<String> = r.get(7)?;
+            Ok(json!({
+                "id": r.get::<_, String>(0)?, "channel_id": r.get::<_, String>(1)?,
+                "space_id": r.get::<_, String>(2)?, "account_id": r.get::<_, String>(3)?,
+                "occurred_at": r.get::<_, i64>(4)?, "text": r.get::<_, String>(5)?,
+                "cw": r.get::<_, Option<String>>(6)?,
+                "visibility": visibility.and_then(|v| serde_json::from_str::<Value>(&v).ok()),
+                "authors": serde_json::from_str::<Value>(&authors).unwrap_or(json!([])),
+            }))
+        })
+        .optional()?;
+    Ok(row)
+}
