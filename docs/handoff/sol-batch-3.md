@@ -90,6 +90,10 @@ Additional notes for those tasks:
   - `data/Chorus.kt` now applies deltas (`Model.applyDelta`), so keep using `chorus.model`.
   - Push and the updater live in `data/Push.kt` and `data/Updater.kt`, and `MainActivity`
     calls `Push.ensure` and `Updater.schedule`. Keep those calls when editing `MainActivity`.
+  - *Added on main:* person accounts now have one `is_self` member (D-003), created by the
+    server. On the web (`web/src/lib/data.ts` `selfMember`), its presence hides members, history,
+    the front card and quick switch, and chat speaks as it. Do the same on Android. The widget
+    and search launcher make no sense for a person, so show a short "for systems" note instead.
 - **Android dependencies:** `settings.gradle.kts` now limits `google()` to Google's groups, so
   a library from **Maven Central** can be fetched online (drop `--offline` once) even while
   dl.google.com is down. Pin any you add in DECISIONS §Versions. AndroidX libraries still need
