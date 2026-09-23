@@ -56,6 +56,59 @@
     await load();
   }
 
+  // Webhooks (API.md §7): POST signed events to your own URL on the tailnet.
+  interface Hook { id: string; url: string; events: string[]; is_enabled: boolean; last_status: number | null; last_error: string | null }
+  const EVENTS = [
+    { id: 'front.switch', label: 'Front changes' },
+    { id: 'member.created', label: 'New members' },
+    { id: 'member.updated', label: 'Member edits' },
+    { id: 'follow.requested', label: 'Follow requests' },
+  ];
+  let hooks = $state<Hook[]>([]);
+  let hookUrl = $state('');
+  let hookEvents = $state<string[]>(['front.switch']);
+  let hookSecret = $state<string | null>(null);
+  let hookNote = $state<Record<string, string>>({});
+
+  async function loadHooks() {
+    try {
+      hooks = (await api('/webhooks')).items;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+  loadHooks();
+
+  async function addHook(e: SubmitEvent) {
+    e.preventDefault();
+    error = '';
+    try {
+      const h = await api('/webhooks', { method: 'POST', body: JSON.stringify({ url: hookUrl.trim(), events: hookEvents }) });
+      hookSecret = h.secret;
+      hookUrl = '';
+      await loadHooks();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async function testHook(id: string) {
+    hookNote = { ...hookNote, [id]: 'Sending…' };
+    const r = await api(`/webhooks/${id}/test`, { method: 'POST' });
+    hookNote = { ...hookNote, [id]: r.ok ? `Delivered (HTTP ${r.status})` : `Failed: ${r.error}` };
+    await loadHooks();
+  }
+
+  async function toggleHook(h: Hook) {
+    await api(`/webhooks/${h.id}`, { method: 'PUT', body: JSON.stringify({ enabled: !h.is_enabled }) });
+    await loadHooks();
+  }
+
+  async function removeHook(id: string) {
+    await api(`/webhooks/${id}`, { method: 'DELETE' });
+    await loadHooks();
+  }
+
   const overlay = (t: string) => `${location.origin}/overlay/front?token=${t}`;
   const when = (t: number | null) => (t ? new Date(t).toLocaleString() : 'never');
 </script>
@@ -105,6 +158,47 @@
       <li class="hint">No tokens yet.</li>
     {/each}
   </ul>
+
+  <h2>Webhooks</h2>
+  <p class="hint">Chorus posts a signed JSON event to your URL (Home Assistant, n8n, a script) when these happen.</p>
+  <form class="card" onsubmit={addHook}>
+    <input bind:value={hookUrl} type="url" placeholder="https://homeassistant.tailnet.ts.net/api/webhook/…" aria-label="Webhook URL" required />
+    {#each EVENTS as ev (ev.id)}
+      <label class="check">
+        <input type="checkbox" value={ev.id} bind:group={hookEvents} />
+        {ev.label}
+      </label>
+    {/each}
+    <button class="primary" disabled={!hookEvents.length}>Add webhook</button>
+  </form>
+  {#if hookSecret}
+    <div class="card fresh">
+      <strong>Signing secret — copy it now, it won't be shown again:</strong>
+      <code>{hookSecret}</code>
+      <span class="hint">Check <code>Chorus-Signature: t=…,v1=…</code> = HMAC-SHA256(secret, t + "." + body).</span>
+    </div>
+  {/if}
+  <ul>
+    {#each hooks as h (h.id)}
+      <li class="card">
+        <div class="row">
+          <div>
+            <strong class="url">{h.url}</strong>
+            <span class="hint">{h.events.join(', ')}{h.is_enabled ? '' : ' · off'}{h.last_status ? ` · last HTTP ${h.last_status}` : ''}</span>
+          </div>
+          <div class="actions">
+            <button class="ghost" onclick={() => testHook(h.id)}>Test</button>
+            <button class="ghost" onclick={() => toggleHook(h)}>{h.is_enabled ? 'Turn off' : 'Turn on'}</button>
+            <button class="ghost" onclick={() => removeHook(h.id)}>Remove</button>
+          </div>
+        </div>
+        {#if hookNote[h.id]}<span class="hint">{hookNote[h.id]}</span>{/if}
+        {#if h.last_error}<span class="error">{h.last_error}</span>{/if}
+      </li>
+    {:else}
+      <li class="hint">No webhooks yet.</li>
+    {/each}
+  </ul>
 </section>
 
 <style>
@@ -117,6 +211,8 @@
   .row { display: flex; justify-content: space-between; align-items: center; }
   .row div { display: grid; }
   .fresh code { word-break: break-all; }
+  .url { word-break: break-all; }
+  .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; }
   ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
   input:not([type='checkbox']) {
     font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line);

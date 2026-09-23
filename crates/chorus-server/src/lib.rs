@@ -13,6 +13,7 @@ pub mod notifier;
 pub mod oplog;
 pub mod project;
 pub mod push;
+pub mod webhooks;
 
 use rusqlite::Connection;
 

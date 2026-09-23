@@ -31,6 +31,11 @@ impl Principal {
     pub fn allows(&self, scope: &str) -> bool {
         self.scopes.as_ref().is_none_or(|s| s.iter().any(|x| x == scope))
     }
+
+    /// A signed-in device rather than an API token (tokens can't manage tokens or webhooks).
+    pub fn is_device(&self) -> bool {
+        self.scopes.is_none()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -220,6 +225,28 @@ pub fn intervals(conn: &Connection, p: &Principal, from: Option<i64>, to: Option
         }))
     })?;
     Ok(json!({"items": rows.collect::<Result<Vec<_>, _>>()?}))
+}
+
+/// One member in the `/members` shape (webhook payloads).
+pub fn member(conn: &Connection, account_id: &str, id: &str) -> rusqlite::Result<Option<Value>> {
+    conn.query_row(
+        "SELECT id, name, display_name, pronouns, color, sigils, archived_at, deleted_at FROM member
+         WHERE id = ?1 AND account_id = ?2",
+        [id, account_id],
+        |r| {
+            Ok(json!({
+                "id": r.get::<_, String>(0)?,
+                "name": r.get::<_, Option<String>>(1)?,
+                "display_name": r.get::<_, Option<String>>(2)?,
+                "pronouns": r.get::<_, Option<String>>(3)?,
+                "color": r.get::<_, Option<String>>(4)?,
+                "sigils": serde_json::from_str::<Value>(&r.get::<_, String>(5)?).unwrap_or(json!([])),
+                "archived": r.get::<_, Option<i64>>(6)?.is_some(),
+                "deleted": r.get::<_, Option<i64>>(7)?.is_some(),
+            }))
+        },
+    )
+    .optional()
 }
 
 pub fn members(conn: &Connection, p: &Principal) -> Result<Value, DataError> {

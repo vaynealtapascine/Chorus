@@ -37,6 +37,9 @@ pub struct Shared {
     peers: Mutex<HashMap<String, Peer>>,
     /// Live events for `/api/v1/stream`: (account id, event JSON).
     pub events: tokio::sync::broadcast::Sender<(String, serde_json::Value)>,
+    /// Webhook deliveries (and their retries) for the delivery task (webhooks.rs).
+    hooks: mpsc::UnboundedSender<crate::webhooks::Delivery>,
+    hook_rx: Mutex<Option<mpsc::UnboundedReceiver<crate::webhooks::Delivery>>>,
 }
 
 pub type AppState = Arc<Shared>;
@@ -45,7 +48,16 @@ impl Shared {
     pub fn new(conn: Connection, cfg: Config) -> anyhow::Result<AppState> {
         let instance_id = db::meta(&conn, "instance_id")?.unwrap_or_default();
         let (events, _) = tokio::sync::broadcast::channel(256);
-        Ok(Arc::new(Shared { db: Mutex::new(conn), cfg, instance_id, peers: Mutex::new(HashMap::new()), events }))
+        let (hooks, hook_rx) = mpsc::unbounded_channel();
+        Ok(Arc::new(Shared {
+            db: Mutex::new(conn),
+            cfg,
+            instance_id,
+            peers: Mutex::new(HashMap::new()),
+            events,
+            hooks,
+            hook_rx: Mutex::new(Some(hook_rx)),
+        }))
     }
 
     fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -63,6 +75,9 @@ impl Shared {
 }
 
 pub fn router(state: AppState) -> Router {
+    if let Some(rx) = state.hook_rx.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        run_webhooks(state.clone(), rx);
+    }
     let api = Router::new()
         .route("/server", get(server_info))
         .route("/auth/redeem", post(redeem))
@@ -77,6 +92,9 @@ pub fn router(state: AppState) -> Router {
         .route("/notifications", get(notifications))
         .route("/tokens", get(tokens_list).post(tokens_create))
         .route("/tokens/{id}", delete(tokens_revoke))
+        .route("/webhooks", get(webhooks_list).post(webhooks_create))
+        .route("/webhooks/{id}", put(webhooks_update).delete(webhooks_remove))
+        .route("/webhooks/{id}/test", post(webhooks_test))
         .route("/front", get(front_now))
         .route("/front/switches", get(front_switches))
         .route("/front/intervals", get(front_intervals))
@@ -567,6 +585,133 @@ async fn account_view(
         .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "you don't follow this account".into()))
 }
 
+// ─── webhooks (webhooks.rs) ──────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct WebhookIn {
+    url: String,
+    events: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct WebhookPatch {
+    enabled: Option<bool>,
+    events: Option<Vec<String>>,
+}
+
+async fn webhooks_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::webhooks::list(&conn, &p)?))
+}
+
+async fn webhooks_create(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<WebhookIn>,
+) -> Result<Response, ApiError> {
+    // resolve the host before taking the db lock
+    let url = crate::webhooks::check_url(b.url.trim(), s.cfg.security.webhooks_allow_external)
+        .await
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "bad_request", e))?;
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    let v = crate::webhooks::create(&conn, &p, url.as_str(), &b.events, now_ms())?;
+    Ok((StatusCode::CREATED, Json(v)).into_response())
+}
+
+async fn webhooks_update(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    Json(b): Json<WebhookPatch>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    crate::webhooks::update(&conn, &p, &id, b.enabled, b.events.as_deref())?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn webhooks_remove(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    crate::webhooks::remove(&conn, &p, &id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Send a `ping` now and say how it went. A failed test is shown but never retried and never
+/// counts towards turning the webhook off.
+async fn webhooks_test(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let d = {
+        let conn = s.db();
+        let p = principal(&s, &conn, &headers)?;
+        crate::webhooks::test(&conn, &p, &id, now_ms())?
+    };
+    let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().unwrap_or_default();
+    let outcome = crate::webhooks::send(&http, &d, s.cfg.security.webhooks_allow_external, now_ms()).await;
+    let (status, error) = match &outcome {
+        Ok(st) => (Some(*st), None),
+        Err((st, e)) => (*st, Some(e.clone())),
+    };
+    s.db()
+        .execute(
+            "UPDATE webhook SET last_status = ?2, last_error = ?3 WHERE id = ?1",
+            rusqlite::params![d.webhook_id, status, error],
+        )
+        .map_err(anyhow::Error::from)?;
+    Ok(Json(json!({"ok": error.is_none(), "status": status, "error": error})))
+}
+
+/// Deliver webhooks: new deliveries arrive on `rx`; due ones go out once a second, each on its own
+/// task so a slow receiver can't hold up others. Retries come back through the same channel.
+fn run_webhooks(state: AppState, mut rx: mpsc::UnboundedReceiver<crate::webhooks::Delivery>) {
+    tokio::spawn(async move {
+        let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap_or_default();
+        let mut pending: Vec<crate::webhooks::Delivery> = Vec::new();
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+        loop {
+            tokio::select! {
+                d = rx.recv() => match d {
+                    Some(d) => pending.push(d),
+                    None => break,
+                },
+                _ = tick.tick() => {}
+            }
+            let now = now_ms();
+            let (due, later): (Vec<_>, Vec<_>) = pending.drain(..).partition(|d| d.due <= now);
+            pending = later;
+            for d in due {
+                let (state, http) = (state.clone(), http.clone());
+                tokio::spawn(async move {
+                    if !crate::webhooks::still_enabled(&state.db(), &d.webhook_id) {
+                        return;
+                    }
+                    let outcome =
+                        crate::webhooks::send(&http, &d, state.cfg.security.webhooks_allow_external, now_ms()).await;
+                    match crate::webhooks::record(&state.db(), &d, &outcome, now_ms()) {
+                        Ok(Some(retry)) => {
+                            let _ = state.hooks.send(retry);
+                        }
+                        Ok(None) => {}
+                        Err(e) => tracing::error!(error = %e, "webhooks: can't record outcome"),
+                    }
+                });
+            }
+        }
+    });
+}
+
 /// Reveal and deliver due follower notifications every few seconds (notifier.rs).
 fn run_notifier(state: AppState) {
     tokio::spawn(async move {
@@ -789,6 +934,12 @@ pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Optio
             let event = json!({"type": "front", "at": now_ms(), "front": v["front"], "since": v["since"]});
             let _ = s.events.send((account.to_string(), event));
         }
+    }
+    match crate::webhooks::deliveries_for(conn, fresh, now_ms()) {
+        Ok(ds) => ds.into_iter().for_each(|d| {
+            let _ = s.hooks.send(d);
+        }),
+        Err(e) => tracing::error!(error = %e, "webhooks: can't build deliveries"),
     }
     let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
     for (device, p) in peers.iter_mut() {

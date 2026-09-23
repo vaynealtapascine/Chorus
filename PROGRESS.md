@@ -136,7 +136,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M10 — Data
 
 - [ ] M10.1 Insights dashboards
-- [~] M10.2 API tokens, SSE stream, webhooks — tokens (web "Your data" page), front/members reads, SSE front stream, OBS overlay done; webhooks not yet
+- [x] M10.2 API tokens, SSE stream, webhooks — tokens + webhooks on the web "Your data" page, front/members reads, SSE front stream, OBS overlay; message/post webhook events wait for M5.7/M7
 - [ ] M10.3 Exports (JSONL op log, tidy CSVs, SQLite copy), documented views
 
 ### M11 — Import
@@ -206,3 +206,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M5.12 M5.12 Trash (finished gpt-6-sol's WIP): restore limited to creator/latest deleter (core::restore, both servers), searchable web Trash + per-channel 'Show deleted'; fixed early out-of-order restores being rejected permanently; fixtures blessed for the new trash stamps
 - 2026-09-23 claude-opus-5.5 — perf (SPEC §9): incremental projector (core/projector.rs) + store `touched` ids + projection deltas to the web; send-message cost on a 55k-op history 640 ms → 0.12 ms native; checked against the reference by a property test and inside the convergence simulator (3000 seeds).
 - 2026-09-23 claude-opus-5.5 — audited + merged gpt-6-sol batch 2 (T1 blobs, T2 attachments, T3 avatars incl. PK + Android display, T4 custom emoji, T5 buckets); T6 backups was in progress, uncommitted, left in the worktree. Android now applies projection deltas too.
+- 2026-09-23 claude-opus-5.5 — M10.2 webhooks (webhooks.rs): signed POSTs (HMAC-SHA256 of t.body) for front.switch/member.created/member.updated/follow.requested, test ping, retries 1m…12h then off with the reason, tailnet-only URLs (resolved on save and per delivery); web Your data section. E2E test + verified in the browser against a local receiver. Also freed C: (0 MB free blocked writes) by cargo-cleaning the stale Chorus\target (17 GB of build output).

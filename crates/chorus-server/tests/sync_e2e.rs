@@ -455,3 +455,122 @@ async fn api_tokens_read_the_front_and_stream_switches() {
     assert_eq!(http.delete(url(&format!("/tokens/{id}"))).bearer_auth(&session).send().await.unwrap().status(), 204);
     assert_eq!(http.get(url("/front")).bearer_auth(&token).send().await.unwrap().status(), 401);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn webhooks_post_signed_events() {
+    // a receiver on the loopback (inside the "tailnet")
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(axum::http::HeaderMap, String)>();
+    let receiver = axum::Router::new().route(
+        "/hook",
+        axum::routing::post(move |h: axum::http::HeaderMap, body: String| {
+            let tx = tx.clone();
+            async move {
+                let _ = tx.send((h, body));
+                axum::http::StatusCode::NO_CONTENT
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let hook = format!("http://{}/hook", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, receiver).await.unwrap() });
+
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 51, "stars").await;
+    let mut phone = Device::new(&sys, 51);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct = phone.scope("account:");
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let session = sys["session"].as_str().unwrap().to_string();
+
+    // outside the tailnet is refused unless allowed
+    let r = http
+        .post(url("/webhooks"))
+        .bearer_auth(&session)
+        .json(&json!({"url": "http://8.8.8.8/hook", "events": ["front.switch"]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    let created: Value = http
+        .post(url("/webhooks"))
+        .bearer_auth(&session)
+        .json(&json!({"url": hook, "events": ["front.switch", "member.created"]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let secret = created["secret"].as_str().unwrap().to_string();
+    let id = created["id"].as_str().unwrap().to_string();
+    let listed: Value = http.get(url("/webhooks")).bearer_auth(&session).send().await.unwrap().json().await.unwrap();
+    assert!(listed["items"][0].get("secret").is_none(), "the secret is shown once");
+
+    async fn next(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<(axum::http::HeaderMap, String)>,
+    ) -> (axum::http::HeaderMap, Value, String) {
+        let (h, body) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await.expect("no webhook").unwrap();
+        let v: Value = serde_json::from_str(&body).unwrap();
+        (h, v, body)
+    }
+    let check = |h: &axum::http::HeaderMap, body: &str| {
+        let sig = h["chorus-signature"].to_str().unwrap();
+        let t: i64 = sig.split(',').next().unwrap().trim_start_matches("t=").parse().unwrap();
+        assert_eq!(sig, chorus_server::webhooks::signature(&secret, t, body));
+    };
+
+    let kai = new_id(1, [52; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    phone.drain(Q).await;
+    let (h, v, body) = next(&mut rx).await;
+    check(&h, &body);
+    assert_eq!(h["chorus-event"], "member.created");
+    assert_eq!(v["data"]["name"], "Kai");
+
+    // not subscribed to member.updated: nothing is sent for the edit; the switch is
+    phone.create("member.set", &acct, &kai, json!({"pronouns": "they/them"})).await;
+    phone
+        .create(
+            "front.switch",
+            &acct,
+            &new_id(2, [53; 10]),
+            json!({"entries": [{"subject_type": "member", "subject_id": kai, "level": "front", "is_primary": true}]}),
+        )
+        .await;
+    phone.drain(Q).await;
+    let (h, v, body) = next(&mut rx).await;
+    check(&h, &body);
+    assert_eq!(v["event"], "front.switch");
+    assert_eq!(v["data"]["front"][0]["name"], "Kai");
+
+    // the test button
+    let t: Value = http
+        .post(url(&format!("/webhooks/{id}/test")))
+        .bearer_auth(&session)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(t["ok"], true);
+    let (h, _, body) = next(&mut rx).await;
+    check(&h, &body);
+    assert_eq!(h["chorus-event"], "ping");
+
+    // turned off: no more deliveries
+    let r = http
+        .put(url(&format!("/webhooks/{id}")))
+        .bearer_auth(&session)
+        .json(&json!({"enabled": false}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 204);
+    phone.create("member.create", &acct, &new_id(3, [54; 10]), json!({"name": "Rin"})).await;
+    phone.drain(Q).await;
+    assert!(tokio::time::timeout(Duration::from_millis(1500), rx.recv()).await.is_err());
+    assert_eq!(http.delete(url(&format!("/webhooks/{id}"))).bearer_auth(&session).send().await.unwrap().status(), 204);
+}

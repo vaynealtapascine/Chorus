@@ -194,6 +194,22 @@ Events: `front.switch`, `front.review`, `member.created`, `member.updated`, `mes
 `post.created`, `follow.requested`. Retries: 1 m, 5 m, 30 m, 2 h, 12 h; then disabled with an
 in-app notice. Webhook URLs may point outside the tailnet only if `webhooks.allow_external` is on.
 
+Implemented (M10.2, `webhooks.rs`):
+
+- **Endpoints** (signed-in devices only, never API tokens):
+  - `GET/POST /webhooks {url, events}` → `{id, secret}`; the secret is shown once.
+  - `PUT /webhooks/{id} {enabled?, events?}` and `DELETE /webhooks/{id}`.
+  - `POST /webhooks/{id}/test` sends a `ping` and answers `{ok, status, error}`. A failed test
+    never counts towards turning the webhook off.
+- **Events so far:** `front.switch`, `member.created`, `member.updated`, `follow.requested`.
+  `message.created` waits for M5.7 visibility, `post.created` for M7, and `front.review` for
+  later. The body also carries `delivery` (the same value as `Chorus-Delivery`).
+- **Internal URLs** are loopback, RFC 1918, link-local, Tailscale's 100.64/10 and fd00::/8, bare
+  names, and `.ts.net`/`.local`/`.lan`/`.internal`/`.home.arpa`. Any other name is resolved and
+  must resolve only to internal addresses; this is checked on save and before each delivery. The
+  switch is `security.webhooks_allow_external` in `chorus.toml`.
+- **Retries** are kept in memory, so a restart drops pending retries.
+
 ## 8. Admin
 
 ```
