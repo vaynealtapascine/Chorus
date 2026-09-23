@@ -70,6 +70,9 @@ Continue with **T6 (finish) → T7 → T8 (with A2) → T9 → T10 → T11 → T
 
 Additional notes for those tasks:
 
+- **T7 exports:** reuse `api_data::principal` (sessions and `chorus_…` API tokens) for
+  `GET /api/v1/exports/...`. Add an `export` scope to `api_data::SCOPES` and to the web "Your
+  data" page (`DataPage.svelte`) rather than a second auth path.
 - **T9 search:** the web client keeps its projection as a plain object updated by deltas
   (`web/src/lib/sync/delta.ts`, `App.svelte` uses `$state.raw`). Build any search index
   incrementally from the same deltas; don't re-scan the whole projection per keystroke. Budget:
