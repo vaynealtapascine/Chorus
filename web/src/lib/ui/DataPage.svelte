@@ -11,7 +11,9 @@
     { id: 'read:members', label: 'Member list' },
     { id: 'stream', label: 'Live stream (overlays)' },
     { id: 'write:front', label: 'Log switches (NFC tags, Tasker, Home Assistant)' },
+    { id: 'export', label: 'Download your op log and data exports' },
   ];
+  const CSV_EXPORTS = ['members', 'groups', 'switches', 'front_intervals', 'front_daily', 'messages', 'posts'];
 
   let tokens = $state<Token[]>([]);
   let name = $state('');
@@ -112,11 +114,38 @@
 
   const overlay = (t: string) => `${location.origin}/overlay/front?token=${t}`;
   const when = (t: number | null) => (t ? new Date(t).toLocaleString() : 'never');
+
+  async function download(path: string, filename: string) {
+    error = '';
+    try {
+      const response = await fetch(`${apiBase()}${path}`, {
+        headers: { authorization: `Bearer ${sync.device?.session ?? ''}` },
+      });
+      if (!response.ok) throw new Error(`Export failed (HTTP ${response.status})`);
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
 </script>
 
 <section class="page">
   <a class="back" href="#/">‹ Home</a>
   <h1 class="display">Your data</h1>
+  <section class="card">
+    <h2>Export your data</h2>
+    <button class="ghost" onclick={() => download('/exports/ops.jsonl', 'ops.jsonl')}>Download op log (JSONL)</button>
+    <div class="actions">
+      {#each CSV_EXPORTS as table (table)}
+        <button class="ghost" onclick={() => download(`/exports/csv/${table}`, `${table}.csv`)}>{table.replaceAll('_', ' ')} CSV</button>
+      {/each}
+    </div>
+  </section>
   <p class="hint">
     Tokens let your own scripts, spreadsheets, Grafana or a stream overlay read <em>your</em> front history,
     and an NFC tag or Tasker log a switch. They only ever reach your own account.

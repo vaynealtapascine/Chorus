@@ -10,6 +10,7 @@ pub mod backup;
 pub mod blobs;
 pub mod config;
 pub mod db;
+pub mod exports;
 pub mod follows;
 pub mod ingest;
 pub mod notifier;

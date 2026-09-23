@@ -97,6 +97,8 @@ pub fn router(state: AppState) -> Router {
         .route("/notifications", get(notifications))
         .route("/tokens", get(tokens_list).post(tokens_create))
         .route("/tokens/{id}", delete(tokens_revoke))
+        .route("/exports/ops.jsonl", get(export_ops))
+        .route("/exports/csv/{name}", get(export_csv))
         .route("/webhooks", get(webhooks_list).post(webhooks_create))
         .route("/webhooks/{id}", put(webhooks_update).delete(webhooks_remove))
         .route("/webhooks/{id}/test", post(webhooks_test))
@@ -457,6 +459,47 @@ fn principal(
     headers: &axum::http::HeaderMap,
 ) -> Result<crate::api_data::Principal, ApiError> {
     Ok(crate::api_data::principal(conn, bearer(headers)?, now_ms(), s.session_ttl())?)
+}
+
+async fn export_ops(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    if !p.allows("export") {
+        return Err(crate::api_data::DataError::Scope("export").into());
+    }
+    let bytes = crate::exports::ops_jsonl(&conn, &p.account_id)?;
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "application/x-ndjson"),
+            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"ops.jsonl\""),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+async fn export_csv(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(name): Path<String>,
+) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    if !p.allows("export") {
+        return Err(crate::api_data::DataError::Scope("export").into());
+    }
+    let bytes = crate::exports::csv(&conn, &p.account_id, &name)?
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "unknown CSV export".into()))?;
+    let mut response = bytes.into_response();
+    response
+        .headers_mut()
+        .insert(axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("text/csv; charset=utf-8"));
+    response.headers_mut().insert(
+        axum::http::header::CONTENT_DISPOSITION,
+        axum::http::HeaderValue::from_str(&format!("attachment; filename=\"{name}.csv\""))
+            .map_err(anyhow::Error::from)?,
+    );
+    Ok(response)
 }
 
 #[derive(Deserialize)]
