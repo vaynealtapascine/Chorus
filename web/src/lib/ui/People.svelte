@@ -9,6 +9,7 @@
   import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
   import AvatarImage from './AvatarImage.svelte';
   import { disablePush, enablePush, pushActive, pushSupported } from '../push';
+  import { createShared, openDm } from '../spaces';
 
   let { projection }: { projection: Projection } = $props();
 
@@ -189,6 +190,35 @@
     await load();
   }
 
+  // Shared spaces and DMs (M6.2) are for people you're connected to, either way round.
+  const connections = $derived(
+    [...new Map([...followers, ...following].filter((f) => f.status === 'active').map((f) => [f.account.id, f.account])).values()],
+  );
+  let spaceName = $state('');
+  let spaceWith = $state<string[]>([]);
+
+  async function message(accountId: string) {
+    error = '';
+    try {
+      location.hash = `#/chat/space:${await openDm(accountId)}`;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  async function newSpace(e: SubmitEvent) {
+    e.preventDefault();
+    error = '';
+    try {
+      const id = await createShared(spaceName.trim(), spaceWith);
+      spaceName = '';
+      spaceWith = [];
+      location.hash = `#/chat/space:${id}`;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
   function ceilingOf(id: string): string {
     const c = projection.rows.follow?.[id]?.fields.ceiling;
     const s = JSON.stringify(c ?? {});
@@ -268,7 +298,10 @@
             {/each}
           </div>
         {/if}
-        <div class="actions"><button class="ghost" onclick={() => remove(f.id)}>Remove</button></div>
+        <div class="actions">
+          <button class="ghost" onclick={() => message(f.account.id)}>Message</button>
+          <button class="ghost" onclick={() => remove(f.id)}>Remove</button>
+        </div>
       </li>
     {:else}
       <li class="muted">No followers yet. Share your handle with friends.</li>
@@ -329,6 +362,7 @@
           {/if}
         </div>
         <div class="actions">
+          {#if f.status === 'active'}<button class="ghost" onclick={() => message(f.account.id)}>Message</button>{/if}
           <button class="ghost" onclick={() => unfollow(f.id)}>{f.status === 'requested' ? 'Cancel' : 'Unfollow'}</button>
         </div>
       </li>
@@ -336,6 +370,19 @@
       <li class="muted">You're not following anyone yet.</li>
     {/each}
   </ul>
+
+  {#if connections.length}
+    <h2>Shared spaces</h2>
+    <form class="card new-space" onsubmit={newSpace}>
+      <input bind:value={spaceName} placeholder="Name (e.g. Book club)" aria-label="Shared space name" maxlength="80" required />
+      <div class="bucket-checks" aria-label="Who to bring in">
+        {#each connections as a (a.id)}
+          <label><input type="checkbox" value={a.id} bind:group={spaceWith} /> {name(a)}</label>
+        {/each}
+      </div>
+      <button class="primary" disabled={!spaceName.trim()}>Start a shared space</button>
+    </form>
+  {/if}
 
   {#if notes.length || following.length}
     <div class="notes-head">
@@ -391,6 +438,8 @@
   .bucket-new input, .bucket-row input { font: inherit; min-width: 10ch; padding: var(--s-1) var(--s-2); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
   .bucket-row label { display: grid; gap: 2px; }
   .bucket-checks { width: 100%; font-size: var(--fs-sm); }
+  .new-space input:not([type='checkbox']) { font: inherit; flex: 1; min-width: 12ch; padding: var(--s-1) var(--s-2); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .primary:disabled { opacity: 0.5; }
   .preset { display: grid; gap: 2px; flex: 1; min-width: 14em; }
   select {
     font: inherit; font-size: var(--fs-sm); color: var(--ink); background: var(--surface-2);

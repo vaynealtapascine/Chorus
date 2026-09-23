@@ -108,7 +108,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M6 — Sharing
 
 - [x] M6.1 Person accounts, follows, privacy buckets — follows (Claude) + buckets, account default ceiling, per-member bucket announce (batch 2 T5)
-- [ ] M6.2 Shared spaces + DMs between accounts
+- [~] M6.2 Shared spaces + DMs between accounts — server (spaces.rs: create/add/leave/authors, connected accounts only) + web (spaces rail, DM from People, new shared space, author cards) done; Android not yet; roles/permissions are M5.10
 - [~] M6.3 Follower views (delayed/fuzzed front state per NOTIFICATIONS.md §5) — server reveal + GET /accounts/{id}/view + web People page (fuzzed "since", recent switches, browser notifications while open) done; history/stats surfaces not yet
 
 ### M7 — Profiles & journals
@@ -210,3 +210,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M2.7 more reads (api_reads.rs): /me, /members/{id} (groups + field values), /groups, /fields, /states, /front/daily, /front/reviews; scope-checked for tokens. E2E test.
 - 2026-09-23 claude-opus-5.5 — write:front tokens + POST /front/switch (api_writes.rs; ingest::op_as generalises server_op): entries by id or by member/group/state name, typed time, note, notify; attributed to token:<id>; web Your data scope + example. E2E test; verified in the browser (switch posted with a token appears live in History).
 - 2026-09-23 claude-opus-5.5 — L6 Web Push (D-061, Q13): VAPID key in server_meta + GET /push/vapid, RFC 8292 header for web devices only, SW push/notificationclick handlers, web/src/lib/push.ts + People-page opt-in. Unit tests (JWT verifies, web-only VAPID) + SW handlers run in a Node harness; real browser push not tried (the pane has notifications denied).
+- 2026-09-23 claude-opus-5.5 — M6.2 shared spaces + DMs: POST /spaces (shared|dm, one DM per pair, follow-connected accounts only), add (owner), leave (self-leave now revokes access), author cards for other accounts' members; web spaces rail + DM header, People 'Message' + 'Start a shared space'. E2E test (live scope grant, message delivery, cards, leave); verified in the browser (DM + Book club created, message sent). Sol's A1 note updated to share the author rule.

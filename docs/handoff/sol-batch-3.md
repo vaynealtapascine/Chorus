@@ -45,6 +45,13 @@ Two new rules that come with the merge:
   - Add a rule: the member has authored a non-deleted message, visible to the reader, in a
     channel of a space the reader has `scope_access` to.
   - Add tests for both the positive case and a reader outside the space.
+  - *Added on main after this was written:* shared spaces and DMs now exist (M6.2,
+    `crates/chorus-server/src/spaces.rs`, `POST /spaces`). `GET /spaces/{id}/authors` already
+    serves author cards, including `avatar_blob`, using the rule "wrote a non-deleted message with
+    `visibility IS NULL` in a channel of the space". Make `can_read` use the same rule, ideally
+    through one shared SQL helper in `spaces.rs`. `tests/sync_e2e.rs`
+    `friends_share_spaces_and_dms` sets up a DM with a message; extend it for the avatar. When T8
+    defines visibility, update both places together.
 - **A2 · structured visibility.** `can_read` checks attachments with
   `m.visibility NOT LIKE '%system_only%'`. Replace that string match with a proper check once
   T8 defines the visibility JSON.
