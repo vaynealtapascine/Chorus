@@ -82,6 +82,7 @@ follower's buckets → account default.
   "hidden_subjects": "omit",               // omit | someone
   "announce_leaving": false,
   "delay": { "min_s": 300, "max_s": 1200 },
+  "extra_delay": { "min_s": 1800, "max_s": 7200 },   // added for switches sent as extra_delay
   "allow_now": true,
   "time": { "mode": "round", "round_min": 15 },  // exact | round | jitter | part_of_day | hidden
   "stacking": "collapse",                  // collapse | sequence
@@ -112,7 +113,7 @@ fuzzing hides the exact time afterwards — use both for real privacy.*
 ```json
 {
   "enabled": true,
-  "subjects": { "mode": "all" },          // all | only[…ids] | except[…ids]; groups allowed
+  "subjects": { "mode": "all" },          // or {"mode":"only","ids":[…]} / {"mode":"except","ids":[…]}; group ids cover their members
   "levels": ["front"],
   "switch_outs": false,
   "delivery": "each",                     // each | digest_hourly | digest_daily
@@ -180,6 +181,19 @@ inline reply (`RemoteInput`) sends as the current primary fronter (or the member
 mentions, if Advanced "reply as mentioned member" is on) and works offline (queued op).
 Notification channels: Switches, Digests, Mentions, Direct messages, Replies, Channels, System —
 the user can tune each in Android settings too.
+
+## 7a. Implementation (`chorus_core::notify`)
+
+All of §2–§5 that must agree everywhere is pure core code: `effective_ceiling` (layers + the
+most-permissive bucket fold; a bucket that leaves a field unset inherits the account default for
+it), `view` (the reveal), `diff` (what a follower is pinged about), `due_at` (settle + delay +
+late-arrival spread; random draws are passed in and persisted by the server), `supersede`,
+`quiet_until`, `route` (deliver / digest / reveal-only) and `displayed` (time fuzzing with the
+≤ delivered, non-decreasing guarantee — property-tested in `tests/notify_props.rs`).
+Member policy JSON: `{"announce": "everyone" | "nobody" | {"buckets": […]}, "announce_leaving":
+bool, "extra_delay_range": {min_s, max_s}?}`. Leaving is announced when the ceiling and the
+follower's `switch_outs` allow it and the member announces to everyone (or opted in with
+`announce_leaving`).
 
 ## 8. Data model additions
 

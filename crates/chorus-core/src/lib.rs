@@ -12,6 +12,7 @@ pub mod id;
 pub mod import;
 pub mod lww;
 pub mod model;
+pub mod notify;
 pub mod op;
 pub mod replica;
 pub mod restore;

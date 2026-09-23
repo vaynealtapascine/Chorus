@@ -122,8 +122,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M8 — Notifications
 
 - [ ] M8.1 ntfy/UnifiedPush plumbing (server publisher, Android distributor registration)
-- [ ] M8.2 Rule resolution: per-switch × per-member × system ceiling × recipient prefs
-- [ ] M8.3 Random delay, time fuzzing, supersede/collapse, digests, quiet hours
+- [~] M8.2 Rule resolution: per-switch × per-member × system ceiling × recipient prefs — core done (`chorus_core::notify`); server scheduler needs M6.1 follows
+- [~] M8.3 Random delay, time fuzzing, supersede/collapse, digests, quiet hours — core rules + property tests done; server pending (digest text too)
 - [ ] M8.4 Chat notifications (mentions, DMs, replies), inline reply
 
 ### M9 — Stage (screenshot) mode
