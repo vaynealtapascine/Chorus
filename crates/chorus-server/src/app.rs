@@ -174,7 +174,15 @@ async fn session(State(s): State<AppState>, Json(b): Json<SessionIn>) -> Result<
     let ttl = s.session_ttl();
     let now = now_ms();
     let token = auth::verify(&s.db(), &b.device_id, &b.nonce, &b.signature, &s.instance_id, now, ttl)?;
-    Ok(Json(json!({"session": token, "expires_at": now + ttl})))
+    let is_admin: bool = s
+        .db()
+        .query_row(
+            "SELECT a.is_admin FROM account a JOIN device d ON d.account_id = a.id WHERE d.id = ?1",
+            [&b.device_id],
+            |r| r.get(0),
+        )
+        .map_err(anyhow::Error::from)?;
+    Ok(Json(json!({"session": token, "expires_at": now + ttl, "is_admin": is_admin})))
 }
 
 fn bearer(headers: &axum::http::HeaderMap) -> Result<&str, ApiError> {

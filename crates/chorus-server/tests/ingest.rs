@@ -88,6 +88,30 @@ fn rejects_invalid_and_forbidden() {
 }
 
 #[test]
+fn duplicate_live_emoji_names_are_rejected_without_losing_ops() {
+    let (c, admin, other) = setup();
+    let first = op(31, "emoji.create", "server", json!({"name":"ka_wave","blob_hash":"a".repeat(64)}), NOW);
+    let first_id = first.entity_id.clone().unwrap();
+    assert!(ingest::accept(&c, &session(&admin, 0), first, NOW, false).unwrap().0.error.is_none());
+    let second = op(32, "emoji.create", "server", json!({"name":"ka_wave","blob_hash":"b".repeat(64)}), NOW + 1);
+    let (rejected, _) = ingest::accept(&c, &session(&admin, 0), second.clone(), NOW + 1, false).unwrap();
+    assert_eq!(rejected.error.unwrap().code, "conflict");
+    assert_eq!(oplog::count(&c).unwrap(), 1);
+    let mut retired = op(33, "emoji.delete", "server", json!({}), NOW + 2);
+    retired.entity_id = Some(first_id.clone());
+    assert!(ingest::accept(&c, &session(&admin, 0), retired, NOW + 2, false).unwrap().0.error.is_none());
+    assert!(ingest::accept(&c, &session(&admin, 0), second, NOW + 3, false).unwrap().0.error.is_none());
+    let mut restore = op(34, "emoji.restore", "server", json!({}), NOW + 4);
+    restore.entity_id = Some(first_id);
+    let (rejected, _) = ingest::accept(&c, &session(&admin, 0), restore, NOW + 4, false).unwrap();
+    assert_eq!(rejected.error.unwrap().code, "conflict");
+    let nonadmin = op(35, "emoji.create", "server", json!({"name":"other","blob_hash":"c".repeat(64)}), NOW + 5);
+    let (rejected, _) = ingest::accept(&c, &session(&other, 0), nonadmin, NOW + 5, false).unwrap();
+    assert_eq!(rejected.error.unwrap().code, "forbidden");
+    assert_eq!(oplog::count(&c).unwrap(), 3);
+}
+
+#[test]
 fn trash_restore_is_limited_to_creator_or_deleter() {
     let (c, a, b) = setup();
     let third = new_id(1, [3; 10]);

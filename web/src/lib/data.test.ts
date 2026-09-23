@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { fuzzy, groupPath, membership, messages, segmentParsing, threadSummaries, type GroupRow } from './data';
+import { customEmojis, fuzzy, groupPath, membership, messages, segmentParsing, threadSummaries, type GroupRow } from './data';
 import type { Projection } from './sync/client';
 
 describe('data helpers', () => {
+  it('keeps retired emoji addressable while excluding them from the active picker', () => {
+    const p = { rows: { custom_emoji: {
+      live: { exists: true, fields: { name: 'wave', aliases: ['hi'], blob_hash: 'one' } },
+      retired: { exists: true, fields: { name: 'old', blob_hash: 'two', deleted_at: 1 } },
+    } }, sets: {}, fronts: {}, opaque: 0 } as unknown as Projection;
+    expect(customEmojis(p).map((e) => [e.name, e.deleted])).toEqual([['old', true], ['wave', false]]);
+  });
   it('fuzzy prefers direct substrings', () => {
     expect(fuzzy('ka', 'Kai')).toBe(0);
     expect(fuzzy('ki', 'Kai')).toBeGreaterThanOrEqual(100);

@@ -5,6 +5,7 @@ export interface DeviceRecord {
   device_id: string;
   short_id: string;
   account_id: string;
+  is_admin?: boolean;
   session: string;
   expires_at: number;
   /** Non-extractable CryptoKeyPair (structured-clonable into IndexedDB). */

@@ -36,7 +36,7 @@ export async function enrol(
     'verify',
   ])) as CryptoKeyPair;
   const spki = await crypto.subtle.exportKey('spki', keys.publicKey);
-  const e = await post<{ account_id: string; device_id: string; short_id: string; session: string; expires_at: number }>(
+  const e = await post<{ account_id: string; is_admin: boolean; device_id: string; short_id: string; session: string; expires_at: number }>(
     '/auth/redeem',
     {
       code: inviteCode(invite),
@@ -56,12 +56,12 @@ export async function renew(dev: DeviceRecord): Promise<DeviceRecord> {
   });
   const msg = new TextEncoder().encode(`chorus-auth\n${nonce}\n${dev.device_id}\n${instance_id}`);
   const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, dev.keys.privateKey, msg);
-  const s = await post<{ session: string; expires_at: number }>('/auth/session', {
+  const s = await post<{ session: string; expires_at: number; is_admin: boolean }>('/auth/session', {
     device_id: dev.device_id,
     nonce,
     signature: b64(sig),
   });
-  const next = { ...dev, session: s.session, expires_at: s.expires_at };
+  const next = { ...dev, session: s.session, expires_at: s.expires_at, is_admin: s.is_admin };
   await saveDevice(next);
   return next;
 }

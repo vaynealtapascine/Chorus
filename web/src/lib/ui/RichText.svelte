@@ -50,7 +50,9 @@
 </script>
 
 <script lang="ts">
-  let { text, entities = [] }: { text: string; entities?: Entity[] } = $props();
+  import type { EmojiRow } from '../data';
+  import EmojiImage from './EmojiImage.svelte';
+  let { text, entities = [], emoji = new Map() }: { text: string; entities?: Entity[]; emoji?: Map<string, EmojiRow> } = $props();
   const parts = $derived(pieces(text, entities));
   let revealed = $state(new Set<number>());
 </script>
@@ -59,10 +61,15 @@
   {#each parts as p, i (i)}
     {@const url = href(p.marks, p.text)}
     {@const cls = classes(p.marks)}
+    {@const customId = p.marks.find((mark) => mark.type === 'custom_emoji')?.emoji_id}
+    {@const custom = typeof customId === 'string' ? emoji.get(customId) : undefined}
     {#if url}
       <a class={cls} href={url} target="_blank" rel="noopener noreferrer">{p.text}</a>
     {:else if cls.includes('spoiler') && !revealed.has(i)}
       <button class="{cls} hidden" onclick={() => (revealed = new Set(revealed).add(i))} aria-label="Reveal spoiler">{p.text}</button>
+    {:else if custom}
+      <span class="emoji-token">{p.text}</span>
+      <EmojiImage hash={custom.blob_hash} name={custom.name} />
     {:else if cls}
       <span class={cls}>{p.text}</span>
     {:else}
@@ -76,6 +83,8 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+  /* Keep the original token in DOM text so quote-selection offsets still match the stored text. */
+  .emoji-token { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .b {
     font-weight: 650;
   }

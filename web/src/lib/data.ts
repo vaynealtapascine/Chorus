@@ -45,6 +45,33 @@ type Rows = Record<string, { exists: boolean; fields: Record<string, unknown> }>
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
 
+export interface EmojiRow {
+  id: string;
+  name: string;
+  aliases: string[];
+  category: string;
+  blob_hash: string;
+  is_animated: boolean;
+  deleted: boolean;
+}
+
+/** Keep retired rows so old messages can still resolve their stable emoji IDs. */
+export function customEmojis(p: Projection): EmojiRow[] {
+  return Object.entries((p.rows.custom_emoji ?? {}) as Rows)
+    .filter(([, row]) => row.exists)
+    .map(([id, row]) => ({
+      id,
+      name: str(row.fields.name) ?? '',
+      aliases: Array.isArray(row.fields.aliases) ? row.fields.aliases.filter((a): a is string => typeof a === 'string') : [],
+      category: str(row.fields.category) ?? 'Custom',
+      blob_hash: str(row.fields.blob_hash) ?? '',
+      is_animated: row.fields.is_animated === true,
+      deleted: row.fields.deleted_at != null,
+    }))
+    .filter((row) => !!row.blob_hash)
+    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+}
+
 export function members(p: Projection): MemberRow[] {
   const rows = (p.rows.member ?? {}) as Rows;
   return Object.entries(rows)

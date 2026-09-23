@@ -59,6 +59,10 @@ export class SyncClient {
       this.emit();
       return;
     }
+    // Older saved devices predate the admin capability in the enrolment response.
+    if (this.device.is_admin === undefined && navigator.onLine) {
+      try { this.device = await renew(this.device); } catch { /* reconnect will retry auth later */ }
+    }
     this.replica = WebReplica.restore(
       this.device.device_id,
       nodeOf(this.device.short_id),

@@ -108,6 +108,7 @@ pub struct AccountIn {
 #[derive(Clone, Debug, Serialize)]
 pub struct Enrolled {
     pub account_id: String,
+    pub is_admin: bool,
     pub device_id: String,
     pub short_id: String,
     pub session: String,
@@ -222,8 +223,9 @@ pub fn redeem(
         params![device_id, account_id, short_id, device.name, device.platform, device.public_key, now],
     )?;
     let session = new_session(&tx, &device_id, now, session_ttl_ms)?;
+    let is_admin = tx.query_row("SELECT is_admin FROM account WHERE id = ?1", [&account_id], |r| r.get(0))?;
     tx.commit()?;
-    Ok(Enrolled { account_id, device_id, short_id, session, expires_at: now + session_ttl_ms })
+    Ok(Enrolled { account_id, is_admin, device_id, short_id, session, expires_at: now + session_ttl_ms })
 }
 
 fn new_session(conn: &Connection, device_id: &str, now: i64, ttl_ms: i64) -> anyhow::Result<String> {
