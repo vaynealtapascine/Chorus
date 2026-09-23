@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
         }
         garden.vayne.chorus.data.Push.ensure(this)
+        garden.vayne.chorus.data.Updater.schedule(this)
         setContent { ChorusTheme { App(chorus, inviteLink.value) } }
     }
 

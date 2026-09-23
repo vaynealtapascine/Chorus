@@ -147,7 +147,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 - [x] M12.1 Deploy scripts (NSSM service, Caddy snippet, ntfy)
 - [ ] M12.2 Disclosure card, screenshots, README, publish to GitHub
-- [ ] M12.3 In-app APK updates + silent OTA (CLIENTS.md §5a)
+- [~] M12.3 In-app APK updates + silent OTA (CLIENTS.md §5a) — server endpoints, deploy -Android, app updater (D-060) done; needs a device check
 
 ### Later (not v1)
 

@@ -25,11 +25,15 @@ struct Server {
 }
 
 async fn start() -> Server {
+    start_with(Config::default()).await
+}
+
+async fn start_with(cfg: Config) -> Server {
     let mut conn = db::open_memory().unwrap();
     db::migrate(&mut conn).unwrap();
     db::set_meta(&conn, "instance_id", "test").unwrap();
     db::set_meta(&conn, "epoch", "1").unwrap();
-    let state = app::Shared::new(conn, Config::default()).unwrap();
+    let state = app::Shared::new(conn, cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let router = app::router(state.clone());
@@ -348,4 +352,29 @@ async fn a_friend_follows_a_system() {
     assert_eq!(model::project(phone.store.confirmed()).rows["follow"][&id].fields["status"], "ended");
     let list: Value = http.get(url("/follows")).bearer_auth(tok(&friend)).send().await.unwrap().json().await.unwrap();
     assert_eq!(list["following"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn the_server_hosts_the_android_update() {
+    let dir = std::env::temp_dir().join(format!("chorus-apk-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut cfg = Config::default();
+    cfg.server.android_dir = Some(dir.clone());
+    let s = start_with(cfg).await;
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}{p}", s.base);
+    assert_eq!(http.get(url("/api/v1/android/latest")).send().await.unwrap().status(), 404);
+    std::fs::write(dir.join("chorus.apk"), b"PK fake apk").unwrap();
+    std::fs::write(
+        dir.join("chorus.json"),
+        br#"{"version_code": 42, "version_name": "0.2.0", "sha256": "ab", "size": 11}"#,
+    )
+    .unwrap();
+    let meta: Value = http.get(url("/api/v1/android/latest")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(meta["version_code"], 42);
+    assert!(meta["url"].as_str().unwrap().ends_with("/download/android"));
+    let r = http.get(url("/download/android")).send().await.unwrap();
+    assert_eq!(r.headers()["content-type"], "application/vnd.android.package-archive");
+    assert_eq!(r.bytes().await.unwrap().as_ref(), b"PK fake apk");
+    let _ = std::fs::remove_dir_all(&dir);
 }

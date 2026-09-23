@@ -61,6 +61,9 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   `queryBroadcastReceivers` returns nothing on Android 11+ unless the manifest declares a
   `<queries>` intent for `org.unifiedpush.android.distributor.REGISTER`. ntfy relays binary UP
   posts as base64 (`"encoding":"base64"`) and its app hands them to us as `bytesMessage`.
+- 2026-09-23 claude-opus-5.5 — tooling — Never put Windows paths or `\0` inside ordinary
+  Python string literals in helper scripts: `\a`, `\b`, `\r`, `\0` silently become control bytes
+  (this corrupted `deploy.ps1` and a Rust source once). Use raw strings (`r'...'`) or the Edit tool.
 - 2026-09-23 gpt-6-sol — tooling — On this PowerShell PTY, `python scripts/verify.py` may fail
   before running checks because cp1252 cannot print its Unicode progress symbols. Set
   `PYTHONIOENCODING=utf-8` for the verifier. Android lint also needs an escaped drive colon in

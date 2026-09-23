@@ -70,10 +70,12 @@ pub fn router(state: AppState) -> Router {
         .route("/follows/{id}/prefs", put(follow_prefs))
         .route("/follows/{id}", delete(follow_end))
         .route("/devices/push", put(push_register).delete(push_unregister))
+        .route("/android/latest", get(android_latest))
         .route("/notifications", get(notifications))
         .route("/accounts/{id}/view", get(account_view))
         .route("/sync", get(sync_ws));
-    let mut app = Router::new().nest("/api/v1", api).with_state(state.clone());
+    let mut app =
+        Router::new().nest("/api/v1", api).route("/download/android", get(android_download)).with_state(state.clone());
     if let Some(dir) = state.cfg.server.web_dir.clone() {
         let index = dir.join("index.html");
         app = app.fallback_service(
@@ -296,6 +298,37 @@ async fn push_unregister(State(s): State<AppState>, headers: axum::http::HeaderM
     let me = who(&s, &conn, &headers)?;
     crate::push::unregister(&conn, &me.device_id)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// The released Android build, if the owner deployed one (`chorus.json` beside `chorus.apk`).
+fn android_release(s: &AppState) -> Option<serde_json::Value> {
+    let dir = s.cfg.android_dir()?;
+    let meta: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("chorus.json")).ok()?).ok()?;
+    dir.join("chorus.apk").is_file().then_some(meta)
+}
+
+/// `{version_code, version_name, sha256, size, changelog}` for the in-app updater (CLIENTS.md §5a).
+async fn android_latest(State(s): State<AppState>) -> Result<Json<serde_json::Value>, ApiError> {
+    let mut meta = android_release(&s)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "no Android build published".into()))?;
+    meta["url"] = json!(format!("{}/download/android", s.cfg.server.public_url.trim_end_matches('/')));
+    Ok(Json(meta))
+}
+
+async fn android_download(State(s): State<AppState>) -> Result<Response, ApiError> {
+    let dir =
+        s.cfg.android_dir().ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "no Android build".into()))?;
+    let bytes = tokio::fs::read(dir.join("chorus.apk"))
+        .await
+        .map_err(|_| ApiError(StatusCode::NOT_FOUND, "not_found", "no Android build".into()))?;
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "application/vnd.android.package-archive"),
+            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"chorus.apk\""),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 async fn notifications(
