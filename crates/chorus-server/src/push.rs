@@ -188,6 +188,16 @@ pub struct Outbound {
 /// Encrypt `payload` (JSON) for every registered device of `account`. A payload that is too big
 /// becomes a tickle (`{"t":"sync"}`) so the app fetches it itself.
 pub fn prepare(conn: &Connection, account: &str, payload: &serde_json::Value) -> anyhow::Result<Vec<Outbound>> {
+    prepare_except(conn, account, payload, None)
+}
+
+/// [`prepare`], skipping one device (the one an own-account message was written on).
+pub fn prepare_except(
+    conn: &Connection,
+    account: &str,
+    payload: &serde_json::Value,
+    except: Option<&str>,
+) -> anyhow::Result<Vec<Outbound>> {
     let mut text = serde_json::to_vec(payload)?;
     if text.len() > MAX_PAYLOAD {
         text = br#"{"t":"sync"}"#.to_vec();
@@ -202,6 +212,9 @@ pub fn prepare(conn: &Connection, account: &str, payload: &serde_json::Value) ->
     let mut out = Vec::new();
     let mut signer: Option<(SecretKey, String)> = None;
     for (device_id, endpoint, key, auth, web) in rows {
+        if except == Some(device_id.as_str()) {
+            continue;
+        }
         let (Some(key), Some(auth)) = (unb64url(&key), unb64url(&auth)) else { continue };
         let vapid = if web {
             if signer.is_none() {

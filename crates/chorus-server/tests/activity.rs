@@ -164,3 +164,76 @@ fn each_recipient_chooses_per_channel_and_per_kind() {
     assert_eq!(w.inbox(&b)[0], ("mention".to_string(), "@June now".to_string()));
     assert!(w.inbox(&a).is_empty(), "the sender's own account is never notified");
 }
+
+#[test]
+fn own_internal_chat_follows_each_members_rule() {
+    let mut w = W::new();
+    let a = w.a.clone();
+    let acct = format!("account:{a}");
+    let home_id = new_id(1, [4; 10]);
+    let home = format!("space:{home_id}");
+    ingest::grant(&w.c, &a, &home).unwrap();
+    w.push(&a, "space.create", &home, &home_id, json!({"kind": "internal", "name": "Home"}));
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    let rin = new_id(NOW as u64, [42; 10]);
+    for (id, name) in [(&kai, "Kai"), (&june, "June"), (&rin, "Rin")] {
+        w.push(&a, "member.create", &acct, id, json!({"name": name}));
+    }
+    let general = new_id(NOW as u64, [30; 10]);
+    let kj = new_id(NOW as u64, [31; 10]);
+    w.push(&a, "channel.create", &home, &general, json!({"space_id": home_id, "kind": "text", "name": "general"}));
+    w.push(
+        &a,
+        "channel.create",
+        &home,
+        &kj,
+        json!({"space_id": home_id, "kind": "member_dm", "member_ids": [kai, june]}),
+    );
+    let sw = new_id(NOW as u64, [70; 10]);
+    w.push(
+        &a,
+        "front.switch",
+        &acct,
+        &sw,
+        json!({"entries": [{"subject_type": "member", "subject_id": rin, "level": "front"}]}),
+    );
+    let mut n = 60u8;
+    let mut send = |w: &mut W, channel: &str, text: &str, ent: Value| {
+        n += 1;
+        let id = new_id(NOW as u64, [n; 10]);
+        let mut m = msg(text, &[&kai], ent);
+        m["channel_id"] = json!(channel);
+        w.push(&a, "message.send", &home, &id, m);
+    };
+    let mention =
+        |m: &str| json!([{"type": "mention", "offset": 0, "length": 4, "target_type": "member", "target_id": m}]);
+
+    // a mention of June pings the system (default "always"); Kai naming themself doesn't
+    send(&mut w, &general, "@June look", mention(&june));
+    send(&mut w, &general, "@Kai me", mention(&kai));
+    assert_eq!(w.inbox(&a), [("mention".to_string(), "@June look".to_string())]);
+
+    // a member DM to June: June isn't fronting, so the default ("fronting") stays quiet
+    send(&mut w, &kj, "psst", json!([]));
+    assert_eq!(w.inbox(&a).len(), 1);
+    // June asks for DMs always; June's mentions only while fronting
+    let pref = new_id(NOW as u64, [80; 10]);
+    w.push(
+        &a,
+        "pref.set",
+        &acct,
+        &pref,
+        json!({"device": "", "key": format!("notify_member:{june}"),
+        "value": {"dms": "always", "mentions": "fronting"}}),
+    );
+    send(&mut w, &kj, "psst again", json!([]));
+    send(&mut w, &general, "@June hey", mention(&june));
+    assert_eq!(w.inbox(&a)[0], ("member_dm".to_string(), "psst again".to_string()));
+    assert_eq!(w.inbox(&a).len(), 2);
+
+    // @front reaches Rin, who is fronting
+    send(&mut w, &general, "@front hi", json!([{"type": "mention", "offset": 0, "length": 6, "target_type": "front"}]));
+    assert_eq!(w.inbox(&a)[0], ("mention".to_string(), "@front hi".to_string()));
+    assert!(w.inbox(&w.b.clone()).is_empty(), "nothing leaves the internal space");
+}

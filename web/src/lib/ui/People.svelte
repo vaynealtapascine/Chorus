@@ -29,7 +29,7 @@
   }
   interface Note {
     id: string;
-    kind: 'switch' | 'mention' | 'dm' | 'reply' | 'message';
+    kind: 'switch' | 'mention' | 'dm' | 'reply' | 'message' | 'member_dm';
     text: string;
     title?: string;
     channel_id?: string;

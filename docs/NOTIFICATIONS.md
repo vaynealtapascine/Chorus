@@ -208,8 +208,14 @@ Implemented (M8.4, `activity.rs`), for other accounts in shared spaces and DMs:
   kind for plain messages.
 - `notify_chat` = `{mention, dm, reply, message}` holds the per-kind switches, all on by default.
 - The web sets the level in each channel's ⋯ menu, and the kinds under People.
-- Not yet: your own account's internal-space activity (member DMs, own switches from other
-  devices), per-member mention rules, and Android inline reply.
+- In your own internal space, a mention of one of your members (or `@front`, which reaches the
+  current fronters and co-cons) and a member DM ping your account under each member's rule: `pref`
+  key `notify_member:<member id>` = `{"mentions": rule, "dms": rule}`, where rule is `always`,
+  `fronting` (fronting or co-con) or `never`. Mentions default to `always`, member DMs to
+  `fronting`. The authors of the message never ping themselves. Channel levels apply here too
+  (internal channels default to `mentions`), and so does `notify_chat` (with a `member_dm` kind).
+  The push skips the device the message was written on. The member editor sets both rules.
+- Not yet: own switches from other devices, and Android inline reply.
 
 Android: MessagingStyle notifications with member avatars as `Person`s, grouped per channel;
 inline reply (`RemoteInput`) sends as the current primary fronter (or the member the notification

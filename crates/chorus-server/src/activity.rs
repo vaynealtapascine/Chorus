@@ -1,5 +1,7 @@
-//! Activity notifications to *other* accounts in a shared space (NOTIFICATIONS.md §7, M8.4):
-//! direct messages, mentions of one of their members, and replies to their messages.
+//! Activity notifications (NOTIFICATIONS.md §7, M8.4). To *other* accounts in a shared space:
+//! direct messages, mentions of one of their members, and replies to their messages. Inside a
+//! system's own internal space: mentions of a member (or `@front`) and member DMs, each under that
+//! member's rule, pushed to the account's *other* devices only.
 //!
 //! Queued on live ingest of `message.send` (never on rebuild), delivered by the notifier loop
 //! within seconds, as an inbox row plus an encrypted push. The author's own account is never
@@ -53,6 +55,94 @@ fn kind_wanted(conn: &Connection, account: &str, kind: &str) -> anyhow::Result<b
     Ok(pref(conn, account, "notify_chat")?.and_then(|v| v.get(kind).and_then(Value::as_bool)).unwrap_or(true))
 }
 
+/// Per-member rule for the account's own chat (`pref` key `notify_member:<id>`: `{"mentions":
+/// rule, "dms": rule}` with rule `always` · `fronting` · `never`). Mentions default to `always`,
+/// member DMs to `fronting` (§7).
+fn member_rule(conn: &Connection, account: &str, member: &str, which: &str) -> anyhow::Result<String> {
+    let set = pref(conn, account, &format!("notify_member:{member}"))?;
+    Ok(match set.as_ref().and_then(|v| v.get(which)).and_then(Value::as_str) {
+        Some(r @ ("always" | "fronting" | "never")) => r.to_string(),
+        _ if which == "dms" => "fronting".into(),
+        _ => "always".into(),
+    })
+}
+
+/// Members fronting or co-conscious right now.
+fn fronting(conn: &Connection, account: &str) -> anyhow::Result<Vec<String>> {
+    let mut st = conn.prepare_cached(
+        "SELECT subject_id FROM front_interval WHERE account_id = ?1 AND subject_type = 'member'
+         AND end_at IS NULL AND level IN ('front', 'cocon')",
+    )?;
+    Ok(st.query_map([account], |r| r.get(0))?.collect::<Result<_, _>>()?)
+}
+
+/// Why the author's own account should hear about a message in its internal space, if at all.
+fn own_kind(
+    conn: &Connection,
+    p: &Value,
+    account: &str,
+    channel_id: &str,
+    member_dm: Option<Vec<String>>,
+) -> anyhow::Result<Option<&'static str>> {
+    let level = channel_level(conn, account, channel_id, false)?;
+    if level == "none" {
+        return Ok(None);
+    }
+    let authors: Vec<&str> =
+        p.get("authors").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+    let front = fronting(conn, account)?;
+    let wants = |m: &str, which: &str| -> anyhow::Result<bool> {
+        if authors.contains(&m) {
+            return Ok(false);
+        }
+        Ok(match member_rule(conn, account, m, which)?.as_str() {
+            "always" => true,
+            "fronting" => front.iter().any(|f| f == m),
+            _ => false,
+        })
+    };
+    let mut kind = None;
+    for e in p.get("entities").and_then(Value::as_array).into_iter().flatten() {
+        if kind.is_some() || e.get("type").and_then(Value::as_str) != Some("mention") {
+            continue;
+        }
+        let hit = match e.get("target_type").and_then(Value::as_str) {
+            Some("member") => match e.get("target_id").and_then(Value::as_str) {
+                Some(m) if account_of_member(conn, m)?.as_deref() == Some(account) => wants(m, "mentions")?,
+                _ => false,
+            },
+            Some("front") => {
+                let mut any = false;
+                for m in &front {
+                    any = any || wants(m, "mentions")?;
+                }
+                any
+            }
+            _ => false,
+        };
+        if hit {
+            kind = Some("mention");
+        }
+    }
+    if kind.is_none()
+        && let Some(members) = member_dm
+    {
+        for m in &members {
+            if wants(m, "dms")? {
+                kind = Some("member_dm");
+                break;
+            }
+        }
+    }
+    if kind.is_none() && level == "all" {
+        kind = Some("message");
+    }
+    Ok(match kind {
+        Some(k) if kind_wanted(conn, account, k)? => Some(k),
+        _ => None,
+    })
+}
+
 /// Queue notifications for a freshly accepted op (inside the ingest transaction).
 pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     if o.kind != "message.send" {
@@ -64,18 +154,28 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
         return Ok(());
     }
     let channel_id = p.get("channel_id").and_then(Value::as_str).unwrap_or_default();
-    let (channel_name, space_kind): (Option<String>, Option<String>) = conn
+    type Row = (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>);
+    let (channel_name, space_kind, space_owner, channel_kind, member_ids): Row = conn
         .query_row(
-            "SELECT c.name, s.kind FROM channel c LEFT JOIN space s ON s.id = c.space_id WHERE c.id = ?1",
+            "SELECT c.name, s.kind, s.owner_account_id, c.kind, c.member_ids
+             FROM channel c LEFT JOIN space s ON s.id = c.space_id WHERE c.id = ?1",
             [channel_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )
         .optional()?
-        .unwrap_or((None, None));
+        .unwrap_or_default();
     let is_dm = space_kind.as_deref() == Some("dm");
 
-    // why each other account should hear about it
+    // why each account should hear about it
     let mut why: BTreeMap<String, &'static str> = BTreeMap::new();
+    if space_kind.as_deref() == Some("internal") && space_owner.as_deref() == Some(author) {
+        let member_dm = (channel_kind.as_deref() == Some("member_dm"))
+            .then(|| member_ids.and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok()).unwrap_or_default());
+        if let Some(kind) = own_kind(conn, p, author, channel_id, member_dm)? {
+            why.insert(author.to_string(), kind);
+        }
+        return queue(conn, o, why, channel_name, now);
+    }
     let mut st = conn.prepare_cached("SELECT account_id FROM scope_access WHERE scope = ?1 AND account_id <> ?2")?;
     let others: Vec<String> = st.query_map(params![o.scope, author], |r| r.get(0))?.collect::<Result<_, _>>()?;
     if others.is_empty() {
@@ -122,10 +222,21 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
             why.insert(a.clone(), "message");
         }
     }
+    queue(conn, o, why, channel_name, now)
+}
+
+fn queue(
+    conn: &Connection,
+    o: &Op,
+    why: BTreeMap<String, &'static str>,
+    channel_name: Option<String>,
+    now: i64,
+) -> anyhow::Result<()> {
     if why.is_empty() {
         return Ok(());
     }
-
+    let p = &o.payload;
+    let channel_id = p.get("channel_id").and_then(Value::as_str).unwrap_or_default();
     let mut authors = Vec::new();
     for m in p.get("authors").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
         authors.push(name_of(conn, m)?.unwrap_or_else(|| "Someone".into()));
@@ -134,14 +245,20 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     let text: String = p.get("text").and_then(Value::as_str).unwrap_or_default().chars().take(280).collect();
     for (recipient, kind) in why {
         let title = match (kind, &channel_name) {
-            ("dm", _) => who.clone(),
+            ("dm" | "member_dm", _) => who.clone(),
             (_, Some(c)) => format!("{who} · #{c}"),
             _ => who.clone(),
         };
-        let payload = json!({
+        let mut payload = json!({
             "t": "message", "kind": kind, "title": title, "text": text,
             "channel_id": channel_id, "message_id": o.entity_id, "scope": o.scope,
         });
+        // your own message: the device it was written on doesn't need the ping
+        if o.account_id.as_deref() == Some(recipient.as_str())
+            && let Some(d) = &o.device_id
+        {
+            payload["from_device"] = json!(d);
+        }
         let id = chorus_core::id::new_id(now as u64, rand::random());
         conn.execute(
             "INSERT INTO notification (id, recipient_account_id, kind, source_op_id, payload, created_at, due_at)
@@ -156,7 +273,7 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
 pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Vec<push::Outbound>> {
     let mut st = conn.prepare_cached(
         "SELECT id, recipient_account_id, payload FROM notification
-         WHERE kind IN ('mention', 'dm', 'reply', 'message') AND delivered_at IS NULL AND cancelled_at IS NULL AND due_at <= ?1
+         WHERE kind IN ('mention', 'dm', 'reply', 'message', 'member_dm') AND delivered_at IS NULL AND cancelled_at IS NULL AND due_at <= ?1
          ORDER BY due_at, id LIMIT 500",
     )?;
     let rows: Vec<(String, String, String)> =
@@ -166,7 +283,8 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Vec<push::Outb
         conn.execute("UPDATE notification SET delivered_at = ?2 WHERE id = ?1", params![id, now])?;
         let mut p: Value = serde_json::from_str(&payload).unwrap_or(json!({}));
         p["id"] = json!(id);
-        pushes.extend(push::prepare(conn, &recipient, &p)?);
+        let skip = p.as_object_mut().and_then(|m| m.remove("from_device")).and_then(|d| d.as_str().map(String::from));
+        pushes.extend(push::prepare_except(conn, &recipient, &p, skip.as_deref())?);
     }
     Ok(pushes)
 }
