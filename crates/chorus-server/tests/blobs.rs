@@ -1,4 +1,4 @@
-use chorus_server::{app, auth, config::Config, db};
+use chorus_server::{app, auth, config::Config, db, follows};
 use sha2::{Digest, Sha256};
 
 struct Server {
@@ -145,6 +145,38 @@ async fn follower_avatar_is_unavailable_until_member_is_revealed() {
         let c = s.state.db.lock().unwrap();
         c.execute("INSERT INTO follower_front_view(follower_account_id,target_account_id,entries,revealed_at) VALUES ('bob','alice',?1,1)",
             [r#"[{"t":"subject","subject_type":"member","subject_id":"m1","level":"front","is_primary":true,"name":"Visible"}]"#]).unwrap();
+    }
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 200);
+}
+
+#[tokio::test]
+async fn account_avatar_is_readable_to_an_active_follower() {
+    let s = Server::new().await;
+    let client = reqwest::Client::new();
+    let bytes = b"account-avatar";
+    let digest = hash(bytes);
+    let url = format!("{}/{digest}", s.base);
+    assert_eq!(
+        client
+            .put(&url)
+            .bearer_auth("alice-token")
+            .header("content-range", "bytes 0-13/14")
+            .body(bytes.as_slice())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        201
+    );
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE account SET avatar_blob = ?1 WHERE id = 'alice'", [&digest]).unwrap();
+    }
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 403);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("INSERT INTO follow(id,follower_account_id,target_account_id,status,created_at) VALUES ('f1','bob','alice','active',0)", []).unwrap();
+        assert_eq!(follows::list(&c, "bob").unwrap()["following"][0]["account"]["avatar_blob"], digest);
     }
     assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 200);
 }

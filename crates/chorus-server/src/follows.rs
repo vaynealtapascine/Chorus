@@ -146,21 +146,22 @@ pub fn list(conn: &Connection, account: &str) -> Result<Value, FollowError> {
                     "handle": r.get::<_, Option<String>>(2)?,
                     "display_name": r.get::<_, Option<String>>(3)?,
                     "kind": r.get::<_, String>(4)?,
+                    "avatar_blob": r.get::<_, Option<String>>(5)?,
                 },
-                "status": r.get::<_, Option<String>>(5)?,
-                "prefs": serde_json::from_str::<Value>(&r.get::<_, String>(6)?).unwrap_or(json!({})),
-                "created_at": r.get::<_, i64>(7)?,
+                "status": r.get::<_, Option<String>>(6)?,
+                "prefs": serde_json::from_str::<Value>(&r.get::<_, String>(7)?).unwrap_or(json!({})),
+                "created_at": r.get::<_, i64>(8)?,
             }))
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
     };
     let following = query(
-        "SELECT f.id, a.id, a.handle, a.display_name, a.kind, f.status, f.prefs, f.created_at
+        "SELECT f.id, a.id, a.handle, a.display_name, a.kind, a.avatar_blob, f.status, f.prefs, f.created_at
          FROM follow f JOIN account a ON a.id = f.target_account_id
          WHERE f.follower_account_id = ?1 AND f.status IN ('requested', 'active') ORDER BY f.created_at",
     )?;
     let followers = query(
-        "SELECT f.id, a.id, a.handle, a.display_name, a.kind, f.status, f.prefs, f.created_at
+        "SELECT f.id, a.id, a.handle, a.display_name, a.kind, a.avatar_blob, f.status, f.prefs, f.created_at
          FROM follow f JOIN account a ON a.id = f.follower_account_id
          WHERE f.target_account_id = ?1 AND f.status IN ('requested', 'active') ORDER BY f.created_at",
     )?;

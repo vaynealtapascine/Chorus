@@ -128,6 +128,19 @@ fn nothing_is_revealed_before_due_then_the_view_and_inbox_update_together() {
 }
 
 #[test]
+fn follower_avatar_hash_is_only_exposed_after_reveal() {
+    let (mut w, kai, _, _) = world();
+    let hash = "a".repeat(64);
+    w.push("member.set", &kai, json!({"avatar_blob": hash}), NOW - 1_000);
+    w.switch(&[&kai], NOW);
+    let before = notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().unwrap();
+    assert!(before["entries"].as_array().unwrap().is_empty());
+    notifier::process_due(&w.c, NOW + SETTLE + DELAY).unwrap();
+    let after = notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().unwrap();
+    assert_eq!(after["entries"][0]["avatar_blob"], hash);
+}
+
+#[test]
 fn hidden_members_are_omitted_and_an_undo_cancels_whats_pending() {
     let (mut w, kai, june, secret) = world();
     w.switch(&[&kai], NOW);

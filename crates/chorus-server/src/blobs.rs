@@ -105,6 +105,10 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
         "SELECT EXISTS (
            SELECT 1 FROM custom_emoji e WHERE e.blob_hash = ?1 AND e.deleted_at IS NULL
            UNION ALL SELECT 1 FROM account a WHERE a.avatar_blob = ?1 AND a.id = ?2
+           UNION ALL SELECT 1 FROM account a JOIN follow f ON
+             ((f.target_account_id = a.id AND f.follower_account_id = ?2 AND f.status = 'active')
+              OR (f.follower_account_id = a.id AND f.target_account_id = ?2 AND f.status IN ('requested','active')))
+             WHERE a.avatar_blob = ?1
            UNION ALL SELECT 1 FROM member m WHERE (m.avatar_blob = ?1 OR m.banner_blob = ?1)
               AND m.account_id = ?2 AND m.deleted_at IS NULL
            UNION ALL SELECT 1 FROM member_group g WHERE g.avatar_blob = ?1 AND g.account_id = ?2 AND g.deleted_at IS NULL

@@ -31,6 +31,8 @@ pub struct Shown {
     pub name: String,
     pub color: Option<String>,
     pub glyph: Option<String>,
+    #[serde(default)]
+    pub avatar_blob: Option<String>,
 }
 
 /// subject id → (name, colour, glyph), snapshotted when a change is queued.
@@ -436,16 +438,25 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<usize> {
             let shown: Vec<Shown> = q
                 .view
                 .iter()
-                .map(|s| {
+                .map(|s| -> anyhow::Result<Shown> {
                     let (name, color, glyph) = match s {
                         Seen::Subject { subject_id, .. } => {
                             q.names.get(subject_id).cloned().unwrap_or(("Someone".into(), None, None))
                         }
                         Seen::Someone { .. } => ("Someone".into(), None, None),
                     };
-                    Shown { seen: s.clone(), name, color, glyph }
+                    let avatar_blob = match s {
+                        Seen::Subject { subject_type: SubjectType::Member, subject_id, .. } => conn
+                            .query_row("SELECT avatar_blob FROM member WHERE id = ?1", [subject_id], |r| {
+                                r.get::<_, Option<String>>(0)
+                            })
+                            .optional()?
+                            .flatten(),
+                        _ => None,
+                    };
+                    Ok(Shown { seen: s.clone(), name, color, glyph, avatar_blob })
                 })
-                .collect();
+                .collect::<anyhow::Result<_>>()?;
             conn.execute(
                 "INSERT INTO follower_front_view (follower_account_id, target_account_id, entries, displayed_since, revealed_at)
                  VALUES (?1, ?2, ?3, ?4, ?5)
