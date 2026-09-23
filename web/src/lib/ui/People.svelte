@@ -14,7 +14,7 @@
   let { projection }: { projection: Projection } = $props();
 
   interface Person { id: string; handle: string | null; display_name: string | null; kind: string; avatar_blob?: string | null }
-  interface FollowRow { id: string; account: Person; status: string; created_at: number }
+  interface FollowRow { id: string; account: Person; status: string; created_at: number; prefs?: Record<string, unknown> }
 
   interface ViewEntry { t: string; name: string; level: string; color?: string | null; glyph?: string | null; avatar_blob?: string | null }
   interface View { entries: ViewEntry[]; since: number | null; time?: { mode?: string }; shared?: boolean }
@@ -101,9 +101,45 @@
       const j = await api('/follows');
       following = j.following;
       followers = j.followers;
+      readQuiet();
       await loadViews();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  // Quiet hours (DESIGN §6 Basic → Notifications): one setting for everyone you follow, saved into
+  // each follow's prefs with this device's UTC offset so it's your night, not theirs
+  // (NOTIFICATIONS §4). Prefs are replaced whole, so the rest of each follow's prefs is kept.
+  let quietFrom = $state('23:00');
+  let quietTo = $state('08:00');
+  let quietOn = $state(false);
+  let quietNote = $state('');
+  const tzOffset = () => -new Date().getTimezoneOffset();
+  type Quiet = { from: string; to: string } | null;
+
+  function readQuiet() {
+    const q = following.find((f) => f.status === 'active' && f.prefs?.quiet_hours)?.prefs?.quiet_hours as Quiet;
+    quietOn = !!q;
+    if (q) [quietFrom, quietTo] = [q.from, q.to];
+    // the clocks changed (or another device saved a different offset): bring the prefs up to date
+    if (q && following.some((f) => f.prefs?.quiet_hours && f.prefs.tz_offset_min !== tzOffset())) {
+      void saveQuiet(q, true);
+    }
+  }
+
+  async function saveQuiet(q: Quiet, quiet = false) {
+    quietNote = '';
+    try {
+      for (const f of following.filter((x) => x.status === 'active')) {
+        const prefs = { ...(f.prefs ?? {}), quiet_hours: q, tz_offset_min: tzOffset() };
+        await api(`/follows/${f.id}/prefs`, { method: 'PUT', body: JSON.stringify(prefs) });
+        f.prefs = prefs;
+      }
+      quietOn = !!q;
+      if (!quiet) quietNote = q ? `Quiet from ${q.from} to ${q.to}, your time.` : 'Quiet hours off.';
+    } catch (e) {
+      quietNote = e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -370,6 +406,17 @@
       <li class="muted">You're not following anyone yet.</li>
     {/each}
   </ul>
+  {#if following.some((f) => f.status === 'active')}
+    <form class="quiet" onsubmit={(e) => { e.preventDefault(); void saveQuiet({ from: quietFrom, to: quietTo }); }}>
+      <span>Quiet hours</span>
+      <input type="time" bind:value={quietFrom} aria-label="Quiet from" required />
+      <span>to</span>
+      <input type="time" bind:value={quietTo} aria-label="Quiet until" required />
+      <button class="ghost">{quietOn ? 'Update' : 'Turn on'}</button>
+      {#if quietOn}<button type="button" class="ghost" onclick={() => saveQuiet(null)}>Turn off</button>{/if}
+    </form>
+    <p class="hint">Switch pings wait until quiet hours end; you still see who's fronting here.{quietNote ? ` ${quietNote}` : ''}</p>
+  {/if}
 
   {#if connections.length}
     <h2>Shared spaces</h2>
@@ -444,6 +491,8 @@
   .bucket-checks { width: 100%; font-size: var(--fs-sm); }
   .new-space input:not([type='checkbox']) { font: inherit; flex: 1; min-width: 12ch; padding: var(--s-1) var(--s-2); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
   .primary:disabled { opacity: 0.5; }
+  .quiet { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); font-size: var(--fs-sm); color: var(--ink-2); }
+  .quiet input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-1) var(--s-2); }
   .preset { display: grid; gap: 2px; flex: 1; min-width: 14em; }
   select {
     font: inherit; font-size: var(--fs-sm); color: var(--ink); background: var(--surface-2);
