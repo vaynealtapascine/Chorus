@@ -26,8 +26,41 @@ pub fn after_insert(conn: &Connection, o: &Op) -> anyhow::Result<()> {
         Action::SetAdd | Action::SetRemove => element_set(conn, spec.table, o),
         Action::Special => special(conn, o),
         Action::Admin => Ok(()),
+        Action::Set if FAST_SET.contains(&spec.table) && set_in_place(conn, spec.table, o)? => Ok(()),
         _ => entity(conn, spec.table, o.entity().unwrap_or("")),
     }
+}
+
+/// Tables whose `.set` has no effect beyond its own fields (no derived rows, links or parents),
+/// so it can be applied to the stored row (SPEC §9 ingest budget).
+const FAST_SET: &[&str] = &["member", "custom_state", "field_def", "bucket"];
+
+/// Apply a `.set` straight onto the stored row with the model's own LWW rule
+/// (`lww::apply_fields` over the row's `clocks`), instead of re-running the model over every op
+/// of the entity. False if the row isn't there yet (the full path then waits for its create).
+fn set_in_place(conn: &Connection, table: &str, o: &Op) -> anyhow::Result<bool> {
+    let Some(id) = o.entity() else { return Ok(false) };
+    let stored: Option<String> =
+        conn.query_row(&format!("SELECT clocks FROM {table} WHERE id = ?1"), [id], |r| r.get(0)).optional()?;
+    let Some(stored) = stored else { return Ok(false) };
+    let mut clocks = chorus_core::lww::Clocks::from_json(&serde_json::from_str(&stored)?);
+    let payload = o.payload_obj().cloned().unwrap_or_default();
+    let won = chorus_core::lww::apply_fields(&mut clocks, o.hlc, &payload);
+    let cols = writable(conn, table)?;
+    let mut sets = vec!["clocks = ?1".to_string()];
+    let mut vals = vec![Sql::Text(clocks.to_json().to_string())];
+    for (k, v) in &won {
+        if cols.contains(k) && !matches!(k.as_str(), "id" | "clocks" | "account_id" | "created_at") {
+            vals.push(to_sql(v));
+            sets.push(format!("{k} = ?{}", vals.len()));
+        }
+    }
+    vals.push(Sql::Text(id.to_string()));
+    conn.execute(
+        &format!("UPDATE {table} SET {} WHERE id = ?{}", sets.join(", "), vals.len()),
+        params_from_iter(vals),
+    )?;
+    Ok(true)
 }
 
 // ─── entity rows ─────────────────────────────────────────────────────────────

@@ -285,9 +285,22 @@ fn sql_matches_model_and_rebuild_is_identical() {
         let m = model::project(all.iter());
         // members: every existing model row is in SQL with the same fields
         for (id, row) in m.rows.get("member").into_iter().flatten().filter(|(_, r)| r.exists) {
-            let (name, deleted): (Option<String>, Option<i64>) = c
-                .query_row("SELECT name, deleted_at FROM member WHERE id = ?1", [id], |x| Ok((x.get(0)?, x.get(1)?)))
+            let (name, deleted, color, clocks): (Option<String>, Option<i64>, Option<String>, String) = c
+                .query_row("SELECT name, deleted_at, color, clocks FROM member WHERE id = ?1", [id], |x| {
+                    Ok((x.get(0)?, x.get(1)?, x.get(2)?, x.get(3)?))
+                })
                 .unwrap();
+            // `.set` is applied in place (project.rs set_in_place): same fields and clocks as the model
+            assert_eq!(
+                color.as_deref(),
+                row.fields.get("color").and_then(Value::as_str),
+                "seed {seed} member {id} color"
+            );
+            assert_eq!(
+                serde_json::from_str::<Value>(&clocks).unwrap(),
+                row.clocks.to_json(),
+                "seed {seed} member {id} clocks"
+            );
             assert_eq!(name.as_deref(), row.fields.get("name").and_then(Value::as_str), "seed {seed} member {id}");
             assert_eq!(
                 deleted,
