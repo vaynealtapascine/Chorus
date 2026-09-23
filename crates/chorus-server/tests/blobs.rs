@@ -1,4 +1,6 @@
 use chorus_server::{app, auth, config::Config, db, follows};
+use proptest::prelude::*;
+use proptest::test_runner::{Config as PropConfig, TestCaseError, TestRunner};
 use sha2::{Digest, Sha256};
 
 struct Server {
@@ -55,6 +57,66 @@ impl Drop for Server {
 
 fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+async fn resume_case(bytes: Vec<u8>, chunks: Vec<usize>) -> Result<(), TestCaseError> {
+    let s = Server::new().await;
+    let client = reqwest::Client::new();
+    let url = format!("{}/{}", s.base, hash(&bytes));
+    let mut offset = 0usize;
+    for wanted in chunks.into_iter().chain(std::iter::once(bytes.len())) {
+        if offset == bytes.len() {
+            break;
+        }
+        let end = (offset + wanted.max(1)).min(bytes.len());
+        let range = format!("bytes {}-{}/{}", offset, end - 1, bytes.len());
+        let response = client
+            .put(&url)
+            .bearer_auth("alice-token")
+            .header("content-range", &range)
+            .body(bytes[offset..end].to_vec())
+            .send()
+            .await
+            .unwrap();
+        prop_assert_eq!(response.status().as_u16(), if end == bytes.len() { 201 } else { 202 });
+        if end < bytes.len() {
+            let head = client.head(&url).bearer_auth("alice-token").send().await.unwrap();
+            prop_assert_eq!(head.status().as_u16(), 206);
+            prop_assert_eq!(head.headers()["upload-offset"].to_str().unwrap(), end.to_string());
+            // A duplicate or stale chunk must not advance the cursor or alter the bytes.
+            let stale = client
+                .put(&url)
+                .bearer_auth("alice-token")
+                .header("content-range", &range)
+                .body(bytes[offset..end].to_vec())
+                .send()
+                .await
+                .unwrap();
+            prop_assert_eq!(stale.status().as_u16(), 409);
+            let head = client.head(&url).bearer_auth("alice-token").send().await.unwrap();
+            prop_assert_eq!(head.headers()["upload-offset"].to_str().unwrap(), end.to_string());
+        }
+        offset = end;
+    }
+    prop_assert_eq!(offset, bytes.len());
+    let response = client.get(&url).bearer_auth("alice-token").send().await.unwrap();
+    prop_assert_eq!(response.status().as_u16(), 200);
+    let downloaded = response.bytes().await.unwrap();
+    prop_assert_eq!(downloaded.as_ref(), bytes.as_slice());
+    prop_assert_eq!(client.head(&url).bearer_auth("alice-token").send().await.unwrap().status().as_u16(), 200);
+    Ok(())
+}
+
+#[test]
+fn arbitrary_chunk_partitions_resume_without_duplication() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let mut runner = TestRunner::new(PropConfig::with_cases(30));
+    runner
+        .run(
+            &(prop::collection::vec(any::<u8>(), 2..2048), prop::collection::vec(1usize..512, 1..12)),
+            |(bytes, chunks)| runtime.block_on(resume_case(bytes, chunks)),
+        )
+        .unwrap();
 }
 
 #[tokio::test]

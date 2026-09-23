@@ -31,7 +31,7 @@ fn make(i: usize, pick: u8, x: u8, t: u64, node: u32) -> Op {
     let space = format!("space:{}", new_id(1, [9; 10]));
     let m = members[(x % 3) as usize].clone();
     let msg = msgs[(x % 3) as usize].clone();
-    let (kind, scope, entity, payload): (&str, &str, String, Value) = match pick % 20 {
+    let (kind, scope, entity, payload): (&str, &str, String, Value) = match pick % 27 {
         0 => ("member.create", &acct, m, json!({"name": format!("n{i}")})),
         1 => ("member.set", &acct, m, json!({"color": format!("#0000{:02x}", x)})),
         2 => (
@@ -101,6 +101,38 @@ fn make(i: usize, pick: u8, x: u8, t: u64, node: u32) -> Op {
         16 => ("bucket.set", &acct, ids(5, 2)[(x % 2) as usize].clone(), json!({"name": format!("b{i}")})),
         17 => ("follow.accept", &acct, ids(6, 1)[0].clone(), json!({})),
         18 => ("pref.set", &acct, m, json!({"device": "", "key": "k", "value": x})),
+        19 => (
+            "draft.set",
+            &acct,
+            ids(7, 2)[(x % 2) as usize].clone(),
+            json!({"context": "post", "text": format!("draft{i}")}),
+        ),
+        20 => (
+            "feed.set",
+            &acct,
+            ids(8, 2)[(x % 2) as usize].clone(),
+            json!({"name": format!("feed{i}"), "query": "kind:entry"}),
+        ),
+        21 => ("list.set", &acct, ids(9, 2)[(x % 2) as usize].clone(), json!({"name": format!("list{i}")})),
+        22 => ("reltype.set", &acct, ids(10, 2)[(x % 2) as usize].clone(), json!({"name": format!("friend{i}")})),
+        23 => (
+            "relationship.set",
+            &acct,
+            ids(11, 2)[(x % 2) as usize].clone(),
+            json!({"from_member_id": m, "to_kind": "external", "to_label": format!("person{i}")}),
+        ),
+        24 => (
+            "post.create",
+            &acct,
+            ids(12, 2)[(x % 2) as usize].clone(),
+            json!({"kind": "note", "authors": [m], "text": format!("post{i}"), "entities": [], "visibility": {"mode":"private"}}),
+        ),
+        25 => (
+            "post.react",
+            &acct,
+            ids(12, 2)[(x % 2) as usize].clone(),
+            json!({"target_type":"post","target_id":ids(12, 2)[(x % 2) as usize],"emoji":"💜","member_id":m}),
+        ),
         _ => ("mystery.kind", &acct, m, json!({})),
     };
     Op {
