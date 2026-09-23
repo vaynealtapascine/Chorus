@@ -128,6 +128,13 @@ GET  /pins?channel=
 
 GET  /posts?author=&kind=&before=&limit=
 GET  /posts/{id}                           with replies ?depth=
+  Device-session reads now return posts visible to the caller: own posts, server-visible posts,
+  posts shared with active followers, and posts for an assigned, live bucket. `account=` narrows
+  the list to one account. `before` is an exclusive occurred-at millisecond value; `limit` is
+  clamped to 1–100. Detail replies are filtered by the same rule (`depth` 0–3, at most 50 per
+  level). Hidden/deleted posts return 404. Responses omit `front_snapshot` and remove unreadable
+  parent/repost links. Authors include ordered member ids and small author cards. API tokens do
+  not use these cross-account routes.
 GET  /timeline?before=&limit=              combined system timeline
 GET  /profiles/{member_id}                 profile bundle (fields, stats, highlights, relationships)
 GET  /lists  /lists/{id}/timeline
@@ -174,7 +181,7 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
     display name, pronouns, colour, sigils, avatar) for other accounts' members who wrote a message
     everyone in the space can read.
   - A space you aren't in is a 404.
-- **Not yet:** messages, posts, profiles, feeds and insights, which come with
+- **Not yet:** message list/thread reads, profiles, feeds and insights, which come with
   M5.7/M5.8/M7/M10.1.
 
 ## 4. Writes (non-sync)

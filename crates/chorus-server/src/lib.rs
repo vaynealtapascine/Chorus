@@ -15,6 +15,7 @@ pub mod follows;
 pub mod ingest;
 pub mod notifier;
 pub mod oplog;
+pub mod posts;
 pub mod project;
 pub mod push;
 pub mod qr;

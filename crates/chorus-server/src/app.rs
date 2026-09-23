@@ -116,6 +116,8 @@ pub fn router(state: AppState) -> Router {
         .route("/front/reviews", get(front_reviews))
         .route("/search/messages", get(search_messages))
         .route("/messages/{id}", get(search_message))
+        .route("/posts", get(posts_list))
+        .route("/posts/{id}", get(post_one))
         .route("/me", get(me))
         .route("/stream", get(stream))
         .route("/spaces", get(spaces_list).post(spaces_create))
@@ -628,6 +630,37 @@ async fn search_message(
     let message = crate::search::message_by_id(&conn, &p, &id)?
         .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "message unavailable".into()))?;
     Ok(Json(message))
+}
+
+/// Posts are account-scoped data with an explicit audience. Only signed-in devices can use the
+/// cross-account view; API tokens remain limited to their own-account data APIs.
+async fn posts_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<crate::posts::PostQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    Ok(Json(crate::posts::list(&conn, &me.account_id, &q)?))
+}
+
+#[derive(Deserialize)]
+struct PostDetailQuery {
+    depth: Option<usize>,
+}
+
+async fn post_one(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<PostDetailQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let mut item = crate::posts::one(&conn, &me.account_id, &id)?
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "post unavailable".into()))?;
+    item["replies"] = json!(crate::posts::replies(&conn, &me.account_id, &id, q.depth.unwrap_or(1).min(3))?);
+    Ok(Json(item))
 }
 
 /// Log a switch from a script, NFC tag or Tasker (`write:front`, api_writes.rs).
