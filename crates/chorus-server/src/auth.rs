@@ -322,6 +322,11 @@ pub fn verify(
     Ok(new_session(conn, device_id, now, ttl_ms)?)
 }
 
+/// Is this device still allowed in (not revoked)?
+pub fn device_active(conn: &Connection, device_id: &str) -> bool {
+    conn.query_row("SELECT revoked_at IS NULL FROM device WHERE id = ?1", [device_id], |r| r.get(0)).unwrap_or(false)
+}
+
 pub fn revoke_device(conn: &Connection, device_id: &str, now: i64) -> anyhow::Result<()> {
     conn.execute("UPDATE device SET revoked_at = ?2 WHERE id = ?1", params![device_id, now])?;
     conn.execute("DELETE FROM session WHERE device_id = ?1", [device_id])?;

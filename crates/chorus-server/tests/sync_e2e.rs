@@ -840,3 +840,41 @@ async fn friends_share_spaces_and_dms() {
     let r = http.get(url(&format!("/spaces/{dm}/authors"))).bearer_auth(tok(&friend)).send().await.unwrap();
     assert_eq!(r.status(), 404);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lost_device_can_be_signed_out() {
+    let s = start().await;
+    let a = enrol(&s, auth::InviteKind::System, None, 91, "stars").await;
+    let acct = a["account_id"].as_str().unwrap().to_string();
+    let lost_e = enrol(&s, auth::InviteKind::Device, Some(&acct), 92, "").await;
+    let other = enrol(&s, auth::InviteKind::Person, None, 93, "sam").await;
+    let mut lost = Device::new(&lost_e, 92);
+    lost.connect(&s).await;
+    lost.drain(Q).await;
+
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+    let dev = |e: &Value| e["device_id"].as_str().unwrap().to_string();
+    let revoke = |who: &Value, id: String| {
+        let (http, url, t) = (http.clone(), url(&format!("/devices/{id}/revoke")), tok(who));
+        async move { http.post(url).bearer_auth(t).send().await.unwrap().status().as_u16() }
+    };
+
+    let me: Value = http.get(url("/me")).bearer_auth(tok(&a)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(me["devices"].as_array().unwrap().len(), 2);
+    assert_eq!(revoke(&a, dev(&a)).await, 400, "not the device you're on");
+    assert_eq!(revoke(&other, dev(&lost_e)).await, 404, "not someone else's device");
+    assert_eq!(revoke(&a, dev(&lost_e)).await, 204);
+
+    // its session no longer works, and its open socket is closed on the next frame
+    assert_eq!(http.get(url("/me")).bearer_auth(tok(&lost_e)).send().await.unwrap().status(), 401);
+    let ws = lost.ws.as_mut().unwrap();
+    let ping = Frame::Ping { clock: ClockReading { wall: chorus_server::now_ms(), mono: None, boot_id: None } };
+    ws.send(Message::Text(serde_json::to_string(&ping).unwrap().into())).await.unwrap();
+    let reply = tokio::time::timeout(Duration::from_secs(2), ws.next()).await.unwrap().unwrap().unwrap();
+    let f: Frame = serde_json::from_str(reply.to_text().unwrap()).unwrap();
+    assert!(matches!(f, Frame::Error { ref code, .. } if code == "unauthenticated"), "{f:?}");
+    let me: Value = http.get(url("/me")).bearer_auth(tok(&a)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(me["devices"].as_array().unwrap().len(), 1);
+}

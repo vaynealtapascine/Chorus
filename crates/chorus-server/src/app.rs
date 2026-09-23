@@ -88,6 +88,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/challenge", post(challenge))
         .route("/auth/session", post(session))
         .route("/devices/invite", post(device_invite))
+        .route("/devices/{id}/revoke", post(device_revoke))
         .route("/follows", get(follows_list).post(follow_request))
         .route("/follows/{id}/prefs", put(follow_prefs))
         .route("/follows/{id}", delete(follow_end))
@@ -297,6 +298,32 @@ async fn device_invite(
     // scan with the other device's camera instead of copying the link across (qr.rs)
     let qr_svg = crate::qr::encode(&url).map(|q| q.svg());
     Ok(Json(json!({"code": code, "url": url, "qr_svg": qr_svg, "expires_at": now + 86_400_000})))
+}
+
+/// Sign out another device of the same account (a lost phone): its sessions end, its socket is
+/// dropped from the fan-out and closed on its next frame, and it can't renew.
+async fn device_revoke(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    if id == me.device_id {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "bad_request", "this is the device you're using".into()));
+    }
+    let owner: Option<String> = rusqlite::OptionalExtension::optional(conn.query_row(
+        "SELECT account_id FROM device WHERE id = ?1 AND revoked_at IS NULL",
+        [&id],
+        |r| r.get(0),
+    ))
+    .map_err(anyhow::Error::from)?;
+    if owner.as_deref() != Some(me.account_id.as_str()) {
+        return Err(ApiError(StatusCode::NOT_FOUND, "not_found", "no such device".into()));
+    }
+    auth::revoke_device(&conn, &id, now_ms())?;
+    s.peers.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ─── follows (API.md §3) ────────────────────────────────────────────────────
@@ -998,6 +1025,13 @@ async fn run_socket(s: AppState, socket: WebSocket) {
                 continue;
             }
         };
+        // a device signed out from another one stops here, even mid-connection
+        if let Some((device, _)) = &me
+            && !auth::device_active(&s.db(), device)
+        {
+            send(&tx, Frame::Error { code: "unauthenticated".into(), message: "this device was signed out".into() });
+            break;
+        }
         let result = match (&me, frame) {
             (None, Frame::Hello { token, epoch, cursors, clock, .. }) => {
                 match hello(&s, &tx, &token, epoch, cursors, clock) {

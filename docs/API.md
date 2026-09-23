@@ -41,6 +41,11 @@ POST /devices/invite            Authorization: Bearer <session>
 can scan it from the web app. `CHORUS_QR_SAMPLES=<dir> cargo test -p chorus-server --lib qr`
 followed by `python scripts/qr-check.py <dir>` decodes samples with OpenCV.
 
+Sign out another device of the same account (a lost phone): `POST /devices/{id}/revoke` → 204.
+Its sessions end, it can't renew, and its open sync socket is closed on its next frame. Revoking
+the device you're calling from is a 400; another account's device is a 404. `GET /me` lists the
+account's devices.
+
 `GET /push/vapid` → `{public_key}` is the server's VAPID key for browsers' `pushManager.subscribe`
 (D-061). Browsers then register below like any device.
 
