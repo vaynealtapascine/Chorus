@@ -729,3 +729,114 @@ async fn a_write_token_logs_switches_by_name() {
     assert_eq!(st, 201);
     assert_eq!(v["front"].as_array().unwrap().len(), 0);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn friends_share_spaces_and_dms() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 81, "stars").await;
+    let friend = enrol(&s, auth::InviteKind::Person, None, 82, "alex").await;
+    let stranger = enrol(&s, auth::InviteKind::Person, None, 83, "sam").await;
+    let mut phone = Device::new(&sys, 81);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let mut laptop = Device::new(&friend, 82);
+    laptop.connect(&s).await;
+    laptop.drain(Q).await;
+    let acct = phone.scope("account:");
+    let kai = new_id(1, [84; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai", "color": "#C0694E"})).await;
+
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+    let id_of = |e: &Value| e["account_id"].as_str().unwrap().to_string();
+    let post = |path: String, auth: String, body: Value| {
+        let http = http.clone();
+        async move {
+            let r = http.post(path).bearer_auth(auth).json(&body).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap_or(Value::Null))
+        }
+    };
+
+    // alex follows stars and stars accepts: now they're connected
+    let (_, f) = post(url("/follows"), tok(&friend), json!({"target": "stars"})).await;
+    phone.drain(Q).await;
+    phone.create("follow.accept", &acct, f["id"].as_str().unwrap(), json!({})).await;
+    phone.drain(Q).await;
+
+    // strangers can't be pulled into a DM
+    let (st, _) = post(url("/spaces"), tok(&sys), json!({"kind": "dm", "accounts": [id_of(&stranger)]})).await;
+    assert_eq!(st, 403);
+    let (st, dm) = post(url("/spaces"), tok(&sys), json!({"kind": "dm", "accounts": [id_of(&friend)]})).await;
+    assert_eq!(st, 201);
+    let dm = dm["id"].as_str().unwrap().to_string();
+    let (st, again) = post(url("/spaces"), tok(&sys), json!({"kind": "dm", "accounts": [id_of(&friend)]})).await;
+    assert_eq!((st, again["id"].as_str()), (200, Some(dm.as_str())), "one DM per pair");
+
+    // both sides get the space live; a message from Kai reaches alex
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    let scope = format!("space:{dm}");
+    assert!(laptop.store.scopes.contains(&scope));
+    let p = model::project(phone.store.confirmed());
+    let chan = p.rows["channel"].iter().find(|(_, r)| r.fields["space_id"] == dm.as_str()).unwrap().0.clone();
+    phone
+        .create(
+            "message.send",
+            &scope,
+            &new_id(2, [85; 10]),
+            json!({"channel_id": chan, "authors": [kai], "text": "hi alex", "entities": []}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    let p = model::project(laptop.store.confirmed());
+    assert!(p.rows["message"].values().any(|m| m.fields["text"] == "hi alex"));
+
+    // alex sees Kai's author card, and nothing about stars' other members
+    let cards: Value = http
+        .get(url(&format!("/spaces/{dm}/authors")))
+        .bearer_auth(tok(&friend))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(cards["members"].as_array().unwrap().len(), 1);
+    assert_eq!(cards["members"][0]["name"], "Kai");
+    assert_eq!(cards["accounts"].as_array().unwrap().len(), 2);
+    let r = http.get(url(&format!("/spaces/{dm}/authors"))).bearer_auth(tok(&stranger)).send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    let list: Value = http.get(url("/spaces")).bearer_auth(tok(&friend)).send().await.unwrap().json().await.unwrap();
+    assert!(list["items"].as_array().unwrap().iter().any(|i| i["id"] == dm.as_str() && i["kind"] == "dm"));
+
+    // a shared space: only its owner adds people, and the owner can't leave it
+    let (st, club) =
+        post(url("/spaces"), tok(&sys), json!({"kind": "shared", "name": "Book club", "accounts": []})).await;
+    assert_eq!(st, 201);
+    let club = club["id"].as_str().unwrap().to_string();
+    let (st, _) =
+        post(url(&format!("/spaces/{club}/members")), tok(&friend), json!({"accounts": [id_of(&friend)]})).await;
+    assert_eq!(st, 404, "alex isn't in it, so for alex it doesn't exist");
+    let r = http
+        .post(url(&format!("/spaces/{club}/members")))
+        .bearer_auth(tok(&sys))
+        .json(&json!({"accounts": [id_of(&friend)]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 204);
+    laptop.drain(Q).await;
+    assert!(laptop.store.scopes.contains(&format!("space:{club}")));
+    let r = http.delete(url(&format!("/spaces/{club}/members/me"))).bearer_auth(tok(&sys)).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+
+    // alex leaves the DM: the scope goes away and the cards with it
+    let r = http.delete(url(&format!("/spaces/{dm}/members/me"))).bearer_auth(tok(&friend)).send().await.unwrap();
+    assert_eq!(r.status(), 204);
+    laptop.drain(Q).await;
+    assert!(!laptop.store.scopes.contains(&scope));
+    let r = http.get(url(&format!("/spaces/{dm}/authors"))).bearer_auth(tok(&friend)).send().await.unwrap();
+    assert_eq!(r.status(), 404);
+}

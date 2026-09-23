@@ -148,6 +148,18 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   - `/front/reviews?open=1`.
 - **Other accounts:** `/accounts/{id}/view`, `/follows`, `/notifications`.
 - `/front/intervals` also takes `subject` (an id) and `level`.
+- **Shared spaces and DMs** (M6.2, `spaces.rs`, signed-in devices only):
+  - `GET /spaces` returns your spaces with the accounts in each.
+  - `POST /spaces {kind: "shared"|"dm", name?, accounts: [account ids]}` answers
+    `201 {id}`, or `200 {id}` when that DM already exists. It works only with accounts connected
+    to you by an active follow, in either direction.
+  - `POST /spaces/{id}/members {accounts}` is for a shared space's owner only.
+  - `DELETE /spaces/{id}/members/me` leaves. The owner of a shared space can't leave it, and
+    nobody can leave their home space.
+  - `GET /spaces/{id}/authors` returns `{accounts, members}`. `members` holds author cards (name,
+    display name, pronouns, colour, sigils, avatar) for other accounts' members who wrote a message
+    everyone in the space can read.
+  - A space you aren't in is a 404.
 - **Not yet:** messages, posts, profiles, feeds and insights, which come with
   M5.7/M5.8/M7/M10.1.
 

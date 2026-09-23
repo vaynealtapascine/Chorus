@@ -113,6 +113,10 @@ pub fn router(state: AppState) -> Router {
         .route("/front/reviews", get(front_reviews))
         .route("/me", get(me))
         .route("/stream", get(stream))
+        .route("/spaces", get(spaces_list).post(spaces_create))
+        .route("/spaces/{id}/members", post(spaces_add))
+        .route("/spaces/{id}/members/me", delete(spaces_leave))
+        .route("/spaces/{id}/authors", get(spaces_authors))
         .route("/emoji", get(emoji_list))
         .route("/accounts/{id}/view", get(account_view))
         .route(
@@ -554,6 +558,91 @@ async fn front_switch(
         v["front"] = crate::api_data::current_front(&conn, &p)?["front"].take();
     }
     Ok((StatusCode::CREATED, Json(v)).into_response())
+}
+
+// ─── shared spaces and DMs (spaces.rs) ──────────────────────────────────────
+
+impl From<crate::spaces::SpaceError> for ApiError {
+    fn from(e: crate::spaces::SpaceError) -> Self {
+        use crate::spaces::SpaceError as E;
+        match e {
+            E::Bad(m) => ApiError(StatusCode::BAD_REQUEST, "bad_request", m),
+            E::NotFound => ApiError(StatusCode::NOT_FOUND, "not_found", "no such space".into()),
+            E::Forbidden(m) => ApiError(StatusCode::FORBIDDEN, "forbidden", m),
+            E::Internal(e) => e.into(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct SpaceIn {
+    kind: String,
+    name: Option<String>,
+    #[serde(default)]
+    accounts: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct AccountsIn {
+    accounts: Vec<String>,
+}
+
+async fn spaces_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    Ok(Json(crate::spaces::list(&conn, &me.account_id)?))
+}
+
+async fn spaces_create(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<SpaceIn>,
+) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let (id, ops) = crate::spaces::create(&conn, &me.account_id, &b.kind, b.name.as_deref(), &b.accounts, now_ms())?;
+    let created = !ops.is_empty();
+    fan_out(&s, &conn, &ops, None)?;
+    let status = if created { StatusCode::CREATED } else { StatusCode::OK };
+    Ok((status, Json(json!({"id": id}))).into_response())
+}
+
+async fn spaces_add(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    Json(b): Json<AccountsIn>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let ops = crate::spaces::add(&conn, &me.account_id, &id, &b.accounts, now_ms())?;
+    fan_out(&s, &conn, &ops, None)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn spaces_leave(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let ops = crate::spaces::leave(&conn, &me.account_id, &id, now_ms())?;
+    fan_out(&s, &conn, &ops, None)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn spaces_authors(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    Ok(Json(crate::spaces::authors(&conn, &me.account_id, &id)?))
 }
 
 // ─── more reads (api_reads.rs) ───────────────────────────────────────────────
