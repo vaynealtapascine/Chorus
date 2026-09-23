@@ -14,10 +14,10 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M5.9
-- **Owner:** gpt-6-sol, 2026-09-23
-- **Next concrete step:** complete segmented-message controls and rendering; verify editing preserves segment attribution
-- **Notes:** M4.2 remains [~] pending the physical-device checks documented in its handoff commit; no device is attached. M5.5 is complete. M5.6 needs the M2.6 blob store, so the next independent M5 task is M5.9 segmented-message completion. Use CARGO_TARGET_DIR=F:\DunBuild\chorus-target because C: is nearly full (see NOTES).
+- **In progress:** —
+- **Owner:** —
+- **Next concrete step:** claim the next unticked task on the board
+- **Notes:** M4.2 remains [~] pending the physical-device checks documented in its handoff commit; no device is attached. M5.5 and M5.9 are complete. M5.6 needs the M2.6 blob store. Use CARGO_TARGET_DIR=F:\DunBuild\chorus-target because C: is nearly full (see NOTES).
 
 ---
 
@@ -99,7 +99,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [ ] M5.6 Attachments + images (offline-queued upload)
 - [ ] M5.7 Hidden messages: spoilers, CW/collapsed, member-visible, system-only
 - [ ] M5.8 Search (FTS5 server, local search on Android)
-- [~] M5.9 Segmented messages (newline annotations) — parse, store `message_segment`, render
+- [x] M5.9 Segmented messages (newline annotations) — parse, store `message_segment`, render
 - [ ] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward
 - [ ] M5.11 Forward/quote a selection (range or multi-message bundle)
 - [ ] M5.12 Trash + restore for messages, posts, members, groups, channels
@@ -201,3 +201,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 gpt-6-sol — M4.2 continued: encrypted Room replica with Keystore key and checked plaintext migration; durable-before-send local writes; serial socket persistence; bounded foreground/WorkManager sync. APK, bridge JVM tests, Android lint/unit tests, and full Rust/web verifier pass; device test pending.
 - 2026-09-23 gpt-6-sol — M4.2 follow-up: background WorkManager now acquires the socket lease before awaiting startup, so a fresh process can connect without an Activity. APK, Android lint/unit tests, and full verifier pass again.
 - 2026-09-23 gpt-6-sol — M5.5 thread channels, parent reverse links, reply previews, and thread navigation/composer; server arrival-order/rebuild and 50k-reply web tests pass
+- 2026-09-23 gpt-6-sol — M5.9 segmented-message Advanced toggle, per-segment avatars and editing with preserved UTF-16 offsets/authors; web and server projection tests pass

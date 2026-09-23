@@ -350,3 +350,60 @@ fn thread_reverse_link_survives_arrival_order_and_rebuild() {
     assert_eq!(link(&c, &parent), Some(parent));
     assert_eq!(link(&c, &later_parent), Some(later_parent));
 }
+
+#[test]
+fn editing_segmented_message_updates_text_and_attribution() {
+    let (mut c, account, _, scope) = setup();
+    let message = new_id(1, [221; 10]);
+    let first = new_id(1, [222; 10]);
+    let second = new_id(1, [223; 10]);
+    ingest::server_op(
+        &c,
+        &account,
+        "message.send",
+        &scope,
+        Some(&message),
+        json!({"channel_id":"c","authors":[first,second],"text":"A\nB","entities":[],"segments":[
+            {"offset":0,"length":1,"authors":[first]},
+            {"offset":2,"length":1,"authors":[second]}
+        ]}),
+        T,
+    )
+    .unwrap();
+    ingest::server_op(
+        &c,
+        &account,
+        "message.edit",
+        &scope,
+        Some(&message),
+        json!({"message_id":message,"text":"A😀!\nB?","entities":[],"segments":[
+            {"offset":0,"length":4,"authors":[first]},
+            {"offset":5,"length":2,"authors":[second]}
+        ]}),
+        T + 1,
+    )
+    .unwrap();
+    let query = "SELECT s.idx, s.offset_u16, s.length_u16, s.text, a.member_id FROM message_segment s \
+                 JOIN message_segment_author a ON a.message_id = s.message_id AND a.idx = s.idx \
+                 WHERE s.message_id = ?1 ORDER BY s.idx";
+    let rows = |db: &Connection| {
+        db.prepare(query)
+            .unwrap()
+            .query_map([&message], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    };
+    let expected = vec![(0, 0, 4, "A😀!".to_string(), first), (1, 5, 2, "B?".to_string(), second)];
+    assert_eq!(rows(&c), expected);
+    project::rebuild(&mut c).unwrap();
+    assert_eq!(rows(&c), expected);
+}

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { core, type Composed } from '../core';
-  import { channels, lastRead, members, messageById, messages, reactions, spaces, threadSummaries, unread, type MessageRow } from '../data';
+  import { channels, lastRead, members, messageById, messages, reactions, segmentParsing, spaces, threadSummaries, unread, type MessageRow } from '../data';
   import { router } from '../router.svelte';
+  import { editedSegments, segmentMarkup } from '../segments';
   import { sync, type Projection } from '../sync/client';
   import Message, { type Quote } from './Message.svelte';
 
@@ -23,6 +24,7 @@
   const people = $derived(new Map(members(projection).map((m) => [m.id, m])));
   const scopeOf = (spaceId: string) => `space:${spaceId}`;
   const scope = $derived(space ? scopeOf(space.id) : '');
+  const parseSegments = $derived(segmentParsing(projection, sync.accountId));
 
   // who speaks by default: the primary fronter, else the first one fronting (SPEC §5.2)
   const fronting = $derived(projection.fronts[sync.accountId]?.current ?? []);
@@ -45,6 +47,7 @@
   let replyTo = $state<MessageRow | null>(null);
   let quoting = $state<Quote | null>(null);
   let editing = $state<MessageRow | null>(null);
+  let editingParts = $state<string[] | null>(null);
   let forwarding = $state<MessageRow | null>(null);
   let showPins = $state(false);
   let picking = $state(false);
@@ -54,22 +57,32 @@
     if (current?.id === activeChannelId) return;
     activeChannelId = current?.id;
     replyTo = quoting = editing = forwarding = null;
+    editingParts = null;
     chosen = null;
   });
 
-  const preview: Composed | null = $derived(draft.trim() ? core.compose(draft, speakers, {}, speaker ? [speaker] : [], names) : null);
+  const preview: Composed | null = $derived(draft.trim() && !editing ? core.compose(draft, speakers, { segments: parseSegments }, speaker ? [speaker] : [], names) : null);
   const previewNames = $derived(
     preview ? preview.segments.map((s) => s.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')).join(' → ') : '',
   );
 
   function send() {
-    if (!current || !preview) return;
+    if (!current) return;
     if (editing) {
-      sync.create('message.edit', scope, editing.id, { message_id: editing.id, text: preview.rich.text, entities: preview.rich.entities });
+      const result = editingParts
+        ? editedSegments(editingParts, editing.segments, names)
+        : { rich: core.parseMarkup(draft, names), segments: [{ offset: 0, length: 0, authors: [...editing.authors] }] };
+      if (!result.rich.text.trim()) return;
+      if (!editingParts) result.segments[0].length = result.rich.text.length;
+      sync.create('message.edit', scope, editing.id, {
+        message_id: editing.id, text: result.rich.text, entities: result.rich.entities, segments: result.segments,
+      });
       editing = null;
+      editingParts = null;
       draft = '';
       return;
     }
+    if (!preview) return;
     if (!preview.rich.text.trim() || !preview.authors.length) return;
     sync.create('message.send', scope, sync.newId(), {
       channel_id: current.id,
@@ -98,14 +111,16 @@
   function cancel() {
     if (editing) draft = ''; // leaving an edit drops the edited text
     replyTo = quoting = editing = null;
+    editingParts = null;
   }
 
   function startEdit(m: MessageRow) {
     editing = m;
+    editingParts = m.segments.length > 1 ? segmentMarkup(m) : null;
     replyTo = quoting = null;
-    // edit in markup, re-parsed on save (the authors stay as they were)
-    draft = core.toMarkup({ text: m.text, entities: m.entities });
-    box?.focus();
+    // Segment editing keeps each part's authors; a single segment uses the plain composer.
+    draft = editingParts ? '' : core.toMarkup({ text: m.text, entities: m.entities });
+    if (!editingParts) box?.focus();
   }
 
   function forwardTo(targetId: string) {
@@ -260,8 +275,8 @@
           {dark}
           lookup={(id) => messageById(projection, id)}
           mine={m.account_id === sync.accountId}
-          onreply={() => { replyTo = m; quoting = null; editing = null; box?.focus(); }}
-          onquote={(q) => { quoting = q; replyTo = m; box?.focus(); }}
+          onreply={() => { replyTo = m; quoting = null; editing = null; editingParts = null; box?.focus(); }}
+          onquote={(q) => { quoting = q; replyTo = m; editing = null; editingParts = null; box?.focus(); }}
           onedit={() => startEdit(m)}
           ondelete={() => sync.create('message.delete', scope, m.id, {})}
           onrestore={() => sync.create('message.restore', scope, m.id, {})}
@@ -295,8 +310,17 @@
       </div>
     {/if}
 
+    {#if !editing}
+      <details class="chat-advanced">
+        <summary>Advanced chat settings</summary>
+        <label><input type="checkbox" checked={parseSegments} onchange={(e) => sync.create('pref.set', sync.accountScope, null, {
+          device: '', key: 'chat.segment_parsing', value: (e.currentTarget as HTMLInputElement).checked,
+        })} /> Parse speaker annotations on new lines</label>
+      </details>
+    {/if}
+
     <div class="composer">
-      <div class="chip-wrap">
+      {#if !editing}<div class="chip-wrap">
         <button class="chip" onclick={() => (picking = !picking)} title="Speaking as">
           {#if speaker}
             <span class="avatar" style="--ring: {color(speaker).ring}">{people.get(speaker)?.sigils[0] ?? people.get(speaker)?.name[0]}</span>
@@ -311,19 +335,28 @@
             {/each}
           </div>
         {/if}
-      </div>
+      </div>{/if}
       <div class="input">
         {#if preview && !editing}<span class="as">as {previewNames || 'no one — pick a speaker'}</span>{/if}
-        <textarea
-          bind:this={box}
-          bind:value={draft}
-          onkeydown={onkey}
-          rows="1"
-          placeholder={current ? `Message #${current.name}` : ''}
-          aria-label="Message"
-        ></textarea>
+        {#if editing && editingParts}
+          {#each editingParts as part, i (i)}
+            <label class="segment-edit">
+              <span>{editing.segments[i].authors.map((a) => people.get(a)?.name ?? 'Someone').join(' & ')}</span>
+              <textarea value={part} oninput={(e) => (editingParts![i] = e.currentTarget.value)} onkeydown={onkey} rows="2" aria-label={`Edit segment ${i + 1}`}></textarea>
+            </label>
+          {/each}
+        {:else}
+          <textarea
+            bind:this={box}
+            bind:value={draft}
+            onkeydown={onkey}
+            rows="1"
+            placeholder={current ? `Message #${current.name}` : ''}
+            aria-label="Message"
+          ></textarea>
+        {/if}
       </div>
-      <button class="send" onclick={send} disabled={!preview || (!editing && !preview.authors.length)}>{editing ? 'Save' : 'Send'}</button>
+      <button class="send" onclick={send} disabled={editing ? (editingParts ? !editingParts.some((part) => part.trim()) : !draft.trim()) : !preview || !preview.authors.length}>{editing ? 'Save' : 'Send'}</button>
     </div>
   </section>
 </div>
@@ -495,6 +528,16 @@
     padding: var(--s-3);
     border-top: 1px solid var(--line);
   }
+  .chat-advanced {
+    padding: var(--s-1) var(--s-3);
+    border-top: 1px solid var(--line);
+    color: var(--ink-3);
+    font-size: var(--fs-xs);
+  }
+  .chat-advanced summary { cursor: pointer; width: fit-content; }
+  .chat-advanced label { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) 0; color: var(--ink-2); }
+  .segment-edit { display: grid; gap: 2px; font-size: var(--fs-xs); color: var(--ink-2); }
+  .segment-edit + .segment-edit { margin-top: var(--s-2); }
   .chip-wrap {
     position: relative;
   }

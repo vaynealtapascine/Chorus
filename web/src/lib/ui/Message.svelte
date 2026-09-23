@@ -1,6 +1,7 @@
 <script lang="ts">
   import { core } from '../core';
   import type { MemberRow, MessageRow, ThreadSummary } from '../data';
+  import { segmentRich } from '../segments';
   import RichText from './RichText.svelte';
 
   export interface Quote {
@@ -67,13 +68,6 @@
   const replied = $derived(m.reply_to ? lookup(m.reply_to) : undefined);
   let body: HTMLElement | undefined = $state();
 
-  function segText(s: MessageRow['segments'][number]) {
-    const ents = m.entities
-      .filter((e) => e.offset >= s.offset && e.offset + e.length <= s.offset + s.length)
-      .map((e) => ({ ...e, offset: e.offset - s.offset }));
-    return { text: m.text.slice(s.offset, s.offset + s.length), entities: ents };
-  }
-
   /** Quote the selected part of this message, or all of it (SPEC §5.3). */
   function quote() {
     const sel = getSelection();
@@ -125,9 +119,16 @@
       {/each}
       {#if m.segments.length > 1}
         {#each m.segments as s, i (i)}
-          {@const seg = segText(s)}
+          {@const seg = segmentRich(m, s)}
           <div class="segment">
-            <span class="who" style="color: {color(s.authors[0] ?? '').name}">{s.authors.map(nameOf).join(' & ')}</span>
+            <span class="segment-head">
+              <span class="segment-avatars">
+                {#each s.authors as author (author)}
+                  <span class="segment-avatar" style="--ring: {color(author).ring}" title={nameOf(author)}>{people.get(author)?.sigils[0] ?? nameOf(author)[0]}</span>
+                {/each}
+              </span>
+              <span class="who" style="color: {color(s.authors[0] ?? '').name}">{s.authors.map(nameOf).join(' & ')}</span>
+            </span>
             <RichText text={seg.text} entities={seg.entities} />
           </div>
         {/each}
@@ -274,6 +275,18 @@
     border-left: 2px solid var(--line);
     margin-top: var(--s-1);
   }
+  .segment-head { display: flex; align-items: center; gap: var(--s-2); font-size: var(--fs-xs); }
+  .segment-avatars { display: flex; }
+  .segment-avatar {
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--surface-2);
+    box-shadow: 0 0 0 1px var(--ring, var(--line));
+  }
+  .segment-avatar + .segment-avatar { margin-left: -4px; }
   .avatars {
     display: flex;
   }

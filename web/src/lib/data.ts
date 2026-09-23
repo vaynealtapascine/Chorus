@@ -180,6 +180,13 @@ export interface ThreadSummary {
   lastRepliers: string[];
 }
 
+/** Pending local prefs use an empty account id until the server stamps the op. */
+export function segmentParsing(p: Projection, accountId: string): boolean {
+  const prefs = (p.rows.pref ?? {}) as Rows;
+  const row = prefs['||chat.segment_parsing'] ?? prefs[`${accountId}||chat.segment_parsing`];
+  return row?.fields.value !== false;
+}
+
 export interface Segment {
   offset: number;
   length: number;

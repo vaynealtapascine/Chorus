@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fuzzy, groupPath, membership, threadSummaries, type GroupRow } from './data';
+import { fuzzy, groupPath, membership, segmentParsing, threadSummaries, type GroupRow } from './data';
 import type { Projection } from './sync/client';
 
 describe('data helpers', () => {
@@ -75,5 +75,15 @@ describe('data helpers', () => {
     const summary = threadSummaries(p).get('parent');
     expect(summary?.replyCount).toBe(50_000);
     expect(summary?.lastRepliers).toEqual(['author4', 'author3', 'author2']);
+  });
+
+  it('uses pending local segment preference until the server confirms it', () => {
+    const p = { rows: { pref: {
+      'account||chat.segment_parsing': { exists: true, fields: { value: true } },
+      '||chat.segment_parsing': { exists: true, fields: { value: false } },
+    } } } as unknown as Projection;
+    expect(segmentParsing(p, 'account')).toBe(false);
+    delete p.rows.pref['||chat.segment_parsing'];
+    expect(segmentParsing(p, 'account')).toBe(true);
   });
 });
