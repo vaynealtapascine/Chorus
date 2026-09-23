@@ -3,9 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
-use axum::extract::Path;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::{DefaultBodyLimit, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
@@ -21,7 +21,7 @@ use tokio::sync::mpsc;
 use crate::auth::{self, AuthError};
 use crate::config::Config;
 use crate::follows::{self, FollowError};
-use crate::{db, ingest, now_ms, oplog};
+use crate::{blobs, db, ingest, now_ms, oplog};
 
 /// A connected device.
 struct Peer {
@@ -71,6 +71,13 @@ pub fn router(state: AppState) -> Router {
         .route("/follows/{id}", delete(follow_end))
         .route("/notifications", get(notifications))
         .route("/accounts/{id}/view", get(account_view))
+        .route(
+            "/blobs/{hash}",
+            get(blobs::get_blob)
+                .head(blobs::head_blob)
+                .put(blobs::put_blob)
+                .layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
+        )
         .route("/sync", get(sync_ws));
     let mut app = Router::new().nest("/api/v1", api).with_state(state.clone());
     if let Some(dir) = state.cfg.server.web_dir.clone() {

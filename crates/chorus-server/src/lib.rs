@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod auth;
+pub mod blobs;
 pub mod config;
 pub mod db;
 pub mod follows;
