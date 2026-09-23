@@ -68,7 +68,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M2.3 Op ingestion: validate → permission → append → project (single writer task)
 - [x] M2.4 Projections for all tables + rebuild-from-log command
 - [x] M2.5 Sync WebSocket (hello/push/pull/ack/snapshot/hash) per SYNC.md
-- [ ] M2.6 Blob store (content-addressed, resumable upload)
+- [x] M2.6 Blob store (content-addressed, resumable upload) — gpt-6-sol batch 2 T1 (merged 18e4d6e)
 - [ ] M2.7 Read API (REST) + follower views
 - [ ] M2.8 Nightly backups + `chorus-server backup|restore|rebuild|export` CLI
 
@@ -96,18 +96,18 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M5.3 Replies (incl. cross-channel), quotes (full/partial), forwards, edits+history, deletes, pins
 - [x] M5.4 Reactions, mentions, read states, unread badges
 - [x] M5.5 Threads
-- [ ] M5.6 Attachments + images (offline-queued upload)
+- [x] M5.6 Attachments + images (offline-queued upload) — web (batch 2 T2); Android display not yet
 - [ ] M5.7 Hidden messages: spoilers, CW/collapsed, member-visible, system-only
 - [ ] M5.8 Search (FTS5 server, local search on Android)
 - [x] M5.9 Segmented messages (newline annotations) — parse, store `message_segment`, render
 - [ ] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward
 - [x] M5.11 Forward/quote a selection (range or multi-message bundle)
 - [x] M5.12 Trash + restore for messages, posts, members, groups, channels
-- [ ] M5.13 Custom emoji: server-wide set, upload/crop, picker + `:name:` autocomplete, reactions (D-054)
+- [x] M5.13 Custom emoji: server-wide set, upload/crop, picker + `:name:` autocomplete, reactions (D-054) — web (batch 2 T4)
 
 ### M6 — Sharing
 
-- [~] M6.1 Person accounts, follows, privacy buckets — follows done end to end (server-written requests/prefs, REST, web People page with presets); bucket UI + per-member announce policy UI still to do
+- [x] M6.1 Person accounts, follows, privacy buckets — follows (Claude) + buckets, account default ceiling, per-member bucket announce (batch 2 T5)
 - [ ] M6.2 Shared spaces + DMs between accounts
 - [~] M6.3 Follower views (delayed/fuzzed front state per NOTIFICATIONS.md §5) — server reveal + GET /accounts/{id}/view + web People page (fuzzed "since", recent switches, browser notifications while open) done; history/stats surfaces not yet
 
@@ -205,3 +205,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 gpt-6-sol — M5.11 range and multi-message quote/forward snapshots, destination picker, outward-share confirmation, UTF-16 clipping and projection tests
 - 2026-09-23 claude-opus-5.5 — M5.12 M5.12 Trash (finished gpt-6-sol's WIP): restore limited to creator/latest deleter (core::restore, both servers), searchable web Trash + per-channel 'Show deleted'; fixed early out-of-order restores being rejected permanently; fixtures blessed for the new trash stamps
 - 2026-09-23 claude-opus-5.5 — perf (SPEC §9): incremental projector (core/projector.rs) + store `touched` ids + projection deltas to the web; send-message cost on a 55k-op history 640 ms → 0.12 ms native; checked against the reference by a property test and inside the convergence simulator (3000 seeds).
+- 2026-09-23 claude-opus-5.5 — audited + merged gpt-6-sol batch 2 (T1 blobs, T2 attachments, T3 avatars incl. PK + Android display, T4 custom emoji, T5 buckets); T6 backups was in progress, uncommitted, left in the worktree. Android now applies projection deltas too.
