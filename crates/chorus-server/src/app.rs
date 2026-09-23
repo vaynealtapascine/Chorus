@@ -70,6 +70,7 @@ pub fn router(state: AppState) -> Router {
         .route("/follows/{id}/prefs", put(follow_prefs))
         .route("/follows/{id}", delete(follow_end))
         .route("/notifications", get(notifications))
+        .route("/emoji", get(emoji_list))
         .route("/accounts/{id}/view", get(account_view))
         .route(
             "/blobs/{hash}",
@@ -191,6 +192,37 @@ fn bearer(headers: &axum::http::HeaderMap) -> Result<&str, ApiError> {
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or_else(|| ApiError(StatusCode::UNAUTHORIZED, "unauthenticated", "missing session".into()))
+}
+
+/// Server-wide active emoji for clients and integrations that do not read the sync log.
+async fn emoji_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    auth::authenticate(&conn, bearer(&headers)?, now_ms(), s.session_ttl())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, aliases, category, blob_hash, is_animated FROM custom_emoji
+         WHERE deleted_at IS NULL ORDER BY coalesce(category, ''), name",
+        )
+        .map_err(anyhow::Error::from)?;
+    let rows = stmt
+        .query_map([], |r| {
+            let aliases: String = r.get(2)?;
+            Ok(json!({
+                "id": r.get::<_, String>(0)?,
+                "name": r.get::<_, String>(1)?,
+                "aliases": serde_json::from_str::<serde_json::Value>(&aliases).unwrap_or_else(|_| json!([])),
+                "category": r.get::<_, Option<String>>(3)?,
+                "blob_hash": r.get::<_, String>(4)?,
+                "is_animated": r.get::<_, bool>(5)?,
+            }))
+        })
+        .map_err(anyhow::Error::from)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(anyhow::Error::from)?;
+    Ok(Json(json!({"emoji": rows})))
 }
 
 /// A one-use, 1-day invite that links another device to the caller's account (API.md §2.1).

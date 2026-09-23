@@ -58,6 +58,30 @@ fn hash(bytes: &[u8]) -> String {
 }
 
 #[tokio::test]
+async fn emoji_catalogue_needs_auth_and_excludes_retired_rows() {
+    let s = Server::new().await;
+    {
+        let conn = s.state.db.lock().unwrap();
+        for (id, name, deleted) in [("one", "wave", None), ("two", "old", Some(1))] {
+            conn.execute(
+                "INSERT INTO custom_emoji(id,name,blob_hash,created_by,created_at,deleted_at)
+                 VALUES (?1,?2,'hash','alice',0,?3)",
+                rusqlite::params![id, name, deleted],
+            )
+            .unwrap();
+        }
+    }
+    let url = s.base.replace("/blobs", "/emoji");
+    let client = reqwest::Client::new();
+    assert_eq!(client.get(&url).send().await.unwrap().status(), 401);
+    let response = client.get(&url).bearer_auth("bob-token").send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["emoji"].as_array().unwrap().len(), 1);
+    assert_eq!(body["emoji"][0]["name"], "wave");
+}
+
+#[tokio::test]
 async fn resume_range_and_stranger_denied() {
     let s = Server::new().await;
     let client = reqwest::Client::new();
