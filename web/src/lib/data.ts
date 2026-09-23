@@ -226,6 +226,43 @@ export interface SnapshotItem {
 }
 export type QuoteValue = TextRange | { items: SnapshotItem[] };
 
+export type TrashKind = 'message' | 'post' | 'member' | 'group' | 'channel';
+export interface TrashItem {
+  id: string;
+  kind: TrashKind;
+  label: string;
+  detail: string;
+  deletedAt: number;
+  scope: string;
+  channelId?: string;
+}
+
+/** Show only items this account authored or deleted; pending local deletes have no stamp yet. */
+export function trashItems(p: Projection, accountId: string): TrashItem[] {
+  const channelRows = (p.rows.channel ?? {}) as Rows;
+  const names = new Map(Object.entries(channelRows).map(([id, row]) => [id, str(row.fields.name) ?? 'channel']));
+  const out: TrashItem[] = [];
+  for (const [table, kind] of [
+    ['message', 'message'], ['post', 'post'], ['member', 'member'], ['member_group', 'group'], ['channel', 'channel'],
+  ] as const) {
+    for (const [id, row] of Object.entries((p.rows[table] ?? {}) as Rows)) {
+      if (!row.exists || typeof row.fields.deleted_at !== 'number') continue;
+      const f = row.fields;
+      if (f.created_by_account_id !== accountId && f.deleted_by_account_id !== accountId && f.deleted_by_account_id != null) continue;
+      const channel = channelRows[str(f.channel_id) ?? ''];
+      const spaceId = table === 'message' ? str(channel?.fields.space_id) : str(f.space_id);
+      const scope = table === 'message' || table === 'channel' ? (spaceId ? `space:${spaceId}` : '') : `account:${accountId}`;
+      const label = table === 'post' ? (f.kind === 'entry' ? 'Entry' : 'Post') :
+        table === 'member_group' ? 'Group' : kind[0].toUpperCase() + kind.slice(1);
+      const detail = table === 'message' ? `#${names.get(str(f.channel_id) ?? '') ?? 'channel'} · ${str(f.text) ?? '(empty message)'}` :
+        str(f.name) ?? str(f.title) ?? str(f.text) ?? '(untitled)';
+      out.push({ id, kind, label, detail, deletedAt: f.deleted_at as number, scope,
+        channelId: table === 'message' ? str(f.channel_id) : undefined });
+    }
+  }
+  return out.sort((a, b) => b.deletedAt - a.deletedAt || a.id.localeCompare(b.id));
+}
+
 export function spaces(p: Projection): SpaceRow[] {
   return Object.entries((p.rows.space ?? {}) as Rows)
     .filter(([, r]) => r.exists && r.fields.deleted_at == null)

@@ -14,6 +14,7 @@ pub mod lww;
 pub mod model;
 pub mod op;
 pub mod replica;
+pub mod restore;
 pub mod speaker;
 pub mod sync;
 pub mod text;

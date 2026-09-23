@@ -12,6 +12,7 @@
           "exists": true,
           "fields": {
             "color": "#aa5500",
+            "created_by_account_id": "0192f8c2-0000-7000-8000-0000000000a1",
             "name": "Kai R"
           }
         }

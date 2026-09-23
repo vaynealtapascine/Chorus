@@ -8,6 +8,7 @@
   import Members from './lib/ui/Members.svelte';
   import Onboarding from './lib/ui/Onboarding.svelte';
   import Switcher from './lib/ui/Switcher.svelte';
+  import Trash from './lib/ui/Trash.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
 
   let switching = $state(false);
@@ -68,6 +69,8 @@
         <Chat {projection} {dark} channelId={router.route.id} />
       {:else if router.route.name === 'history'}
         <History {projection} {dark} />
+      {:else if router.route.name === 'trash'}
+        <Trash {projection} channelId={router.route.id} />
       {:else}
         <Home {projection} {dark} onswitch={() => (switching = true)} />
       {/if}

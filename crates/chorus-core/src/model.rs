@@ -121,9 +121,13 @@ pub fn project<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Projection {
         };
         let entity = o.entity().unwrap_or("");
         let payload = o.payload_obj().cloned().unwrap_or_default();
+        let trash_item = matches!(spec.table, "message" | "post" | "member" | "member_group" | "channel");
         match spec.action {
             Action::Create | Action::Append => {
                 let mut fields = payload.clone();
+                if trash_item {
+                    fields.insert("created_by_account_id".into(), json!(o.account_id));
+                }
                 if spec.action == Action::Append {
                     fields.insert("occurred_at".into(), json!(o.time()));
                     fields.insert("account_id".into(), json!(o.account_id));
@@ -143,10 +147,18 @@ pub fn project<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Projection {
                 row.edits += 1;
             }
             Action::Delete => {
-                set_fields(&mut p, spec.table, entity, o.hlc, &one("deleted_at", json!(o.time())));
+                let mut fields = one("deleted_at", json!(o.time()));
+                if trash_item {
+                    fields.insert("deleted_by_account_id".into(), json!(o.account_id));
+                }
+                set_fields(&mut p, spec.table, entity, o.hlc, &fields);
             }
             Action::Restore => {
-                set_fields(&mut p, spec.table, entity, o.hlc, &one("deleted_at", Value::Null));
+                let mut fields = one("deleted_at", Value::Null);
+                if trash_item {
+                    fields.insert("deleted_by_account_id".into(), Value::Null);
+                }
+                set_fields(&mut p, spec.table, entity, o.hlc, &fields);
             }
             Action::Archive => {
                 set_fields(&mut p, spec.table, entity, o.hlc, &one("archived_at", json!(o.time())));

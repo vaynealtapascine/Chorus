@@ -308,6 +308,12 @@
       {/if}
       {#if current?.topic}<span class="topic">{current.topic}</span>{/if}
       <button class="pins" class:on={showPins} onclick={() => (showPins = !showPins)}>📌 {pinned.length}</button>
+      {#if current}
+        <details class="room-menu">
+          <summary aria-label="Channel menu">⋯</summary>
+          <a href="#/trash/{current.id}">Show deleted</a>
+        </details>
+      {/if}
     </header>
 
     {#if showPins}
@@ -534,6 +540,9 @@
     font-size: var(--fs-sm);
   }
   .thread-back { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
+  .room-menu { position: relative; color: var(--ink-3); }
+  .room-menu summary { cursor: pointer; list-style: none; }
+  .room-menu a { position: absolute; right: 0; top: 100%; z-index: 2; width: max-content; padding: var(--s-2) var(--s-3); color: var(--accent); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); text-decoration: none; font-size: var(--fs-sm); }
   .thread-origin {
     display: grid;
     gap: 2px;

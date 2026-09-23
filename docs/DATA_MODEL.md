@@ -26,6 +26,7 @@ schemaless things, and a set of `v_*` views (§6) that pre-join the common quest
 | Enums | TEXT with a `CHECK (x IN (...))`. Never integer codes. |
 | JSON | TEXT with `CHECK (json_valid(x))`. Used for: entities, settings, visibility, clocks, snapshots. |
 | Soft delete | `deleted_at` (tombstone). Queries/views exclude them. |
+| Trash stamps | For `message`, `post`, `member`, `member_group` and `channel` the reference projection also carries `created_by_account_id` (first create) and `deleted_by_account_id` (latest delete, cleared on restore). Only those two accounts may restore (`core::restore::allowed`, D-053). |
 | LWW clocks | Tables with field-level last-writer-wins carry `clocks` JSON: `{"name": "<hlc>", ...}`. Only the merge code reads it. |
 | HLC | String `"<physical_ms, 12 hex>-<counter, 4 hex>-<device short_id, 8 hex>"`, zero-padded, e.g. `"01a0c27d1e3f-0003-a1b2c3d4"`; plain string comparison = HLC order. See SYNC.md §3. |
 | Rich text | `text` (plain UTF-8) + `entities` JSON array `[{"type":"bold","offset":0,"length":5}, ...]`. Offsets/lengths are in **UTF-16 code units** (Telegram-compatible; what Android and JS use natively). |

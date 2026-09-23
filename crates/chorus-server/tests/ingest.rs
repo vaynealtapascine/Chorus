@@ -88,6 +88,33 @@ fn rejects_invalid_and_forbidden() {
 }
 
 #[test]
+fn trash_restore_is_limited_to_creator_or_deleter() {
+    let (c, a, b) = setup();
+    let third = new_id(1, [3; 10]);
+    c.execute("INSERT INTO account(id, kind, created_at) VALUES (?1, 'system', 0)", [&third]).unwrap();
+    let shared = format!("space:{}", new_id(1, [9; 10]));
+    for account in [&a, &b, &third] {
+        ingest::grant(&c, account, &shared).unwrap();
+    }
+    let created =
+        op(20, "message.send", &shared, json!({"channel_id":"c","authors":[],"text":"hi","entities":[]}), NOW);
+    let message_id = created.entity_id.clone().unwrap();
+    assert!(ingest::accept(&c, &session(&a, 0), created, NOW, false).unwrap().0.error.is_none());
+    let mut deleted = op(21, "message.delete", &shared, json!({}), NOW + 1);
+    deleted.entity_id = Some(message_id.clone());
+    assert!(ingest::accept(&c, &session(&b, 0), deleted, NOW + 1, false).unwrap().0.error.is_none());
+
+    let restore = |n, account: &str| {
+        let mut request = op(n, "message.restore", &shared, json!({}), NOW + i64::from(n));
+        request.entity_id = Some(message_id.clone());
+        ingest::accept(&c, &session(account, 0), request, NOW + i64::from(n), false).unwrap().0
+    };
+    assert_eq!(restore(22, &third).error.unwrap().code, "forbidden");
+    assert!(restore(23, &b).error.is_none());
+    assert!(restore(24, &a).error.is_none());
+}
+
+#[test]
 fn server_scope_is_admin_only() {
     let (c, a, b) = setup();
     let emoji = |n| op(n, "emoji.create", "server", json!({"name": "kai_wave", "blob_hash": "x"}), NOW);

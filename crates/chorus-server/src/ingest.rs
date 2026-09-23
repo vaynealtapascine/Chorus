@@ -3,6 +3,7 @@
 
 use chorus_core::hlc::{Hlc, HlcClock};
 use chorus_core::op::{self, Op, Scope};
+use chorus_core::restore;
 use chorus_core::sync::AckResult;
 use chorus_core::time::{self, ClockSample, TimeSource};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -77,6 +78,20 @@ pub fn accept(
         && can_access(conn, &s.account_id, &o.scope)?;
     if !allowed {
         return Ok((AckResult::err(o.id, "forbidden", format!("{} not writable", o.scope), false), None));
+    }
+    if !preserved && o.kind.ends_with(".restore") {
+        let related = oplog::for_entity(conn, o.entity().unwrap_or_default())?;
+        if !restore::allowed(&o.kind, &o.scope, o.entity().unwrap_or_default(), &author, related.iter()) {
+            return Ok((
+                AckResult::err(
+                    o.id,
+                    "forbidden",
+                    "only the creator or deleting account may restore this item".into(),
+                    false,
+                ),
+                None,
+            ));
+        }
     }
     let mut suspect = false;
     if !preserved {

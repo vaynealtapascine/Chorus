@@ -93,6 +93,10 @@
     </div>
   </section>
   <LinkDevice />
+  <section class="data-links" aria-label="Data">
+    <h2>Data</h2>
+    <a href="#/trash">Trash · deleted items</a>
+  </section>
 </div>
 
 <style>
@@ -100,6 +104,7 @@
     display: grid;
     gap: var(--s-6);
   }
+  .data-links a { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
   .card-button {
     all: unset;
     display: block;

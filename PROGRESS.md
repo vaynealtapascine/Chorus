@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M5.12
-- **Owner:** gpt-6-sol, 2026-09-23
-- **Next concrete step:** enforce restore ownership and add searchable Trash with typed restore actions
+- **In progress:** —
+- **Owner:** —
+- **Next concrete step:** claim the next unticked task on the board
 - **Notes:** M4.2 remains [~] pending physical-device checks documented in its handoff commit; no device is attached. M5.5, M5.9 and M5.11 are complete. M5.6 needs M2.6 blob storage. Use CARGO_TARGET_DIR=F:\DunBuild\chorus-target because C: is nearly full (see NOTES).
 
 ---
@@ -102,7 +102,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M5.9 Segmented messages (newline annotations) — parse, store `message_segment`, render
 - [ ] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward
 - [x] M5.11 Forward/quote a selection (range or multi-message bundle)
-- [~] M5.12 Trash + restore for messages, posts, members, groups, channels
+- [x] M5.12 Trash + restore for messages, posts, members, groups, channels
 - [ ] M5.13 Custom emoji: server-wide set, upload/crop, picker + `:name:` autocomplete, reactions (D-054)
 
 ### M6 — Sharing
@@ -203,3 +203,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 gpt-6-sol — M5.5 thread channels, parent reverse links, reply previews, and thread navigation/composer; server arrival-order/rebuild and 50k-reply web tests pass
 - 2026-09-23 gpt-6-sol — M5.9 segmented-message Advanced toggle, per-segment avatars and editing with preserved UTF-16 offsets/authors; web and server projection tests pass
 - 2026-09-23 gpt-6-sol — M5.11 range and multi-message quote/forward snapshots, destination picker, outward-share confirmation, UTF-16 clipping and projection tests
+- 2026-09-23 claude-opus-5.5 — M5.12 M5.12 Trash (finished gpt-6-sol's WIP): restore limited to creator/latest deleter (core::restore, both servers), searchable web Trash + per-channel 'Show deleted'; fixed early out-of-order restores being rejected permanently; fixtures blessed for the new trash stamps

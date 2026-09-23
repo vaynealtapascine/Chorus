@@ -11,7 +11,9 @@
         "0192f8c2-0000-7000-8000-0000000000b1": {
           "exists": true,
           "fields": {
+            "created_by_account_id": "0192f8c2-0000-7000-8000-0000000000a1",
             "deleted_at": null,
+            "deleted_by_account_id": null,
             "name": "Kai"
           }
         }

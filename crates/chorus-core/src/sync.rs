@@ -690,6 +690,20 @@ impl MemServer {
             self.rejected.push((o.id.clone(), e.clone()));
             return (AckResult::err(o.id, "forbidden", e.to_string(), false), None);
         }
+        if !preserved
+            && o.kind.ends_with(".restore")
+            && !crate::restore::allowed(&o.kind, &o.scope, o.entity().unwrap_or_default(), &author, self.log.iter())
+        {
+            return (
+                AckResult::err(
+                    o.id,
+                    "forbidden",
+                    "only the creator or deleting account may restore this item".into(),
+                    false,
+                ),
+                None,
+            );
+        }
         o.seq = Some(self.log.len() as i64 + 1);
         if !preserved {
             let t = time::OpTime {
