@@ -121,3 +121,46 @@ fn mentions_and_replies_notify_the_other_account_only() {
     w.push(&a, "message.send", &space, &m4, hidden);
     assert_eq!(w.inbox(&b).len(), 1);
 }
+
+#[test]
+fn each_recipient_chooses_per_channel_and_per_kind() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai"}));
+    w.push(&b, "member.create", &format!("account:{b}"), &june, json!({"name": "June"}));
+    let pref = |w: &mut W, key: &str, value: Value| {
+        let id = new_id(NOW as u64, [w.n.wrapping_add(90); 10]);
+        let scope = format!("account:{}", w.b);
+        let who = w.b.clone();
+        w.push(&who, "pref.set", &scope, &id, json!({"device": "", "key": key, "value": value}));
+    };
+    let mention = json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": june}]);
+    let mut n = 60u8;
+    let mut send = |w: &mut W, text: &str, ent: Value| {
+        n += 1;
+        let id = new_id(NOW as u64, [n; 10]);
+        w.push(&a, "message.send", &space, &id, msg(text, &[&kai], ent));
+    };
+
+    // "all": plain chatter in this channel now reaches Alex
+    pref(&mut w, "notify_channel:general", json!("all"));
+    send(&mut w, "chatter", json!([]));
+    assert_eq!(w.inbox(&b)[0], ("message".to_string(), "chatter".to_string()));
+
+    // "none": even a mention stays quiet
+    pref(&mut w, "notify_channel:general", json!("none"));
+    send(&mut w, "@June muted", mention.clone());
+    assert_eq!(w.inbox(&b).len(), 1);
+
+    // back to mentions, but mentions switched off as a kind
+    pref(&mut w, "notify_channel:general", json!("mentions"));
+    pref(&mut w, "notify_chat", json!({"mention": false}));
+    send(&mut w, "@June again", mention.clone());
+    assert_eq!(w.inbox(&b).len(), 1);
+    pref(&mut w, "notify_chat", json!({}));
+    send(&mut w, "@June now", mention);
+    assert_eq!(w.inbox(&b)[0], ("mention".to_string(), "@June now".to_string()));
+    assert!(w.inbox(&a).is_empty(), "the sender's own account is never notified");
+}

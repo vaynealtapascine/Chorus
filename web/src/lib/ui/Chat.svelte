@@ -440,6 +440,18 @@
   });
   const color = (id: string) => core.adaptColor(people.get(id)?.color ?? '#A09184', dark);
 
+  // notifications for this channel (NOTIFICATIONS §7): all · mentions · none, kept as an account
+  // pref the server reads; DMs default to "all", other shared channels to "mentions"
+  const notifyKey = $derived(current ? `notify_channel:${current.id}` : '');
+  const notifyLevel = $derived.by(() => {
+    const rows = projection.rows.pref ?? {};
+    const v = (rows[`${sync.accountId}||${notifyKey}`] ?? rows[`||${notifyKey}`])?.fields.value;
+    return typeof v === 'string' ? v : space?.kind === 'dm' ? 'all' : 'mentions';
+  });
+  function setNotifyLevel(level: string) {
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: notifyKey, value: level });
+  }
+
   // who is in which space (names for DMs), refreshed when spaces come and go
   $effect(() => {
     void ss.length;
@@ -502,6 +514,15 @@
           <div class="menu-items">
             <a href="#/stage/{current.id}">Stage… (screenshot)</a>
             <a href="#/trash/{current.id}">Show deleted</a>
+            {#if space && space.kind !== 'internal'}
+              <label class="notify">Notify me
+                <select value={notifyLevel} onchange={(e) => setNotifyLevel(e.currentTarget.value)} aria-label="Notifications for this channel">
+                  <option value="all">for every message</option>
+                  <option value="mentions">for mentions and replies</option>
+                  <option value="none">never</option>
+                </select>
+              </label>
+            {/if}
           </div>
         </details>
       {/if}
@@ -809,6 +830,8 @@
   .room-menu summary { cursor: pointer; list-style: none; }
   .menu-items { position: absolute; right: 0; top: 100%; z-index: 2; width: max-content; display: grid; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
   .room-menu a { padding: var(--s-2) var(--s-3); color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
+  .room-menu .notify { display: grid; gap: 2px; padding: var(--s-2) var(--s-3); font-size: var(--fs-sm); border-top: 1px solid var(--line); }
+  .room-menu select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); }
   .thread-origin {
     display: grid;
     gap: 2px;

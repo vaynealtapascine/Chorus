@@ -25,6 +25,34 @@ fn account_of_member(conn: &Connection, member: &str) -> anyhow::Result<Option<S
     Ok(conn.query_row("SELECT account_id FROM member WHERE id = ?1", [member], |r| r.get(0)).optional()?)
 }
 
+fn pref(conn: &Connection, account: &str, key: &str) -> anyhow::Result<Option<Value>> {
+    let v: Option<String> = conn
+        .query_row(
+            "SELECT value FROM pref WHERE account_id = ?1 AND device_id = '' AND key = ?2",
+            params![account, key],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(v.and_then(|s| serde_json::from_str(&s).ok()))
+}
+
+/// `all` · `mentions` · `none` for one channel (`pref` key `notify_channel:<id>`); DMs default to
+/// `all`, everything else to `mentions` (NOTIFICATIONS §7).
+pub fn channel_level(conn: &Connection, account: &str, channel: &str, is_dm: bool) -> anyhow::Result<String> {
+    let set = pref(conn, account, &format!("notify_channel:{channel}"))?;
+    Ok(match set.as_ref().and_then(Value::as_str) {
+        Some(l @ ("all" | "mentions" | "none")) => l.to_string(),
+        _ if is_dm => "all".into(),
+        _ => "mentions".into(),
+    })
+}
+
+/// Per-kind switches (`pref` key `notify_chat`: `{"mention": bool, "dm": bool, "reply": bool,
+/// "message": bool}`), all on unless turned off.
+fn kind_wanted(conn: &Connection, account: &str, kind: &str) -> anyhow::Result<bool> {
+    Ok(pref(conn, account, "notify_chat")?.and_then(|v| v.get(kind).and_then(Value::as_bool)).unwrap_or(true))
+}
+
 /// Queue notifications for a freshly accepted op (inside the ingest transaction).
 pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     if o.kind != "message.send" {
@@ -78,6 +106,22 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
             why.entry(a.clone()).or_insert("dm");
         }
     }
+    // each recipient's own settings (§7): the channel's level, then which kinds they want
+    for a in &others {
+        let level = channel_level(conn, a, channel_id, is_dm)?;
+        if level == "none" {
+            why.remove(a);
+            continue;
+        }
+        if let Some(kind) = why.get(a).copied()
+            && !kind_wanted(conn, a, kind)?
+        {
+            why.remove(a);
+        }
+        if level == "all" && !why.contains_key(a) && !is_dm && kind_wanted(conn, a, "message")? {
+            why.insert(a.clone(), "message");
+        }
+    }
     if why.is_empty() {
         return Ok(());
     }
@@ -112,7 +156,7 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
 pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Vec<push::Outbound>> {
     let mut st = conn.prepare_cached(
         "SELECT id, recipient_account_id, payload FROM notification
-         WHERE kind IN ('mention', 'dm', 'reply') AND delivered_at IS NULL AND cancelled_at IS NULL AND due_at <= ?1
+         WHERE kind IN ('mention', 'dm', 'reply', 'message') AND delivered_at IS NULL AND cancelled_at IS NULL AND due_at <= ?1
          ORDER BY due_at, id LIMIT 500",
     )?;
     let rows: Vec<(String, String, String)> =

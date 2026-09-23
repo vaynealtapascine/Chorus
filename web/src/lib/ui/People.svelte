@@ -165,6 +165,21 @@
     }
   }
 
+  // which chat activity pings you (NOTIFICATIONS §7), an account pref the server reads
+  const CHAT_KINDS = [
+    { id: 'mention', label: 'mentions' },
+    { id: 'dm', label: 'direct messages' },
+    { id: 'reply', label: 'replies' },
+  ];
+  const chatKinds = $derived.by(() => {
+    const rows = projection.rows.pref ?? {};
+    const v = (rows[`${sync.accountId}||notify_chat`] ?? rows['||notify_chat'])?.fields.value;
+    return (v && typeof v === 'object' ? v : {}) as Record<string, boolean>;
+  });
+  function setChatKind(kind: string, on: boolean) {
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: 'notify_chat', value: { ...chatKinds, [kind]: on } });
+  }
+
   /** What we may see of the accounts we follow, and our switch notifications (polled). */
   async function loadViews() {
     const next: Record<string, View> = {};
@@ -457,6 +472,15 @@
       {#if quietOn}<button type="button" class="ghost" onclick={() => saveQuiet(null)}>Turn off</button>{/if}
     </form>
     <p class="hint">Switch pings wait until quiet hours end; you still see who's fronting here.{quietNote ? ` ${quietNote}` : ''}</p>
+  {/if}
+  {#if connections.length}
+    <div class="quiet" role="group" aria-label="Chat notifications">
+      <span>Chat pings for</span>
+      {#each CHAT_KINDS as k (k.id)}
+        <label class="check"><input type="checkbox" checked={chatKinds[k.id] !== false} onchange={(e) => setChatKind(k.id, e.currentTarget.checked)} /> {k.label}</label>
+      {/each}
+    </div>
+    <p class="hint">Each channel's ⋯ menu can also ping for every message, or never.</p>
   {/if}
 
   {#if connections.length}
