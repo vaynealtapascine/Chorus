@@ -14,9 +14,9 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** —
-- **Owner:** —
-- **Next concrete step:** claim the next unticked task on the board
+- **In progress:** M5.11
+- **Owner:** gpt-6-sol, 2026-09-23
+- **Next concrete step:** add message-range and multi-message quote/forward snapshots with selection controls
 - **Notes:** M4.2 remains [~] pending the physical-device checks documented in its handoff commit; no device is attached. M5.5 and M5.9 are complete. M5.6 needs the M2.6 blob store. Use CARGO_TARGET_DIR=F:\DunBuild\chorus-target because C: is nearly full (see NOTES).
 
 ---
@@ -101,7 +101,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [ ] M5.8 Search (FTS5 server, local search on Android)
 - [x] M5.9 Segmented messages (newline annotations) — parse, store `message_segment`, render
 - [ ] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward
-- [ ] M5.11 Forward/quote a selection (range or multi-message bundle)
+- [~] M5.11 Forward/quote a selection (range or multi-message bundle)
 - [ ] M5.12 Trash + restore for messages, posts, members, groups, channels
 - [ ] M5.13 Custom emoji: server-wide set, upload/crop, picker + `:name:` autocomplete, reactions (D-054)
 
