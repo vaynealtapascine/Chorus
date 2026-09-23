@@ -15,9 +15,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -27,7 +32,7 @@ import org.json.JSONObject
 import uniffi.chorus_ffi.CoreReplica
 import uniffi.chorus_ffi.newId
 
-enum class Status { Loading, NoDevice, Offline, Connecting, Live }
+enum class Status { Loading, NoDevice, Offline, Connecting, Live, StorageError }
 
 /**
  * The app's one sync client (CLIENTS.md §2.3): owns the core replica, the sync socket and the
@@ -40,7 +45,8 @@ enum class Status { Loading, NoDevice, Offline, Connecting, Live }
 class Chorus private constructor(private val ctx: Context) {
     private val store = Store(ctx)
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "chorus-store") }
-    private val scope = CoroutineScope(SupervisorJob() + worker.asCoroutineDispatcher())
+    private val dispatcher = worker.asCoroutineDispatcher()
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val main = Handler(Looper.getMainLooper())
     private val random = SecureRandom()
 
@@ -56,11 +62,18 @@ class Chorus private constructor(private val ctx: Context) {
     @Volatile private var renewing = false
     private var backoff = 1000L
     private val rebuildPending = AtomicBoolean(false)
+    private val syncReady = MutableStateFlow(false)
+    private val expectedScopes = mutableSetOf<String>() // store thread only
+    private val caughtScopes = mutableSetOf<String>() // store thread only
+    private var foreground = false // main thread only
+    private var workLeases = 0 // main thread only
 
     val accountScope: String get() = "account:${device?.accountId.orEmpty()}"
 
     init {
-        scope.launch { start() }
+        scope.launch {
+            try { start() } catch (e: Exception) { storageFailed(e) }
+        }
         val cm = ctx.getSystemService(ConnectivityManager::class.java)
         cm?.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) { main.post { reconnectNow() } }
@@ -82,8 +95,10 @@ class Chorus private constructor(private val ctx: Context) {
     /** After enrolment. */
     fun adopt(dev: DeviceRecord) {
         scope.launch {
-            store.put("device", dev.toJson())
-            start()
+            try {
+                store.put("device", dev.toJson())
+                start()
+            } catch (e: Exception) { storageFailed(e) }
         }
     }
 
@@ -105,23 +120,30 @@ class Chorus private constructor(private val ctx: Context) {
      * Create a local op; it is shown at once and synced when connected. Returns the op id.
      * Throws [uniffi.chorus_ffi.CoreException] when the core rejects it.
      */
-    fun create(kind: String, entityId: String?, payload: JSONObject, scope: String = accountScope, userTime: Long? = null): String {
-        val r = replica ?: error("not set up")
-        val n = JSONObject().put("kind", kind).put("scope", scope).put("entity_id", entityId ?: JSONObject.NULL)
-            .put("payload", payload).put("member_id", JSONObject.NULL).put("user_time", userTime ?: JSONObject.NULL)
-        val out = JSONObject(r.create(n.toString(), deviceNow(), bytes()))
-        sendAll(out.getJSONArray("frames"))
-        changed()
-        return out.getJSONObject("op").getString("id")
-    }
+    suspend fun create(kind: String, entityId: String?, payload: JSONObject, scope: String = accountScope, userTime: Long? = null): String =
+        withContext(dispatcher) {
+            check(_status.value != Status.StorageError) { "The local replica could not be saved." }
+            val r = replica ?: error("not set up")
+            val n = JSONObject().put("kind", kind).put("scope", scope).put("entity_id", entityId ?: JSONObject.NULL)
+                .put("payload", payload).put("member_id", JSONObject.NULL).put("user_time", userTime ?: JSONObject.NULL)
+            val out = JSONObject(r.create(n.toString(), deviceNow(), bytes()))
+            try {
+                store.save(r.takeChanges())
+            } catch (e: Exception) {
+                storageFailed(e)
+                throw e
+            }
+            rebuild()
+            sendAll(out.getJSONArray("frames"))
+            syncReady.value = false
+            SyncWork.enqueue(ctx)
+            out.getJSONObject("op").getString("id")
+        }
 
     // ─── persistence + model ─────────────────────────────────────────────────
 
-    private fun changed() {
-        scope.launch {
-            val r = replica ?: return@launch
-            store.save(r.takeChanges())
-        }
+    private fun changed(r: CoreReplica) {
+        try { store.save(r.takeChanges()) } catch (e: Exception) { storageFailed(e); return }
         rebuild()
     }
 
@@ -136,6 +158,49 @@ class Chorus private constructor(private val ctx: Context) {
         }
     }
 
+    private fun storageFailed(e: Exception) {
+        Log.e(TAG, "local replica unavailable", e)
+        _status.value = Status.StorageError
+        syncReady.value = false
+        main.post { ws?.close(1000, "storage unavailable"); ws = null; main.removeCallbacks(retry) }
+    }
+
+    /** Own a socket only while visible or while a bounded sync work is running. */
+    fun setForeground(active: Boolean) {
+        main.post {
+            foreground = active
+            if (active) reconnectNow() else if (workLeases == 0) closeSocket()
+        }
+    }
+
+    /** WorkManager waits for catch-up and the outbox to drain, then releases its socket lease. */
+    suspend fun syncOnce(): Boolean {
+        val ready = withTimeoutOrNull(25_000) { status.first { it != Status.Loading } } ?: return false
+        if (ready == Status.NoDevice) return true
+        if (ready == Status.StorageError) return false
+        withContext(Dispatchers.Main) {
+            workLeases++
+            reconnectNow()
+        }
+        return try {
+            withTimeoutOrNull(25_000) { syncReady.first { it } } != null
+        } finally {
+            withContext(NonCancellable + Dispatchers.Main) {
+                workLeases--
+                if (!foreground && workLeases == 0) closeSocket()
+            }
+        }
+    }
+
+    private fun closeSocket() {
+        main.removeCallbacks(retry)
+        val socket = ws ?: return
+        ws = null
+        socket.close(1000, "background")
+        scope.launch { replica?.disconnect(); syncReady.value = false }
+        _status.value = Status.Offline
+    }
+
     // ─── socket ──────────────────────────────────────────────────────────────
 
     private fun wsUrl(base: String) = base.replaceFirst("http", "ws") + "/api/v1/sync"
@@ -147,15 +212,21 @@ class Chorus private constructor(private val ctx: Context) {
     }
 
     private fun connect() {
+        if (!foreground && workLeases == 0 || _status.value == Status.StorageError) return
         val dev = device ?: return
         val r = replica ?: return
         if (ws != null) return
         _status.value = Status.Connecting
+        syncReady.value = false
+        scope.launch { expectedScopes.clear(); caughtScopes.clear() }
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                val clock = JSONObject().put("wall", System.currentTimeMillis())
-                    .put("mono", SystemClock.elapsedRealtime()).put("boot_id", bootId())
-                webSocket.send(r.connect(clock.toString(), device!!.session))
+                scope.launch {
+                    if (ws !== webSocket) return@launch
+                    val clock = JSONObject().put("wall", System.currentTimeMillis())
+                        .put("mono", SystemClock.elapsedRealtime()).put("boot_id", bootId())
+                    webSocket.send(r.connect(clock.toString(), device!!.session))
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -166,27 +237,54 @@ class Chorus private constructor(private val ctx: Context) {
                     webSocket.close(1000, null)
                     scope.launch {
                         val renewed = renewSession()
+                        r.disconnect()
                         main.post {
                             if (ws === webSocket) {
                                 ws = null
-                                replica?.disconnect()
                             }
                             renewing = false
-                            _status.value = Status.Offline
-                            if (renewed) reconnectNow() else schedule()
+                            if (_status.value != Status.StorageError) {
+                                _status.value = Status.Offline
+                                if (renewed) reconnectNow()
+                                else if (foreground || workLeases > 0) schedule()
+                            }
                         }
                     }
                     return
                 }
-                if (frame.optString("t") == "welcome") {
-                    _status.value = Status.Live
-                    backoff = 1000
+                scope.launch {
+                    if (ws !== webSocket || _status.value == Status.StorageError) return@launch
+                    val kind = frame.optString("t")
+                    val out = runCatching { JSONArray(r.onFrame(text, System.currentTimeMillis())) }
+                        .onFailure { Log.w(TAG, "frame rejected by core", it) }
+                        .getOrNull() ?: return@launch
+                    changed(r) // durable before any dependent frame goes out
+                    if (_status.value == Status.StorageError) return@launch
+                    if (kind == "welcome") {
+                        expectedScopes.clear()
+                        caughtScopes.clear()
+                        frame.optJSONArray("scopes")?.let { scopes ->
+                            for (i in 0 until scopes.length()) expectedScopes.add(scopes.getString(i))
+                        }
+                        _status.value = Status.Live
+                        backoff = 1000
+                    }
+                    if (kind == "scope") {
+                        frame.optJSONArray("remove")?.let { a -> for (i in 0 until a.length()) { expectedScopes.remove(a.getString(i)); caughtScopes.remove(a.getString(i)) } }
+                        frame.optJSONArray("add")?.let { a -> for (i in 0 until a.length()) { expectedScopes.add(a.getString(i)); caughtScopes.remove(a.getString(i)) } }
+                    }
+                    for (i in 0 until out.length()) webSocket.send(out.get(i).toString())
+                    if (kind == "caught") {
+                        val scopeName = frame.optString("scope")
+                        val repairing = (0 until out.length()).any { i ->
+                            val reply = out.getJSONObject(i)
+                            reply.optString("t") == "pull" && reply.optString("scope") == scopeName
+                        }
+                        if (!repairing) caughtScopes.add(scopeName)
+                    }
+                    syncReady.value = _status.value == Status.Live &&
+                        caughtScopes.containsAll(expectedScopes) && r.pendingCount() == 0UL
                 }
-                val out = runCatching { JSONArray(r.onFrame(text, System.currentTimeMillis())) }
-                    .onFailure { Log.w(TAG, "frame rejected by core", it) }
-                    .getOrNull() ?: return
-                for (i in 0 until out.length()) webSocket.send(out.get(i).toString())
-                changed()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = dropped(webSocket)
@@ -202,9 +300,9 @@ class Chorus private constructor(private val ctx: Context) {
         main.post {
             if (ws !== socket) return@post
             ws = null
-            replica?.disconnect()
+            scope.launch { replica?.disconnect(); syncReady.value = false }
             _status.value = Status.Offline
-            if (!renewing) schedule()
+            if (!renewing && (foreground || workLeases > 0)) schedule()
         }
     }
 
@@ -212,7 +310,7 @@ class Chorus private constructor(private val ctx: Context) {
         val dev = device ?: return false
         return try {
             val next = Api.renew(dev)
-            store.put("device", next.toJson())
+            try { store.put("device", next.toJson()) } catch (e: Exception) { storageFailed(e); return false }
             device = next
             true
         } catch (e: Exception) {
@@ -232,7 +330,7 @@ class Chorus private constructor(private val ctx: Context) {
 
     /** Network came back or the app came to the front: try now instead of waiting out the backoff. */
     fun reconnectNow() {
-        if (ws != null || device == null || renewing) return
+        if (ws != null || device == null || renewing || !foreground && workLeases == 0 || _status.value == Status.StorageError) return
         backoff = 1000
         main.removeCallbacks(retry)
         connect()

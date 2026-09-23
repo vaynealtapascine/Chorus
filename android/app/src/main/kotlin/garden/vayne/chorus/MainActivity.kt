@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Status
+import garden.vayne.chorus.data.SyncWork
 import garden.vayne.chorus.designsystem.ChorusTheme
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.ui.History
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         inviteLink.value = inviteFrom(intent)
         val chorus = Chorus.get(this)
+        SyncWork.schedulePeriodic(this)
         setContent { ChorusTheme { App(chorus, inviteLink.value) } }
     }
 
@@ -57,9 +59,14 @@ class MainActivity : ComponentActivity() {
         inviteFrom(intent)?.let { inviteLink.value = it }
     }
 
-    override fun onResume() {
-        super.onResume()
-        Chorus.get(this).reconnectNow()
+    override fun onStart() {
+        super.onStart()
+        Chorus.get(this).setForeground(true)
+    }
+
+    override fun onStop() {
+        Chorus.get(this).setForeground(false)
+        super.onStop()
     }
 
     private fun inviteFrom(i: Intent?): String? =
@@ -78,6 +85,9 @@ private fun App(chorus: Chorus, invite: String?) {
     when (status) {
         Status.Loading -> Box(Modifier.fillMaxSize().background(p.bg))
         Status.NoDevice -> Onboarding(chorus, invite)
+        Status.StorageError -> Box(Modifier.fillMaxSize().background(p.bg).padding(24.dp), contentAlignment = Alignment.Center) {
+            Text("The local replica could not be opened or saved. Keep this app's data intact and check the device storage.", color = p.danger)
+        }
         else -> Column(Modifier.fillMaxSize().background(p.bg)) {
             Row(
                 Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),

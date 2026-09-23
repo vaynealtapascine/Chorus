@@ -82,6 +82,12 @@ impl Replica {
         self.engine.state
     }
 
+    /// Locally accepted ops still awaiting a server stamp. Rejected ops need user attention,
+    /// so they do not keep a bounded background sync worker alive indefinitely.
+    pub fn pending_count(&self) -> usize {
+        self.store.ops.values().filter(|o| o.seq.is_none() && !self.store.rejected.contains_key(&o.id)).count()
+    }
+
     /// Create a local op (validated here, so the UI can report errors immediately), and the
     /// frames to send if connected.
     pub fn create(&mut self, n: NewOp, d: &DeviceNow, random: [u8; 10]) -> Result<(Op, Vec<Frame>), OpError> {
@@ -215,6 +221,7 @@ mod tests {
         };
         let (o, frames) = r.create(good, &now(1000), [4; 10]).unwrap();
         assert!(frames.is_empty(), "not connected yet");
+        assert_eq!(r.pending_count(), 1);
         assert_eq!(r.projection().row("member", &member).unwrap().fields["name"], "Kai");
         let ch = r.take_changes();
         assert_eq!(ch.ops.len(), 1);
@@ -259,6 +266,7 @@ mod tests {
             }
         }
         assert_eq!(r.store.confirmed().count(), 1);
+        assert_eq!(r.pending_count(), 0);
         let ch = r.take_changes();
         assert!(ch.ops[0].seq.is_some(), "persisted copy carries the server stamp");
         assert!(r.store.local_order.is_empty(), "compacted");

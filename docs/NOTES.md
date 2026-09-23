@@ -46,3 +46,18 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   before Gradle; merely rebuilding the host Rust crate leaves Kotlin with stale generated APIs.
   Android lint/unit tests currently need AndroidX Activity 1.8.2 artifacts not in the local Gradle
   cache; dl.google.com was unreachable, though offline `assembleDebug` passed.
+- 2026-09-23 gpt-6-sol — android — `cargo ndk build -p chorus-ffi` also attempts to link the
+  host-only `uniffi-bindgen` binary for Android; pass `--lib` for target builds. The host bindgen
+  run must use the same debug/release profile as its input DLL. `CARGO_TARGET_DIR` can point at
+  a roomy drive when C: cannot hold another Rust build; the Android build script and JVM test
+  library path now honor it. Set `CHORUS_GRADLE_BUILD_DIR` for Gradle's project outputs on that
+  drive too (the root build script honors it); generated bindings and `.so` source outputs remain
+  in the repository.
+- 2026-09-23 gpt-6-sol — android — UniFFI's default Kotlin cleaner references
+  `java.lang.ref.Cleaner`, which Android exposes only at API 33. `chorus-ffi/uniffi.toml` sets
+  `disable_java_cleaner = true`, making generated bindings use the JNA cleaner on minSdk 29 and
+  removing the Android lint errors. Regenerate bindings after changing this file.
+- 2026-09-23 gpt-6-sol — tooling — On this PowerShell PTY, `python scripts/verify.py` may fail
+  before running checks because cp1252 cannot print its Unicode progress symbols. Set
+  `PYTHONIOENCODING=utf-8` for the verifier. Android lint also needs an escaped drive colon in
+  ignored `android/local.properties`, such as `sdk.dir=C\:/Users/pcuser/AppData/Local/Android/Sdk`.

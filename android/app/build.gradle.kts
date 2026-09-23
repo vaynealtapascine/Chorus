@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("org.jetbrains.kotlin.kapt")
 }
 
 android {
@@ -40,4 +41,13 @@ dependencies {
     implementation(libs.core.ktx)
     implementation(libs.okhttp)
     implementation(libs.coroutines.android)
+    implementation(libs.room.runtime)
+    kapt(libs.room.compiler)
+    implementation(libs.sqlcipher)
+    implementation(libs.androidx.sqlite)
+    implementation(libs.work.runtime)
+}
+
+kapt {
+    arguments { arg("room.schemaLocation", "$projectDir/schemas") }
 }

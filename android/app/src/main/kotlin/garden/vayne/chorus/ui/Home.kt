@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +49,7 @@ import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.Subject
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** Simple fuzzy match (same as the web): every query char in order. Lower = better, null = no match. */
 fun fuzzy(query: String, text: String): Int? {
@@ -80,6 +82,8 @@ fun Home(chorus: Chorus, model: Model) {
     var query by remember { mutableStateOf("") }
     var folder by remember { mutableStateOf<String?>(null) }
     val undo by Front.undo.collectAsState()
+    val actions = rememberCoroutineScope()
+    var error by remember { mutableStateOf<String?>(null) }
 
     // the mode resets to Replace 30 s after last use (CLIENTS.md §3.2)
     LaunchedEffect(modeUsed) {
@@ -112,10 +116,13 @@ fun Home(chorus: Chorus, model: Model) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(u.label, color = p.ink, modifier = Modifier.weight(1f))
-                    Text("Undo", color = p.accent, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable { Front.undo(chorus) }.padding(4.dp))
+                    Text("Undo", color = p.accent, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable {
+                        actions.launch { try { Front.undo(chorus); error = null } catch (e: Exception) { error = e.message } }
+                    }.padding(4.dp))
                 }
             } ?: Spacer(Modifier.height(0.dp))
         }
+        error?.let { message -> item(span = { GridItemSpan(maxLineSpan) }) { Text(message, color = p.danger) } }
         item(span = { GridItemSpan(maxLineSpan) }) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -151,9 +158,14 @@ fun Home(chorus: Chorus, model: Model) {
         items(tiles, key = { t -> when (t) { is Tile.One -> "${t.s.type}:${t.s.id}:${t.whole}"; is Tile.Folder -> "f:${t.id}" } }) { t ->
             when (t) {
                 is Tile.One -> SubjectTile(t.s, (t.s.type to t.s.id) in here, if (t.whole) "Whole subsystem" else null) {
-                    Front.tap(chorus, t.s, mode)
-                    modeUsed = System.currentTimeMillis()
-                    query = ""
+                    actions.launch {
+                        try {
+                            Front.tap(chorus, t.s, mode)
+                            modeUsed = System.currentTimeMillis()
+                            query = ""
+                            error = null
+                        } catch (e: Exception) { error = e.message }
+                    }
                 }
                 is Tile.Folder -> FolderTile(t) { folder = t.id; query = "" }
             }

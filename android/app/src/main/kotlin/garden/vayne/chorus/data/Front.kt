@@ -21,7 +21,7 @@ object Front {
     val undo: StateFlow<Undo?> = _undo
 
     /** Apply a tap on `subject` in `mode`. Returns the label for the undo row. */
-    fun tap(chorus: Chorus, s: Subject, mode: Mode): String {
+    suspend fun tap(chorus: Chorus, s: Subject, mode: Mode): String {
         val entry = Entry(s.type, s.id, "front", mode == Mode.Replace)
         val (kind, payload, label) = when (mode) {
             Mode.Replace -> Triple("front.switch", JSONObject().put("entries", JSONArray().put(entry.toJson())), "Switched to ${s.name}")
@@ -38,17 +38,17 @@ object Front {
     }
 
     /** Record a full switch (the switcher sheet). */
-    fun switch(chorus: Chorus, entries: List<Entry>, label: String, at: Long? = null) {
+    suspend fun switch(chorus: Chorus, entries: List<Entry>, label: String, at: Long? = null) {
         val arr = JSONArray().also { a -> entries.forEach { a.put(it.toJson()) } }
         val id = chorus.create("front.switch", chorus.newId(), JSONObject().put("entries", arr), userTime = at)
         _undo.value = Undo(id, label, System.currentTimeMillis())
     }
 
-    fun undo(chorus: Chorus): Boolean {
+    suspend fun undo(chorus: Chorus): Boolean {
         val u = _undo.value ?: return false
-        _undo.value = null
         if (System.currentTimeMillis() - u.at > 30_000) return false
         chorus.create("front.retract", chorus.newId(), JSONObject().put("target_op_id", u.opId))
+        _undo.value = null
         return true
     }
 

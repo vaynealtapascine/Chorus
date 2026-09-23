@@ -245,6 +245,10 @@ impl JsonReplica {
         format!("{:?}", self.0.state()).to_lowercase()
     }
 
+    pub fn pending_count(&self) -> u64 {
+        self.0.pending_count() as u64
+    }
+
     pub fn rejected(&self) -> String {
         js(&self.0.store.rejected)
     }

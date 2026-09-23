@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +41,7 @@ import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.coroutines.launch
 
 @Composable
 fun Members(chorus: Chorus, model: Model) {
@@ -108,6 +110,7 @@ private fun MemberEditor(chorus: Chorus, m: Member?, onDone: () -> Unit) {
     var color by remember { mutableStateOf(m?.color ?: "#C0694E") }
     var description by remember { mutableStateOf(m?.description.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
+    val actions = rememberCoroutineScope()
 
     fun save() {
         if (name.isBlank()) { error = "A name is needed."; return }
@@ -122,12 +125,14 @@ private fun MemberEditor(chorus: Chorus, m: Member?, onDone: () -> Unit) {
         if (sigil.trim() != oldSigils.firstOrNull().orEmpty()) {
             f.put("sigils", JSONArray((listOf(sigil.trim()).filter { it.isNotEmpty() } + oldSigils.drop(1))))
         }
-        try {
-            if (m == null) chorus.create("member.create", chorus.newId(), f)
-            else if (f.length() > 0) chorus.create("member.set", m.id, f)
-            onDone()
-        } catch (e: Exception) {
-            error = e.message
+        actions.launch {
+            try {
+                if (m == null) chorus.create("member.create", chorus.newId(), f)
+                else if (f.length() > 0) chorus.create("member.set", m.id, f)
+                onDone()
+            } catch (e: Exception) {
+                error = e.message
+            }
         }
     }
 
@@ -155,8 +160,12 @@ private fun MemberEditor(chorus: Chorus, m: Member?, onDone: () -> Unit) {
                 Text(
                     if (m.archived) "Unarchive" else "Archive", color = p.ink2,
                     modifier = Modifier.clickable {
-                        chorus.create(if (m.archived) "member.unarchive" else "member.archive", m.id, JSONObject())
-                        onDone()
+                        actions.launch {
+                            try {
+                                chorus.create(if (m.archived) "member.unarchive" else "member.archive", m.id, JSONObject())
+                                onDone()
+                            } catch (e: Exception) { error = e.message }
+                        }
                     }.padding(8.dp),
                 )
             }

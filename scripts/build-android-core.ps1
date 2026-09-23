@@ -8,6 +8,7 @@
 param([switch]$Debug)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
+$targetRoot = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $root 'target' }
 
 function Find-Ndk {
     foreach ($c in @($env:ANDROID_NDK_HOME, $env:NDK_HOME)) { if ($c -and (Test-Path $c)) { return $c } }
@@ -29,15 +30,16 @@ New-Item -ItemType Directory -Force $out | Out-Null
 
 Push-Location $root
 try {
-    cargo ndk -t arm64-v8a -t x86_64 -o $out build -p chorus-ffi @cargoArgs
+    # The bindgen CLI is a host tool and must not be linked for an Android target.
+    cargo ndk -t arm64-v8a -t x86_64 -o $out build -p chorus-ffi --lib @cargoArgs
     if ($LASTEXITCODE) { throw 'cargo ndk failed' }
     # Bindings are generated from the host build of the same crate (library mode).
     cargo build -p chorus-ffi @cargoArgs
     if ($LASTEXITCODE) { throw 'host build failed' }
     $dir = if ($Debug) { 'debug' } else { 'release' }
-    $lib = Join-Path $root "target\$dir\chorus_ffi.dll"
+    $lib = Join-Path $targetRoot "$dir\chorus_ffi.dll"
     $kt = Join-Path $root 'android\core-bridge\src\main\kotlin'
-    cargo run -q -p chorus-ffi --bin uniffi-bindgen -- generate --library $lib --language kotlin --out-dir $kt --no-format
+    cargo run -q -p chorus-ffi --bin uniffi-bindgen @cargoArgs -- generate --library $lib --language kotlin --out-dir $kt --no-format
     if ($LASTEXITCODE) { throw 'uniffi-bindgen failed' }
     Write-Host "Native libs: $out"
     Write-Host "Kotlin bindings: $kt"

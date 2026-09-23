@@ -151,6 +151,10 @@ impl CoreReplica {
         self.lock().state()
     }
 
+    pub fn pending_count(&self) -> u64 {
+        self.lock().pending_count()
+    }
+
     pub fn rejected(&self) -> String {
         self.lock().rejected()
     }
