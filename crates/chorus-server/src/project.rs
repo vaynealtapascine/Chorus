@@ -40,8 +40,10 @@ const FAST_SET: &[&str] = &["member", "custom_state", "field_def", "bucket"];
 /// of the entity. False if the row isn't there yet (the full path then waits for its create).
 fn set_in_place(conn: &Connection, table: &str, o: &Op) -> anyhow::Result<bool> {
     let Some(id) = o.entity() else { return Ok(false) };
-    let stored: Option<String> =
-        conn.query_row(&format!("SELECT clocks FROM {table} WHERE id = ?1"), [id], |r| r.get(0)).optional()?;
+    let stored: Option<String> = conn
+        .prepare_cached(&format!("SELECT clocks FROM {table} WHERE id = ?1"))?
+        .query_row([id], |r| r.get(0))
+        .optional()?;
     let Some(stored) = stored else { return Ok(false) };
     let mut clocks = chorus_core::lww::Clocks::from_json(&serde_json::from_str(&stored)?);
     let payload = o.payload_obj().cloned().unwrap_or_default();
@@ -56,10 +58,7 @@ fn set_in_place(conn: &Connection, table: &str, o: &Op) -> anyhow::Result<bool> 
         }
     }
     vals.push(Sql::Text(id.to_string()));
-    conn.execute(
-        &format!("UPDATE {table} SET {} WHERE id = ?{}", sets.join(", "), vals.len()),
-        params_from_iter(vals),
-    )?;
+    exec(conn, &format!("UPDATE {table} SET {} WHERE id = ?{}", sets.join(", "), vals.len()), params_from_iter(vals))?;
     Ok(true)
 }
 
@@ -104,6 +103,12 @@ fn to_sql(v: &Value) -> Sql {
     }
 }
 
+/// `execute` through the statement cache: projection SQL is built from a few shapes and runs for
+/// every op, so re-preparing it each time is a large part of ingest and rebuild (SPEC §9).
+fn exec<P: rusqlite::Params>(conn: &Connection, sql: &str, params: P) -> rusqlite::Result<usize> {
+    conn.prepare_cached(sql)?.execute(params)
+}
+
 fn account_of(scope: &str) -> Option<&str> {
     scope.strip_prefix("account:")
 }
@@ -125,6 +130,8 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
         return Ok(()); // not created yet (fields wait in the log until the create arrives)
     };
     let old_thread_parent = if table == "channel" { thread_parent(conn, id)? } else { None };
+    // the create is the entity's only op: nothing derived from it has been written yet
+    let fresh = ops.len() == 1;
     let first = ops.iter().min_by_key(|o| (o.hlc, o.id.clone()));
     let mut vals: BTreeMap<String, Value> = row.fields.clone().into_iter().collect();
     vals.insert("id".into(), Value::String(id.into()));
@@ -170,7 +177,8 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
                 .collect();
             let id_at = names.iter().position(|n| n == "id").map_or(0, |i| i + 1);
             if !sets.is_empty() && id_at > 0 {
-                conn.execute(
+                exec(
+                    conn,
                     &format!("UPDATE account SET {} WHERE id = ?{id_at}", sets.join(", ")),
                     params_from_iter(values),
                 )?;
@@ -180,8 +188,8 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
     }
     match table {
         "message" => {
-            message_extras(conn, id, row.fields.get("authors"), &row.fields)?;
-            item_attachments(conn, "message", id, row.fields.get("attachments"))?;
+            message_extras(conn, id, row.fields.get("authors"), &row.fields, fresh)?;
+            item_attachments(conn, "message", id, row.fields.get("attachments"), fresh)?;
             refresh_thread_link(conn, id)?;
         }
         "channel" => {
@@ -193,8 +201,8 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
             }
         }
         "post" => {
-            authors(conn, "post_author", "post_id", id, row.fields.get("authors"))?;
-            item_attachments(conn, "post", id, row.fields.get("attachments"))?;
+            authors(conn, "post_author", "post_id", id, row.fields.get("authors"), fresh)?;
+            item_attachments(conn, "post", id, row.fields.get("attachments"), fresh)?;
         }
         "member_group" => {
             group_parents(conn, account_of(&first.map(|f| f.scope.clone()).unwrap_or_default()).unwrap_or(""))?
@@ -216,7 +224,8 @@ fn thread_parent(conn: &Connection, channel_id: &str) -> anyhow::Result<Option<S
 /// A thread is a channel, and its parent message keeps a reverse pointer for read APIs. Refresh
 /// on both channel and message projection so offline ops converge in either arrival order.
 fn refresh_thread_link(conn: &Connection, parent_id: &str) -> anyhow::Result<()> {
-    conn.execute(
+    exec(
+        conn,
         "UPDATE message SET thread_channel_id = (
            SELECT t.id FROM channel t JOIN channel source ON source.id = message.channel_id
            WHERE t.kind = 'thread' AND t.parent_message_id = message.id AND t.space_id = source.space_id
@@ -239,15 +248,19 @@ fn upsert(conn: &Connection, table: &str, key: &[&str], names: &[String], values
         key.join(", "),
         if updates.is_empty() { "NOTHING".into() } else { format!("UPDATE SET {}", updates.join(", ")) }
     );
-    conn.execute(&sql, params_from_iter(values))?;
+    exec(conn, &sql, params_from_iter(values))?;
     Ok(())
 }
 
-fn authors(conn: &Connection, table: &str, key: &str, id: &str, a: Option<&Value>) -> anyhow::Result<()> {
-    conn.execute(&format!("DELETE FROM {table} WHERE {key} = ?1"), [id])?;
+/// `fresh`: the entity's only op is its create, so it has no derived rows to clear yet.
+fn authors(conn: &Connection, table: &str, key: &str, id: &str, a: Option<&Value>, fresh: bool) -> anyhow::Result<()> {
+    if !fresh {
+        exec(conn, &format!("DELETE FROM {table} WHERE {key} = ?1"), [id])?;
+    }
     for (i, m) in a.and_then(Value::as_array).into_iter().flatten().enumerate() {
         if let Some(m) = m.as_str() {
-            conn.execute(
+            exec(
+                conn,
                 &format!("INSERT OR IGNORE INTO {table} ({key}, member_id, position) VALUES (?1, ?2, ?3)"),
                 params![id, m, i as i64],
             )?;
@@ -257,11 +270,24 @@ fn authors(conn: &Connection, table: &str, key: &str, id: &str, a: Option<&Value
 }
 
 /// Authors, segments (D-045), mentions and the FTS index for a message.
-fn item_attachments(conn: &Connection, owner_type: &str, owner_id: &str, ids: Option<&Value>) -> anyhow::Result<()> {
-    conn.execute("DELETE FROM item_attachment WHERE owner_type = ?1 AND owner_id = ?2", params![owner_type, owner_id])?;
+fn item_attachments(
+    conn: &Connection,
+    owner_type: &str,
+    owner_id: &str,
+    ids: Option<&Value>,
+    fresh: bool,
+) -> anyhow::Result<()> {
+    if !fresh {
+        exec(
+            conn,
+            "DELETE FROM item_attachment WHERE owner_type = ?1 AND owner_id = ?2",
+            params![owner_type, owner_id],
+        )?;
+    }
     for (position, id) in ids.and_then(Value::as_array).into_iter().flatten().enumerate() {
         if let Some(id) = id.as_str() {
-            conn.execute(
+            exec(
+                conn,
                 "INSERT OR IGNORE INTO item_attachment(owner_type, owner_id, attachment_id, position) VALUES (?1, ?2, ?3, ?4)",
                 params![owner_type, owner_id, id, position as i64],
             )?;
@@ -275,11 +301,14 @@ fn message_extras(
     id: &str,
     a: Option<&Value>,
     f: &serde_json::Map<String, Value>,
+    fresh: bool,
 ) -> anyhow::Result<()> {
-    authors(conn, "message_author", "message_id", id, a)?;
+    authors(conn, "message_author", "message_id", id, a, fresh)?;
     let text_s = f.get("text").and_then(Value::as_str).unwrap_or("");
-    conn.execute("DELETE FROM message_segment WHERE message_id = ?1", [id])?;
-    conn.execute("DELETE FROM message_segment_author WHERE message_id = ?1", [id])?;
+    if !fresh {
+        exec(conn, "DELETE FROM message_segment WHERE message_id = ?1", [id])?;
+        exec(conn, "DELETE FROM message_segment_author WHERE message_id = ?1", [id])?;
+    }
     let segs: Vec<Value> = match f.get("segments").and_then(Value::as_array) {
         Some(s) if !s.is_empty() => s.clone(),
         _ => vec![
@@ -289,36 +318,48 @@ fn message_extras(
     for (i, s) in segs.iter().enumerate() {
         let off = s.get("offset").and_then(Value::as_u64).unwrap_or(0) as u32;
         let len = s.get("length").and_then(Value::as_u64).unwrap_or(0) as u32;
-        conn.execute(
+        exec(
+            conn,
             "INSERT INTO message_segment (message_id, idx, offset_u16, length_u16, text) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![id, i as i64, off, len, text::utf16_slice(text_s, off, len)],
         )?;
         for (p, m) in s.get("authors").and_then(Value::as_array).into_iter().flatten().enumerate() {
             if let Some(m) = m.as_str() {
-                conn.execute(
+                exec(
+                    conn,
                     "INSERT OR IGNORE INTO message_segment_author (message_id, idx, member_id, position) VALUES (?1, ?2, ?3, ?4)",
                     params![id, i as i64, m, p as i64],
                 )?;
             }
         }
     }
-    conn.execute("DELETE FROM mention WHERE source_type = 'message' AND source_id = ?1", [id])?;
+    if !fresh {
+        exec(conn, "DELETE FROM mention WHERE source_type = 'message' AND source_id = ?1", [id])?;
+    }
     let ents: Vec<Entity> = f.get("entities").and_then(|e| serde_json::from_value(e.clone()).ok()).unwrap_or_default();
     for e in ents {
         if let text::EntityKind::Mention { target_type, target_id } = e.kind {
             let tt = serde_json::to_value(target_type)?.as_str().unwrap_or("member").to_string();
-            conn.execute(
+            exec(
+                conn,
                 "INSERT OR IGNORE INTO mention (source_type, source_id, target_type, target_id) VALUES ('message', ?1, ?2, ?3)",
                 params![id, tt, target_id.unwrap_or_default()],
             )?;
         }
     }
-    // FTS keeps its own copy keyed by the message rowid; replace it (deleted messages drop out)
+    // FTS keeps its own copy keyed by the message rowid; replace it (deleted messages drop out).
+    // A rebuild fills the index in one pass at the end instead.
+    if REBUILDING.with(std::cell::Cell::get) {
+        return Ok(());
+    }
     let rowid: Option<i64> =
-        conn.query_row("SELECT rowid FROM message WHERE id = ?1", [id], |r| r.get(0)).optional()?;
+        conn.prepare_cached("SELECT rowid FROM message WHERE id = ?1")?.query_row([id], |r| r.get(0)).optional()?;
     if let Some(rowid) = rowid {
-        conn.execute("DELETE FROM message_fts WHERE rowid = ?1", [rowid])?;
-        conn.execute(
+        if !fresh {
+            exec(conn, "DELETE FROM message_fts WHERE rowid = ?1", [rowid])?;
+        }
+        exec(
+            conn,
             "INSERT INTO message_fts(rowid, text, cw) SELECT rowid, text, coalesce(cw, '') FROM message WHERE rowid = ?1 AND deleted_at IS NULL",
             [rowid],
         )?;
@@ -369,7 +410,7 @@ fn group_parents(conn: &Connection, account: &str) -> anyhow::Result<()> {
         }
     }
     for (id, p) in effective {
-        conn.execute("UPDATE member_group SET effective_parent_id = ?2 WHERE id = ?1", params![id, p])?;
+        exec(conn, "UPDATE member_group SET effective_parent_id = ?2 WHERE id = ?1", params![id, p])?;
     }
     Ok(())
 }
@@ -473,7 +514,7 @@ fn space_access(conn: &Connection, o: &Op, account: &str, present: bool) -> anyh
     if present && manages {
         ingest::grant(conn, account, &o.scope)?;
     } else if !present && ((manages && account != author) || self_leave) {
-        conn.execute("DELETE FROM scope_access WHERE account_id = ?1 AND scope = ?2", params![account, o.scope])?;
+        exec(conn, "DELETE FROM scope_access WHERE account_id = ?1 AND scope = ?2", params![account, o.scope])?;
     }
     Ok(())
 }
@@ -609,12 +650,12 @@ fn write_daily(conn: &Connection, account: &str, tz: i32, from_day_start: Option
     let now = crate::now_ms();
     let intervals = match from_day_start {
         None => {
-            conn.execute("DELETE FROM front_daily WHERE account_id = ?1", [account])?;
+            exec(conn, "DELETE FROM front_daily WHERE account_id = ?1", [account])?;
             load_intervals(conn, account, false, i64::MIN)?
         }
         Some(t0) => {
             let day = front::civil_date((t0 + i64::from(tz) * 60_000).div_euclid(DAY));
-            conn.execute("DELETE FROM front_daily WHERE account_id = ?1 AND day >= ?2", params![account, day])?;
+            exec(conn, "DELETE FROM front_daily WHERE account_id = ?1 AND day >= ?2", params![account, day])?;
             // only what falls on those days: daily() splits at the same local midnights
             let mut v = load_intervals(conn, account, false, t0)?;
             for iv in &mut v {
@@ -680,7 +721,8 @@ fn append_front(conn: &Connection, o: &Op) -> anyhow::Result<bool> {
 
     insert_switch(conn, account, &a.row)?;
     for c in &a.closed {
-        conn.execute(
+        exec(
+            conn,
             "UPDATE front_interval SET end_at = ?2, end_switch_id = ?3 WHERE id = ?1",
             params![c.id, c.end_at, c.end_switch_id],
         )?;
@@ -716,7 +758,8 @@ fn append_front(conn: &Connection, o: &Op) -> anyhow::Result<bool> {
         let Some(other) = oplog::by_id(conn, &id)?.and_then(|op| FrontOp::from_op(&op).ok()) else { continue };
         let other_front: front::Front = serde_json::from_str(&f)?;
         if let Some(r) = front::review_of((&other, &other_front), (&fo, &a.row.resulting_front)) {
-            conn.execute(
+            exec(
+                conn,
                 "INSERT OR IGNORE INTO front_review (id, account_id, switch_a, switch_b, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![r.id, account, r.switch_a, r.switch_b, now],
             )?;
@@ -732,8 +775,8 @@ pub fn account_front(conn: &Connection, scope: &str) -> anyhow::Result<()> {
     let ops: Vec<FrontOp> =
         oplog::for_scope_kinds(conn, scope, "front.")?.iter().filter_map(|o| FrontOp::from_op(o).ok()).collect();
     let folded = front::fold(&ops);
-    conn.execute("DELETE FROM switch WHERE account_id = ?1", [account])?;
-    conn.execute("DELETE FROM front_interval WHERE account_id = ?1", [account])?;
+    exec(conn, "DELETE FROM switch WHERE account_id = ?1", [account])?;
+    exec(conn, "DELETE FROM front_interval WHERE account_id = ?1", [account])?;
     for s in &folded.switches {
         insert_switch(conn, account, s)?;
     }
@@ -745,7 +788,8 @@ pub fn account_front(conn: &Connection, scope: &str) -> anyhow::Result<()> {
     write_daily(conn, account, tz, None)?;
     let now = crate::now_ms();
     for r in front::reviews(&ops, &folded, front::DEFAULT_REVIEW_WINDOW_MS) {
-        conn.execute(
+        exec(
+            conn,
             "INSERT OR IGNORE INTO front_review (id, account_id, switch_a, switch_b, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![r.id, account, r.switch_a, r.switch_b, now],
         )?;
@@ -762,7 +806,8 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
         "follow.request" | "follow.accept" | "follow.end" | "follow.set_ceiling" | "follow.set_prefs" => {
             entity(conn, "follow", o.entity().unwrap_or(""))?;
             if o.kind == "follow.request" {
-                conn.execute(
+                exec(
+                    conn,
                     "UPDATE follow SET target_account_id = ?2 WHERE id = ?1 AND target_account_id IS NULL",
                     params![o.entity(), p("target_account_id")],
                 )?;
@@ -798,21 +843,24 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
             Ok(())
         }
         "space.set_role" => {
-            conn.execute(
+            exec(
+                conn,
                 "UPDATE space_member SET role = ?3 WHERE space_id = ?1 AND account_id = ?2",
                 params![o.entity(), p("account_id"), p("role")],
             )?;
             Ok(())
         }
         "space.set_roles" => {
-            conn.execute(
+            exec(
+                conn,
                 "UPDATE space SET roles = ?2 WHERE id = ?1",
                 params![o.entity(), o.payload.get("roles").cloned().unwrap_or_default().to_string()],
             )?;
             Ok(())
         }
         "front.review_resolve" => {
-            conn.execute(
+            exec(
+                conn,
                 "UPDATE front_review SET resolution = ?2, resolved_at = ?3 WHERE id = ?1",
                 params![p("review_id"), p("resolution"), o.time()],
             )?;
@@ -820,7 +868,8 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
         }
         "read.mark" | "read.set" => read_state(conn, o),
         "highlight.reorder" => {
-            conn.execute(
+            exec(
+                conn,
                 "UPDATE highlight SET sort_key = ?3 WHERE profile_member_id = ?1 AND post_id = ?2",
                 params![p("profile_member_id"), p("post_id"), p("sort_key")],
             )?;
@@ -896,7 +945,8 @@ fn read_state(conn: &Connection, o: &Op) -> anyhow::Result<()> {
         (m.as_ref().map(|m| m.0), m.as_ref().map(|m| m.1.clone()), m.as_ref().map(|m| m.2.to_string()))
     };
     let ((ma, mi, mh), (sa, si, sh)) = (parts(&best), parts(&manual));
-    conn.execute(
+    exec(
+        conn,
         "INSERT INTO read_state (channel_id, account_id, reader_member_id, last_read_message_id, last_read_message_at,
             mark_at, mark_id, mark_hlc, set_at, set_id, set_hlc, state_ok)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1)
@@ -981,27 +1031,65 @@ pub(crate) const DERIVED: &[&str] = &[
     "custom_emoji",
 ];
 
+thread_local! {
+    /// Set while [`rebuild_timed`] replays the log on this thread.
+    static REBUILDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// Rebuild every projection from the op log (`chorus-server rebuild`).
 pub fn rebuild(conn: &mut Connection) -> anyhow::Result<u64> {
+    rebuild_timed(conn, &mut |_, _| {})
+}
+
+/// [`rebuild`], reporting how long each op's projection took (by kind; `tests/perf.rs`).
+pub fn rebuild_timed(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Duration)) -> anyhow::Result<u64> {
+    // one transaction rewrites every projection: with the default 2 MB page cache it spills
+    // to the WAL over and over, so give it room for the duration (256 MB at most)
+    let cache: i64 = conn.query_row("PRAGMA cache_size", [], |r| r.get(0))?;
+    conn.execute_batch("PRAGMA cache_size = -262144")?;
+    let result = rebuild_in(conn, time);
+    conn.execute_batch(&format!("PRAGMA cache_size = {cache}"))?;
+    result
+}
+
+fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Duration)) -> anyhow::Result<u64> {
     let tx = conn.transaction()?;
     for t in DERIVED {
         tx.execute(&format!("DELETE FROM {t}"), [])?;
     }
-    tx.execute("INSERT INTO message_fts(message_fts) VALUES ('delete-all')", []).ok();
+    // message_fts keeps its own copy of the text (not external content), so 'delete-all' doesn't
+    // apply to it; a plain DELETE empties it
+    tx.execute("DELETE FROM message_fts", [])?;
     let mut n = 0u64;
     let mut seq = 0i64;
-    loop {
-        let batch = oplog::applied_after(&tx, seq, 1000)?;
-        if batch.is_empty() {
-            break;
+    REBUILDING.with(|r| r.set(true));
+    let replayed = (|| -> anyhow::Result<()> {
+        loop {
+            let batch = oplog::applied_after(&tx, seq, 1000)?;
+            if batch.is_empty() {
+                break;
+            }
+            for o in &batch {
+                seq = o.seq.unwrap_or(seq);
+                let t = std::time::Instant::now();
+                after_insert(&tx, o)?;
+                time(&o.kind, t.elapsed());
+                n += 1;
+            }
         }
-        for o in &batch {
-            seq = o.seq.unwrap_or(seq);
-            after_insert(&tx, o)?;
-            n += 1;
-        }
-    }
+        Ok(())
+    })();
+    REBUILDING.with(|r| r.set(false));
+    replayed?;
+    let t = std::time::Instant::now();
+    tx.execute(
+        "INSERT INTO message_fts(rowid, text, cw) SELECT rowid, text, coalesce(cw, '') FROM message WHERE deleted_at IS NULL",
+        [],
+    )?;
+    time("(search index)", t.elapsed());
+    let t = std::time::Instant::now();
     tx.commit()?;
+    time("(commit)", t.elapsed());
     let _ = columns; // kept for diagnostics
     Ok(n)
 }

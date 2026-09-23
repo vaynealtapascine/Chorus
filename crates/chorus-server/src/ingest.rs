@@ -23,9 +23,8 @@ pub fn can_access(conn: &Connection, account: &str, scope: &str) -> anyhow::Resu
         return Ok(true); // everyone reads the server scope (custom emoji)
     }
     Ok(conn
-        .query_row("SELECT 1 FROM scope_access WHERE account_id = ?1 AND scope = ?2", params![account, scope], |_| {
-            Ok(())
-        })
+        .prepare_cached("SELECT 1 FROM scope_access WHERE account_id = ?1 AND scope = ?2")?
+        .query_row(params![account, scope], |_| Ok(()))
         .optional()?
         .is_some())
 }

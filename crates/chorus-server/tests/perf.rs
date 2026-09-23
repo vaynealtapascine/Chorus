@@ -17,9 +17,11 @@ use chorus_server::{db, ingest, project};
 use serde_json::{Value, json};
 
 const T0: i64 = 1_790_000_000_000;
+/// Time between ops: 30 s, so the 3 % switches come ~90 a day (a heavy switcher; 1M ops ≈ a year).
+const STEP: i64 = 30_000;
 
 fn op(n: u64, kind: &str, scope: &str, entity: Option<String>, payload: Value) -> Op {
-    let at = T0 + n as i64 * 1000;
+    let at = T0 + n as i64 * STEP;
     let mut r = [0u8; 10];
     r[..8].copy_from_slice(&n.to_be_bytes());
     Op {
@@ -82,7 +84,7 @@ fn history(total: u64, acct: &str, space: &str) -> Vec<Op> {
         let k = next();
         let ch = (k % channels.len() as u64) as usize;
         let who = &members[(k / 7 % members.len() as u64) as usize];
-        let at = T0 + k as i64 * 1000;
+        let at = T0 + k as i64 * STEP;
         match k % 100 {
             0..=2 => {
                 let e = json!([{"subject_type": "member", "subject_id": who, "level": "front", "is_primary": true}]);
@@ -204,9 +206,18 @@ fn ingest_and_rebuild_budgets() {
         .unwrap();
     println!("switch rows {sw}, distinct times {distinct}");
     let t = Instant::now();
-    let n = project::rebuild(&mut c).unwrap();
+    let mut by_kind: std::collections::BTreeMap<String, (u64, f64)> = Default::default();
+    let n = project::rebuild_timed(&mut c, &mut |kind, d| {
+        let e = by_kind.entry(kind.to_string()).or_default();
+        e.0 += 1;
+        e.1 += d.as_secs_f64();
+    })
+    .unwrap();
     let rebuild = t.elapsed().as_secs_f64();
     println!("rebuild: {n} ops in {rebuild:.1} s");
+    for (kind, (n, t)) in &by_kind {
+        println!("  {kind:<14} {n:>8} ops  {:>8.1} s total  {:>8.3} ms each", t, t * 1000.0 / *n as f64);
+    }
 
     drop(c);
     for ext in ["", "-wal", "-shm"] {

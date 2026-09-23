@@ -37,39 +37,39 @@ fn from_row(r: &Row) -> rusqlite::Result<Op> {
 
 /// Insert a fully stamped op; returns its new seq.
 pub fn insert(conn: &Connection, o: &Op, time_suspect: bool, restored: bool) -> anyhow::Result<i64> {
-    conn.execute(
+    conn.prepare_cached(
         "INSERT INTO op (id, scope, kind, entity_id, payload, v, hlc, account_id, device_id, member_id,
             occurred_at, device_at, tz_offset_min, mono, boot_id, time_source, time_suspect, seen_seq,
             received_at, restored)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
-        params![
-            o.id,
-            o.scope,
-            o.kind,
-            o.entity_id,
-            serde_json::to_string(&o.payload)?,
-            o.v,
-            o.hlc.to_string(),
-            o.account_id,
-            o.device_id,
-            o.member_id,
-            o.occurred_at,
-            o.device_at,
-            o.tz_offset_min,
-            o.mono,
-            o.boot_id,
-            if o.time_source == TimeSource::User { "user" } else { "auto" },
-            time_suspect,
-            o.seen_seq,
-            o.received_at,
-            restored,
-        ],
-    )?;
+    )?
+    .execute(params![
+        o.id,
+        o.scope,
+        o.kind,
+        o.entity_id,
+        serde_json::to_string(&o.payload)?,
+        o.v,
+        o.hlc.to_string(),
+        o.account_id,
+        o.device_id,
+        o.member_id,
+        o.occurred_at,
+        o.device_at,
+        o.tz_offset_min,
+        o.mono,
+        o.boot_id,
+        if o.time_source == TimeSource::User { "user" } else { "auto" },
+        time_suspect,
+        o.seen_seq,
+        o.received_at,
+        restored,
+    ])?;
     Ok(conn.last_insert_rowid())
 }
 
 pub fn by_id(conn: &Connection, id: &str) -> anyhow::Result<Option<Op>> {
-    Ok(conn.query_row(&format!("SELECT {COLS} FROM op WHERE id = ?1"), [id], from_row).optional()?)
+    Ok(conn.prepare_cached(&format!("SELECT {COLS} FROM op WHERE id = ?1"))?.query_row([id], from_row).optional()?)
 }
 
 /// Ops of a scope after `after`, oldest first.

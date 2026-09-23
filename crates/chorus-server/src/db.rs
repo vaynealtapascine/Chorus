@@ -29,6 +29,8 @@ pub fn open_memory() -> anyhow::Result<Connection> {
 }
 
 fn pragmas(conn: &Connection) -> anyhow::Result<()> {
+    // projections use a few dozen statement shapes per op mix; keep them all prepared
+    conn.set_prepared_statement_cache_capacity(256);
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;
          PRAGMA synchronous = NORMAL;
