@@ -25,11 +25,15 @@ struct Server {
 }
 
 async fn start() -> Server {
+    start_with(Config::default()).await
+}
+
+async fn start_with(cfg: Config) -> Server {
     let mut conn = db::open_memory().unwrap();
     db::migrate(&mut conn).unwrap();
     db::set_meta(&conn, "instance_id", "test").unwrap();
     db::set_meta(&conn, "epoch", "1").unwrap();
-    let state = app::Shared::new(conn, Config::default()).unwrap();
+    let state = app::Shared::new(conn, cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let router = app::router(state.clone());
@@ -348,4 +352,491 @@ async fn a_friend_follows_a_system() {
     assert_eq!(model::project(phone.store.confirmed()).rows["follow"][&id].fields["status"], "ended");
     let list: Value = http.get(url("/follows")).bearer_auth(tok(&friend)).send().await.unwrap().json().await.unwrap();
     assert_eq!(list["following"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn the_server_hosts_the_android_update() {
+    let dir = std::env::temp_dir().join(format!("chorus-apk-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut cfg = Config::default();
+    cfg.server.android_dir = Some(dir.clone());
+    let s = start_with(cfg).await;
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}{p}", s.base);
+    assert_eq!(http.get(url("/api/v1/android/latest")).send().await.unwrap().status(), 404);
+    std::fs::write(dir.join("chorus.apk"), b"PK fake apk").unwrap();
+    std::fs::write(
+        dir.join("chorus.json"),
+        br#"{"version_code": 42, "version_name": "0.2.0", "sha256": "ab", "size": 11}"#,
+    )
+    .unwrap();
+    let meta: Value = http.get(url("/api/v1/android/latest")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(meta["version_code"], 42);
+    assert!(meta["url"].as_str().unwrap().ends_with("/download/android"));
+    let r = http.get(url("/download/android")).send().await.unwrap();
+    assert_eq!(r.headers()["content-type"], "application/vnd.android.package-archive");
+    assert_eq!(r.bytes().await.unwrap().as_ref(), b"PK fake apk");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn api_tokens_read_the_front_and_stream_switches() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 41, "stars").await;
+    let mut phone = Device::new(&sys, 41);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct = phone.scope("account:");
+    let kai = new_id(1, [42; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai", "color": "#C0694E"})).await;
+    phone.drain(Q).await;
+
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let session = sys["session"].as_str().unwrap().to_string();
+    let r = http
+        .post(url("/tokens"))
+        .bearer_auth(&session)
+        .json(&json!({"name": "obs", "scopes": ["read:front", "stream"]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+    let created: Value = r.json().await.unwrap();
+    let token = created["token"].as_str().unwrap().to_string();
+    assert!(token.starts_with("chorus_"));
+    // tokens can't mint tokens, and scopes are enforced
+    let r = http
+        .post(url("/tokens"))
+        .bearer_auth(&token)
+        .json(&json!({"name": "x", "scopes": ["stream"]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    assert_eq!(http.get(url("/members")).bearer_auth(&token).send().await.unwrap().status(), 403);
+    let front: Value = http.get(url("/front")).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
+    assert_eq!(front["front"].as_array().unwrap().len(), 0);
+
+    // the stream: first event is the current front, then a live switch from the phone
+    let mut sse = http.get(url(&format!("/stream?token={token}"))).send().await.unwrap();
+    assert_eq!(sse.status(), 200);
+    let mut buf = String::new();
+    async fn until(sse: &mut reqwest::Response, buf: &mut String, needle: &str) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while !buf.contains(needle) {
+            let chunk =
+                tokio::time::timeout_at(deadline, sse.chunk()).await.expect("stream timed out").unwrap().unwrap();
+            buf.push_str(&String::from_utf8_lossy(&chunk));
+        }
+    }
+    until(&mut sse, &mut buf, "\n\n").await;
+    assert!(buf.starts_with("event: front"), "{buf}");
+    let sw = new_id(2, [43; 10]);
+    phone
+        .create(
+            "front.switch",
+            &acct,
+            &sw,
+            json!({"entries": [{"subject_type": "member", "subject_id": kai, "level": "front", "is_primary": true}]}),
+        )
+        .await;
+    phone.drain(Q).await;
+    until(&mut sse, &mut buf, "\"Kai\"").await;
+    let front: Value = http.get(url("/front")).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
+    assert_eq!(front["front"][0]["name"], "Kai");
+    let switches: Value =
+        http.get(url("/front/switches")).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
+    assert_eq!(switches["items"].as_array().unwrap().len(), 1);
+
+    // revoke: the token stops working
+    let list: Value = http.get(url("/tokens")).bearer_auth(&session).send().await.unwrap().json().await.unwrap();
+    let id = list["items"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(http.delete(url(&format!("/tokens/{id}"))).bearer_auth(&session).send().await.unwrap().status(), 204);
+    assert_eq!(http.get(url("/front")).bearer_auth(&token).send().await.unwrap().status(), 401);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn webhooks_post_signed_events() {
+    // a receiver on the loopback (inside the "tailnet")
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(axum::http::HeaderMap, String)>();
+    let receiver = axum::Router::new().route(
+        "/hook",
+        axum::routing::post(move |h: axum::http::HeaderMap, body: String| {
+            let tx = tx.clone();
+            async move {
+                let _ = tx.send((h, body));
+                axum::http::StatusCode::NO_CONTENT
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let hook = format!("http://{}/hook", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, receiver).await.unwrap() });
+
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 51, "stars").await;
+    let mut phone = Device::new(&sys, 51);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct = phone.scope("account:");
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let session = sys["session"].as_str().unwrap().to_string();
+
+    // outside the tailnet is refused unless allowed
+    let r = http
+        .post(url("/webhooks"))
+        .bearer_auth(&session)
+        .json(&json!({"url": "http://8.8.8.8/hook", "events": ["front.switch"]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    let created: Value = http
+        .post(url("/webhooks"))
+        .bearer_auth(&session)
+        .json(&json!({"url": hook, "events": ["front.switch", "member.created"]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let secret = created["secret"].as_str().unwrap().to_string();
+    let id = created["id"].as_str().unwrap().to_string();
+    let listed: Value = http.get(url("/webhooks")).bearer_auth(&session).send().await.unwrap().json().await.unwrap();
+    assert!(listed["items"][0].get("secret").is_none(), "the secret is shown once");
+
+    async fn next(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<(axum::http::HeaderMap, String)>,
+    ) -> (axum::http::HeaderMap, Value, String) {
+        let (h, body) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await.expect("no webhook").unwrap();
+        let v: Value = serde_json::from_str(&body).unwrap();
+        (h, v, body)
+    }
+    let check = |h: &axum::http::HeaderMap, body: &str| {
+        let sig = h["chorus-signature"].to_str().unwrap();
+        let t: i64 = sig.split(',').next().unwrap().trim_start_matches("t=").parse().unwrap();
+        assert_eq!(sig, chorus_server::webhooks::signature(&secret, t, body));
+    };
+
+    let kai = new_id(1, [52; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    phone.drain(Q).await;
+    let (h, v, body) = next(&mut rx).await;
+    check(&h, &body);
+    assert_eq!(h["chorus-event"], "member.created");
+    assert_eq!(v["data"]["name"], "Kai");
+
+    // not subscribed to member.updated: nothing is sent for the edit; the switch is
+    phone.create("member.set", &acct, &kai, json!({"pronouns": "they/them"})).await;
+    phone
+        .create(
+            "front.switch",
+            &acct,
+            &new_id(2, [53; 10]),
+            json!({"entries": [{"subject_type": "member", "subject_id": kai, "level": "front", "is_primary": true}]}),
+        )
+        .await;
+    phone.drain(Q).await;
+    let (h, v, body) = next(&mut rx).await;
+    check(&h, &body);
+    assert_eq!(v["event"], "front.switch");
+    assert_eq!(v["data"]["front"][0]["name"], "Kai");
+
+    // the test button
+    let t: Value = http
+        .post(url(&format!("/webhooks/{id}/test")))
+        .bearer_auth(&session)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(t["ok"], true);
+    let (h, _, body) = next(&mut rx).await;
+    check(&h, &body);
+    assert_eq!(h["chorus-event"], "ping");
+
+    // turned off: no more deliveries
+    let r = http
+        .put(url(&format!("/webhooks/{id}")))
+        .bearer_auth(&session)
+        .json(&json!({"enabled": false}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 204);
+    phone.create("member.create", &acct, &new_id(3, [54; 10]), json!({"name": "Rin"})).await;
+    phone.drain(Q).await;
+    assert!(tokio::time::timeout(Duration::from_millis(1500), rx.recv()).await.is_err());
+    assert_eq!(http.delete(url(&format!("/webhooks/{id}"))).bearer_auth(&session).send().await.unwrap().status(), 204);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rest_reads_cover_members_groups_fields_and_days() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 61, "stars").await;
+    let mut phone = Device::new(&sys, 61);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct = phone.scope("account:");
+    let (kai, grp, fld) = (new_id(1, [62; 10]), new_id(2, [63; 10]), new_id(3, [64; 10]));
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai", "pronouns": "they/them"})).await;
+    phone.create("group.create", &acct, &grp, json!({"name": "Littles", "kind": "group"})).await;
+    phone.create("group.add_member", &acct, &grp, json!({"member_id": kai})).await;
+    phone.create("field.define", &acct, &fld, json!({"name": "Role", "type": "text"})).await;
+    phone
+        .create(
+            "field.set_value",
+            &acct,
+            &new_id(4, [65; 10]),
+            json!({"member_id": kai, "field_id": fld, "value": "host"}),
+        )
+        .await;
+    phone
+        .create(
+            "front.switch",
+            &acct,
+            &new_id(5, [66; 10]),
+            json!({"entries": [{"subject_type": "member", "subject_id": kai, "level": "front", "is_primary": true}]}),
+        )
+        .await;
+    phone.drain(Q).await;
+
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let session = sys["session"].as_str().unwrap().to_string();
+    let get = |path: String, auth: String| {
+        let http = http.clone();
+        async move {
+            let r = http.get(path).bearer_auth(auth).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap_or(Value::Null))
+        }
+    };
+
+    let (st, m) = get(url(&format!("/members/{kai}")), session.clone()).await;
+    assert_eq!(st, 200);
+    assert_eq!(m["pronouns"], "they/them");
+    assert_eq!(m["groups"], json!([grp]));
+    assert_eq!(m["fields"][0]["name"], "Role");
+    assert_eq!(m["fields"][0]["value"], "host");
+    assert_eq!(get(url("/members/nope"), session.clone()).await.0, 404);
+    let (_, g) = get(url("/groups"), session.clone()).await;
+    assert_eq!(g["items"][0]["name"], "Littles");
+    assert_eq!(g["items"][0]["member_ids"], json!([kai]));
+    let (_, f) = get(url("/fields"), session.clone()).await;
+    assert_eq!(f["items"][0]["type"], "text");
+    let (_, i) = get(url(&format!("/front/intervals?subject={kai}&level=front")), session.clone()).await;
+    assert_eq!(i["items"].as_array().unwrap().len(), 1);
+    let (_, i) = get(url("/front/intervals?level=cocon"), session.clone()).await;
+    assert_eq!(i["items"].as_array().unwrap().len(), 0);
+    let (_, d) = get(url("/front/daily?level=front"), session.clone()).await;
+    assert_eq!(d["items"][0]["subject_id"], kai.as_str());
+    assert_eq!(get(url("/front/daily?from=yesterday"), session.clone()).await.0, 400);
+    let (st, r) = get(url("/front/reviews?open=1"), session.clone()).await;
+    assert_eq!((st, r["items"].as_array().unwrap().len()), (200, 0));
+    let (_, me) = get(url("/me"), session.clone()).await;
+    assert_eq!((me["via"].as_str(), me["account"]["handle"].as_str()), (Some("device"), Some("stars")));
+    assert_eq!(me["devices"].as_array().unwrap().len(), 1);
+
+    // a members-only token: members yes, front no; /me shows its scopes and no devices
+    let created: Value = http
+        .post(url("/tokens"))
+        .bearer_auth(&session)
+        .json(&json!({"name": "sheet", "scopes": ["read:members"]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let token = created["token"].as_str().unwrap().to_string();
+    assert_eq!(get(url(&format!("/members/{kai}")), token.clone()).await.0, 200);
+    assert_eq!(get(url("/front/daily"), token.clone()).await.0, 403);
+    assert_eq!(get(url("/states"), token.clone()).await.0, 403);
+    let (_, me) = get(url("/me"), token.clone()).await;
+    assert_eq!(me["scopes"], json!(["read:members"]));
+    assert!(me["devices"].is_null());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_write_token_logs_switches_by_name() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 71, "stars").await;
+    let mut phone = Device::new(&sys, 71);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct = phone.scope("account:");
+    let kai = new_id(1, [72; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    phone.create("member.create", &acct, &new_id(2, [73; 10]), json!({"name": "Rin"})).await;
+    phone.create("member.create", &acct, &new_id(3, [74; 10]), json!({"name": "rin"})).await;
+    phone.drain(Q).await;
+
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let session = sys["session"].as_str().unwrap().to_string();
+    let mint = |scopes: Value| {
+        let (http, url, session) = (http.clone(), url("/tokens"), session.clone());
+        async move {
+            let v: Value = http
+                .post(url)
+                .bearer_auth(session)
+                .json(&json!({"name": "nfc", "scopes": scopes}))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            v["token"].as_str().unwrap().to_string()
+        }
+    };
+    let writer = mint(json!(["write:front"])).await;
+    let reader = mint(json!(["read:front"])).await;
+    let post = |token: String, body: Value| {
+        let (http, url) = (http.clone(), url("/front/switch"));
+        async move {
+            let r = http.post(url).bearer_auth(token).json(&body).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap_or(Value::Null))
+        }
+    };
+
+    assert_eq!(post(reader.clone(), json!({"entries": [{"member": "Kai"}]})).await.0, 403);
+    assert_eq!(post(writer.clone(), json!({"entries": [{"member": "Nobody"}]})).await.0, 400);
+    assert_eq!(post(writer.clone(), json!({"entries": [{"member": "RIN"}]})).await.0, 400, "ambiguous");
+    assert_eq!(post(writer.clone(), json!({"entries": [{"subject_type": "member", "subject_id": "x"}]})).await.0, 400);
+    let future = chorus_server::now_ms() + 3_600_000;
+    assert_eq!(post(writer.clone(), json!({"entries": [], "occurred_at": future})).await.0, 400);
+
+    let (st, v) = post(writer.clone(), json!({"entries": [{"member": "kai"}], "note": "tapped the tag"})).await;
+    assert_eq!(st, 201);
+    assert!(v.get("front").is_none(), "a write-only token doesn't read the front back");
+    // the phone gets it like any other switch, attributed to the token's pseudo-device
+    phone.drain(Q).await;
+    let op = phone.store.confirmed().find(|o| o.kind == "front.switch").unwrap().clone();
+    assert!(op.device_id.as_deref().unwrap().starts_with("token:"));
+    assert_eq!(op.payload["entries"][0]["subject_id"], kai.as_str());
+    assert_eq!(op.payload["entries"][0]["is_primary"], true);
+    let front: Value = http.get(url("/front")).bearer_auth(&reader).send().await.unwrap().json().await.unwrap();
+    assert_eq!(front["front"][0]["name"], "Kai");
+
+    // a device session may switch out through the same endpoint and reads the result
+    let (st, v) = post(session.clone(), json!({"entries": []})).await;
+    assert_eq!(st, 201);
+    assert_eq!(v["front"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn friends_share_spaces_and_dms() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 81, "stars").await;
+    let friend = enrol(&s, auth::InviteKind::Person, None, 82, "alex").await;
+    let stranger = enrol(&s, auth::InviteKind::Person, None, 83, "sam").await;
+    let mut phone = Device::new(&sys, 81);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let mut laptop = Device::new(&friend, 82);
+    laptop.connect(&s).await;
+    laptop.drain(Q).await;
+    let acct = phone.scope("account:");
+    let kai = new_id(1, [84; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai", "color": "#C0694E"})).await;
+
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+    let id_of = |e: &Value| e["account_id"].as_str().unwrap().to_string();
+    let post = |path: String, auth: String, body: Value| {
+        let http = http.clone();
+        async move {
+            let r = http.post(path).bearer_auth(auth).json(&body).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap_or(Value::Null))
+        }
+    };
+
+    // alex follows stars and stars accepts: now they're connected
+    let (_, f) = post(url("/follows"), tok(&friend), json!({"target": "stars"})).await;
+    phone.drain(Q).await;
+    phone.create("follow.accept", &acct, f["id"].as_str().unwrap(), json!({})).await;
+    phone.drain(Q).await;
+
+    // strangers can't be pulled into a DM
+    let (st, _) = post(url("/spaces"), tok(&sys), json!({"kind": "dm", "accounts": [id_of(&stranger)]})).await;
+    assert_eq!(st, 403);
+    let (st, dm) = post(url("/spaces"), tok(&sys), json!({"kind": "dm", "accounts": [id_of(&friend)]})).await;
+    assert_eq!(st, 201);
+    let dm = dm["id"].as_str().unwrap().to_string();
+    let (st, again) = post(url("/spaces"), tok(&sys), json!({"kind": "dm", "accounts": [id_of(&friend)]})).await;
+    assert_eq!((st, again["id"].as_str()), (200, Some(dm.as_str())), "one DM per pair");
+
+    // both sides get the space live; a message from Kai reaches alex
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    let scope = format!("space:{dm}");
+    assert!(laptop.store.scopes.contains(&scope));
+    let p = model::project(phone.store.confirmed());
+    let chan = p.rows["channel"].iter().find(|(_, r)| r.fields["space_id"] == dm.as_str()).unwrap().0.clone();
+    phone
+        .create(
+            "message.send",
+            &scope,
+            &new_id(2, [85; 10]),
+            json!({"channel_id": chan, "authors": [kai], "text": "hi alex", "entities": []}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    let p = model::project(laptop.store.confirmed());
+    assert!(p.rows["message"].values().any(|m| m.fields["text"] == "hi alex"));
+
+    // alex sees Kai's author card, and nothing about stars' other members
+    let cards: Value = http
+        .get(url(&format!("/spaces/{dm}/authors")))
+        .bearer_auth(tok(&friend))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(cards["members"].as_array().unwrap().len(), 1);
+    assert_eq!(cards["members"][0]["name"], "Kai");
+    assert_eq!(cards["accounts"].as_array().unwrap().len(), 2);
+    let r = http.get(url(&format!("/spaces/{dm}/authors"))).bearer_auth(tok(&stranger)).send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    let list: Value = http.get(url("/spaces")).bearer_auth(tok(&friend)).send().await.unwrap().json().await.unwrap();
+    assert!(list["items"].as_array().unwrap().iter().any(|i| i["id"] == dm.as_str() && i["kind"] == "dm"));
+
+    // a shared space: only its owner adds people, and the owner can't leave it
+    let (st, club) =
+        post(url("/spaces"), tok(&sys), json!({"kind": "shared", "name": "Book club", "accounts": []})).await;
+    assert_eq!(st, 201);
+    let club = club["id"].as_str().unwrap().to_string();
+    let (st, _) =
+        post(url(&format!("/spaces/{club}/members")), tok(&friend), json!({"accounts": [id_of(&friend)]})).await;
+    assert_eq!(st, 404, "alex isn't in it, so for alex it doesn't exist");
+    let r = http
+        .post(url(&format!("/spaces/{club}/members")))
+        .bearer_auth(tok(&sys))
+        .json(&json!({"accounts": [id_of(&friend)]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 204);
+    laptop.drain(Q).await;
+    assert!(laptop.store.scopes.contains(&format!("space:{club}")));
+    let r = http.delete(url(&format!("/spaces/{club}/members/me"))).bearer_auth(tok(&sys)).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+
+    // alex leaves the DM: the scope goes away and the cards with it
+    let r = http.delete(url(&format!("/spaces/{dm}/members/me"))).bearer_auth(tok(&friend)).send().await.unwrap();
+    assert_eq!(r.status(), 204);
+    laptop.drain(Q).await;
+    assert!(!laptop.store.scopes.contains(&scope));
+    let r = http.get(url(&format!("/spaces/{dm}/authors"))).bearer_auth(tok(&friend)).send().await.unwrap();
+    assert_eq!(r.status(), 404);
 }

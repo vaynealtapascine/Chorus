@@ -51,6 +51,14 @@ class MainActivity : ComponentActivity() {
         inviteLink.value = inviteFrom(intent)
         val chorus = Chorus.get(this)
         SyncWork.schedulePeriodic(this)
+        // switch notifications (M8.1): ask once on Android 13+, then register with ntfy if present
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
+        garden.vayne.chorus.data.Push.ensure(this)
+        garden.vayne.chorus.data.Updater.schedule(this)
         setContent { ChorusTheme { App(chorus, inviteLink.value) } }
     }
 

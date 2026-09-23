@@ -155,14 +155,34 @@ class Chorus private constructor(private val ctx: Context) {
             rebuildPending.set(false)
             val r = replica ?: return@launch
             val dev = device ?: return@launch
-            val next = Model.parse(r.projection(), dev.accountId)
+            // only what changed crosses the FFI; the first time, the whole projection
+            val d = JSONObject(r.projectionDelta())
+            val cached = projectionCache
+            val p = if (cached == null || d.optBoolean("full")) {
+                JSONObject(r.projection()).also { r.projectionDelta() }
+            } else {
+                cached.also { Model.applyDelta(it, d) }
+            }
+            projectionCache = p
+            val next = Model.parse(p, dev.accountId)
             _model.value = next
             onModel?.invoke(next)
         }
     }
 
+    /** The projection as last applied (store thread only). */
+    private var projectionCache: JSONObject? = null
+
     /** Called on the store thread after each model rebuild (the widget refreshes itself here). */
     @Volatile var onModel: ((Model) -> Unit)? = null
+
+    /** A small private setting in the encrypted store (push keys and similar). */
+    suspend fun setting(key: String): String? = withContext(dispatcher) { store.get(key) }
+
+    suspend fun putSetting(key: String, value: String) = withContext(dispatcher) { store.put(key, value) }
+
+    /** The signed-in device, after the replica has loaded. */
+    suspend fun awaitDevice(): DeviceRecord? = withContext(dispatcher) { device }
 
     /** A fresh model, waiting for the replica to load (for the widget in a cold process). */
     suspend fun awaitModel(): Model = withContext(dispatcher) {

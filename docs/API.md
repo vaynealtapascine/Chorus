@@ -34,8 +34,25 @@ Link another device of the same account (any enrolled device; one use, 1 day):
 
 ```
 POST /devices/invite            Authorization: Bearer <session>
-→ 200 { "code":"…", "url":"https://chorus.…/i/<code>", "expires_at":… }
+→ 200 { "code":"…", "url":"https://chorus.…/i/<code>", "qr_svg":"<svg…>", "expires_at":… }
 ```
+
+`qr_svg` encodes the URL (`qr.rs`: byte mode, level M, versions 1–10, no dependency) so a phone
+can scan it from the web app. `CHORUS_QR_SAMPLES=<dir> cargo test -p chorus-server --lib qr`
+followed by `python scripts/qr-check.py <dir>` decodes samples with OpenCV.
+
+`GET /push/vapid` → `{public_key}` is the server's VAPID key for browsers' `pushManager.subscribe`
+(D-061). Browsers then register below like any device.
+
+Register this device for push (UnifiedPush endpoint + Web Push keys, NOTIFICATIONS.md §1):
+
+```
+PUT    /devices/push {endpoint, p256dh: <b64url uncompressed P-256>, auth: <b64url 16 bytes>}  → 204
+DELETE /devices/push                                                                          → 204
+```
+
+Payloads are RFC 8291 `aes128gcm`, one record, ≤ 3 KB plaintext (else `{"t":"sync"}`). A 404/410
+from the endpoint clears the registration.
 
 ### 2.2 Sessions
 
@@ -68,6 +85,13 @@ POST /devices/invite            Authorization: Bearer <session>
 | `admin` | server admin endpoints (admin accounts only) |
 
 Writes through tokens are turned into ops server-side with the token's pseudo-device id.
+
+Implemented so far (M10.2, `api_data.rs`): scopes `read:front`, `read:members`, `stream`,
+`write:front` (see §4);
+`POST /tokens {name, scopes}` → `{id, token}` (shown once), `GET /tokens`, `DELETE /tokens/{id}` —
+from a signed-in device only (tokens can't mint tokens). Reads: `GET /front`, `/front/switches`,
+`/front/intervals`, `/members`. `GET /stream` sends `event: front` (current front first, then each
+change); EventSource clients pass `?token=`. `/overlay/front?token=…` is a transparent OBS pill.
 
 ## 3. Read endpoints
 
@@ -115,6 +139,37 @@ GET  /insights/{chart}?from=&to=           dashboard data (same numbers as the v
 
 Reads of another account's content always go through the view layer (same privacy as sync views).
 
+Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
+
+- **Account:** `/me` returns `{account, via: "device"|"token", scopes, devices}`. `devices` is
+  shown to devices only.
+- **Members** (`read:members`):
+  - `/members`;
+  - `/members/{id}`, which adds `groups` (ids) and `fields` (`[{field_id, name, type, value}]`);
+  - `/groups` (a flat list with `effective_parent_id` and `member_ids`);
+  - `/fields`.
+- **Front** (`read:front`):
+  - `/states`;
+  - `/front`, `/front/switches`, `/front/intervals`;
+  - `/front/daily?from=&to=&level=` (days are `YYYY-MM-DD`, `to` inclusive);
+  - `/front/reviews?open=1`.
+- **Other accounts:** `/accounts/{id}/view`, `/follows`, `/notifications`.
+- `/front/intervals` also takes `subject` (an id) and `level`.
+- **Shared spaces and DMs** (M6.2, `spaces.rs`, signed-in devices only):
+  - `GET /spaces` returns your spaces with the accounts in each.
+  - `POST /spaces {kind: "shared"|"dm", name?, accounts: [account ids]}` answers
+    `201 {id}`, or `200 {id}` when that DM already exists. It works only with accounts connected
+    to you by an active follow, in either direction.
+  - `POST /spaces/{id}/members {accounts}` is for a shared space's owner only.
+  - `DELETE /spaces/{id}/members/me` leaves. The owner of a shared space can't leave it, and
+    nobody can leave their home space.
+  - `GET /spaces/{id}/authors` returns `{accounts, members}`. `members` holds author cards (name,
+    display name, pronouns, colour, sigils, avatar) for other accounts' members who wrote a message
+    everyone in the space can read.
+  - A space you aren't in is a 404.
+- **Not yet:** messages, posts, profiles, feeds and insights, which come with
+  M5.7/M5.8/M7/M10.1.
+
 ## 4. Writes (non-sync)
 
 ```
@@ -127,6 +182,21 @@ POST /invites           (admin) {kind, expires_in_s, max_uses}  → {url, qr_svg
 ```
 
 `format: "markup"` parses Chorus markup with the same core parser the apps use.
+
+**`POST /front/switch`** is implemented (`api_writes.rs`). The body is
+`{entries, occurred_at?, note?, notify?}`:
+
+- **Entries:** each entry is `{subject_type, subject_id}` or, for scripts, exactly one of
+  `{member: "Kai"}`, `{group: "…"}` or `{state: "…"}`. Names match case-insensitively on name or
+  display name, and an ambiguous name is a 400. Each entry may also give `level` (default `front`)
+  and `is_primary`; the first fronting entry becomes primary if none is.
+- **Switching out:** empty `entries`.
+- **`occurred_at`:** a typed time (`TimeSource::User`), at most a minute ahead.
+
+The switch becomes an ordinary `front.switch` op attributed to `token:<token id>` (or to `server`
+from a session), so devices, followers, the stream and webhooks see it like a switch from the app.
+The answer is `201 {switch_id, op_id, occurred_at}`, plus `front` if the caller may `read:front`.
+`POST /channels/{id}/messages` waits for M5.7 visibility.
 
 ## 5. Blobs
 
@@ -177,6 +247,22 @@ Chorus-Signature: t=1790000000,v1=<hex HMAC-SHA256(secret, t + "." + body)>
 Events: `front.switch`, `front.review`, `member.created`, `member.updated`, `message.created`,
 `post.created`, `follow.requested`. Retries: 1 m, 5 m, 30 m, 2 h, 12 h; then disabled with an
 in-app notice. Webhook URLs may point outside the tailnet only if `webhooks.allow_external` is on.
+
+Implemented (M10.2, `webhooks.rs`):
+
+- **Endpoints** (signed-in devices only, never API tokens):
+  - `GET/POST /webhooks {url, events}` → `{id, secret}`; the secret is shown once.
+  - `PUT /webhooks/{id} {enabled?, events?}` and `DELETE /webhooks/{id}`.
+  - `POST /webhooks/{id}/test` sends a `ping` and answers `{ok, status, error}`. A failed test
+    never counts towards turning the webhook off.
+- **Events so far:** `front.switch`, `member.created`, `member.updated`, `follow.requested`.
+  `message.created` waits for M5.7 visibility, `post.created` for M7, and `front.review` for
+  later. The body also carries `delivery` (the same value as `Chorus-Delivery`).
+- **Internal URLs** are loopback, RFC 1918, link-local, Tailscale's 100.64/10 and fd00::/8, bare
+  names, and `.ts.net`/`.local`/`.lan`/`.internal`/`.home.arpa`. Any other name is resolved and
+  must resolve only to internal addresses; this is checked on save and before each delivery. The
+  switch is `security.webhooks_allow_external` in `chorus.toml`.
+- **Retries** are kept in memory, so a restart drops pending retries.
 
 ## 8. Admin
 

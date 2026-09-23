@@ -46,7 +46,7 @@ pub struct Projection {
     pub opaque: usize,
     /// LWW element-set clocks while projecting; cleared at the end.
     #[serde(skip)]
-    set_clocks: BTreeMap<(String, String), SetElem>,
+    pub(crate) set_clocks: BTreeMap<(String, String), SetElem>,
 }
 
 impl Projection {
@@ -79,9 +79,9 @@ pub fn dedupe<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Vec<&'a Op> {
 }
 
 /// A read mark: (message time, message id, op clock).
-type ReadMark = (i64, String, Hlc);
+pub(crate) type ReadMark = (i64, String, Hlc);
 /// Per read-state key: all `read.mark`s, and the latest `read.set`.
-type Reads = BTreeMap<String, (Vec<ReadMark>, Option<ReadMark>)>;
+pub(crate) type Reads = BTreeMap<String, (Vec<ReadMark>, Option<ReadMark>)>;
 
 fn scope_account(op: &Op) -> Option<&str> {
     op.scope.strip_prefix("account:")
@@ -115,82 +115,7 @@ pub fn project<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Projection {
     let mut reads: Reads = BTreeMap::new();
 
     for o in ops {
-        let Ok(Known::Yes(spec)) = op::validate(o) else {
-            p.opaque += 1;
-            continue;
-        };
-        let entity = o.entity().unwrap_or("");
-        let payload = o.payload_obj().cloned().unwrap_or_default();
-        let trash_item = matches!(spec.table, "message" | "post" | "member" | "member_group" | "channel");
-        match spec.action {
-            Action::Create | Action::Append => {
-                let mut fields = payload.clone();
-                if trash_item {
-                    fields.insert("created_by_account_id".into(), json!(o.account_id));
-                }
-                if spec.action == Action::Append {
-                    fields.insert("occurred_at".into(), json!(o.time()));
-                    fields.insert("account_id".into(), json!(o.account_id));
-                }
-                let row = set_fields(&mut p, spec.table, entity, o.hlc, &fields);
-                row.exists = true;
-            }
-            Action::Set => {
-                let row = set_fields(&mut p, spec.table, entity, o.hlc, &payload);
-                if op::set_upserts(spec.table) {
-                    row.exists = true;
-                }
-            }
-            Action::Revise => {
-                let mut fields = payload.clone();
-                fields.remove("message_id");
-                fields.remove("post_id");
-                fields.insert("edited_at".into(), json!(o.time()));
-                let row = set_fields(&mut p, spec.table, entity, o.hlc, &fields);
-                row.edits += 1;
-            }
-            Action::Delete => {
-                let mut fields = one("deleted_at", json!(o.time()));
-                if trash_item {
-                    fields.insert("deleted_by_account_id".into(), json!(o.account_id));
-                }
-                set_fields(&mut p, spec.table, entity, o.hlc, &fields);
-            }
-            Action::Restore => {
-                let mut fields = one("deleted_at", Value::Null);
-                if trash_item {
-                    fields.insert("deleted_by_account_id".into(), Value::Null);
-                }
-                set_fields(&mut p, spec.table, entity, o.hlc, &fields);
-            }
-            Action::Archive => {
-                set_fields(&mut p, spec.table, entity, o.hlc, &one("archived_at", json!(o.time())));
-            }
-            Action::Unarchive => {
-                set_fields(&mut p, spec.table, entity, o.hlc, &one("archived_at", Value::Null));
-            }
-            Action::SetAdd | Action::SetRemove => {
-                // element key: entity + canonical payload (serde_json maps are sorted)
-                let key = format!("{entity}|{}", Value::Object(payload.clone()));
-                let elem = p.set_clocks.entry((spec.table.to_string(), key.clone())).or_default();
-                if spec.action == Action::SetAdd {
-                    elem.add(o.hlc);
-                } else {
-                    elem.remove(o.hlc);
-                }
-                let present = elem.is_present();
-                p.sets.entry(spec.table.to_string()).or_default().insert(key, present);
-            }
-            Action::Front => {
-                if let (Some(acct), Ok(f)) = (scope_account(o), FrontOp::from_op(o)) {
-                    front_ops.entry(acct.to_string()).or_default().push(f);
-                } else {
-                    p.opaque += 1;
-                }
-            }
-            Action::Special => special(&mut p, o, &payload, &mut reads),
-            Action::Admin => p.opaque += 1,
-        }
+        apply_op(&mut p, o, &mut front_ops, &mut reads);
     }
 
     for (acct, ops) in front_ops {
@@ -202,28 +127,117 @@ pub fn project<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Projection {
         p.fronts.insert(acct, folded);
     }
     for (key, (marks, manual)) in reads {
-        let floor = manual.as_ref().map(|m| m.2);
-        let best_mark =
-            marks.into_iter().filter(|m| floor.is_none_or(|f| m.2 > f)).max_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
-        let effective = match (best_mark, manual) {
-            (Some(m), Some(s)) => {
-                if (m.0, &m.1) > (s.0, &s.1) {
-                    m
-                } else {
-                    s
-                }
-            }
-            (Some(m), None) => m,
-            (None, Some(s)) => s,
-            (None, None) => continue,
-        };
-        let row = p.rows.entry("read_state".into()).or_default().entry(key).or_default();
-        row.exists = true;
-        row.fields.insert("last_read_message_id".into(), json!(effective.1));
-        row.fields.insert("last_read_message_at".into(), json!(effective.0));
+        if let Some(row) = read_row(marks, manual) {
+            p.rows.entry("read_state".into()).or_default().insert(key, row);
+        }
     }
     p.set_clocks.clear();
     p
+}
+
+/// The effective read position for one read-state key: the furthest mark newer than the last
+/// manual `read.set`, or that set.
+pub(crate) fn read_row(marks: Vec<ReadMark>, manual: Option<ReadMark>) -> Option<Row> {
+    let floor = manual.as_ref().map(|m| m.2);
+    let best_mark =
+        marks.into_iter().filter(|m| floor.is_none_or(|f| m.2 > f)).max_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+    let effective = match (best_mark, manual) {
+        (Some(m), Some(s)) => {
+            if (m.0, &m.1) > (s.0, &s.1) {
+                m
+            } else {
+                s
+            }
+        }
+        (Some(m), None) => m,
+        (None, Some(s)) => s,
+        (None, None) => return None,
+    };
+    let mut row = Row { exists: true, ..Default::default() };
+    row.fields.insert("last_read_message_id".into(), json!(effective.1));
+    row.fields.insert("last_read_message_at".into(), json!(effective.0));
+    Some(row)
+}
+
+/// Apply one op to a projection (the body of [`project`]; also used by the incremental
+/// [`crate::projector::Projector`], so both share exactly one definition of every op's effect).
+pub(crate) fn apply_op(p: &mut Projection, o: &Op, front_ops: &mut BTreeMap<String, Vec<FrontOp>>, reads: &mut Reads) {
+    let Ok(Known::Yes(spec)) = op::validate(o) else {
+        p.opaque += 1;
+        return;
+    };
+    let entity = o.entity().unwrap_or("");
+    let payload = o.payload_obj().cloned().unwrap_or_default();
+    let trash_item = matches!(spec.table, "message" | "post" | "member" | "member_group" | "channel");
+    match spec.action {
+        Action::Create | Action::Append => {
+            let mut fields = payload.clone();
+            if trash_item {
+                fields.insert("created_by_account_id".into(), json!(o.account_id));
+            }
+            if spec.action == Action::Append {
+                fields.insert("occurred_at".into(), json!(o.time()));
+                fields.insert("account_id".into(), json!(o.account_id));
+            }
+            let row = set_fields(p, spec.table, entity, o.hlc, &fields);
+            row.exists = true;
+        }
+        Action::Set => {
+            let row = set_fields(p, spec.table, entity, o.hlc, &payload);
+            if op::set_upserts(spec.table) {
+                row.exists = true;
+            }
+        }
+        Action::Revise => {
+            let mut fields = payload.clone();
+            fields.remove("message_id");
+            fields.remove("post_id");
+            fields.insert("edited_at".into(), json!(o.time()));
+            let row = set_fields(p, spec.table, entity, o.hlc, &fields);
+            row.edits += 1;
+        }
+        Action::Delete => {
+            let mut fields = one("deleted_at", json!(o.time()));
+            if trash_item {
+                fields.insert("deleted_by_account_id".into(), json!(o.account_id));
+            }
+            set_fields(p, spec.table, entity, o.hlc, &fields);
+        }
+        Action::Restore => {
+            let mut fields = one("deleted_at", Value::Null);
+            if trash_item {
+                fields.insert("deleted_by_account_id".into(), Value::Null);
+            }
+            set_fields(p, spec.table, entity, o.hlc, &fields);
+        }
+        Action::Archive => {
+            set_fields(p, spec.table, entity, o.hlc, &one("archived_at", json!(o.time())));
+        }
+        Action::Unarchive => {
+            set_fields(p, spec.table, entity, o.hlc, &one("archived_at", Value::Null));
+        }
+        Action::SetAdd | Action::SetRemove => {
+            // element key: entity + canonical payload (serde_json maps are sorted)
+            let key = format!("{entity}|{}", Value::Object(payload.clone()));
+            let elem = p.set_clocks.entry((spec.table.to_string(), key.clone())).or_default();
+            if spec.action == Action::SetAdd {
+                elem.add(o.hlc);
+            } else {
+                elem.remove(o.hlc);
+            }
+            let present = elem.is_present();
+            p.sets.entry(spec.table.to_string()).or_default().insert(key, present);
+        }
+        Action::Front => {
+            if let (Some(acct), Ok(f)) = (scope_account(o), FrontOp::from_op(o)) {
+                front_ops.entry(acct.to_string()).or_default().push(f);
+            } else {
+                p.opaque += 1;
+            }
+        }
+        Action::Special => special(p, o, &payload, reads),
+        Action::Admin => p.opaque += 1,
+    }
 }
 
 fn special(p: &mut Projection, o: &Op, payload: &Map<String, Value>, reads: &mut Reads) {

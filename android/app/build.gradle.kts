@@ -12,12 +12,17 @@ android {
         applicationId = "garden.vayne.chorus"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // every commit is a newer build, so in-app updates (M12.3) always move forward
+        val commits = providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }
+            .standardOutput.asText.get().trim().toIntOrNull() ?: 1
+        versionCode = commits
+        versionName = "0.1.$commits"
     }
     buildTypes {
         release {
             isMinifyEnabled = false
+            // signed with this PC's debug key so builds stay upgradable in place (D-060)
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -47,6 +52,8 @@ dependencies {
     implementation(libs.androidx.sqlite)
     implementation(libs.work.runtime)
     testImplementation(libs.junit)
+    // the real org.json for JVM tests (Android's is a stub there)
+    testImplementation(libs.orgjson)
 }
 
 kapt {

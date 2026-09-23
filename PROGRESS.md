@@ -14,10 +14,10 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** nothing claimed — pick from the suggestions below
+- **In progress:** gpt-6-sol batch 3 on branch `sol/batch-2` (worktree `F:\DunBuild\Chorus-sol`): merge main, finish T6, audit items A1–A4, then T7–T13 — see `docs/handoff/sol-batch-3.md`. Claude audits and merges afterwards; don't start those tasks on `main`.
 - **Owner:** —
 - **Next concrete step:** see Notes
-- **Notes:** State 2026-09-23 (end of Claude session 2). Since gpt-6-sol's turn: audited + finished M5.12 Trash (fixed early out-of-order restores being rejected permanently); Android quick-switch widget + search launcher (RemoteViews, D-058; built + unit-tested, **not yet run on a device** — the phone dropped off adb); follows end to end (M6.1: server-written requests/prefs, People page with presets; per-member "followers hear when X fronts"); switch notifications core (`chorus_core::notify`) + server scheduler (`notifier.rs`) + follower view/inbox on the web — verified in the browser that nothing is revealed before due. **C: has <1 GB free: always `CARGO_TARGET_DIR=F:\DunBuild\chorus-target` and `CHORUS_GRADLE_BUILD_DIR=F:\DunBuild\chorus-gradle`** (deploy/web/android scripts honour them now; the dev-server launch config runs the F: release exe, so stop it before `cargo build --release`). The old `Chorus\target` on C: is stale and could be deleted by the owner to free space. Owner's Chorus service is stuck in StopPending: rerunning install.cmd (fixed installer) ends it. Suggested next: device check of M4.2/M4.5/M4.6 when the phone is on adb; M8.1 push (ntfy/UnifiedPush) so followers get pings off-page; bucket UI (M6.1 rest); M2.6 blobs → attachments/avatars; M9 stage mode; M7 journals.
+- **Notes:** State 2026-09-23 (end of Claude session 2). Since gpt-6-sol's turn: audited + finished M5.12 Trash (fixed early out-of-order restores being rejected permanently); Android quick-switch widget + search launcher (RemoteViews, D-058; built + unit-tested, **not yet run on a device** — the phone dropped off adb); follows end to end (M6.1: server-written requests/prefs, People page with presets; per-member "followers hear when X fronts"); switch notifications core (`chorus_core::notify`) + server scheduler (`notifier.rs`) + follower view/inbox on the web — verified in the browser that nothing is revealed before due. **C: has <1 GB free: always `CARGO_TARGET_DIR=F:\DunBuild\chorus-target` and `CHORUS_GRADLE_BUILD_DIR=F:\DunBuild\chorus-gradle`** (deploy/web/android scripts honour them now; the dev-server launch config runs the F: release exe, so stop it before `cargo build --release`). The stale `Chorus\target` on C: was cargo-cleaned on 2026-09-23 (C: had hit 0 bytes free); keep building on F:. Owner's Chorus service is stuck in StopPending: rerunning install.cmd (fixed installer) ends it. Suggested next: device check of M4.2/M4.5/M4.6 when the phone is on adb; M8.1 push (ntfy/UnifiedPush) so followers get pings off-page; bucket UI (M6.1 rest); M2.6 blobs → attachments/avatars; M9 stage mode; M7 journals.
 
 ---
 
@@ -68,8 +68,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M2.3 Op ingestion: validate → permission → append → project (single writer task)
 - [x] M2.4 Projections for all tables + rebuild-from-log command
 - [x] M2.5 Sync WebSocket (hello/push/pull/ack/snapshot/hash) per SYNC.md
-- [ ] M2.6 Blob store (content-addressed, resumable upload)
-- [ ] M2.7 Read API (REST) + follower views
+- [x] M2.6 Blob store (content-addressed, resumable upload) — gpt-6-sol batch 2 T1 (merged 18e4d6e)
+- [~] M2.7 Read API (REST) + follower views — /me, /members(/{id}), /groups, /fields, /states, /front, /front/switches|intervals|daily|reviews, /accounts/{id}/view done; messages/posts/profiles/feeds reads wait for M5.7/M5.8/M7
 - [ ] M2.8 Nightly backups + `chorus-server backup|restore|rebuild|export` CLI
 
 ### M3 — Web client foundation
@@ -84,7 +84,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 - [ ] M4.1 Theme + components mirroring DESIGN.md
 - [~] M4.2 Room (SQLCipher) + outbox + sync engine (via core UniFFI) + WorkManager
-- [ ] M4.3 Onboarding via invite link / QR
+- [~] M4.3 Onboarding via invite link / QR — the web "Link another device" now shows a QR of the one-use link (server qr.rs, decoded with OpenCV); in-app camera scanning not needed while the phone camera opens the link
 - [ ] M4.4 Members, groups, switcher, front history
 - [~] M4.5 Quick-switch widget (RemoteViews, D-058): recent grid, folders, mode chip, undo — built + unit-tested; needs a device check; pins not done
 - [~] M4.6 Search launcher activity + app shortcuts — SearchActivity + static "Switch…" shortcut; dynamic pinned shortcuts not done; needs a device check
@@ -96,19 +96,19 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M5.3 Replies (incl. cross-channel), quotes (full/partial), forwards, edits+history, deletes, pins
 - [x] M5.4 Reactions, mentions, read states, unread badges
 - [x] M5.5 Threads
-- [ ] M5.6 Attachments + images (offline-queued upload)
+- [x] M5.6 Attachments + images (offline-queued upload) — web (batch 2 T2); Android display not yet
 - [ ] M5.7 Hidden messages: spoilers, CW/collapsed, member-visible, system-only
 - [ ] M5.8 Search (FTS5 server, local search on Android)
 - [x] M5.9 Segmented messages (newline annotations) — parse, store `message_segment`, render
 - [ ] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward
 - [x] M5.11 Forward/quote a selection (range or multi-message bundle)
 - [x] M5.12 Trash + restore for messages, posts, members, groups, channels
-- [ ] M5.13 Custom emoji: server-wide set, upload/crop, picker + `:name:` autocomplete, reactions (D-054)
+- [x] M5.13 Custom emoji: server-wide set, upload/crop, picker + `:name:` autocomplete, reactions (D-054) — web (batch 2 T4)
 
 ### M6 — Sharing
 
-- [~] M6.1 Person accounts, follows, privacy buckets — follows done end to end (server-written requests/prefs, REST, web People page with presets); bucket UI + per-member announce policy UI still to do
-- [ ] M6.2 Shared spaces + DMs between accounts
+- [x] M6.1 Person accounts, follows, privacy buckets — follows (Claude) + buckets, account default ceiling, per-member bucket announce (batch 2 T5)
+- [~] M6.2 Shared spaces + DMs between accounts — server (spaces.rs: create/add/leave/authors, connected accounts only) + web (spaces rail, DM from People, new shared space, author cards) done; Android not yet; roles/permissions are M5.10
 - [~] M6.3 Follower views (delayed/fuzzed front state per NOTIFICATIONS.md §5) — server reveal + GET /accounts/{id}/view + web People page (fuzzed "since", recent switches, browser notifications while open) done; history/stats surfaces not yet
 
 ### M7 — Profiles & journals
@@ -121,10 +121,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M8 — Notifications
 
-- [ ] M8.1 ntfy/UnifiedPush plumbing (server publisher, Android distributor registration)
+- [~] M8.1 ntfy/UnifiedPush plumbing (server publisher, Android distributor registration) — server encrypt+send and Android connector/decrypt/notification done (D-059); needs a device check with the ntfy app installed and pointed at ntfy.vayne.garden
 - [~] M8.2 Rule resolution: per-switch × per-member × system ceiling × recipient prefs — core + server scheduler done (notifier.rs: queue on front change, reveal/deliver loop, GET /notifications); push delivery is M8.1
 - [~] M8.3 Random delay, time fuzzing, supersede/collapse, digests, quiet hours — core rules + property tests done; server pending (digest text too)
-- [ ] M8.4 Chat notifications (mentions, DMs, replies), inline reply
+- [~] M8.4 Chat notifications (mentions, DMs, replies), inline reply — cross-account mentions/replies/DMs queued on ingest, inbox + push (activity.rs); per-channel/per-member settings and inline reply not yet; hidden messages skipped until M5.7
 
 ### M9 — Stage (screenshot) mode
 
@@ -136,7 +136,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M10 — Data
 
 - [ ] M10.1 Insights dashboards
-- [ ] M10.2 API tokens, SSE stream, webhooks
+- [x] M10.2 API tokens, SSE stream, webhooks — tokens + webhooks on the web "Your data" page, front/members reads, SSE front stream, OBS overlay; message/post webhook events wait for M5.7/M7
 - [ ] M10.3 Exports (JSONL op log, tidy CSVs, SQLite copy), documented views
 
 ### M11 — Import
@@ -146,8 +146,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M12 — Ship
 
 - [x] M12.1 Deploy scripts (NSSM service, Caddy snippet, ntfy)
-- [ ] M12.2 Disclosure card, screenshots, README, publish to GitHub
-- [ ] M12.3 In-app APK updates + silent OTA (CLIENTS.md §5a)
+- [~] M12.2 Disclosure card, screenshots, README, publish to GitHub — card (Disclosure Studio: claude-opus-5.5 + gpt-6-sol), fresh screenshots and README done; publishing waits for the owner
+- [~] M12.3 In-app APK updates + silent OTA (CLIENTS.md §5a) — server endpoints, deploy -Android, app updater (D-060) done; needs a device check
 
 ### Later (not v1)
 
@@ -156,7 +156,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [ ] L3 Render stage to PNG in-app
 - [ ] L4 Quick Settings tile, Wear OS
 - [ ] L5 Sealed (client-encrypted) member-private entries
-- [ ] L6 Web push for the PWA
+- [~] L6 Web push for the PWA — server VAPID + service-worker push/click handlers + People-page opt-in (D-061); not yet tried against a real browser push service; owner to confirm Q13
 
 ---
 
@@ -204,3 +204,11 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 gpt-6-sol — M5.9 segmented-message Advanced toggle, per-segment avatars and editing with preserved UTF-16 offsets/authors; web and server projection tests pass
 - 2026-09-23 gpt-6-sol — M5.11 range and multi-message quote/forward snapshots, destination picker, outward-share confirmation, UTF-16 clipping and projection tests
 - 2026-09-23 claude-opus-5.5 — M5.12 M5.12 Trash (finished gpt-6-sol's WIP): restore limited to creator/latest deleter (core::restore, both servers), searchable web Trash + per-channel 'Show deleted'; fixed early out-of-order restores being rejected permanently; fixtures blessed for the new trash stamps
+- 2026-09-23 claude-opus-5.5 — perf (SPEC §9): incremental projector (core/projector.rs) + store `touched` ids + projection deltas to the web; send-message cost on a 55k-op history 640 ms → 0.12 ms native; checked against the reference by a property test and inside the convergence simulator (3000 seeds).
+- 2026-09-23 claude-opus-5.5 — audited + merged gpt-6-sol batch 2 (T1 blobs, T2 attachments, T3 avatars incl. PK + Android display, T4 custom emoji, T5 buckets); T6 backups was in progress, uncommitted, left in the worktree. Android now applies projection deltas too.
+- 2026-09-23 claude-opus-5.5 — M10.2 webhooks (webhooks.rs): signed POSTs (HMAC-SHA256 of t.body) for front.switch/member.created/member.updated/follow.requested, test ping, retries 1m…12h then off with the reason, tailnet-only URLs (resolved on save and per delivery); web Your data section. E2E test + verified in the browser against a local receiver. Also freed C: (0 MB free blocked writes) by cargo-cleaning the stale Chorus\target (17 GB of build output).
+- 2026-09-23 claude-opus-5.5 — M2.7 more reads (api_reads.rs): /me, /members/{id} (groups + field values), /groups, /fields, /states, /front/daily, /front/reviews; scope-checked for tokens. E2E test.
+- 2026-09-23 claude-opus-5.5 — write:front tokens + POST /front/switch (api_writes.rs; ingest::op_as generalises server_op): entries by id or by member/group/state name, typed time, note, notify; attributed to token:<id>; web Your data scope + example. E2E test; verified in the browser (switch posted with a token appears live in History).
+- 2026-09-23 claude-opus-5.5 — L6 Web Push (D-061, Q13): VAPID key in server_meta + GET /push/vapid, RFC 8292 header for web devices only, SW push/notificationclick handlers, web/src/lib/push.ts + People-page opt-in. Unit tests (JWT verifies, web-only VAPID) + SW handlers run in a Node harness; real browser push not tried (the pane has notifications denied).
+- 2026-09-23 claude-opus-5.5 — M6.2 shared spaces + DMs: POST /spaces (shared|dm, one DM per pair, follow-connected accounts only), add (owner), leave (self-leave now revokes access), author cards for other accounts' members; web spaces rail + DM header, People 'Message' + 'Start a shared space'. E2E test (live scope grant, message delivery, cards, leave); verified in the browser (DM + Book club created, message sent). Sol's A1 note updated to share the author rule.
+- 2026-09-23 claude-opus-5.5 — QR codes for device invites: dependency-free encoder (qr.rs, byte/M/v1–10, masks scored) → qr_svg on POST /devices/invite, shown in Link another device; samples decoded by OpenCV (scripts/qr-check.py) incl. versions 7–9. Shared-space hint about the chat side channel (NOTIFICATIONS §5.6).

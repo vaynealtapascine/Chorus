@@ -8,6 +8,8 @@
   import { sync, type Projection } from '../sync/client';
   import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
   import AvatarImage from './AvatarImage.svelte';
+  import { disablePush, enablePush, pushActive, pushSupported } from '../push';
+  import { createShared, openDm } from '../spaces';
 
   let { projection }: { projection: Projection } = $props();
 
@@ -18,15 +20,23 @@
   interface View { entries: ViewEntry[]; since: number | null; time?: { mode?: string }; shared?: boolean }
   interface Note {
     id: string;
+    kind: 'switch' | 'mention' | 'dm' | 'reply';
     text: string;
+    title?: string;
+    channel_id?: string;
     time: { at: number | null; precision: Precision; part?: Part | null };
-    account: { handle: string | null; display_name: string | null };
+    account?: { handle: string | null; display_name: string | null };
   }
+  const noteTitle = (n: Note) => n.account?.display_name ?? (n.account?.handle ? `@${n.account.handle}` : (n.title ?? 'Chorus'));
 
   let views = $state<Record<string, View>>({});
   let notes = $state<Note[]>([]);
   let seenNotes = new Set<string>();
   let canNotify = $state(typeof Notification !== 'undefined' && Notification.permission === 'granted');
+  // Web Push: notifications even with no Chorus tab open (only in the built app)
+  let pushOn = $state(false);
+  let pushNote = $state('');
+  pushActive().then((on) => (pushOn = on));
   let following = $state<FollowRow[]>([]);
   let followers = $state<FollowRow[]>([]);
   let target = $state('');
@@ -111,8 +121,8 @@
     const j = await api('/notifications');
     const fresh = (j.items as Note[]).filter((n) => !seenNotes.has(n.id));
     // a desktop notification for anything new while this page is open (not on first load)
-    if (seenNotes.size && canNotify && document.hidden) {
-      for (const n of fresh) new Notification(n.account.display_name ?? 'Chorus', { body: n.text, tag: n.id });
+    if (seenNotes.size && canNotify && !pushOn && document.hidden) {
+      for (const n of fresh) new Notification(noteTitle(n), { body: n.text, tag: n.id });
     }
     for (const n of j.items as Note[]) seenNotes.add(n.id);
     notes = j.items;
@@ -124,7 +134,21 @@
   });
 
   async function enableNotifications() {
+    if (pushSupported()) {
+      const err = await enablePush();
+      pushOn = !err;
+      pushNote = err ?? '';
+      if (!err) {
+        canNotify = true;
+        return;
+      }
+    }
     canNotify = (await Notification.requestPermission()) === 'granted';
+  }
+
+  async function turnOffPush() {
+    await disablePush();
+    pushOn = false;
   }
 
   function viewLine(v: View | undefined): string {
@@ -164,6 +188,35 @@
   async function unfollow(id: string) {
     await api(`/follows/${id}`, { method: 'DELETE' });
     await load();
+  }
+
+  // Shared spaces and DMs (M6.2) are for people you're connected to, either way round.
+  const connections = $derived(
+    [...new Map([...followers, ...following].filter((f) => f.status === 'active').map((f) => [f.account.id, f.account])).values()],
+  );
+  let spaceName = $state('');
+  let spaceWith = $state<string[]>([]);
+
+  async function message(accountId: string) {
+    error = '';
+    try {
+      location.hash = `#/chat/space:${await openDm(accountId)}`;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  async function newSpace(e: SubmitEvent) {
+    e.preventDefault();
+    error = '';
+    try {
+      const id = await createShared(spaceName.trim(), spaceWith);
+      spaceName = '';
+      spaceWith = [];
+      location.hash = `#/chat/space:${id}`;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
   }
 
   function ceilingOf(id: string): string {
@@ -245,7 +298,10 @@
             {/each}
           </div>
         {/if}
-        <div class="actions"><button class="ghost" onclick={() => remove(f.id)}>Remove</button></div>
+        <div class="actions">
+          <button class="ghost" onclick={() => message(f.account.id)}>Message</button>
+          <button class="ghost" onclick={() => remove(f.id)}>Remove</button>
+        </div>
       </li>
     {:else}
       <li class="muted">No followers yet. Share your handle with friends.</li>
@@ -306,6 +362,7 @@
           {/if}
         </div>
         <div class="actions">
+          {#if f.status === 'active'}<button class="ghost" onclick={() => message(f.account.id)}>Message</button>{/if}
           <button class="ghost" onclick={() => unfollow(f.id)}>{f.status === 'requested' ? 'Cancel' : 'Unfollow'}</button>
         </div>
       </li>
@@ -314,18 +371,42 @@
     {/each}
   </ul>
 
+  {#if connections.length}
+    <h2>Shared spaces</h2>
+    <p class="hint">
+      A chat with people you're connected to. What you post there is seen as it's sent, so it also shows who's
+      around at that moment, even if your switch notifications are delayed.
+    </p>
+    <form class="card new-space" onsubmit={newSpace}>
+      <input bind:value={spaceName} placeholder="Name (e.g. Book club)" aria-label="Shared space name" maxlength="80" required />
+      <div class="bucket-checks" aria-label="Who to bring in">
+        {#each connections as a (a.id)}
+          <label><input type="checkbox" value={a.id} bind:group={spaceWith} /> {name(a)}</label>
+        {/each}
+      </div>
+      <button class="primary" disabled={!spaceName.trim()}>Start a shared space</button>
+    </form>
+  {/if}
+
   {#if notes.length || following.length}
     <div class="notes-head">
-      <h2>Recent switches</h2>
-      {#if typeof Notification !== 'undefined' && !canNotify}
+      <h2>Recent</h2>
+      {#if pushOn}
+        <button class="ghost" onclick={turnOffPush}>Stop notifying this browser</button>
+      {:else if typeof Notification !== 'undefined' && (!canNotify || pushSupported())}
         <button class="ghost" onclick={enableNotifications}>Notify me in this browser</button>
       {/if}
     </div>
+    {#if pushNote}<p class="muted">{pushNote} Notifications will show while this page is open.</p>{/if}
     <ul>
       {#each notes as n (n.id)}
         <li class="note">
-          <strong>{n.account.display_name ?? `@${n.account.handle}`}</strong>
-          <span>{n.text}</span>
+          <strong>{noteTitle(n)}</strong>
+          {#if n.kind !== 'switch' && n.channel_id}
+            <a href="#/chat/{n.channel_id}">{n.text}</a>
+          {:else}
+            <span>{n.text}</span>
+          {/if}
           <time>{fuzzyWhen(n.time.at, n.time.precision, n.time.part)}</time>
         </li>
       {:else}
@@ -361,6 +442,8 @@
   .bucket-new input, .bucket-row input { font: inherit; min-width: 10ch; padding: var(--s-1) var(--s-2); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
   .bucket-row label { display: grid; gap: 2px; }
   .bucket-checks { width: 100%; font-size: var(--fs-sm); }
+  .new-space input:not([type='checkbox']) { font: inherit; flex: 1; min-width: 12ch; padding: var(--s-1) var(--s-2); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .primary:disabled { opacity: 0.5; }
   .preset { display: grid; gap: 2px; flex: 1; min-width: 14em; }
   select {
     font: inherit; font-size: var(--fs-sm); color: var(--ink); background: var(--surface-2);

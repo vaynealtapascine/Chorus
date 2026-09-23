@@ -35,6 +35,11 @@ pub struct Shared {
     pub cfg: Config,
     pub instance_id: String,
     peers: Mutex<HashMap<String, Peer>>,
+    /// Live events for `/api/v1/stream`: (account id, event JSON).
+    pub events: tokio::sync::broadcast::Sender<(String, serde_json::Value)>,
+    /// Webhook deliveries (and their retries) for the delivery task (webhooks.rs).
+    hooks: mpsc::UnboundedSender<crate::webhooks::Delivery>,
+    hook_rx: Mutex<Option<mpsc::UnboundedReceiver<crate::webhooks::Delivery>>>,
 }
 
 pub type AppState = Arc<Shared>;
@@ -42,7 +47,21 @@ pub type AppState = Arc<Shared>;
 impl Shared {
     pub fn new(conn: Connection, cfg: Config) -> anyhow::Result<AppState> {
         let instance_id = db::meta(&conn, "instance_id")?.unwrap_or_default();
-        Ok(Arc::new(Shared { db: Mutex::new(conn), cfg, instance_id, peers: Mutex::new(HashMap::new()) }))
+        // browser push services want to know how to reach the operator (RFC 8292 `sub`)
+        let url = &cfg.server.public_url;
+        let sub = if url.starts_with("https://") { url.clone() } else { crate::push::DEFAULT_SUBJECT.into() };
+        db::set_meta(&conn, "push_subject", &sub)?;
+        let (events, _) = tokio::sync::broadcast::channel(256);
+        let (hooks, hook_rx) = mpsc::unbounded_channel();
+        Ok(Arc::new(Shared {
+            db: Mutex::new(conn),
+            cfg,
+            instance_id,
+            peers: Mutex::new(HashMap::new()),
+            events,
+            hooks,
+            hook_rx: Mutex::new(Some(hook_rx)),
+        }))
     }
 
     fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -60,6 +79,9 @@ impl Shared {
 }
 
 pub fn router(state: AppState) -> Router {
+    if let Some(rx) = state.hook_rx.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        run_webhooks(state.clone(), rx);
+    }
     let api = Router::new()
         .route("/server", get(server_info))
         .route("/auth/redeem", post(redeem))
@@ -69,7 +91,32 @@ pub fn router(state: AppState) -> Router {
         .route("/follows", get(follows_list).post(follow_request))
         .route("/follows/{id}/prefs", put(follow_prefs))
         .route("/follows/{id}", delete(follow_end))
+        .route("/devices/push", put(push_register).delete(push_unregister))
+        .route("/push/vapid", get(push_vapid))
+        .route("/android/latest", get(android_latest))
         .route("/notifications", get(notifications))
+        .route("/tokens", get(tokens_list).post(tokens_create))
+        .route("/tokens/{id}", delete(tokens_revoke))
+        .route("/webhooks", get(webhooks_list).post(webhooks_create))
+        .route("/webhooks/{id}", put(webhooks_update).delete(webhooks_remove))
+        .route("/webhooks/{id}/test", post(webhooks_test))
+        .route("/front", get(front_now))
+        .route("/front/switches", get(front_switches))
+        .route("/front/intervals", get(front_intervals))
+        .route("/members", get(members_list))
+        .route("/members/{id}", get(member_one))
+        .route("/groups", get(groups_list))
+        .route("/fields", get(fields_list))
+        .route("/states", get(states_list))
+        .route("/front/switch", post(front_switch))
+        .route("/front/daily", get(front_daily))
+        .route("/front/reviews", get(front_reviews))
+        .route("/me", get(me))
+        .route("/stream", get(stream))
+        .route("/spaces", get(spaces_list).post(spaces_create))
+        .route("/spaces/{id}/members", post(spaces_add))
+        .route("/spaces/{id}/members/me", delete(spaces_leave))
+        .route("/spaces/{id}/authors", get(spaces_authors))
         .route("/emoji", get(emoji_list))
         .route("/accounts/{id}/view", get(account_view))
         .route(
@@ -80,7 +127,11 @@ pub fn router(state: AppState) -> Router {
                 .layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
         )
         .route("/sync", get(sync_ws));
-    let mut app = Router::new().nest("/api/v1", api).with_state(state.clone());
+    let mut app = Router::new()
+        .nest("/api/v1", api)
+        .route("/download/android", get(android_download))
+        .route("/overlay/front", get(overlay_front))
+        .with_state(state.clone());
     if let Some(dir) = state.cfg.server.web_dir.clone() {
         let index = dir.join("index.html");
         app = app.fallback_service(
@@ -243,7 +294,9 @@ async fn device_invite(
         now,
     )?;
     let url = format!("{}/i/{code}", s.cfg.server.public_url.trim_end_matches('/'));
-    Ok(Json(json!({"code": code, "url": url, "expires_at": now + 86_400_000})))
+    // scan with the other device's camera instead of copying the link across (qr.rs)
+    let qr_svg = crate::qr::encode(&url).map(|q| q.svg());
+    Ok(Json(json!({"code": code, "url": url, "qr_svg": qr_svg, "expires_at": now + 86_400_000})))
 }
 
 // ─── follows (API.md §3) ────────────────────────────────────────────────────
@@ -324,6 +377,395 @@ async fn follow_end(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// This device's UnifiedPush endpoint and Web Push keys (NOTIFICATIONS.md §1).
+async fn push_register(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<crate::push::Registration>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    crate::push::register(&conn, &me.device_id, &b)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "bad_request", e.to_string()))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// The server's VAPID public key, for a browser's `pushManager.subscribe` (push.rs).
+async fn push_vapid(State(s): State<AppState>) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(json!({"public_key": crate::push::vapid_public(&s.db())?})))
+}
+
+async fn push_unregister(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    crate::push::unregister(&conn, &me.device_id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// The released Android build, if the owner deployed one (`chorus.json` beside `chorus.apk`).
+fn android_release(s: &AppState) -> Option<serde_json::Value> {
+    let dir = s.cfg.android_dir()?;
+    let meta: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("chorus.json")).ok()?).ok()?;
+    dir.join("chorus.apk").is_file().then_some(meta)
+}
+
+/// `{version_code, version_name, sha256, size, changelog}` for the in-app updater (CLIENTS.md §5a).
+async fn android_latest(State(s): State<AppState>) -> Result<Json<serde_json::Value>, ApiError> {
+    let mut meta = android_release(&s)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "no Android build published".into()))?;
+    meta["url"] = json!(format!("{}/download/android", s.cfg.server.public_url.trim_end_matches('/')));
+    Ok(Json(meta))
+}
+
+async fn android_download(State(s): State<AppState>) -> Result<Response, ApiError> {
+    let dir =
+        s.cfg.android_dir().ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "no Android build".into()))?;
+    let bytes = tokio::fs::read(dir.join("chorus.apk"))
+        .await
+        .map_err(|_| ApiError(StatusCode::NOT_FOUND, "not_found", "no Android build".into()))?;
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "application/vnd.android.package-archive"),
+            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"chorus.apk\""),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+// ─── your data: tokens, reads, stream (api_data.rs) ─────────────────────────
+
+impl From<crate::api_data::DataError> for ApiError {
+    fn from(e: crate::api_data::DataError) -> Self {
+        use crate::api_data::DataError as D;
+        let (s, c) = match &e {
+            D::Unauthenticated => (StatusCode::UNAUTHORIZED, "unauthenticated"),
+            D::Scope(_) => (StatusCode::FORBIDDEN, "forbidden"),
+            D::Bad(_) => (StatusCode::BAD_REQUEST, "bad_request"),
+            D::Internal(e) => {
+                tracing::error!(error = %e, "internal error");
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal")
+            }
+        };
+        ApiError(s, c, e.to_string())
+    }
+}
+
+fn principal(
+    s: &AppState,
+    conn: &Connection,
+    headers: &axum::http::HeaderMap,
+) -> Result<crate::api_data::Principal, ApiError> {
+    Ok(crate::api_data::principal(conn, bearer(headers)?, now_ms(), s.session_ttl())?)
+}
+
+#[derive(Deserialize)]
+struct TokenIn {
+    name: String,
+    scopes: Vec<String>,
+}
+
+async fn tokens_create(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<TokenIn>,
+) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    let v = crate::api_data::create_token(&conn, &p, &b.name, &b.scopes, now_ms())?;
+    Ok((StatusCode::CREATED, Json(v)).into_response())
+}
+
+async fn tokens_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_data::list_tokens(&conn, &p)?))
+}
+
+async fn tokens_revoke(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    crate::api_data::revoke_token(&conn, &p, &id, now_ms())?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize, Default)]
+struct Range {
+    from: Option<i64>,
+    to: Option<i64>,
+    limit: Option<i64>,
+    subject: Option<String>,
+    level: Option<String>,
+    /// EventSource can't send headers, so the stream (only) also takes `?token=`.
+    token: Option<String>,
+}
+
+async fn front_now(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_data::current_front(&conn, &p)?))
+}
+
+async fn front_switches(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<Range>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_data::switches(&conn, &p, q.from, q.to, q.limit)?))
+}
+
+async fn front_intervals(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<Range>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_data::intervals(&conn, &p, q.from, q.to, q.subject.as_deref(), q.level.as_deref())?))
+}
+
+async fn members_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_data::members(&conn, &p)?))
+}
+
+/// Log a switch from a script, NFC tag or Tasker (`write:front`, api_writes.rs).
+async fn front_switch(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<crate::api_writes::SwitchIn>,
+) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    let o = crate::api_writes::switch(&conn, &p, &b, now_ms())?;
+    fan_out(&s, &conn, std::slice::from_ref(&o), None)?;
+    let mut v = json!({"switch_id": o.entity_id, "op_id": o.id, "occurred_at": o.occurred_at});
+    if p.allows("read:front") {
+        v["front"] = crate::api_data::current_front(&conn, &p)?["front"].take();
+    }
+    Ok((StatusCode::CREATED, Json(v)).into_response())
+}
+
+// ─── shared spaces and DMs (spaces.rs) ──────────────────────────────────────
+
+impl From<crate::spaces::SpaceError> for ApiError {
+    fn from(e: crate::spaces::SpaceError) -> Self {
+        use crate::spaces::SpaceError as E;
+        match e {
+            E::Bad(m) => ApiError(StatusCode::BAD_REQUEST, "bad_request", m),
+            E::NotFound => ApiError(StatusCode::NOT_FOUND, "not_found", "no such space".into()),
+            E::Forbidden(m) => ApiError(StatusCode::FORBIDDEN, "forbidden", m),
+            E::Internal(e) => e.into(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct SpaceIn {
+    kind: String,
+    name: Option<String>,
+    #[serde(default)]
+    accounts: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct AccountsIn {
+    accounts: Vec<String>,
+}
+
+async fn spaces_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    Ok(Json(crate::spaces::list(&conn, &me.account_id)?))
+}
+
+async fn spaces_create(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<SpaceIn>,
+) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let (id, ops) = crate::spaces::create(&conn, &me.account_id, &b.kind, b.name.as_deref(), &b.accounts, now_ms())?;
+    let created = !ops.is_empty();
+    fan_out(&s, &conn, &ops, None)?;
+    let status = if created { StatusCode::CREATED } else { StatusCode::OK };
+    Ok((status, Json(json!({"id": id}))).into_response())
+}
+
+async fn spaces_add(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    Json(b): Json<AccountsIn>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let ops = crate::spaces::add(&conn, &me.account_id, &id, &b.accounts, now_ms())?;
+    fan_out(&s, &conn, &ops, None)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn spaces_leave(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let ops = crate::spaces::leave(&conn, &me.account_id, &id, now_ms())?;
+    fan_out(&s, &conn, &ops, None)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn spaces_authors(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    Ok(Json(crate::spaces::authors(&conn, &me.account_id, &id)?))
+}
+
+// ─── more reads (api_reads.rs) ───────────────────────────────────────────────
+
+async fn me(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_reads::me(&conn, &p)?))
+}
+
+async fn member_one(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    crate::api_reads::member(&conn, &p, &id)?
+        .map(Json)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "no such member".into()))
+}
+
+async fn groups_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_reads::groups(&conn, &p)?))
+}
+
+async fn fields_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_reads::fields(&conn, &p)?))
+}
+
+async fn states_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_reads::states(&conn, &p)?))
+}
+
+#[derive(Deserialize, Default)]
+struct DayRange {
+    from: Option<String>,
+    to: Option<String>,
+    level: Option<String>,
+    open: Option<u8>,
+}
+
+async fn front_daily(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<DayRange>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_reads::daily(&conn, &p, q.from.as_deref(), q.to.as_deref(), q.level.as_deref())?))
+}
+
+async fn front_reviews(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<DayRange>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_reads::reviews(&conn, &p, q.open.unwrap_or(0) != 0)?))
+}
+
+/// Server-sent events of the caller's own front (`stream` + `read:front`). The first event is the
+/// current front, then one per change.
+async fn stream(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<Range>,
+) -> Result<Response, ApiError> {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    let (account, first) = {
+        let conn = s.db();
+        let p = match q.token.as_deref() {
+            Some(t) => crate::api_data::principal(&conn, t, now_ms(), s.session_ttl())?,
+            None => principal(&s, &conn, &headers)?,
+        };
+        if !(p.allows("stream") && p.allows("read:front")) {
+            return Err(crate::api_data::DataError::Scope("stream").into());
+        }
+        let v = crate::api_data::current_front(&conn, &p)?;
+        (p.account_id.clone(), json!({"type": "front", "at": now_ms(), "front": v["front"], "since": v["since"]}))
+    };
+    let rx = s.events.subscribe();
+    let first = futures_util::stream::once(async move {
+        Ok::<_, std::convert::Infallible>(Event::default().event("front").data(first.to_string()))
+    });
+    let rest = futures_util::stream::unfold((rx, account), |(mut rx, account)| async move {
+        loop {
+            match rx.recv().await {
+                Ok((a, v)) if a == account => {
+                    return Some((Ok(Event::default().event("front").data(v.to_string())), (rx, account)));
+                }
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => return None,
+            }
+        }
+    });
+    Ok(Sse::new(futures_util::StreamExt::chain(first, rest)).keep_alive(KeepAlive::default()).into_response())
+}
+
+/// A transparent "who's fronting" pill for OBS: `/overlay/front?token=chorus_…` (API.md §6).
+async fn overlay_front() -> Response {
+    ([(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")], include_str!("../assets/overlay-front.html"))
+        .into_response()
+}
+
 async fn notifications(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -346,15 +788,156 @@ async fn account_view(
         .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "you don't follow this account".into()))
 }
 
+// ─── webhooks (webhooks.rs) ──────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct WebhookIn {
+    url: String,
+    events: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct WebhookPatch {
+    enabled: Option<bool>,
+    events: Option<Vec<String>>,
+}
+
+async fn webhooks_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::webhooks::list(&conn, &p)?))
+}
+
+async fn webhooks_create(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<WebhookIn>,
+) -> Result<Response, ApiError> {
+    // resolve the host before taking the db lock
+    let url = crate::webhooks::check_url(b.url.trim(), s.cfg.security.webhooks_allow_external)
+        .await
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "bad_request", e))?;
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    let v = crate::webhooks::create(&conn, &p, url.as_str(), &b.events, now_ms())?;
+    Ok((StatusCode::CREATED, Json(v)).into_response())
+}
+
+async fn webhooks_update(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    Json(b): Json<WebhookPatch>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    crate::webhooks::update(&conn, &p, &id, b.enabled, b.events.as_deref())?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn webhooks_remove(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    crate::webhooks::remove(&conn, &p, &id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Send a `ping` now and say how it went. A failed test is shown but never retried and never
+/// counts towards turning the webhook off.
+async fn webhooks_test(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let d = {
+        let conn = s.db();
+        let p = principal(&s, &conn, &headers)?;
+        crate::webhooks::test(&conn, &p, &id, now_ms())?
+    };
+    let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().unwrap_or_default();
+    let outcome = crate::webhooks::send(&http, &d, s.cfg.security.webhooks_allow_external, now_ms()).await;
+    let (status, error) = match &outcome {
+        Ok(st) => (Some(*st), None),
+        Err((st, e)) => (*st, Some(e.clone())),
+    };
+    s.db()
+        .execute(
+            "UPDATE webhook SET last_status = ?2, last_error = ?3 WHERE id = ?1",
+            rusqlite::params![d.webhook_id, status, error],
+        )
+        .map_err(anyhow::Error::from)?;
+    Ok(Json(json!({"ok": error.is_none(), "status": status, "error": error})))
+}
+
+/// Deliver webhooks: new deliveries arrive on `rx`; due ones go out once a second, each on its own
+/// task so a slow receiver can't hold up others. Retries come back through the same channel.
+fn run_webhooks(state: AppState, mut rx: mpsc::UnboundedReceiver<crate::webhooks::Delivery>) {
+    tokio::spawn(async move {
+        let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap_or_default();
+        let mut pending: Vec<crate::webhooks::Delivery> = Vec::new();
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+        loop {
+            tokio::select! {
+                d = rx.recv() => match d {
+                    Some(d) => pending.push(d),
+                    None => break,
+                },
+                _ = tick.tick() => {}
+            }
+            let now = now_ms();
+            let (due, later): (Vec<_>, Vec<_>) = pending.drain(..).partition(|d| d.due <= now);
+            pending = later;
+            for d in due {
+                let (state, http) = (state.clone(), http.clone());
+                tokio::spawn(async move {
+                    if !crate::webhooks::still_enabled(&state.db(), &d.webhook_id) {
+                        return;
+                    }
+                    let outcome =
+                        crate::webhooks::send(&http, &d, state.cfg.security.webhooks_allow_external, now_ms()).await;
+                    match crate::webhooks::record(&state.db(), &d, &outcome, now_ms()) {
+                        Ok(Some(retry)) => {
+                            let _ = state.hooks.send(retry);
+                        }
+                        Ok(None) => {}
+                        Err(e) => tracing::error!(error = %e, "webhooks: can't record outcome"),
+                    }
+                });
+            }
+        }
+    });
+}
+
 /// Reveal and deliver due follower notifications every few seconds (notifier.rs).
 fn run_notifier(state: AppState) {
     tokio::spawn(async move {
+        let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap_or_default();
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
         loop {
             tick.tick().await;
-            let conn = state.db();
-            if let Err(e) = crate::notifier::process_due(&conn, now_ms()) {
-                tracing::error!(error = %e, "notifier failed");
+            let pushes = {
+                let conn = state.db();
+                match crate::notifier::process_due(&conn, now_ms()) {
+                    Ok(p) => p.pushes,
+                    Err(e) => {
+                        tracing::error!(error = %e, "notifier failed");
+                        continue;
+                    }
+                }
+            };
+            // send without holding the database lock
+            for o in pushes {
+                let sent = crate::push::send(&http, &o).await;
+                if let Err(e) = crate::push::record(&state.db(), &o.device_id, &sent) {
+                    tracing::error!(error = %e, "push: can't record outcome");
+                }
             }
         }
     });
@@ -541,6 +1124,26 @@ fn push(
 /// whose scopes changed). Call it while still holding the db lock so per-connection order matches
 /// seq order. `skip` is the device that pushed them (it already has them).
 pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Option<&str>) -> anyhow::Result<()> {
+    // the owner's live stream: one front event per account that just changed
+    let changed: BTreeSet<&str> = fresh
+        .iter()
+        .filter(|o| o.kind.starts_with("front."))
+        .filter_map(|o| o.scope.strip_prefix("account:"))
+        .collect();
+    for account in changed {
+        if s.events.receiver_count() > 0
+            && let Ok(v) = crate::api_data::current_front(conn, &crate::api_data::Principal::owner(account))
+        {
+            let event = json!({"type": "front", "at": now_ms(), "front": v["front"], "since": v["since"]});
+            let _ = s.events.send((account.to_string(), event));
+        }
+    }
+    match crate::webhooks::deliveries_for(conn, fresh, now_ms()) {
+        Ok(ds) => ds.into_iter().for_each(|d| {
+            let _ = s.hooks.send(d);
+        }),
+        Err(e) => tracing::error!(error = %e, "webhooks: can't build deliveries"),
+    }
     let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
     for (device, p) in peers.iter_mut() {
         // scope changes (e.g. someone was added to a space)

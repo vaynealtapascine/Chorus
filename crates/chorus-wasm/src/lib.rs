@@ -116,8 +116,14 @@ impl WebReplica {
         self.0.take_changes()
     }
 
-    pub fn projection(&self) -> String {
+    pub fn projection(&mut self) -> String {
         self.0.projection()
+    }
+
+    /// Only what changed since the last call (see `JsonReplica::projection_delta`).
+    #[wasm_bindgen(js_name = projectionDelta)]
+    pub fn projection_delta(&mut self) -> String {
+        self.0.projection_delta()
     }
 
     pub fn state(&self) -> String {

@@ -1,0 +1,37 @@
+<!doctype html>
+<!-- OBS / browser-source overlay: who's fronting, live. /overlay/front?token=chorus_… (read:front + stream) -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chorus overlay</title>
+<style>
+  html, body { margin: 0; background: transparent; font-family: system-ui, sans-serif; }
+  .pill { display: inline-flex; align-items: center; gap: 10px; margin: 12px; padding: 8px 18px 8px 10px;
+    border-radius: 999px; background: rgba(27, 23, 20, 0.82); color: #f1e9e0; font-size: 22px; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: #86b489; }
+  .dim { opacity: 0.6; }
+</style>
+</head>
+<body>
+<div class="pill"><span class="dot" id="dot"></span><span id="who" class="dim">…</span></div>
+<script>
+  const token = new URLSearchParams(location.search).get('token') || '';
+  const who = document.getElementById('who');
+  const dot = document.getElementById('dot');
+  function show(e) {
+    const d = JSON.parse(e.data);
+    const front = (d.front || []).filter((f) => f.level === 'front');
+    const names = front.map((f) => f.name || 'Someone');
+    who.textContent = names.length ? names.join(' & ') : 'No one';
+    who.classList.toggle('dim', !names.length);
+    if (front[0] && front[0].color) dot.style.background = front[0].color;
+  }
+  function connect() {
+    const es = new EventSource('/api/v1/stream?token=' + encodeURIComponent(token));
+    es.addEventListener('front', show);
+    es.onerror = () => { who.classList.add('dim'); };
+  }
+  connect();
+</script>
+</body>
+</html>

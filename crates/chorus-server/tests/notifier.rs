@@ -187,6 +187,64 @@ fn unfollowing_drops_pending_notifications() {
 }
 
 #[test]
+fn delivery_pushes_the_inbox_text_encrypted_to_the_followers_devices() {
+    use chorus_server::push;
+    use p256::elliptic_curve::sec1::ToSec1Point;
+    let (mut w, kai, _, _) = world();
+    // the friend's phone registers its UnifiedPush endpoint and keys
+    w.c.execute(
+        "INSERT INTO device (id, account_id, short_id, name, platform, public_key, created_at)
+         VALUES ('phone', ?1, 'aabbccdd', 'Phone', 'android', 'k', 0)",
+        [&w.friend],
+    )
+    .unwrap();
+    let ua = p256::SecretKey::from_slice(&[5; 32]).unwrap();
+    let reg = push::Registration {
+        endpoint: "https://ntfy.example/upABC?up=1".into(),
+        p256dh: push::b64url(ua.public_key().to_sec1_point(false).as_bytes()),
+        auth: push::b64url(&[8; 16]),
+    };
+    push::register(&w.c, "phone", &reg).unwrap();
+
+    w.switch(&[&kai], NOW);
+    let early = notifier::process_due(&w.c, NOW + SETTLE + DELAY - 1).unwrap();
+    assert!(early.pushes.is_empty(), "nothing may be pushed before the reveal");
+    let out = notifier::process_due(&w.c, NOW + SETTLE + DELAY).unwrap();
+    assert_eq!(out.pushes.len(), 1);
+    assert_eq!(out.pushes[0].endpoint, reg.endpoint);
+    let plain = push::decrypt(&ua, &[8; 16], &out.pushes[0].body).expect("decrypts with the device key");
+    let v: Value = serde_json::from_slice(&plain).unwrap();
+    assert_eq!(v["text"], "Kai is fronting");
+    assert_eq!(v["title"], "stars");
+    // a gone endpoint is forgotten
+    push::record(&w.c, "phone", &push::Sent::Gone).unwrap();
+    let left: Option<String> =
+        w.c.query_row("SELECT push_endpoint FROM device WHERE id = 'phone'", [], |r| r.get(0)).unwrap();
+    assert!(left.is_none());
+}
+
+#[test]
+fn a_digest_follower_gets_one_summary_for_the_day() {
+    let (mut w, kai, june, _) = world();
+    let follow: String = w.c.query_row("SELECT id FROM follow", [], |r| r.get(0)).unwrap();
+    let ceiling = json!({"delay": {"min_s": 60, "max_s": 60}, "time": {"mode": "part_of_day"},
+                         "levels": ["front"], "digest_only": true});
+    w.push("follow.set_ceiling", &follow, json!({"ceiling": ceiling}), NOW - 2_000);
+    let day = NOW - NOW.rem_euclid(86_400_000) + 86_400_000; // next UTC midnight (tz offset 0)
+    let h = 3_600_000;
+    w.switch(&[&kai], day + 9 * h);
+    notifier::process_due(&w.c, day + 9 * h + SETTLE + DELAY).unwrap(); // revealed, held for the digest
+    w.switch(&[&june], day + 19 * h);
+    notifier::process_due(&w.c, day + 19 * h + SETTLE + DELAY).unwrap();
+    assert!(w.inbox().is_empty(), "nothing before the digest");
+    assert_eq!(w.view(), ["June"], "the view is still revealed on schedule");
+    // the digest goes out at 20:00 plus a stable 0–20 min spread
+    let out = notifier::process_due(&w.c, day + 20 * h + 20 * 60_000).unwrap();
+    assert_eq!(w.inbox(), ["Kai (morning) · June (evening)"]);
+    assert_eq!(out.handled, 2, "both items were due in the same pass");
+}
+
+#[test]
 fn bucket_ceiling_inherits_and_folds_while_member_policy_restricts_reveal() {
     let mut w = World::new();
     let sys = w.sys.clone();

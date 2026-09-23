@@ -1,5 +1,9 @@
 //! Chorus server: op log, projections, sync, API (docs/SYNC.md, docs/API.md).
 
+pub mod activity;
+pub mod api_data;
+pub mod api_reads;
+pub mod api_writes;
 pub mod app;
 pub mod auth;
 pub mod backup;
@@ -11,6 +15,10 @@ pub mod ingest;
 pub mod notifier;
 pub mod oplog;
 pub mod project;
+pub mod push;
+pub mod qr;
+pub mod spaces;
+pub mod webhooks;
 
 use rusqlite::Connection;
 

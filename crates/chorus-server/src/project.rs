@@ -399,22 +399,31 @@ fn element_set(conn: &Connection, table: &str, o: &Op) -> anyhow::Result<()> {
 }
 
 /// Space membership grants scope access — but only when the op's author may manage the space
-/// (its owner, or the account joining a DM/space it created itself).
+/// (its owner, or the account joining a DM/space it created itself). Access ends when the owner
+/// removes someone, or when someone leaves a shared space or DM themselves (M6.2); nobody loses
+/// their own internal space, and the owner of a shared space can't strand it by leaving.
 fn space_access(conn: &Connection, o: &Op, account: &str, present: bool) -> anyhow::Result<()> {
     let space = o.entity().unwrap_or("");
-    let owner: Option<String> =
-        conn.query_row("SELECT owner_account_id FROM space WHERE id = ?1", [space], |r| r.get(0)).optional()?;
+    let row: Option<(String, Option<String>)> = conn
+        .query_row("SELECT owner_account_id, kind FROM space WHERE id = ?1", [space], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()?;
+    let (owner, kind) = row.map_or((None, None), |(o, k)| (Some(o), k));
     let author = o.account_id.clone().unwrap_or_default();
     let manages = match &owner {
         Some(ow) => *ow == author,
         None => author == account,
     };
-    if manages {
-        if present {
-            ingest::grant(conn, account, &o.scope)?;
-        } else if Some(account) != Some(author.as_str()) {
-            conn.execute("DELETE FROM scope_access WHERE account_id = ?1 AND scope = ?2", params![account, o.scope])?;
-        }
+    let self_leave = !present
+        && account == author
+        && match kind.as_deref() {
+            Some("dm") => true,
+            Some("shared") => owner.as_deref() != Some(author.as_str()),
+            _ => false,
+        };
+    if present && manages {
+        ingest::grant(conn, account, &o.scope)?;
+    } else if !present && ((manages && account != author) || self_leave) {
+        conn.execute("DELETE FROM scope_access WHERE account_id = ?1 AND scope = ?2", params![account, o.scope])?;
     }
     Ok(())
 }

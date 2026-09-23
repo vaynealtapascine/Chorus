@@ -22,6 +22,9 @@ pub struct Server {
     pub data_dir: PathBuf,
     /// Serve the built web app from this directory (the PWA), if set.
     pub web_dir: Option<PathBuf>,
+    /// Released APK + `chorus.json` for in-app updates (M12.3). Default: `android/` next to
+    /// `web_dir`.
+    pub android_dir: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -63,6 +66,7 @@ impl Default for Server {
             public_url: "http://127.0.0.1:5250".into(),
             data_dir: PathBuf::from("data"),
             web_dir: None,
+            android_dir: None,
         }
     }
 }
@@ -80,6 +84,13 @@ impl Default for Limits {
 }
 
 impl Config {
+    pub fn android_dir(&self) -> Option<PathBuf> {
+        self.server
+            .android_dir
+            .clone()
+            .or_else(|| self.server.web_dir.as_ref().and_then(|w| w.parent()).map(|p| p.join("android")))
+    }
+
     /// Load from a file if it exists; otherwise defaults.
     pub fn load(path: Option<&Path>) -> anyhow::Result<Config> {
         let Some(path) = path else { return Ok(Config::default()) };

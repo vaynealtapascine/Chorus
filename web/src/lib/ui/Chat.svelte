@@ -10,12 +10,22 @@
   import Message from './Message.svelte';
   import AvatarImage from './AvatarImage.svelte';
   import EmojiImage from './EmojiImage.svelte';
+  import SpaceRail from './SpaceRail.svelte';
+  import { authorCards, listSpaces, spaceTitle, type SpaceInfo } from '../spaces';
+  import type { MemberRow } from '../data';
 
   let { projection, dark, channelId }: { projection: Projection; dark: boolean; channelId?: string } = $props();
 
   const ss = $derived(spaces(projection));
   const allChannels = $derived(channels(projection));
-  const current = $derived(allChannels.find((c) => c.id === channelId) ?? allChannels.find((c) => !c.archived && c.kind !== 'thread'));
+  // `#/chat/space:<id>` opens a space by id (a DM just created may not have its channel synced yet)
+  const current = $derived(
+    allChannels.find((c) => c.id === channelId) ??
+      (channelId?.startsWith('space:')
+        ? allChannels.find((c) => c.space_id === channelId.slice(6) && !c.archived && c.kind !== 'thread')
+        : undefined) ??
+      allChannels.find((c) => !c.archived && c.kind !== 'thread'),
+  );
   const space = $derived(ss.find((s) => s.id === current?.space_id) ?? ss[0]);
   const spaceChannels = $derived(allChannels.filter((c) => c.space_id === space?.id && !c.archived && c.kind !== 'thread'));
   const msgs = $derived(current ? messages(projection, current.id) : []);
@@ -26,7 +36,10 @@
     return allChannels.some((c) => c.id === parent?.channel_id && c.space_id === current.space_id) ? parent : undefined;
   });
   const parentChannel = $derived(allChannels.find((c) => c.id === threadParent?.channel_id));
-  const people = $derived(new Map(members(projection).map((m) => [m.id, m])));
+  // other accounts' members in shared spaces and DMs come as author cards (spaces.ts)
+  let cards = $state<MemberRow[]>([]);
+  let directory = $state(new Map<string, SpaceInfo>());
+  const people = $derived(new Map([...cards, ...members(projection)].map((m) => [m.id, m])));
   const emojiRows = $derived(customEmojis(projection));
   const emojiById = $derived(new Map(emojiRows.map((e) => [e.id, e])));
   const activeEmoji = $derived(emojiRows.filter((e) => !e.deleted));
@@ -424,6 +437,29 @@
   });
   const color = (id: string) => core.adaptColor(people.get(id)?.color ?? '#A09184', dark);
 
+  // who is in which space (names for DMs), refreshed when spaces come and go
+  $effect(() => {
+    void ss.length;
+    listSpaces()
+      .then((items) => (directory = new Map(items.map((i) => [i.id, i]))))
+      .catch(() => {});
+  });
+  // author cards: fetched when entering a shared space or DM, and again when someone new speaks
+  const strangers = $derived(
+    space && space.kind !== 'internal'
+      ? [...new Set(msgs.flatMap((m) => m.authors))].filter((a) => !people.has(a)).sort().join(',')
+      : '',
+  );
+  let cardsFor = '';
+  $effect(() => {
+    const key = `${space?.id}|${strangers}`;
+    if (!space || space.kind === 'internal' || key === cardsFor) return;
+    cardsFor = key;
+    authorCards(space.id)
+      .then((c) => (cards = c.members))
+      .catch(() => {});
+  });
+
   let list: HTMLElement | undefined = $state();
   $effect(() => {
     void msgs.length;
@@ -433,7 +469,7 @@
 
 <div class="chat">
   <aside class="channels" aria-label="Channels">
-    <p class="space">{space?.name ?? 'No spaces yet'}</p>
+    <SpaceRail spaces={ss} channels={allChannels} currentId={space?.id} {directory} me={sync.accountId} />
     {#each spaceChannels as c (c.id)}
       {@const n = c.id === current?.id ? 0 : unread(projection, c.id, sync.accountId)}
       <a href="#/chat/{c.id}" class:on={c.id === current?.id} class:unread={n > 0}
@@ -453,7 +489,7 @@
         <a class="thread-back" href="#/chat/{parentChannel?.id ?? ''}">‹ #{parentChannel?.name ?? 'channel'}</a>
         <h1>Thread</h1>
       {:else}
-        <h1># {current?.name ?? '…'}</h1>
+        <h1>{space?.kind === 'dm' ? spaceTitle(space, directory.get(space.id), sync.accountId) : `# ${current?.name ?? '…'}`}</h1>
       {/if}
       {#if current?.topic}<span class="topic">{current.topic}</span>{/if}
       <button class="pins" class:on={showPins} onclick={() => (showPins = !showPins)}>📌 {pinned.length}</button>
@@ -639,7 +675,7 @@
             onkeydown={onkey}
             onpaste={pasteFiles}
             rows="1"
-            placeholder={current ? `Message #${current.name}` : ''}
+            placeholder={!current ? '' : space?.kind === 'dm' ? `Message ${spaceTitle(space, directory.get(space.id), sync.accountId)}` : `Message #${current.name}`}
             aria-label="Message"
           ></textarea>
         {/if}
@@ -692,15 +728,17 @@
   @media (max-width: 640px) {
     .chat {
       grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
       height: calc(100dvh - 190px);
     }
-    .channels {
+    /* `.chat .channels` so this beats the base rule below (same specificity would lose to it) */
+    .chat .channels {
       display: flex;
+      align-items: center;
       gap: var(--s-2);
       overflow-x: auto;
     }
-    .channels form,
-    .space {
+    .channels form {
       display: none;
     }
   }
@@ -708,13 +746,6 @@
     display: grid;
     align-content: start;
     gap: 2px;
-  }
-  .space {
-    font-size: var(--fs-xs);
-    color: var(--ink-3);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin: 0 0 var(--s-2);
   }
   .channels a {
     color: var(--ink-2);

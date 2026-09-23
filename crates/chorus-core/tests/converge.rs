@@ -15,6 +15,7 @@ use chorus_core::hlc::HlcClock;
 use chorus_core::id::new_id;
 use chorus_core::model;
 use chorus_core::op::Op;
+use chorus_core::projector::Projector;
 use chorus_core::sync::{ClientEngine, ClientStore, ClockReading, Frame, MemServer, MemStore};
 use chorus_core::time::TimeSource;
 use serde_json::{Value, json};
@@ -55,6 +56,49 @@ struct Device {
     to_server: VecDeque<Frame>,
     to_device: VecDeque<Frame>,
     created: Vec<String>,
+    /// Follows the store only through `touched` ids, like the apps (projector.rs).
+    projector: Projector,
+}
+
+fn first_diff(a: &Value, b: &Value, path: &str) -> String {
+    match (a, b) {
+        (Value::Object(x), Value::Object(y)) => {
+            for k in x.keys().chain(y.keys()) {
+                let (u, v) = (x.get(k).unwrap_or(&Value::Null), y.get(k).unwrap_or(&Value::Null));
+                if u != v {
+                    return first_diff(u, v, &format!("{path}/{k}"));
+                }
+            }
+            format!("{path}: ?")
+        }
+        _ => format!("{path}: incremental {a} vs reference {b}"),
+    }
+}
+
+impl Device {
+    /// Update the incremental projection from touched ids and, when asked, check it against
+    /// the reference projection of the same visible ops.
+    fn check_projector(&mut self, compare: bool) -> Result<(), String> {
+        let touched = self.store.take_touched();
+        if self.projector.is_empty() {
+            self.projector.sync(self.store.visible());
+        } else {
+            let store = &self.store;
+            self.projector.sync_ids(touched, |id| store.ops.get(id).filter(|o| !store.rejected.contains_key(&o.id)));
+        }
+        if compare {
+            let mine = self.projector.projection().canonical();
+            let reference = model::project(self.store.visible()).canonical();
+            if mine != reference {
+                return Err(format!(
+                    "{}: incremental projection differs: {}",
+                    self.name,
+                    first_diff(&mine, &reference, "")
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Ids the "UI" of each account knows about (shared by an account's devices).
@@ -117,6 +161,7 @@ impl World {
                 to_server: VecDeque::new(),
                 to_device: VecDeque::new(),
                 created: Vec::new(),
+                projector: Projector::new(),
             });
         }
         World {
@@ -454,10 +499,16 @@ impl World {
 
 fn run(seed: u64, steps: usize) -> Result<(), String> {
     let mut w = World::new(seed);
-    for _ in 0..steps {
+    for i in 0..steps {
         w.step();
+        for dev in &mut w.devices {
+            dev.check_projector(i % 7 == 0)?;
+        }
     }
     w.quiesce();
+    for dev in &mut w.devices {
+        dev.check_projector(true)?;
+    }
 
     let server_ids: BTreeSet<&str> = w.server.log.iter().map(|o| o.id.as_str()).collect();
     // seqs are gapless

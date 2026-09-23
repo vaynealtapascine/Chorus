@@ -4,6 +4,7 @@ import { WebReplica, newId } from '../core/pkg/chorus_wasm.js';
 import type { SwitchRow } from '../front.svelte';
 import { load, save, type Changes, type DeviceRecord } from './persist';
 import { renew } from './device';
+import { applyDelta, type Delta } from './delta';
 import { flushUploads } from './uploads';
 
 export type Status = 'offline' | 'connecting' | 'live' | 'no-device';
@@ -92,8 +93,18 @@ export class SyncClient {
 
   projection(): Projection | null {
     if (!this.replica) return null;
-    this.cached ??= JSON.parse(this.replica.projection()) as Projection;
+    if (!this.cached) {
+      this.cached = JSON.parse(this.replica.projection()) as Projection;
+      this.replica.projectionDelta(); // the next delta starts from here
+    }
     return this.cached;
+  }
+
+  /** Bring the cached projection up to date with only what changed (SPEC §9). */
+  private refresh(): void {
+    if (!this.replica || !this.cached) return;
+    const d = JSON.parse(this.replica.projectionDelta()) as Delta;
+    this.cached = d.full ? (JSON.parse(this.replica.projection()) as Projection) : applyDelta(this.cached, d);
   }
 
   get accountId(): string {
@@ -156,7 +167,7 @@ export class SyncClient {
   }
 
   private changed(): void {
-    this.cached = null;
+    this.refresh();
     const ch = JSON.parse(this.replica!.takeChanges()) as Changes;
     this.saving = this.saving.then(() => save(ch)).catch((e) => console.error('persist failed', e));
     this.emit();

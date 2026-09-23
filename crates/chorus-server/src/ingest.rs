@@ -156,6 +156,9 @@ pub fn accept(
     {
         crate::notifier::on_front_change(conn, account, now)?;
     }
+    if !preserved {
+        crate::activity::on_op(conn, &o, now)?;
+    }
     Ok((AckResult::ok(&o), Some(o)))
 }
 
@@ -186,6 +189,27 @@ pub fn server_op(
     payload: serde_json::Value,
     now: i64,
 ) -> anyhow::Result<Op> {
+    match op_as(conn, account, SERVER_DEVICE, kind, scope, entity, payload, now, None)? {
+        (_, Some(o)) => Ok(o),
+        (r, None) => anyhow::bail!("server op {kind} rejected: {:?}", r.error),
+    }
+}
+
+/// Create and accept an op made on the server for `account` as `device` — the server itself, or
+/// an API token's pseudo-device (`token:<id>`, API.md §2.3). `user_time` is a typed time
+/// (`TimeSource::User`), taken as-is. Rejections come back as the ack, like a pushed op.
+#[allow(clippy::too_many_arguments)]
+pub fn op_as(
+    conn: &Connection,
+    account: &str,
+    device: &str,
+    kind: &str,
+    scope: &str,
+    entity: Option<&str>,
+    payload: serde_json::Value,
+    now: i64,
+    user_time: Option<i64>,
+) -> anyhow::Result<(AckResult, Option<Op>)> {
     let hlc = server_hlc(conn, now)?;
     let o = Op {
         id: chorus_core::id::new_id(now as u64, rand::random()),
@@ -194,11 +218,11 @@ pub fn server_op(
         scope: scope.into(),
         entity_id: entity.map(str::to_string),
         hlc,
-        device_at: now,
+        device_at: user_time.unwrap_or(now),
         tz_offset_min: 0,
         mono: None,
         boot_id: None,
-        time_source: TimeSource::Auto,
+        time_source: if user_time.is_some() { TimeSource::User } else { TimeSource::Auto },
         seen_seq: 0,
         member_id: None,
         payload,
@@ -210,11 +234,8 @@ pub fn server_op(
     };
     let s = Session {
         account_id: account.into(),
-        device_id: SERVER_DEVICE.into(),
+        device_id: device.into(),
         sample: ClockSample { server_time: now, mono: None, boot_id: None, offset_ms: 0 },
     };
-    match accept(conn, &s, o, now, false)? {
-        (_, Some(o)) => Ok(o),
-        (r, None) => anyhow::bail!("server op {kind} rejected: {:?}", r.error),
-    }
+    accept(conn, &s, o, now, false)
 }

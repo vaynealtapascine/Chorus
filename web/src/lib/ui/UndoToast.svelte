@@ -15,6 +15,9 @@
     left: 50%;
     bottom: calc(76px + env(safe-area-inset-bottom));
     transform: translateX(-50%);
+    /* left: 50% would cap an auto width at half the screen and wrap short labels */
+    width: max-content;
+    max-width: calc(100vw - 32px);
     z-index: 20;
     display: flex;
     gap: var(--s-4);

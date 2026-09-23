@@ -57,6 +57,18 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   `java.lang.ref.Cleaner`, which Android exposes only at API 33. `chorus-ffi/uniffi.toml` sets
   `disable_java_cleaner = true`, making generated bindings use the JNA cleaner on minSdk 29 and
   removing the Android lint errors. Regenerate bindings after changing this file.
+- 2026-09-23 claude-opus-5.5 — android — Finding UnifiedPush distributors with
+  `queryBroadcastReceivers` returns nothing on Android 11+ unless the manifest declares a
+  `<queries>` intent for `org.unifiedpush.android.distributor.REGISTER`. ntfy relays binary UP
+  posts as base64 (`"encoding":"base64"`) and its app hands them to us as `bytesMessage`.
+- 2026-09-23 claude-opus-5.5 — tooling — Never put Windows paths or `\0` inside ordinary
+  Python string literals in helper scripts: `\a`, `\b`, `\r`, `\0` silently become control bytes
+  (this corrupted `deploy.ps1` and a Rust source once). Use raw strings (`r'...'`) or the Edit tool.
+- 2026-09-23 claude-opus-5.5 — android — `settings.gradle.kts` limits `google()` to
+  androidx/com.android/com.google groups, so libraries from Maven Central (e.g. `org.json` for JVM
+  tests) resolve online even when dl.google.com is unreachable; Google artifacts still need to be
+  in the cache (`--offline`). Android's own `org.json` is a stub in JVM unit tests — tests use the
+  real one via `testImplementation(libs.orgjson)`.
 - 2026-09-23 gpt-6-sol — tooling — On this PowerShell PTY, `python scripts/verify.py` may fail
   before running checks because cp1252 cannot print its Unicode progress symbols. Set
   `PYTHONIOENCODING=utf-8` for the verifier. Android lint also needs an escaped drive colon in
