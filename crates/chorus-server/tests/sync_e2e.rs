@@ -574,3 +574,86 @@ async fn webhooks_post_signed_events() {
     assert!(tokio::time::timeout(Duration::from_millis(1500), rx.recv()).await.is_err());
     assert_eq!(http.delete(url(&format!("/webhooks/{id}"))).bearer_auth(&session).send().await.unwrap().status(), 204);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rest_reads_cover_members_groups_fields_and_days() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 61, "stars").await;
+    let mut phone = Device::new(&sys, 61);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct = phone.scope("account:");
+    let (kai, grp, fld) = (new_id(1, [62; 10]), new_id(2, [63; 10]), new_id(3, [64; 10]));
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai", "pronouns": "they/them"})).await;
+    phone.create("group.create", &acct, &grp, json!({"name": "Littles", "kind": "group"})).await;
+    phone.create("group.add_member", &acct, &grp, json!({"member_id": kai})).await;
+    phone.create("field.define", &acct, &fld, json!({"name": "Role", "type": "text"})).await;
+    phone
+        .create(
+            "field.set_value",
+            &acct,
+            &new_id(4, [65; 10]),
+            json!({"member_id": kai, "field_id": fld, "value": "host"}),
+        )
+        .await;
+    phone
+        .create(
+            "front.switch",
+            &acct,
+            &new_id(5, [66; 10]),
+            json!({"entries": [{"subject_type": "member", "subject_id": kai, "level": "front", "is_primary": true}]}),
+        )
+        .await;
+    phone.drain(Q).await;
+
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let session = sys["session"].as_str().unwrap().to_string();
+    let get = |path: String, auth: String| {
+        let http = http.clone();
+        async move {
+            let r = http.get(path).bearer_auth(auth).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap_or(Value::Null))
+        }
+    };
+
+    let (st, m) = get(url(&format!("/members/{kai}")), session.clone()).await;
+    assert_eq!(st, 200);
+    assert_eq!(m["pronouns"], "they/them");
+    assert_eq!(m["groups"], json!([grp]));
+    assert_eq!(m["fields"][0]["name"], "Role");
+    assert_eq!(m["fields"][0]["value"], "host");
+    assert_eq!(get(url("/members/nope"), session.clone()).await.0, 404);
+    let (_, g) = get(url("/groups"), session.clone()).await;
+    assert_eq!(g["items"][0]["name"], "Littles");
+    assert_eq!(g["items"][0]["member_ids"], json!([kai]));
+    let (_, f) = get(url("/fields"), session.clone()).await;
+    assert_eq!(f["items"][0]["type"], "text");
+    let (_, d) = get(url("/front/daily?level=front"), session.clone()).await;
+    assert_eq!(d["items"][0]["subject_id"], kai.as_str());
+    assert_eq!(get(url("/front/daily?from=yesterday"), session.clone()).await.0, 400);
+    let (st, r) = get(url("/front/reviews?open=1"), session.clone()).await;
+    assert_eq!((st, r["items"].as_array().unwrap().len()), (200, 0));
+    let (_, me) = get(url("/me"), session.clone()).await;
+    assert_eq!((me["via"].as_str(), me["account"]["handle"].as_str()), (Some("device"), Some("stars")));
+    assert_eq!(me["devices"].as_array().unwrap().len(), 1);
+
+    // a members-only token: members yes, front no; /me shows its scopes and no devices
+    let created: Value = http
+        .post(url("/tokens"))
+        .bearer_auth(&session)
+        .json(&json!({"name": "sheet", "scopes": ["read:members"]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let token = created["token"].as_str().unwrap().to_string();
+    assert_eq!(get(url(&format!("/members/{kai}")), token.clone()).await.0, 200);
+    assert_eq!(get(url("/front/daily"), token.clone()).await.0, 403);
+    assert_eq!(get(url("/states"), token.clone()).await.0, 403);
+    let (_, me) = get(url("/me"), token.clone()).await;
+    assert_eq!(me["scopes"], json!(["read:members"]));
+    assert!(me["devices"].is_null());
+}

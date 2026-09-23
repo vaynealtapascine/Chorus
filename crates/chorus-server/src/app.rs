@@ -99,6 +99,13 @@ pub fn router(state: AppState) -> Router {
         .route("/front/switches", get(front_switches))
         .route("/front/intervals", get(front_intervals))
         .route("/members", get(members_list))
+        .route("/members/{id}", get(member_one))
+        .route("/groups", get(groups_list))
+        .route("/fields", get(fields_list))
+        .route("/states", get(states_list))
+        .route("/front/daily", get(front_daily))
+        .route("/front/reviews", get(front_reviews))
+        .route("/me", get(me))
         .route("/stream", get(stream))
         .route("/emoji", get(emoji_list))
         .route("/accounts/{id}/view", get(account_view))
@@ -517,6 +524,81 @@ async fn members_list(
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
     Ok(Json(crate::api_data::members(&conn, &p)?))
+}
+
+// ─── more reads (api_reads.rs) ───────────────────────────────────────────────
+
+async fn me(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_reads::me(&conn, &p)?))
+}
+
+async fn member_one(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    crate::api_reads::member(&conn, &p, &id)?
+        .map(Json)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "no such member".into()))
+}
+
+async fn groups_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_reads::groups(&conn, &p)?))
+}
+
+async fn fields_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_reads::fields(&conn, &p)?))
+}
+
+async fn states_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_reads::states(&conn, &p)?))
+}
+
+#[derive(Deserialize, Default)]
+struct DayRange {
+    from: Option<String>,
+    to: Option<String>,
+    level: Option<String>,
+    open: Option<u8>,
+}
+
+async fn front_daily(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<DayRange>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_reads::daily(&conn, &p, q.from.as_deref(), q.to.as_deref(), q.level.as_deref())?))
+}
+
+async fn front_reviews(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<DayRange>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_reads::reviews(&conn, &p, q.open.unwrap_or(0) != 0)?))
 }
 
 /// Server-sent events of the caller's own front (`stream` + `read:front`). The first event is the

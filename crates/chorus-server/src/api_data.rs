@@ -36,6 +36,11 @@ impl Principal {
     pub fn is_device(&self) -> bool {
         self.scopes.is_none()
     }
+
+    /// A token's scopes (`None` for a device, which may do everything its account can).
+    pub fn scopes(&self) -> Option<&[String]> {
+        self.scopes.as_deref()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

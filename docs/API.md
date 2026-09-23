@@ -131,6 +131,24 @@ GET  /insights/{chart}?from=&to=           dashboard data (same numbers as the v
 
 Reads of another account's content always go through the view layer (same privacy as sync views).
 
+Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
+
+- **Account:** `/me` returns `{account, via: "device"|"token", scopes, devices}`. `devices` is
+  shown to devices only.
+- **Members** (`read:members`):
+  - `/members`;
+  - `/members/{id}`, which adds `groups` (ids) and `fields` (`[{field_id, name, type, value}]`);
+  - `/groups` (a flat list with `effective_parent_id` and `member_ids`);
+  - `/fields`.
+- **Front** (`read:front`):
+  - `/states`;
+  - `/front`, `/front/switches`, `/front/intervals`;
+  - `/front/daily?from=&to=&level=` (days are `YYYY-MM-DD`, `to` inclusive);
+  - `/front/reviews?open=1`.
+- **Other accounts:** `/accounts/{id}/view`, `/follows`, `/notifications`.
+- **Not yet:** `/front/intervals?subject=&level=` filters. Messages, posts, profiles, feeds and
+  insights come with M5.7/M5.8/M7/M10.1.
+
 ## 4. Writes (non-sync)
 
 ```
