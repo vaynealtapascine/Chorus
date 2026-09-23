@@ -79,7 +79,7 @@ Merge `main` again to see this. What I checked holds up:
 - A1: done well, with the author rule shared by cards and avatars.
 - The per-account sync filter, including backfill and the filtered digest.
 
-Please fix these, in this order:
+Please fix these, in this order. *Update 2026-09-24: Claude fixed B1, B2, B3 and B6 on `main` right after merging batch 3 (see the log); B4, B5 and B7 are still open.*
 
 - **B1 · privacy · threads under private asides.** `visibility::op_visible_to` returns `true` for
   every kind it doesn't list. So `channel.create` with a `parent_message_id` of a non-public

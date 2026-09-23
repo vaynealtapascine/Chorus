@@ -52,6 +52,7 @@ fn seed() -> Connection {
         ("members", ALICE, "violet chosen members", 120, Some(r#"{"mode":"members","member_ids":["rose"]}"#), None),
         ("bob", BOB, "violet bob message", 130, None, None),
         ("deleted", ALICE, "violet deleted", 140, None, Some(150)),
+        ("segmented", ALICE, "violet in two voices", 160, None, None),
     ] {
         conn.execute(
             "INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text,visibility,deleted_at)
@@ -65,6 +66,11 @@ fn seed() -> Connection {
         }
     }
     conn.execute("INSERT INTO message_author(message_id,member_id,position) VALUES ('public','rose',0)", []).unwrap();
+    conn.execute(
+        "INSERT INTO message_segment_author(message_id,idx,member_id,position) VALUES ('segmented',1,'rose',0)",
+        [],
+    )
+    .unwrap();
     conn.execute("INSERT INTO attachment(id,mime,created_at) VALUES ('photo','image/png',0)", []).unwrap();
     conn.execute(
         "INSERT INTO item_attachment(owner_type,owner_id,attachment_id,position)
@@ -108,24 +114,37 @@ async fn http_search_applies_account_visibility_and_filters() {
     );
     assert_eq!(
         get("bob-session", "").send().await.unwrap().json::<Value>().await.unwrap()["items"].as_array().unwrap().len(),
-        2
+        3
     );
     assert_eq!(
         get("alice-session", "").send().await.unwrap().json::<Value>().await.unwrap()["items"]
             .as_array()
             .unwrap()
             .len(),
-        4
+        5
     );
+    // an API token reaches only its own account's messages (API.md §2.3), even in a shared space
+    let items = |v: Value| {
+        v["items"].as_array().unwrap().iter().map(|i| i["id"].as_str().unwrap().to_string()).collect::<Vec<_>>()
+    };
+    assert_eq!(items(get(&token, "").send().await.unwrap().json::<Value>().await.unwrap()), ["bob"]);
+    assert!(items(get(&token, "&from=Rose").send().await.unwrap().json::<Value>().await.unwrap()).is_empty());
     assert_eq!(
-        get(&token, "&from=Rose&has=image&in=garden&after=50&before=110")
-            .send()
-            .await
-            .unwrap()
-            .json::<Value>()
-            .await
-            .unwrap()["items"][0]["id"],
-        "public"
+        items(
+            get("bob-session", "&from=Rose&has=image&in=garden&after=50&before=110")
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()
+        ),
+        ["public"]
+    );
+    // a segmented message counts every segment's author (D-045)
+    assert_eq!(
+        items(get("alice-session", "&from=Rose&after=155").send().await.unwrap().json::<Value>().await.unwrap()),
+        ["segmented"]
     );
     assert_eq!(
         get("bob-session", "&has=image").send().await.unwrap().json::<Value>().await.unwrap()["items"]
@@ -168,4 +187,6 @@ async fn http_search_applies_account_visibility_and_filters() {
         client.get(format!("{message_base}/public")).bearer_auth("outsider-session").send().await.unwrap().status(),
         404
     );
+    assert_eq!(client.get(format!("{message_base}/public")).bearer_auth(&token).send().await.unwrap().status(), 404);
+    assert_eq!(client.get(format!("{message_base}/bob")).bearer_auth(&token).send().await.unwrap().status(), 200);
 }

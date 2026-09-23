@@ -220,6 +220,8 @@ pub fn sqlite_copy(source: &Connection, account: &str, work_dir: &Path) -> anyho
     db::migrate(&mut target)?;
     copy_owned_rows(source, &target, "account", "id=?1", account)?;
     copy_owned_rows(source, &target, "device", "account_id=?1", account)?;
+    // push endpoints and keys are delivery credentials, not the account's data
+    target.execute("UPDATE device SET push_endpoint = NULL, push_p256dh = NULL, push_auth = NULL", [])?;
     copy_owned_rows(source, &target, "op", "account_id=?1 AND status='applied'", account)?;
     project::rebuild(&mut target)?;
     for spec in CSV {

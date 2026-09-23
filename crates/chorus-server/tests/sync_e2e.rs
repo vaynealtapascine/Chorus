@@ -864,6 +864,31 @@ async fn friends_share_spaces_and_dms() {
     assert!(phone.store.confirmed().any(|o| o.entity_id.as_deref() == Some(aside.as_str())));
     assert!(!laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(aside.as_str())));
     assert!(!laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(private_attachment.as_str())));
+    // a thread under the aside is as private as the aside: neither it nor what's said in it leaks
+    let aside_thread = new_id(3, [96; 10]);
+    phone
+        .create(
+            "channel.create",
+            &scope,
+            &aside_thread,
+            json!({"space_id": dm, "kind": "thread", "name": "about the aside", "parent_message_id": aside}),
+        )
+        .await;
+    let in_thread = new_id(3, [97; 10]);
+    phone
+        .create(
+            "message.send",
+            &scope,
+            &in_thread,
+            json!({"channel_id": aside_thread, "authors": [kai], "text": "said in the aside's thread", "entities": []}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    for hidden in [&aside_thread, &in_thread] {
+        assert!(phone.store.confirmed().any(|o| o.entity_id.as_deref() == Some(hidden.as_str())));
+        assert!(!laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(hidden.as_str())), "{hidden}");
+    }
     laptop
         .create("message.edit", &scope, &aside, json!({"message_id": aside, "text": "guessed edit", "entities": []}))
         .await;
@@ -904,6 +929,19 @@ async fn friends_share_spaces_and_dms() {
     laptop.drain(Q).await;
     assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(public.as_str())));
     assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(public_attachment.as_str())));
+    // a thread under a public message is public
+    let public_thread = new_id(3, [98; 10]);
+    phone
+        .create(
+            "channel.create",
+            &scope,
+            &public_thread,
+            json!({"space_id": dm, "kind": "thread", "name": "about the image", "parent_message_id": public}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(public_thread.as_str())));
 
     laptop.disconnect();
     let later_aside = new_id(3, [95; 10]);

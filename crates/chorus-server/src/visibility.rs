@@ -7,21 +7,37 @@ use serde_json::Value;
 
 use crate::oplog;
 
-/// A message that every member of its space may see. NULL is the legacy/default public value.
-pub const PUBLIC_MESSAGE_SQL: &str = "(m.visibility IS NULL OR json_extract(m.visibility, '$.mode') = 'all')";
+/// A message that every member of its space may see: its own visibility is public (NULL is the
+/// legacy/default public value), and it isn't in a thread under a message that isn't — a thread is
+/// as private as its parent.
+pub const PUBLIC_MESSAGE_SQL: &str = "((m.visibility IS NULL OR json_extract(m.visibility, '$.mode') = 'all')
+    AND NOT EXISTS (SELECT 1 FROM channel tc JOIN message pm ON pm.id = tc.parent_message_id
+        WHERE tc.id = m.channel_id AND tc.kind = 'thread'
+          AND NOT (pm.visibility IS NULL OR json_extract(pm.visibility, '$.mode') = 'all')))";
 
 pub fn is_public(value: Option<&Value>) -> bool {
     value.is_none_or(|v| v.is_null() || v.get("mode").and_then(Value::as_str) == Some("all"))
 }
 
 fn message_public(conn: &Connection, id: &str) -> anyhow::Result<bool> {
-    let row: Option<Option<String>> =
-        conn.query_row("SELECT visibility FROM message WHERE id = ?1", [id], |r| r.get(0)).optional()?;
-    Ok(match row {
-        Some(None) => true,
-        Some(Some(s)) => serde_json::from_str::<Value>(&s).is_ok_and(|v| is_public(Some(&v))),
-        None => false, // A related op arrived before its message; reveal it with the public send.
-    })
+    // a related op that arrived before its message stays hidden; the public send reveals it
+    Ok(conn.query_row(
+        &format!("SELECT EXISTS(SELECT 1 FROM message m WHERE m.id = ?1 AND {PUBLIC_MESSAGE_SQL})"),
+        [id],
+        |r| r.get(0),
+    )?)
+}
+
+/// A channel everyone in its space may see: anything but a thread under a non-public message
+/// (a thread whose parent hasn't arrived yet stays hidden until it does).
+fn channel_public(conn: &Connection, channel: &str) -> anyhow::Result<bool> {
+    let parent: Option<Option<String>> = conn
+        .query_row("SELECT parent_message_id FROM channel WHERE id = ?1 AND kind = 'thread'", [channel], |r| r.get(0))
+        .optional()?;
+    match parent.flatten() {
+        Some(p) => message_public(conn, &p),
+        None => Ok(true),
+    }
 }
 
 /// A participant cannot mutate a private aside owned by another account, even with a guessed
@@ -55,7 +71,15 @@ pub fn op_visible_to(conn: &Connection, account: &str, o: &Op) -> anyhow::Result
         return Ok(true);
     }
     if o.kind == "message.send" || o.kind == "message.forward" {
-        return Ok(is_public(o.payload.get("visibility")));
+        let channel = o.payload.get("channel_id").and_then(Value::as_str).unwrap_or_default();
+        return Ok(is_public(o.payload.get("visibility")) && channel_public(conn, channel)?);
+    }
+    if o.kind.starts_with("channel.") {
+        // a new thread names its parent; later channel ops find it in the projection
+        if let Some(parent) = o.payload.get("parent_message_id").and_then(Value::as_str) {
+            return message_public(conn, parent);
+        }
+        return o.entity().map_or(Ok(true), |id| channel_public(conn, id));
     }
     if o.kind.starts_with("message.") {
         let id = o.payload.get("message_id").and_then(Value::as_str).or_else(|| o.entity());
@@ -124,6 +148,19 @@ pub fn backfill_for_public_send(conn: &Connection, o: &Op) -> anyhow::Result<Vec
     for id in ids {
         if let Some(op) = oplog::by_id(conn, &id)? {
             earlier.push(op);
+        }
+    }
+    // a thread started under this message before it arrived, and what was said in it
+    let mut st =
+        conn.prepare("SELECT id FROM channel WHERE kind = 'thread' AND parent_message_id = ?1 AND space_id = ?2")?;
+    let space = o.scope.strip_prefix("space:").unwrap_or_default();
+    let threads: Vec<String> = st.query_map(params![message_id, space], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    for thread in threads {
+        earlier.extend(oplog::for_entity(conn, &thread)?);
+        let mut st = conn.prepare_cached("SELECT id FROM message WHERE channel_id = ?1")?;
+        let msgs: Vec<String> = st.query_map([&thread], |r| r.get(0))?.collect::<Result<_, _>>()?;
+        for m in msgs {
+            earlier.extend(oplog::for_entity(conn, &m)?);
         }
     }
     Ok(earlier.into_iter().filter(|op| op.scope == o.scope && op.seq.is_some_and(|seq| seq < before)).collect())
