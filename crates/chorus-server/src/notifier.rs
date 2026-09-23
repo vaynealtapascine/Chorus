@@ -473,6 +473,20 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
                  DO UPDATE SET entries = excluded.entries, displayed_since = excluded.displayed_since, revealed_at = excluded.revealed_at",
                 params![follower, q.target_account_id, serde_json::to_string(&shown)?, shown_since.at, now],
             )?;
+            // …and the history/stats log grows here and only here (§5 rule 4); avatars stay out,
+            // since blob access follows the *current* view
+            let logged: Vec<Shown> = shown.iter().cloned().map(|s| Shown { avatar_blob: None, ..s }).collect();
+            conn.execute(
+                "INSERT INTO follower_front_log (follower_account_id, target_account_id, revealed_at, displayed, entries)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    follower,
+                    q.target_account_id,
+                    now,
+                    serde_json::to_string(&shown_since)?,
+                    serde_json::to_string(&logged)?
+                ],
+            )?;
             q.displayed = Some(shown_since);
             q.text = Some(describe(&q));
             let diff_empty = q.diff_arrived.is_empty() && q.diff_left.is_empty();
@@ -677,6 +691,11 @@ fn switch_items(conn: &Connection, follower: &str, limit: i64) -> anyhow::Result
 
 /// What `follower` may see of `target` right now (only what has been revealed).
 pub fn follower_view(conn: &Connection, follower: &str, target: &str) -> anyhow::Result<Option<Value>> {
+    follower_view_at(conn, follower, target, crate::now_ms())
+}
+
+/// [`follower_view`] at a given time (stats count whole days before `now`).
+pub fn follower_view_at(conn: &Connection, follower: &str, target: &str, now: i64) -> anyhow::Result<Option<Value>> {
     let active: bool = conn
         .query_row(
             "SELECT 1 FROM follow WHERE follower_account_id = ?1 AND target_account_id = ?2 AND status = 'active'",
@@ -703,7 +722,7 @@ pub fn follower_view(conn: &Connection, follower: &str, target: &str) -> anyhow:
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
-    let time = match follow {
+    let (time, history, stats) = match follow {
         Some((id, ceiling)) => {
             let f = Follow {
                 id,
@@ -715,13 +734,108 @@ pub fn follower_view(conn: &Connection, follower: &str, target: &str) -> anyhow:
             if !c.share_current_front {
                 return Ok(Some(json!({"entries": [], "since": null, "revealed_at": null, "shared": false})));
             }
-            serde_json::to_value(c.time)?
+            (serde_json::to_value(c.time)?, c.share_history, c.share_stats)
         }
-        None => json!({"mode": "hidden"}),
+        None => (json!({"mode": "hidden"}), false, false),
     };
-    let Some((entries, since, revealed_at)) = row else {
-        return Ok(Some(json!({"entries": [], "since": null, "revealed_at": null, "time": time})));
+    let mut v = match row {
+        Some((entries, since, revealed_at)) => {
+            let entries: Vec<Shown> = serde_json::from_str(&entries).unwrap_or_default();
+            json!({"entries": entries, "since": since, "revealed_at": revealed_at, "time": time})
+        }
+        None => json!({"entries": [], "since": null, "revealed_at": null, "time": time}),
     };
-    let entries: Vec<Shown> = serde_json::from_str(&entries).unwrap_or_default();
-    Ok(Some(json!({"entries": entries, "since": since, "revealed_at": revealed_at, "time": time})))
+    if history || stats {
+        let log = revealed_log(conn, follower, target)?;
+        if history {
+            v["history"] = history_of(&log);
+        }
+        if stats {
+            v["stats"] = stats_of(&log, now);
+        }
+    }
+    Ok(Some(v))
+}
+
+/// One revealed state: when it was revealed, its (fuzzed) start, and who was shown.
+struct Logged {
+    revealed_at: i64,
+    displayed: notify::Displayed,
+    entries: Vec<Shown>,
+}
+
+/// How far back follower history and stats go.
+const HISTORY_DAYS: i64 = 30;
+const HISTORY_ITEMS: usize = 50;
+
+fn revealed_log(conn: &Connection, follower: &str, target: &str) -> anyhow::Result<Vec<Logged>> {
+    let mut st = conn.prepare_cached(
+        "SELECT revealed_at, displayed, entries FROM follower_front_log
+         WHERE follower_account_id = ?1 AND target_account_id = ?2
+           AND revealed_at >= (SELECT max(revealed_at) FROM follower_front_log
+                               WHERE follower_account_id = ?1 AND target_account_id = ?2) - ?3
+         ORDER BY revealed_at, rowid",
+    )?;
+    let rows = st.query_map(params![follower, target, HISTORY_DAYS * 86_400_000], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        let (revealed_at, displayed, entries) = r?;
+        let (Ok(displayed), Ok(entries)) = (serde_json::from_str(&displayed), serde_json::from_str(&entries)) else {
+            continue;
+        };
+        out.push(Logged { revealed_at, displayed, entries });
+    }
+    Ok(out)
+}
+
+fn names(entries: &[Shown]) -> Vec<Value> {
+    entries.iter().map(|e| json!({"name": e.name, "color": e.color, "glyph": e.glyph, "seen": e.seen})).collect()
+}
+
+/// Newest first; consecutive reveals that show the same people are one item.
+fn history_of(log: &[Logged]) -> Value {
+    let mut items: Vec<Value> = Vec::new();
+    let mut last: Option<Vec<String>> = None;
+    for l in log {
+        let key: Vec<String> = l.entries.iter().map(|e| e.name.clone()).collect();
+        if last.as_ref() == Some(&key) {
+            continue;
+        }
+        items.push(json!({"entries": names(&l.entries), "time": precision_of(&Some(l.displayed.clone()))}));
+        last = Some(key);
+    }
+    items.reverse();
+    items.truncate(HISTORY_ITEMS);
+    Value::Array(items)
+}
+
+/// Share of revealed front time per name over the log window, rounded to 5 %, from the fuzzed
+/// times. Whole days only: each state counts until the next revealed one, and nothing counts past
+/// the start of today (UTC), so the numbers move at a reveal or at midnight and never at a switch.
+fn stats_of(log: &[Logged], now: i64) -> Value {
+    let today = now - now.rem_euclid(86_400_000);
+    let mut spans: BTreeMap<String, i64> = BTreeMap::new();
+    let mut total = 0;
+    for (i, l) in log.iter().enumerate() {
+        let Some(start) = l.displayed.at else { continue };
+        let end = log.get(i + 1).and_then(|n| n.displayed.at).unwrap_or(today).min(today);
+        let d = (end - start).max(0);
+        let front: Vec<&Shown> = l.entries.iter().filter(|e| e.seen.level() == Level::Front).collect();
+        if d == 0 || front.is_empty() {
+            continue;
+        }
+        total += d;
+        for e in front {
+            *spans.entry(e.name.clone()).or_default() += d;
+        }
+    }
+    if total == 0 {
+        return json!({"days": HISTORY_DAYS, "members": []});
+    }
+    let mut members: Vec<(String, i64)> =
+        spans.into_iter().map(|(n, d)| (n, ((d as f64 / total as f64 * 20.0).round() as i64) * 5)).collect();
+    members.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    json!({"days": HISTORY_DAYS, "members": members.iter().map(|(n, p)| json!({"name": n, "share_pct": p})).collect::<Vec<_>>()})
 }

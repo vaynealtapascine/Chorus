@@ -158,7 +158,10 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   - `/front`, `/front/switches`, `/front/intervals`;
   - `/front/daily?from=&to=&level=` (days are `YYYY-MM-DD`, `to` inclusive);
   - `/front/reviews?open=1`.
-- **Other accounts:** `/accounts/{id}/view`, `/follows`, `/notifications`.
+- **Other accounts:** `/accounts/{id}/view`, `/follows`, `/notifications`. The view is
+  `{entries, since, revealed_at, time}`, plus `history: [{entries, time}]` and
+  `stats: {days, members: [{name, share_pct}]}` when the ceiling has `share_history` or
+  `share_stats` (NOTIFICATIONS §3).
 - `/front/intervals` also takes `subject` (an id) and `level`.
 - **Shared spaces and DMs** (M6.2, `spaces.rs`, signed-in devices only):
   - `GET /spaces` returns your spaces with the accounts in each.

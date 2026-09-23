@@ -334,7 +334,8 @@ fn follower_surfaces_only_change_at_reveal_times() {
         let max_s = [60, 300, 900][(seed % 3) as usize];
         let stacking = if seed % 4 == 0 { "sequence" } else { "collapse" };
         let ceiling = json!({"delay": {"min_s": 60, "max_s": max_s}, "time": {"mode": "exact"},
-                             "levels": ["front"], "stacking": stacking});
+                             "levels": ["front"], "stacking": stacking,
+                             "share_history": true, "share_stats": true});
         w.push("follow.set_ceiling", &follow, json!({"ceiling": ceiling}), NOW - 2_000);
 
         let mut rng = seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
@@ -344,8 +345,8 @@ fn follower_surfaces_only_change_at_reveal_times() {
             rng ^= rng << 17;
             rng
         };
-        let surfaces = |w: &World| {
-            let v = notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap();
+        let surfaces = |w: &World, t: i64| {
+            let v = notifier::follower_view_at(&w.c, &w.friend, &w.sys, t).unwrap();
             let l = notifier::list(&w.c, &w.friend, 200).unwrap();
             serde_json::to_string(&(v, l)).unwrap()
         };
@@ -368,14 +369,14 @@ fn follower_surfaces_only_change_at_reveal_times() {
                 let ids: Vec<&str> = chosen.iter().map(|(id, _)| *id).collect();
                 let mut names: Vec<String> = chosen.iter().filter_map(|(_, n)| n.map(str::to_string)).collect();
                 names.sort();
-                let before = surfaces(&w);
+                let before = surfaces(&w, t);
                 w.switch(&ids, at);
-                assert_eq!(surfaces(&w), before, "seed {seed}: recording a switch changed a follower surface");
+                assert_eq!(surfaces(&w, t), before, "seed {seed}: recording a switch changed a follower surface");
                 history.push((at, names));
             }
-            let before = surfaces(&w);
+            let before = surfaces(&w, t);
             let p = notifier::process_due(&w.c, t).unwrap();
-            let after = surfaces(&w);
+            let after = surfaces(&w, t);
             assert!(!after.contains("Secret"), "seed {seed}: a hidden member was named");
             if after != before {
                 reveals += 1;
@@ -396,4 +397,47 @@ fn follower_surfaces_only_change_at_reveal_times() {
     }
     // delays are drawn on the server, so count reveals across all seeds, not per seed
     assert!(total_reveals >= 40, "too few reveals overall: {total_reveals}");
+}
+
+#[test]
+fn shared_history_and_stats_only_contain_revealed_whole_days() {
+    let (mut w, kai, june, _) = world();
+    let follow: String = w.c.query_row("SELECT id FROM follow", [], |r| r.get(0)).unwrap();
+    let view = |w: &World, at: i64| notifier::follower_view_at(&w.c, &w.friend, &w.sys, at).unwrap().unwrap();
+    let h = 3_600_000;
+    let today = NOW - NOW.rem_euclid(86_400_000); // NOW is 14:13 UTC
+    let tomorrow = today + 24 * h;
+
+    w.switch(&[&kai], NOW);
+    notifier::process_due(&w.c, NOW + SETTLE + DELAY).unwrap();
+    assert!(view(&w, NOW + h).get("history").is_none(), "not shared by default");
+    assert!(view(&w, NOW + h).get("stats").is_none());
+
+    let ceiling = json!({"delay": {"min_s": 60, "max_s": 60}, "time": {"mode": "exact"}, "levels": ["front"],
+                         "share_history": true, "share_stats": true});
+    w.push("follow.set_ceiling", &follow, json!({"ceiling": ceiling}), NOW + 60 * 60_000);
+    let t = NOW + 2 * h;
+    w.switch(&[&june], t);
+    let names = |v: &Value| -> Vec<String> {
+        v["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["entries"][0]["name"].as_str().unwrap_or("").to_string())
+            .collect()
+    };
+    let before = view(&w, t + SETTLE + DELAY - 1);
+    assert_eq!(names(&before), ["Kai"], "June isn't revealed yet");
+    assert_eq!(before["stats"]["members"], json!([]), "nothing counts until a whole day has passed");
+
+    notifier::process_due(&w.c, t + SETTLE + DELAY).unwrap();
+    assert_eq!(names(&view(&w, t + SETTLE + DELAY)), ["June", "Kai"]);
+    assert_eq!(view(&w, t + SETTLE + DELAY)["history"][1]["time"]["at"], NOW, "exact rule: the real start");
+
+    // the next day: Kai 14:13–16:13 (2 h), June 16:13–midnight (7 h 47 min) → 20 % and 80 %
+    let pending = tomorrow + 30 * 60_000;
+    w.switch(&[&kai], pending); // recorded, not yet revealed
+    let s = view(&w, tomorrow + h)["stats"].clone();
+    assert_eq!(s["members"], json!([{"name": "June", "share_pct": 80}, {"name": "Kai", "share_pct": 20}]));
+    assert_eq!(s["days"], 30);
 }

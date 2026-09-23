@@ -9,6 +9,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 pub const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_init", include_str!("../migrations/0001_init.sql")),
     ("0002_push_keys", include_str!("../migrations/0002_push_keys.sql")),
+    ("0003_follower_history", include_str!("../migrations/0003_follower_history.sql")),
 ];
 
 pub fn open(path: &Path) -> anyhow::Result<Connection> {

@@ -99,6 +99,18 @@ follower's buckets → account default.
 }
 ```
 
+`share_history` and `share_stats` (implemented, M6.3) add `history` and `stats` to the follower
+view. Both are computed from `follower_front_log`, which gets a row only at reveal time, with the
+fuzzed displayed time and without avatars.
+
+- `history` is the last 30 days of revealed states, newest first, up to 50.
+- `stats` is each name's share of revealed front time, rounded to 5 %. It counts **whole days
+  only**: nothing after the start of today (UTC) counts, so it moves at a reveal or at midnight,
+  never at a switch.
+
+The web sets both in People → Advanced sharing default. They are kept out of the presets:
+choosing a preset keeps them, and they never make a preset read as "Custom".
+
 **Presets** (Basic UI shows only these, per follower or per bucket):
 
 | Preset | Delay | Time shown | Other |

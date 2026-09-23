@@ -17,7 +17,16 @@
   interface FollowRow { id: string; account: Person; status: string; created_at: number; prefs?: Record<string, unknown> }
 
   interface ViewEntry { t: string; name: string; level: string; color?: string | null; glyph?: string | null; avatar_blob?: string | null }
-  interface View { entries: ViewEntry[]; since: number | null; time?: { mode?: string }; shared?: boolean }
+  interface When { at: number | null; precision: Precision; part?: Part | null }
+  interface View {
+    entries: ViewEntry[];
+    since: number | null;
+    time?: { mode?: string };
+    shared?: boolean;
+    /** only when they share it: past revealed fronts, newest first */
+    history?: { entries: { name: string }[]; time: When }[];
+    stats?: { days: number; members: { name: string; share_pct: number }[] };
+  }
   interface Note {
     id: string;
     kind: 'switch' | 'mention' | 'dm' | 'reply';
@@ -59,14 +68,27 @@
   let newBucket = $state('');
   let newBucketPreset = $state('gentle');
 
+  // what followers may browse besides the current front (NOTIFICATIONS §3); kept apart from the
+  // timing presets, so choosing a preset never changes them and they don't make a preset "custom"
+  const SHARING = ['share_history', 'share_stats'] as const;
+  const withoutSharing = (c: Record<string, unknown>) =>
+    Object.fromEntries(Object.entries(c).filter(([k]) => !(SHARING as readonly string[]).includes(k)));
+
   function presetOf(ceiling: unknown): string {
-    const raw = JSON.stringify(ceiling ?? {});
+    const raw = JSON.stringify(withoutSharing((ceiling ?? {}) as Record<string, unknown>));
     return PRESETS.find((p) => JSON.stringify(JSON.parse(presetJson[p.id])) === raw)?.id ?? (raw === '{}' ? 'gentle' : 'custom');
   }
 
   function setDefault(preset: string) {
+    const keep = Object.fromEntries(SHARING.filter((k) => k in defaultCeiling).map((k) => [k, defaultCeiling[k]]));
     sync.create('account.set', sync.accountScope, sync.accountId, {
-      settings: { ...accountSettings, follow_ceiling: JSON.parse(presetJson[preset]) },
+      settings: { ...accountSettings, follow_ceiling: { ...JSON.parse(presetJson[preset]), ...keep } },
+    });
+  }
+
+  function setSharing(key: (typeof SHARING)[number], on: boolean) {
+    sync.create('account.set', sync.accountScope, sync.accountId, {
+      settings: { ...accountSettings, follow_ceiling: { ...defaultCeiling, [key]: on } },
     });
   }
 
@@ -378,6 +400,11 @@
           {#each PRESETS as p (p.id)}<option value={p.id}>{p.label} — {p.hint}</option>{/each}
         </select>
       </label>
+      <label class="check"><input type="checkbox" checked={defaultCeiling.share_history === true}
+        onchange={(e) => setSharing('share_history', e.currentTarget.checked)} /> Followers can look back at who fronted</label>
+      <label class="check"><input type="checkbox" checked={defaultCeiling.share_stats === true}
+        onchange={(e) => setSharing('share_stats', e.currentTarget.checked)} /> Followers can see who fronts most (last 30 days)</label>
+      <p class="hint">Both only ever show what followers were already told, with the same delay and fuzzed times.</p>
     </details>
   </section>
 
@@ -395,6 +422,20 @@
                 <span class="front-avatar" title={e.name}><AvatarImage hash={e.avatar_blob} glyph={e.glyph ?? e.name[0]} name={e.name} /></span>
               {/each}
             </span>
+          {/if}
+          {#if views[f.account.id]?.stats?.members.length}
+            <span>Most often, last {views[f.account.id].stats!.days} days:
+              {views[f.account.id].stats!.members.filter((m) => m.share_pct > 0).map((m) => `${m.name} ${m.share_pct}%`).join(' · ')}</span>
+          {/if}
+          {#if views[f.account.id]?.history && views[f.account.id].history!.length > 1}
+            <details class="history">
+              <summary>Earlier</summary>
+              <ol>
+                {#each views[f.account.id].history!.slice(1) as h, i (i)}
+                  <li>{h.entries.map((e) => e.name).join(' & ') || 'Nobody shared'} <time>{fuzzyWhen(h.time.at, h.time.precision, h.time.part)}</time></li>
+                {/each}
+              </ol>
+            </details>
           {/if}
         </div>
         <div class="actions">
@@ -491,6 +532,10 @@
   .bucket-checks { width: 100%; font-size: var(--fs-sm); }
   .new-space input:not([type='checkbox']) { font: inherit; flex: 1; min-width: 12ch; padding: var(--s-1) var(--s-2); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
   .primary:disabled { opacity: 0.5; }
+  .history { font-size: var(--fs-sm); color: var(--ink-3); }
+  .history ol { margin: var(--s-1) 0 0; padding-left: var(--s-4); display: grid; gap: 2px; }
+  .history time { margin-left: var(--s-2); }
+  .check { display: flex; gap: var(--s-2); align-items: center; font-size: var(--fs-sm); }
   .quiet { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); font-size: var(--fs-sm); color: var(--ink-2); }
   .quiet input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-1) var(--s-2); }
   .preset { display: grid; gap: 2px; flex: 1; min-width: 14em; }
