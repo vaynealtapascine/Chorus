@@ -26,7 +26,8 @@
   media.addEventListener('change', (e) => (dark = e.matches));
 
   let status: Status = $state(sync.status);
-  let projection: Projection | null = $state(sync.projection());
+  // raw: the client hands us a new object per change (deltas, copy-on-write); no deep proxies
+  let projection: Projection | null = $state.raw(sync.projection());
   $effect(() =>
     sync.subscribe(() => {
       status = sync.status;

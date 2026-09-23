@@ -153,6 +153,11 @@ impl CoreReplica {
         self.lock().projection()
     }
 
+    /// Only what changed since the last call (`{"full": true}` the first time).
+    pub fn projection_delta(&self) -> String {
+        self.lock().projection_delta()
+    }
+
     pub fn state(&self) -> String {
         self.lock().state()
     }

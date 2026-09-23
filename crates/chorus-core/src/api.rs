@@ -253,8 +253,14 @@ impl JsonReplica {
         js(&self.0.take_changes())
     }
 
-    pub fn projection(&self) -> String {
+    pub fn projection(&mut self) -> String {
         js(&self.0.projection().canonical())
+    }
+
+    /// Only what changed since the last call (`{"full": true}` the first time: read
+    /// `projection()` then). Rows/sets/fronts set to `null` are gone.
+    pub fn projection_delta(&mut self) -> String {
+        js(&self.0.projection_delta())
     }
 
     pub fn state(&self) -> String {

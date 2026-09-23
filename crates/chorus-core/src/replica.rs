@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::hlc::{Hlc, HlcClock};
-use crate::model::{self, Projection};
+use crate::model::Projection;
 use crate::op::{self, Op, OpError};
+use crate::projector::{Delta, Projector};
 use crate::sync::{ClientEngine, ClientState, ClientStore, ClockReading, Frame, MemStore};
 use crate::time::TimeSource;
 
@@ -18,6 +19,8 @@ pub struct Replica {
     pub engine: ClientEngine,
     pub store: MemStore,
     pub clock: HlcClock,
+    /// Incremental projection of `store.visible()` (projector.rs), refreshed on read.
+    projector: Projector,
 }
 
 /// What to persist after a call.
@@ -62,7 +65,12 @@ pub struct DeviceNow {
 
 impl Replica {
     pub fn new(device_id: &str, node: u32) -> Replica {
-        Replica { engine: ClientEngine::new(device_id), store: MemStore::default(), clock: HlcClock::new(node) }
+        Replica {
+            engine: ClientEngine::new(device_id),
+            store: MemStore::default(),
+            clock: HlcClock::new(node),
+            projector: Projector::new(),
+        }
     }
 
     /// Rebuild from persisted metadata and ops.
@@ -75,7 +83,7 @@ impl Replica {
             Some(h) => HlcClock::resume(node, h),
             None => HlcClock::new(node),
         };
-        Replica { engine: ClientEngine::new(device_id), store, clock }
+        Replica { engine: ClientEngine::new(device_id), store, clock, projector: Projector::new() }
     }
 
     pub fn state(&self) -> ClientState {
@@ -163,9 +171,28 @@ impl Replica {
         Changes { ops, meta: meta.then(|| self.store.clone_meta()), hlc_last: self.clock.last }
     }
 
-    /// What the UI shows: confirmed + pending ops, minus rejected ones.
-    pub fn projection(&self) -> Projection {
-        model::project(self.store.visible())
+    /// What the UI shows: confirmed + pending ops, minus rejected ones. Equal to
+    /// `model::project(self.store.visible())`, kept up to date incrementally.
+    pub fn projection(&mut self) -> &Projection {
+        self.refresh();
+        self.projector.projection()
+    }
+
+    /// Bring the projector up to date with only the ops the store says changed.
+    fn refresh(&mut self) {
+        let touched = self.store.take_touched();
+        if self.projector.is_empty() {
+            self.projector.sync(self.store.visible());
+            return;
+        }
+        let store = &self.store;
+        self.projector.sync_ids(touched, |id| store.ops.get(id).filter(|o| !store.rejected.contains_key(&o.id)));
+    }
+
+    /// What changed in [`Replica::projection`] since the last call (`full` the first time).
+    pub fn projection_delta(&mut self) -> Delta {
+        self.refresh();
+        self.projector.take_delta()
     }
 }
 
@@ -182,6 +209,7 @@ impl MemStore {
             restoring: self.restoring.clone(),
             dirty: Default::default(),
             meta_dirty: false,
+            touched: Default::default(),
         }
     }
 }

@@ -444,10 +444,15 @@ pub struct MemStore {
     /// Cursors/epoch/scopes/queues changed since the last take.
     #[serde(skip)]
     pub meta_dirty: bool,
+    /// Op ids whose visible copy may have changed since the projector last looked
+    /// ([`MemStore::take_touched`]); every op mutation below records here.
+    #[serde(skip)]
+    pub touched: BTreeSet<String>,
 }
 
 impl MemStore {
     pub fn add_local(&mut self, op: Op) {
+        self.touched.insert(op.id.clone());
         self.local_order.push(op.id.clone());
         self.dirty.insert(op.id.clone());
         self.meta_dirty = true;
@@ -462,6 +467,11 @@ impl MemStore {
         if self.local_order.len() != before {
             self.meta_dirty = true;
         }
+    }
+
+    /// Op ids that may look different to the projection since the last call.
+    pub fn take_touched(&mut self) -> BTreeSet<String> {
+        std::mem::take(&mut self.touched)
     }
 
     /// Changed ops (current versions) and whether the meta changed, clearing the flags.
@@ -510,12 +520,14 @@ impl ClientStore for MemStore {
             self.meta_dirty = true;
         }
         self.dirty.insert(op.id.clone());
+        self.touched.insert(op.id.clone());
         self.ops.insert(op.id.clone(), op);
     }
     fn ack(&mut self, id: &str, stamp: &Stamp) {
         if let Some(o) = self.ops.get_mut(id) {
             stamp.apply(o);
             self.dirty.insert(id.into());
+            self.touched.insert(id.into());
         }
         if self.restoring.iter().any(|x| x == id) {
             self.restoring.retain(|x| x != id);
@@ -525,6 +537,7 @@ impl ClientStore for MemStore {
     fn reject(&mut self, id: &str, error: AckError) {
         if self.ops.get(id).is_some_and(|o| o.seq.is_none()) {
             self.rejected.insert(id.into(), error);
+            self.touched.insert(id.into());
             self.meta_dirty = true;
         }
     }
@@ -553,6 +566,7 @@ impl ClientStore for MemStore {
                 o.seq = None;
             }
             self.dirty.insert(id.clone());
+            self.touched.insert(id.clone());
             self.restoring.push(id);
         }
         self.meta_dirty = true;
