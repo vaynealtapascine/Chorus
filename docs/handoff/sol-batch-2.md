@@ -210,6 +210,16 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 ### Batch 3
 
 #### T6 · doing (pre-merge WIP)
-- Replaced `VACUUM INTO` with rusqlite's online backup API and drafted a snapshot/manifest, restore verification, rotation and nightly scheduler. This is intentionally a WIP before merging Claude's main branch; CLI commands and restore tests still need to be completed and run.
-- `cargo check -p chorus-server --offline` passed. Next: run the required quick verifier, commit this WIP, merge main, rebuild generated cores, run verifier and Android build, then read `docs/handoff/sol-batch-3.md` and do A1–A4 before resuming T6.
+- Commit `a06942c` replaced `VACUUM INTO` with rusqlite's online backup API and drafted a snapshot/manifest, restore verification, rotation and nightly scheduler. This is intentionally a WIP; CLI command tests and restore checks still need to be completed and run. `cargo check -p chorus-server --offline` and `verify.py --quick` passed before the WIP commit.
 - Audit first: restore staging cleanup, checksum validation, projection comparison, retention policy, and OPS format alignment. No core semantics changed and no proposed decision yet.
+
+#### Step 0 · done
+- Merge commit `a4778fa` brought main `c548c9b` into `sol/batch-2`. The only conflict was `chorus-server/Cargo.toml`; retained main's `reqwest` dependency and the branch's rusqlite `backup` feature. No branch switch or rebase.
+- Rebuilt ignored wasm and Android UniFFI outputs, ran `verify.py --quick` (passed), and ran `:app:assembleDebug :app:testDebugUnitTest --offline` (passed). Android was compiled and unit tested; no device runtime check was made for the merge.
+
+#### A1 · done
+- Shared the visible-author SQL source between `/spaces/{id}/authors` and blob avatar authorization. A reader can fetch another account's member avatar only after that member authored a non-deleted, unhidden message in an accessible space. The extended `friends_share_spaces_and_dms` HTTP/WebSocket test passed: DM membership alone and a stranger returned 403, an author avatar returned 200 after the message, and leaving the DM returned 403 again. This exercises behaviour on a running test server, not just compilation.
+- Audit first: revisit both uses of `PUBLIC_AUTHOR_SOURCE` when T8 defines structured visibility. No core semantics changed; no proposed decision.
+
+#### A2 · deferred to T8
+- The attachment string match and activity notification skip are tied to the T8 visibility JSON shape. They remain unchanged for now; T8 must replace both with one structured visibility rule and test readable messages plus system-only asides.

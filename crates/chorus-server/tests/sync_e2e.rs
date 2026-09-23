@@ -15,6 +15,7 @@ use chorus_server::{app, auth, config::Config, db};
 use futures_util::{SinkExt, StreamExt};
 use p256::pkcs8::EncodePublicKey;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use tokio_tungstenite::tungstenite::Message;
 
 type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
@@ -750,6 +751,21 @@ async fn friends_share_spaces_and_dms() {
     let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
     let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
     let id_of = |e: &Value| e["account_id"].as_str().unwrap().to_string();
+    let avatar = b"shared-avatar";
+    let avatar_hash = format!("{:x}", Sha256::digest(avatar));
+    let avatar_url = url(&format!("/blobs/{avatar_hash}"));
+    let upload = http
+        .put(&avatar_url)
+        .bearer_auth(tok(&sys))
+        .header("content-range", format!("bytes 0-{}/{}", avatar.len() - 1, avatar.len()))
+        .header("content-type", "image/png")
+        .body(avatar.as_slice())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(upload.status(), 201);
+    phone.create("member.set", &acct, &kai, json!({"avatar_blob": avatar_hash})).await;
+    phone.drain(Q).await;
     let post = |path: String, auth: String, body: Value| {
         let http = http.clone();
         async move {
@@ -780,6 +796,11 @@ async fn friends_share_spaces_and_dms() {
     assert!(laptop.store.scopes.contains(&scope));
     let p = model::project(phone.store.confirmed());
     let chan = p.rows["channel"].iter().find(|(_, r)| r.fields["space_id"] == dm.as_str()).unwrap().0.clone();
+    assert_eq!(
+        http.get(&avatar_url).bearer_auth(tok(&friend)).send().await.unwrap().status(),
+        403,
+        "DM membership alone does not expose unrelated member avatars"
+    );
     phone
         .create(
             "message.send",
@@ -805,6 +826,9 @@ async fn friends_share_spaces_and_dms() {
         .unwrap();
     assert_eq!(cards["members"].as_array().unwrap().len(), 1);
     assert_eq!(cards["members"][0]["name"], "Kai");
+    assert_eq!(cards["members"][0]["avatar_blob"], avatar_hash);
+    assert_eq!(http.get(&avatar_url).bearer_auth(tok(&friend)).send().await.unwrap().status(), 200);
+    assert_eq!(http.get(&avatar_url).bearer_auth(tok(&stranger)).send().await.unwrap().status(), 403);
     assert_eq!(cards["accounts"].as_array().unwrap().len(), 2);
     let r = http.get(url(&format!("/spaces/{dm}/authors"))).bearer_auth(tok(&stranger)).send().await.unwrap();
     assert_eq!(r.status(), 404);
@@ -839,4 +863,9 @@ async fn friends_share_spaces_and_dms() {
     assert!(!laptop.store.scopes.contains(&scope));
     let r = http.get(url(&format!("/spaces/{dm}/authors"))).bearer_auth(tok(&friend)).send().await.unwrap();
     assert_eq!(r.status(), 404);
+    assert_eq!(
+        http.get(&avatar_url).bearer_auth(tok(&friend)).send().await.unwrap().status(),
+        403,
+        "leaving the space revokes access to its authors' avatars"
+    );
 }
