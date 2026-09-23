@@ -213,15 +213,26 @@ pub fn switches(
 }
 
 /// Front intervals overlapping `[from, to)`: the table graphs are made from (DATA_MODEL §4).
-pub fn intervals(conn: &Connection, p: &Principal, from: Option<i64>, to: Option<i64>) -> Result<Value, DataError> {
+/// `subject` (a subject id) and `level` narrow it down.
+pub fn intervals(
+    conn: &Connection,
+    p: &Principal,
+    from: Option<i64>,
+    to: Option<i64>,
+    subject: Option<&str>,
+    level: Option<&str>,
+) -> Result<Value, DataError> {
     if !p.allows("read:front") {
         return Err(DataError::Scope("read:front"));
     }
     let mut st = conn.prepare_cached(
         "SELECT subject_type, subject_id, level, is_primary, start_at, end_at FROM front_interval
-         WHERE account_id = ?1 AND start_at < ?3 AND (end_at IS NULL OR end_at > ?2) ORDER BY start_at, subject_id",
+         WHERE account_id = ?1 AND start_at < ?3 AND (end_at IS NULL OR end_at > ?2)
+           AND (?4 IS NULL OR subject_id = ?4) AND (?5 IS NULL OR level = ?5)
+         ORDER BY start_at, subject_id",
     )?;
-    let rows = st.query_map(params![p.account_id, from.unwrap_or(i64::MIN), to.unwrap_or(i64::MAX)], |r| {
+    let args = params![p.account_id, from.unwrap_or(i64::MIN), to.unwrap_or(i64::MAX), subject, level];
+    let rows = st.query_map(args, |r| {
         Ok(json!({
             "subject_type": r.get::<_, String>(0)?,
             "subject_id": r.get::<_, String>(1)?,

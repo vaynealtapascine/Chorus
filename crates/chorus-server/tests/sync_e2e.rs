@@ -629,6 +629,10 @@ async fn rest_reads_cover_members_groups_fields_and_days() {
     assert_eq!(g["items"][0]["member_ids"], json!([kai]));
     let (_, f) = get(url("/fields"), session.clone()).await;
     assert_eq!(f["items"][0]["type"], "text");
+    let (_, i) = get(url(&format!("/front/intervals?subject={kai}&level=front")), session.clone()).await;
+    assert_eq!(i["items"].as_array().unwrap().len(), 1);
+    let (_, i) = get(url("/front/intervals?level=cocon"), session.clone()).await;
+    assert_eq!(i["items"].as_array().unwrap().len(), 0);
     let (_, d) = get(url("/front/daily?level=front"), session.clone()).await;
     assert_eq!(d["items"][0]["subject_id"], kai.as_str());
     assert_eq!(get(url("/front/daily?from=yesterday"), session.clone()).await.0, 400);

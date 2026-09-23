@@ -485,6 +485,8 @@ struct Range {
     from: Option<i64>,
     to: Option<i64>,
     limit: Option<i64>,
+    subject: Option<String>,
+    level: Option<String>,
     /// EventSource can't send headers, so the stream (only) also takes `?token=`.
     token: Option<String>,
 }
@@ -515,7 +517,7 @@ async fn front_intervals(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
-    Ok(Json(crate::api_data::intervals(&conn, &p, q.from, q.to)?))
+    Ok(Json(crate::api_data::intervals(&conn, &p, q.from, q.to, q.subject.as_deref(), q.level.as_deref())?))
 }
 
 async fn members_list(
