@@ -4,7 +4,11 @@
 
 A cozy, local-first home for plural systems: chat as your members, keep journals, switch in one tap, and share who's around on your terms.
 
-> **Status:** specification phase. No code yet — see [PROGRESS.md](PROGRESS.md).
+> **Status:** in active development. The server, sync and web app work end to end (members,
+> switching, chat, stage mode, follows with delayed/fuzzed switch notifications); the Android app
+> and its home-screen widget are being finished. See [PROGRESS.md](PROGRESS.md).
+
+<img src="assets/screenshot-web-light.png" alt="Chorus on the web: the home screen with who's fronting and quick switch" width="360">
 
 Chorus is a self-hosted PluralKit replacement that lives on your own server over Tailscale:
 
@@ -22,6 +26,20 @@ Chorus is a self-hosted PluralKit replacement that lives on your own server over
 - **Your data, readable** — plain SQL tables, documented views, CSV/JSONL/SQLite exports, a live
   event stream and webhooks.
 - **Offline-first** — the Android app and web app work without a connection and resync cleanly.
+
+## Running it
+
+Chorus runs on one Windows PC and is reached over Tailscale through Caddy
+([Operations](docs/OPS.md)).
+
+```powershell
+pwsh scripts/deploy.ps1            # build the server + web app into ~\selfhost\chorus
+pwsh scripts/deploy.ps1 -Android   # also publish the Android app for in-app updates
+~\selfhost\chorus\install.cmd      # once, as administrator: Windows service + Caddy site + first invite
+```
+
+For development: `cargo run -p chorus-server -- --dev serve` (port 5251) and, in `web/`,
+`npm run dev` (port 5252). `python scripts/verify.py` runs every check.
 
 ## Documentation
 
