@@ -69,6 +69,8 @@ pub fn router(state: AppState) -> Router {
         .route("/follows", get(follows_list).post(follow_request))
         .route("/follows/{id}/prefs", put(follow_prefs))
         .route("/follows/{id}", delete(follow_end))
+        .route("/notifications", get(notifications))
+        .route("/accounts/{id}/view", get(account_view))
         .route("/sync", get(sync_ws));
     let mut app = Router::new().nest("/api/v1", api).with_state(state.clone());
     if let Some(dir) = state.cfg.server.web_dir.clone() {
@@ -273,6 +275,42 @@ async fn follow_end(
         fan_out(&s, &conn, &[o], None)?;
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn notifications(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    Ok(Json(crate::notifier::list(&conn, &me.account_id, 100)?))
+}
+
+/// A follower's view of another account: only what has been revealed (NOTIFICATIONS.md §5).
+async fn account_view(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    crate::notifier::follower_view(&conn, &me.account_id, &id)?
+        .map(Json)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "you don't follow this account".into()))
+}
+
+/// Reveal and deliver due follower notifications every few seconds (notifier.rs).
+fn run_notifier(state: AppState) {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
+        loop {
+            tick.tick().await;
+            let conn = state.db();
+            if let Err(e) = crate::notifier::process_due(&conn, now_ms()) {
+                tracing::error!(error = %e, "notifier failed");
+            }
+        }
+    });
 }
 
 // ─── sync socket ─────────────────────────────────────────────────────────────
@@ -509,6 +547,7 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!(%addr, "chorus-server listening");
     watch_own_binary();
+    run_notifier(state.clone());
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     let server = axum::serve(listener, router(state)).with_graceful_shutdown(async {
         let _ = tokio::signal::ctrl_c().await;

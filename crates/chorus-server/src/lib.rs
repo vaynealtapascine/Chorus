@@ -6,6 +6,7 @@ pub mod config;
 pub mod db;
 pub mod follows;
 pub mod ingest;
+pub mod notifier;
 pub mod oplog;
 pub mod project;
 

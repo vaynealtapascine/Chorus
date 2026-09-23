@@ -109,7 +109,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 - [~] M6.1 Person accounts, follows, privacy buckets — follows done end to end (server-written requests/prefs, REST, web People page with presets); bucket UI + per-member announce policy UI still to do
 - [ ] M6.2 Shared spaces + DMs between accounts
-- [ ] M6.3 Follower views (delayed/fuzzed front state per NOTIFICATIONS.md §5)
+- [~] M6.3 Follower views (delayed/fuzzed front state per NOTIFICATIONS.md §5) — server reveal + GET /accounts/{id}/view done; history/stats surfaces not yet
 
 ### M7 — Profiles & journals
 
@@ -122,7 +122,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M8 — Notifications
 
 - [ ] M8.1 ntfy/UnifiedPush plumbing (server publisher, Android distributor registration)
-- [~] M8.2 Rule resolution: per-switch × per-member × system ceiling × recipient prefs — core done (`chorus_core::notify`); server scheduler needs M6.1 follows
+- [~] M8.2 Rule resolution: per-switch × per-member × system ceiling × recipient prefs — core + server scheduler done (notifier.rs: queue on front change, reveal/deliver loop, GET /notifications); push delivery is M8.1
 - [~] M8.3 Random delay, time fuzzing, supersede/collapse, digests, quiet hours — core rules + property tests done; server pending (digest text too)
 - [ ] M8.4 Chat notifications (mentions, DMs, replies), inline reply
 

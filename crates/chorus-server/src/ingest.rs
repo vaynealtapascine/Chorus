@@ -119,6 +119,13 @@ pub fn accept(
     let seq = oplog::insert(conn, &o, suspect, preserved)?;
     o.seq = Some(seq);
     project::after_insert(conn, &o)?;
+    // follower notifications are queued from live ingest only (never from a rebuild or a restore)
+    if !preserved
+        && o.kind.starts_with("front.")
+        && let Some(account) = o.scope.strip_prefix("account:")
+    {
+        crate::notifier::on_front_change(conn, account, now)?;
+    }
     Ok((AckResult::ok(&o), Some(o)))
 }
 

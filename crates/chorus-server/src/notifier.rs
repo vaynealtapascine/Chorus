@@ -1,0 +1,574 @@
+//! Switch notifications and follower views on the server (NOTIFICATIONS.md §2, §5, §6).
+//!
+//! The rules are `chorus_core::notify`; this module feeds them from SQL and keeps the queue:
+//!
+//! - [`on_front_change`] runs inside the ingest transaction after any `front.*` op (never during a
+//!   rebuild). For each active follower it computes the privacy-filtered view; if that differs
+//!   from what is already revealed or queued, it queues one `notification` row with a randomized
+//!   `due_at` (settle + delay; late arrivals spread over 2 min) and collapses older pending rows.
+//!   A retraction that brings the view back to what was revealed cancels what's pending.
+//! - [`process_due`] runs every few seconds. At `due_at` it **reveals** the view (the follower
+//!   view changes only here, §5) and then delivers, holds (quiet hours), queues for a digest, or
+//!   just reveals (silent/muted/filtered).
+//!
+//! Random draws come from the OS CSPRNG once and are stored in the row, so restarts don't redraw.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use chorus_core::front::{Entry, Level, Notify, SubjectType};
+use chorus_core::notify::{
+    self, Audience, Ceiling, Diff, Draws, MemberPolicy, Pending, Precision, Prefs, Route, RouteIn, ScheduleIn, Seen,
+};
+use rusqlite::{Connection, OptionalExtension, params};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+
+/// A subject as the follower sees it: names are snapshotted when the change is queued.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Shown {
+    #[serde(flatten)]
+    pub seen: Seen,
+    pub name: String,
+    pub color: Option<String>,
+    pub glyph: Option<String>,
+}
+
+/// subject id → (name, colour, glyph), snapshotted when a change is queued.
+type Names = BTreeMap<String, (String, Option<String>, Option<String>)>;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Queued {
+    target_account_id: String,
+    follow_id: String,
+    view: Vec<Seen>,
+    names: Names,
+    diff_arrived: Vec<Seen>,
+    diff_left: Vec<Seen>,
+    occurred_at: i64,
+    tz_offset_min: i32,
+    notify: Notify,
+    draws: Draws,
+    /// pending → (held | digest) → delivered, or revealed (no ping)
+    state: String,
+    text: Option<String>,
+    displayed: Option<notify::Displayed>,
+}
+
+fn json_col<T: for<'de> Deserialize<'de> + Default>(s: Option<String>) -> T {
+    s.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+fn current_front(conn: &Connection, account: &str) -> anyhow::Result<Vec<Entry>> {
+    let mut st = conn.prepare_cached(
+        "SELECT subject_type, subject_id, level, is_primary FROM front_interval
+         WHERE account_id = ?1 AND end_at IS NULL ORDER BY position",
+    )?;
+    let rows = st.query_map([account], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, bool>(3)?))
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        let (t, id, level, primary) = r?;
+        let subject_type = serde_json::from_value(json!(t))?;
+        let level = serde_json::from_value(json!(level))?;
+        out.push(Entry { subject_type, subject_id: id, level, is_primary: primary });
+    }
+    Ok(out)
+}
+
+struct Latest {
+    id: String,
+    occurred_at: i64,
+    tz_offset_min: i32,
+    notify: Notify,
+}
+
+fn latest_switch(conn: &Connection, account: &str) -> anyhow::Result<Option<Latest>> {
+    Ok(conn
+        .query_row(
+            "SELECT id, occurred_at, tz_offset_min, notify FROM switch
+             WHERE account_id = ?1 AND retracted = 0 ORDER BY occurred_at DESC, id DESC LIMIT 1",
+            [account],
+            |r| {
+                Ok(Latest {
+                    id: r.get(0)?,
+                    occurred_at: r.get(1)?,
+                    tz_offset_min: r.get(2)?,
+                    notify: serde_json::from_value(json!(r.get::<_, String>(3)?)).unwrap_or_default(),
+                })
+            },
+        )
+        .optional()?)
+}
+
+struct Follow {
+    id: String,
+    follower: String,
+    ceiling: Value,
+    prefs: Prefs,
+}
+
+fn active_follows(conn: &Connection, account: &str) -> anyhow::Result<Vec<Follow>> {
+    let mut st = conn.prepare_cached(
+        "SELECT id, follower_account_id, ceiling, prefs FROM follow WHERE target_account_id = ?1 AND status = 'active'",
+    )?;
+    let rows = st.query_map([account], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        let (id, follower, ceiling, prefs) = r?;
+        out.push(Follow {
+            id,
+            follower,
+            ceiling: serde_json::from_str(&ceiling).unwrap_or(json!({})),
+            prefs: serde_json::from_str(&prefs).unwrap_or_default(),
+        });
+    }
+    Ok(out)
+}
+
+/// The follower's effective ceiling and the buckets they're in.
+fn ceiling_for(conn: &Connection, account: &str, follow: &Follow) -> anyhow::Result<(Ceiling, BTreeSet<String>)> {
+    let default: Value = conn
+        .query_row("SELECT json_extract(settings, '$.follow_ceiling') FROM account WHERE id = ?1", [account], |r| {
+            r.get::<_, Option<String>>(0)
+        })
+        .optional()?
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(json!({}));
+    let mut st = conn.prepare_cached(
+        "SELECT b.id, b.ceiling FROM bucket b JOIN bucket_assignment a ON a.bucket_id = b.id
+         WHERE b.account_id = ?1 AND a.follower_account_id = ?2 AND a.is_present = 1 AND b.deleted_at IS NULL",
+    )?;
+    let rows: Vec<(String, String)> =
+        st.query_map(params![account, follow.follower], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
+    let ceilings: Vec<Value> = rows.iter().map(|(_, c)| serde_json::from_str(c).unwrap_or(json!({}))).collect();
+    let refs: Vec<&Value> = ceilings.iter().collect();
+    let buckets = rows.into_iter().map(|(id, _)| id).collect();
+    Ok((notify::effective_ceiling(&default, &refs, &follow.ceiling), buckets))
+}
+
+fn policies(conn: &Connection, account: &str) -> anyhow::Result<BTreeMap<String, MemberPolicy>> {
+    let mut st = conn.prepare_cached("SELECT id, notify_policy FROM member WHERE account_id = ?1")?;
+    let rows = st.query_map([account], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)))?;
+    let mut out = BTreeMap::new();
+    for r in rows {
+        let (id, p) = r?;
+        out.insert(id, json_col::<MemberPolicy>(p));
+    }
+    Ok(out)
+}
+
+fn groups(conn: &Connection, account: &str) -> anyhow::Result<BTreeMap<String, BTreeSet<String>>> {
+    let mut st = conn.prepare_cached(
+        "SELECT gm.group_id, gm.member_id FROM group_membership gm JOIN member_group g ON g.id = gm.group_id
+         WHERE g.account_id = ?1 AND gm.is_present = 1",
+    )?;
+    let rows = st.query_map([account], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for r in rows {
+        let (g, m) = r?;
+        out.entry(g).or_default().insert(m);
+    }
+    Ok(out)
+}
+
+fn names_for(conn: &Connection, seen: &[&Seen]) -> anyhow::Result<Names> {
+    let mut out = BTreeMap::new();
+    for s in seen {
+        let Seen::Subject { subject_type, subject_id, .. } = s else { continue };
+        type NameRow = (Option<String>, Option<String>, Option<String>, Option<String>);
+        let row: Option<NameRow> = match subject_type {
+            SubjectType::Member => conn
+                .query_row(
+                    "SELECT name, display_name, color, json_extract(sigils, '$[0]') FROM member WHERE id = ?1",
+                    [subject_id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )
+                .optional()?,
+            SubjectType::Group => conn
+                .query_row("SELECT name, NULL, color, NULL FROM member_group WHERE id = ?1", [subject_id], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                })
+                .optional()?,
+            SubjectType::State => conn
+                .query_row("SELECT name, NULL, color, NULL FROM custom_state WHERE id = ?1", [subject_id], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                })
+                .optional()?,
+        };
+        let (name, display, color, glyph) = row.unwrap_or((None, None, None, None));
+        out.insert(subject_id.clone(), (display.or(name).unwrap_or_else(|| "Someone".into()), color, glyph));
+    }
+    Ok(out)
+}
+
+/// The revealed view for (follower, target): `(view, displayed_since)`.
+fn revealed(conn: &Connection, follower: &str, target: &str) -> anyhow::Result<(Vec<Seen>, Option<i64>)> {
+    let row: Option<(String, Option<i64>)> = conn
+        .query_row(
+            "SELECT entries, displayed_since FROM follower_front_view WHERE follower_account_id = ?1 AND target_account_id = ?2",
+            params![follower, target],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    Ok(match row {
+        Some((entries, since)) => {
+            let shown: Vec<Shown> = serde_json::from_str(&entries).unwrap_or_default();
+            (shown.into_iter().map(|s| s.seen).collect(), since)
+        }
+        None => (Vec::new(), None),
+    })
+}
+
+/// Pending (not yet revealed) rows for (follower, target), oldest first.
+fn pending(conn: &Connection, follower: &str, target: &str) -> anyhow::Result<Vec<(String, i64, Queued)>> {
+    let mut st = conn.prepare_cached(
+        "SELECT id, due_at, payload FROM notification
+         WHERE recipient_account_id = ?1 AND kind = 'switch' AND delivered_at IS NULL AND cancelled_at IS NULL
+           AND json_extract(payload, '$.target_account_id') = ?2 AND json_extract(payload, '$.state') = 'pending'
+         ORDER BY due_at, id",
+    )?;
+    let rows = st.query_map(params![follower, target], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?))
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        let (id, due, payload) = r?;
+        if let Ok(q) = serde_json::from_str::<Queued>(&payload) {
+            out.push((id, due, q));
+        }
+    }
+    Ok(out)
+}
+
+fn draws() -> Draws {
+    Draws { delay: rand::random(), extra: rand::random(), late: rand::random(), jitter: rand::random() }
+}
+
+/// Queue follower notifications after a front change of `account` (inside the ingest tx).
+pub fn on_front_change(conn: &Connection, account: &str, now: i64) -> anyhow::Result<()> {
+    let follows = active_follows(conn, account)?;
+    if follows.is_empty() {
+        return Ok(());
+    }
+    let front = current_front(conn, account)?;
+    let latest = latest_switch(conn, account)?;
+    let policies = policies(conn, account)?;
+    let groups = groups(conn, account)?;
+    for f in follows {
+        let (ceiling, buckets) = ceiling_for(conn, account, &f)?;
+        let audience = Audience { ceiling: &ceiling, follower_buckets: &buckets, policies: &policies };
+        let after = notify::view(&front, &audience);
+        let (shown, _) = revealed(conn, &f.follower, account)?;
+        let queued = pending(conn, &f.follower, account)?;
+        let base = queued.last().map(|(_, _, q)| q.view.clone()).unwrap_or_else(|| shown.clone());
+        if after == base {
+            continue;
+        }
+        if after == shown {
+            // e.g. an undo: back to what the follower already knows — nothing left to tell
+            for (id, _, _) in &queued {
+                conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
+            }
+            continue;
+        }
+        // collapse: the survivor replaces everything pending, so it is described relative to what
+        // the follower actually knows; sequence: relative to the previous queued item
+        let since = if ceiling.stacking == notify::Stacking::Collapse { &shown } else { &base };
+        let Diff { arrived, left } = notify::diff(since, &after, &audience, &f.prefs, &groups);
+        let d = draws();
+        let (occurred_at, tz, how) =
+            latest.as_ref().map_or((now, 0, Notify::Default), |l| (l.occurred_at, l.tz_offset_min, l.notify));
+        let member_extra: Vec<_> = arrived
+            .iter()
+            .filter_map(|s| match s {
+                Seen::Subject { subject_type: SubjectType::Member, subject_id, .. } => {
+                    policies.get(subject_id).and_then(|p| p.extra_delay_range)
+                }
+                _ => None,
+            })
+            .collect();
+        let due = notify::due_at(
+            &ceiling,
+            &ScheduleIn {
+                occurred_at,
+                accepted_at: now,
+                notify: how,
+                settle_ms: notify::DEFAULT_SETTLE_MS,
+                member_extra: &member_extra,
+                draws: d,
+            },
+        );
+        let pend: Vec<Pending> = queued.iter().map(|(id, due, _)| Pending { id: id.clone(), due_at: *due }).collect();
+        let (cancel, due) = notify::supersede(ceiling.stacking, &pend, due);
+        let id = chorus_core::id::new_id(now as u64, rand::random());
+        for c in cancel {
+            conn.execute(
+                "UPDATE notification SET cancelled_at = ?2, collapsed_into = ?3 WHERE id = ?1",
+                params![c, now, id],
+            )?;
+        }
+        let all: Vec<&Seen> = after.iter().chain(left.iter()).collect();
+        let q = Queued {
+            target_account_id: account.into(),
+            follow_id: f.id.clone(),
+            names: names_for(conn, &all)?,
+            view: after,
+            diff_arrived: arrived,
+            diff_left: left,
+            occurred_at,
+            tz_offset_min: tz,
+            notify: how,
+            draws: d,
+            state: "pending".into(),
+            text: None,
+            displayed: None,
+        };
+        conn.execute(
+            "INSERT INTO notification (id, recipient_account_id, kind, source_op_id, payload, created_at, due_at)
+             VALUES (?1, ?2, 'switch', ?3, ?4, ?5, ?6)",
+            params![id, f.follower, latest.as_ref().map(|l| l.id.clone()), serde_json::to_string(&q)?, now, due],
+        )?;
+    }
+    Ok(())
+}
+
+fn level_phrase(level: Level, n: usize) -> &'static str {
+    match (level, n > 1) {
+        (Level::Front, false) => "is fronting",
+        (Level::Front, true) => "are fronting",
+        (Level::Cocon, false) => "is co-conscious",
+        (Level::Cocon, true) => "are co-conscious",
+        (Level::Present, false) => "is around",
+        (Level::Present, true) => "are around",
+    }
+}
+
+fn join_names(names: &[String]) -> String {
+    match names.len() {
+        0 => String::new(),
+        1 => names[0].clone(),
+        n => format!("{} & {}", names[..n - 1].join(", "), names[n - 1]),
+    }
+}
+
+/// "Kai & June are fronting · Rin left"
+fn describe(q: &Queued) -> String {
+    let name = |s: &Seen| match s {
+        Seen::Subject { subject_id, .. } => {
+            q.names.get(subject_id).map(|n| n.0.clone()).unwrap_or_else(|| "Someone".into())
+        }
+        Seen::Someone { .. } => "Someone".into(),
+    };
+    let mut parts = Vec::new();
+    for level in [Level::Front, Level::Cocon, Level::Present] {
+        let who: Vec<String> = q.diff_arrived.iter().filter(|s| s.level() == level).map(name).collect();
+        if !who.is_empty() {
+            parts.push(format!("{} {}", join_names(&who), level_phrase(level, who.len())));
+        }
+    }
+    let gone: Vec<String> = q.diff_left.iter().map(name).collect();
+    if !gone.is_empty() {
+        parts.push(format!("{} left", join_names(&gone)));
+    }
+    if parts.is_empty() {
+        let front: Vec<String> = q.view.iter().filter(|s| s.level() == Level::Front).map(name).collect();
+        return if front.is_empty() {
+            "No one is fronting".into()
+        } else {
+            format!("{} {}", join_names(&front), level_phrase(Level::Front, front.len()))
+        };
+    }
+    parts.join(" · ")
+}
+
+fn sent_today(conn: &Connection, follower: &str, target: &str, now: i64) -> anyhow::Result<u32> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM notification WHERE recipient_account_id = ?1 AND kind = 'switch'
+         AND json_extract(payload, '$.target_account_id') = ?2 AND delivered_at > ?3",
+        params![follower, target, now - 86_400_000],
+        |r| r.get(0),
+    )?)
+}
+
+fn follow_prefs_and_ceiling(conn: &Connection, q: &Queued) -> anyhow::Result<Option<(Ceiling, Prefs)>> {
+    let row: Option<(String, String, String, Option<String>)> = conn
+        .query_row(
+            "SELECT id, follower_account_id, ceiling, prefs FROM follow WHERE id = ?1 AND status = 'active'",
+            [&q.follow_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .optional()?;
+    let Some((id, follower, ceiling, prefs)) = row else { return Ok(None) };
+    let f =
+        Follow { id, follower, ceiling: serde_json::from_str(&ceiling).unwrap_or(json!({})), prefs: json_col(prefs) };
+    let (c, _) = ceiling_for(conn, &q.target_account_id, &f)?;
+    Ok(Some((c, f.prefs)))
+}
+
+/// Reveal and deliver everything due at `now`. Returns how many rows were handled.
+pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<usize> {
+    let mut st = conn.prepare_cached(
+        "SELECT id, recipient_account_id, payload FROM notification
+         WHERE kind = 'switch' AND delivered_at IS NULL AND cancelled_at IS NULL AND due_at <= ?1 ORDER BY due_at, id LIMIT 500",
+    )?;
+    let rows: Vec<(String, String, String)> =
+        st.query_map([now], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
+    let n = rows.len();
+    for (id, follower, payload) in rows {
+        let Ok(mut q) = serde_json::from_str::<Queued>(&payload) else {
+            conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
+            continue;
+        };
+        // the follow ended (or was never accepted) since this was queued: drop it silently
+        let Some((ceiling, prefs)) = follow_prefs_and_ceiling(conn, &q)? else {
+            conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
+            continue;
+        };
+        if q.state == "pending" {
+            // §5: the follower view changes here and only here
+            let (_, prev_since) = revealed(conn, &follower, &q.target_account_id)?;
+            let shown_since =
+                notify::displayed(q.occurred_at, now, ceiling.time, q.tz_offset_min, prev_since, q.draws.jitter);
+            let shown: Vec<Shown> = q
+                .view
+                .iter()
+                .map(|s| {
+                    let (name, color, glyph) = match s {
+                        Seen::Subject { subject_id, .. } => {
+                            q.names.get(subject_id).cloned().unwrap_or(("Someone".into(), None, None))
+                        }
+                        Seen::Someone { .. } => ("Someone".into(), None, None),
+                    };
+                    Shown { seen: s.clone(), name, color, glyph }
+                })
+                .collect();
+            conn.execute(
+                "INSERT INTO follower_front_view (follower_account_id, target_account_id, entries, displayed_since, revealed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT (follower_account_id, target_account_id)
+                 DO UPDATE SET entries = excluded.entries, displayed_since = excluded.displayed_since, revealed_at = excluded.revealed_at",
+                params![follower, q.target_account_id, serde_json::to_string(&shown)?, shown_since.at, now],
+            )?;
+            q.displayed = Some(shown_since);
+            q.text = Some(describe(&q));
+            let diff_empty = q.diff_arrived.is_empty() && q.diff_left.is_empty();
+            let route = notify::route(&RouteIn {
+                due_at: now,
+                notify: q.notify,
+                diff_empty,
+                sent_today: sent_today(conn, &follower, &q.target_account_id, now)?,
+                tz_offset_min: q.tz_offset_min,
+                digest_draw: q.draws.late.rotate_left(29),
+                ceiling: &ceiling,
+                prefs: &prefs,
+            });
+            match route {
+                Route::Deliver { at } if at <= now => deliver(conn, &id, &mut q, now)?,
+                Route::Deliver { at } => hold(conn, &id, &mut q, "held", at)?,
+                Route::Digest { at } => hold(conn, &id, &mut q, "digest", at)?,
+                Route::RevealOnly => {
+                    q.state = "revealed".into();
+                    conn.execute(
+                        "UPDATE notification SET cancelled_at = ?2, payload = ?3 WHERE id = ?1",
+                        params![id, now, serde_json::to_string(&q)?],
+                    )?;
+                }
+            }
+        } else {
+            // held by quiet hours, or a digest item: its time has come
+            deliver(conn, &id, &mut q, now)?;
+        }
+    }
+    Ok(n)
+}
+
+fn hold(conn: &Connection, id: &str, q: &mut Queued, state: &str, at: i64) -> anyhow::Result<()> {
+    q.state = state.into();
+    conn.execute(
+        "UPDATE notification SET due_at = ?2, payload = ?3 WHERE id = ?1",
+        params![id, at, serde_json::to_string(q)?],
+    )?;
+    Ok(())
+}
+
+fn deliver(conn: &Connection, id: &str, q: &mut Queued, now: i64) -> anyhow::Result<()> {
+    q.state = "delivered".into();
+    let at = q.displayed.and_then(|d| d.at);
+    conn.execute(
+        "UPDATE notification SET delivered_at = ?2, displayed_time = ?3, payload = ?4 WHERE id = ?1",
+        params![id, now, at, serde_json::to_string(q)?],
+    )?;
+    Ok(())
+}
+
+// ─── reads for the follower (API.md §3) ─────────────────────────────────────
+
+fn precision_of(d: &Option<notify::Displayed>) -> Value {
+    d.map(|d| json!({"at": d.at, "precision": d.precision, "part": d.part}))
+        .unwrap_or(json!({"at": null, "precision": Precision::None}))
+}
+
+/// The follower's delivered switch notifications, newest first.
+pub fn list(conn: &Connection, follower: &str, limit: i64) -> anyhow::Result<Value> {
+    let mut st = conn.prepare_cached(
+        "SELECT n.id, n.payload, n.delivered_at, a.id, a.handle, a.display_name FROM notification n
+         JOIN account a ON a.id = json_extract(n.payload, '$.target_account_id')
+         WHERE n.recipient_account_id = ?1 AND n.kind = 'switch' AND n.delivered_at IS NOT NULL
+         ORDER BY n.delivered_at DESC, n.id DESC LIMIT ?2",
+    )?;
+    let rows = st.query_map(params![follower, limit], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, i64>(2)?,
+            r.get::<_, String>(3)?,
+            r.get::<_, Option<String>>(4)?,
+            r.get::<_, Option<String>>(5)?,
+        ))
+    })?;
+    let mut items = Vec::new();
+    for r in rows {
+        let (id, payload, delivered, aid, handle, display) = r?;
+        let Ok(q) = serde_json::from_str::<Queued>(&payload) else { continue };
+        items.push(json!({
+            "id": id,
+            "kind": "switch",
+            "text": q.text,
+            "time": precision_of(&q.displayed),
+            "delivered_at": delivered,
+            "account": {"id": aid, "handle": handle, "display_name": display},
+        }));
+    }
+    Ok(json!({"items": items}))
+}
+
+/// What `follower` may see of `target` right now (only what has been revealed).
+pub fn follower_view(conn: &Connection, follower: &str, target: &str) -> anyhow::Result<Option<Value>> {
+    let active: bool = conn
+        .query_row(
+            "SELECT 1 FROM follow WHERE follower_account_id = ?1 AND target_account_id = ?2 AND status = 'active'",
+            params![follower, target],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !active {
+        return Ok(None);
+    }
+    let row: Option<(String, Option<i64>, i64)> = conn
+        .query_row(
+            "SELECT entries, displayed_since, revealed_at FROM follower_front_view WHERE follower_account_id = ?1 AND target_account_id = ?2",
+            params![follower, target],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    let Some((entries, since, revealed_at)) = row else {
+        return Ok(Some(json!({"entries": [], "since": null, "revealed_at": null})));
+    };
+    let entries: Vec<Shown> = serde_json::from_str(&entries).unwrap_or_default();
+    Ok(Some(json!({"entries": entries, "since": since, "revealed_at": revealed_at})))
+}
