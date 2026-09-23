@@ -14,10 +14,10 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M4.2 — Android local replica and sync (first pass)
+- **In progress:** M5.5
 - **Owner:** gpt-6-sol, 2026-09-23
-- **Next concrete step:** launch the encrypted Android app on a device; check fresh onboarding, migration from the prior plaintext prototype, offline op creation, foreground catch-up, and WorkManager catch-up after closing the app. Then mark M4.2 done if the observations match.
-- **Notes:** Room over SQLCipher 4.17.0 now uses a random Keystore-wrapped key; the old plaintext `chorus.db` is copied, row-checked, then removed. Local op creation saves before sending; socket frames and Room writes run on one serial worker. WorkManager has expedited outbox work and a 15-minute backstop, with a bounded socket lease when the UI is closed. `scripts/build-android-core.ps1` regenerates ignored UniFFI Kotlin bindings and Android `.so` files; run it on a fresh checkout. Set `CARGO_TARGET_DIR=F:\DunBuild\chorus-target` and `CHORUS_GRADLE_BUILD_DIR=F:\DunBuild\chorus-gradle` on this machine because C: has almost no free space (see NOTES). `:app:assembleDebug`, Android lint/unit tests, and the full `python scripts/verify.py` Rust/web verifier pass. No device is attached; on-device behavior and the SQLCipher migration have not been observed. QR scanning belongs to M4.3; the full member editor belongs to M4.4.
+- **Next concrete step:** implement thread channels linked to parent messages, previews, navigation, and reply composer; verify core/server/web.
+- **Notes:** The owner asked for M5 work while M4.2 waits for a physical Android device. M4.2 remains `[~]` solely for the fresh install, plaintext migration, offline op, foreground catch-up, and WorkManager catch-up checks listed in the preceding commit; no device is attached. M5.5 is now the active code task. Use `CARGO_TARGET_DIR=F:\DunBuild\chorus-target` on this machine because C: has almost no free space (see NOTES).
 
 ---
 
@@ -95,7 +95,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M5.2 Composer: speaker chip, proxy tags, sigils, multi-author, formatting
 - [x] M5.3 Replies (incl. cross-channel), quotes (full/partial), forwards, edits+history, deletes, pins
 - [x] M5.4 Reactions, mentions, read states, unread badges
-- [ ] M5.5 Threads
+- [~] M5.5 Threads
 - [ ] M5.6 Attachments + images (offline-queued upload)
 - [ ] M5.7 Hidden messages: spoilers, CW/collapsed, member-visible, system-only
 - [ ] M5.8 Search (FTS5 server, local search on Android)
