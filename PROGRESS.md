@@ -84,7 +84,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 - [ ] M4.1 Theme + components mirroring DESIGN.md
 - [~] M4.2 Room (SQLCipher) + outbox + sync engine (via core UniFFI) + WorkManager
-- [ ] M4.3 Onboarding via invite link / QR
+- [~] M4.3 Onboarding via invite link / QR — the web "Link another device" now shows a QR of the one-use link (server qr.rs, decoded with OpenCV); in-app camera scanning not needed while the phone camera opens the link
 - [ ] M4.4 Members, groups, switcher, front history
 - [~] M4.5 Quick-switch widget (RemoteViews, D-058): recent grid, folders, mode chip, undo — built + unit-tested; needs a device check; pins not done
 - [~] M4.6 Search launcher activity + app shortcuts — SearchActivity + static "Switch…" shortcut; dynamic pinned shortcuts not done; needs a device check
@@ -211,3 +211,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — write:front tokens + POST /front/switch (api_writes.rs; ingest::op_as generalises server_op): entries by id or by member/group/state name, typed time, note, notify; attributed to token:<id>; web Your data scope + example. E2E test; verified in the browser (switch posted with a token appears live in History).
 - 2026-09-23 claude-opus-5.5 — L6 Web Push (D-061, Q13): VAPID key in server_meta + GET /push/vapid, RFC 8292 header for web devices only, SW push/notificationclick handlers, web/src/lib/push.ts + People-page opt-in. Unit tests (JWT verifies, web-only VAPID) + SW handlers run in a Node harness; real browser push not tried (the pane has notifications denied).
 - 2026-09-23 claude-opus-5.5 — M6.2 shared spaces + DMs: POST /spaces (shared|dm, one DM per pair, follow-connected accounts only), add (owner), leave (self-leave now revokes access), author cards for other accounts' members; web spaces rail + DM header, People 'Message' + 'Start a shared space'. E2E test (live scope grant, message delivery, cards, leave); verified in the browser (DM + Book club created, message sent). Sol's A1 note updated to share the author rule.
+- 2026-09-23 claude-opus-5.5 — QR codes for device invites: dependency-free encoder (qr.rs, byte/M/v1–10, masks scored) → qr_svg on POST /devices/invite, shown in Link another device; samples decoded by OpenCV (scripts/qr-check.py) incl. versions 7–9. Shared-space hint about the chat side channel (NOTIFICATIONS §5.6).

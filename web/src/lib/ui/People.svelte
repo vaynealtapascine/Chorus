@@ -373,6 +373,10 @@
 
   {#if connections.length}
     <h2>Shared spaces</h2>
+    <p class="hint">
+      A chat with people you're connected to. What you post there is seen as it's sent, so it also shows who's
+      around at that moment, even if your switch notifications are delayed.
+    </p>
     <form class="card new-space" onsubmit={newSpace}>
       <input bind:value={spaceName} placeholder="Name (e.g. Book club)" aria-label="Shared space name" maxlength="80" required />
       <div class="bucket-checks" aria-label="Who to bring in">

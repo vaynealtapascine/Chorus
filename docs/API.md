@@ -34,8 +34,15 @@ Link another device of the same account (any enrolled device; one use, 1 day):
 
 ```
 POST /devices/invite            Authorization: Bearer <session>
-→ 200 { "code":"…", "url":"https://chorus.…/i/<code>", "expires_at":… }
+→ 200 { "code":"…", "url":"https://chorus.…/i/<code>", "qr_svg":"<svg…>", "expires_at":… }
 ```
+
+`qr_svg` encodes the URL (`qr.rs`: byte mode, level M, versions 1–10, no dependency) so a phone
+can scan it from the web app. `CHORUS_QR_SAMPLES=<dir> cargo test -p chorus-server --lib qr`
+followed by `python scripts/qr-check.py <dir>` decodes samples with OpenCV.
+
+`GET /push/vapid` → `{public_key}` is the server's VAPID key for browsers' `pushManager.subscribe`
+(D-061). Browsers then register below like any device.
 
 Register this device for push (UnifiedPush endpoint + Web Push keys, NOTIFICATIONS.md §1):
 

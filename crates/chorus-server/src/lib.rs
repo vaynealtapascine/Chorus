@@ -15,6 +15,7 @@ pub mod notifier;
 pub mod oplog;
 pub mod project;
 pub mod push;
+pub mod qr;
 pub mod spaces;
 pub mod webhooks;
 

@@ -294,7 +294,9 @@ async fn device_invite(
         now,
     )?;
     let url = format!("{}/i/{code}", s.cfg.server.public_url.trim_end_matches('/'));
-    Ok(Json(json!({"code": code, "url": url, "expires_at": now + 86_400_000})))
+    // scan with the other device's camera instead of copying the link across (qr.rs)
+    let qr_svg = crate::qr::encode(&url).map(|q| q.svg());
+    Ok(Json(json!({"code": code, "url": url, "qr_svg": qr_svg, "expires_at": now + 86_400_000})))
 }
 
 // ─── follows (API.md §3) ────────────────────────────────────────────────────

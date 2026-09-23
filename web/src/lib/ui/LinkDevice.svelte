@@ -4,6 +4,7 @@
   import { sync } from '../sync/client';
 
   let link = $state('');
+  let qr = $state('');
   let error = $state('');
   let busy = $state(false);
   let copied = $state(false);
@@ -19,6 +20,7 @@
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
       link = j.url;
+      qr = j.qr_svg ?? '';
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -35,7 +37,8 @@
 
 <section class="link" aria-label="Link another device">
   {#if link}
-    <p>Open this on your other device (works once, for a day):</p>
+    <p>Scan this with your other device's camera, or open the link there (works once, for a day):</p>
+    {#if qr}<div class="qr" role="img" aria-label="QR code for the link">{@html qr}</div>{/if}
     <div class="row">
       <code>{link}</code>
       <button class="ghost" onclick={copy}>{copied ? 'Copied' : 'Copy'}</button>
@@ -61,6 +64,16 @@
     gap: var(--s-2);
     align-items: center;
     flex-wrap: wrap;
+  }
+  .qr {
+    width: min(240px, 100%);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    line-height: 0;
+  }
+  .qr :global(svg) {
+    width: 100%;
+    height: auto;
   }
   code {
     font-family: var(--font-mono);
