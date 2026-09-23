@@ -57,6 +57,16 @@
     sync.create('field.set_value', sync.accountScope, null, { member_id: id, field_id: def.id, value });
   }
 
+  // who hears when this member fronts (NOTIFICATIONS.md §2.4; "nobody" hides them from follower views)
+  const announce = $derived.by(() => {
+    const p = raw.notify_policy as { announce?: unknown } | undefined;
+    return p?.announce === 'nobody' ? 'nobody' : 'everyone';
+  });
+  function setAnnounce(v: string) {
+    const p = (raw.notify_policy as Record<string, unknown> | undefined) ?? {};
+    set({ notify_policy: { ...p, announce: v } });
+  }
+
   let newField = $state('');
   let newFieldType = $state<FieldDef['type']>('text');
   function addField(e: SubmitEvent) {
@@ -101,6 +111,19 @@
         <label class="wide">
           Description <span class="hint">**bold**, *italic*, ||spoiler||, [link](https://…)</span>
           <textarea rows="4" value={descMarkup} onchange={saveDescription}></textarea>
+        </label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Sharing</h2>
+      <div class="fields">
+        <label class="wide">
+          Followers hear when {m.name} fronts
+          <select value={announce} onchange={(e) => setAnnounce(e.currentTarget.value)}>
+            <option value="everyone">Yes, as your follower settings allow</option>
+            <option value="nobody">No, keep {m.name} private</option>
+          </select>
         </label>
       </div>
     </section>

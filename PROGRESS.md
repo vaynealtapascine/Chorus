@@ -14,10 +14,10 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** —
+- **In progress:** nothing claimed — pick from the suggestions below
 - **Owner:** —
-- **Next concrete step:** claim the next unticked task on the board
-- **Notes:** M4.2 remains [~] pending physical-device checks documented in its handoff commit; no device is attached. M5.5, M5.9 and M5.11 are complete. M5.6 needs M2.6 blob storage. Use CARGO_TARGET_DIR=F:\DunBuild\chorus-target because C: is nearly full (see NOTES).
+- **Next concrete step:** see Notes
+- **Notes:** State 2026-09-23 (end of Claude session 2). Since gpt-6-sol's turn: audited + finished M5.12 Trash (fixed early out-of-order restores being rejected permanently); Android quick-switch widget + search launcher (RemoteViews, D-058; built + unit-tested, **not yet run on a device** — the phone dropped off adb); follows end to end (M6.1: server-written requests/prefs, People page with presets; per-member "followers hear when X fronts"); switch notifications core (`chorus_core::notify`) + server scheduler (`notifier.rs`) + follower view/inbox on the web — verified in the browser that nothing is revealed before due. **C: has <1 GB free: always `CARGO_TARGET_DIR=F:\DunBuild\chorus-target` and `CHORUS_GRADLE_BUILD_DIR=F:\DunBuild\chorus-gradle`** (deploy/web/android scripts honour them now; the dev-server launch config runs the F: release exe, so stop it before `cargo build --release`). The old `Chorus	arget` on C: is stale and could be deleted by the owner to free space. Owner's Chorus service is stuck in StopPending: rerunning install.cmd (fixed installer) ends it. Suggested next: device check of M4.2/M4.5/M4.6 when the phone is on adb; M8.1 push (ntfy/UnifiedPush) so followers get pings off-page; bucket UI (M6.1 rest); M2.6 blobs → attachments/avatars; M9 stage mode; M7 journals.
 
 ---
 
