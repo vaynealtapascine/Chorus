@@ -18,6 +18,7 @@ pub mod oplog;
 pub mod project;
 pub mod push;
 pub mod qr;
+pub mod search;
 pub mod spaces;
 pub mod visibility;
 pub mod webhooks;

@@ -114,6 +114,7 @@ pub fn router(state: AppState) -> Router {
         .route("/front/switch", post(front_switch))
         .route("/front/daily", get(front_daily))
         .route("/front/reviews", get(front_reviews))
+        .route("/search/messages", get(search_messages))
         .route("/me", get(me))
         .route("/stream", get(stream))
         .route("/spaces", get(spaces_list).post(spaces_create))
@@ -604,6 +605,16 @@ async fn members_list(
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
     Ok(Json(crate::api_data::members(&conn, &p)?))
+}
+
+async fn search_messages(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<crate::search::MessageQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::search::messages(&conn, &p, &q)?))
 }
 
 /// Log a switch from a script, NFC tag or Tasker (`write:front`, api_writes.rs).

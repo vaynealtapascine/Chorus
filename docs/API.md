@@ -117,6 +117,11 @@ GET  /channels/{id}/messages?before=&after=&around=&limit=
 GET  /messages/{id}                        incl. revisions if ?revisions=1
 GET  /messages/{id}/thread
 GET  /search/messages?q=&in=&from=&before=&after=&has=
+  → {items:[{id,channel_id,space_id,account_id,occurred_at,text,cw,visibility,authors}]}
+  Uses FTS5; `in` accepts a channel id/name, `from` a member id/name, before/after are
+  exclusive epoch milliseconds, and `has` is attachment/image/file. Results are capped at
+  100 and limited to accessible spaces plus public or own messages. API tokens need
+  `read:messages`; device sessions inherit access.
 GET  /pins?channel=
 
 GET  /posts?author=&kind=&before=&limit=
