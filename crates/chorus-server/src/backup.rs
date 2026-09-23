@@ -139,10 +139,19 @@ fn verify_rebuild(database: &Path) -> anyhow::Result<()> {
         project::rebuild(&mut rebuilt)?;
         rebuilt.execute("ATTACH DATABASE ?1 AS source", [database.to_string_lossy().as_ref()])?;
         for table in project::DERIVED {
+            // What a rebuild must reproduce exactly. Daily totals cut open intervals at "now" and
+            // review cards stamp when they were made, so those depend on when they ran; the read
+            // state's running parts are bookkeeping (migration 0004), not the position itself.
+            let cols = match *table {
+                "front_daily" => continue,
+                "front_review" => "id, account_id, switch_a, switch_b, resolution, resolved_at",
+                "read_state" => "channel_id, account_id, reader_member_id, last_read_message_id, last_read_message_at",
+                _ => "*",
+            };
             let differs: bool = rebuilt.query_row(
                 &format!(
-                    "SELECT EXISTS(SELECT * FROM main.{table} EXCEPT SELECT * FROM source.{table}) \
-                          OR EXISTS(SELECT * FROM source.{table} EXCEPT SELECT * FROM main.{table})"
+                    "SELECT EXISTS(SELECT {cols} FROM main.{table} EXCEPT SELECT {cols} FROM source.{table}) \
+                          OR EXISTS(SELECT {cols} FROM source.{table} EXCEPT SELECT {cols} FROM main.{table})"
                 ),
                 [],
                 |r| r.get(0),

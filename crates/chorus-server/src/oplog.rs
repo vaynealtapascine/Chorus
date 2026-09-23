@@ -81,6 +81,15 @@ pub fn scope_after(conn: &Connection, scope: &str, after: i64, limit: usize) -> 
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// Applied ops of every scope after `after`, in seq order (for rebuilds).
+pub fn applied_after(conn: &Connection, after: i64, limit: usize) -> anyhow::Result<Vec<Op>> {
+    let mut st = conn.prepare_cached(&format!(
+        "SELECT {COLS} FROM op WHERE seq > ?1 AND status = 'applied' ORDER BY seq LIMIT ?2"
+    ))?;
+    let rows = st.query_map(params![after, limit as i64], from_row)?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 pub fn for_entity(conn: &Connection, entity_id: &str) -> anyhow::Result<Vec<Op>> {
     let mut st = conn.prepare_cached(&format!("SELECT {COLS} FROM op WHERE entity_id = ?1 AND status = 'applied'"))?;
     let rows = st.query_map([entity_id], from_row)?;

@@ -71,15 +71,26 @@ fn columns(conn: &Connection, table: &str) -> anyhow::Result<Vec<String>> {
     Ok(v)
 }
 
+thread_local! {
+    /// Writable columns per table. Migrations only run before serving, so the schema a
+    /// connection sees doesn't change while projecting; cached per thread (SPEC §9 ingest budget).
+    static WRITABLE: std::cell::RefCell<HashMap<String, std::rc::Rc<Vec<String>>>> = Default::default();
+}
+
 /// Generated (virtual/stored) columns can't be written.
-fn writable(conn: &Connection, table: &str) -> anyhow::Result<Vec<String>> {
+fn writable(conn: &Connection, table: &str) -> anyhow::Result<std::rc::Rc<Vec<String>>> {
+    if let Some(v) = WRITABLE.with(|w| w.borrow().get(table).cloned()) {
+        return Ok(v);
+    }
     let mut st = conn.prepare_cached(&format!("PRAGMA table_xinfo({table})"))?;
-    let v = st
+    let v: Vec<String> = st
         .query_map([], |r| Ok((r.get::<_, String>(1)?, r.get::<_, i64>(6)?)))?
         .filter_map(|r| r.ok())
         .filter(|(_, hidden)| *hidden == 0)
         .map(|(n, _)| n)
         .collect();
+    let v = std::rc::Rc::new(v);
+    WRITABLE.with(|w| w.borrow_mut().insert(table.to_string(), v.clone()));
     Ok(v)
 }
 
@@ -980,12 +991,7 @@ pub fn rebuild(conn: &mut Connection) -> anyhow::Result<u64> {
     let mut n = 0u64;
     let mut seq = 0i64;
     loop {
-        let batch: Vec<Op> = {
-            let mut st =
-                tx.prepare("SELECT id FROM op WHERE seq > ?1 AND status = 'applied' ORDER BY seq LIMIT 1000")?;
-            let ids: Vec<String> = st.query_map([seq], |r| r.get(0))?.collect::<Result<_, _>>()?;
-            ids.iter().filter_map(|i| oplog::by_id(&tx, i).ok().flatten()).collect()
-        };
+        let batch = oplog::applied_after(&tx, seq, 1000)?;
         if batch.is_empty() {
             break;
         }
