@@ -68,6 +68,11 @@
             android:name=".data.UpdateReceiver"
             android:exported="false" />
 
+        <!-- inline replies from chat notifications -->
+        <receiver
+            android:name=".data.ReplyReceiver"
+            android:exported="false" />
+
         <!-- UnifiedPush connector: the distributor sends endpoints and encrypted pushes here -->
         <receiver
             android:name=".data.PushReceiver"

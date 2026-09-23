@@ -219,7 +219,10 @@ Implemented (M8.4, `activity.rs`), for other accounts in shared spaces and DMs:
   People → Recent). Queued after the 15 s settle; a newer switch replaces a pending one, an undone
   (retracted) switch is dropped, silent switches never ping, and the text is the front as it is at
   delivery ("Front changed on <device>: Kai & June · co-con Rin"). The writing device is skipped.
-- Not yet: Android inline reply.
+- Android inline reply (`data/Reply.kt`): chat notifications carry a Reply action; the text is
+  queued as a `message.send` replying to the notified message, as the primary fronter (else the
+  first fronter, else a person's own member), and the notification changes to "Sent as Kai".
+  Built and unit-tested; needs a device check. "Reply as mentioned member" is not done.
 
 Android: MessagingStyle notifications with member avatars as `Person`s, grouped per channel;
 inline reply (`RemoteInput`) sends as the current primary fronter (or the member the notification
