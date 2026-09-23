@@ -207,17 +207,24 @@ export interface MessageRow {
   deleted: boolean;
   pinned: boolean;
   cw?: string;
+  visibility?: { mode: string; member_ids?: string[] };
   reply_to?: string;
-  quote?: { message_id: string; offset: number; length: number; text: string };
-  forward_snapshot?: {
-    message_id: string;
-    channel_name?: string;
-    authors: string[];
-    text: string;
-    entities: import('./core').Entity[];
-    occurred_at: number;
-  }[];
+  quote?: QuoteValue;
+  forward_snapshot?: SnapshotItem[];
 }
+
+export interface TextRange { message_id: string; offset: number; length: number; text: string }
+export interface SnapshotItem {
+  message_id: string;
+  offset?: number;
+  length?: number;
+  text: string;
+  channel_name?: string;
+  authors: string[];
+  entities: import('./core').Entity[];
+  occurred_at: number;
+}
+export type QuoteValue = TextRange | { items: SnapshotItem[] };
 
 export function spaces(p: Projection): SpaceRow[] {
   return Object.entries((p.rows.space ?? {}) as Rows)
@@ -308,8 +315,9 @@ export function messages(p: Projection, channelId: string): MessageRow[] {
         deleted: f.deleted_at != null,
         pinned: f.pinned_at != null,
         cw: str(f.cw),
+        visibility: f.visibility && typeof f.visibility === 'object' ? f.visibility as MessageRow['visibility'] : undefined,
         reply_to: str(f.reply_to),
-        quote: f.quote && typeof f.quote === 'object' ? (f.quote as MessageRow['quote']) : undefined,
+        quote: f.quote && typeof f.quote === 'object' ? (f.quote as QuoteValue) : undefined,
         forward_snapshot: Array.isArray(f.forward_snapshot) ? (f.forward_snapshot as MessageRow['forward_snapshot']) : undefined,
       };
     })

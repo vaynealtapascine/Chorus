@@ -130,10 +130,10 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `channel.create` / `channel.set` / `channel.archive` / `channel.delete` / `channel.restore` | | LWW-F |
 | `channel.set_permission` | `{target_type: role or account, target_id, allow:[…], deny:[…]}` | LWW-F per (channel, target) |
 | `space.set_roles` | custom roles for shared spaces `{roles:[{id,name,color,perms}]}` | LWW-F |
-| `message.send` | `{channel_id, authors:[member_id], text, entities, segments?:[{offset,length,authors}], reply_to?, quote?, forward?, cw?, visibility?, attachments?:[attachment_id], sent_offline:bool}`; segment offsets/lengths are UTF-16 | APP |
+| `message.send` | `{channel_id, authors:[member_id], text, entities, segments?:[{offset,length,authors}], reply_to?, quote?, forward?, cw?, visibility?, attachments?:[attachment_id], sent_offline:bool}`; segment offsets/lengths are UTF-16. `quote` is a single `{message_id,offset,length,text}` or a bundle `{items:[snapshot]}` (D-048). | APP |
 | `message.edit` | `{message_id, text, entities, segments?, cw?}` → new revision; supply updated segments when editing text so attribution and offsets stay aligned (D-045) | APP (latest HLC shown) |
 | `message.delete` / `message.restore` | `{message_id}` — restore clears `deleted_at` with a newer HLC | LWW-F |
-| `message.forward` | `{channel_id, authors, items:[{message_id, offset?, length?}], comment?}` → a new message whose `forward_snapshot` holds the copied items | APP |
+| `message.forward` | `{channel_id, authors, text, entities, forward_of_id, forward_snapshot:[{message_id, channel_name?, authors, text, entities, offset?, length?, occurred_at}]}` → a new message with source snapshots captured by the sending client (D-048) | APP |
 | `*.restore` | `post.restore`, `member.restore`, `group.restore`, `space.restore` — same rule as messages | LWW-F |
 | `message.pin` / `message.unpin` | `{message_id}` | LWW-F |
 | `reaction.add` / `reaction.remove` | `{target_type: message, target_id, emoji, member_id}` — in the message's `space:` scope | SET |
@@ -406,9 +406,9 @@ CREATE TABLE message (
   entities         TEXT NOT NULL DEFAULT '[]',
   cw               TEXT,
   reply_to_id      TEXT,                        -- may be in another channel
-  quote            TEXT CHECK (quote IS NULL OR json_valid(quote)),      -- {message_id, offset, length, text}
+  quote            TEXT CHECK (quote IS NULL OR json_valid(quote)),      -- {message_id, offset, length, text} or {items:[snapshot]}
   forward_of_id    TEXT,                        -- first forwarded item, for simple queries
-  forward_snapshot TEXT CHECK (forward_snapshot IS NULL OR json_valid(forward_snapshot)),  -- [{message_id, channel_name, authors:[{id,name,color}], text, entities, offset?, length?, occurred_at}]
+  forward_snapshot TEXT CHECK (forward_snapshot IS NULL OR json_valid(forward_snapshot)),  -- [{message_id, channel_name, authors:[member_id], text, entities, offset?, length?, occurred_at}]
   visibility       TEXT CHECK (visibility IS NULL OR json_valid(visibility)),  -- {"mode":"members","member_ids":[...]} | {"mode":"system_only"}
   revision_count   INTEGER NOT NULL DEFAULT 1,
   edited_at        INTEGER,

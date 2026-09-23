@@ -1,10 +1,11 @@
 <script lang="ts">
   import { core, type Composed } from '../core';
-  import { channels, lastRead, members, messageById, messages, reactions, segmentParsing, spaces, threadSummaries, unread, type MessageRow } from '../data';
+  import { channels, lastRead, members, messageById, messages, reactions, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
   import { router } from '../router.svelte';
+  import { snapshot } from '../selection';
   import { editedSegments, segmentMarkup } from '../segments';
   import { sync, type Projection } from '../sync/client';
-  import Message, { type Quote } from './Message.svelte';
+  import Message from './Message.svelte';
 
   let { projection, dark, channelId }: { projection: Projection; dark: boolean; channelId?: string } = $props();
 
@@ -45,10 +46,16 @@
 
   let draft = $state('');
   let replyTo = $state<MessageRow | null>(null);
-  let quoting = $state<Quote | null>(null);
+  let quoting = $state<QuoteValue | null>(null);
   let editing = $state<MessageRow | null>(null);
   let editingParts = $state<string[] | null>(null);
-  let forwarding = $state<MessageRow | null>(null);
+  let forwarding = $state<SnapshotItem[] | null>(null);
+  let forwardingSensitive = false;
+  let quoteSourceSpaceId = '';
+  let quoteSensitive = false;
+  let keepQuoteOnNavigation = false;
+  let selecting = $state(false);
+  let selectedIds = $state(new Set<string>());
   let showPins = $state(false);
   let picking = $state(false);
   let box: HTMLTextAreaElement | undefined = $state();
@@ -56,8 +63,12 @@
   $effect(() => {
     if (current?.id === activeChannelId) return;
     activeChannelId = current?.id;
-    replyTo = quoting = editing = forwarding = null;
+    replyTo = editing = forwarding = null;
+    if (!keepQuoteOnNavigation) quoting = null;
+    keepQuoteOnNavigation = false;
     editingParts = null;
+    selecting = false;
+    selectedIds = new Set();
     chosen = null;
   });
 
@@ -98,6 +109,8 @@
     chosen = null;
     replyTo = null;
     quoting = null;
+    quoteSourceSpaceId = '';
+    quoteSensitive = false;
   }
 
   function onkey(e: KeyboardEvent) {
@@ -123,19 +136,72 @@
     if (!editingParts) box?.focus();
   }
 
+  function toggleSelect(m: MessageRow) {
+    selecting = true;
+    const next = new Set(selectedIds);
+    if (next.has(m.id)) next.delete(m.id);
+    else next.add(m.id);
+    selectedIds = next;
+  }
+
+  function selectedMessages(): MessageRow[] {
+    return msgs.filter((m) => selectedIds.has(m.id) && !m.deleted);
+  }
+
+  function quoteSelected() {
+    if (!current) return;
+    const picked = selectedMessages();
+    if (!picked.length) return;
+    quoting = { items: picked.map((m) => snapshot(m, current.name)) };
+    forwarding = null;
+    quoteSourceSpaceId = current.space_id;
+    quoteSensitive = picked.some((m) => !!m.visibility && m.visibility.mode !== 'all');
+    replyTo = editing = null;
+    editingParts = null;
+    selecting = false;
+    selectedIds = new Set();
+    box?.focus();
+  }
+
+  function startForward(items: MessageRow[], range?: TextRange) {
+    if (!current || !items.length) return;
+    forwarding = items.map((m) => snapshot(m, current.name, m.id === range?.message_id ? range : undefined));
+    quoting = null;
+    replyTo = editing = null;
+    editingParts = null;
+    forwardingSensitive = items.some((m) => !!m.visibility && m.visibility.mode !== 'all');
+    selecting = false;
+    selectedIds = new Set();
+  }
+
+  function sharingOutward(targetId: string, targetSpaceId: string, sourceSpaceId: string, sensitive: boolean): boolean {
+    if (targetId === current?.id) return false;
+    const sourceSpace = ss.find((s) => s.id === sourceSpaceId);
+    return (sourceSpace?.kind === 'internal' && targetSpaceId !== sourceSpaceId) || sensitive;
+  }
+
+  function moveQuote(targetId: string) {
+    const target = allChannels.find((c) => c.id === targetId && !c.archived);
+    if (!target || !quoting || target.id === current?.id) return;
+    if (sharingOutward(target.id, target.space_id, quoteSourceSpaceId, quoteSensitive) &&
+        !confirm('This quote shares a snapshot of the selected content with another channel. Continue?')) return;
+    keepQuoteOnNavigation = true;
+    router.go(`/chat/${target.id}`);
+  }
+
   function forwardTo(targetId: string) {
     const target = allChannels.find((c) => c.id === targetId);
-    const m = forwarding;
-    if (!target || !m) return;
+    const items = forwarding;
+    if (!target || target.archived || !items || !speaker || !current) return;
+    if (sharingOutward(target.id, target.space_id, current.space_id, forwardingSensitive) &&
+        !confirm('This forward shares a snapshot of the selected content with another channel. Continue?')) return;
     sync.create('message.forward', scopeOf(target.space_id), sync.newId(), {
       channel_id: target.id,
-      authors: speaker ? [speaker] : m.authors,
+      authors: [speaker],
       text: '',
       entities: [],
-      forward_of_id: m.id,
-      forward_snapshot: [
-        { message_id: m.id, channel_name: current?.name, authors: m.authors, text: m.text, entities: m.entities, occurred_at: m.occurred_at },
-      ],
+      forward_of_id: items[0].message_id,
+      forward_snapshot: items,
     });
     forwarding = null;
     router.go(`/chat/${target.id}`);
@@ -276,12 +342,15 @@
           lookup={(id) => messageById(projection, id)}
           mine={m.account_id === sync.accountId}
           onreply={() => { replyTo = m; quoting = null; editing = null; editingParts = null; box?.focus(); }}
-          onquote={(q) => { quoting = q; replyTo = m; editing = null; editingParts = null; box?.focus(); }}
+          onquote={(q) => { quoting = q; forwarding = null; quoteSourceSpaceId = current?.space_id ?? ''; quoteSensitive = !!m.visibility && m.visibility.mode !== 'all'; replyTo = m; editing = null; editingParts = null; box?.focus(); }}
           onedit={() => startEdit(m)}
           ondelete={() => sync.create('message.delete', scope, m.id, {})}
           onrestore={() => sync.create('message.restore', scope, m.id, {})}
           onpin={() => sync.create(m.pinned ? 'message.unpin' : 'message.pin', scope, m.id, {}, { memberId: speaker ?? undefined })}
-          onforward={() => (forwarding = m)}
+          onforward={(range) => startForward([m], range)}
+          onselect={() => toggleSelect(m)}
+          {selecting}
+          selected={selectedIds.has(m.id)}
           thread={threads.get(m.id)}
           onthread={() => openThread(m)}
           reacts={reacts.get(m.id)}
@@ -293,19 +362,34 @@
       {/each}
     </div>
 
+    {#if selecting}
+      <div class="bar">
+        {selectedIds.size} selected
+        <button onclick={quoteSelected} disabled={!selectedIds.size}>Quote bundle</button>
+        <button onclick={() => startForward(selectedMessages())} disabled={!selectedIds.size}>Forward bundle</button>
+        <button class="x" onclick={() => { selecting = false; selectedIds = new Set(); }} aria-label="Cancel selection">✕</button>
+      </div>
+    {/if}
     {#if forwarding}
       <div class="bar">
-        Forward to
-        <select onchange={(e) => forwardTo((e.currentTarget as HTMLSelectElement).value)} aria-label="Forward to channel">
+        Forward {forwarding.length} {forwarding.length === 1 ? 'item' : 'items'} to
+        <select onchange={(e) => { forwardTo((e.currentTarget as HTMLSelectElement).value); e.currentTarget.value = ''; }} aria-label="Forward to channel">
           <option value="">choose…</option>
           {#each allChannels.filter((c) => !c.archived) as c (c.id)}<option value={c.id}># {c.name}</option>{/each}
         </select>
+        {#if !speaker}<span>Pick a speaker first.</span>{/if}
         <button class="x" onclick={() => (forwarding = null)} aria-label="Cancel forward">✕</button>
       </div>
     {/if}
     {#if replyTo || quoting || editing}
       <div class="bar">
-        {#if editing}Editing message{:else if quoting}Quoting “{quoting.text.slice(0, 60)}”{:else if replyTo}Replying to {replyTo.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')}{/if}
+        {#if editing}Editing message{:else if quoting}Quoting {#if 'items' in quoting}{quoting.items.length} {quoting.items.length === 1 ? 'message' : 'messages'}{:else}“{quoting.text.slice(0, 60)}”{/if}{:else if replyTo}Replying to {replyTo.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')}{/if}
+        {#if quoting}
+          <select onchange={(e) => { moveQuote((e.currentTarget as HTMLSelectElement).value); e.currentTarget.value = ''; }} aria-label="Quote in another channel">
+            <option value="">Quote in…</option>
+            {#each allChannels.filter((c) => !c.archived && c.id !== current?.id) as c (c.id)}<option value={c.id}># {c.name}</option>{/each}
+          </select>
+        {/if}
         <button class="x" onclick={cancel} aria-label="Cancel">✕</button>
       </div>
     {/if}

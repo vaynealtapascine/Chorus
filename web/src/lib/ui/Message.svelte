@@ -1,23 +1,11 @@
 <script lang="ts">
   import { core } from '../core';
-  import type { MemberRow, MessageRow, ThreadSummary } from '../data';
+  import type { MemberRow, MessageRow, SnapshotItem, TextRange, ThreadSummary } from '../data';
   import { segmentRich } from '../segments';
   import RichText from './RichText.svelte';
 
-  export interface Quote {
-    message_id: string;
-    offset: number;
-    length: number;
-    text: string;
-  }
-  export interface Forwarded {
-    message_id: string;
-    channel_name?: string;
-    authors: string[];
-    text: string;
-    entities: MessageRow['entities'];
-    occurred_at: number;
-  }
+  export type Quote = TextRange;
+  export type Forwarded = SnapshotItem;
 
   let {
     m,
@@ -33,13 +21,16 @@
     onrestore,
     onpin,
     onforward,
+    onselect,
+    selecting,
+    selected,
     thread,
     onthread,
     reacts,
     speaker,
     onreact,
   }: {
-    m: MessageRow & { reply_to?: string; quote?: Quote; forward_snapshot?: Forwarded[] };
+    m: MessageRow;
     cont: boolean;
     people: Map<string, MemberRow>;
     dark: boolean;
@@ -51,7 +42,10 @@
     ondelete: () => void;
     onrestore: () => void;
     onpin: () => void;
-    onforward: () => void;
+    onforward: (range?: TextRange) => void;
+    onselect: () => void;
+    selecting: boolean;
+    selected: boolean;
     thread?: ThreadSummary;
     onthread: () => void;
     reacts: Map<string, string[]> | undefined;
@@ -68,13 +62,29 @@
   const replied = $derived(m.reply_to ? lookup(m.reply_to) : undefined);
   let body: HTMLElement | undefined = $state();
 
-  /** Quote the selected part of this message, or all of it (SPEC §5.3). */
-  function quote() {
+  /** DOM text positions and message offsets are both UTF-16. */
+  function selectedRange(): TextRange | null {
     const sel = getSelection();
-    const picked = sel && body && sel.rangeCount && body.contains(sel.anchorNode) ? sel.toString() : '';
-    const at = picked ? m.text.indexOf(picked) : -1;
-    if (at >= 0 && picked) onquote({ message_id: m.id, offset: at, length: picked.length, text: picked });
-    else onquote({ message_id: m.id, offset: 0, length: m.text.length, text: m.text });
+    if (!sel || !body || !sel.rangeCount || sel.isCollapsed) return null;
+    const range = sel.getRangeAt(0);
+    const wrapper = (node: Node) => (node instanceof Element ? node : node.parentElement)?.closest<HTMLElement>('[data-message-offset]');
+    const start = wrapper(range.startContainer);
+    const end = wrapper(range.endContainer);
+    if (!start || !end || !body.contains(start) || !body.contains(end)) return null;
+    const position = (element: HTMLElement, node: Node, offset: number) => {
+      const before = document.createRange();
+      before.selectNodeContents(element);
+      before.setEnd(node, offset);
+      return Number(element.dataset.messageOffset) + before.toString().length;
+    };
+    const from = position(start, range.startContainer, range.startOffset);
+    const to = position(end, range.endContainer, range.endOffset);
+    if (to <= from) return null;
+    return { message_id: m.id, offset: from, length: to - from, text: m.text.slice(from, to) };
+  }
+
+  function quote() {
+    onquote(selectedRange() ?? { message_id: m.id, offset: 0, length: m.text.length, text: m.text });
   }
 </script>
 
@@ -84,7 +94,7 @@
     {#if thread}<button class="link" onclick={onthread}>Open thread · {thread.replyCount} {thread.replyCount === 1 ? 'reply' : 'replies'}</button>{/if}
   </div>
 {:else}
-  <div class="msg" class:cont class:pinned={m.pinned}>
+  <div class="msg" class:cont class:pinned={m.pinned} class:selected>
     {#if replied}
       <div class="replybar">
         ↪ <span style="color: {color(replied.authors[0] ?? '').name}">{replied.authors.map(nameOf).join(' & ')}</span>
@@ -92,8 +102,9 @@
         <span class="snip">{replied.deleted ? 'deleted message' : replied.text.slice(0, 80)}</span>
       </div>
     {/if}
-    {#if !cont || replied}
+    {#if !cont || replied || selecting}
       <div class="head">
+        {#if selecting}<button class="select-toggle" aria-label={selected ? 'Deselect message' : 'Select message'} aria-pressed={selected} onclick={onselect}>{selected ? '☑' : '□'}</button>{/if}
         <span class="avatars">
           {#each m.authors.slice(0, 3) as a (a)}
             <span class="avatar" style="--ring: {color(a).ring}">{people.get(a)?.sigils[0] ?? nameOf(a)[0]}</span>
@@ -109,7 +120,13 @@
     {/if}
     <div class="body" bind:this={body}>
       {#if m.quote}
-        <blockquote>{m.quote.text}</blockquote>
+        {#if 'items' in m.quote}
+          {#each m.quote.items as q, i (`${q.message_id}:${i}`)}
+            <blockquote><span>{q.authors.map(nameOf).join(' & ')}{q.channel_name ? ` · #${q.channel_name}` : ''}</span><RichText text={q.text} entities={q.entities} /></blockquote>
+          {/each}
+        {:else}
+          <blockquote>{m.quote.text}</blockquote>
+        {/if}
       {/if}
       {#each m.forward_snapshot ?? [] as f (f.message_id)}
         <div class="forward">
@@ -129,11 +146,11 @@
               </span>
               <span class="who" style="color: {color(s.authors[0] ?? '').name}">{s.authors.map(nameOf).join(' & ')}</span>
             </span>
-            <RichText text={seg.text} entities={seg.entities} />
+            <span class="selectable" data-message-offset={s.offset}><RichText text={seg.text} entities={seg.entities} /></span>
           </div>
         {/each}
       {:else if m.text}
-        <RichText text={m.text} entities={m.entities} />
+        <span class="selectable" data-message-offset="0"><RichText text={m.text} entities={m.entities} /></span>
       {/if}
       {#if m.edited}<span class="edited"> (edited)</span>{/if}
       {#if reacts?.size}
@@ -168,7 +185,8 @@
       <button onclick={() => (palette = !palette)} title="React" disabled={!speaker}>☺</button>
       <button onclick={onreply} title="Reply">↩</button>
       <button onclick={quote} title="Quote (select text first to quote part)">❝</button>
-      <button onclick={onforward} title="Forward">↗</button>
+      <button onclick={() => onforward(selectedRange() ?? undefined)} title="Forward selection or message">↗</button>
+      <button onclick={onselect} title={selected ? 'Deselect message' : 'Select for bundle'} aria-label={selected ? 'Deselect message' : 'Select for bundle'}>{selected ? '☑' : '□'}</button>
       <button onclick={onthread} title={thread ? 'Open thread' : 'Start thread'} aria-label={thread ? 'Open thread' : 'Start thread'}>☷</button>
       <button onclick={onpin} title={m.pinned ? 'Unpin' : 'Pin'}>{m.pinned ? '⊘' : '📌'}</button>
       {#if mine}
@@ -188,6 +206,9 @@
   .msg.cont {
     padding-top: 2px;
   }
+  .msg.selected { background: var(--accent-soft); }
+  .select-toggle { background: none; border: 0; color: var(--accent); cursor: pointer; }
+  blockquote span { display: block; font-size: var(--fs-xs); color: var(--ink-3); }
   .msg:hover {
     background: var(--surface-2);
   }

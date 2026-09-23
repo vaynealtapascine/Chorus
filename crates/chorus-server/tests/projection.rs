@@ -407,3 +407,47 @@ fn editing_segmented_message_updates_text_and_attribution() {
     project::rebuild(&mut c).unwrap();
     assert_eq!(rows(&c), expected);
 }
+
+#[test]
+fn selection_snapshots_survive_projection_rebuild() {
+    let (mut c, account, _, scope) = setup();
+    let source = new_id(1, [231; 10]);
+    let quote_id = new_id(1, [232; 10]);
+    let forward_id = new_id(1, [233; 10]);
+    let author = new_id(1, [234; 10]);
+    let item = json!({
+        "message_id": source, "channel_name": "general", "authors": [author],
+        "text": "part", "entities": [], "offset": 2, "length": 4, "occurred_at": T
+    });
+    ingest::server_op(
+        &c,
+        &account,
+        "message.send",
+        &scope,
+        Some(&quote_id),
+        json!({"channel_id":"c","authors":[author],"text":"see this","entities":[],"quote":{"items":[item]}}),
+        T,
+    )
+    .unwrap();
+    ingest::server_op(
+        &c,
+        &account,
+        "message.forward",
+        &scope,
+        Some(&forward_id),
+        json!({"channel_id":"c","authors":[author],"text":"","entities":[],
+            "forward_of_id":source,"forward_snapshot":[item]}),
+        T + 1,
+    )
+    .unwrap();
+    let read = |db: &Connection, id: &str, col: &str| -> serde_json::Value {
+        let raw: String =
+            db.query_row(&format!("SELECT {col} FROM message WHERE id = ?1"), [id], |r| r.get(0)).unwrap();
+        serde_json::from_str(&raw).unwrap()
+    };
+    assert_eq!(read(&c, &quote_id, "quote"), json!({"items":[item]}));
+    assert_eq!(read(&c, &forward_id, "forward_snapshot"), json!([item]));
+    project::rebuild(&mut c).unwrap();
+    assert_eq!(read(&c, &quote_id, "quote"), json!({"items":[item]}));
+    assert_eq!(read(&c, &forward_id, "forward_snapshot"), json!([item]));
+}
