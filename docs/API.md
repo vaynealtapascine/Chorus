@@ -147,8 +147,9 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   - `/front/daily?from=&to=&level=` (days are `YYYY-MM-DD`, `to` inclusive);
   - `/front/reviews?open=1`.
 - **Other accounts:** `/accounts/{id}/view`, `/follows`, `/notifications`.
-- **Not yet:** `/front/intervals?subject=&level=` filters. Messages, posts, profiles, feeds and
-  insights come with M5.7/M5.8/M7/M10.1.
+- `/front/intervals` also takes `subject` (an id) and `level`.
+- **Not yet:** messages, posts, profiles, feeds and insights, which come with
+  M5.7/M5.8/M7/M10.1.
 
 ## 4. Writes (non-sync)
 
