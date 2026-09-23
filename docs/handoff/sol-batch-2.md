@@ -178,3 +178,10 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 - Access checks cover the uploader, own account/member/group/attachment references, shared message attachments via `scope_access`, custom emoji, and member avatars after follower reveal. Audit this SQL first, especially visibility when T8 adds system-only asides.
 - The API's optional `?thumb=480` server fallback is not implemented; T2 produces client thumbnails. GET currently buffers up to the configured 100 MB limit in memory. Consider streaming if large blob traffic warrants it.
 - The ignored wasm package was absent in the isolated worktree, so `pwsh scripts/build-web-core.ps1` was run before the passing verifier. No core semantics changed. No proposed decision.
+
+### T2 · done
+- Commits: `9fd5b0a` (SQL message/post attachment links and rebuild test), `c8a994f` (web upload queue, composer, thumbnails, rendering).
+- Added server test for an attachment link arriving before its attachment op and surviving projection rebuild; added web test for attachment metadata, alt text, and spoiler mapping. `python scripts/verify.py --quick` passed before both code commits.
+- Ran an actual Playwright browser flow on the isolated 5261/5262 servers: stopped 5261, picked an image and sent a message as a member, observed the local message/image and one IndexedDB outbox blob, restarted 5261, reloaded the persistent browser profile, observed the image decode (natural width 1) and outbox count fall to zero. Also ran `imageThumbnail` in Chromium with a generated 900×600 PNG: it made a distinct 480×320 WebP blob. These are runtime checks.
+- Picker, paste/drop, alt text, spoiler, quote/forward previews, and Stage attachment blur compile and pass Svelte checks; they were not each clicked through in the browser. Audit forwarded attachments across two accounts and the `AttachmentView` object-URL lifecycle first.
+- No core semantics changed. No proposed decision. The first quick verifier attempt while the dev server was running hit Windows' executable lock; stopping only the isolated server allowed the next run to pass.
