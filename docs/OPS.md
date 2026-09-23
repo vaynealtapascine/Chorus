@@ -1,7 +1,11 @@
 # Chorus — operations
 
-The server runs on the owner's Windows PC, same pattern as Arbor: an NSSM service behind Caddy,
-reachable only over Tailscale.
+Two supported ways to run the server (D-062):
+
+- **Windows PC** (§1–§6): an NSSM service behind Caddy, reachable only over Tailscale, same
+  pattern as Arbor. This is how it started.
+- **Linux server on the public internet** (§9): a systemd service behind Caddy, built and packed
+  on the PC by `scripts/pack-linux.ps1`, installed by `deploy/linux/install.sh`.
 
 ---
 
@@ -68,7 +72,7 @@ snapshot_threshold = 20000
 
 [security]
 tailscale_whois = false                      # D-034 optional second factor
-webhooks_allow_external = false
+webhook_targets = "internal"                 # internal (tailnet/LAN, never loopback) | public | any
 ```
 
 Every option also has a default in code; the file may be empty.
@@ -127,3 +131,28 @@ chorus-server migrate                   # run pending schema migrations (also au
   the debug build's network security config).
 - Seed data: `chorus-server seed --members 300 --switches 20000 --messages 100000` for
   performance testing against the SPEC §9 budgets.
+
+## 9. Linux server (public VPS)
+
+The walkthrough for the owner is `deploy/linux/README.txt` (first install, moving from the PC,
+updates). What differs from the PC:
+
+- **Build**: `pwsh scripts/pack-linux.ps1 [-WithData] [-NoBuild]` builds a static x86_64 musl
+  binary in the `rust:1.98-bookworm` image through Docker in WSL (repo mounted read-only; target
+  and registry cache in `F:\DunBuild\chorus-linux`), builds the web app, and writes
+  `chorus-linux-<git describe>.tar.gz` with `install.sh`, `files/` and `README.txt`.
+  `-WithData` adds `chorus-server backup` output from the PC install as `import/`.
+- **Layout**: `/opt/chorus/{app,data,backups}` (data and backups owned by the `chorus` user),
+  `/etc/chorus/chorus.toml`, unit `chorus.service` (sandboxed: only data and backups writable),
+  Caddy site `/etc/caddy/sites/chorus.caddy`, imported from the main Caddyfile.
+- **Updates**: rerun `install.sh` from a newer bundle; it swaps `app/` and restarts. No binary
+  watcher (`CHORUS_RESTART_ON_CHANGE` is a Windows deploy trick). The server stops cleanly on SIGTERM.
+- **Moving data**: `install.sh --import [--replace-data]` goes through `chorus-server restore`
+  (checksums, integrity, projection rebuild, epoch bump), so devices re-send anything newer.
+  Keep the same domain and move its DNS record; devices remember the address.
+- **Exposure**: public, not tailnet-only. Invites stay the only way in; `webhook_targets =
+  "public"` keeps webhooks off the host's own services (Caddy admin API, ntfy, other apps);
+  `tailscale_whois` is meaningless there. Backups land on the same disk: copy them off the box.
+- **Coexisting with the selfhost VPS bundle** (memos, ntfy, Arbor, …): that bundle's Caddyfile
+  imports `/etc/caddy/sites/*.caddy`, so Chorus's site survives its reinstalls. Chorus can use
+  that ntfy as its push distributor (`ntfy_url`).

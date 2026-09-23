@@ -962,9 +962,10 @@ async fn webhooks_create(
     Json(b): Json<WebhookIn>,
 ) -> Result<Response, ApiError> {
     // resolve the host before taking the db lock
-    let url = crate::webhooks::check_url(b.url.trim(), s.cfg.security.webhooks_allow_external)
+    let url = crate::webhooks::check_url(b.url.trim(), s.cfg.security.webhook_targets())
         .await
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "bad_request", e))?;
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "bad_request", e))?
+        .url;
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
     let v = crate::webhooks::create(&conn, &p, url.as_str(), &b.events, now_ms())?;
@@ -1006,8 +1007,7 @@ async fn webhooks_test(
         let p = principal(&s, &conn, &headers)?;
         crate::webhooks::test(&conn, &p, &id, now_ms())?
     };
-    let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().unwrap_or_default();
-    let outcome = crate::webhooks::send(&http, &d, s.cfg.security.webhooks_allow_external, now_ms()).await;
+    let outcome = crate::webhooks::send(&d, s.cfg.security.webhook_targets(), now_ms()).await;
     let (status, error) = match &outcome {
         Ok(st) => (Some(*st), None),
         Err((st, e)) => (*st, Some(e.clone())),
@@ -1025,7 +1025,6 @@ async fn webhooks_test(
 /// task so a slow receiver can't hold up others. Retries come back through the same channel.
 fn run_webhooks(state: AppState, mut rx: mpsc::UnboundedReceiver<crate::webhooks::Delivery>) {
     tokio::spawn(async move {
-        let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap_or_default();
         let mut pending: Vec<crate::webhooks::Delivery> = Vec::new();
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
         loop {
@@ -1040,13 +1039,12 @@ fn run_webhooks(state: AppState, mut rx: mpsc::UnboundedReceiver<crate::webhooks
             let (due, later): (Vec<_>, Vec<_>) = pending.drain(..).partition(|d| d.due <= now);
             pending = later;
             for d in due {
-                let (state, http) = (state.clone(), http.clone());
+                let state = state.clone();
                 tokio::spawn(async move {
                     if !crate::webhooks::still_enabled(&state.db(), &d.webhook_id) {
                         return;
                     }
-                    let outcome =
-                        crate::webhooks::send(&http, &d, state.cfg.security.webhooks_allow_external, now_ms()).await;
+                    let outcome = crate::webhooks::send(&d, state.cfg.security.webhook_targets(), now_ms()).await;
                     match crate::webhooks::record(&state.db(), &d, &outcome, now_ms()) {
                         Ok(Some(retry)) => {
                             let _ = state.hooks.send(retry);
@@ -1372,7 +1370,30 @@ fn watch_own_binary() {
     });
 }
 
-/// Bind and serve until Ctrl-C.
+/// Ctrl-C, or SIGTERM on Unix (what systemd sends to stop the service).
+async fn stop_signal() {
+    #[cfg(unix)]
+    {
+        let mut term = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(error = %e, "can't listen for SIGTERM; only Ctrl-C stops cleanly");
+                let _ = tokio::signal::ctrl_c().await;
+                return;
+            }
+        };
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = term.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+/// Bind and serve until Ctrl-C (or SIGTERM).
 pub async fn serve(state: AppState) -> anyhow::Result<()> {
     let addr = state.cfg.server.listen.clone();
     let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -1382,7 +1403,7 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     crate::backup::start_nightly(state.cfg.clone())?;
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     let server = axum::serve(listener, router(state)).with_graceful_shutdown(async {
-        let _ = tokio::signal::ctrl_c().await;
+        stop_signal().await;
         tracing::info!("stopping");
         let _ = stop_tx.send(());
     });

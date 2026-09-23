@@ -459,7 +459,7 @@ async fn api_tokens_read_the_front_and_stream_switches() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn webhooks_post_signed_events() {
-    // a receiver on the loopback (inside the "tailnet")
+    // a receiver on the loopback
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(axum::http::HeaderMap, String)>();
     let receiver = axum::Router::new().route(
         "/hook",
@@ -475,7 +475,10 @@ async fn webhooks_post_signed_events() {
     let hook = format!("http://{}/hook", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, receiver).await.unwrap() });
 
-    let s = start().await;
+    // the receiver is on loopback, which only `any` allows
+    let mut cfg = Config::default();
+    cfg.security.webhook_targets = Some(chorus_server::config::WebhookTargets::Any);
+    let s = start_with(cfg).await;
     let sys = enrol(&s, auth::InviteKind::System, None, 51, "stars").await;
     let mut phone = Device::new(&sys, 51);
     phone.connect(&s).await;
@@ -485,15 +488,7 @@ async fn webhooks_post_signed_events() {
     let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
     let session = sys["session"].as_str().unwrap().to_string();
 
-    // outside the tailnet is refused unless allowed
-    let r = http
-        .post(url("/webhooks"))
-        .bearer_auth(&session)
-        .json(&json!({"url": "http://8.8.8.8/hook", "events": ["front.switch"]}))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 400);
+    // (which targets each `webhook_targets` mode refuses is covered by webhooks::tests::url_rules)
     let created: Value = http
         .post(url("/webhooks"))
         .bearer_auth(&session)

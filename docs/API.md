@@ -276,7 +276,7 @@ Chorus-Signature: t=1790000000,v1=<hex HMAC-SHA256(secret, t + "." + body)>
 
 Events: `front.switch`, `front.review`, `member.created`, `member.updated`, `message.created`,
 `post.created`, `follow.requested`. Retries: 1 m, 5 m, 30 m, 2 h, 12 h; then disabled with an
-in-app notice. Webhook URLs may point outside the tailnet only if `webhooks.allow_external` is on.
+in-app notice. Where webhook URLs may point is `security.webhook_targets` (below).
 
 Implemented (M10.2, `webhooks.rs`):
 
@@ -288,10 +288,16 @@ Implemented (M10.2, `webhooks.rs`):
 - **Events so far:** `front.switch`, `member.created`, `member.updated`, `follow.requested`.
   `message.created` waits for M5.7 visibility, `post.created` for M7, and `front.review` for
   later. The body also carries `delivery` (the same value as `Chorus-Delivery`).
-- **Internal URLs** are loopback, RFC 1918, link-local, Tailscale's 100.64/10 and fd00::/8, bare
-  names, and `.ts.net`/`.local`/`.lan`/`.internal`/`.home.arpa`. Any other name is resolved and
-  must resolve only to internal addresses; this is checked on save and before each delivery. The
-  switch is `security.webhooks_allow_external` in `chorus.toml`.
+- **Targets** (`security.webhook_targets` in `chorus.toml`, D-062), checked on save and before
+  each delivery:
+  - `internal` (default): RFC 1918, link-local, Tailscale's 100.64/10 and fd00::/8, bare names,
+    and `.ts.net`/`.local`/`.lan`/`.internal`/`.home.arpa`. **Never loopback** (`localhost`,
+    127/8, ::1), which would reach the host's own admin ports.
+  - `public` (the Linux/VPS install): only globally routable addresses; no loopback, private,
+    link-local (cloud metadata), CGNAT, multicast, documentation or NAT64 ranges.
+  - `any`: everything (the legacy `webhooks_allow_external = true` means this).
+  Names are resolved and every address must pass; the delivery then connects to the checked
+  address (no DNS rebinding) and doesn't follow redirects.
 - **Retries** are kept in memory, so a restart drops pending retries.
 
 ## 8. Admin

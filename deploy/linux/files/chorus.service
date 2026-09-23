@@ -1,0 +1,48 @@
+[Unit]
+Description=Chorus on http://127.0.0.1:5250 (https://@DOMAIN@ via Caddy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=chorus
+Group=chorus
+WorkingDirectory=/opt/chorus
+ExecStart=/opt/chorus/app/chorus-server --config /etc/chorus/chorus.toml serve
+# SIGTERM: the server closes sockets and the database, then exits (a few seconds at most)
+KillSignal=SIGTERM
+TimeoutStopSec=20
+Restart=always
+RestartSec=3
+UMask=0027
+LimitNOFILE=65536
+Environment=RUST_LOG=info
+
+# The server writes only its data and backups; everything else is read-only to it.
+ReadWritePaths=/opt/chorus/data /opt/chorus/backups
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
