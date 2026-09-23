@@ -95,8 +95,8 @@ fn recover_complete(
     Ok(())
 }
 
-/// The owner sees their own references; a shared-space member sees attachments of readable
-/// messages. Follower avatars are restricted to entries already revealed by the notifier.
+/// The owner sees their own references; readers see attachments of readable messages or posts.
+/// Follower avatars are restricted to entries already revealed by the notifier.
 fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &str) -> Result<bool, BlobError> {
     if account == uploader {
         return Ok(true);
@@ -124,6 +124,11 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
               JOIN scope_access sa ON sa.scope = 'space:' || c.space_id AND sa.account_id = ?2
               WHERE (a.blob_hash = ?1 OR a.thumb_blob_hash = ?1)
                 AND {}
+           UNION ALL SELECT 1 FROM attachment a
+              JOIN item_attachment ia ON ia.attachment_id = a.id AND ia.owner_type = 'post'
+              JOIN post p ON p.id = ia.owner_id AND p.deleted_at IS NULL
+              WHERE (a.blob_hash = ?1 OR a.thumb_blob_hash = ?1)
+                AND {}
            UNION ALL SELECT 1 FROM member m
               JOIN follower_front_view fv ON fv.target_account_id = m.account_id AND fv.follower_account_id = ?2
               JOIN follow f ON f.target_account_id = m.account_id AND f.follower_account_id = ?2 AND f.status = 'active'
@@ -131,7 +136,7 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
                 AND EXISTS (SELECT 1 FROM json_each(fv.entries) je
                     WHERE json_extract(je.value, '$.subject_type') = 'member'
                       AND json_extract(je.value, '$.subject_id') = m.id)
-         )", crate::visibility::PUBLIC_MESSAGE_SQL),
+         )", crate::visibility::PUBLIC_MESSAGE_SQL, crate::posts::readable_sql("?2")),
         params![hash, account],
         |r| r.get(0),
     )

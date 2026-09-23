@@ -5,16 +5,20 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 /// A malformed visibility value fails closed. An ended follow removes follower and bucket access.
-const READABLE: &str = "(p.account_id=?1 OR CASE WHEN json_valid(p.visibility) THEN
+pub(crate) fn readable_sql(viewer: &str) -> String {
+    format!(
+        "(p.account_id={viewer} OR CASE WHEN json_valid(p.visibility) THEN
     (json_extract(p.visibility,'$.mode')='server' OR
      (json_extract(p.visibility,'$.mode') IN ('followers','buckets') AND
-      EXISTS (SELECT 1 FROM follow f WHERE f.follower_account_id=?1
+      EXISTS (SELECT 1 FROM follow f WHERE f.follower_account_id={viewer}
               AND f.target_account_id=p.account_id AND f.status='active') AND
       (json_extract(p.visibility,'$.mode')='followers' OR
        EXISTS (SELECT 1 FROM json_each(p.visibility,'$.bucket_ids') ids
-               JOIN bucket_assignment ba ON ba.bucket_id=ids.value AND ba.follower_account_id=?1 AND ba.is_present
+               JOIN bucket_assignment ba ON ba.bucket_id=ids.value AND ba.follower_account_id={viewer} AND ba.is_present
                JOIN bucket b ON b.id=ba.bucket_id AND b.account_id=p.account_id AND b.deleted_at IS NULL))))
-    ELSE 0 END)";
+    ELSE 0 END)"
+    )
+}
 
 const COLUMNS: &str = "p.id,p.account_id,p.kind,p.title,p.text,p.entities,p.mood,p.tags,p.cw,
     p.reply_to_id,p.quote,p.repost_of_id,p.visibility,p.occurred_at,p.edited_at,
@@ -60,7 +64,8 @@ fn row(r: &Row<'_>) -> rusqlite::Result<Value> {
 }
 
 fn readable_id(conn: &Connection, viewer: &str, id: &str) -> rusqlite::Result<bool> {
-    let sql = format!("SELECT EXISTS(SELECT 1 FROM post p WHERE p.id=?2 AND p.deleted_at IS NULL AND {READABLE})");
+    let readable = readable_sql("?1");
+    let sql = format!("SELECT EXISTS(SELECT 1 FROM post p WHERE p.id=?2 AND p.deleted_at IS NULL AND {readable})");
     conn.query_row(&sql, params![viewer, id], |r| r.get(0))
 }
 
@@ -77,8 +82,9 @@ fn hide_unreadable_links(conn: &Connection, viewer: &str, item: &mut Value) -> r
 
 pub fn list(conn: &Connection, viewer: &str, q: &PostQuery) -> anyhow::Result<Value> {
     let limit = q.limit.unwrap_or(50).clamp(1, 100) as i64;
+    let readable = readable_sql("?1");
     let sql = format!(
-        "SELECT {COLUMNS} FROM post p WHERE p.deleted_at IS NULL AND {READABLE}
+        "SELECT {COLUMNS} FROM post p WHERE p.deleted_at IS NULL AND {readable}
          AND (?2 IS NULL OR p.account_id=?2)
          AND (?3 IS NULL OR p.kind=?3)
          AND (?4 IS NULL OR p.occurred_at<?4)
@@ -96,7 +102,8 @@ pub fn list(conn: &Connection, viewer: &str, q: &PostQuery) -> anyhow::Result<Va
 }
 
 pub fn one(conn: &Connection, viewer: &str, id: &str) -> anyhow::Result<Option<Value>> {
-    let sql = format!("SELECT {COLUMNS} FROM post p WHERE p.id=?2 AND p.deleted_at IS NULL AND {READABLE}");
+    let readable = readable_sql("?1");
+    let sql = format!("SELECT {COLUMNS} FROM post p WHERE p.id=?2 AND p.deleted_at IS NULL AND {readable}");
     let mut item = conn.query_row(&sql, params![viewer, id], row).optional()?;
     if let Some(item) = &mut item {
         hide_unreadable_links(conn, viewer, item)?;
@@ -108,8 +115,9 @@ pub fn replies(conn: &Connection, viewer: &str, parent: &str, depth: usize) -> a
     if depth == 0 {
         return Ok(Vec::new());
     }
+    let readable = readable_sql("?1");
     let sql = format!(
-        "SELECT {COLUMNS} FROM post p WHERE p.reply_to_id=?2 AND p.deleted_at IS NULL AND {READABLE}
+        "SELECT {COLUMNS} FROM post p WHERE p.reply_to_id=?2 AND p.deleted_at IS NULL AND {readable}
          ORDER BY p.occurred_at,p.id LIMIT 50"
     );
     let mut st = conn.prepare(&sql)?;

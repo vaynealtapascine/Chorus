@@ -228,7 +228,9 @@ GET  /blobs/{sha256}?thumb=480        server-side fallback thumbnail if client d
 ```
 
 Max blob size: 100 MB default (Advanced). Access check: the caller must be able to read at least
-one attachment/avatar referencing the blob.
+one attachment/avatar referencing the blob. Post attachments (including thumbnail blobs) follow
+the post's current private, follower, bucket, or server audience; deleting the post or ending a
+follow revokes that access.
 
 ## 6. Live stream (SSE)
 

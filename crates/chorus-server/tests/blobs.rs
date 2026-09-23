@@ -218,6 +218,108 @@ async fn shared_attachment_requires_public_structured_visibility() {
 }
 
 #[tokio::test]
+async fn post_attachment_tracks_current_post_audience() {
+    let s = Server::new().await;
+    let client = reqwest::Client::new();
+    let bytes = b"journal attachment";
+    let digest = hash(bytes);
+    let url = format!("{}/{digest}", s.base);
+    assert_eq!(
+        client
+            .put(&url)
+            .bearer_auth("alice-token")
+            .header("content-range", format!("bytes 0-{}/{}", bytes.len() - 1, bytes.len()))
+            .body(bytes.as_slice())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        201
+    );
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute(
+            "INSERT INTO post(id,account_id,device_id,kind,text,visibility,occurred_at)
+                   VALUES ('p','alice','alice-device','note','hi','{\"mode\":\"private\"}',0)",
+            [],
+        )
+        .unwrap();
+        c.execute("INSERT INTO attachment(id,account_id,blob_hash,created_at) VALUES ('a','alice',?1,0)", [&digest])
+            .unwrap();
+        c.execute(
+            "INSERT INTO item_attachment(owner_type,owner_id,attachment_id,position)
+                   VALUES ('post','p','a',0)",
+            [],
+        )
+        .unwrap();
+    }
+    let read = || client.get(&url).bearer_auth("bob-token");
+    assert_eq!(read().send().await.unwrap().status(), 403);
+    assert_eq!(client.head(&url).bearer_auth("bob-token").send().await.unwrap().status(), 403);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE post SET visibility='{\"mode\":\"server\"}' WHERE id='p'", []).unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 200);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE post SET visibility='{\"mode\":\"followers\"}' WHERE id='p'", []).unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 403);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute(
+            "INSERT INTO follow(id,follower_account_id,target_account_id,status,created_at)
+                   VALUES ('f','bob','alice','active',0)",
+            [],
+        )
+        .unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 200);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE follow SET status='ended' WHERE id='f'", []).unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 403);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE follow SET status='active' WHERE id='f'", []).unwrap();
+    }
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("INSERT INTO bucket(id,account_id,name) VALUES ('b','alice','Close')", []).unwrap();
+        c.execute("UPDATE post SET visibility='{\"mode\":\"buckets\",\"bucket_ids\":[\"b\"]}' WHERE id='p'", [])
+            .unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 403);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute(
+            "INSERT INTO bucket_assignment(bucket_id,follower_account_id,added_hlc)
+                   VALUES ('b','bob','1:0:1')",
+            [],
+        )
+        .unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 200);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE bucket_assignment SET removed_hlc='2:0:1' WHERE bucket_id='b'", []).unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 403);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE post SET visibility='not-json' WHERE id='p'", []).unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 403);
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE post SET visibility='{\"mode\":\"server\"}',deleted_at=1 WHERE id='p'", []).unwrap();
+    }
+    assert_eq!(read().send().await.unwrap().status(), 403);
+}
+
+#[tokio::test]
 async fn mismatch_discards_only_partial_and_limit_is_enforced() {
     let s = Server::new().await;
     let client = reqwest::Client::new();
