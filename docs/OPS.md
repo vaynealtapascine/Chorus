@@ -83,7 +83,7 @@ Every option also has a default in code; the file may be empty.
 chorus-server serve                     # what the service runs
 chorus-server invite --kind system|person [--expires 7d]   # prints URL + QR in terminal
 chorus-server backup [--to path]        # online backup (SQLite backup API) + blob manifest
-chorus-server restore <backup>          # stops if serving; bumps epoch (SYNC.md §7.3)
+chorus-server restore --from <snapshot> --into <new dir>   # verifies, bumps epoch (SYNC.md §7.3)
 chorus-server rebuild                   # rebuild all projections from the op log
 chorus-server export --account <id> --kind full|csv|sqlite
 chorus-server check                     # integrity_check, digests, orphan blobs, config
@@ -94,8 +94,10 @@ chorus-server migrate                   # run pending schema migrations (also au
 
 ## 5. Backups (D-043)
 
-- Nightly at `backup.time`: SQLite online backup → `backups/chorus-YYYYMMDD-HHMM.db.zst` plus a
-  blob manifest; blobs themselves are immutable and copied incrementally to `backups/blobs/`.
+- Nightly at `backup.time`: a snapshot directory `backups/chorus-<stamp>-<rand>/` with
+  `chorus.db` (SQLite online backup) and `manifest.json` (database sha256, blob list); blobs are
+  immutable and copied once into `backups/blobs/` (D-064). `chorus-server restore --from <snapshot>
+  --into <new dir>` verifies checksums, integrity and a projection rebuild, then bumps the epoch.
 - Rotation per `keep_*`.
 - Before every migration: automatic backup, refuse to migrate if it fails.
 - `GET /admin/health` and Settings → Data show "Last backup: 04:00 today · 212 MB".

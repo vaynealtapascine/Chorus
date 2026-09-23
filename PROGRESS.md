@@ -14,7 +14,7 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** gpt-6-sol batch 3 on branch `sol/batch-2` (worktree `F:\DunBuild\Chorus-sol`): merge main, finish T6, audit items A1–A4, then T7–T13 — see `docs/handoff/sol-batch-3.md`. Claude audits and merges afterwards; don't start those tasks on `main`.
+- **In progress:** two in parallel. **Claude**: SPEC §9 server budgets (incremental entity projections, batched rebuild; `tests/perf.rs`) and the Linux deployment (D-062: build verification waits for the owner to allow the toolchain download). **gpt-6-sol**: batch 4 (U1–U6) in `docs/handoff/sol-batch-4.md` on `sol/batch-2`; its "don't touch" list keeps the two apart.
 - **Owner:** —
 - **Next concrete step:** see Notes
 - **Notes:** State 2026-09-23 (end of Claude session 2). Since gpt-6-sol's turn: audited + finished M5.12 Trash (fixed early out-of-order restores being rejected permanently); Android quick-switch widget + search launcher (RemoteViews, D-058; built + unit-tested, **not yet run on a device** — the phone dropped off adb); follows end to end (M6.1: server-written requests/prefs, People page with presets; per-member "followers hear when X fronts"); switch notifications core (`chorus_core::notify`) + server scheduler (`notifier.rs`) + follower view/inbox on the web — verified in the browser that nothing is revealed before due. **C: has <1 GB free: always `CARGO_TARGET_DIR=F:\DunBuild\chorus-target` and `CHORUS_GRADLE_BUILD_DIR=F:\DunBuild\chorus-gradle`** (deploy/web/android scripts honour them now; the dev-server launch config runs the F: release exe, so stop it before `cargo build --release`). The stale `Chorus\target` on C: was cargo-cleaned on 2026-09-23 (C: had hit 0 bytes free), and deleted again later that day after verify runs had refilled it to 12.7 GB; `verify.py` now defaults `CARGO_TARGET_DIR` to `F:\DunBuild\chorus-target` when unset. Keep building on F:. Owner reran install.cmd on 2026-09-23; the Chorus service is running again. Session 3 (same day) added: webhooks, more REST reads, write:front tokens + POST /front/switch, Web Push (D-061, owner question Q13), shared spaces + DMs (M6.2 server + web), QR device invites, device sign-out — see the log. Suggested next: device check of M4.2/M4.5/M4.6 when the phone is on adb; M6.2 on Android; a real-browser Web Push check once Q13 is answered; M9 stage mode; M7 journals.
@@ -70,7 +70,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M2.5 Sync WebSocket (hello/push/pull/ack/snapshot/hash) per SYNC.md
 - [x] M2.6 Blob store (content-addressed, resumable upload) — gpt-6-sol batch 2 T1 (merged 18e4d6e)
 - [~] M2.7 Read API (REST) + follower views — /me, /members(/{id}), /groups, /fields, /states, /front, /front/switches|intervals|daily|reviews, /accounts/{id}/view done; messages/posts/profiles/feeds reads wait for M5.7/M5.8/M7
-- [ ] M2.8 Nightly backups + `chorus-server backup|restore|rebuild|export` CLI
+- [x] M2.8 Nightly backups + `chorus-server backup|restore|rebuild|export` CLI — batch 3 T6 (snapshot directories, D-064)
 
 ### M3 — Web client foundation
 
@@ -85,7 +85,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M4.1 Theme + components mirroring DESIGN.md
 - [~] M4.2 Room (SQLCipher) + outbox + sync engine (via core UniFFI) + WorkManager
 - [~] M4.3 Onboarding via invite link / QR — the web "Link another device" now shows a QR of the one-use link (server qr.rs, decoded with OpenCV); in-app camera scanning not needed while the phone camera opens the link
-- [ ] M4.4 Members, groups, switcher, front history
+- [~] M4.4 Members, groups, switcher, front history — Android switcher sheet, History undo/redo, device linking (batch 3 T11); person-account hiding and full parity in batch 4 U5
 - [~] M4.5 Quick-switch widget (RemoteViews, D-058): recent grid, folders, mode chip, undo — built + unit-tested; needs a device check; pins not done
 - [~] M4.6 Search launcher activity + app shortcuts — SearchActivity + static "Switch…" shortcut; dynamic pinned shortcuts not done; needs a device check
 
@@ -97,10 +97,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M5.4 Reactions, mentions, read states, unread badges
 - [x] M5.5 Threads
 - [x] M5.6 Attachments + images (offline-queued upload) — web (batch 2 T2); Android display not yet
-- [ ] M5.7 Hidden messages: spoilers, CW/collapsed, member-visible, system-only
-- [ ] M5.8 Search (FTS5 server, local search on Android)
+- [x] M5.7 Hidden messages: spoilers, CW/collapsed, member-visible, system-only — batch 3 T8 (server filters + web); threads inherit their parent (B1 fix); Android controls in batch 4 U5
+- [~] M5.8 Search (FTS5 server, local search on Android) — server FTS + web local index (batch 3 T9); tokens own-account only (B2); Android local search and paging (batch 4 U1) not yet
 - [x] M5.9 Segmented messages (newline annotations) — parse, store `message_segment`, render
-- [ ] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward
+- [ ] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward — batch 4 U3 (gpt-6-sol)
 - [x] M5.11 Forward/quote a selection (range or multi-message bundle)
 - [x] M5.12 Trash + restore for messages, posts, members, groups, channels
 - [x] M5.13 Custom emoji: server-wide set, upload/crop, picker + `:name:` autocomplete, reactions (D-054) — web (batch 2 T4)
@@ -113,11 +113,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M7 — Profiles & journals
 
-- [ ] M7.1 Profile page (banner, fields, pinned, stats)
-- [ ] M7.2 Posts (notes) + long-form entries, replies/quotes/reposts/reactions
+- [~] M7.1 Profile page (banner, fields, pinned, stats) — member profile with Posts/Replies tabs (batch 3 T12); banner/fields/pinned/stats in batch 4 U4
+- [~] M7.2 Posts (notes) + long-form entries, replies/quotes/reposts/reactions — web composer, audiences, GET /posts with per-read audience checks (batch 3); cross-account reactions/replies in batch 4 U4
 - [ ] M7.3 Highlights, relationships + relationship types
 - [ ] M7.4 Lists, feeds (filter language), sharing feeds
-- [ ] M7.5 Combined system timeline
+- [x] M7.5 Combined system timeline — web Journal (batch 3 T12)
 
 ### M8 — Notifications
 
@@ -135,9 +135,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M10 — Data
 
-- [ ] M10.1 Insights dashboards
+- [x] M10.1 Insights dashboards — web (batch 3 T10), DST-aware days
 - [x] M10.2 API tokens, SSE stream, webhooks — tokens + webhooks on the web "Your data" page, front/members reads, SSE front stream, OBS overlay; message/post webhook events wait for M5.7/M7
-- [ ] M10.3 Exports (JSONL op log, tidy CSVs, SQLite copy), documented views
+- [x] M10.3 Exports (JSONL op log, tidy CSVs, SQLite copy), documented views — batch 3 T7 (direct downloads, D-065); zip archive + background jobs later
 
 ### M11 — Import
 
@@ -224,3 +224,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — M3.1 + M4.1 ticked after an audit: design/tokens.json → tokens.css + base.css (web) and Tokens.kt + ChorusTheme (Android) have been in place since M0; verify.py now fails on token drift (gen-tokens.mjs --check)
 - 2026-09-23 claude-opus-5.5 — web chat at scale (SPEC §9): only the newest 100 messages are rendered (older pages on scroll-up / button, scroll position kept); messages() cached per channel and patched from delta-touched keys; messageById no longer rebuilds the channel per reply; unread() stops at the read mark. data.perf.test.ts (PERF=1): 50k channel opens in ~90 ms, send ~33 ms (was ~90). Randomized incremental-vs-fresh test. Merge note for Sol's focusId jump in sol-batch-3.md
 - 2026-09-24 claude-opus-5.5 — SPEC §9 server budgets measured (crates/chorus-server/tests/perf.rs, ignored): front and read-state projections made incremental (core front::append + review_of, model::read_best/read_effective; migration 0004_incremental_projections; project.rs fast path tested against refold-on-every-op). 100k ops: 327 → ~2 500 ops/s. Still short: 1M ops average 1 734 ops/s (member.set entity refold 8 ms), rebuild ~4–5× the 60 s budget (needs batch rebuild). verify.py builds on F: by default; C: target deleted (12.7 GB)
+- 2026-09-24 claude-opus-5.5 — audited and merged gpt-6-sol batch 3 (cda38c8: backups, exports, hidden messages, search, insights, Android switcher, journals, T13); fixed B1/B2/B3/B6 on main (935d04c); accepted D-S2-1..3 as D-063..D-065; Linux/VPS deployment (e8db205, D-062) incl. webhook target policy and SIGTERM; batch 4 handoff for Sol (sol-batch-4.md)
