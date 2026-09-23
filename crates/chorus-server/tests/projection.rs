@@ -151,6 +151,24 @@ fn setup() -> (Connection, String, String, String) {
     (c, a, acct, space)
 }
 
+#[test]
+fn post_reply_link_survives_projection_rebuild() {
+    let (mut c, account, scope, _) = setup();
+    let member = new_id(1, [241; 10]);
+    let parent = new_id(1, [242; 10]);
+    let reply = new_id(1, [243; 10]);
+    ingest::server_op(&c, &account, "post.create", &scope, Some(&parent),
+        json!({"kind":"entry","authors":[member],"title":"Day","text":"Body","entities":[],"visibility":{"mode":"private"}}), T).unwrap();
+    ingest::server_op(&c, &account, "post.create", &scope, Some(&reply),
+        json!({"kind":"note","authors":[member],"text":"Reply","entities":[],"reply_to":parent,"visibility":{"mode":"private"}}), T + 1).unwrap();
+    let target = |db: &Connection| -> Option<String> {
+        db.query_row("SELECT reply_to_id FROM post WHERE id = ?1", [&reply], |r| r.get(0)).unwrap()
+    };
+    assert_eq!(target(&c), Some(parent.clone()));
+    project::rebuild(&mut c).unwrap();
+    assert_eq!(target(&c), Some(parent));
+}
+
 fn dump(c: &Connection, sql: &str) -> Vec<String> {
     let mut st = c.prepare(sql).unwrap();
     let n = st.column_count();
