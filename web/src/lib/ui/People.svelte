@@ -5,12 +5,26 @@
   import { notifyPreset } from '../core/pkg/chorus_wasm.js';
   import { apiBase } from '../sync/device';
   import { sync, type Projection } from '../sync/client';
+  import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
 
   let { projection }: { projection: Projection } = $props();
 
   interface Person { id: string; handle: string | null; display_name: string | null; kind: string }
   interface FollowRow { id: string; account: Person; status: string; created_at: number }
 
+  interface ViewEntry { t: string; name: string; level: string; color?: string | null; glyph?: string | null }
+  interface View { entries: ViewEntry[]; since: number | null; time?: { mode?: string }; shared?: boolean }
+  interface Note {
+    id: string;
+    text: string;
+    time: { at: number | null; precision: Precision; part?: Part | null };
+    account: { handle: string | null; display_name: string | null };
+  }
+
+  let views = $state<Record<string, View>>({});
+  let notes = $state<Note[]>([]);
+  let seenNotes = new Set<string>();
+  let canNotify = $state(typeof Notification !== 'undefined' && Notification.permission === 'granted');
   let following = $state<FollowRow[]>([]);
   let followers = $state<FollowRow[]>([]);
   let target = $state('');
@@ -42,9 +56,50 @@
       const j = await api('/follows');
       following = j.following;
       followers = j.followers;
+      await loadViews();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
+  }
+
+  /** What we may see of the accounts we follow, and our switch notifications (polled). */
+  async function loadViews() {
+    const next: Record<string, View> = {};
+    for (const f of following.filter((x) => x.status === 'active')) {
+      try {
+        next[f.account.id] = await api(`/accounts/${f.account.id}/view`);
+      } catch {
+        /* not shared (yet) */
+      }
+    }
+    views = next;
+    const j = await api('/notifications');
+    const fresh = (j.items as Note[]).filter((n) => !seenNotes.has(n.id));
+    // a desktop notification for anything new while this page is open (not on first load)
+    if (seenNotes.size && canNotify && document.hidden) {
+      for (const n of fresh) new Notification(n.account.display_name ?? 'Chorus', { body: n.text, tag: n.id });
+    }
+    for (const n of j.items as Note[]) seenNotes.add(n.id);
+    notes = j.items;
+  }
+
+  $effect(() => {
+    const t = setInterval(() => void loadViews().catch(() => {}), 30_000);
+    return () => clearInterval(t);
+  });
+
+  async function enableNotifications() {
+    canNotify = (await Notification.requestPermission()) === 'granted';
+  }
+
+  function viewLine(v: View | undefined): string {
+    if (!v) return '';
+    if (v.shared === false) return "They don't share who's fronting";
+    const front = v.entries.filter((e) => e.level === 'front').map((e) => e.name);
+    if (!front.length) return v.since == null ? 'Nothing shared yet' : 'No one fronting';
+    const who = front.length > 1 ? `${front.slice(0, -1).join(', ')} & ${front.at(-1)}` : front[0];
+    const when = fuzzyWhen(v.since, precisionOfRule(v.time)).replace(/^at /, '');
+    return `${who} ${front.length > 1 ? 'are' : 'is'} fronting${when ? ` · since ${when}` : ''}`;
   }
 
   // reload when the synced follow rows change (a request arrived, another device accepted…)
@@ -156,7 +211,7 @@
       <li class="card">
         <div class="who">
           <strong>{name(f.account)}</strong>
-          <span>{f.status === 'requested' ? 'waiting for them to accept' : f.account.handle ? `@${f.account.handle}` : ''}</span>
+          <span>{f.status === 'requested' ? 'waiting for them to accept' : viewLine(views[f.account.id]) || (f.account.handle ? `@${f.account.handle}` : '')}</span>
         </div>
         <div class="actions">
           <button class="ghost" onclick={() => unfollow(f.id)}>{f.status === 'requested' ? 'Cancel' : 'Unfollow'}</button>
@@ -166,6 +221,26 @@
       <li class="muted">You're not following anyone yet.</li>
     {/each}
   </ul>
+
+  {#if notes.length || following.length}
+    <div class="notes-head">
+      <h2>Recent switches</h2>
+      {#if typeof Notification !== 'undefined' && !canNotify}
+        <button class="ghost" onclick={enableNotifications}>Notify me in this browser</button>
+      {/if}
+    </div>
+    <ul>
+      {#each notes as n (n.id)}
+        <li class="note">
+          <strong>{n.account.display_name ?? `@${n.account.handle}`}</strong>
+          <span>{n.text}</span>
+          <time>{fuzzyWhen(n.time.at, n.time.precision, n.time.part)}</time>
+        </li>
+      {:else}
+        <li class="muted">Nothing yet. Switches arrive after the delay each system chose.</li>
+      {/each}
+    </ul>
+  {/if}
 </section>
 
 <style>
@@ -197,4 +272,7 @@
   }
   .ghost { background: none; border: 0; color: var(--accent); cursor: pointer; }
   .error { color: var(--danger); margin: 0; }
+  .notes-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .note { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: baseline; padding: var(--s-2) 0; border-bottom: 1px solid var(--line); }
+  .note time { margin-left: auto; color: var(--ink-3); font-size: var(--fs-sm); }
 </style>

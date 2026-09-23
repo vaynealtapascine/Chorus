@@ -566,9 +566,33 @@ pub fn follower_view(conn: &Connection, follower: &str, target: &str) -> anyhow:
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()?;
+    // how precise `since` is (the ceiling's time rule), so clients can say "around" or "this evening"
+    let follow: Option<(String, String)> = conn
+        .query_row(
+            "SELECT id, ceiling FROM follow WHERE follower_account_id = ?1 AND target_account_id = ?2 AND status = 'active'",
+            params![follower, target],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let time = match follow {
+        Some((id, ceiling)) => {
+            let f = Follow {
+                id,
+                follower: follower.into(),
+                ceiling: serde_json::from_str(&ceiling).unwrap_or(json!({})),
+                prefs: Prefs::default(),
+            };
+            let (c, _) = ceiling_for(conn, target, &f)?;
+            if !c.share_current_front {
+                return Ok(Some(json!({"entries": [], "since": null, "revealed_at": null, "shared": false})));
+            }
+            serde_json::to_value(c.time)?
+        }
+        None => json!({"mode": "hidden"}),
+    };
     let Some((entries, since, revealed_at)) = row else {
-        return Ok(Some(json!({"entries": [], "since": null, "revealed_at": null})));
+        return Ok(Some(json!({"entries": [], "since": null, "revealed_at": null, "time": time})));
     };
     let entries: Vec<Shown> = serde_json::from_str(&entries).unwrap_or_default();
-    Ok(Some(json!({"entries": entries, "since": since, "revealed_at": revealed_at})))
+    Ok(Some(json!({"entries": entries, "since": since, "revealed_at": revealed_at, "time": time})))
 }

@@ -509,11 +509,13 @@ pub fn due_at(c: &Ceiling, s: &ScheduleIn) -> i64 {
     }
     let due = s.occurred_at + s.settle_ms + delay;
     let earliest = s.accepted_at + s.settle_ms;
-    if due < earliest {
-        // arrived late (offline phone): deliver soon, spread out so a backlog doesn't flood
+    if due < s.accepted_at {
+        // already past on arrival (offline phone): deliver soon, spread out so a backlog doesn't
+        // flood (§6)
         earliest + (s.draws.late % LATE_SPREAD_MS) as i64
     } else {
-        due
+        // live: the full settle counts from acceptance, whatever the network latency was
+        due.max(earliest)
     }
 }
 
@@ -815,6 +817,9 @@ mod tests {
         assert_eq!(due_at(&c, &s(Notify::Now, 1_000_000, 1_000_000, d)), 1_015_000);
         let no_now = Ceiling { allow_now: false, ..c.clone() };
         assert_eq!(due_at(&no_now, &s(Notify::Now, 1_000_000, 1_000_000, d)), 1_315_000);
+        // a live switch that took 300 ms to arrive is not "late": no random spread
+        let live = due_at(&c, &s(Notify::Now, 1_000_000, 1_000_300, Draws { late: 99_000, ..d }));
+        assert_eq!(live, 1_015_300);
         // a switch from 3 h ago arriving now is delivered within 2 min of settling
         let late = due_at(&c, &s(Notify::Default, 0, 3 * HOUR, Draws { late: 50_000, ..d }));
         assert_eq!(late, 3 * HOUR + 15_000 + 50_000);

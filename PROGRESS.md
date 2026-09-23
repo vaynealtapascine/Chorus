@@ -109,7 +109,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 - [~] M6.1 Person accounts, follows, privacy buckets — follows done end to end (server-written requests/prefs, REST, web People page with presets); bucket UI + per-member announce policy UI still to do
 - [ ] M6.2 Shared spaces + DMs between accounts
-- [~] M6.3 Follower views (delayed/fuzzed front state per NOTIFICATIONS.md §5) — server reveal + GET /accounts/{id}/view done; history/stats surfaces not yet
+- [~] M6.3 Follower views (delayed/fuzzed front state per NOTIFICATIONS.md §5) — server reveal + GET /accounts/{id}/view + web People page (fuzzed "since", recent switches, browser notifications while open) done; history/stats surfaces not yet
 
 ### M7 — Profiles & journals
 
