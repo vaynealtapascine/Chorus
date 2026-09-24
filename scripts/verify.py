@@ -5,6 +5,8 @@
     python scripts/verify.py --quick    # skip the long simulator/proptest runs (debug build)
     python scripts/verify.py --android  # also gradle lint + unit tests (needs JDK 17 + SDK)
 
+It also runs scripts/api-check.py (docs/API.md documents every route).
+
 Exits non-zero on the first failure and prints the command that failed.
 """
 import os
@@ -50,6 +52,7 @@ def main():
 
     if shutil.which('node'):
         run(['node', 'scripts/gen-tokens.mjs', '--check'])
+    run([sys.executable, 'scripts/api-check.py'])
     run(['cargo', 'fmt', '--all', '--check'])
     run(['cargo', 'clippy', '--workspace', '--all-targets', '--', '-D', 'warnings'])
     if quick:

@@ -157,6 +157,8 @@ GET  /lists  /lists/{id}/timeline
 GET  /feeds  /feeds/{id}/items?before=     evaluates the feed query
 POST /feeds/preview {query}                → parsed AST + first 20 items (for the editor)
 
+GET  /android/latest                       the published Android build for in-app updates (no auth):
+                                           {version_code, version_name, sha256, size, changelog, url}; 404 if none
 GET  /emoji                                the server-wide custom emoji set
 GET  /accounts/{id}/view                   follower view of another account (privacy-filtered, §5 NOTIFICATIONS)
 GET  /follows                               following + followers ({following:[…], followers:[…]}, open ones)
@@ -276,9 +278,20 @@ event: message
 data: {"type":"message","id":"…","channel":"general","authors":["Kai"],"text":"…","at":…}
 ```
 
-Also over WebSocket at `/stream/ws` for clients that prefer it. Followers' streams carry only
-revealed follower-view events (NOTIFICATIONS.md §5). An OBS/overlay example page lives at
-`/overlay/front?token=…&style=pill` (Advanced; token must be `read:front` + `stream`).
+Also over WebSocket at `/stream/ws` for clients that prefer it (planned; not served yet).
+Followers' streams carry only revealed follower-view events (NOTIFICATIONS.md §5). An
+OBS/overlay example page lives at `GET /overlay/front?token=…&style=pill`, outside `/api/v1` (Advanced; token must be `read:front` +
+`stream`): a static page that reads `/stream` with that token.
+
+## 6a. Sync socket
+
+```
+GET /sync                             WebSocket upgrade; frames are JSON (SYNC.md §6)
+```
+
+The device signs in with its first frame (`Hello` with its session), within 15 s or the socket is
+closed. Everything after that is SYNC.md's protocol: `Push`/`Ack`, `Pull`/`Ops`/`Caught`, `Ping`.
+The upgrade request counts against the rate limit (§1) like any other request.
 
 ## 7. Webhooks
 
@@ -334,3 +347,16 @@ POST /admin/rebuild                     rebuild projections from the op log (mai
 ```
 
 Same operations exist on the CLI (`chorus-server --help`, OPS.md).
+
+## 9. Outside the API
+
+```
+GET /download/android                 the published APK (no auth; D-060), 404 if none
+GET /overlay/front                    the OBS overlay page (§6)
+```
+
+Everything else outside `/api/v1` is the web app (its files, and `index.html` for any other path).
+
+`python scripts/api-check.py` (run by `verify.py`) fails when a route in `app.rs` isn't in this
+file; `--list` prints the router's routes.
+

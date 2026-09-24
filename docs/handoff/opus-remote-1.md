@@ -150,3 +150,10 @@ a new dependency (a zip crate) is acceptable. The owner decides.
 ## 5. Report (append below; newest last)
 
 - 2026-09-24 local Claude — hand-off written; branch `handoff/opus-remote-1` cut from `main`.
+- 2026-09-24 remote Claude — working on branch `handoff/opus-remote-1` (this session may push
+  only there, not to `opus-remote/batch-1`); merge from it. Tests that read `CARGO_TARGET_DIR`
+  (posts, search, seed_cli, exports) need it set on Linux: `export CARGO_TARGET_DIR=$PWD/target`.
+- R4 — `scripts/api-check.py` (run by `verify.py`): every `.route()` in `app.rs` (nested prefixes
+  resolved) must appear with its method in API.md; self-test on a sample and the real router.
+  It found 4 gaps, now documented: `GET /android/latest`, `GET /sync` (new §6a), and the two
+  routes outside `/api/v1` (new §9). `/stream/ws` is marked planned (not served).
