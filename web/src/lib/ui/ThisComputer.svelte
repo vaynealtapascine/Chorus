@@ -81,7 +81,7 @@
       <h2>Add a phone</h2>
       {#if status.lan}
         <ol>
-          <li>Install the Chorus app on the phone.</li>
+          <li>Install the Chorus app on the phone (<a href="https://github.com/vaynealtapascine/Chorus/releases/latest" target="_blank" rel="noreferrer">download page</a>).</li>
           <li>Connect the phone to the same wifi as this computer.</li>
           <li>Scan this code with the phone's camera. It opens Chorus and links the phone.</li>
         </ol>
