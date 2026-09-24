@@ -110,6 +110,12 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   single-op entities from the op in hand (no `for_entity` query + JSON parse); consider rebuilding
   into fresh tables instead of DELETE + INSERT (halves the WAL). The 1M test needs ~5 GB free
   for the database and its WAL; F: ran out, so run it with `CHORUS_PERF_DIR` on a roomier drive.
+  After 5a91ab5 (single-op entities projected from the op in hand): **rebuild 84 s at 1M**
+  (messages 45 s, commit 11 s, switches 7–11 s, search index 5 s, clear 1.4 s). Timings on this
+  PC are noisy while gpt-6-sol builds in parallel (one ingest window fell to 261 ops/s in that
+  run, average 3 817). Don't fold the front once at the end of a rebuild to save the switch
+  time: review cards accumulate per switch (INSERT OR IGNORE, never withdrawn), a final fold
+  alone would drop ones that later retracts made moot, and restore compares `front_review`.
   **Still over budget: rebuild** (~26 s per 100k, so ~4–5× the 60 s for 1M), because it replays
   `after_insert` op by op, each one re-running the model over its entity. A batch rebuild
   (project whole scopes in memory, bulk insert) is the fix. Clients' core projector still
