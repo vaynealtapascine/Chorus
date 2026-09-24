@@ -107,3 +107,15 @@ take **0007** if you need one; Sol takes 0008.
   test holds the last handle (asserting it), then deletes the data dir strictly; used by the
   HTTP tests in `admin_health.rs`, `posts.rs` and `exports.rs` (`search.rs` left alone: M5.10
   territory; it can switch to `release` the same way).
+- R12 — browser suite: `web/e2e/v1.spec.ts` (Playwright, `@playwright/test` pinned 1.56.1,
+  DECISIONS §Versions) run by `scripts/e2e-web.sh` against a server on a temp data dir, and as
+  the `e2e` CI job. Nine serial tests over three browser contexts: onboarding by invite +
+  members + switch; the switch on a linked second device; a follower (Close preset) not seeing
+  a switch before the 15 s settle and seeing it after (asserts ≥ 14 s); a DM; a shared space; a
+  followers post the follower reacts to and replies to, both seen by the author; message and
+  post search; a feed shared with followers; the CSP header and zero console errors/page errors
+  across all pages (checked that a CSP violation does land there). Passes here in ~22 s.
+  Handles carry a per-run suffix, so local Claude can run it against the real server:
+  `web/e2e/README.md` has the command (`CHORUS_E2E_BASE`, `CHORUS_E2E_CLI`) and the cleanup.
+  Found on the way: the author had no way to see other accounts' reactions to their posts; the
+  thread view (`PostReplies.svelte`) now lists them from `GET /posts/{id}`.
