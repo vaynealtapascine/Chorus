@@ -30,9 +30,10 @@ You ran out of usage mid-V1; local Claude picked up from your uncommitted work. 
 
 **Correction about the phone.** The Chorus app installed on the owner's phone is enrolled on
 **Claude's dev server** (`http://127.0.0.1:5251` through `adb reverse tcp:5251 tcp:5251`, demo
-members Kai/Moss/Rin/…), not the owner's real server. Sending test messages there is fine. Start
-the dev server (`chorus-server --dev serve`, or your 5261 one with a reverse to 5251… simplest is
-to reuse 5251 when Claude isn't using it — ask) and reopen the app to reconnect. The owner's
+members Kai/Moss/Rin/…), not the owner's real server. Sending test messages there is fine. The
+phone's account lives in the main checkout's `data-dev/` (your 5261 server has other data), so
+for phone sessions run that one on 5251 (`chorus-server --dev serve` from the main checkout, when
+Claude isn't running it — ask the owner), keep the reverse, and reopen the app to reconnect. The owner's
 quick-switch widget is placed on their home screen: don't move it. Still ask before each session;
 never clear the app's data or uninstall it.
 
