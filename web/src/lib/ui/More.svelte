@@ -4,6 +4,7 @@
     <a href="#/history">Front history <span>›</span></a>
     <a href="#/insights">Insights <span>›</span></a>
     <a href="#/people">People and sharing <span>›</span></a>
+    <a href="#/settings">Settings <span>›</span></a>
     <a href="#/search">Search <span>›</span></a>
     <a href="#/data">Your data <span>›</span></a>
     <a href="#/trash">Trash <span>›</span></a>

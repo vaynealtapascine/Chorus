@@ -121,10 +121,11 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   adapter to produce matching charts.
 - 2026-09-23 gpt-6-sol — journals — Post ops and the core model call the parent field `reply_to`,
   while the SQLite projection column is `reply_to_id`; the server projector must map it explicitly.
-  The existing server still has no `GET /posts` or follower post view, so a post's visibility is
-  stored but cross-account publication is not yet served. Any future route must apply the
-  follower-view privacy ceiling before returning posts or reactions.
+  Cross-account publication later arrived through `GET /posts`; its audience is checked at read
+  time through `posts::readable_sql`.
 - 2026-09-23 gpt-6-sol — journals — The later `GET /posts` and `/posts/{id}` implementation now
   checks the stored post audience against active follows and live bucket assignments on every
   read. It omits `front_snapshot`, which could disclose an unrevealed front state even on an
-  otherwise visible post. This read API does not yet serve post attachments or reaction detail.
+  otherwise visible post. The read API now serves audience-checked attachments and present reaction
+  detail; the reactor's op remains in the reactor's account scope, so owners see it through the
+  post read view rather than their own replica.

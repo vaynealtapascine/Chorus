@@ -9,6 +9,7 @@
   import Onboarding from './lib/ui/Onboarding.svelte';
   import People from './lib/ui/People.svelte';
   import DataPage from './lib/ui/DataPage.svelte';
+  import Settings from './lib/ui/Settings.svelte';
   import Stage from './lib/ui/Stage.svelte';
   import Search from './lib/ui/Search.svelte';
   import Insights from './lib/ui/Insights.svelte';
@@ -61,7 +62,7 @@
   const tabs = $derived(person ? allTabs.filter((t) => t.name !== 'members') : allTabs);
   const active = $derived(router.route.name === 'member' || router.route.name === 'profile' ? 'members' :
     router.route.name === 'stage' ? 'chat' : router.route.name === 'post-stage' ? 'journal' :
-    ['history', 'insights', 'people', 'data', 'search', 'trash'].includes(router.route.name) ? 'more' : router.route.name);
+    ['history', 'insights', 'people', 'data', 'search', 'trash', 'settings'].includes(router.route.name) ? 'more' : router.route.name);
 </script>
 
 {#if status === 'no-device'}
@@ -104,6 +105,8 @@
         <Stage {projection} {dark} channelId={router.route.id} />
       {:else if router.route.name === 'data'}
         <DataPage />
+      {:else if router.route.name === 'settings'}
+        <Settings {projection} />
       {:else if router.route.name === 'people'}
         <People {projection} />
       {:else if router.route.name === 'trash'}
