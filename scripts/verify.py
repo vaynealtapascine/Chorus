@@ -82,7 +82,10 @@ def main():
             env['JAVA_HOME'] = jbr
         if os.name == 'nt' and os.path.isdir(r'F:\DunBuild\gradle'):
             env['GRADLE_USER_HOME'] = r'F:\DunBuild\gradle'
-        run([gradlew, 'lint', 'testDebugUnitTest', '--console=plain'], cwd=os.path.join(ROOT, 'android'), env=env)
+        gradle_args = [gradlew, 'lint', 'testDebugUnitTest', '--console=plain']
+        if '--offline' in sys.argv:
+            gradle_args.append('--offline')
+        run(gradle_args, cwd=os.path.join(ROOT, 'android'), env=env)
     elif android:
         print('\n(android: no gradlew yet)')
 

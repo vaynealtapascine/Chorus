@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +59,7 @@ fun Chat(chorus: Chorus, model: Model) {
     var selectedAuthor by rememberSaveable { mutableStateOf("") }
     var draft by rememberSaveable { mutableStateOf("") }
     var cw by rememberSaveable { mutableStateOf("") }
+    var moreOpen by rememberSaveable { mutableStateOf(false) }
     var audience by rememberSaveable { mutableStateOf("all") }
     var visibleTo by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
@@ -87,6 +89,7 @@ fun Chat(chorus: Chorus, model: Model) {
                     audience = "all"
                     visibleTo = emptyList()
                     replyTo = null
+                    moreOpen = false
                 }
             }
         }
@@ -144,28 +147,38 @@ fun Chat(chorus: Chorus, model: Model) {
             }
             OutlinedTextField(draft, { draft = it }, label = { Text("Message as ${author?.shownName ?: "choose a member"}") },
                 modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4)
-            OutlinedTextField(cw, { cw = it }, label = { Text("Content warning (optional)") },
-                modifier = Modifier.fillMaxWidth(), singleLine = true)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                item { ChatChip("Everyone here", audience == "all") { audience = "all" } }
-                if (space.kind == "internal") item {
-                    ChatChip("Chosen members", audience == "members") { audience = "members" }
-                }
-                if (space.kind != "internal") item {
-                    ChatChip("Only my system", audience == "system_only") { audience = "system_only" }
-                }
+            val audienceLabel = when (audience) {
+                "members" -> "Chosen members (${visibleTo.size})"
+                "system_only" -> "Only my system"
+                else -> "Everyone here"
             }
-            if (audience == "members" && space.kind == "internal") {
+            TextButton(onClick = { moreOpen = !moreOpen }) {
+                Text("${if (moreOpen) "Less" else "More"} · $audienceLabel${if (cw.isNotBlank()) " · CW" else ""}")
+            }
+            if (moreOpen) {
+                OutlinedTextField(cw, { cw = it }, label = { Text("Content warning (optional)") },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(model.active, key = { it.id }) { member ->
-                        ChatChip(member.shownName, member.id in visibleTo) {
-                            visibleTo = if (member.id in visibleTo) visibleTo - member.id else visibleTo + member.id
+                    item { ChatChip("Everyone here", audience == "all") { audience = "all" } }
+                    if (space.kind == "internal") item {
+                        ChatChip("Chosen members", audience == "members") { audience = "members" }
+                    }
+                    if (space.kind != "internal") item {
+                        ChatChip("Only my system", audience == "system_only") { audience = "system_only" }
+                    }
+                }
+                if (audience == "members" && space.kind == "internal") {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(model.active, key = { it.id }) { member ->
+                            ChatChip(member.shownName, member.id in visibleTo) {
+                                visibleTo = if (member.id in visibleTo) visibleTo - member.id else visibleTo + member.id
+                            }
                         }
                     }
                 }
-            }
-            if (space.kind != "internal" && audience == "all") {
-                Text("Everyone in this space can see who is speaking.", color = p.ink3, fontSize = 12.sp)
+                if (space.kind != "internal" && audience == "all") {
+                    Text("Everyone in this space can see who is speaking.", color = p.ink3, fontSize = 12.sp)
+                }
             }
             if (error != null) Text(error.orEmpty(), color = p.accent, fontSize = 12.sp)
             Button(enabled = !busy && draft.isNotBlank() && author != null && (replyTo == null || target != null) &&
@@ -183,13 +196,14 @@ fun Chat(chorus: Chorus, model: Model) {
                         audience = "all"
                         visibleTo = emptyList()
                         replyTo = null
+                        moreOpen = false
                     } catch (e: Exception) {
                         error = e.message ?: "Could not send the message."
                     } finally {
                         busy = false
                     }
                 }
-            }) { Text(if (busy) "Sending…" else "Send") }
+            }) { Text(if (busy) "Sending…" else "Send · $audienceLabel") }
         }
     }
 }
