@@ -151,3 +151,11 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   `json_extract(payload,'$.message_id')` lookup scanned the scope's whole log — quadratic over a
   catch-up. Migration 0005 indexes that expression (the query must use the identical expression
   for SQLite to pick the index).
+- 2026-09-24 claude-opus-5.5 — android — Testing the phone without touching real data: run the dev
+  server (port 5251, ./data-dev), `adb reverse tcp:5251 tcp:5251`, create a device invite with
+  `chorus-server --dev invite --kind device --account <id>`, and open
+  `http://127.0.0.1:5251/i/<code>` in the app (`am start -n garden.vayne.chorus/.MainActivity
+  -a android.intent.action.VIEW -d <link>`). Debug builds allow cleartext to loopback only
+  (`app/src/debug/res/xml/network_security_config.xml`). Removing the reverse doesn't cut an open
+  socket; stop the server to test offline queueing. The quick-switch grid reorders by recency after
+  each switch, so re-read the screen before tapping again.

@@ -99,6 +99,8 @@ class Chorus private constructor(private val ctx: Context) {
             try {
                 store.put("device", dev.toJson())
                 start()
+                // app start registered nothing while signed out: do it now, not at the next launch
+                Push.ensure(ctx)
             } catch (e: Exception) { storageFailed(e) }
         }
     }

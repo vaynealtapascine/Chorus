@@ -83,11 +83,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M4 — Android foundation
 
 - [x] M4.1 Theme + components mirroring DESIGN.md
-- [~] M4.2 Room (SQLCipher) + outbox + sync engine (via core UniFFI) + WorkManager
+- [x] M4.2 Room (SQLCipher) + outbox + sync engine (via core UniFFI) + WorkManager — device-checked 2026-09-24 (Galaxy A56 against the dev server over `adb reverse`): enrol, switch → server ~0.4 s, web switch → phone live, switch while the server was down synced 1 s after it came back
 - [~] M4.3 Onboarding via invite link / QR — the web "Link another device" now shows a QR of the one-use link (server qr.rs, decoded with OpenCV); in-app camera scanning not needed while the phone camera opens the link
 - [~] M4.4 Members, groups, switcher, front history — Android switcher sheet, History undo/redo, device linking (batch 3 T11); person-account hiding and full parity in batch 4 U5
 - [~] M4.5 Quick-switch widget (RemoteViews, D-058): recent grid, folders, mode chip, undo — built + unit-tested; needs a device check; pins not done
-- [~] M4.6 Search launcher activity + app shortcuts — SearchActivity + static "Switch…" shortcut; dynamic pinned shortcuts not done; needs a device check
+- [~] M4.6 Search launcher activity + app shortcuts — SearchActivity + static "Switch…" shortcut; dynamic pinned shortcuts not done; device-checked 2026-09-24 (opens over the home screen in ~110 ms, filters, Enter switches and closes)
 
 ### M5 — Chat (internal space)
 
@@ -121,7 +121,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M8 — Notifications
 
-- [~] M8.1 ntfy/UnifiedPush plumbing (server publisher, Android distributor registration) — server encrypt+send and Android connector/decrypt/notification done (D-059); needs a device check with the ntfy app installed and pointed at ntfy.vayne.garden
+- [~] M8.1 ntfy/UnifiedPush plumbing (server publisher, Android distributor registration) — server encrypt+send and Android connector/decrypt/notification done (D-059); device check 2026-09-24: registration works (fixed: a fresh sign-in didn't register until the next app start), the endpoint was on ntfy.sh (the ntfy app's default); delivery untested because the phone's DNS was down (no host resolved, IP fine)
 - [~] M8.2 Rule resolution: per-switch × per-member × system ceiling × recipient prefs — core + server scheduler done (notifier.rs: queue on front change, reveal/deliver loop, GET /notifications); push delivery is M8.1
 - [x] M8.3 Random delay, time fuzzing, supersede/collapse, digests, quiet hours — core rules + property tests; server scheduler with digests (one summary per follower/account), quiet hours (follower's own time zone via prefs.tz_offset_min), collapse/sequence; §5 invariant test over random sequences
 - [~] M8.4 Chat notifications (mentions, DMs, replies), inline reply — cross-account mentions/replies/DMs queued on ingest, inbox + push (activity.rs); per-channel level (all/mentions/none) + per-kind switches as account prefs, web controls; own internal space: member mentions, @front and member DMs under per-member rules (always/fronting/never), push skips the writing device; opt-in own-switch pings after the settle (undo stays quiet); Android inline reply built + unit-tested (needs a device check), including Advanced "reply as mentioned member" (reply_as in the push)
@@ -239,3 +239,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-24 claude-opus-5.5 — SPEC §9 sync budgets measured (sync_e2e sync_budgets): switch → other device ~1 ms p95 (loopback), reconnect with 5 000 queued ops 11 s → 1.3 s after migration 0005 indexes op payload.message_id (late-send backfill scanned the scope per message).
 - 2026-09-24 claude-opus-5.5 — Restore window (SYNC §7.3): `reconcile-status` / `reconcile-close` built (reconcile.rs); devices count as back at hello with the new epoch and an empty outbox; the window now closes by itself 7 days after a restore (D-067: an import on the VPS used to leave authorship-preserving restore pushes open forever); `check` and install.sh --import point at it.
 - 2026-09-24 claude-opus-5.5 — Hardening: the server sends a strict CSP with the web app (checked in the browser pane against a scratch copy of data-dev: sign-in, live sync socket, blob/data images, all pages, no violations); blob responses are Cache-Control private + nosniff + CSP sandbox. (The pane itself can't register service workers, with or without the CSP.)
+- 2026-09-24 claude-opus-5.5 — Phone device checks (Galaxy A56, debug build 0.1.204, against data-dev via `adb reverse tcp:5251 tcp:5251`; debug builds now allow cleartext to 127.0.0.1/localhost only): M4.2 sync and M4.6 search launcher pass; push registration fixed (Push.ensure after enrolment); push delivery, inline reply and the widget (needs placing on the owner's home screen) still to do.
