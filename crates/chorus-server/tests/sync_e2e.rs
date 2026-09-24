@@ -338,6 +338,17 @@ async fn a_friend_follows_a_system() {
     assert_eq!(r.status(), 400);
     let r = http.put(url(&format!("/follows/{id}/prefs"))).bearer_auth(tok(&friend)).json(&prefs).send().await.unwrap();
     assert_eq!(r.status(), 204);
+    // the follower's prefs (quiet hours, mutes, time zone) never reach the followed system's
+    // devices, but the server and the follower's own view have them
+    phone.drain(Q).await;
+    assert!(!phone.store.confirmed().any(|o| o.kind == "follow.set_prefs"), "prefs leaked to the followed system");
+    let stored: String =
+        s.state.db.lock().unwrap().query_row("SELECT prefs FROM follow WHERE id = ?1", [&id], |r| r.get(0)).unwrap();
+    assert!(stored.contains("23:00"), "{stored}");
+    let mine: Value = http.get(url("/follows")).bearer_auth(tok(&friend)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(mine["following"][0]["prefs"]["quiet_hours"]["from"], "23:00");
+    let theirs: Value = http.get(url("/follows")).bearer_auth(tok(&sys)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(theirs["followers"][0]["prefs"], json!({}), "the followed account doesn't get them from the API either");
 
     // a client can't forge a follow request into its own scope for someone else
     let forged = phone

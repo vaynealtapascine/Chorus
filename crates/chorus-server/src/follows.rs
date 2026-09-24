@@ -2,8 +2,9 @@
 //!
 //! A follow lives in the **target's** `account:` scope (SYNC.md §3), so the target's devices see
 //! requests and set the ceiling with ordinary ops. The follower can't write there, so the server
-//! writes `follow.request`, `follow.set_prefs` and the follower's `follow.end` on their behalf
-//! (`ingest` refuses those kinds from clients). Followers never get the target's ops; they read
+//! writes `follow.request` and the follower's `follow.end` on their behalf (`ingest` refuses
+//! those kinds from clients). The follower's own prefs (`follow.set_prefs`) go into the
+//! *follower's* scope instead (D-066): the followed account never syncs them. Followers never get the target's ops; they read
 //! their follows through this module and, later, follower views.
 
 use chorus_core::notify::Prefs;
@@ -103,11 +104,14 @@ pub fn set_prefs(conn: &Connection, follower: &str, id: &str, prefs: Value, now:
         return Err(FollowError::NotFollower);
     }
     serde_json::from_value::<Prefs>(prefs.clone()).map_err(|e| FollowError::BadPrefs(e.to_string()))?;
+    // In the *follower's* own scope: they're the follower's business (whether they muted you,
+    // their quiet hours and time zone), not something the followed account's devices sync or
+    // export. The server's follow row still gets them (it projects every op of the follow).
     Ok(ingest::server_op(
         conn,
-        &r.target,
+        follower,
         "follow.set_prefs",
-        &format!("account:{}", r.target),
+        &format!("account:{follower}"),
         Some(id),
         json!({"prefs": prefs}),
         now,
@@ -160,8 +164,9 @@ pub fn list(conn: &Connection, account: &str) -> Result<Value, FollowError> {
          FROM follow f JOIN account a ON a.id = f.target_account_id
          WHERE f.follower_account_id = ?1 AND f.status IN ('requested', 'active') ORDER BY f.created_at",
     )?;
+    // a follower's prefs are theirs alone (D-066): the followed account gets `{}`
     let followers = query(
-        "SELECT f.id, a.id, a.handle, a.display_name, a.kind, a.avatar_blob, f.status, f.prefs, f.created_at
+        "SELECT f.id, a.id, a.handle, a.display_name, a.kind, a.avatar_blob, f.status, '{}', f.created_at
          FROM follow f JOIN account a ON a.id = f.follower_account_id
          WHERE f.target_account_id = ?1 AND f.status IN ('requested', 'active') ORDER BY f.created_at",
     )?;

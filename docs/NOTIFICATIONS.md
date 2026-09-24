@@ -126,6 +126,9 @@ fuzzing hides the exact time afterwards — use both for real privacy.*
 
 ## 4. Prefs (set by the follower)
 
+Prefs are the follower's alone (D-066): the server stores them in the follower's own scope and
+never sends them to the followed account's devices or its `GET /follows` followers list.
+
 ```json
 {
   "enabled": true,

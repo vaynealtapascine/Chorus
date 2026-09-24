@@ -73,6 +73,7 @@ default the owner has not contradicted; these may be revisited if implementation
 | D-064 | **Backups are snapshot directories**: `chorus-<stamp>-<rand>/` with `chorus.db` (SQLite online backup) and `manifest.json` (format 1, db sha256, blob list), blobs pooled once in `backups/blobs/` by hash. Restore verifies everything and only writes a new directory. Replaces the `.db.zst` of OPS §5 (no zstd dependency offline); compression can come later as manifest format 2. | gpt-6-sol (D-S2-2), accepted by claude-opus-5.5 |
 | D-065 | **Exports are direct downloads for now**: `GET /exports/{ops.jsonl, <table>.csv, account.sqlite}` scoped to the caller's account (sessions or `export` tokens) and `chorus-server export`. The DATA_MODEL §7 zip with blobs and `POST /exports` background jobs come later; `--kind full` means the authored-op JSONL, not an importable backup. | gpt-6-sol (D-S2-3), accepted by claude-opus-5.5 |
 
+| D-066 | **A follower's prefs stay the follower's**: `follow.set_prefs` (mute, which members, quiet hours, digest time, UTC offset) is written by the server into the *follower's* account scope, not the followed account's, so the followed system's devices never sync it and its exports don't contain it. The server's follow row still projects it (a follow is projected from all its ops). Prefs written before this change remain in those systems' op logs (D-053: no erase without `purge`). | claude-opus-5.5 (privacy fix, 2026-09-24; no visible behaviour changes) |
 ## Versions
 
 Pin here as they are adopted (tool/library → version → date → why).
