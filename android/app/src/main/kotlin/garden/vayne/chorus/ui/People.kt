@@ -144,6 +144,12 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
                             FollowPresets.ceiling(choice, model.followCeilings[f.id] ?: JSONObject())))
                     }
                 }
+                FollowAdvanced(model.followCeilings[f.id] ?: JSONObject(), !busy) { key, enabled ->
+                    action {
+                        chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
+                            FollowPresets.withSharing(model.followCeilings[f.id] ?: JSONObject(), key, enabled)))
+                    }
+                }
                 Row {
                     TextButton(enabled = !busy, onClick = { action {
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
@@ -181,6 +187,22 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
         }
         item { Text("A follower sees your switches only within the sharing limit you choose for them.",
             color = p.ink2, modifier = Modifier.padding(bottom = 20.dp)) }
+    }
+}
+
+@Composable
+private fun FollowAdvanced(ceiling: JSONObject, enabled: Boolean, onChange: (String, Boolean) -> Unit) {
+    val p = LocalChorusPalette.current
+    var open by rememberSaveable { mutableStateOf(false) }
+    TextButton(onClick = { open = !open }) { Text(if (open) "Advanced sharing ▴" else "Advanced sharing ▾") }
+    if (open) {
+        Text("History shows only already revealed, fuzzed fronts; stats use rounded whole days.", color = p.ink2)
+        for ((key, label) in listOf("share_history" to "Can look back at who fronted",
+            "share_stats" to "Can see fronting stats")) {
+            TextButton(enabled = enabled, onClick = { onChange(key, !ceiling.optBoolean(key, false)) }) {
+                Text("${if (ceiling.optBoolean(key, false)) "✓" else "○"} $label")
+            }
+        }
     }
 }
 

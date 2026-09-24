@@ -25,4 +25,13 @@ class FollowPresetsTest {
         assertEquals(false, next.getBoolean("share_stats"))
         assertEquals("inherit", FollowPresets.choiceOf(FollowPresets.ceiling("inherit", JSONObject(), core), core))
     }
+
+    @Test fun advancedSharingChangesOnlyTheSelectedPermission() {
+        val old = JSONObject("""{"delay":{"min_s":300},"share_history":true,"share_stats":false}""")
+        val next = FollowPresets.withSharing(old, "share_stats", true)
+        assertEquals(true, next.getBoolean("share_history"))
+        assertEquals(true, next.getBoolean("share_stats"))
+        assertEquals(300, next.getJSONObject("delay").getInt("min_s"))
+        assertEquals(false, old.getBoolean("share_stats"))
+    }
 }
