@@ -101,3 +101,9 @@ take **0007** if you need one; Sol takes 0008.
   with `read:posts` (own account's posts and replies only; a device session still reads
   cross-account). No new scope beyond `read:posts`, which API.md already named. Tests in
   `tests/posts.rs`; API.md and `api-check.py` in step (68 routes).
+- R13 — `Shared::shutdown()` (a `watch` flag): the webhook task and the notifier stop on it, and
+  both now hold the state only weakly, so dropping every other handle also ends them; `serve`
+  calls it on SIGTERM/Ctrl-C. `tests/common::release(state, dir)` shuts down, waits until the
+  test holds the last handle (asserting it), then deletes the data dir strictly; used by the
+  HTTP tests in `admin_health.rs`, `posts.rs` and `exports.rs` (`search.rs` left alone: M5.10
+  territory; it can switch to `release` the same way).

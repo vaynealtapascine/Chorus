@@ -52,6 +52,9 @@ pub struct Shared {
     hook_rx: Mutex<Option<mpsc::UnboundedReceiver<crate::webhooks::Delivery>>>,
     pub(crate) limiter: crate::ratelimit::Limiter,
     sockets: Mutex<Sockets>,
+    /// Set by [`Shared::shutdown`]: the background tasks (webhook deliveries, the notifier) stop
+    /// and let go of the state, and with it the database connection.
+    stop: tokio::sync::watch::Sender<bool>,
 }
 
 pub type AppState = Arc<Shared>;
@@ -76,11 +79,19 @@ impl Shared {
             hooks,
             hook_rx: Mutex::new(Some(hook_rx)),
             sockets: Mutex::new(Sockets::default()),
+            stop: tokio::sync::watch::channel(false).0,
         }))
     }
 
     fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.db.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Stop the background tasks started with this state ([`router`], [`serve`]), so they drop
+    /// their handle on it: once the caller's handles are gone too, the database is closed (tests
+    /// delete their data directory right after; Windows won't while the file is open).
+    pub fn shutdown(&self) {
+        self.stop.send_replace(true);
     }
 
     fn sockets(&self) -> std::sync::MutexGuard<'_, Sockets> {
@@ -1343,6 +1354,10 @@ async fn webhooks_test(
 /// Deliver webhooks: new deliveries arrive on `rx`; due ones go out once a second, each on its own
 /// task so a slow receiver can't hold up others. Retries come back through the same channel.
 fn run_webhooks(state: AppState, mut rx: mpsc::UnboundedReceiver<crate::webhooks::Delivery>) {
+    let mut stop = state.stop.subscribe();
+    // the task holds the state only weakly: dropping every other handle ends it too
+    let weak = Arc::downgrade(&state);
+    drop(state);
     tokio::spawn(async move {
         let mut pending: Vec<crate::webhooks::Delivery> = Vec::new();
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
@@ -1353,7 +1368,9 @@ fn run_webhooks(state: AppState, mut rx: mpsc::UnboundedReceiver<crate::webhooks
                     None => break,
                 },
                 _ = tick.tick() => {}
+                _ = stop.wait_for(|stopped| *stopped) => break,
             }
+            let Some(state) = weak.upgrade() else { break };
             let now = now_ms();
             let (due, later): (Vec<_>, Vec<_>) = pending.drain(..).partition(|d| d.due <= now);
             pending = later;
@@ -1379,11 +1396,18 @@ fn run_webhooks(state: AppState, mut rx: mpsc::UnboundedReceiver<crate::webhooks
 
 /// Reveal and deliver due follower notifications every few seconds (notifier.rs).
 fn run_notifier(state: AppState) {
+    let mut stop = state.stop.subscribe();
+    let weak = Arc::downgrade(&state);
+    drop(state);
     tokio::spawn(async move {
         let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap_or_default();
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
         loop {
-            tick.tick().await;
+            tokio::select! {
+                _ = tick.tick() => {}
+                _ = stop.wait_for(|stopped| *stopped) => break,
+            }
+            let Some(state) = weak.upgrade() else { break };
             let pushes = {
                 let conn = state.db();
                 match crate::notifier::process_due(&conn, now_ms()) {
@@ -1880,10 +1904,12 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     run_notifier(state.clone());
     crate::backup::start_nightly(state.cfg.clone())?;
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+    let shared = state.clone();
     let app = router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
-    let server = axum::serve(listener, app).with_graceful_shutdown(async {
+    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
         stop_signal().await;
         tracing::info!("stopping");
+        shared.shutdown();
         let _ = stop_tx.send(());
     });
     // Open sync sockets would hold a graceful shutdown forever; give them a moment, then go.

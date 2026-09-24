@@ -229,8 +229,8 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
     assert!(chorus_server::posts::one(&ended, BOB, "bucket").unwrap().is_none());
     server.abort();
     let _ = server.await;
-    drop(state);
-    let _ = std::fs::remove_dir_all(test_dir);
+    drop(client);
+    common::release(state, &test_dir).await;
 }
 
 #[test]
@@ -327,7 +327,8 @@ async fn cross_account_replies_require_a_readable_parent_and_reach_its_author() 
     let state = app::Shared::new(conn, cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/api/v1/posts/server?depth=1", listener.local_addr().unwrap());
-    let server = tokio::spawn(async move { axum::serve(listener, app::router(state)).await.unwrap() });
+    let serving = state.clone();
+    let server = tokio::spawn(async move { axum::serve(listener, app::router(serving)).await.unwrap() });
     let client = reqwest::Client::new();
     for session in ["alice-session", "bob-session"] {
         let body: Value = client.get(&base).bearer_auth(session).send().await.unwrap().json().await.unwrap();
@@ -335,7 +336,8 @@ async fn cross_account_replies_require_a_readable_parent_and_reach_its_author() 
     }
     server.abort();
     let _ = server.await;
-    let _ = std::fs::remove_dir_all(test_dir);
+    drop(client);
+    common::release(state, &test_dir).await;
 }
 
 /// `GET /search/posts`: projected posts are indexed (title, text, tags), a reader never matches a
