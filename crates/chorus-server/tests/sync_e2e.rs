@@ -1123,3 +1123,21 @@ async fn a_lost_device_can_be_signed_out() {
     let me: Value = http.get(url("/me")).bearer_auth(tok(&a)).send().await.unwrap().json().await.unwrap();
     assert_eq!(me["devices"].as_array().unwrap().len(), 1);
 }
+
+/// A socket that never says Hello is closed, not held open (a public server gets strangers).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_silent_socket_is_closed() {
+    let s = start().await;
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{}/api/v1/sync", s.base)).await.unwrap();
+    let t = std::time::Instant::now();
+    let end = tokio::time::timeout(Duration::from_secs(25), async {
+        while let Some(Ok(m)) = ws.next().await {
+            if matches!(m, Message::Close(_)) {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(end.is_ok(), "still open after 25 s");
+    assert!(t.elapsed() >= Duration::from_secs(14), "closed too early: {:?}", t.elapsed());
+}

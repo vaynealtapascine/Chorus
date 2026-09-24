@@ -1247,6 +1247,9 @@ fn run_notifier(state: AppState) {
 
 // ─── sync socket ─────────────────────────────────────────────────────────────
 
+/// How long a new sync socket may stay open without a Hello.
+const HELLO_WITHIN: std::time::Duration = std::time::Duration::from_secs(15);
+
 async fn sync_ws(State(s): State<AppState>, ws: WebSocketUpgrade) -> Response {
     ws.max_message_size(8 << 20).on_upgrade(move |socket| run_socket(s, socket))
 }
@@ -1306,7 +1309,18 @@ async fn run_socket(s: AppState, socket: WebSocket) {
     });
 
     let mut me: Option<(String, ingest::Session)> = None; // (device, session)
-    while let Some(Ok(msg)) = stream.next().await {
+    loop {
+        // on a public server anyone can open a socket: one that hasn't signed in with a Hello
+        // within HELLO_WITHIN is closed rather than held open
+        let next = if me.is_none() {
+            match tokio::time::timeout(HELLO_WITHIN, stream.next()).await {
+                Ok(n) => n,
+                Err(_) => break,
+            }
+        } else {
+            stream.next().await
+        };
+        let Some(Ok(msg)) = next else { break };
         let text = match msg {
             Message::Text(t) => t.to_string(),
             Message::Close(_) => break,
