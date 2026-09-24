@@ -146,7 +146,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M12 — Ship
 
 - [x] M12.1 Deploy scripts (NSSM service, Caddy snippet, ntfy)
-- [~] M12.2 Disclosure card, screenshots, README, publish to GitHub — card (Disclosure Studio: claude-opus-5.5 + gpt-6-sol), fresh screenshots and README done; publishing waits for the owner
+- [~] M12.2 Disclosure card, screenshots, README, publish to GitHub — card (Disclosure Studio: claude-opus-5.5 + gpt-6-sol), fresh screenshots and README done; published 2026-09-24 at github.com/vaynealtapascine/Chorus (public; push main after each commit)
 - [~] M12.3 In-app APK updates + silent OTA (CLIENTS.md §5a) — server endpoints, deploy -Android, app updater (D-060) done; needs a device check
 
 ### Later (not v1)
@@ -231,3 +231,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-24 claude-opus-5.5 — public-server hardening: Caddy log redacts ?token= (tested on the VPS container), silent sync sockets closed after 15 s, ≤5 sign-in challenges per device; REST message API (channels, messages, threads, POST with write:messages) and message events on the SSE stream
 - 2026-09-24 claude-opus-5.5 — `chorus-server purge --message|--op` (D-053's true erase): payloads -> {"purged":true} (core treats them as opaque), projections rebuilt, unused attachment files deleted, purge.log; CLI test on a real database
 - 2026-09-24 claude-opus-5.5 — M9.1 finished: stage `reply_depth` crops reply chains to N levels (core + web Replies select). Reactions and thread previews are never drawn on stage, so those filters are already met.
+- 2026-09-24 claude-opus-5.5 — Published: created public github.com/vaynealtapascine/Chorus (owner's request), pushed main (history scanned for secrets first), topics set. sol/batch-2 stays local.
