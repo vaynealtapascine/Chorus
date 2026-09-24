@@ -18,4 +18,13 @@ class ProfileTest {
         val bundle = ProfileApi.parse(JSONObject("""{"stats":{"posts":0,"entries":0,"notes":0},"relationships":[],"highlights":null}"""))
         assertEquals(emptyList<SharedPost>(), bundle.highlights)
     }
+
+    @Test fun profileFieldsRenderSimpleValuesAndLocalPinSurvivesOffline() {
+        val bundle = ProfileApi.parse(JSONObject("""{"member":{"fields":[{"name":"Comfort food","value":"Soup"},{"name":"Available","value":true},{"name":"Hidden","value":null}]},"stats":{"posts":0,"entries":0,"notes":0},"relationships":[],"highlights":null}"""))
+        assertEquals(listOf(ProfileField("Comfort food", "Soup"), ProfileField("Available", "Yes")), bundle.fields)
+        val model = Model.parse("""{"rows":{"member":{"m":{"exists":true,"fields":{"name":"Kai","banner_blob":"banner-hash","pinned_post_id":"post"}}},"post":{"post":{"exists":true,"fields":{"kind":"note","authors":["m"],"text":"hello","occurred_at":1}}}}}""", "acct")
+        assertEquals("banner-hash", model.member("m")?.bannerBlob)
+        assertEquals("post", model.member("m")?.pinnedPostId)
+        assertEquals("post", model.posts.single().id)
+    }
 }

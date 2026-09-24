@@ -18,6 +18,8 @@ data class Member(
     val isSelf: Boolean = false,
     val proxyTags: List<ProxyTag> = emptyList(),
     val createdByAccountId: String? = null,
+    val bannerBlob: String? = null,
+    val pinnedPostId: String? = null,
 ) {
     val shownName: String get() = displayName ?: name
     val glyph: String get() = sigils.firstOrNull() ?: name.take(1).uppercase()
@@ -198,7 +200,7 @@ class Model(
                         f.optJSONArray("proxy_tags")?.let { tags -> (0 until tags.length()).mapNotNull { i ->
                             tags.optJSONObject(i)?.let { ProxyTag(it.optString("prefix"), it.optString("suffix")) }
                         } } ?: emptyList(),
-                        f.str("created_by_account_id"),
+                        f.str("created_by_account_id"), f.str("banner_blob"), f.str("pinned_post_id"),
                     )
                 }
                 .sortedBy { it.shownName.lowercase() }

@@ -7,26 +7,37 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.Chorus
+import garden.vayne.chorus.data.Blobs
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.ProfileApi
 import garden.vayne.chorus.data.ProfileBundle
 import garden.vayne.chorus.designsystem.LocalChorusPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Own member profile: local posts stay visible offline; server adds stats and readable highlights. */
 @Composable
@@ -34,10 +45,19 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     onClose: () -> Unit, onWrite: () -> Unit, onReply: (String) -> Unit) {
     val p = LocalChorusPalette.current
     val dev = chorus.device
+    val ctx = LocalContext.current
+    val actions = rememberCoroutineScope()
     val member = model.member(memberId)?.takeIf { it.createdByAccountId == null || it.createdByAccountId == dev?.accountId }
     var tab by rememberSaveable(memberId) { mutableStateOf("Posts") }
     var bundle by remember(memberId, dev?.accountId) { mutableStateOf<ProfileBundle?>(null) }
     var error by remember(memberId, dev?.accountId) { mutableStateOf<String?>(null) }
+    var pinBusy by remember(memberId) { mutableStateOf(false) }
+    val banner = produceState<android.graphics.Bitmap?>(initialValue = null, member?.bannerBlob, dev?.session) {
+        value = if (member?.bannerBlob != null && dev != null) withContext(Dispatchers.IO) {
+            Blobs.image(ctx.applicationContext, member.bannerBlob, dev, kind = "profile", maxPx = 1400,
+                maxBytes = 10L * 1024 * 1024)
+        } else null
+    }
 
     LaunchedEffect(dev?.session, memberId) {
         bundle = null
@@ -56,6 +76,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     }
 
     val ownPosts = model.posts.filter { memberId in it.authors }
+    val pinned = model.posts.find { it.id == member.pinnedPostId }
     val selectedPosts = when (tab) {
         "Replies" -> ownPosts.filter { it.replyTo != null }
         "Journal" -> ownPosts.filter { it.kind == "entry" && it.replyTo == null }
@@ -64,10 +85,13 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
+            if (banner.value != null) Image(banner.value!!.asImageBitmap(), contentDescription = "Profile banner",
+                contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().height(150.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(onClick = onClose) { Text("‹ Journal") }
                 TextButton(onClick = onWrite) { Text("Post as ${member.shownName}") }
             }
+            Avatar(member.glyph, member.color, size = 64.dp, avatarBlob = member.avatarBlob)
             Text(member.shownName, color = p.ink, fontWeight = FontWeight.SemiBold)
             if (member.displayName != null) Text(member.name, color = p.ink2)
             if (member.pronouns != null) Text(member.pronouns, color = p.ink2)
@@ -77,8 +101,21 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
             if (groups.isNotEmpty()) Text(groups.joinToString(" · "), color = p.ink2)
             bundle?.let { details ->
                 Text("${details.posts} posts · ${details.entries} entries · ${details.notes} notes", color = p.ink2)
+                for (field in details.fields) Text("${field.name}: ${field.value}", color = p.ink2)
             }
             if (error != null) Text(error.orEmpty(), color = p.ink3)
+        }
+        if (pinned != null) item(key = "pinned:${pinned.id}") {
+            Text("Pinned post", color = p.ink, fontWeight = FontWeight.SemiBold)
+            JournalPostCard(pinned, model, onReply = { onReply(pinned.id) })
+            TextButton(enabled = !pinBusy, onClick = {
+                pinBusy = true
+                actions.launch {
+                    try { chorus.create("member.set", memberId, org.json.JSONObject().put("pinned_post_id", org.json.JSONObject.NULL)) }
+                    catch (e: Exception) { error = e.message ?: "Could not unpin this post." }
+                    finally { pinBusy = false }
+                }
+            }) { Text("Unpin") }
         }
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -111,6 +148,14 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
                 if (selectedPosts.isEmpty()) item { Text("No ${tab.lowercase()} yet.", color = p.ink2) }
                 for (post in selectedPosts) item(key = "profile-post:${post.id}") {
                     JournalPostCard(post, model, onReply = { onReply(post.id) })
+                    if (post.id != member.pinnedPostId) TextButton(enabled = !pinBusy, onClick = {
+                        pinBusy = true
+                        actions.launch {
+                            try { chorus.create("member.set", memberId, org.json.JSONObject().put("pinned_post_id", post.id)) }
+                            catch (e: Exception) { error = e.message ?: "Could not pin this post." }
+                            finally { pinBusy = false }
+                        }
+                    }) { Text("Pin to profile") }
                 }
             }
         }
