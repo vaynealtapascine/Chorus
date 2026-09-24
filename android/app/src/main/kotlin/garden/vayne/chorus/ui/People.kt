@@ -32,6 +32,8 @@ import garden.vayne.chorus.data.FollowPresets
 import garden.vayne.chorus.data.FollowerView
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PeopleApi
+import garden.vayne.chorus.data.PostReactions
+import garden.vayne.chorus.data.Reply
 import garden.vayne.chorus.data.Spaces
 import garden.vayne.chorus.data.SharedPost
 import garden.vayne.chorus.designsystem.LocalChorusPalette
@@ -54,6 +56,9 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
     var refresh by remember { mutableStateOf(0) }
     var loadedAccount by remember { mutableStateOf<String?>(null) }
     var requestChoices by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    val reactMember = Reply.speaker(model)?.takeIf { member ->
+        member.createdByAccountId == null || member.createdByAccountId == chorus.device?.accountId
+    }
 
     LaunchedEffect(chorus.device?.session, model, refresh) {
         val dev = chorus.device ?: return@LaunchedEffect
@@ -185,7 +190,24 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
                 }
                 sharedPosts[f.account.id]?.takeIf { it.isNotEmpty() }?.let { posts ->
                     Text("Shared posts", color = p.ink2, fontWeight = FontWeight.SemiBold)
-                    for (post in posts) SharedPostPreview(post, f.account.shownName)
+                    for (post in posts) SharedPostPreview(post, f.account.shownName,
+                        reactMember?.id, !busy) { selected ->
+                        val member = reactMember ?: return@SharedPostPreview
+                        if (busy) return@SharedPostPreview
+                        busy = true; error = null
+                        actions.launch {
+                            try {
+                                val chosen = selected.reactions.any { it.emoji == PostReactions.HEART && it.memberId == member.id }
+                                chorus.create(if (chosen) "post.unreact" else "post.react", selected.id,
+                                    PostReactions.payload(selected.id, member.id))
+                                sharedPosts = sharedPosts + (f.account.id to posts.map { item ->
+                                    if (item.id == selected.id) item.copy(reactions = PostReactions.toggle(item.reactions,
+                                        member.id, member.shownName)) else item
+                                })
+                            } catch (e: Exception) { error = e.message ?: "Could not react to this post." }
+                            finally { busy = false }
+                        }
+                    }
                 }
             }
         }
@@ -229,7 +251,8 @@ private fun FollowAdvanced(ceiling: JSONObject, enabled: Boolean, onChange: (Str
 }
 
 @Composable
-internal fun SharedPostPreview(post: SharedPost, accountName: String) {
+internal fun SharedPostPreview(post: SharedPost, accountName: String, reactMemberId: String? = null,
+    enabled: Boolean = true, onReact: (SharedPost) -> Unit = {}) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().background(p.surface2).padding(10.dp),
@@ -243,6 +266,14 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String) {
         if (post.cw == null || revealed) {
             if (post.title != null) Text(post.title, color = p.ink, fontWeight = FontWeight.SemiBold)
             Text(post.text, color = p.ink)
+            if (post.reactions.isNotEmpty()) Text(post.reactions.joinToString(" · ") { "${it.emoji} ${it.memberName}" }, color = p.ink2)
+            if (reactMemberId != null) {
+                val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == reactMemberId }
+                TextButton(enabled = enabled, onClick = { onReact(post) }) {
+                    Text(if (selected) "Remove 💜 reaction" else "React 💜")
+                }
+                Text("Reacting shows this member to post readers right away.", color = p.ink3, fontSize = 12.sp)
+            }
         }
     }
 }
