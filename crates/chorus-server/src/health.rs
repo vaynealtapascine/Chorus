@@ -34,6 +34,27 @@ fn latest_backup(cfg: &Config) -> anyhow::Result<Option<Value>> {
     Ok(latest.map(|(_, value)| value))
 }
 
+/// The restore window (SYNC.md §7.3, D-067): open until it's closed or times out, and which
+/// signed-in devices have come back since the restore. Closed, it lists no devices.
+pub fn restore_window(conn: &Connection, now: i64) -> anyhow::Result<Value> {
+    let Some(closes_at) = crate::reconcile::closes_at(conn, now)? else {
+        return Ok(json!({"open": false, "closes_at": null, "devices": []}));
+    };
+    let devices: Vec<Value> = crate::reconcile::devices(conn)?
+        .into_iter()
+        .map(|d| {
+            json!({
+                "account": d.account,
+                "name": d.name,
+                "platform": d.platform,
+                "last_seen_at": d.last_seen_at,
+                "back_at": d.back_at,
+            })
+        })
+        .collect();
+    Ok(json!({"open": true, "closes_at": closes_at, "devices": devices}))
+}
+
 pub fn snapshot(conn: &Connection, cfg: &Config, connected_devices: usize) -> anyhow::Result<Value> {
     let db_path = cfg.db_path();
     let db_bytes = fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
@@ -54,5 +75,6 @@ pub fn snapshot(conn: &Connection, cfg: &Config, connected_devices: usize) -> an
         "last_backup": latest_backup(cfg)?,
         "last_error": last_error,
         "ntfy_configured": cfg.push.ntfy_url.is_some(),
+        "restore_window": restore_window(conn, crate::now_ms())?,
     }))
 }

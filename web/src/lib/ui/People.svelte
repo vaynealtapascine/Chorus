@@ -6,6 +6,7 @@
   import { bucketAssignments, buckets, members, selfMember, type AttachmentRow } from '../data';
   import { postReaction } from '../posts';
   import { apiBase } from '../sync/device';
+  import { apiFetch } from '../http';
   import { sync, type Projection } from '../sync/client';
   import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
   import AvatarImage from './AvatarImage.svelte';
@@ -108,7 +109,7 @@
   }
 
   async function api(path: string, init: RequestInit = {}) {
-    const r = await fetch(`${apiBase()}${path}`, {
+    const r = await apiFetch(`${apiBase()}${path}`, {
       ...init,
       headers: { 'content-type': 'application/json', authorization: `Bearer ${sync.device?.session ?? ''}` },
     });

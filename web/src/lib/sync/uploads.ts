@@ -1,6 +1,7 @@
 // Blobs are persisted before the message op is queued. HEAD gives the resume offset after a
 // reload or server restart; the server verifies the content hash on the last PUT.
 import { apiBase } from './device';
+import { apiFetch, RateLimitedError } from '../http';
 import { pendingBlobs, queueBlob, uploadedBlob, type BlobUpload, type DeviceRecord } from './persist';
 
 const CHUNK = 4 * 1024 * 1024;
@@ -38,14 +39,14 @@ export async function stageBlob(blob: Blob, mime: string, accountId: string): Pr
 async function send(upload: BlobUpload, dev: DeviceRecord): Promise<void> {
   const url = `${apiBase()}/blobs/${upload.hash}`;
   const auth = { authorization: `Bearer ${dev.session}` };
-  const head = await fetch(url, { method: 'HEAD', headers: auth });
+  const head = await apiFetch(url, { method: 'HEAD', headers: auth });
   if (head.status === 200) return;
   if (head.status !== 404 && head.status !== 206) throw new Error(`Blob HEAD: ${head.status}`);
   let offset = head.status === 206 ? Number(head.headers.get('upload-offset')) : 0;
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > upload.blob.size) throw new Error('Invalid upload offset');
   while (offset < upload.blob.size) {
     const end = Math.min(offset + CHUNK, upload.blob.size);
-    const response = await fetch(url, {
+    const response = await apiFetch(url, {
       method: 'PUT',
       headers: { ...auth, 'content-range': `bytes ${offset}-${end - 1}/${upload.blob.size}`, 'content-type': upload.mime },
       body: upload.blob.slice(offset, end),
@@ -72,7 +73,9 @@ export async function flushUploads(dev: DeviceRecord | null): Promise<void> {
     }
   } catch (error) {
     console.warn('Blob upload paused; will retry', error);
-    retry = setTimeout(() => void flushUploads(latestDevice), 10_000);
+    // a rate-limited chunk waits as long as the server asked, if that's longer
+    const wait = error instanceof RateLimitedError ? Math.max(10_000, error.retryAfterMs) : 10_000;
+    retry = setTimeout(() => void flushUploads(latestDevice), wait);
   } finally {
     running = false;
   }

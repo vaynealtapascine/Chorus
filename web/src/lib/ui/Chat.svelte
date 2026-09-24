@@ -15,6 +15,7 @@
   import { authorCards, listSpaces, spaceTitle, type SpaceInfo } from '../spaces';
   import { selfMember, type MemberRow } from '../data';
   import { apiBase } from '../sync/device';
+  import { apiFetch } from '../http';
 
   let { projection, dark, channelId, focusId }: { projection: Projection; dark: boolean; channelId?: string; focusId?: string } = $props();
 
@@ -534,7 +535,7 @@
     const abort = new AbortController();
     history = null;
     historyRevealed = false;
-    fetch(`${apiBase()}/messages/${encodeURIComponent(id)}`, {
+    apiFetch(`${apiBase()}/messages/${encodeURIComponent(id)}`, {
       headers: { authorization: `Bearer ${sync.device?.session ?? ''}` }, signal: abort.signal,
     }).then(async (response) => {
       if (!response.ok) throw new Error(`History HTTP ${response.status}`);
@@ -542,7 +543,7 @@
     }).then((found) => {
       if (found.channel_id === channelId) history = found;
       else historyError = 'This message belongs to another channel.';
-    }).catch((error) => { if (!abort.signal.aborted) historyError = String(error); });
+    }).catch((error) => { if (!abort.signal.aborted) historyError = error instanceof Error ? error.message : String(error); });
     return () => abort.abort();
   });
   $effect(() => {

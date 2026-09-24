@@ -5,7 +5,9 @@
 //! `cargo test --release -p chorus-server --test perf -- --ignored --nocapture`
 //!
 //! `CHORUS_PERF_OPS` sets the log size (default 1 000 000), `CHORUS_PERF_DIR` where the database
-//! goes (default: the system temp directory).
+//! goes (default: the system temp directory). To time rebuilds without ingesting every time, set
+//! `CHORUS_PERF_DB=<file>`: the first run keeps a copy of the ingested database there, later runs
+//! start from that copy and only rebuild.
 
 use std::time::Instant;
 
@@ -153,6 +155,19 @@ fn ingest_and_rebuild_budgets() {
     let total: u64 = std::env::var("CHORUS_PERF_OPS").ok().and_then(|s| s.parse().ok()).unwrap_or(1_000_000);
     let dir = std::env::var("CHORUS_PERF_DIR").map(std::path::PathBuf::from).unwrap_or_else(|_| std::env::temp_dir());
     let path = dir.join(format!("chorus-perf-{}.db", std::process::id()));
+    let saved = std::env::var("CHORUS_PERF_DB").ok().map(std::path::PathBuf::from);
+    if let Some(saved) = saved.as_ref().filter(|p| p.exists()) {
+        std::fs::copy(saved, &path).unwrap();
+        let mut c = db::open(&path).unwrap();
+        println!("rebuilding a copy of {}", saved.display());
+        let (rebuild, _) = timed_rebuild(&mut c);
+        drop(c);
+        remove_db(&path);
+        if total >= 1_000_000 {
+            assert!(rebuild <= 60.0, "SPEC §9: rebuild of a 1M-op log ≤ 60 s");
+        }
+        return;
+    }
     let mut c = db::open(&path).unwrap();
     db::migrate(&mut c).unwrap();
     let acct = new_id(1, [9; 10]);
@@ -205,9 +220,26 @@ fn ingest_and_rebuild_budgets() {
         .query_row("SELECT count(*), count(DISTINCT occurred_at) FROM switch", [], |r| Ok((r.get(0)?, r.get(1)?)))
         .unwrap();
     println!("switch rows {sw}, distinct times {distinct}");
+    if let Some(saved) = &saved {
+        c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").unwrap();
+        std::fs::copy(&path, saved).unwrap();
+        println!("kept the ingested database as {}", saved.display());
+    }
+    let (rebuild, _) = timed_rebuild(&mut c);
+
+    drop(c);
+    remove_db(&path);
+    assert!(worst >= 2000.0, "SPEC §9: ingestion ≥ 2 000 ops/s sustained");
+    if total >= 1_000_000 {
+        assert!(rebuild <= 60.0, "SPEC §9: rebuild of a 1M-op log ≤ 60 s");
+    }
+}
+
+/// Rebuild every projection, printing the time per op kind and phase: (seconds, ops).
+fn timed_rebuild(c: &mut rusqlite::Connection) -> (f64, u64) {
     let t = Instant::now();
     let mut by_kind: std::collections::BTreeMap<String, (u64, f64)> = Default::default();
-    let n = project::rebuild_timed(&mut c, &mut |kind, d| {
+    let n = project::rebuild_timed(c, &mut |kind, d| {
         let e = by_kind.entry(kind.to_string()).or_default();
         e.0 += 1;
         e.1 += d.as_secs_f64();
@@ -218,13 +250,11 @@ fn ingest_and_rebuild_budgets() {
     for (kind, (n, t)) in &by_kind {
         println!("  {kind:<14} {n:>8} ops  {:>8.1} s total  {:>8.3} ms each", t, t * 1000.0 / *n as f64);
     }
+    (rebuild, n)
+}
 
-    drop(c);
+fn remove_db(path: &std::path::Path) {
     for ext in ["", "-wal", "-shm"] {
         let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
-    }
-    assert!(worst >= 2000.0, "SPEC §9: ingestion ≥ 2 000 ops/s sustained");
-    if total >= 1_000_000 {
-        assert!(rebuild <= 60.0, "SPEC §9: rebuild of a 1M-op log ≤ 60 s");
     }
 }

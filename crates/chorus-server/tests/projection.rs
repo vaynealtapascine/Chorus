@@ -350,6 +350,62 @@ fn sql_matches_model_and_rebuild_is_identical() {
     }
 }
 
+/// A rebuild of a database file reads the log on a second thread, drops the message indexes and
+/// the search index while it replays, and makes them again: same rows, same schema, search works.
+#[test]
+fn a_file_rebuild_is_identical_and_keeps_its_indexes() {
+    let path = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "projection-file-{}-{:x}.db",
+        std::process::id(),
+        T
+    ));
+    let (mut c, a, acct, space) = {
+        let mut c = db::open(&path).unwrap();
+        db::migrate(&mut c).unwrap();
+        let a = new_id(1, [200; 10]);
+        c.execute("INSERT INTO account(id, kind, created_at) VALUES (?1, 'system', 0)", [&a]).unwrap();
+        let acct = format!("account:{a}");
+        let space = format!("space:{}", new_id(1, [201; 10]));
+        ingest::grant(&c, &a, &acct).unwrap();
+        ingest::grant(&c, &a, &space).unwrap();
+        (c, a, acct, space)
+    };
+    let s = ingest::Session {
+        account_id: a,
+        device_id: "d".into(),
+        sample: ClockSample { server_time: T, mono: None, boot_id: None, offset_ms: 0 },
+    };
+    for seed in 1..=3u64 {
+        let tx = c.transaction().unwrap();
+        for o in gen_ops(seed, 400, &acct, &space) {
+            let (res, _) = ingest::accept(&tx, &s, o, T + 200_000, false).unwrap();
+            assert!(res.error.is_none(), "seed {seed}: {:?}", res.error);
+        }
+        tx.commit().unwrap();
+    }
+    let schema = |c: &Connection| dump(c, "SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'");
+    let before: Vec<Vec<String>> = TABLES.iter().map(|q| dump(&c, q)).collect();
+    let before_schema = schema(&c);
+    assert!(!before[5].is_empty() && !before[10].is_empty(), "messages and their search index");
+    project::rebuild(&mut c).unwrap();
+    for (i, q) in TABLES.iter().enumerate() {
+        assert_eq!(before[i], dump(&c, q), "rebuild differs for {q}");
+    }
+    assert_eq!(before_schema, schema(&c), "the same tables and indexes afterwards");
+    let word: String = c
+        .query_row("SELECT text FROM message WHERE deleted_at IS NULL AND text <> '' LIMIT 1", [], |r| r.get(0))
+        .unwrap();
+    let word = word.split_whitespace().next().unwrap().trim_matches(|ch: char| !ch.is_alphanumeric()).to_string();
+    let hits: i64 = c
+        .query_row("SELECT count(*) FROM message_fts WHERE message_fts MATCH ?1", [format!("\"{word}\"")], |r| r.get(0))
+        .unwrap();
+    assert!(hits > 0, "search finds {word:?} after the rebuild");
+    drop(c);
+    for ext in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+    }
+}
+
 #[test]
 fn thread_reverse_link_survives_arrival_order_and_rebuild() {
     let (mut c, account, _, scope) = setup();
@@ -657,7 +713,13 @@ fn in_order_switches_match_refolding() {
         for q in FRONT_TABLES {
             assert_eq!(dump(&fast, q), dump(&slow, q), "seed {seed}: {q}");
         }
-        let live: Vec<Vec<String>> = FRONT_TABLES[..3].iter().map(|q| dump(&fast, q)).collect();
+        let live: Vec<Vec<String>> = FRONT_TABLES.iter().map(|q| dump(&fast, q)).collect();
+        // a rebuild replays the same order, writing daily totals once at the end
+        let mut fast = fast;
+        project::rebuild(&mut fast).unwrap();
+        for (i, q) in FRONT_TABLES.iter().enumerate() {
+            assert_eq!(live[i], dump(&fast, q), "seed {seed}: rebuild, {q}");
+        }
         project::account_front(&fast, &acct).unwrap();
         for (i, q) in FRONT_TABLES[..3].iter().enumerate() {
             assert_eq!(live[i], dump(&fast, q), "seed {seed}: final refold, {q}");

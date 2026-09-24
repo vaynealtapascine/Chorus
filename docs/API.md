@@ -10,7 +10,7 @@ is for reads, auth, blobs, exports and third-party scripts.
 
 - Errors: `{"error":{"code":"forbidden","message":"…","retry":false}}` with a matching HTTP status.
   Codes: `bad_request`, `unauthenticated`, `forbidden`, `not_found`, `conflict`, `too_large`,
-  `rate_limited`, `unsupported_version`, `internal`.
+  `rate_limited`, `too_many_connections`, `unsupported_version`, `internal`.
 - Pagination: cursor-based, `?limit=100&before=<id>` / `after=<id>`; responses carry
   `{"items":[…],"next":"<cursor>|null"}`.
 - Versioning: `/api/v1` is stable. Additive changes only; breaking ones get `/api/v2`. The sync
@@ -157,6 +157,8 @@ GET  /lists  /lists/{id}/timeline
 GET  /feeds  /feeds/{id}/items?before=     evaluates the feed query
 POST /feeds/preview {query}                → parsed AST + first 20 items (for the editor)
 
+GET  /android/latest                       the published Android build for in-app updates (no auth):
+                                           {version_code, version_name, sha256, size, changelog, url}; 404 if none
 GET  /emoji                                the server-wide custom emoji set
 GET  /accounts/{id}/view                   follower view of another account (privacy-filtered, §5 NOTIFICATIONS)
 GET  /follows                               following + followers ({following:[…], followers:[…]}, open ones)
@@ -276,9 +278,24 @@ event: message
 data: {"type":"message","id":"…","channel":"general","authors":["Kai"],"text":"…","at":…}
 ```
 
-Also over WebSocket at `/stream/ws` for clients that prefer it. Followers' streams carry only
-revealed follower-view events (NOTIFICATIONS.md §5). An OBS/overlay example page lives at
-`/overlay/front?token=…&style=pill` (Advanced; token must be `read:front` + `stream`).
+Also over WebSocket at `/stream/ws` for clients that prefer it (planned; not served yet).
+Followers' streams carry only revealed follower-view events (NOTIFICATIONS.md §5). An
+OBS/overlay example page lives at `GET /overlay/front?token=…&style=pill`, outside `/api/v1` (Advanced; token must be `read:front` +
+`stream`): a static page that reads `/stream` with that token.
+
+## 6a. Sync socket
+
+```
+GET /sync                             WebSocket upgrade; frames are JSON (SYNC.md §6)
+```
+
+The device signs in with its first frame (`Hello` with its session), within 15 s or the socket is
+closed. Everything after that is SYNC.md's protocol: `Push`/`Ack`, `Pull`/`Ops`/`Caught`, `Ping`.
+The upgrade request counts against the rate limit (§1) like any other request. The socket has
+its own limits (OPS.md §9): per client address, sockets that haven't signed in yet (default 30;
+more are refused with `429 too_many_connections`); per account, open sockets (default 20; the
+oldest is closed with an error frame `too_many_connections`); per socket, frames (200 burst,
+50/s; over it an error frame `rate_limited`, then the socket closes).
 
 ## 7. Webhooks
 
@@ -329,8 +346,30 @@ GET  /admin/accounts   /admin/devices   /admin/jobs
 POST /admin/backup                      run a backup now
 GET  /admin/health                      admin device session only; DB/WAL bytes, applied op count,
                                         connected devices, pending notifications, latest backup
-                                        {at,size_bytes}, last recorded error, ntfy reachability
+                                        {at,size_bytes}, last recorded error, ntfy reachability,
+                                        restore_window (below)
+POST /admin/reconcile/close             admin device session only; close the restore window → 204
 POST /admin/rebuild                     rebuild projections from the op log (maintenance mode)
 ```
 
+`restore_window` is `{open, closes_at, devices: [{account, name, platform, last_seen_at,
+back_at}]}` (SYNC.md §7.3, D-067): `open` while restored devices may still hand back ops with
+their original authors, `closes_at` when it closes by itself, and every signed-in device (API
+tokens aren't listed) with `back_at` set once it has said hello with the new epoch and an empty
+outbox. Closed, it is `{open: false, closes_at: null, devices: []}`. The web app's *Your data*
+page shows it to admins while open ("Restore in progress — N of M devices back", with Close).
+Non-admins get 403 from both endpoints; API tokens can't call them.
+
 Same operations exist on the CLI (`chorus-server --help`, OPS.md).
+
+## 9. Outside the API
+
+```
+GET /download/android                 the published APK (no auth; D-060), 404 if none
+GET /overlay/front                    the OBS overlay page (§6)
+```
+
+Everything else outside `/api/v1` is the web app (its files, and `index.html` for any other path).
+
+`python scripts/api-check.py` (run by `verify.py`) fails when a route in `app.rs` isn't in this
+file; `--list` prints the router's routes.

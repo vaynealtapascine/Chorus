@@ -2,6 +2,7 @@
 // the subscription like an Android device registers its UnifiedPush endpoint. Needs the built
 // app's service worker (dev builds have none) and a browser push service.
 import { apiBase } from './sync/device';
+import { apiFetch } from './http';
 import { sync } from './sync/client';
 
 export function pushSupported(): boolean {
@@ -22,7 +23,7 @@ function same(a: ArrayBuffer | null, b: Uint8Array): boolean {
 }
 
 async function call(method: string, path: string, body?: unknown) {
-  const r = await fetch(`${apiBase()}${path}`, {
+  const r = await apiFetch(`${apiBase()}${path}`, {
     method,
     headers: { 'content-type': 'application/json', authorization: `Bearer ${sync.device?.session ?? ''}` },
     body: body === undefined ? undefined : JSON.stringify(body),

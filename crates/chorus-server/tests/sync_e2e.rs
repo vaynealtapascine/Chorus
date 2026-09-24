@@ -1312,3 +1312,169 @@ async fn the_web_app_carries_a_content_security_policy() {
     assert!(api.headers().get("content-security-policy").is_none());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// [`start_with`], but the server knows each client's address (as behind `serve`).
+async fn start_with_addresses(cfg: Config) -> Server {
+    let mut conn = db::open_memory().unwrap();
+    db::migrate(&mut conn).unwrap();
+    db::set_meta(&conn, "instance_id", "test").unwrap();
+    db::set_meta(&conn, "epoch", "1").unwrap();
+    let state = app::Shared::new(conn, cfg).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let router = app::router(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    Server { base: format!("127.0.0.1:{}", addr.port()), state }
+}
+
+/// A raw sync socket signed in with `token`, read up to its Welcome.
+async fn signed_socket(s: &Server, token: &str, device: &str) -> Ws {
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{}/api/v1/sync", s.base)).await.unwrap();
+    let clock = ClockReading { wall: chorus_server::now_ms(), mono: None, boot_id: None };
+    let hello = ClientEngine::new(device).on_connect(&MemStore::default(), clock, token);
+    ws.send(Message::Text(serde_json::to_string(&hello).unwrap().into())).await.unwrap();
+    loop {
+        match next_frame(&mut ws).await {
+            Some(Frame::Welcome { .. }) => return ws,
+            Some(Frame::Error { message, .. }) => panic!("hello refused: {message}"),
+            Some(_) => {}
+            None => panic!("closed before welcome"),
+        }
+    }
+}
+
+/// The next frame, or `None` once the socket is closed (or quiet for 5 s).
+async fn next_frame(ws: &mut Ws) -> Option<Frame> {
+    loop {
+        match tokio::time::timeout(Duration::from_secs(5), ws.next()).await {
+            Ok(Some(Ok(Message::Text(t)))) => return Some(serde_json::from_str(&t).unwrap()),
+            Ok(Some(Ok(Message::Close(_)) | Err(_))) | Ok(None) | Err(_) => return None,
+            Ok(Some(Ok(_))) => {}
+        }
+    }
+}
+
+/// Is the socket still served? (A ping gets its pong.)
+async fn answers(ws: &mut Ws) -> bool {
+    let ping =
+        serde_json::to_string(&Frame::Ping { clock: ClockReading { wall: 0, mono: None, boot_id: None } }).unwrap();
+    if ws.send(Message::Text(ping.into())).await.is_err() {
+        return false;
+    }
+    loop {
+        match next_frame(ws).await {
+            Some(Frame::Pong { .. }) => return true,
+            Some(Frame::Error { .. }) | None => return false,
+            Some(_) => {}
+        }
+    }
+}
+
+/// OPS.md §9: an account keeps at most `sync_sockets_per_account` sockets; a new one closes the
+/// oldest with `too_many_connections`.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_account_has_a_limited_number_of_sync_sockets() {
+    let mut cfg = Config::default();
+    cfg.security.sync_sockets_per_account = Some(2);
+    let s = start_with(cfg).await;
+    let a = enrol(&s, auth::InviteKind::System, None, 1, "stars").await;
+    let (token, device) = (a["session"].as_str().unwrap(), a["device_id"].as_str().unwrap());
+    let mut first = signed_socket(&s, token, device).await;
+    let mut second = signed_socket(&s, token, device).await;
+    assert!(answers(&mut first).await && answers(&mut second).await);
+    let mut third = signed_socket(&s, token, device).await;
+    let closed = loop {
+        match next_frame(&mut first).await {
+            Some(Frame::Error { code, .. }) => break code,
+            Some(_) => {}
+            None => panic!("closed without saying why"),
+        }
+    };
+    assert_eq!(closed, "too_many_connections");
+    assert!(next_frame(&mut first).await.is_none(), "the oldest socket is closed");
+    assert!(answers(&mut second).await && answers(&mut third).await, "the newer ones stay");
+
+    // the device's newest socket still gets live ops after the oldest went away
+    let friend_e = enrol(&s, auth::InviteKind::Device, Some(a["account_id"].as_str().unwrap()), 2, "").await;
+    let mut other = Device::new(&friend_e, 2);
+    other.connect(&s).await;
+    other.drain(Q).await;
+    let acct_scope = format!("account:{}", a["account_id"].as_str().unwrap());
+    other.create("member.create", &acct_scope, &new_id(1, [7; 10]), json!({"name": "Kai"})).await;
+    let delivered = loop {
+        match next_frame(&mut third).await {
+            Some(Frame::Ops { ops, .. }) if ops.iter().any(|o| o.kind == "member.create") => break true,
+            Some(_) => {}
+            None => break false,
+        }
+    };
+    assert!(delivered, "the newest socket stays registered for fan-out");
+}
+
+/// OPS.md §9: sockets that haven't signed in are limited per client address; signing in frees
+/// the slot.
+#[tokio::test(flavor = "multi_thread")]
+async fn unsigned_sync_sockets_are_limited_per_address() {
+    let mut cfg = Config::default();
+    cfg.security.sync_sockets_per_address = Some(2);
+    let s = start_with_addresses(cfg).await;
+    let a = enrol(&s, auth::InviteKind::System, None, 1, "stars").await;
+    let url = format!("ws://{}/api/v1/sync", s.base);
+    let (mut one, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (_two, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    match tokio_tungstenite::connect_async(&url).await {
+        Err(tokio_tungstenite::tungstenite::Error::Http(r)) => assert_eq!(r.status(), 429),
+        other => panic!("a third unsigned socket was let in: {:?}", other.map(|(_, r)| r.status())),
+    }
+    // signing in frees a slot
+    let clock = ClockReading { wall: chorus_server::now_ms(), mono: None, boot_id: None };
+    let hello = ClientEngine::new(a["device_id"].as_str().unwrap()).on_connect(
+        &MemStore::default(),
+        clock,
+        a["session"].as_str().unwrap(),
+    );
+    one.send(Message::Text(serde_json::to_string(&hello).unwrap().into())).await.unwrap();
+    assert!(matches!(next_frame(&mut one).await, Some(Frame::Welcome { .. })));
+    let (_three, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    // and so does going away
+    drop(_two);
+    let mut let_in = false;
+    for _ in 0..50 {
+        if tokio_tungstenite::connect_async(&url).await.is_ok() {
+            let_in = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(let_in, "a closed socket's slot comes back");
+}
+
+/// OPS.md §9: a socket sending frames faster than its budget is closed with `rate_limited`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_socket_over_its_frame_budget_is_closed() {
+    let mut cfg = Config::default();
+    cfg.security.sync_frame_burst = Some(5);
+    cfg.security.sync_frames_per_second = Some(1.0);
+    let s = start_with(cfg).await;
+    let a = enrol(&s, auth::InviteKind::System, None, 1, "stars").await;
+    let mut ws = signed_socket(&s, a["session"].as_str().unwrap(), a["device_id"].as_str().unwrap()).await;
+    let ping =
+        serde_json::to_string(&Frame::Ping { clock: ClockReading { wall: 0, mono: None, boot_id: None } }).unwrap();
+    for _ in 0..10 {
+        if ws.send(Message::Text(ping.clone().into())).await.is_err() {
+            break;
+        }
+    }
+    let mut pongs = 0;
+    let code = loop {
+        match next_frame(&mut ws).await {
+            Some(Frame::Pong { .. }) => pongs += 1,
+            Some(Frame::Error { code, .. }) => break code,
+            Some(_) => {}
+            None => panic!("closed without saying why"),
+        }
+    };
+    assert_eq!(code, "rate_limited");
+    assert_eq!(pongs, 4, "hello + 4 pings fit the burst of 5");
+    assert!(next_frame(&mut ws).await.is_none(), "then the socket is closed");
+}

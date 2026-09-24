@@ -169,6 +169,13 @@ web/
   src/routes/          home, chat, members, profile, journal, stage, insights, settings, onboarding
 ```
 
+REST calls go through `src/lib/http.ts` (`apiFetch`), which copes with the server's rate limit
+(API.md §1): a `429` on a GET/HEAD is retried after `Retry-After` (at most twice, never waiting
+more than 10 s), and a `429` on a write, or a read still limited, throws `RateLimitedError`, whose
+message is fit to show ("… Try again in N seconds."). Blob uploads wait at least that long before
+resuming. Blob reads (`AvatarImage`, `AttachmentView`, `EmojiImage`) use plain `fetch`: the
+server doesn't count them.
+
 ### 4.3 Offline window
 
 Account scope is fully replicated; `space:` scopes keep the last N days (default 90) of messages

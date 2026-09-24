@@ -5,9 +5,7 @@ use serde_json::Value;
 #[tokio::test]
 async fn health_requires_admin_session_and_reports_live_counts() {
     let mut cfg = Config::default();
-    cfg.server.data_dir = std::env::var_os("CARGO_TARGET_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
+    cfg.server.data_dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join(format!("health-http-test-{:016x}", rand::random::<u64>()));
     let mut conn = db::open(&cfg.db_path()).unwrap();
     db::migrate(&mut conn).unwrap();
@@ -70,5 +68,70 @@ async fn health_requires_admin_session_and_reports_live_counts() {
     assert_eq!(health["last_backup"]["size_bytes"], 13);
     assert_eq!(health["last_error"]["source"], "backup");
     assert_eq!(health["ntfy_reachable"], true);
+    assert_eq!(health["restore_window"], serde_json::json!({"open": false, "closes_at": null, "devices": []}));
+    server.abort();
+}
+
+#[tokio::test]
+async fn restore_window_shows_in_health_and_closes_for_admins_only() {
+    let mut cfg = Config::default();
+    cfg.server.data_dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("health-restore-test-{:016x}", rand::random::<u64>()));
+    let mut conn = db::open(&cfg.db_path()).unwrap();
+    db::migrate(&mut conn).unwrap();
+    let now = chorus_server::now_ms();
+    for (id, admin) in [("owner", true), ("friend", false)] {
+        conn.execute(
+            "INSERT INTO account(id,kind,handle,is_admin,created_at) VALUES (?1,'person',?1,?2,0)",
+            params![id, admin],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO device(id,account_id,short_id,name,platform,public_key,created_at,last_seen_at)
+             VALUES (?1,?1,?1,?1 || '-phone','android','test',0,?2)",
+            params![id, now - 1000],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO session(token_hash,device_id,created_at,expires_at) VALUES (?1,?2,?3,?4)",
+            params![auth::hash(&format!("{id}-session")), id, now, now + 86_400_000],
+        )
+        .unwrap();
+    }
+    chorus_server::reconcile::start(&conn, now).unwrap();
+    chorus_server::reconcile::hello(&conn, "friend", 0, now).unwrap();
+
+    let state = app::Shared::new(conn, cfg).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/api/v1/admin", listener.local_addr().unwrap());
+    let running = state.clone();
+    let server = tokio::spawn(async move { axum::serve(listener, app::router(running)).await.unwrap() });
+    let client = reqwest::Client::new();
+
+    let health: Value =
+        client.get(format!("{base}/health")).bearer_auth("owner-session").send().await.unwrap().json().await.unwrap();
+    let window = &health["restore_window"];
+    assert_eq!(window["open"], true);
+    assert_eq!(window["closes_at"], now + chorus_server::reconcile::WINDOW_MS);
+    let devices = window["devices"].as_array().unwrap();
+    assert_eq!(devices.len(), 2);
+    assert_eq!(devices[0]["account"], "friend");
+    assert_eq!(devices[0]["name"], "friend-phone");
+    assert_eq!(devices[0]["platform"], "android");
+    assert_eq!(devices[0]["last_seen_at"], now - 1000);
+    assert_eq!(devices[0]["back_at"], now);
+    assert_eq!(devices[1]["account"], "owner");
+    assert_eq!(devices[1]["back_at"], Value::Null);
+
+    let close = format!("{base}/reconcile/close");
+    assert_eq!(client.post(&close).send().await.unwrap().status(), 401);
+    assert_eq!(client.post(&close).bearer_auth("friend-session").send().await.unwrap().status(), 403);
+    assert!(chorus_server::reconcile::open(&state.db.lock().unwrap(), now).unwrap(), "a 403 changes nothing");
+    assert_eq!(client.post(&close).bearer_auth("owner-session").send().await.unwrap().status(), 204);
+    assert!(!chorus_server::reconcile::open(&state.db.lock().unwrap(), now).unwrap());
+    let health: Value =
+        client.get(format!("{base}/health")).bearer_auth("owner-session").send().await.unwrap().json().await.unwrap();
+    assert_eq!(health["restore_window"]["open"], false);
+    assert_eq!(health["restore_window"]["devices"], serde_json::json!([]));
     server.abort();
 }

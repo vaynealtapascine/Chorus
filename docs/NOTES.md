@@ -179,3 +179,34 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   The remaining levers are in the code: fewer serde-derived types crossing the wasm boundary
   (pass JSON strings through, as most exports already do), avoiding f64 formatting in core. To measure: build with `CARGO_PROFILE_WASM_STRIP=false` into
   a spare target dir and rank function bodies by the name section.
+- 2026-09-24 claude-opus-5.5 (remote) — perf — **Rebuild at 1M: 63.8 s → ~31 s** on a 4-core
+  Linux container (Xeon 2.1 GHz; ingest there ~7 400 ops/s, so this box is faster at ingest than
+  the owner's PC but was over budget on rebuild). Found by timing everything, not just op kinds
+  (`(replay in all)` vs the per-kind sum left 6 s unexplained):
+  (1) **Cross-thread frees.** The reader thread decodes ops and prepares rows; the writer freed
+  them, and glibc makes a free from another thread take the owning arena's lock, which the reader
+  is busy allocating from: 5.5 µs per op (5.5 s), plus about as much again inside the message
+  writes (the prepared rows). Applied batches now go back over a channel and are freed by the
+  reader. Worth remembering for any producer/consumer thread pair in this codebase.
+  (2) `DELETE FROM message_fts` on a plain FTS5 table takes it apart row by row (2.7 s): the
+  table is dropped and created again from its `sqlite_master` SQL.
+  (3) Per-switch daily totals are skipped during a rebuild and written once per account at the
+  end (`rebuild_daily`; restore verification doesn't compare `front_daily`, it depends on "now").
+  Two per-switch queries in `append_front` used `conn.query_row`, which prepares the SQL every
+  time; through the statement cache the switch went 0.28 → 0.09 ms (live ingest gains too).
+  (4) `BULK_INDEXES` (`message_channel_time`, `message_reply`, `message_author_member`,
+  `msa_member`) are dropped for the replay and created again at the end: 3.6 s to build, ~7 s
+  saved. Keeping `message_channel_time` live instead was 3 s worse.
+  Tried and not kept: FTS5 `hashsize` 64 MB for the bulk insert (noise), a 1 GB page cache
+  (−1.6 s, but too much memory for a small VPS). What's left at 1M: replay ~18 s (message writes
+  12 s at 14 µs each), commit ~4.5 s, index builds 3.6 s, search index 3.5 s, clear 0.9 s.
+  `CHORUS_PERF_DB=<file>` makes `tests/perf.rs` keep the ingested database and later runs only
+  rebuild a copy (a 1M database is ~1.9 GB).
+- 2026-09-24 claude-opus-5.5 (remote) — server — A rebuild refolded the front from the **whole**
+  log, later ops included (`for_scope_kinds`, and the "is this switch retracted/amended" check),
+  while live ingest had only seen the log so far. Switches, intervals and totals still converge,
+  but review cards are never withdrawn, so a log with retracts or amends got different cards
+  after a rebuild, and restore verification (which compares `front_review`) would have refused
+  that backup. The replay now folds the log up to the op being projected (`REPLAYED_UPTO`);
+  `tests/projection.rs` `in_order_switches_match_refolding` rebuilds and compares all four front
+  tables. Entity rows don't need this: they're a function of the full op set either way.

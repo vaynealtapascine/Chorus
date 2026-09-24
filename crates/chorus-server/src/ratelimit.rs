@@ -26,10 +26,30 @@ const AUTH_PER_SECOND: f64 = 1.0;
 /// Forget buckets past this many (the full ones: they carry no state worth keeping).
 const MAX_BUCKETS: usize = 10_000;
 
+/// A token bucket: `burst` requests at once, refilled at `per_second`. Also the sync socket's
+/// frame budget (app.rs, OPS.md §9).
 #[derive(Clone, Copy)]
-struct Bucket {
+pub(crate) struct Bucket {
     tokens: f64,
     at: Instant,
+}
+
+impl Bucket {
+    pub(crate) fn full(burst: f64, now: Instant) -> Bucket {
+        Bucket { tokens: burst, at: now }
+    }
+
+    /// Take one token; `Err(seconds)` until the next one is there.
+    pub(crate) fn take(&mut self, burst: f64, per_second: f64, now: Instant) -> Result<(), u64> {
+        self.tokens = (self.tokens + now.duration_since(self.at).as_secs_f64() * per_second).min(burst);
+        self.at = now;
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            Ok(())
+        } else {
+            Err(((1.0 - self.tokens) / per_second).ceil().max(1.0) as u64)
+        }
+    }
 }
 
 pub struct Limiter {
@@ -50,15 +70,7 @@ impl Limiter {
         if map.len() >= MAX_BUCKETS {
             map.retain(|_, b| b.tokens + now.duration_since(b.at).as_secs_f64() * per_second < burst);
         }
-        let b = map.entry(key).or_insert(Bucket { tokens: burst, at: now });
-        b.tokens = (b.tokens + now.duration_since(b.at).as_secs_f64() * per_second).min(burst);
-        b.at = now;
-        if b.tokens >= 1.0 {
-            b.tokens -= 1.0;
-            Ok(())
-        } else {
-            Err(((1.0 - b.tokens) / per_second).ceil().max(1.0) as u64)
-        }
+        map.entry(key).or_insert(Bucket::full(burst, now)).take(burst, per_second, now)
     }
 
     fn check(
@@ -107,7 +119,7 @@ fn credential<'a>(headers: &'a HeaderMap, query: Option<&'a str>) -> Option<&'a 
 
 /// The client's address: the connection's, or through a local reverse proxy the last hop it
 /// added to `X-Forwarded-For`.
-fn client_addr(headers: &HeaderMap, peer: Option<SocketAddr>) -> String {
+pub(crate) fn client_addr(headers: &HeaderMap, peer: Option<SocketAddr>) -> String {
     let Some(peer) = peer else { return "unknown".into() };
     if peer.ip().is_loopback()
         && let Some(ip) = headers

@@ -1,6 +1,7 @@
 <script lang="ts">
   // "Link another device": a one-use invite for this account (API.md §2.1).
   import { apiBase } from '../sync/device';
+  import { apiFetch } from '../http';
   import { sync } from '../sync/client';
 
   let link = $state('');
@@ -13,7 +14,7 @@
     busy = true;
     error = '';
     try {
-      const r = await fetch(`${apiBase()}/devices/invite`, {
+      const r = await apiFetch(`${apiBase()}/devices/invite`, {
         method: 'POST',
         headers: { authorization: `Bearer ${sync.device?.session ?? ''}` },
       });
@@ -39,7 +40,7 @@
   let devices = $state<Dev[]>([]);
 
   async function call(method: string, path: string) {
-    const r = await fetch(`${apiBase()}${path}`, { method, headers: { authorization: `Bearer ${sync.device?.session ?? ''}` } });
+    const r = await apiFetch(`${apiBase()}${path}`, { method, headers: { authorization: `Bearer ${sync.device?.session ?? ''}` } });
     if (!r.ok) throw new Error((await r.json().catch(() => null))?.error?.message ?? `HTTP ${r.status}`);
     return r.status === 204 ? null : r.json();
   }

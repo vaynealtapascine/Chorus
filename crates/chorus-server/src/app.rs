@@ -30,6 +30,16 @@ struct Peer {
     tx: mpsc::UnboundedSender<Frame>,
 }
 
+/// Open sync sockets, for the per-address and per-account limits (OPS.md §9).
+#[derive(Default)]
+struct Sockets {
+    next_id: u64,
+    /// Sockets that haven't signed in yet, by client address.
+    unsigned: HashMap<String, usize>,
+    /// Signed-in sockets by account, oldest first, each with the way to close it.
+    by_account: HashMap<String, Vec<(u64, Arc<tokio::sync::Notify>)>>,
+}
+
 pub struct Shared {
     pub db: Mutex<Connection>,
     pub cfg: Config,
@@ -41,6 +51,7 @@ pub struct Shared {
     hooks: mpsc::UnboundedSender<crate::webhooks::Delivery>,
     hook_rx: Mutex<Option<mpsc::UnboundedReceiver<crate::webhooks::Delivery>>>,
     pub(crate) limiter: crate::ratelimit::Limiter,
+    sockets: Mutex<Sockets>,
 }
 
 pub type AppState = Arc<Shared>;
@@ -64,11 +75,16 @@ impl Shared {
             events,
             hooks,
             hook_rx: Mutex::new(Some(hook_rx)),
+            sockets: Mutex::new(Sockets::default()),
         }))
     }
 
     fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.db.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn sockets(&self) -> std::sync::MutexGuard<'_, Sockets> {
+        self.sockets.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     fn session_ttl(&self) -> i64 {
@@ -105,6 +121,7 @@ pub fn router(state: AppState) -> Router {
         .route("/exports/csv/{name}", get(export_csv))
         .route("/exports/account.sqlite", get(export_sqlite))
         .route("/admin/health", get(admin_health))
+        .route("/admin/reconcile/close", post(admin_reconcile_close))
         .route("/webhooks", get(webhooks_list).post(webhooks_create))
         .route("/webhooks/{id}", put(webhooks_update).delete(webhooks_remove))
         .route("/webhooks/{id}/test", post(webhooks_test))
@@ -520,19 +537,25 @@ fn principal(
     Ok(crate::api_data::principal(conn, bearer(headers)?, now_ms(), s.session_ttl())?)
 }
 
+/// Admin endpoints take a signed-in device of an admin account (not API tokens).
+fn require_admin(s: &AppState, conn: &Connection, headers: &axum::http::HeaderMap) -> Result<(), ApiError> {
+    let who = auth::authenticate(conn, bearer(headers)?, now_ms(), s.session_ttl())?;
+    let is_admin: bool = conn
+        .query_row("SELECT is_admin FROM account WHERE id=?1", [&who.account_id], |r| r.get(0))
+        .map_err(anyhow::Error::from)?;
+    if !is_admin {
+        return Err(ApiError(StatusCode::FORBIDDEN, "forbidden", "admin account required".into()));
+    }
+    Ok(())
+}
+
 async fn admin_health(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let mut health = {
         let conn = s.db();
-        let who = auth::authenticate(&conn, bearer(&headers)?, now_ms(), s.session_ttl())?;
-        let is_admin: bool = conn
-            .query_row("SELECT is_admin FROM account WHERE id=?1", [&who.account_id], |r| r.get(0))
-            .map_err(anyhow::Error::from)?;
-        if !is_admin {
-            return Err(ApiError(StatusCode::FORBIDDEN, "forbidden", "admin account required".into()));
-        }
+        require_admin(&s, &conn, &headers)?;
         let connected = s.peers.lock().unwrap_or_else(|e| e.into_inner()).len();
         crate::health::snapshot(&conn, &s.cfg, connected)?
     };
@@ -548,6 +571,18 @@ async fn admin_health(
         health["ntfy_reachable"] = serde_json::Value::Null;
     }
     Ok(Json(health))
+}
+
+/// Close the restore window now (`chorus-server reconcile-close`; SYNC.md §7.3, D-067).
+async fn admin_reconcile_close(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    require_admin(&s, &conn, &headers)?;
+    crate::reconcile::close(&conn)?;
+    tracing::info!("restore window closed from the admin view");
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn export_ops(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<Response, ApiError> {
@@ -1273,8 +1308,93 @@ fn run_notifier(state: AppState) {
 /// How long a new sync socket may stay open without a Hello.
 const HELLO_WITHIN: std::time::Duration = std::time::Duration::from_secs(15);
 
-async fn sync_ws(State(s): State<AppState>, ws: WebSocketUpgrade) -> Response {
-    ws.max_message_size(8 << 20).on_upgrade(move |socket| run_socket(s, socket))
+async fn sync_ws(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    extensions: axum::http::Extensions,
+    ws: WebSocketUpgrade,
+) -> Response {
+    let peer = extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0);
+    let addr = crate::ratelimit::client_addr(&headers, peer);
+    let Some(slot) = Unsigned::take(&s, addr) else {
+        let message = "too many sync connections from this address that haven't signed in".to_string();
+        return ApiError(StatusCode::TOO_MANY_REQUESTS, "too_many_connections", message).into_response();
+    };
+    ws.max_message_size(8 << 20).on_upgrade(move |socket| run_socket(s, socket, slot))
+}
+
+/// A sync socket that hasn't signed in yet, counted against its address until it does (or goes).
+struct Unsigned {
+    s: AppState,
+    addr: Option<String>,
+}
+
+impl Unsigned {
+    /// `None` when the address already has as many unsigned sockets as it may.
+    fn take(s: &AppState, addr: String) -> Option<Unsigned> {
+        let limit = s.cfg.security.sync_limits().per_address;
+        // no address to tell clients apart (an embedded router): nothing to count
+        if limit == 0 || addr == "unknown" {
+            return Some(Unsigned { s: s.clone(), addr: None });
+        }
+        let mut sockets = s.sockets();
+        let n = sockets.unsigned.entry(addr.clone()).or_default();
+        if *n >= limit {
+            return None;
+        }
+        *n += 1;
+        Some(Unsigned { s: s.clone(), addr: Some(addr) })
+    }
+}
+
+impl Drop for Unsigned {
+    fn drop(&mut self) {
+        let Some(addr) = self.addr.take() else { return };
+        let mut sockets = self.s.sockets();
+        if let Some(n) = sockets.unsigned.get_mut(&addr) {
+            *n -= 1;
+            if *n == 0 {
+                sockets.unsigned.remove(&addr);
+            }
+        }
+    }
+}
+
+/// A signed-in sync socket of an account; dropping it takes the socket off the account's list.
+struct Signed {
+    s: AppState,
+    account: String,
+    id: u64,
+}
+
+impl Signed {
+    /// Count a socket that just signed in; past the account's limit, the oldest are told to close.
+    fn add(s: &AppState, account: &str, close: Arc<tokio::sync::Notify>) -> Signed {
+        let limit = s.cfg.security.sync_limits().per_account;
+        let mut sockets = s.sockets();
+        sockets.next_id += 1;
+        let id = sockets.next_id;
+        let list = sockets.by_account.entry(account.to_string()).or_default();
+        list.push((id, close));
+        if limit > 0 && list.len() > limit {
+            for (_, oldest) in list.drain(..list.len() - limit) {
+                oldest.notify_one();
+            }
+        }
+        Signed { s: s.clone(), account: account.to_string(), id }
+    }
+}
+
+impl Drop for Signed {
+    fn drop(&mut self) {
+        let mut sockets = self.s.sockets();
+        if let Some(list) = sockets.by_account.get_mut(&self.account) {
+            list.retain(|(id, _)| *id != self.id);
+            if list.is_empty() {
+                sockets.by_account.remove(&self.account);
+            }
+        }
+    }
 }
 
 fn send(tx: &mpsc::UnboundedSender<Frame>, f: Frame) {
@@ -1318,8 +1438,14 @@ fn catch_up(
     Ok(())
 }
 
-async fn run_socket(s: AppState, socket: WebSocket) {
+async fn run_socket(s: AppState, socket: WebSocket, unsigned: Unsigned) {
     use futures_util::{SinkExt, StreamExt};
+    let limits = s.cfg.security.sync_limits();
+    // every frame the device sends takes one from its budget (OPS.md §9)
+    let mut budget = crate::ratelimit::Bucket::full(limits.frame_burst, std::time::Instant::now());
+    let close = Arc::new(tokio::sync::Notify::new());
+    let mut unsigned = Some(unsigned);
+    let mut signed: Option<Signed> = None;
     let (mut sink, mut stream) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<Frame>();
     let writer = tokio::spawn(async move {
@@ -1329,6 +1455,7 @@ async fn run_socket(s: AppState, socket: WebSocket) {
                 break;
             }
         }
+        sink
     });
 
     let mut me: Option<(String, ingest::Session)> = None; // (device, session)
@@ -1341,14 +1468,28 @@ async fn run_socket(s: AppState, socket: WebSocket) {
                 Err(_) => break,
             }
         } else {
-            stream.next().await
+            tokio::select! {
+                n = stream.next() => n,
+                // a newer socket of this account went over its limit: this one is the oldest
+                () = close.notified() => {
+                    let message = "too many open connections for this account; closing the oldest".into();
+                    send(&tx, Frame::Error { code: "too_many_connections".into(), message });
+                    break;
+                }
+            }
         };
         let Some(Ok(msg)) = next else { break };
-        let text = match msg {
-            Message::Text(t) => t.to_string(),
-            Message::Close(_) => break,
-            _ => continue,
-        };
+        if matches!(msg, Message::Close(_)) {
+            break;
+        }
+        if limits.frames_per_second > 0.0
+            && budget.take(limits.frame_burst, limits.frames_per_second, std::time::Instant::now()).is_err()
+        {
+            send(&tx, Frame::Error { code: "rate_limited".into(), message: "too many frames; slow down".into() });
+            break;
+        }
+        let Message::Text(text) = msg else { continue };
+        let text = text.to_string();
         let frame: Frame = match serde_json::from_str(&text) {
             Ok(f) => f,
             Err(e) => {
@@ -1367,6 +1508,8 @@ async fn run_socket(s: AppState, socket: WebSocket) {
             (None, Frame::Hello { token, epoch, cursors, clock, outbox, .. }) => {
                 match hello(&s, &tx, &token, epoch, cursors, clock, outbox) {
                     Ok(session) => {
+                        unsigned = None;
+                        signed = Some(Signed::add(&s, &session.account_id, close.clone()));
                         me = Some((session.device_id.clone(), session));
                         Ok(())
                     }
@@ -1402,10 +1545,21 @@ async fn run_socket(s: AppState, socket: WebSocket) {
         }
     }
     if let Some((device, _)) = me {
-        s.peers.lock().unwrap_or_else(|e| e.into_inner()).remove(&device);
+        // the device may have connected again meanwhile: leave its newer socket registered
+        let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
+        if peers.get(&device).is_some_and(|p| p.tx.same_channel(&tx)) {
+            peers.remove(&device);
+        }
     }
+    drop((unsigned, signed));
     drop(tx);
-    let _ = writer.await;
+    if let Ok(mut sink) = writer.await {
+        // Close politely and read until the client closes too: dropping a socket with unread
+        // data resets it (Windows), and the client loses the error frame that says why.
+        let _ = sink.send(Message::Close(None)).await;
+        let drain = async { while let Some(Ok(_)) = stream.next().await {} };
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), drain).await;
+    }
 }
 
 fn hello(

@@ -2,6 +2,7 @@
   // Your data for scripts, dashboards and stream overlays (API.md §2.3, §3, §6): personal API
   // tokens, read-only and limited to your own account. The secret is shown once.
   import { apiBase } from '../sync/device';
+  import { apiFetch } from '../http';
   import { sync } from '../sync/client';
 
   interface Token { id: string; name: string; scopes: string[]; created_at: number; last_used_at: number | null }
@@ -27,13 +28,17 @@
     pending_notifications: number; last_backup: { at: number; size_bytes: number } | null;
     last_error: { source: string; at: number; message: string } | null;
     ntfy_configured: boolean; ntfy_reachable: boolean | null;
+    restore_window?: {
+      open: boolean; closes_at: number | null;
+      devices: { account: string; name: string; platform: string; last_seen_at: number | null; back_at: number | null }[];
+    };
   }
   let health = $state<Health | null>(null);
   let healthError = $state('');
   const size = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
   async function api(path: string, init: RequestInit = {}) {
-    const r = await fetch(`${apiBase()}${path}`, {
+    const r = await apiFetch(`${apiBase()}${path}`, {
       ...init,
       headers: { 'content-type': 'application/json', authorization: `Bearer ${sync.device?.session ?? ''}` },
     });
@@ -62,6 +67,29 @@
     }
   }
   loadHealth();
+
+  // this device counts as back once its sync socket has said hello: look again when it goes live
+  $effect(() => {
+    let was = sync.status;
+    return sync.subscribe(() => {
+      if (sync.status === 'live' && was !== 'live') void loadHealth();
+      was = sync.status;
+    });
+  });
+
+  // After a restore (SYNC.md §7.3): devices hand back what the backup missed until this closes.
+  const restore = $derived(health?.restore_window?.open ? health.restore_window : null);
+  const back = $derived(restore ? restore.devices.filter((d) => d.back_at !== null).length : 0);
+  async function closeRestore() {
+    if (restore && back < restore.devices.length
+      && !confirm('Some devices are not back yet. Anything they still hold will count as sent by them now, not by its original author. Close anyway?')) return;
+    try {
+      await api('/admin/reconcile/close', { method: 'POST' });
+      await loadHealth();
+    } catch (e) {
+      healthError = e instanceof Error ? e.message : String(e);
+    }
+  }
 
   async function create(e: SubmitEvent) {
     e.preventDefault();
@@ -142,7 +170,7 @@
   async function download(path: string, filename: string) {
     error = '';
     try {
-      const response = await fetch(`${apiBase()}${path}`, {
+      const response = await apiFetch(`${apiBase()}${path}`, {
         headers: { authorization: `Bearer ${sync.device?.session ?? ''}` },
       });
       if (!response.ok) throw new Error(`Export failed (HTTP ${response.status})`);
@@ -170,6 +198,15 @@
         <span>Last backup: {health.last_backup ? `${when(health.last_backup.at)} · ${size(health.last_backup.size_bytes)}` : 'none yet'}</span>
         {#if health.ntfy_configured}<span>ntfy: {health.ntfy_reachable ? 'reachable' : 'unreachable'}</span>{/if}
         {#if health.last_error}<span class="error">Last {health.last_error.source} error: {health.last_error.message}</span>{/if}
+        {#if restore}
+          <div class="row">
+            <strong>Restore in progress — {back} of {restore.devices.length} devices back</strong>
+            <button class="ghost" onclick={closeRestore}>Close</button>
+          </div>
+          <span class="hint">
+            Devices are handing back what the backup missed. Close this once they're all back; it closes by itself on {when(restore.closes_at)}.
+          </span>
+        {/if}
       {/if}
       {#if healthError}<span class="error">Health unavailable: {healthError}</span>{/if}
     </section>

@@ -130,7 +130,7 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
 /// [`entity`] over a given set of the entity's ops (all of them).
 fn entity_from(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Result<()> {
     match prepare(conn, table, id, ops)? {
-        Some(p) => write(conn, p),
+        Some(p) => write(conn, &p),
         None => Ok(()),
     }
 }
@@ -213,13 +213,13 @@ fn prepare(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Re
     }))
 }
 
-fn write(conn: &Connection, p: Prepared) -> anyhow::Result<()> {
+fn write(conn: &Connection, p: &Prepared) -> anyhow::Result<()> {
     let Prepared { table, id, fields, names, values, fresh, first_scope } = p;
-    let (table, id) = (table.as_str(), id.as_str());
+    let (table, id, fresh) = (table.as_str(), id.as_str(), *fresh);
     let old_thread_parent = if table == "channel" { thread_parent(conn, id)? } else { None };
     match table {
         // one row per account, keyed by it
-        "system" => upsert(conn, table, &["account_id"], &names, values)?,
+        "system" => upsert(conn, table, &["account_id"], names, values)?,
         // created by the server at enrolment; `account.set` only updates it
         "account" => {
             let sets: Vec<String> = names
@@ -237,11 +237,11 @@ fn write(conn: &Connection, p: Prepared) -> anyhow::Result<()> {
                 )?;
             }
         }
-        _ => upsert(conn, table, &["id"], &names, values)?,
+        _ => upsert(conn, table, &["id"], names, values)?,
     }
     match table {
         "message" => {
-            message_extras(conn, id, fields.get("authors"), &fields, fresh)?;
+            message_extras(conn, id, fields.get("authors"), fields, fresh)?;
             item_attachments(conn, "message", id, fields.get("attachments"), fresh)?;
             refresh_thread_link(conn, id)?;
         }
@@ -299,7 +299,7 @@ thread_local! {
     static UPSERT_SQL: std::cell::RefCell<SqlShapes> = Default::default();
 }
 
-fn upsert(conn: &Connection, table: &str, key: &[&str], names: &[String], values: Vec<Sql>) -> anyhow::Result<()> {
+fn upsert(conn: &Connection, table: &str, key: &[&str], names: &[String], values: &[Sql]) -> anyhow::Result<()> {
     let hit =
         UPSERT_SQL.with(|c| c.borrow().iter().find(|((t, n), _)| t == table && n == names).map(|(_, sql)| sql.clone()));
     let sql = match hit {
@@ -563,7 +563,7 @@ fn element_set(conn: &Connection, table: &str, o: &Op) -> anyhow::Result<()> {
         values.push(o.member_id.clone().map(Sql::Text).unwrap_or(Sql::Null));
     }
     let key_cols: Vec<&str> = keys.iter().map(|(c, _)| *c).collect();
-    upsert(conn, table, &key_cols, &names, values)?;
+    upsert(conn, table, &key_cols, &names, &values)?;
     if table == "space_member" {
         space_access(conn, o, &want[1], e.is_present())?;
     }
@@ -772,23 +772,23 @@ fn append_front(conn: &Connection, o: &Op) -> anyhow::Result<bool> {
     let Ok(fo) = FrontOp::from_op(o) else { return Ok(false) };
     // the last row in fold order: time, then HLC, then id
     let last: Option<(i64, i32, String)> = conn
-        .query_row(
+        .prepare_cached(
             "SELECT s.occurred_at, s.tz_offset_min, s.resulting_front FROM switch s JOIN op ON op.id = s.id
              WHERE s.account_id = ?1 AND s.occurred_at = (SELECT max(occurred_at) FROM switch WHERE account_id = ?1)
              ORDER BY op.hlc DESC, s.id DESC LIMIT 1",
-            [account],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )
+        )?
+        .query_row([account], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()?;
     if last.as_ref().is_some_and(|(at, _, _)| *at >= fo.occurred_at) {
         return Ok(false);
     }
-    let targeted: bool = conn.query_row(
-        "SELECT EXISTS (SELECT 1 FROM op WHERE kind IN ('front.retract', 'front.unretract', 'front.amend')
-           AND +scope = ?1 AND status = 'applied' AND json_extract(payload, '$.target_op_id') = ?2)",
-        params![o.scope, o.id],
-        |r| r.get(0),
-    )?;
+    let targeted: bool = conn
+        .prepare_cached(
+            "SELECT EXISTS (SELECT 1 FROM op WHERE kind IN ('front.retract', 'front.unretract', 'front.amend')
+               AND +scope = ?1 AND status = 'applied' AND json_extract(payload, '$.target_op_id') = ?2
+               AND seq <= ?3)",
+        )?
+        .query_row(params![o.scope, o.id, REPLAYED_UPTO.with(std::cell::Cell::get)], |r| r.get(0))?;
     if targeted {
         return Ok(false);
     }
@@ -813,9 +813,13 @@ fn append_front(conn: &Connection, o: &Op) -> anyhow::Result<bool> {
     }
 
     // Daily totals change from the first day of anything open until now; every day if the
-    // offset moved (days are local to the latest switch's offset).
+    // offset moved (days are local to the latest switch's offset). A rebuild writes them once
+    // at the end instead ([`rebuild_daily`]).
     let tz = fo.tz_offset_min;
-    if last.as_ref().is_none_or(|(_, prev, _)| *prev != tz) {
+    let rebuilding = REBUILDING.with(std::cell::Cell::get);
+    if rebuilding {
+        // rebuild_daily
+    } else if last.as_ref().is_none_or(|(_, prev, _)| *prev != tz) {
         write_daily(conn, account, tz, None)?;
     } else {
         let from = earliest_open.map_or(fo.occurred_at, |e| e.min(fo.occurred_at));
@@ -849,12 +853,38 @@ fn append_front(conn: &Connection, o: &Op) -> anyhow::Result<bool> {
     Ok(true)
 }
 
+/// Daily totals of every account with switches, for the end of a rebuild: what the last front op
+/// of each would have written (days local to its latest switch's offset), done once instead of
+/// per switch. Closed days don't depend on when they're written, and open ones are cut at "now".
+fn rebuild_daily(conn: &Connection) -> anyhow::Result<()> {
+    let accounts: Vec<(String, i32)> = conn
+        .prepare(
+            "SELECT s.account_id, s.tz_offset_min FROM switch s JOIN op ON op.id = s.id
+             WHERE s.occurred_at = (SELECT max(occurred_at) FROM switch WHERE account_id = s.account_id)
+             ORDER BY s.account_id, op.hlc DESC, s.id DESC",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let mut done = std::collections::HashSet::new();
+    for (account, tz) in accounts {
+        // the first row per account is its last switch in fold order (time, HLC, id)
+        if done.insert(account.clone()) {
+            write_daily(conn, &account, tz, None)?;
+        }
+    }
+    Ok(())
+}
+
 /// Rewrite an account's switch log, intervals, daily totals and review cards from all its front
 /// ops: a full refold, for amends, retracts and switches that arrive out of order.
 pub fn account_front(conn: &Connection, scope: &str) -> anyhow::Result<()> {
     let Some(account) = account_of(scope) else { return Ok(()) };
-    let ops: Vec<FrontOp> =
-        oplog::for_scope_kinds(conn, scope, "front.")?.iter().filter_map(|o| FrontOp::from_op(o).ok()).collect();
+    let upto = REPLAYED_UPTO.with(std::cell::Cell::get);
+    let ops: Vec<FrontOp> = oplog::for_scope_kinds(conn, scope, "front.")?
+        .iter()
+        .filter(|o| o.seq.is_none_or(|seq| seq <= upto))
+        .filter_map(|o| FrontOp::from_op(o).ok())
+        .collect();
     let folded = front::fold(&ops);
     exec(conn, "DELETE FROM switch WHERE account_id = ?1", [account])?;
     exec(conn, "DELETE FROM front_interval WHERE account_id = ?1", [account])?;
@@ -866,7 +896,9 @@ pub fn account_front(conn: &Connection, scope: &str) -> anyhow::Result<()> {
     }
     // Local days: the account's most recent UTC offset (no tz database in core; D-058 note).
     let tz = folded.switches.last().map(|s| s.tz_offset_min).unwrap_or(0);
-    write_daily(conn, account, tz, None)?;
+    if !REBUILDING.with(std::cell::Cell::get) {
+        write_daily(conn, account, tz, None)?;
+    }
     let now = crate::now_ms();
     for r in front::reviews(&ops, &folded, front::DEFAULT_REVIEW_WINDOW_MS) {
         exec(
@@ -919,7 +951,7 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
                 let mut vals: Vec<Sql> = key.iter().map(|(_, v)| Sql::Text(v.clone())).collect();
                 names.extend(["allow".into(), "deny".into(), "hlc".into()]);
                 vals.extend([Sql::Text(allow.to_string()), Sql::Text(deny.to_string()), Sql::Text(o.hlc.to_string())]);
-                upsert(conn, "channel_permission", &["channel_id", "target_type", "target_id"], &names, vals)?;
+                upsert(conn, "channel_permission", &["channel_id", "target_type", "target_id"], &names, &vals)?;
             }
             Ok(())
         }
@@ -983,7 +1015,7 @@ fn lww_keyed(conn: &Connection, o: &Op, table: &str, key: &[(&str, String)], fie
     names.push("hlc".into());
     vals.push(Sql::Text(o.hlc.to_string()));
     let key_cols: Vec<&str> = key.iter().map(|(c, _)| *c).collect();
-    upsert(conn, table, &key_cols, &names, vals)
+    upsert(conn, table, &key_cols, &names, &vals)
 }
 
 /// Read states (SYNC.md §5.5), one op at a time: a mark folds into the stored best mark
@@ -1112,7 +1144,15 @@ pub(crate) const DERIVED: &[&str] = &[
     "custom_emoji",
 ];
 
+/// Secondary indexes on derived tables that projecting never reads through (only the read APIs
+/// do). A rebuild drops them for the replay and creates them again at the end (SPEC §9).
+const BULK_INDEXES: &[&str] = &["message_channel_time", "message_reply", "message_author_member", "msa_member"];
+
 thread_local! {
+    /// While a rebuild replays the log: the seq of the op being projected. The front is refolded
+    /// from the log as it was then, not from ops that came later, so review cards (never
+    /// withdrawn) come out as they did live.
+    static REPLAYED_UPTO: std::cell::Cell<i64> = const { std::cell::Cell::new(i64::MAX) };
     /// Set while [`rebuild_timed`] replays the log on this thread.
     static REBUILDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// During a rebuild: the entities with more than one op. Any other entity's op is its only
@@ -1165,11 +1205,30 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
     }
     time("(clear)", t.elapsed());
     // message_fts keeps its own copy of the text (not external content), so 'delete-all' doesn't
-    // apply to it; a plain DELETE empties it
-    tx.execute("DELETE FROM message_fts", [])?;
+    // apply to it, and a DELETE takes it apart row by row (3 s at 1M ops): make it anew instead
+    let t = std::time::Instant::now();
+    let fts: String =
+        tx.query_row("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'message_fts'", [], |r| r.get(0))?;
+    tx.execute_batch(&format!("DROP TABLE message_fts; {fts};"))?;
+    time("(clear search index)", t.elapsed());
+    // indexes no projection reads through: built again after the replay, one sort each instead
+    // of a million scattered inserts
+    let t = std::time::Instant::now();
+    let mut dropped = Vec::new();
+    for name in BULK_INDEXES {
+        let sql: Option<String> = tx
+            .query_row("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?1", [name], |r| r.get(0))
+            .optional()?;
+        if let Some(sql) = sql {
+            tx.execute_batch(&format!("DROP INDEX {name}"))?;
+            dropped.push(sql);
+        }
+    }
+    time("(drop indexes)", t.elapsed());
     let mut n = 0u64;
     let mut seq = 0i64;
     REBUILDING.with(|r| r.set(true));
+    let t = std::time::Instant::now();
     let multi: std::sync::Arc<std::collections::HashSet<String>> = {
         let mut st = tx.prepare(
             "SELECT entity_id FROM op WHERE status = 'applied' AND entity_id IS NOT NULL
@@ -1177,16 +1236,21 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
         )?;
         std::sync::Arc::new(st.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?)
     };
+    time("(entity counts)", t.elapsed());
     SINGLE_OP.with(|m| *m.borrow_mut() = Some(multi.clone()));
+    // time the writer spends waiting for the reader thread
+    let mut waited = std::time::Duration::ZERO;
+    let replay_t = std::time::Instant::now();
     let replayed = (|| -> anyhow::Result<()> {
         // an op, and its entity's row if the reader thread already prepared it
-        let mut apply = |batch: Batch| -> anyhow::Result<()> {
+        let mut apply = |batch: &Batch| -> anyhow::Result<()> {
             for (o, ready) in batch {
                 let t = std::time::Instant::now();
+                REPLAYED_UPTO.with(|u| u.set(o.seq.unwrap_or(i64::MAX)));
                 match ready {
                     Some(Some(p)) => write(&tx, p)?,
                     Some(None) => {}
-                    None => after_insert(&tx, &o)?,
+                    None => after_insert(&tx, o)?,
                 }
                 time(&o.kind, t.elapsed());
                 n += 1;
@@ -1198,6 +1262,9 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
             // table doesn't change during a rebuild, so its committed snapshot is the same log
             Some(path) => std::thread::scope(|s| {
                 let (send, recv) = std::sync::mpsc::sync_channel::<anyhow::Result<Batch>>(4);
+                // Applied batches go back to be freed on the thread that allocated them: freeing
+                // another thread's allocations contends for its allocator lock (5 s at 1M ops).
+                let (spent, spent_back) = std::sync::mpsc::channel::<Batch>();
                 let multi = multi.clone();
                 s.spawn(move || {
                     let read = || -> anyhow::Result<()> {
@@ -1207,6 +1274,7 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
                         )?;
                         let mut seq = 0;
                         loop {
+                            spent_back.try_iter().for_each(drop);
                             let batch = oplog::applied_after(&conn, seq, 1000)?;
                             let Some(last) = batch.last() else { return Ok(()) };
                             seq = last.seq.unwrap_or(seq);
@@ -1223,29 +1291,46 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
                     if let Err(e) = read() {
                         let _ = send.send(Err(e));
                     }
+                    drop(send);
+                    spent_back.into_iter().for_each(drop); // until the writer is done
                 });
-                for batch in recv {
-                    apply(batch?)?;
+                loop {
+                    let t = std::time::Instant::now();
+                    let Ok(batch) = recv.recv() else { return Ok(()) };
+                    waited += t.elapsed();
+                    let batch = batch?;
+                    apply(&batch)?;
+                    let _ = spent.send(batch);
                 }
-                Ok(())
             }),
             None => loop {
                 let batch = oplog::applied_after(&tx, seq, 1000)?;
                 let Some(last) = batch.last() else { return Ok(()) };
                 seq = last.seq.unwrap_or(seq);
-                apply(batch.into_iter().map(|o| (o, None)).collect())?;
+                apply(&batch.into_iter().map(|o| (o, None)).collect())?;
             },
         }
     })();
     REBUILDING.with(|r| r.set(false));
+    REPLAYED_UPTO.with(|u| u.set(i64::MAX));
     SINGLE_OP.with(|m| *m.borrow_mut() = None);
     replayed?;
+    time("(waiting for the log)", waited);
+    time("(replay in all)", replay_t.elapsed());
+    let t = std::time::Instant::now();
+    for sql in dropped {
+        tx.execute_batch(&sql)?;
+    }
+    time("(indexes)", t.elapsed());
     let t = std::time::Instant::now();
     tx.execute(
         &format!("{THREAD_LINK} WHERE id IN (SELECT parent_message_id FROM channel WHERE kind = 'thread')"),
         [],
     )?;
     time("(thread links)", t.elapsed());
+    let t = std::time::Instant::now();
+    rebuild_daily(&tx)?;
+    time("(daily totals)", t.elapsed());
     let t = std::time::Instant::now();
     tx.execute(
         "INSERT INTO message_fts(rowid, text, cw) SELECT rowid, text, coalesce(cw, '') FROM message WHERE deleted_at IS NULL",

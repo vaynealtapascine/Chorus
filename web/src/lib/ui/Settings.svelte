@@ -2,6 +2,7 @@
   import { notifyPreset } from '../core/pkg/chorus_wasm.js';
   import { contentWarningsAutoExpand, segmentParsing, selfMember } from '../data';
   import { apiBase } from '../sync/device';
+  import { apiFetch } from '../http';
   import { sync, type Projection } from '../sync/client';
 
   let { projection }: { projection: Projection } = $props();
@@ -42,7 +43,7 @@
   const active = $derived(follows.filter((f) => f.status === 'active'));
   const tzOffset = () => -new Date().getTimezoneOffset();
   async function api(path: string, init: RequestInit = {}) {
-    const response = await fetch(`${apiBase()}${path}`, {
+    const response = await apiFetch(`${apiBase()}${path}`, {
       ...init,
       headers: { 'content-type': 'application/json', authorization: `Bearer ${sync.device?.session ?? ''}` },
     });
