@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
@@ -46,6 +47,7 @@ import garden.vayne.chorus.ui.DeviceLink
 import garden.vayne.chorus.ui.Chat
 import garden.vayne.chorus.ui.Members
 import garden.vayne.chorus.ui.Onboarding
+import garden.vayne.chorus.ui.People
 
 class MainActivity : ComponentActivity() {
     private var inviteLink = mutableStateOf<String?>(null)
@@ -86,7 +88,7 @@ class MainActivity : ComponentActivity() {
         i?.data?.toString()?.takeIf { "/i/" in it } ?: i?.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { "/i/" in it }
 }
 
-private enum class Tab(val label: String) { Home("Home"), Chat("Chat"), Members("Members"), History("History") }
+private enum class Tab(val label: String) { Home("Home"), Chat("Chat"), People("People"), Members("Members"), History("History") }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -95,6 +97,7 @@ private fun App(chorus: Chorus, invite: String?) {
     val status by chorus.status.collectAsState()
     val model by chorus.model.collectAsState()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
+    var chatSpace by rememberSaveable { mutableStateOf<String?>(null) }
     var linking by rememberSaveable { mutableStateOf(false) }
     if (linking && status != Status.NoDevice && status != Status.Loading) DeviceLink(chorus) { linking = false }
 
@@ -130,7 +133,8 @@ private fun App(chorus: Chorus, invite: String?) {
                             Text("Chorus quick switching is for systems. Your personal profile and journal are available on the web.", color = p.ink2)
                         }
                     } else Home(chorus, model)
-                    Tab.Chat -> Chat(chorus, model)
+                    Tab.Chat -> Chat(chorus, model, chatSpace)
+                    Tab.People -> People(chorus, model) { spaceId -> chatSpace = spaceId; tab = Tab.Chat }
                     Tab.Members -> Members(chorus, model)
                     Tab.History -> History(chorus, model)
                 }
@@ -145,7 +149,8 @@ private fun App(chorus: Chorus, invite: String?) {
                         t.label,
                         color = if (t == tab) p.accent else p.ink2,
                         fontWeight = if (t == tab) FontWeight.SemiBold else FontWeight.Normal,
-                        modifier = Modifier.clickable { tab = t }.padding(horizontal = 20.dp, vertical = 12.dp),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f).clickable { tab = t }.padding(horizontal = 3.dp, vertical = 12.dp),
                     )
                 }
             }
