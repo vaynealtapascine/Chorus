@@ -166,3 +166,12 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   /data/local/tmp/p.json)"'`. In Git Bash set `MSYS_NO_PATHCONV=1` or device paths get mangled.
   With Battery Saver on, background apps lose network: WorkManager stops SyncWork ("Constraints
   not met") and reruns it later, so a background reply syncs when the app opens or the saver ends.
+- 2026-09-24 claude-opus-5.5 — perf — wasm size (SPEC §9: ≤ 300 KB gz; 260 KB after the feed
+  filter). Code by crate (unstripped build, before wasm-bindgen): alloc 237 KB (generic
+  collections monomorphised per type), chorus_core 196 KB (sync 36, feed 35, text 23, front 17,
+  api 16, float formatting 16), serde_json 157 KB, core 150 KB, serde 143 KB. Fat LTO saves
+  ~0.1 % (codegen-units is already 1). Next levers, in order: `wasm-opt -Oz` (binaryen; not
+  installed here, needs the owner's OK to download; typically 10–20 %), fewer serde-derived
+  types crossing the wasm boundary (pass JSON strings through, as most exports already do),
+  avoiding f64 formatting in core. To measure: build with `CARGO_PROFILE_WASM_STRIP=false` into
+  a spare target dir and rank function bodies by the name section.
