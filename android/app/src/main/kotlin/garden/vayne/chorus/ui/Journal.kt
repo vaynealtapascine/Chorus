@@ -1,5 +1,6 @@
 package garden.vayne.chorus.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +41,7 @@ import kotlinx.coroutines.launch
 fun Journal(chorus: Chorus, model: Model) {
     val p = LocalChorusPalette.current
     var editing by rememberSaveable { mutableStateOf(false) }
+    var profileId by rememberSaveable { mutableStateOf<String?>(null) }
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
     var kind by rememberSaveable { mutableStateOf("note") }
     var authorId by rememberSaveable { mutableStateOf("") }
@@ -54,6 +56,15 @@ fun Journal(chorus: Chorus, model: Model) {
     val actions = rememberCoroutineScope()
     val mine = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId }
     val author = mine.find { it.id == authorId } ?: Reply.speaker(model)?.takeIf { it in mine } ?: mine.firstOrNull()
+
+    if (!editing && profileId != null) {
+        val id = profileId!!
+        BackHandler { profileId = null }
+        MemberProfile(chorus, model, id, onClose = { profileId = null },
+            onWrite = { authorId = id; replyTo = null; editing = true },
+            onReply = { postId -> authorId = id; replyTo = postId; editing = true })
+        return
+    }
 
     if (editing) {
         Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
@@ -134,10 +145,10 @@ fun Journal(chorus: Chorus, model: Model) {
         }
         if (events.isEmpty()) item { Text("No posts or switches yet. Write the first note.", color = p.ink2) }
         for (event in events) item(key = "${if (event.post == null) "switch" else "post"}:${event.id}") {
-            if (event.post != null) JournalPostCard(event.post, model) {
-                replyTo = event.post.id
-                editing = true
-            } else Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
+            if (event.post != null) JournalPostCard(event.post, model,
+                onReply = { replyTo = event.post.id; editing = true },
+                onProfile = { profileId = it })
+            else Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
                 Text(event.switchLabel.orEmpty(), color = p.ink2)
                 Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(event.at)),
                     color = p.ink3, fontSize = 12.sp)
@@ -157,12 +168,17 @@ private fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit)
 }
 
 @Composable
-private fun JournalPostCard(post: JournalPost, model: Model, onReply: () -> Unit) {
+internal fun JournalPostCard(post: JournalPost, model: Model, onReply: () -> Unit,
+    onProfile: (String) -> Unit = {}) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
-    val authors = post.authors.map { model.member(it)?.shownName ?: "Someone" }.joinToString(" & ")
     Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(authors.ifBlank { "Someone" }, color = p.ink, fontWeight = FontWeight.SemiBold)
+        if (post.authors.isEmpty()) Text("Someone", color = p.ink, fontWeight = FontWeight.SemiBold)
+        else Row {
+            for (id in post.authors) model.member(id)?.let { member ->
+                TextButton(onClick = { onProfile(id) }) { Text(member.shownName) }
+            }
+        }
         Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(post.occurredAt)),
             color = p.ink3, fontSize = 12.sp)
         if (post.replyTo != null) Text("↪ Reply", color = p.ink3)

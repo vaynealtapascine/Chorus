@@ -185,7 +185,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
 }
 
 @Composable
-private fun SharedPostPreview(post: SharedPost, accountName: String) {
+internal fun SharedPostPreview(post: SharedPost, accountName: String) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().background(p.surface2).padding(10.dp),
