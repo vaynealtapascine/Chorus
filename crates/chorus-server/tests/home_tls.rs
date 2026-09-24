@@ -41,7 +41,7 @@ async fn phones_reach_the_app_over_tls_and_invites_carry_the_pin() {
     )
     .unwrap();
     if let Some(link) = tls::home_invite(&cfg, &code) {
-        assert!(link.starts_with("https://"), "{link}");
+        assert!(link.starts_with("chorus://"), "{link}");
         assert!(link.ends_with(&format!("/i/{code}#pin={}", id.pin)), "{link}");
     } // (no LAN address on an offline machine: then there's nothing to invite over)
     drop((http, state));

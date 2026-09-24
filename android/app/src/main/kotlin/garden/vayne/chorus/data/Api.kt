@@ -15,6 +15,12 @@ class ApiException(message: String, val code: String = "") : Exception(message)
 /** The few REST calls a device needs (API.md §2). Everything else goes over the sync socket. */
 object Api {
     val http: OkHttpClient = OkHttpClient.Builder()
+        // Chorus Home: certificates pinned by an invite are trusted; everything else as usual (Pins.kt)
+        .sslSocketFactory(
+            javax.net.ssl.SSLContext.getInstance("TLS").apply { init(null, arrayOf(Pins.trustManager), null) }.socketFactory,
+            Pins.trustManager,
+        )
+        .hostnameVerifier(Pins.hostnameVerifier)
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .pingInterval(25, TimeUnit.SECONDS)
@@ -40,15 +46,21 @@ object Api {
             }
         }
 
-    /** Invite links look like `https://host/i/<code>`. → (server base, code). */
-    fun parseInvite(link: String): Pair<String, String>? {
-        val m = Regex("""^(https?://[^/\s]+)/i/([A-Za-z0-9_-]+)""").find(link.trim()) ?: return null
-        return m.groupValues[1] to m.groupValues[2]
+    /**
+     * Invite links look like `https://host/i/<code>`, or on a Chorus Home server
+     * `chorus://<lan ip>:<port>/i/<code>#pin=sha256/<b64url>` (https underneath, D-071).
+     */
+    fun parseInvite(link: String): Invite? {
+        val m = Regex("""^(https?|chorus)://([^/\s]+)/i/([A-Za-z0-9_-]+)(?:[^#\s]*)(?:#pin=(sha256/[A-Za-z0-9_-]+))?""")
+            .find(link.trim()) ?: return null
+        val scheme = if (m.groupValues[1] == "chorus") "https" else m.groupValues[1]
+        return Invite("$scheme://${m.groupValues[2]}", m.groupValues[3], m.groupValues[4].ifEmpty { null })
     }
 
     /** Redeem an invite with a fresh device key. `name` is only used for new accounts. */
     suspend fun enrol(link: String, name: String?): DeviceRecord {
-        val (base, code) = parseInvite(link) ?: throw ApiException("That doesn't look like a Chorus invite link.")
+        val (base, code, pin) = parseInvite(link) ?: throw ApiException("That doesn't look like a Chorus invite link.")
+        Pins.trust(pin)
         val body = JSONObject()
             .put("code", code)
             .put(
@@ -60,7 +72,7 @@ object Api {
         val e = post(base, "/auth/redeem", body)
         return DeviceRecord(
             base, e.getString("device_id"), e.getString("short_id"), e.getString("account_id"),
-            e.getString("session"), e.getLong("expires_at"),
+            e.getString("session"), e.getLong("expires_at"), pin,
         )
     }
 

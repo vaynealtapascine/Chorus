@@ -47,7 +47,8 @@ delete my Chorus data").
   - The server also listens with **TLS on the LAN** using a certificate it generates for itself
     on first run (self-signed, 10 years, SANs for the PC's LAN addresses and hostname). The
     invite link/QR for a phone carries the certificate's SHA-256 **fingerprint**
-    (`https://192.168.1.20:5251/i/<code>#pin=<b64url>`); the Android app pins exactly that
+    (`chorus://192.168.1.20:5251/i/<code>#pin=sha256/<b64url>`: the app's own scheme, so the camera
+    opens the Chorus app rather than a browser that doesn't know the pin; https underneath); the Android app pins exactly that
     certificate for this server (no CA, no warning, still encrypted and authenticated). If the
     PC's address changes, the app follows mDNS (`chorus-<id>.local`) and the pin still holds.
   - Other browsers on the wifi (a laptop, an iPhone) would see a certificate warning and get no

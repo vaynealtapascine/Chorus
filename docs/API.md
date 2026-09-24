@@ -40,9 +40,10 @@ POST /devices/invite            Authorization: Bearer <session>
 → 200 { "code":"…", "url":"https://chorus.…/i/<code>", "lan_url":null, "qr_svg":"<svg…>", "expires_at":… }
 ```
 
-On a Chorus Home server (`[server] lan_listen`, D-071) `lan_url` is the home-wifi link a phone
-opens, `https://<lan ip>:<port>/i/<code>#pin=sha256/<b64url>`, and `qr_svg` encodes it. The app
-trusts exactly that certificate (its SHA-256, the `tls_pin` in `GET /server`), not a CA.
+On a Chorus Home server (`[server] lan_listen`, D-071) `lan_url` is the home-wifi invite a phone
+opens, `chorus://<lan ip>:<port>/i/<code>#pin=sha256/<b64url>` (https underneath; the app's own
+scheme so a camera opens the app, not a browser), and `qr_svg` encodes it. The app trusts exactly
+that certificate (its SHA-256, the `tls_pin` in `GET /server`), not a CA.
 
 `qr_svg` encodes the URL (`qr.rs`: byte mode, level M, versions 1–10, no dependency) so a phone
 can scan it from the web app. `CHORUS_QR_SAMPLES=<dir> cargo test -p chorus-server --lib qr`

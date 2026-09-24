@@ -43,6 +43,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="chorus.vayne.garden" android:pathPrefix="/i/" />
             </intent-filter>
+            <!-- Chorus Home invites (D-071): chorus://<lan ip>:<port>/i/<code>#pin=…, from the QR -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="chorus" />
+            </intent-filter>
         </activity>
         <!-- search launcher (CLIENTS.md §3.4): over the home screen, not in recents -->
         <activity

@@ -95,9 +95,12 @@ pub fn lan_base(listen: &str) -> Option<String> {
     Some(format!("https://{}:{port}", lan_ip()?))
 }
 
-/// An invite link a phone opens on the home wifi: the LAN address plus the certificate pin.
+/// An invite a phone opens on the home wifi: the LAN address plus the certificate pin, in the
+/// app's own `chorus://` form (always https underneath). A camera hands that to the Chorus app;
+/// an `https://` link would open the browser, which doesn't know the pin and shows a warning.
 pub fn lan_invite(base: &str, code: &str, pin: &str) -> String {
-    format!("{}/i/{code}#pin={pin}", base.trim_end_matches('/'))
+    let host = base.trim_end_matches('/').trim_start_matches("https://");
+    format!("chorus://{host}/i/{code}#pin={pin}")
 }
 
 /// With a home-wifi listener configured: the invite link a phone should get for `code`.
@@ -208,11 +211,39 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// `fixtures/home-pin.json`: one certificate and its pin, checked here and by the Android app
+    /// (InviteTest), so both sides compute pins the same way. `CHORUS_WRITE_FIXTURES=1` remakes it.
+    #[test]
+    fn pins_match_the_shared_fixture() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/home-pin.json");
+        if std::env::var_os("CHORUS_WRITE_FIXTURES").is_some() {
+            let dir = std::env::temp_dir().join(format!("chorus-pin-fixture-{:016x}", rand::random::<u64>()));
+            let id = load_or_create(&dir).unwrap();
+            let der = base64::engine::general_purpose::STANDARD.encode(&id.cert);
+            std::fs::write(
+                &path,
+                format!(
+                    "{{
+  \"cert_der_b64\": \"{der}\",
+  \"pin\": \"{}\"
+}}
+",
+                    id.pin
+                ),
+            )
+            .unwrap();
+            let _ = std::fs::remove_dir_all(dir);
+        }
+        let f: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let der = base64::engine::general_purpose::STANDARD.decode(f["cert_der_b64"].as_str().unwrap()).unwrap();
+        assert_eq!(pin_of(&der), f["pin"].as_str().unwrap());
+    }
+
     #[test]
     fn lan_invites_carry_the_pin() {
         assert_eq!(
             lan_invite("https://192.168.1.20:5251/", "ABCD", "sha256/xyz"),
-            "https://192.168.1.20:5251/i/ABCD#pin=sha256/xyz"
+            "chorus://192.168.1.20:5251/i/ABCD#pin=sha256/xyz"
         );
     }
 }
