@@ -1,0 +1,89 @@
+name: release-chorus-home
+
+# Chorus Home's download (D-071, M13.6): one Windows program with the web app inside
+# (`--features home-bundle`). A tag `v*` publishes it on the GitHub release; a manual run keeps it
+# as a workflow artifact. The exact file is installed and checked before it is published.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  RUST_VERSION: "1.98"
+  WASM_BINDGEN_VERSION: "0.2.128"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-home
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ env.WASM_BINDGEN_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Web app (scripts/build-web-core.ps1, then vite)
+        shell: pwsh
+        run: |
+          cargo build -p chorus-wasm --target wasm32-unknown-unknown --profile wasm
+          wasm-bindgen target/wasm32-unknown-unknown/wasm/chorus_wasm.wasm --out-dir web/src/lib/core/pkg --target web
+          if ($LASTEXITCODE) { throw 'wasm-bindgen failed' }
+          Push-Location web
+          npm ci
+          npm run build
+          if ($LASTEXITCODE) { throw 'web build failed' }
+          Pop-Location
+      - name: Chorus Home program
+        shell: pwsh
+        run: |
+          cargo build --release -p chorus-server --features home-bundle
+          if ($LASTEXITCODE) { throw 'build failed' }
+          $v = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { "dev-$($env:GITHUB_SHA.Substring(0,7))" }
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item target/release/chorus-server.exe "out/ChorusHome-$v.exe"
+          "NAME=ChorusHome-$v.exe" >> $env:GITHUB_ENV
+      - name: Install the download, check the web app is served, uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & "out/$env:NAME" install --no-browser
+          if ($LASTEXITCODE) { throw "install failed ($LASTEXITCODE)" }
+          $cfg = Get-Content "$env:ProgramData\Chorus Home\chorus.toml" -Raw
+          $port = [int]([regex]::Match($cfg, 'listen = "127\.0\.0\.1:(\d+)"').Groups[1].Value)
+          $page = $null
+          foreach ($i in 1..40) {
+            try { $page = Invoke-WebRequest "http://127.0.0.1:$port/" -UseBasicParsing -TimeoutSec 2; break } catch { Start-Sleep -Milliseconds 500 }
+          }
+          if (-not $page -or $page.Content -notmatch '<div id="app"') { throw 'the bundled web app is not served' }
+          if (-not $page.Headers['Content-Security-Policy']) { throw 'no CSP on the web app' }
+          & "out/$env:NAME" uninstall --delete-data
+          if ($LASTEXITCODE) { throw "uninstall failed ($LASTEXITCODE)" }
+          'the download installs and serves Chorus'
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chorus-home-windows
+          path: out/*.exe
+      - name: Publish on the release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view $env:GITHUB_REF_NAME 2>$null
+          if ($LASTEXITCODE) { gh release create $env:GITHUB_REF_NAME --title "Chorus $env:GITHUB_REF_NAME" --notes "Chorus Home for Windows: download ChorusHome-$env:GITHUB_REF_NAME.exe and double-click it (docs/HOME.md)." }
+          gh release upload $env:GITHUB_REF_NAME "out/$env:NAME" --clobber
