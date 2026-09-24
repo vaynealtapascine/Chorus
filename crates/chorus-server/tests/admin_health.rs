@@ -1,12 +1,13 @@
 use chorus_server::{app, auth, config::Config, db};
 use rusqlite::params;
 use serde_json::Value;
+mod common;
 
 #[tokio::test]
 async fn health_requires_admin_session_and_reports_live_counts() {
     let mut cfg = Config::default();
-    cfg.server.data_dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("health-http-test-{:016x}", rand::random::<u64>()));
+    cfg.server.data_dir = common::http_test_dir("health-http-test");
+    let test_dir = cfg.server.data_dir.clone();
     let mut conn = db::open(&cfg.db_path()).unwrap();
     db::migrate(&mut conn).unwrap();
     let now = chorus_server::now_ms();
@@ -70,13 +71,16 @@ async fn health_requires_admin_session_and_reports_live_counts() {
     assert_eq!(health["ntfy_reachable"], true);
     assert_eq!(health["restore_window"], serde_json::json!({"open": false, "closes_at": null, "devices": []}));
     server.abort();
+    let _ = server.await;
+    drop(state);
+    let _ = std::fs::remove_dir_all(test_dir);
 }
 
 #[tokio::test]
 async fn restore_window_shows_in_health_and_closes_for_admins_only() {
     let mut cfg = Config::default();
-    cfg.server.data_dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("health-restore-test-{:016x}", rand::random::<u64>()));
+    cfg.server.data_dir = common::http_test_dir("health-restore-test");
+    let test_dir = cfg.server.data_dir.clone();
     let mut conn = db::open(&cfg.db_path()).unwrap();
     db::migrate(&mut conn).unwrap();
     let now = chorus_server::now_ms();
@@ -134,4 +138,7 @@ async fn restore_window_shows_in_health_and_closes_for_admins_only() {
     assert_eq!(health["restore_window"]["open"], false);
     assert_eq!(health["restore_window"]["devices"], serde_json::json!([]));
     server.abort();
+    let _ = server.await;
+    drop(state);
+    let _ = std::fs::remove_dir_all(test_dir);
 }

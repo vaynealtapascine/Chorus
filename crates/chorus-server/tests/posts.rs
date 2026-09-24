@@ -10,6 +10,7 @@ use chorus_server::{api_data, app, auth, config::Config, db, ingest, posts};
 use rusqlite::{Connection, params};
 use serde_json::Value;
 use serde_json::json;
+mod common;
 
 const ALICE: &str = "0192f8c2-0000-7000-8000-0000000000a1";
 const BOB: &str = "0192f8c2-0000-7000-8000-0000000000b2";
@@ -123,15 +124,13 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
         .unwrap()
         .to_string();
     let mut cfg = Config::default();
-    cfg.server.data_dir = std::env::var_os("CARGO_TARGET_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join(format!("posts-http-test-{:016x}", rand::random::<u64>()));
+    cfg.server.data_dir = common::http_test_dir("posts-http-test");
+    let test_dir = cfg.server.data_dir.clone();
     let state = app::Shared::new(conn, cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/api/v1/posts", listener.local_addr().unwrap());
     let server = state.clone();
-    tokio::spawn(async move { axum::serve(listener, app::router(server)).await.unwrap() });
+    let server = tokio::spawn(async move { axum::serve(listener, app::router(server)).await.unwrap() });
     let client = reqwest::Client::new();
     let get = |auth: &str, suffix: &str| client.get(format!("{base}{suffix}")).bearer_auth(auth);
 
@@ -205,6 +204,10 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
     let after = chorus_server::posts::list(&ended, BOB, &Default::default()).unwrap();
     assert_eq!(ids(&after), ["own-bob", "server"]);
     assert!(chorus_server::posts::one(&ended, BOB, "bucket").unwrap().is_none());
+    server.abort();
+    let _ = server.await;
+    drop(state);
+    let _ = std::fs::remove_dir_all(test_dir);
 }
 
 #[test]
@@ -296,17 +299,18 @@ async fn cross_account_replies_require_a_readable_parent_and_reach_its_author() 
     assert!(follower_replies.iter().any(|p| p["id"] == reply_id));
 
     let mut cfg = Config::default();
-    cfg.server.data_dir = std::env::var_os("CARGO_TARGET_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join(format!("post-reply-http-test-{:016x}", rand::random::<u64>()));
+    cfg.server.data_dir = common::http_test_dir("post-reply-http-test");
+    let test_dir = cfg.server.data_dir.clone();
     let state = app::Shared::new(conn, cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/api/v1/posts/server?depth=1", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, app::router(state)).await.unwrap() });
+    let server = tokio::spawn(async move { axum::serve(listener, app::router(state)).await.unwrap() });
     let client = reqwest::Client::new();
     for session in ["alice-session", "bob-session"] {
         let body: Value = client.get(&base).bearer_auth(session).send().await.unwrap().json().await.unwrap();
         assert!(body["replies"].as_array().unwrap().iter().any(|p| p["id"] == reply_id));
     }
+    server.abort();
+    let _ = server.await;
+    let _ = std::fs::remove_dir_all(test_dir);
 }

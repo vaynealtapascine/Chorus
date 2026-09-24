@@ -429,7 +429,7 @@
                       <AttachmentView {attachment} />
                     {/each}
                     {#if post.reactions?.length}<p class="post-reactions">{post.reactions.map((r) => `${r.emoji} ${r.member_name}`).join(' · ')}</p>{/if}
-                    {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button>{/if}
+                    {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button><span class="hint">Reacting shows this member to post readers right away.</span>{/if}
                     {#if reactMember}<button class="ghost" onclick={() => (replyingPost = replyingPost === post.id ? null : post.id)}>{replyingPost === post.id ? 'Cancel reply' : 'Reply'}</button>{/if}
                   </details>
                 {:else}
@@ -438,7 +438,7 @@
                     <AttachmentView {attachment} />
                   {/each}
                   {#if post.reactions?.length}<p class="post-reactions">{post.reactions.map((r) => `${r.emoji} ${r.member_name}`).join(' · ')}</p>{/if}
-                  {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button>{/if}
+                  {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button><span class="hint">Reacting shows this member to post readers right away.</span>{/if}
                   {#if reactMember}<button class="ghost" onclick={() => (replyingPost = replyingPost === post.id ? null : post.id)}>{replyingPost === post.id ? 'Cancel reply' : 'Reply'}</button>{/if}
                 {/if}
                 {#if replyingPost === post.id && reactMember}

@@ -68,7 +68,7 @@
 </script>
 
 <section class="feeds" aria-label="Custom feeds">
-  <p class="muted">Save filters for posts and messages on this device. Feed definitions sync to your devices; results use what this device has received.</p>
+  <p class="muted">Saved feed definitions sync to your devices. Each device shows matches from posts and messages it has received.</p>
   {#if feeds.length}<nav aria-label="Saved feeds">{#each feeds as feed (feed.id)}<button class:on={feed.id === selected} onclick={() => choose(feed.id)}>{feed.name}</button>{/each}</nav>{/if}
   <form class="editor" onsubmit={save}>
     <div class="head"><h2>{selected ? 'Edit feed' : 'New feed'}</h2>{#if selected}<button type="button" onclick={clear}>New feed</button>{/if}</div>
