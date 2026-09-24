@@ -171,14 +171,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
                 }
             }
             "Relationships" -> {
-                val relations = bundle?.relations.orEmpty()
-                if (relations.isEmpty()) item { Text(if (bundle == null) "Relationships need a connection." else "No relationships yet.", color = p.ink2) }
-                for ((index, relation) in relations.withIndex()) item(key = "relation:$index") {
-                    Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
-                        Text(listOf(relation.name, relation.target).filter { it.isNotBlank() }.joinToString(" · "), color = p.ink)
-                        if (relation.note != null) Text(relation.note, color = p.ink2)
-                    }
-                }
+                item { ProfileRelationships(chorus, model, memberId) }
             }
             else -> {
                 if (selectedPosts.isEmpty()) item { Text("No ${tab.lowercase()} yet.", color = p.ink2) }
