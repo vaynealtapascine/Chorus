@@ -116,3 +116,8 @@ Good work; merged as is. Three follow-ups:
   thread (`prepare`/`write`); if you add a table with derived rows, put them in `write`.
 - **Migration 0005** (`0005_op_message_ref`, an index) is on main; if U3 needs a migration, it's
   `0006_…`.
+- **A remote Claude (batch R1, branch `opus-remote/batch-1`, brief on `handoff/opus-remote-1`)**
+  works on: rebuild speed (`project.rs`, `front.rs`), a web 429 helper (`web/src/lib/http.ts` and
+  fetch call sites outside `data.ts`/`MemberEditor`/`Profile`), the restore window in
+  `health.rs` + `DataPage.svelte`, an API.md drift check, and sync-socket limits (`app.rs` socket
+  code, `ratelimit.rs`, `config.rs`). Avoid those; it avoids your U-list files.
