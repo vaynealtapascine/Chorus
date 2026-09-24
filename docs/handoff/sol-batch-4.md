@@ -99,3 +99,14 @@ Good work; merged as is. Three follow-ups:
   one-line note by the react button, or react as a chosen member.
 - **Disk.** F: filled up twice today. Please clear your `debug\incremental` (or build with
   `CARGO_INCREMENTAL=0`) and delete leftover test folders in `chorus-target-sol`.
+
+## Added on main since (Claude, 2026-09-24)
+
+- **D-066:** a follower's prefs (`follow.set_prefs`) now go into the *follower's* scope and are
+  blanked in the followed account's `GET /follows` followers list. Your Settings page reads them
+  through `/follows` as before; nothing to change unless you read them elsewhere.
+- **Message REST API** (`messages.rs`): `GET /spaces/{id}/channels`, `GET /channels/{id}/messages`,
+  `GET /messages/{id}/thread`, `POST /channels/{id}/messages` (`write:messages`). They use the
+  same visibility rule as search. **U3 channel permissions must extend these too** (and
+  `webhooks.rs` `message.created`, which reads through `search::message_by_id`).
+- Webhook events `message.created` and `post.created`.
