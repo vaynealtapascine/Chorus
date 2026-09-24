@@ -1,6 +1,14 @@
 package garden.vayne.chorus.ui
 
 import androidx.compose.foundation.background
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateListOf
+import android.net.Uri
+import android.provider.OpenableColumns
+import garden.vayne.chorus.data.Blobs
+import garden.vayne.chorus.data.UploadWork
+import org.json.JSONObject
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.size
@@ -76,6 +84,12 @@ fun Chat(chorus: Chorus, model: Model) {
     var busy by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     val actions = rememberCoroutineScope()
+    val ctx = LocalContext.current
+    // picked files waiting to be sent: staged (copied, hashed) only on send
+    val attachments = remember { mutableStateListOf<PendingAttachment>() }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        for (uri in uris) attachments.add(PendingAttachment.of(ctx, uri))
+    }
     val space = model.spaces.find { it.id == selectedSpace } ?: model.spaces.firstOrNull()
     val channels = model.channels.filter { it.spaceId == space?.id }
     val channel = channels.find { it.id == selectedChannel } ?: channels.firstOrNull()
@@ -169,7 +183,22 @@ fun Chat(chorus: Chorus, model: Model) {
                 "system_only" -> "Only my system"
                 else -> "Everyone here"
             }
+            for ((i, a) in attachments.withIndex()) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("📎 ${a.name}", color = p.ink, fontSize = 13.sp, maxLines = 1, modifier = Modifier.weight(1f))
+                    ChatChip(if (a.spoiler) "Spoiler ✓" else "Spoiler", a.spoiler) { attachments[i] = a.copy(spoiler = !a.spoiler) }
+                    Text("✕", color = p.ink2, modifier = Modifier.clickable { attachments.removeAt(i) }.padding(6.dp)
+                        .semantics { contentDescription = "Remove ${a.name}" })
+                }
+                if (a.mime.startsWith("image/")) {
+                    OutlinedTextField(a.alt, { attachments[i] = a.copy(alt = it) }, placeholder = { Text("Describe the image (alt text)") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true)
+                }
+            }
             if (moreOpen) {
+                Text("📎 Attach images or files", color = p.accent, fontSize = 14.sp,
+                    modifier = Modifier.clickable { picker.launch("*/*") }.padding(vertical = 6.dp))
                 OutlinedTextField(cw, { cw = it }, placeholder = { Text("Content warning (optional)") },
                     modifier = Modifier.fillMaxWidth(), singleLine = true)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -229,7 +258,7 @@ fun Chat(chorus: Chorus, model: Model) {
                     fontSize = 20.sp,
                     modifier = Modifier.clickable { moreOpen = !moreOpen }.padding(8.dp)
                         .semantics { contentDescription = if (moreOpen) "Fewer options" else "Content warning and audience" })
-                val canSend = !busy && draft.isNotBlank() && author != null && (replyTo == null || target != null) &&
+                val canSend = !busy && (draft.isNotBlank() || attachments.isNotEmpty()) && author != null && (replyTo == null || target != null) &&
                     (audience != "members" || visibleTo.isNotEmpty())
                 Text(if (busy) "…" else "↑", color = if (canSend) p.bg else p.ink3, fontSize = 20.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.size(40.dp).clip(CircleShape).background(if (canSend) p.accent else p.surface2)
@@ -239,9 +268,13 @@ fun Chat(chorus: Chorus, model: Model) {
                             error = null
                             actions.launch {
                                 try {
+                                    val scope = "space:${space.id}"
+                                    val attachmentIds = attachments.map { a -> sendAttachment(chorus, ctx, a, scope) }
                                     val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
-                                        audience, visibleTo.toSet(), space.kind, replyTo = target?.id)
-                                    chorus.create("message.send", chorus.newId(), payload, scope = "space:${space.id}")
+                                        audience, visibleTo.toSet(), space.kind, replyTo = target?.id, attachmentIds = attachmentIds)
+                                    chorus.create("message.send", chorus.newId(), payload, scope = scope)
+                                    if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
+                                    attachments.clear()
                                     draft = ""
                                     cw = ""
                                     audience = "all"
@@ -339,7 +372,7 @@ private fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
     val hash = attachment.thumbHash ?: attachment.blobHash
     val bitmap by produceState<android.graphics.Bitmap?>(null, hash, device?.session) {
         value = if (device == null) null else withContext(Dispatchers.IO) {
-            AvatarBlobs.load(ctx.applicationContext, hash, device)
+            Blobs.image(ctx.applicationContext, hash, device)
         }
     }
     if (bitmap == null) {
@@ -349,4 +382,37 @@ private fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
             contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().height(200.dp))
     }
     Text("Hide image", color = p.accent, fontSize = 12.sp, modifier = Modifier.clickable { opened = false })
+}
+
+/** A file picked for the next message: named and described, not yet copied. */
+private data class PendingAttachment(val uri: Uri, val name: String, val mime: String, val alt: String = "", val spoiler: Boolean = false) {
+    companion object {
+        fun of(ctx: android.content.Context, uri: Uri): PendingAttachment {
+            val name = ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            } ?: uri.lastPathSegment ?: "file"
+            return PendingAttachment(uri, name, ctx.contentResolver.getType(uri) ?: "application/octet-stream")
+        }
+    }
+}
+
+/**
+ * Copy one picked file into the upload queue (with a thumbnail for images) and record its
+ * attachment; the message that lists it is written right after, and [UploadWork] sends the bytes.
+ */
+private suspend fun sendAttachment(chorus: Chorus, ctx: android.content.Context, a: PendingAttachment, scope: String): String {
+    val account = chorus.device?.accountId ?: throw IllegalStateException("Not signed in.")
+    val staged = withContext(Dispatchers.IO) {
+        val input = ctx.contentResolver.openInputStream(a.uri) ?: throw IllegalStateException("Can't read ${a.name}.")
+        Blobs.stage(ctx, input, a.mime, account)
+    }
+    val thumb = if (a.mime.startsWith("image/")) withContext(Dispatchers.IO) {
+        Blobs.pendingFile(ctx, staged.hash)?.let { Blobs.thumbnail(ctx, it, account) }
+    } else null
+    val id = chorus.newId()
+    val payload = JSONObject().put("blob_hash", staged.hash).put("filename", a.name).put("mime", staged.mime)
+        .put("size", staged.size).put("alt_text", a.alt.trim()).put("is_spoiler", a.spoiler)
+    if (thumb != null) payload.put("thumb_blob_hash", thumb.hash)
+    chorus.create("attachment.create", id, payload, scope = scope)
+    return id
 }
