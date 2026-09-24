@@ -1,6 +1,18 @@
 package garden.vayne.chorus.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,9 +28,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
-import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,46 +84,61 @@ fun Chat(chorus: Chorus, model: Model) {
             accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
     }
 
-    Column(Modifier.fillMaxSize().background(p.bg)) {
+    Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         if (space == null) {
             Text("No spaces yet. Shared spaces and DMs will appear here when you join them.",
                 color = p.ink2, modifier = Modifier.padding(24.dp))
             return@Column
         }
-        LazyRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(model.spaces, key = { it.id }) { candidate ->
-                ChatChip(spaceLabel(candidate), candidate.id == space.id) {
-                    selectedSpace = candidate.id
-                    selectedChannel = ""
-                    viewingAs = null
-                    audience = "all"
-                    visibleTo = emptyList()
-                    replyTo = null
-                    moreOpen = false
+        // One header row: space picker, channels, and (internal spaces) whose view to show
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            var spacesOpen by remember { mutableStateOf(false) }
+            Box {
+                ChatChip("${spaceLabel(space)} ▾", true) { spacesOpen = true }
+                DropdownMenu(spacesOpen, { spacesOpen = false }) {
+                    for (candidate in model.spaces) {
+                        DropdownMenuItem(text = { Text(spaceLabel(candidate)) }, onClick = {
+                            spacesOpen = false
+                            selectedSpace = candidate.id
+                            selectedChannel = ""
+                            viewingAs = null
+                            audience = "all"
+                            visibleTo = emptyList()
+                            replyTo = null
+                            moreOpen = false
+                        })
+                    }
+                }
+            }
+            LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(channels, key = { it.id }) { candidate ->
+                    ChatChip("#${candidate.name}", candidate.id == channel?.id) {
+                        selectedChannel = candidate.id
+                        replyTo = null
+                    }
+                }
+            }
+            if (space.kind == "internal") {
+                var viewOpen by remember { mutableStateOf(false) }
+                Box {
+                    val viewer = model.active.find { it.id == viewingAs }?.shownName ?: "Present"
+                    Text("👁 $viewer", color = p.ink2, fontSize = 13.sp,
+                        modifier = Modifier.clickable { viewOpen = true }.padding(horizontal = 6.dp, vertical = 8.dp))
+                    DropdownMenu(viewOpen, { viewOpen = false }) {
+                        Text("Member visibility is a soft view setting. Whose view?", color = p.ink3, fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                        DropdownMenuItem(text = { Text("Everyone present") }, onClick = { viewingAs = null; viewOpen = false })
+                        for (member in model.active) {
+                            DropdownMenuItem(text = { Text(member.shownName) }, onClick = { viewingAs = member.id; viewOpen = false })
+                        }
+                    }
                 }
             }
         }
         if (channel == null) {
             Text("No channels in this space yet.", color = p.ink2, modifier = Modifier.padding(24.dp))
             return@Column
-        }
-        LazyRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(channels, key = { it.id }) { candidate ->
-                ChatChip("#${candidate.name}", candidate.id == channel.id) {
-                    selectedChannel = candidate.id
-                    replyTo = null
-                }
-            }
-        }
-        if (space.kind == "internal") {
-            Text("Member visibility is a soft view setting. Choose whose view to see:", color = p.ink2,
-                fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-            LazyRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                item { ChatChip("Present", viewingAs == null) { viewingAs = null } }
-                items(model.active, key = { it.id }) { member ->
-                    ChatChip(member.shownName, viewingAs == member.id) { viewingAs = member.id }
-                }
-            }
         }
         LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), reverseLayout = true,
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -124,20 +149,14 @@ fun Chat(chorus: Chorus, model: Model) {
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
             }
         }
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // Composer: one line (who's speaking, the text, options, send); options open above it
+        Column(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val author = model.active.find { it.id == selectedAuthor } ?: Reply.speaker(model)
-            if (model.active.size > 1) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(model.active, key = { it.id }) { member ->
-                        ChatChip(member.shownName, author?.id == member.id) { selectedAuthor = member.id }
-                    }
-                }
-            }
             val target = messages.find { it.id == replyTo }
             if (target != null) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Replying to a message", color = p.ink2, fontSize = 12.sp)
+                    Text("↪ Replying to a message", color = p.ink2, fontSize = 12.sp)
                     Text("Cancel", color = p.accent, fontSize = 12.sp,
                         modifier = Modifier.clickable { replyTo = null })
                 }
@@ -145,18 +164,13 @@ fun Chat(chorus: Chorus, model: Model) {
                 Text("Reply target unavailable · Cancel", color = p.accent, fontSize = 12.sp,
                     modifier = Modifier.clickable { replyTo = null })
             }
-            OutlinedTextField(draft, { draft = it }, label = { Text("Message as ${author?.shownName ?: "choose a member"}") },
-                modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4)
             val audienceLabel = when (audience) {
                 "members" -> "Chosen members (${visibleTo.size})"
                 "system_only" -> "Only my system"
                 else -> "Everyone here"
             }
-            TextButton(onClick = { moreOpen = !moreOpen }) {
-                Text("${if (moreOpen) "Less" else "More"} · $audienceLabel${if (cw.isNotBlank()) " · CW" else ""}")
-            }
             if (moreOpen) {
-                OutlinedTextField(cw, { cw = it }, label = { Text("Content warning (optional)") },
+                OutlinedTextField(cw, { cw = it }, placeholder = { Text("Content warning (optional)") },
                     modifier = Modifier.fillMaxWidth(), singleLine = true)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     item { ChatChip("Everyone here", audience == "all") { audience = "all" } }
@@ -179,37 +193,77 @@ fun Chat(chorus: Chorus, model: Model) {
                 if (space.kind != "internal" && audience == "all") {
                     Text("Everyone in this space can see who is speaking.", color = p.ink3, fontSize = 12.sp)
                 }
+            } else if (audience != "all" || cw.isNotBlank()) {
+                Text(listOfNotNull(audienceLabel.takeIf { audience != "all" }, "CW: ${cw.trim()}".takeIf { cw.isNotBlank() })
+                    .joinToString(" · "), color = p.ink2, fontSize = 12.sp)
             }
             if (error != null) Text(error.orEmpty(), color = p.accent, fontSize = 12.sp)
-            Button(enabled = !busy && draft.isNotBlank() && author != null && (replyTo == null || target != null) &&
-                (audience != "members" || visibleTo.isNotEmpty()), onClick = {
-                val speakerId = author?.id ?: return@Button
-                busy = true
-                error = null
-                actions.launch {
-                    try {
-                        val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
-                            audience, visibleTo.toSet(), space.kind, replyTo = target?.id)
-                        chorus.create("message.send", chorus.newId(), payload, scope = "space:${space.id}")
-                        draft = ""
-                        cw = ""
-                        audience = "all"
-                        visibleTo = emptyList()
-                        replyTo = null
-                        moreOpen = false
-                    } catch (e: Exception) {
-                        error = e.message ?: "Could not send the message."
-                    } finally {
-                        busy = false
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                var authorsOpen by remember { mutableStateOf(false) }
+                Box {
+                    val tone = author?.let { tonesOf(it.color) }
+                    Text(author?.glyph ?: "?", fontSize = 18.sp, color = tone?.name ?: p.ink2,
+                        modifier = Modifier.size(40.dp).clip(CircleShape).background(tone?.tint ?: p.surface2)
+                            .clickable(enabled = model.active.isNotEmpty()) { authorsOpen = true }
+                            .wrapContentSize(Alignment.Center)
+                            .semantics { contentDescription = "Speaking as ${author?.shownName ?: "nobody yet"}" })
+                    DropdownMenu(authorsOpen, { authorsOpen = false }) {
+                        Text("Who's speaking", color = p.ink3, fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                        for (member in model.active) {
+                            DropdownMenuItem(text = { Text(member.shownName) }, onClick = {
+                                selectedAuthor = member.id
+                                authorsOpen = false
+                            })
+                        }
                     }
                 }
-            }) { Text(if (busy) "Sending…" else "Send · $audienceLabel") }
+                OutlinedTextField(draft, { draft = it },
+                    placeholder = {
+                        Text(if (author == null) "Who's speaking? Tap ?" else "${author.shownName} in #${channel.name}", maxLines = 1)
+                    },
+                    modifier = Modifier.weight(1f), minLines = 1, maxLines = 4)
+                Text(if (moreOpen) "✕" else "⋯",
+                    color = if (moreOpen || audience != "all" || cw.isNotBlank()) p.accent else p.ink2,
+                    fontSize = 20.sp,
+                    modifier = Modifier.clickable { moreOpen = !moreOpen }.padding(8.dp)
+                        .semantics { contentDescription = if (moreOpen) "Fewer options" else "Content warning and audience" })
+                val canSend = !busy && draft.isNotBlank() && author != null && (replyTo == null || target != null) &&
+                    (audience != "members" || visibleTo.isNotEmpty())
+                Text(if (busy) "…" else "↑", color = if (canSend) p.bg else p.ink3, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.size(40.dp).clip(CircleShape).background(if (canSend) p.accent else p.surface2)
+                        .clickable(enabled = canSend) {
+                            val speakerId = author?.id ?: return@clickable
+                            busy = true
+                            error = null
+                            actions.launch {
+                                try {
+                                    val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
+                                        audience, visibleTo.toSet(), space.kind, replyTo = target?.id)
+                                    chorus.create("message.send", chorus.newId(), payload, scope = "space:${space.id}")
+                                    draft = ""
+                                    cw = ""
+                                    audience = "all"
+                                    visibleTo = emptyList()
+                                    replyTo = null
+                                    moreOpen = false
+                                } catch (e: Exception) {
+                                    error = e.message ?: "Could not send the message."
+                                } finally {
+                                    busy = false
+                                }
+                            }
+                        }
+                        .wrapContentSize(Alignment.Center)
+                        .semantics { contentDescription = "Send to $audienceLabel" })
+            }
         }
     }
 }
 
 private fun spaceLabel(space: ChatSpace): String = when (space.kind) {
-    "internal" -> "Home · ${space.name}"
+    "internal" -> if (space.name.isBlank() || space.name.equals("Home", ignoreCase = true)) "Home" else "Home · ${space.name}"
     "dm" -> "DM · ${space.name.takeIf { it.isNotBlank() } ?: "Direct message"}"
     else -> space.name
 }
@@ -228,16 +282,23 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, chorus: Chorus, 
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
     val authors = message.authors.map { model.member(it)?.shownName ?: "Someone" }.joinToString(" & ").ifEmpty { "Someone" }
     Column(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(12.dp))
-        .border(1.dp, p.line, RoundedCornerShape(12.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(authors, color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        .border(1.dp, p.line, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(authors, color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
             Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(message.occurredAt)),
                 color = p.ink3, fontSize = 11.sp)
+            Text("↩", color = p.accent, fontSize = 16.sp,
+                modifier = Modifier.clickable(onClick = onReply).padding(horizontal = 4.dp)
+                    .semantics { contentDescription = "Reply" })
         }
-        if (message.replyTo != null) Text("↪ Reply", color = p.ink3, fontSize = 12.sp)
-        Text("Reply", color = p.accent, fontSize = 12.sp, modifier = Modifier.clickable(onClick = onReply))
-        if (message.visibilityMode == "system_only") Text("Only this system", color = p.ink3, fontSize = 12.sp)
-        if (message.visibilityMode == "members") Text("Chosen members", color = p.ink3, fontSize = 12.sp)
+        val tags = listOfNotNull(
+            "↪ reply".takeIf { message.replyTo != null },
+            "Only this system".takeIf { message.visibilityMode == "system_only" },
+            "Chosen members".takeIf { message.visibilityMode == "members" },
+        )
+        if (tags.isNotEmpty()) Text(tags.joinToString(" · "), color = p.ink3, fontSize = 12.sp)
         if (message.cw != null) {
             Text("Content warning: ${message.cw} · ${if (revealed) "Hide" else "Show"}", color = p.accent,
                 modifier = Modifier.clickable { revealed = !revealed })

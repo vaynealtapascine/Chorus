@@ -1,0 +1,84 @@
+name: chorus-home-windows
+
+# Chorus Home's installer for real (D-071, docs/HOME.md): install the ChorusHome service on a
+# throwaway Windows runner (which runs as administrator), check it answers on both ports, then
+# uninstall and check nothing is left. Agents never install services on the owner's PC.
+on:
+  push:
+    paths:
+      - "crates/chorus-server/**"
+      - ".github/workflows/home-windows.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: home-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: home-windows
+      - name: Build
+        run: cargo build --release -p chorus-server
+      - name: Install, check, uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = "$PWD\target\release\chorus-server.exe"
+          & $exe install --no-browser
+          if ($LASTEXITCODE) { throw "install failed ($LASTEXITCODE)" }
+
+          $svc = Get-Service ChorusHome
+          "service: $($svc.Status), start type $($svc.StartType)"
+          if ($svc.StartType -ne 'Automatic') { throw 'the service must start with Windows' }
+          $cfg = Get-Content "$env:ProgramData\Chorus Home\chorus.toml" -Raw
+          $port = [int]([regex]::Match($cfg, 'listen = "127\.0\.0\.1:(\d+)"').Groups[1].Value)
+          "port $port"
+          if (-not (Test-Path "$env:ProgramFiles\Chorus Home\chorus-server.exe")) { throw 'program not copied' }
+          if (-not (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Chorus.url")) { throw 'no shortcut' }
+          $rule = netsh advfirewall firewall show rule name="Chorus Home" | Out-String
+          if ($rule -notmatch 'Private') { throw "firewall rule missing or not private-only:`n$rule" }
+
+          $info = $null
+          foreach ($i in 1..40) {
+            try { $info = Invoke-RestMethod "http://127.0.0.1:$port/api/v1/server" -TimeoutSec 2; break } catch { Start-Sleep -Milliseconds 500 }
+          }
+          if (-not $info) { Get-Content "$env:ProgramData\Chorus Home\chorus.log" -ErrorAction SilentlyContinue; throw 'the service never answered' }
+          "server $($info.version), pin $($info.tls_pin)"
+          if (-not $info.tls_pin) { throw 'no home-wifi certificate' }
+          $homeInfo = Invoke-RestMethod "http://127.0.0.1:$port/api/v1/home"
+          if (-not $homeInfo.needs_setup) { throw 'a fresh install needs setup' }
+          # the home-wifi port speaks TLS with the pinned certificate
+          $tls = curl.exe -sk "https://127.0.0.1:$($port + 1)/api/v1/server" | ConvertFrom-Json
+          if ($tls.tls_pin -ne $info.tls_pin) { throw 'TLS listener not answering' }
+
+          # run again: an update in place keeps the config and comes back up
+          & $exe install --no-browser
+          if ($LASTEXITCODE) { throw "update failed ($LASTEXITCODE)" }
+          if ((Get-Service ChorusHome).Status -ne 'Running') { throw 'not running after the update' }
+
+          # stopping through the service manager is a clean stop, not a crash
+          Stop-Service ChorusHome
+          if ((Get-Service ChorusHome).Status -ne 'Stopped') { throw 'did not stop' }
+          Start-Service ChorusHome
+
+          & $exe uninstall --delete-data
+          if ($LASTEXITCODE) { throw "uninstall failed ($LASTEXITCODE)" }
+          if (Get-Service ChorusHome -ErrorAction SilentlyContinue) { throw 'service still there' }
+          Start-Sleep -Seconds 5
+          if (Test-Path "$env:ProgramData\Chorus Home") { throw 'data left behind after --delete-data' }
+          $left = netsh advfirewall firewall show rule name="Chorus Home" | Out-String
+          if ($left -match 'Chorus Home') { throw 'firewall rule left behind' }
+          'install, update, stop, uninstall: ok'
+      - name: Service log
+        if: failure()
+        shell: pwsh
+        run: Get-Content "$env:ProgramData\Chorus Home\chorus.log" -ErrorAction SilentlyContinue

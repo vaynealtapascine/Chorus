@@ -15,8 +15,9 @@ struct Cli {
     /// Development profile: port 5251, data in ./data-dev.
     #[arg(long, global = true)]
     dev: bool,
+    /// No command: Chorus Home's double-click (install if needed, then open Chorus).
     #[command(subcommand)]
-    cmd: Cmd,
+    cmd: Option<Cmd>,
 }
 
 #[derive(Subcommand)]
@@ -83,6 +84,19 @@ enum Cmd {
         #[arg(long)]
         yes: bool,
     },
+    /// Chorus Home (D-071): install or update on this Windows PC (as administrator).
+    Install {
+        /// Don't open the browser afterwards.
+        #[arg(long)]
+        no_browser: bool,
+    },
+    /// Chorus Home: remove the service, shortcut and firewall rule. Data stays unless asked.
+    Uninstall {
+        #[arg(long)]
+        delete_data: bool,
+    },
+    /// Chorus Home: run as the Windows service (the Service Control Manager starts this).
+    Service,
     /// Create an invite link for a new system, person or device.
     Invite {
         #[arg(long, value_enum, default_value = "system")]
@@ -113,15 +127,31 @@ enum ExportKind {
 }
 
 fn main() -> anyhow::Result<()> {
-    // colour only on a terminal: the journal (systemd) and NSSM's log files get plain text
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
-        .init();
     let cli = Cli::parse();
-    let cfg = if cli.dev { Config::dev() } else { Config::load(Some(&cli.config))? };
-    match cli.cmd {
-        Cmd::Serve => {
+    if matches!(cli.cmd, Some(Cmd::Service)) {
+        // no console under the service manager: log next to chorus.toml
+        let log = cli.config.parent().map(|d| d.join("chorus.log")).unwrap_or_else(|| "chorus.log".into());
+        let file = std::fs::OpenOptions::new().create(true).append(true).open(log)?;
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
+            .with_ansi(false)
+            .with_writer(std::sync::Mutex::new(file))
+            .init();
+    } else {
+        // colour only on a terminal: the journal (systemd) and NSSM's log files get plain text
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
+            .init();
+    }
+    let Some(cmd) = cli.cmd else { return home_launcher() };
+    let mut cfg = if cli.dev { Config::dev() } else { Config::load(Some(&cli.config))? };
+    match cmd {
+        // Chorus Home's settings page restarts the server with the new file (home.rs)
+        Cmd::Serve => loop {
             let conn = chorus_server::open_and_migrate(&cfg)?;
             if cli.dev && conn.query_row("SELECT count(*) = 0 FROM account", [], |r| r.get::<_, bool>(0))? {
                 let code = chorus_server::auth::create_invite(
@@ -139,9 +169,17 @@ fn main() -> anyhow::Result<()> {
             if fixed > 0 {
                 tracing::info!(accounts = fixed, "gave person accounts their self member (D-003)");
             }
-            let state = chorus_server::app::Shared::new(conn, cfg)?;
+            let state = chorus_server::app::Shared::new(conn, cfg.clone())?;
+            // a fresh runtime each time: dropping it ends the last run's background tasks
             tokio::runtime::Runtime::new()?.block_on(chorus_server::app::serve(state))?;
-        }
+            if !chorus_server::home::take_restart() {
+                break;
+            }
+            cfg = Config::load(Some(&cli.config))?;
+        },
+        Cmd::Install { no_browser } => home_install(no_browser)?,
+        Cmd::Uninstall { delete_data } => home_uninstall(delete_data)?,
+        Cmd::Service => home_service(cli.config)?,
         Cmd::Migrate => {
             let conn = chorus_server::open_and_migrate(&cfg)?;
             println!("schema version {}", db::schema_version(&conn)?);
@@ -308,7 +346,92 @@ fn main() -> anyhow::Result<()> {
                 chorus_server::now_ms(),
             )?;
             println!("{}/i/{code}", cfg.server.public_url.trim_end_matches('/'));
+            if let Some(lan) = chorus_server::tls::home_invite(&cfg, &code) {
+                println!("on the home wifi (phones): {lan}");
+            }
         }
     }
     Ok(())
+}
+
+// ─── Chorus Home (D-071, docs/HOME.md) ───────────────────────────────────────
+
+#[cfg(windows)]
+fn home_launcher() -> anyhow::Result<()> {
+    use chorus_server::home_install as hi;
+    let layout = hi::Layout::windows();
+    if !hi::installed() {
+        println!("Installing Chorus Home… Windows will ask for permission.");
+        anyhow::ensure!(hi::run_elevated(&["install", "--no-browser"])?, "Chorus Home wasn't installed");
+    }
+    // opened from this (not elevated) process: the browser runs as the person, not as admin
+    let port = hi::installed_port(&layout).unwrap_or(5250);
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    hi::open_browser(port);
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn home_launcher() -> anyhow::Result<()> {
+    anyhow::bail!("give a command (chorus-server --help); Chorus Home's installer is Windows-only for now")
+}
+
+#[cfg(windows)]
+fn home_install(no_browser: bool) -> anyhow::Result<()> {
+    use chorus_server::home_install as hi;
+    if !hi::elevated() {
+        let mut args = vec!["install"];
+        if no_browser {
+            args.push("--no-browser");
+        }
+        anyhow::ensure!(hi::run_elevated(&args)?, "Chorus Home wasn't installed");
+        return Ok(());
+    }
+    let port = hi::install(&hi::Layout::windows())?;
+    println!("Chorus Home is running: http://localhost:{port}/");
+    if !no_browser {
+        hi::open_browser(port);
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn home_uninstall(delete_data: bool) -> anyhow::Result<()> {
+    use chorus_server::home_install as hi;
+    if !hi::elevated() {
+        let mut args = vec!["uninstall"];
+        if delete_data {
+            args.push("--delete-data");
+        }
+        anyhow::ensure!(hi::run_elevated(&args)?, "Chorus Home wasn't removed");
+        return Ok(());
+    }
+    let layout = hi::Layout::windows();
+    hi::uninstall(&layout, delete_data)?;
+    if delete_data {
+        println!("Chorus Home and its data were removed.");
+    } else {
+        println!("Chorus Home was removed. Your data is still in {}.", layout.data_root.display());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn home_service(config: PathBuf) -> anyhow::Result<()> {
+    chorus_server::home_install::run_service(config)
+}
+
+#[cfg(not(windows))]
+fn home_install(_: bool) -> anyhow::Result<()> {
+    anyhow::bail!("Chorus Home's installer is Windows-only for now (docs/HOME.md)")
+}
+
+#[cfg(not(windows))]
+fn home_uninstall(_: bool) -> anyhow::Result<()> {
+    anyhow::bail!("Chorus Home's installer is Windows-only for now (docs/HOME.md)")
+}
+
+#[cfg(not(windows))]
+fn home_service(_: PathBuf) -> anyhow::Result<()> {
+    anyhow::bail!("the service mode is Windows-only")
 }

@@ -52,6 +52,7 @@ distributor; no second ntfy.
 ```toml
 [server]
 listen = "127.0.0.1:5250"
+# lan_listen = "0.0.0.0:5251"             # Chorus Home only (D-071, HOME.md): TLS for phones on the wifi
 public_url = "https://chorus.vayne.garden"
 data_dir = "C:/Users/pcuser/selfhost/chorus/data"
 

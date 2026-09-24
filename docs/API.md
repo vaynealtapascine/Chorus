@@ -37,8 +37,13 @@ Link another device of the same account (any enrolled device; one use, 1 day):
 
 ```
 POST /devices/invite            Authorization: Bearer <session>
-→ 200 { "code":"…", "url":"https://chorus.…/i/<code>", "qr_svg":"<svg…>", "expires_at":… }
+→ 200 { "code":"…", "url":"https://chorus.…/i/<code>", "lan_url":null, "qr_svg":"<svg…>", "expires_at":… }
 ```
+
+On a Chorus Home server (`[server] lan_listen`, D-071) `lan_url` is the home-wifi invite a phone
+opens, `chorus://<lan ip>:<port>/i/<code>#pin=sha256/<b64url>` (https underneath; the app's own
+scheme so a camera opens the app, not a browser), and `qr_svg` encodes it. The app trusts exactly
+that certificate (its SHA-256, the `tls_pin` in `GET /server`), not a CA.
 
 `qr_svg` encodes the URL (`qr.rs`: byte mode, level M, versions 1–10, no dependency) so a phone
 can scan it from the web app. `CHORUS_QR_SAMPLES=<dir> cargo test -p chorus-server --lib qr`
@@ -408,6 +413,24 @@ page shows it to admins while open ("Restore in progress — N of M devices back
 Non-admins get 403 from both endpoints; API tokens can't call them.
 
 Same operations exist on the CLI (`chorus-server --help`, OPS.md).
+
+### 8a. Chorus Home (D-071, HOME.md)
+
+Only on a Chorus Home install (`[server] home = true`), and only for requests from the PC itself
+(a loopback peer with no `X-Forwarded-For`/`Forwarded`; anything else gets `403
+not_this_computer`). A technical install behind Caddy never has these routes: every request
+there looks local.
+
+```
+GET  /home            → {needs_setup, version, port, lan, lan_port, lan_address, pin, data_dir,
+                         backup: {dir, keep_daily}}
+POST /home/setup      → {code}   one-use system invite for the first account; 409 once one exists
+PUT  /home/settings   {port?, lan?, keep_daily?}   admin device session → 202 {url}
+```
+
+`PUT /home/settings` rewrites `chorus.toml` (`listen = 127.0.0.1:<port>`, `lan_listen =
+0.0.0.0:<port+1>` when `lan`) after checking the new file loads, answers, then restarts the server
+in place with it (a fresh runtime, so nothing of the old run is left listening).
 
 ## 9. Outside the API
 

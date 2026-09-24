@@ -84,6 +84,7 @@ class Chorus private constructor(private val ctx: Context) {
     private fun start() {
         val dev = store.get("device")?.let { runCatching { DeviceRecord.fromJson(it) }.getOrNull() }
         device = dev
+        Pins.trust(dev?.pin)
         if (dev == null) {
             _status.value = Status.NoDevice
             return

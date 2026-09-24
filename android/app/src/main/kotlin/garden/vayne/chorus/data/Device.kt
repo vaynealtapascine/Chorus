@@ -18,10 +18,13 @@ data class DeviceRecord(
     val accountId: String,
     val session: String,
     val expiresAt: Long,
+    /** Chorus Home: the server certificate's pin from the invite (Pins.kt), else null. */
+    val pin: String? = null,
 ) {
     fun toJson(): String = JSONObject()
         .put("base", base).put("device_id", deviceId).put("short_id", shortId)
         .put("account_id", accountId).put("session", session).put("expires_at", expiresAt)
+        .apply { if (pin != null) put("pin", pin) }
         .toString()
 
     /** HLC node id: the device's short id read as hex (same as the web client). */
@@ -32,6 +35,7 @@ data class DeviceRecord(
             DeviceRecord(
                 it.getString("base"), it.getString("device_id"), it.getString("short_id"),
                 it.getString("account_id"), it.getString("session"), it.getLong("expires_at"),
+                it.optString("pin").ifEmpty { null },
             )
         }
     }

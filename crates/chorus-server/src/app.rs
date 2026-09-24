@@ -83,7 +83,7 @@ impl Shared {
         }))
     }
 
-    fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
+    pub(crate) fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.db.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -178,6 +178,8 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/sync", get(sync_ws))
         .layer(axum::middleware::from_fn_with_state(state.clone(), crate::ratelimit::limit));
+    // Chorus Home's setup and settings, for this PC only (home.rs, D-071)
+    let api = if state.cfg.server.home { api.merge(crate::home::routes()) } else { api };
     let mut app = Router::new()
         .nest("/api/v1", api)
         .route("/download/android", get(android_download))
@@ -213,7 +215,7 @@ async fn web_app_headers(mut r: Response) -> Response {
 
 // ─── errors ──────────────────────────────────────────────────────────────────
 
-pub struct ApiError(StatusCode, &'static str, String);
+pub struct ApiError(pub StatusCode, pub &'static str, pub String);
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
@@ -256,6 +258,10 @@ async fn server_info(State(s): State<AppState>) -> Json<serde_json::Value> {
         "core": chorus_core::api::version(),
         "instance_id": s.instance_id,
         "core_min": "0.1.0",
+        // Chorus Home: the certificate phones pin on the home wifi (tls.rs)
+        "tls_pin": s.cfg.server.lan_listen.as_ref()
+            .and_then(|_| crate::tls::load_or_create(&s.cfg.server.data_dir).ok())
+            .map(|id| id.pin),
     }))
 }
 
@@ -364,9 +370,11 @@ async fn device_invite(
         now,
     )?;
     let url = format!("{}/i/{code}", s.cfg.server.public_url.trim_end_matches('/'));
+    // Chorus Home: phones join over the home wifi, pinning this server's certificate (tls.rs)
+    let lan_url = crate::tls::home_invite(&s.cfg, &code);
     // scan with the other device's camera instead of copying the link across (qr.rs)
-    let qr_svg = crate::qr::encode(&url).map(|q| q.svg());
-    Ok(Json(json!({"code": code, "url": url, "qr_svg": qr_svg, "expires_at": now + 86_400_000})))
+    let qr_svg = crate::qr::encode(lan_url.as_deref().unwrap_or(&url)).map(|q| q.svg());
+    Ok(Json(json!({"code": code, "url": url, "lan_url": lan_url, "qr_svg": qr_svg, "expires_at": now + 86_400_000})))
 }
 
 /// Sign out another device of the same account (a lost phone): its sessions end, its socket is
@@ -1954,10 +1962,28 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     crate::backup::start_nightly(state.cfg.clone())?;
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     let shared = state.clone();
+    let mut lan_task = None;
+    if let Some(lan) = state.cfg.server.lan_listen.clone() {
+        // Chorus Home (D-071): the same app over TLS for phones on the home wifi
+        let id = crate::tls::load_or_create(&state.cfg.server.data_dir)?;
+        let listener = crate::tls::TlsListener::bind(&lan, &id).await?;
+        tracing::info!(addr = %lan, pin = %id.pin, "home-wifi TLS listening");
+        let app =
+            crate::tls::with_peer(router(state.clone())).into_make_service_with_connect_info::<crate::tls::Peer>();
+        lan_task = Some(tokio::spawn(async move {
+            if let Err(e) = axum::serve(listener, app).await {
+                tracing::error!(error = %e, "home-wifi listener stopped");
+            }
+        }));
+    }
     let app = router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
     let server = axum::serve(listener, app).with_graceful_shutdown(async move {
-        stop_signal().await;
-        tracing::info!("stopping");
+        tokio::select! {
+            () = stop_signal() => tracing::info!("stopping"),
+            () = crate::home::stop_requested() => tracing::info!("stopping (service)"),
+            // Chorus Home's settings changed: main starts again with the new config
+            () = crate::home::restart_requested() => tracing::info!("restarting with new settings"),
+        }
         shared.shutdown();
         let _ = stop_tx.send(());
     });
@@ -1969,6 +1995,11 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     tokio::select! {
         r = server => r?,
         _ = deadline => tracing::info!("sockets still open after 2 s; exiting anyway"),
+    }
+    // frees the home-wifi port for a restart (tls.rs stops accepting once its listener is gone)
+    if let Some(t) = lan_task {
+        t.abort();
+        let _ = t.await;
     }
     Ok(())
 }

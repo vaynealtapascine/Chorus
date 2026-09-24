@@ -21,17 +21,29 @@ futures-util = "0.3.34"
 hkdf = "0.12"
 p256 = { version = "0.14", features = ["ecdh", "ecdsa", "pkcs8"] }
 rand = "0.10.3"
+rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "crypto"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12", "logging"] }
 rusqlite = { version = "0.40.2", features = ["backup", "bundled", "serde_json"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10"
 thiserror = "2.0.20"
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12", "logging"] }
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal", "fs"] }
 toml = "1.1.6"
 tower-http = { version = "0.7.1", features = ["trace", "cors", "fs"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+
+include_dir = { version = "0.7", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8"
+
+[features]
+# Chorus Home's Windows download (D-071): the web app (web/dist) travels inside the program
+home-bundle = ["dep:include_dir"]
 
 [dev-dependencies]
 proptest = "1"

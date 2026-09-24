@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -85,6 +88,7 @@ class MainActivity : ComponentActivity() {
 
 private enum class Tab(val label: String) { Home("Home"), Chat("Chat"), Members("Members"), History("History") }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun App(chorus: Chorus, invite: String?) {
     val p = LocalChorusPalette.current
@@ -131,7 +135,8 @@ private fun App(chorus: Chorus, invite: String?) {
                     Tab.History -> History(chorus, model)
                 }
             }
-            Row(
+            // the keyboard covers the tabs anyway; hiding them lets a screen's imePadding sit on it
+            if (!WindowInsets.isImeVisible) Row(
                 Modifier.fillMaxWidth().background(p.surface).navigationBarsPadding().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
