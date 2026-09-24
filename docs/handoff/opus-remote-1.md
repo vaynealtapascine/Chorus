@@ -168,8 +168,10 @@ a new dependency (a zip crate) is acceptable. The owner decides.
   `POST /admin/reconcile/close` (admin device sessions, 204); *Your data* shows "Restore in
   progress — N of M devices back" + Close (asks first while devices are missing) only while
   open. Tests in `tests/admin_health.rs` (401/403/204, devices, closed shape); those tests now
-  use `CARGO_TARGET_TMPDIR`. API.md §8, OPS.md §4–5, SYNC.md §7.3 updated. Not yet looked at in
-  a real browser (svelte-check and the build pass).
+  use `CARGO_TARGET_TMPDIR`. API.md §8, OPS.md §4–5, SYNC.md §7.3 updated. Checked in Chromium
+  (Playwright, light and dark, a served `web/dist`): "Restore in progress — 0 of 2 devices back",
+  the confirm while devices are missing, gone after Close. The health card now reloads when the
+  sync socket goes live, so the device you're on shows as back without a Refresh.
 - R1 — rebuild at 1M on this box (4-core Xeon 2.1 GHz container, not the owner's PC): full test
   run **63.8 s → 43.3 s**; rebuild-only runs of a checkpointed copy (`CHORUS_PERF_DB`) **63–66 s
   → ~31 s**. Ingest 7 386–7 585 → 7 400 ops/s (not worse; switches 0.25 → 0.18 ms). Causes and
@@ -199,3 +201,10 @@ a new dependency (a zip crate) is acceptable. The owner decides.
   `zip` crate for deflate, disk guard and 24 h retention, `POST /exports` / `GET /jobs/{id}` /
   download with Range, an `export_job` table numbered after Sol's 0006). Nothing built; the
   owner decides.
+- R6 — `scripts/test-linux.sh` (bash twin of `test-linux.ps1`: web build, static musl build in
+  `rust:1.98-bookworm`, bundle like `pack-linux.ps1`, a seeded data dir snapshotted for the
+  import, then the same `deploy/linux/test/` container steps; `--out`, `--no-build`, `--keep`).
+  **Not run to the end**: this cloud container has Docker, but its egress policy blocks
+  deb.debian.org (403), so neither the build image (musl-tools) nor the test VPS image (systemd)
+  can install packages. The web build, seed and snapshot steps ran. Worth one run on a Linux box
+  or WSL with open network before relying on it; `install.sh` is untouched.
