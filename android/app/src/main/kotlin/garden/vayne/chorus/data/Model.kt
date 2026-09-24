@@ -70,6 +70,7 @@ data class JournalPost(
 
 data class MemberList(val id: String, val name: String, val description: String?, val memberIds: Set<String>)
 data class SavedFeed(val id: String, val name: String, val description: String?, val query: String, val visibility: String)
+data class FrontSpan(val memberId: String, val startAt: Long, val endAt: Long?)
 
 class Model(
     val members: List<Member>,
@@ -90,6 +91,9 @@ class Model(
     val memberLists: List<MemberList> = emptyList(),
     val savedFeeds: List<SavedFeed> = emptyList(),
     val highlights: Map<String, Set<String>> = emptyMap(),
+    val frontSpans: List<FrontSpan> = emptyList(),
+    val systemZone: String? = null,
+    val messageCounts: Map<String, Int> = emptyMap(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -221,9 +225,14 @@ class Model(
             val fold = p.optJSONObject("fronts")?.optJSONObject(accountId)
             val current = entries(fold?.optJSONArray("current"))
             var since: Long? = null
+            val frontSpans = ArrayList<FrontSpan>()
             fold?.optJSONArray("intervals")?.let { iv ->
                 for (i in 0 until iv.length()) {
                     val o = iv.getJSONObject(i)
+                    if (o.optString("subject_type") == "member" && o.optString("level") == "front") {
+                        o.str("subject_id")?.let { frontSpans.add(FrontSpan(it, o.optLong("start_at"),
+                            o.optLong("end_at").takeIf { o.has("end_at") && !o.isNull("end_at") })) }
+                    }
                     if (o.isNull("end_at")) {
                         val s = o.getLong("start_at")
                         since = since?.let { minOf(it, s) } ?: s
@@ -250,8 +259,13 @@ class Model(
                 .sortedBy { it.name }
             val channelIds = channels.map { it.id }.toSet()
             val attachments = rows(p, "attachment").associate { it.first to it.second }
-            val selected = rows(p, "message")
+            val messageRows = rows(p, "message")
                 .filter { (_, f) -> !f.present("deleted_at") && f.str("channel_id") in channelIds }
+            val messageCounts = HashMap<String, Int>()
+            for ((_, fields) in messageRows) for (author in strings(fields.optJSONArray("authors"))) {
+                messageCounts[author] = (messageCounts[author] ?: 0) + 1
+            }
+            val selected = messageRows
                 .groupBy { (_, f) -> f.str("channel_id").orEmpty() }
                 .mapValues { (_, values) -> values.sortedWith(compareBy<Pair<String, JSONObject>> { it.second.optLong("occurred_at") }.thenBy { it.first }).takeLast(100) }
             val chatMessages = selected.mapValues { (_, values) -> values.map { (id, f) ->
@@ -296,8 +310,10 @@ class Model(
                     f.optJSONObject("visibility")?.str("mode") ?: "private") }
                 .sortedWith(compareBy<SavedFeed> { it.name.lowercase() }.thenBy { it.id })
             val highlights = ProfileHighlights.fromProjection(p.optJSONObject("sets"))
+            val systemZone = rows(p, "system").firstOrNull { it.first == accountId }?.second?.str("timezone")
             return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages,
-                followCeilings, posts, postReactions, memberLists, savedFeeds, highlights)
+                followCeilings, posts, postReactions, memberLists, savedFeeds, highlights, frontSpans, systemZone,
+                messageCounts)
         }
     }
 }

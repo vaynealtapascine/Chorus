@@ -35,10 +35,13 @@ import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.ProfileApi
 import garden.vayne.chorus.data.ProfileBundle
 import garden.vayne.chorus.data.ProfileHighlights
+import garden.vayne.chorus.data.ProfileMetrics
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.DateFormat
+import java.util.Date
 
 /** Own member profile: local posts stay visible offline; server adds stats and readable highlights. */
 @Composable
@@ -79,6 +82,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     }
 
     val ownPosts = model.posts.filter { memberId in it.authors }
+    val metrics = ProfileMetrics.compute(model, memberId)
     val pinned = model.posts.find { it.id == member.pinnedPostId }
     val highlightedIds = model.highlights[memberId].orEmpty()
     val localHighlights = model.posts.filter { it.id in highlightedIds }
@@ -116,6 +120,11 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
             if (member.description != null) Text(member.description, color = p.ink)
             val groups = model.membership.filter { memberId in it.value }.keys.mapNotNull { model.group(it)?.name }
             if (groups.isNotEmpty()) Text(groups.joinToString(" · "), color = p.ink2)
+            Text("Front: ${"%.1f".format(metrics.weekHours)} h in 7 days · ${"%.1f".format(metrics.monthHours)} h in 28 days",
+                color = p.ink2)
+            Text(metrics.lastFrontAt?.let { "Last fronted ${DateFormat.getDateInstance().format(Date(it))}" }
+                ?: "No front recorded", color = p.ink2)
+            Text("${metrics.messages} messages", color = p.ink2)
             bundle?.let { details ->
                 Text("${details.posts} posts · ${details.entries} entries · ${details.notes} notes", color = p.ink2)
                 for (field in details.fields) Text("${field.name}: ${field.value}", color = p.ink2)
