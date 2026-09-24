@@ -18,11 +18,25 @@ android {
         versionCode = commits
         versionName = "0.1.$commits"
     }
+    // The published APK (GitHub releases, D-072) is signed with the release key, which CI gets from
+    // Infisical (`.github/workflows/release-android.yml`); other builds use this PC's debug key so
+    // they stay upgradable in place (D-060).
+    val releaseStore = System.getenv("CHORUS_SIGNING_STORE")?.let(::file)?.takeIf { it.isFile }
+    signingConfigs {
+        if (releaseStore != null) {
+            create("release") {
+                storeFile = releaseStore
+                storeType = "pkcs12"
+                storePassword = System.getenv("CHORUS_SIGNING_PASSWORD")
+                keyAlias = System.getenv("CHORUS_SIGNING_ALIAS") ?: "chorus"
+                keyPassword = System.getenv("CHORUS_SIGNING_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
-            // signed with this PC's debug key so builds stay upgradable in place (D-060)
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (releaseStore != null) "release" else "debug")
         }
     }
     compileOptions {

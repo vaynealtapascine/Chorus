@@ -1,0 +1,112 @@
+name: release-android
+
+# The published Android app (D-072, Q16): built on a clean runner and signed with the release key,
+# which lives only in Infisical (project `chorus-cec1`, secret ANDROID_SIGNING_KEY) and reaches
+# this job through GitHub's OIDC token: no key or password is stored in GitHub. A tag `v*` puts
+# `Chorus-<tag>.apk` on the GitHub release (next to Chorus Home's download); a manual run keeps
+# it as a workflow artifact. Builds on the owner's PC keep the debug key (D-060).
+#
+# ANDROID_SIGNING_KEY is the JSON that scripts/new-android-key.ps1 prints:
+#   {"alias": "chorus", "password": "…", "keystore": "<base64 PKCS12>"}
+# (a bare base64 PKCS12 also works, with its password in ANDROID_SIGNING_PASSWORD).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  RUST_VERSION: "1.98"
+
+jobs:
+  apk:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # versionCode is the commit count (D-060)
+      - uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: oidc
+          identity-id: c73bd110-90e2-4100-b8a7-dceebdd403a2
+          project-slug: chorus-cec1
+          env-slug: ${{ vars.INFISICAL_ENV || 'prod' }}
+      - name: Release key from Infisical
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $raw = "$env:ANDROID_SIGNING_KEY".Trim()
+          if (-not $raw) { throw 'ANDROID_SIGNING_KEY is empty: check the Infisical identity, project and environment' }
+          if ($raw.StartsWith('{')) {
+            $k = $raw | ConvertFrom-Json
+            $store = $k.keystore; $password = $k.password; $alias = if ($k.alias) { $k.alias } else { 'chorus' }
+          } else {
+            $store = $raw; $password = $env:ANDROID_SIGNING_PASSWORD; $alias = 'chorus'
+          }
+          if (-not $password) { throw 'no keystore password in ANDROID_SIGNING_KEY' }
+          "::add-mask::$password"
+          $path = Join-Path $env:RUNNER_TEMP 'chorus-release.p12'
+          [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($store))
+          "CHORUS_SIGNING_STORE=$path" >> $env:GITHUB_ENV
+          "CHORUS_SIGNING_PASSWORD=$password" >> $env:GITHUB_ENV
+          "CHORUS_SIGNING_ALIAS=$alias" >> $env:GITHUB_ENV
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-android
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Core for Android (scripts/build-android-core.ps1)
+        shell: pwsh
+        run: |
+          if (-not $env:ANDROID_NDK_HOME) { $env:ANDROID_NDK_HOME = $env:ANDROID_NDK_LATEST_HOME }
+          ./scripts/build-android-core.ps1
+      - name: APK
+        shell: pwsh
+        working-directory: android
+        run: |
+          ./gradlew.bat --no-daemon :app:assembleRelease
+          if ($LASTEXITCODE) { throw 'gradle failed' }
+      - name: Check the signature, name the file
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $apk = Get-ChildItem android/app/build/outputs/apk/release/*.apk, "$env:CHORUS_GRADLE_BUILD_DIR/app/outputs/apk/release/*.apk" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $apk) { throw 'no APK built' }
+          $bt = Get-ChildItem "$env:ANDROID_HOME/build-tools" -Directory | Sort-Object { [version]$_.Name } | Select-Object -Last 1
+          $out = & "$($bt.FullName)/apksigner.bat" verify --print-certs $apk.FullName
+          if ($LASTEXITCODE) { throw 'the APK is not signed' }
+          $out
+          if ($out -match 'CN=Android Debug') { throw 'signed with a debug key, not the release key' }
+          $v = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { "dev-$($env:GITHUB_SHA.Substring(0,7))" }
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item $apk.FullName "out/Chorus-$v.apk"
+          "NAME=Chorus-$v.apk" >> $env:GITHUB_ENV
+          Remove-Item $env:CHORUS_SIGNING_STORE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chorus-android
+          path: out/*.apk
+      - name: Publish on the release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # release-home.yml may be creating the same release at the same moment
+          gh release view $env:GITHUB_REF_NAME 2>$null
+          if ($LASTEXITCODE) { gh release create $env:GITHUB_REF_NAME --title "Chorus $env:GITHUB_REF_NAME" --notes "Chorus for Android and Chorus Home for Windows (docs/HOME.md)." 2>$null }
+          gh release upload $env:GITHUB_REF_NAME "out/$env:NAME" --clobber
+          if ($LASTEXITCODE) { throw 'upload failed' }
