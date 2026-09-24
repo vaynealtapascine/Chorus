@@ -85,7 +85,9 @@ async fn exports_exclude_other_accounts_and_require_export_scope() {
         .join(format!("export-http-test-{:016x}", rand::random::<u64>()));
     let sqlite_path = cfg.server.data_dir.join("download.sqlite");
     std::fs::create_dir_all(&cfg.server.data_dir).unwrap();
-    let state = app::Shared::new(conn, cfg).unwrap();
+    db::backup_to(&conn, &cfg.db_path()).unwrap();
+    drop(conn);
+    let state = app::Shared::new(db::open(&cfg.db_path()).unwrap(), cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/api/v1/exports", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, app::router(state)).await.unwrap() });
@@ -132,6 +134,30 @@ async fn exports_exclude_other_accounts_and_require_export_scope() {
     );
     drop(copy);
     std::fs::remove_file(sqlite_path).unwrap();
+}
+
+#[test]
+fn export_reader_keeps_one_snapshot_without_blocking_a_writer() {
+    let root = std::path::PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap())
+        .join(format!("export-snapshot-test-{:016x}", rand::random::<u64>()));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("chorus.db");
+    db::backup_to(&seed(), &path).unwrap();
+    let writer = db::open(&path).unwrap();
+    let reader = chorus_server::exports::read_snapshot(&path).unwrap();
+    let count = || {
+        reader.query_row("SELECT count(*) FROM member WHERE account_id=?1", [ALICE], |r| r.get::<_, i64>(0)).unwrap()
+    };
+    assert_eq!(count(), 1);
+    writer.execute("INSERT INTO member(id,account_id,name,created_at) VALUES ('later',?1,'later',1)", [ALICE]).unwrap();
+    assert_eq!(count(), 1, "reader should keep its initial WAL snapshot");
+    assert_eq!(
+        writer.query_row("SELECT count(*) FROM member WHERE account_id=?1", [ALICE], |r| r.get::<_, i64>(0)).unwrap(),
+        2
+    );
+    drop(reader);
+    drop(writer);
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

@@ -494,12 +494,22 @@ fn principal(
 }
 
 async fn export_ops(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<Response, ApiError> {
-    let conn = s.db();
-    let p = principal(&s, &conn, &headers)?;
-    if !p.allows("export") {
-        return Err(crate::api_data::DataError::Scope("export").into());
-    }
-    let bytes = crate::exports::ops_jsonl(&conn, &p.account_id)?;
+    let p = {
+        let conn = s.db();
+        let p = principal(&s, &conn, &headers)?;
+        if !p.allows("export") {
+            return Err(crate::api_data::DataError::Scope("export").into());
+        }
+        p
+    };
+    let path = s.cfg.db_path();
+    let account = p.account_id;
+    let bytes = tokio::task::spawn_blocking(move || {
+        let reader = crate::exports::read_snapshot(&path)?;
+        crate::exports::ops_jsonl(&reader, &account)
+    })
+    .await
+    .map_err(anyhow::Error::from)??;
     Ok((
         [
             (axum::http::header::CONTENT_TYPE, "application/x-ndjson"),
@@ -515,13 +525,24 @@ async fn export_csv(
     headers: axum::http::HeaderMap,
     Path(name): Path<String>,
 ) -> Result<Response, ApiError> {
-    let conn = s.db();
-    let p = principal(&s, &conn, &headers)?;
-    if !p.allows("export") {
-        return Err(crate::api_data::DataError::Scope("export").into());
-    }
-    let bytes = crate::exports::csv(&conn, &p.account_id, &name)?
-        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "unknown CSV export".into()))?;
+    let p = {
+        let conn = s.db();
+        let p = principal(&s, &conn, &headers)?;
+        if !p.allows("export") {
+            return Err(crate::api_data::DataError::Scope("export").into());
+        }
+        p
+    };
+    let path = s.cfg.db_path();
+    let account = p.account_id;
+    let csv_name = name.clone();
+    let bytes = tokio::task::spawn_blocking(move || {
+        let reader = crate::exports::read_snapshot(&path)?;
+        crate::exports::csv(&reader, &account, &csv_name)
+    })
+    .await
+    .map_err(anyhow::Error::from)??
+    .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "unknown CSV export".into()))?;
     let mut response = bytes.into_response();
     response
         .headers_mut()
@@ -535,12 +556,23 @@ async fn export_csv(
 }
 
 async fn export_sqlite(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<Response, ApiError> {
-    let conn = s.db();
-    let p = principal(&s, &conn, &headers)?;
-    if !p.allows("export") {
-        return Err(crate::api_data::DataError::Scope("export").into());
-    }
-    let bytes = crate::exports::sqlite_copy(&conn, &p.account_id, &s.cfg.server.data_dir.join("export-work"))?;
+    let p = {
+        let conn = s.db();
+        let p = principal(&s, &conn, &headers)?;
+        if !p.allows("export") {
+            return Err(crate::api_data::DataError::Scope("export").into());
+        }
+        p
+    };
+    let path = s.cfg.db_path();
+    let work_dir = s.cfg.server.data_dir.join("export-work");
+    let account = p.account_id;
+    let bytes = tokio::task::spawn_blocking(move || {
+        let reader = crate::exports::read_snapshot(&path)?;
+        crate::exports::sqlite_copy(&reader, &account, &work_dir)
+    })
+    .await
+    .map_err(anyhow::Error::from)??;
     Ok((
         [
             (axum::http::header::CONTENT_TYPE, "application/vnd.sqlite3"),
