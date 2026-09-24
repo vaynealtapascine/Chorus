@@ -96,6 +96,21 @@ takes 0008 only if it asks first in its log, so check `migrations/` after each `
   tailnet name) and the loopback test in `sync_e2e.rs` (`webhook_targets = any`). Do this right
   after R9.
 
+- **R17 · fronting feeds are shareable (D-069, the owner's answer to your Q15).** Replace the
+  owner-only 400: evaluate `fronting:` for a reader against only what that reader's follow
+  ceiling has revealed (the same data as their notifications and `/accounts/{id}/view`, never
+  earlier or finer), and show a banner in `JournalFeeds.svelte` when sharing such a feed and when
+  a reader opens one ("This feed shows who was fronting when these posts were written").
+  Tests: a follower with a delay sees a post match only once the switch is revealed to them.
+- **R18 · keep everything on this device (D-070), web + core.** Read D-070. A per-device
+  setting (default on for the installed PWA), "Sync everything now" in *Your data*: re-check
+  every scope's digest, fetch what's missing, optionally fill the offline blob cache
+  (`sync/blobs.ts` `keepBlob`), progress and space used. Offline search in `search.ts` gains
+  posts and switches. Scale: today `persist.ts` `load()` reads every op and
+  `WebReplica.restore` holds them all in memory; measure open time at 10k/100k ops and make a
+  100k-op device open in ≤ 2 s (e.g. persist the projection and load ops lazily). Sol does the
+  Android side from your notes, so write the protocol/UX in CLIENTS.md §4.3 as you go.
+
 ## Appendix: export bundle design (Q14 → D-068) — the DATA_MODEL §7 "full backup" zip, as a background job
 
 **What's in it.** `chorus-<handle>-<YYYYMMDD>.zip`:

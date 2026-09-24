@@ -72,6 +72,11 @@ need one, say so in your log first and check `migrations/` after merging `main`.
 - **V7 · web leftovers.** Switch `data.ts`, `MemberEditor.svelte` and `Profile.svelte` from
   `fetch` to `apiFetch` (`web/src/lib/http.ts`, the remote Claude's R2) so 429s read well.
 
+- **V8 · keep everything on this device, Android (D-070).** After the remote Claude's R18 lands
+  (CLIENTS.md §4.3 will describe it): the same setting and "Sync everything now" in Settings,
+  progress and space used, attachments optionally kept in the chat image cache (V3), and local
+  search (V5) over messages, posts and switches.
+
 ## When done or blocked
 
 Log it, then pick the next Android gap against the web's screen list. Insights on Android is
