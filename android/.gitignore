@@ -4,3 +4,4 @@ local.properties
 */build/
 core-bridge/src/main/jniLibs/
 core-bridge/src/main/kotlin/uniffi/
+.kotlin/
