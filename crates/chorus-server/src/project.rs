@@ -27,7 +27,13 @@ pub fn after_insert(conn: &Connection, o: &Op) -> anyhow::Result<()> {
         Action::Special => special(conn, o),
         Action::Admin => Ok(()),
         Action::Set if FAST_SET.contains(&spec.table) && set_in_place(conn, spec.table, o)? => Ok(()),
-        _ => entity(conn, spec.table, o.entity().unwrap_or("")),
+        _ => {
+            match SINGLE_OP.with(|m| m.borrow().as_ref().map(|multi| !o.entity().is_some_and(|e| multi.contains(e)))) {
+                // a rebuild knows this is the entity's only op: project it from the op in hand
+                Some(true) => entity_from(conn, spec.table, o.entity().unwrap_or(""), vec![o.clone()]),
+                _ => entity(conn, spec.table, o.entity().unwrap_or("")),
+            }
+        }
     }
 }
 
@@ -118,7 +124,15 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
     if id.is_empty() {
         return Ok(());
     }
-    let ops: Vec<Op> = oplog::for_entity(conn, id)?
+    entity_from(conn, table, id, oplog::for_entity(conn, id)?)
+}
+
+/// [`entity`] over a given set of the entity's ops (all of them).
+fn entity_from(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Result<()> {
+    if id.is_empty() {
+        return Ok(());
+    }
+    let ops: Vec<Op> = ops
         .into_iter()
         .filter(|o| {
             op::spec(&o.kind)
@@ -1034,6 +1048,9 @@ pub(crate) const DERIVED: &[&str] = &[
 thread_local! {
     /// Set while [`rebuild_timed`] replays the log on this thread.
     static REBUILDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// During a rebuild: the entities with more than one op. Any other entity's op is its only
+    /// one, so it can be projected without reading it back from the log.
+    static SINGLE_OP: std::cell::RefCell<Option<std::collections::HashSet<String>>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Rebuild every projection from the op log (`chorus-server rebuild`).
@@ -1054,15 +1071,25 @@ pub fn rebuild_timed(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time
 
 fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Duration)) -> anyhow::Result<u64> {
     let tx = conn.transaction()?;
+    let t = std::time::Instant::now();
     for t in DERIVED {
         tx.execute(&format!("DELETE FROM {t}"), [])?;
     }
+    time("(clear)", t.elapsed());
     // message_fts keeps its own copy of the text (not external content), so 'delete-all' doesn't
     // apply to it; a plain DELETE empties it
     tx.execute("DELETE FROM message_fts", [])?;
     let mut n = 0u64;
     let mut seq = 0i64;
     REBUILDING.with(|r| r.set(true));
+    let multi: std::collections::HashSet<String> = {
+        let mut st = tx.prepare(
+            "SELECT entity_id FROM op WHERE status = 'applied' AND entity_id IS NOT NULL
+             GROUP BY entity_id HAVING count(*) > 1",
+        )?;
+        st.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?
+    };
+    SINGLE_OP.with(|m| *m.borrow_mut() = Some(multi));
     let replayed = (|| -> anyhow::Result<()> {
         loop {
             let batch = oplog::applied_after(&tx, seq, 1000)?;
@@ -1080,6 +1107,7 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
         Ok(())
     })();
     REBUILDING.with(|r| r.set(false));
+    SINGLE_OP.with(|m| *m.borrow_mut() = None);
     replayed?;
     let t = std::time::Instant::now();
     tx.execute(
