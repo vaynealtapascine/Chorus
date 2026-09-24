@@ -49,6 +49,9 @@ Moving from the PC (keeps everything; devices stay signed in)
        Caddy gets a certificate within a minute of the record resolving.
     5. Phones and browsers reconnect by themselves. The import bumps the server's epoch, so
        every device also re-sends anything it has that the snapshot didn't (SYNC.md §7.3).
+       Check with: sudo -u chorus /opt/chorus/app/chorus-server --config /etc/chorus/chorus.toml
+       reconcile-status, and once every device is back, the same with reconcile-close (the
+       window also closes by itself 7 days after the import).
     6. Once it works: set the PC's Chorus service to Manual, and remove its block from the PC
        Caddyfile.
 

@@ -23,6 +23,7 @@ pub mod purge;
 pub mod push;
 pub mod qr;
 pub mod ratelimit;
+pub mod reconcile;
 pub mod search;
 pub mod seed;
 pub mod spaces;

@@ -27,6 +27,10 @@ enum Cmd {
     Migrate,
     /// Integrity check and a short status report.
     Check,
+    /// After a restore: is the restore window open, and which devices are back (SYNC.md §7.3)?
+    ReconcileStatus,
+    /// Close the restore window: from now on, restore pushes count as the pusher's own ops.
+    ReconcileClose,
     /// Rebuild every projection from the op log.
     Rebuild,
     /// Take an online SQLite and blob snapshot.
@@ -148,6 +152,38 @@ fn main() -> anyhow::Result<()> {
             let ok: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
             let ops: i64 = conn.query_row("SELECT count(*) FROM op", [], |r| r.get(0)).unwrap_or(0);
             println!("integrity: {ok}\nschema version: {}\nops: {ops}", db::schema_version(&conn)?);
+            if chorus_server::reconcile::open(&conn, chorus_server::now_ms())? {
+                println!("restore window: open (see chorus-server reconcile-status)");
+            }
+        }
+        Cmd::ReconcileStatus => {
+            use chorus_server::reconcile;
+            let conn = chorus_server::open_and_migrate(&cfg)?;
+            let now = chorus_server::now_ms();
+            let ago = |t: i64| {
+                let days = (now - t) as f64 / 86_400_000.0;
+                if days < 1.0 { format!("{:.0} h ago", days * 24.0) } else { format!("{days:.0} d ago") }
+            };
+            match reconcile::closes_at(&conn, now)? {
+                None => println!("restore window: closed"),
+                Some(end) => println!(
+                    "restore window: open; closes by itself in {:.1} days (or: chorus-server reconcile-close)",
+                    (end - now) as f64 / 86_400_000.0
+                ),
+            }
+            let devices = reconcile::devices(&conn)?;
+            let waiting = devices.iter().filter(|d| d.back_at.is_none()).count();
+            for d in &devices {
+                let seen = d.last_seen_at.map_or("never seen".to_string(), |t| format!("seen {}", ago(t)));
+                let back = d.back_at.map_or("not back yet".to_string(), |t| format!("back {}", ago(t)));
+                println!("  {:<16} {:<20} {:<8} {seen:<16} {back}", d.account, d.name, d.platform);
+            }
+            println!("{} of {} devices back", devices.len() - waiting, devices.len());
+        }
+        Cmd::ReconcileClose => {
+            let conn = chorus_server::open_and_migrate(&cfg)?;
+            chorus_server::reconcile::close(&conn)?;
+            println!("restore window closed");
         }
         Cmd::Rebuild => {
             let mut conn = chorus_server::open_and_migrate(&cfg)?;

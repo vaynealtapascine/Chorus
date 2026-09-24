@@ -199,7 +199,7 @@ pub fn restore(from: &Path, into: &Path) -> anyhow::Result<()> {
         verify_rebuild(&database)?;
         let epoch = db::meta(&conn, "epoch")?.and_then(|s| s.parse::<u64>().ok()).unwrap_or(1) + 1;
         db::set_meta(&conn, "epoch", &epoch.to_string())?;
-        db::set_meta(&conn, "restore_open", "1")?;
+        crate::reconcile::start(&conn, crate::now_ms())?;
         drop(conn);
         ensure!(!into.exists(), "restore destination appeared during verification");
         fs::rename(&staging, into)?;

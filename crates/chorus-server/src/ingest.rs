@@ -52,8 +52,9 @@ pub fn grant(conn: &Connection, account: &str, scope: &str) -> anyhow::Result<()
     Ok(())
 }
 
-pub fn restore_open(conn: &Connection) -> anyhow::Result<bool> {
-    Ok(db::meta(conn, "restore_open")?.as_deref() == Some("1"))
+/// Whether restore pushes keep their original authorship (reconcile.rs).
+pub fn restore_open(conn: &Connection, now: i64) -> anyhow::Result<bool> {
+    crate::reconcile::open(conn, now)
 }
 
 /// Accept one op inside the caller's transaction. Idempotent by id.
@@ -70,7 +71,7 @@ pub fn accept(
     if let Err(e) = op::validate(&o) {
         return Ok((AckResult::err(o.id, e.code(), e.to_string(), false), None));
     }
-    let preserved = restore && restore_open(conn)? && o.account_id.is_some() && o.occurred_at.is_some();
+    let preserved = restore && restore_open(conn, now)? && o.account_id.is_some() && o.occurred_at.is_some();
     let author = if preserved { o.account_id.clone().unwrap_or_default() } else { s.account_id.clone() };
     let allowed = Scope::parse(&o.scope).is_some()
         && can_write(conn, &author, &o.scope)?

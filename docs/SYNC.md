@@ -341,13 +341,15 @@ user action
    simulator found that fire-and-forget re-pushes could strand ops).
 3. Restore pushes carry `restore: true`. While the server's **restore window** is open (from the
    restore until an admin closes it with `chorus-server reconcile-close`, after
-   `reconcile-status` shows every device back), the server keeps a restore-pushed op's original
+   `reconcile-status` shows every device back, or 7 days after the restore at the latest, D-067),
+   the server keeps a restore-pushed op's original
    author, device and times and only assigns a new `seq`; known ids are no-ops that return the
    stored stamp. Outside the window, restore pushes are treated as fresh ops from the pusher.
 4. Device pulls each scope from zero; ops it already holds are replaced by the server's copies.
 
 This is how "phone as full replica" (D-043) restores data written after the last backup. A CLI
-`chorus-server reconcile-status` shows which devices have reconciled since the restore.
+`chorus-server reconcile-status` shows which devices have reconciled since the restore: a device
+is back when it says `hello` with the new epoch and an empty outbox (`reconcile.rs`).
 
 ## 8. Attachments and blobs
 

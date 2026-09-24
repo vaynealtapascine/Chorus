@@ -1345,8 +1345,8 @@ async fn run_socket(s: AppState, socket: WebSocket) {
             break;
         }
         let result = match (&me, frame) {
-            (None, Frame::Hello { token, epoch, cursors, clock, .. }) => {
-                match hello(&s, &tx, &token, epoch, cursors, clock) {
+            (None, Frame::Hello { token, epoch, cursors, clock, outbox, .. }) => {
+                match hello(&s, &tx, &token, epoch, cursors, clock, outbox) {
                     Ok(session) => {
                         me = Some((session.device_id.clone(), session));
                         Ok(())
@@ -1396,6 +1396,7 @@ fn hello(
     epoch: Option<String>,
     cursors: BTreeMap<String, i64>,
     clock: chorus_core::sync::ClockReading,
+    outbox: usize,
 ) -> Result<ingest::Session, AuthError> {
     let now = now_ms();
     let conn = s.db();
@@ -1424,6 +1425,10 @@ fn hello(
         },
     );
     if !reconcile {
+        // after a restore: this device is back once it has nothing left to hand over
+        if let Err(e) = crate::reconcile::hello(&conn, &who.device_id, outbox, now) {
+            tracing::warn!(error = %e, "can't note a reconciled device");
+        }
         for sc in &scopes {
             catch_up(&conn, tx, &who.account_id, sc, *cursors.get(sc).unwrap_or(&0))?;
         }

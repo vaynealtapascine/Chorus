@@ -152,6 +152,7 @@ if [ "$IMPORT" = 1 ]; then
   chmod 750 "$OPT/data"
   rm -rf "$work"
   ok "imported $(basename "$snap")"
+  note "devices hand back what the snapshot missed as they reconnect; follow it with 'reconcile-status' (README.txt, step 5)"
 elif [ ! -e "$OPT/data/chorus.db" ]; then
   fresh=1
 fi

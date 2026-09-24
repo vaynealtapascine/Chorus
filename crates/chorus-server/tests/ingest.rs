@@ -180,6 +180,12 @@ fn restore_window_preserves_stamps_only_while_open() {
     assert_eq!(r.occurred_at, Some(NOW - 999));
     let restored: bool = c.query_row("SELECT restored FROM op WHERE seq = ?1", [r.seq.unwrap()], |x| x.get(0)).unwrap();
     assert!(restored);
+    // a window left open closes by itself (reconcile::WINDOW_MS): the pusher is the author again
+    let mut o3 = o.clone();
+    o3.id = new_id(NOW as u64, [8; 10]);
+    let later = NOW + chorus_server::reconcile::WINDOW_MS + 1;
+    let (r, _) = ingest::accept(&c, &session(&a, 0), o3, later, true).unwrap();
+    assert_eq!(r.account_id.as_deref(), Some(a.as_str()));
 }
 
 #[test]

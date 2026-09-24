@@ -95,7 +95,8 @@ chorus-server purge --message <id> | --op <id> | --account <id> [--yes]   # the 
                                         # --account removes a non-admin account (e.g. a test
                                         # account) with everything it wrote; admins are refused
 chorus-server seed --to <new dir>       # test data for the SPEC §9 budgets
-chorus-server reconcile-status          # (not built yet) devices that re-synced since last restore
+chorus-server reconcile-status          # after a restore: is the restore window open, which devices are back
+chorus-server reconcile-close           # close it once they all are (it closes by itself 7 days after)
 chorus-server migrate                   # run pending schema migrations (also automatic on serve)
 ```
 
