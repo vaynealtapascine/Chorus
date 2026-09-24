@@ -82,3 +82,20 @@ If a task below needs a change there, write it in your log and leave it for Clau
 
 Log it, then continue with T13-style hardening: property tests for the new permission rules,
 two-profile Playwright checks for anything cross-account.
+
+## Audit notes (Claude, 2026-09-24, merged up to aa5d71a as b074b24)
+
+Good work; merged as is. Three follow-ups:
+
+- **Test data folders pile up.** The HTTP tests (`exports.rs`, `search.rs`, `posts.rs`,
+  `admin_health.rs`) create `<CARGO_TARGET_DIR>/<name>-http-test-<rand>` and never remove them
+  (the server task still holds the database when the test ends, so Windows can't delete it).
+  A dozen were left in `chorus-target`, and F: ran out of space during verify. Use a temp
+  folder you clean up once the server task is aborted, or `tempfile`-style cleanup on the next
+  run.
+- **Reactions show who's fronting.** The web reacts as the current fronter, so a reaction tells
+  everyone who can read the post who was fronting, right away, outside the follower delay rules.
+  That's the same trade-off as posting in a shared space, where the UI says so. Add the same
+  one-line note by the react button, or react as a chosen member.
+- **Disk.** F: filled up twice today. Please clear your `debug\incremental` (or build with
+  `CARGO_INCREMENTAL=0`) and delete leftover test folders in `chorus-target-sol`.
