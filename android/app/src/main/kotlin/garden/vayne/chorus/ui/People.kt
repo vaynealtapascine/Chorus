@@ -1,0 +1,150 @@
+package garden.vayne.chorus.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import garden.vayne.chorus.data.Chorus
+import garden.vayne.chorus.data.FollowList
+import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.PeopleApi
+import garden.vayne.chorus.data.Spaces
+import garden.vayne.chorus.designsystem.LocalChorusPalette
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+
+/** Account relationships. Other accounts' presence is read only through the filtered server view. */
+@Composable
+fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
+    val p = LocalChorusPalette.current
+    val actions = rememberCoroutineScope()
+    var follows by remember { mutableStateOf(FollowList(emptyList(), emptyList())) }
+    var frontNames by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    var target by rememberSaveable { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var refresh by remember { mutableStateOf(0) }
+    var loadedAccount by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(chorus.device?.session, model, refresh) {
+        val dev = chorus.device ?: return@LaunchedEffect
+        if (loadedAccount != dev.accountId) {
+            follows = FollowList(emptyList(), emptyList())
+            frontNames = emptyMap()
+            loadedAccount = dev.accountId
+        }
+        try {
+            val next = PeopleApi.list(dev)
+            follows = next
+            frontNames = next.following.filter { it.status == "active" }.mapNotNull { f ->
+                runCatching { f.account.id to PeopleApi.frontNames(PeopleApi.view(dev, f.account.id)) }.getOrNull()
+            }.toMap()
+            error = null
+        } catch (e: Exception) { error = e.message ?: "Could not load people." }
+    }
+
+    fun action(block: suspend () -> Unit) {
+        if (busy) return
+        busy = true; error = null
+        actions.launch {
+            try { block(); refresh++ }
+            catch (e: Exception) { error = e.message ?: "Could not update this follow." }
+            finally { busy = false }
+        }
+    }
+
+    LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            Text("People", color = p.ink, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedTextField(target, { target = it }, label = { Text("@handle") }, singleLine = true,
+                    modifier = Modifier.weight(1f))
+                TextButton(enabled = !busy && target.isNotBlank(), onClick = {
+                    action {
+                        val dev = checkNotNull(chorus.device) { "Not signed in." }
+                        PeopleApi.request(dev, target)
+                        target = ""
+                    }
+                }) { Text("Follow") }
+            }
+            if (error != null) Text(error.orEmpty(), color = p.danger)
+            TextButton(onClick = { refresh++ }) { Text("Refresh") }
+        }
+        val requests = follows.followers.filter { it.status == "requested" }
+        if (requests.isNotEmpty()) {
+            item { Text("Requests", color = p.ink, fontWeight = FontWeight.SemiBold) }
+            for (f in requests) item(key = "request:${f.id}") {
+                Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
+                    Text("${f.account.shownName} wants to follow you", color = p.ink)
+                    Text("Your default sharing limit applies unless you change it for them.", color = p.ink2)
+                    Row {
+                        TextButton(enabled = !busy, onClick = { action {
+                            chorus.create("follow.accept", f.id, JSONObject())
+                        } }) { Text("Accept") }
+                        TextButton(enabled = !busy, onClick = { action {
+                            chorus.create("follow.end", f.id, JSONObject())
+                        } }) { Text("Decline") }
+                    }
+                }
+            }
+        }
+        item { Text("Followers", color = p.ink, fontWeight = FontWeight.SemiBold) }
+        if (follows.followers.none { it.status == "active" }) item { Text("No followers yet.", color = p.ink2) }
+        for (f in follows.followers.filter { it.status == "active" }) item(key = "follower:${f.id}") {
+            Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
+                Text(f.account.shownName, color = p.ink)
+                Row {
+                    TextButton(enabled = !busy, onClick = { action {
+                        val dev = checkNotNull(chorus.device) { "Not signed in." }
+                        onOpenChat(Spaces.openDm(dev, f.account.id))
+                    } }) { Text("Message") }
+                    TextButton(enabled = !busy, onClick = { action {
+                        chorus.create("follow.end", f.id, JSONObject())
+                    } }) { Text("Remove") }
+                }
+            }
+        }
+        item { Text("Following", color = p.ink, fontWeight = FontWeight.SemiBold) }
+        if (follows.following.isEmpty()) item { Text("You aren't following anyone yet.", color = p.ink2) }
+        for (f in follows.following) item(key = "following:${f.id}") {
+            Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
+                Text(f.account.shownName, color = p.ink)
+                Text(if (f.status == "requested") "Waiting for them to accept"
+                    else frontNames[f.account.id]?.takeIf { it.isNotEmpty() }?.joinToString(" & ") ?: "Nothing shared yet",
+                    color = p.ink2)
+                Row {
+                    if (f.status == "active") TextButton(enabled = !busy, onClick = { action {
+                        val dev = checkNotNull(chorus.device) { "Not signed in." }
+                        onOpenChat(Spaces.openDm(dev, f.account.id))
+                    } }) { Text("Message") }
+                    TextButton(enabled = !busy, onClick = { action {
+                        val dev = checkNotNull(chorus.device) { "Not signed in." }
+                        PeopleApi.unfollow(dev, f.id)
+                    } }) { Text("Unfollow") }
+                }
+            }
+        }
+        item { Text("A follower sees your switches only within the sharing limit you choose for them.",
+            color = p.ink2, modifier = Modifier.padding(bottom = 20.dp)) }
+    }
+}

@@ -77,9 +77,12 @@ import kotlinx.coroutines.withContext
 
 /** Local chat view: internal channels, shared spaces and account DMs use the same projection. */
 @Composable
-fun Chat(chorus: Chorus, model: Model) {
+fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null) {
     val p = LocalChorusPalette.current
     var selectedSpace by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(requestedSpace) {
+        if (requestedSpace != null) selectedSpace = requestedSpace
+    }
     var selectedChannel by rememberSaveable { mutableStateOf("") }
     var viewingAs by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedAuthor by rememberSaveable { mutableStateOf("") }
