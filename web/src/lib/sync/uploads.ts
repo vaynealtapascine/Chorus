@@ -2,6 +2,7 @@
 // reload or server restart; the server verifies the content hash on the last PUT.
 import { apiBase } from './device';
 import { apiFetch, RateLimitedError } from '../http';
+import { keepBlob } from './blobs';
 import { pendingBlobs, queueBlob, uploadedBlob, type BlobUpload, type DeviceRecord } from './persist';
 
 const CHUNK = 4 * 1024 * 1024;
@@ -69,6 +70,8 @@ export async function flushUploads(dev: DeviceRecord | null): Promise<void> {
     for (const upload of await pendingBlobs()) {
       if (upload.account_id !== dev.account_id) continue;
       await send(upload, dev);
+      // keep this browser's copy for offline viewing before the queued one goes
+      await keepBlob(upload.hash, upload.blob, upload.mime);
       await uploadedBlob(upload.hash);
     }
   } catch (error) {

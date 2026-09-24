@@ -181,6 +181,17 @@ server doesn't count them.
 Account scope is fully replicated; `space:` scopes keep the last N days (default 90) of messages
 plus everything pinned or starred. Scrolling beyond fetches from REST and caches read-only.
 
+With the server down (or no network) the installed PWA keeps working (owner, 2026-09-24: this is
+what "desktop" means for v1): the service worker serves the app shell and wasm core, the replica
+and outbox live in IndexedDB, and every change queues until the socket is back. Blobs (avatars,
+emoji, attachments ≤ 20 MB) are read through `sync/blobs.ts`: the upload queue, then the
+`blobs-v1` Cache Storage copy keyed by hash, then the server; a finished upload is kept there
+too. The name must not start with `chorus-`, which the service worker deletes on update. At
+start the client asks for persistent storage (`navigator.storage.persist()`); Chrome grants it
+silently to installed apps and engaged sites, so an uninstalled tab may still be evicted.
+Checked 2026-09-24: enrol, add a member, stop the server, reload — Home, Chat, Journal and two
+image attachments render, a member added and switched in offline reached the server on restart.
+
 ## 5. Stage mode implementation notes
 
 - Stage is a *view state* over the normal list (no data copies): `{selected: Set<id>,
