@@ -168,3 +168,110 @@ export class SearchIndex {
     return hits.sort((a, b) => b.occurred_at - a.occurred_at || b.id.localeCompare(a.id)).slice(0, limit);
   }
 }
+
+// ─── posts and switches (offline search, D-070) ─────────────────────────────
+
+/** A journal post of this account, as offline search returns it. */
+export interface PostSearchHit {
+  id: string;
+  kind: string | null;
+  title: string | null;
+  text: string;
+  cw: string | null;
+  tags: string[];
+  authors: string[];
+  occurred_at: number;
+}
+
+/** A logged switch, with the names it involved at the time it's searched. */
+export interface SwitchSearchHit {
+  id: string;
+  occurred_at: number;
+  names: string[];
+  note: string | null;
+}
+
+interface SwitchLike { id: string; occurred_at: number; entries: { subject_id: string }[]; note: string | null; retracted: boolean }
+
+/** Every term is a prefix of one of the words. */
+const matchesAll = (terms: string[], words: string[]) => terms.every((t) => words.some((w) => w.startsWith(t)));
+const within = (q: SearchQuery, at: number) =>
+  (q.before === undefined || at < q.before) && (q.after === undefined || at > q.after);
+
+/**
+ * Search this account's journal posts and switch log in the replica (so it works offline).
+ * Posts are indexed like messages (title, text, tags, content warning); switches match the
+ * names of who was in them and their note. `from:` narrows posts to an author.
+ */
+export class JournalIndex {
+  private posts = new Map<string, { hit: PostSearchHit; words: string[] }>();
+  private switches: { hit: SwitchSearchHit; words: string[] }[] = [];
+  private names = new Map<string, string>();
+
+  constructor(p: Projection, private account: string) { this.rebuild(p); }
+
+  rebuild(p: Projection): void {
+    this.posts.clear();
+    this.readNames(p);
+    for (const id of Object.keys(p.rows.post ?? {})) this.updatePost(p, id);
+    this.readSwitches(p);
+  }
+
+  apply(p: Projection, d: Delta): void {
+    if (d.full) { this.rebuild(p); return; }
+    const renamed = Object.keys(d.rows.member ?? {}).length + Object.keys(d.rows.member_group ?? {}).length > 0;
+    if (renamed) this.readNames(p);
+    for (const id of Object.keys(d.rows.post ?? {})) this.updatePost(p, id);
+    if (renamed || this.account in (d.fronts ?? {})) this.readSwitches(p);
+  }
+
+  private readNames(p: Projection): void {
+    this.names.clear();
+    for (const table of ['member', 'member_group']) {
+      for (const [id, row] of Object.entries(p.rows[table] ?? {})) {
+        const name = str(row.fields.display_name) ?? str(row.fields.name);
+        if (name) this.names.set(id, name);
+      }
+    }
+  }
+
+  private updatePost(p: Projection, id: string): void {
+    this.posts.delete(id);
+    const row = p.rows.post?.[id];
+    if (!row?.exists || row.fields.deleted_at != null) return;
+    const f = row.fields;
+    const hit: PostSearchHit = {
+      id, kind: str(f.kind) ?? null, title: str(f.title) ?? null, text: str(f.text) ?? '', cw: str(f.cw) ?? null,
+      tags: strs(f.tags), authors: strs(f.authors), occurred_at: typeof f.occurred_at === 'number' ? f.occurred_at : 0,
+    };
+    this.posts.set(id, { hit, words: tokens(`${hit.title ?? ''} ${hit.text} ${hit.tags.join(' ')} ${hit.cw ?? ''}`) });
+  }
+
+  private readSwitches(p: Projection): void {
+    const rows = (p.fronts[this.account]?.switches ?? []) as unknown as SwitchLike[];
+    this.switches = rows
+      .filter((s) => !s.retracted)
+      .map((s) => {
+        const names = s.entries.map((e) => this.names.get(e.subject_id) ?? 'Someone');
+        return { hit: { id: s.id, occurred_at: s.occurred_at, names, note: s.note }, words: tokens(`${names.join(' ')} ${s.note ?? ''}`) };
+      });
+  }
+
+  searchPosts(q: SearchQuery, limit = 100): PostSearchHit[] {
+    const terms = q.terms.map(fold).filter(Boolean);
+    const from = q.from ? fold(q.from) : null;
+    const out: PostSearchHit[] = [];
+    for (const { hit, words } of this.posts.values()) {
+      if (!matchesAll(terms, words) || !within(q, hit.occurred_at)) continue;
+      if (from && !hit.authors.some((a) => a === q.from || fold(this.names.get(a) ?? '').includes(from))) continue;
+      out.push(hit);
+    }
+    return out.sort((a, b) => b.occurred_at - a.occurred_at || b.id.localeCompare(a.id)).slice(0, limit);
+  }
+
+  searchSwitches(q: SearchQuery, limit = 100): SwitchSearchHit[] {
+    const terms = q.terms.map(fold).filter(Boolean);
+    const out = this.switches.filter((s) => matchesAll(terms, s.words) && within(q, s.hit.occurred_at)).map((s) => s.hit);
+    return out.sort((a, b) => b.occurred_at - a.occurred_at || b.id.localeCompare(a.id)).slice(0, limit);
+  }
+}

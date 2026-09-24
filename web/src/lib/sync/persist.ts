@@ -78,6 +78,15 @@ export async function loadOps(after: string | undefined, n: number): Promise<{ i
   return (await db()).getAll('ops', range, n);
 }
 
+/** A setting that belongs to this device only (never synced). */
+export async function deviceSetting<T>(key: string): Promise<T | undefined> {
+  return (await db()).get('kv', `setting:${key}`);
+}
+
+export async function saveDeviceSetting(key: string, value: unknown): Promise<void> {
+  await (await db()).put('kv', value, `setting:${key}`);
+}
+
 export async function saveSnapshot(snapshot: Snapshot): Promise<void> {
   await (await db()).put('kv', snapshot, 'snapshot');
 }

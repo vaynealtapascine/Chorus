@@ -297,3 +297,25 @@ blobs are verified by hash. The importer is separate work and not part of this p
   nothing before the reveal, then only the announced member's post, never the hidden member's),
   `posts.rs` updated, and the browser feed test checks both notes. Q15 was already marked
   answered in OPEN_QUESTIONS; API.md and SPEC §6.4 updated.
+- R18 — keep everything on this device (D-070), web + core; protocol and numbers in CLIENTS.md
+  §4.3. **Open time:** `web/perf/open.spec.ts` (seeds IndexedDB, reads `chorus:*` marks) measured
+  10k ops 0.6 s and 100k ops 6.7 s before (IndexedDB 1 s, restore 1 s, first projection 3.5–6 s
+  in wasm). Now the client saves the projection it shows plus the core's `projectionDigest()`
+  (10 s after the last change, and when the page is hidden) and opens from it: 100k ops mounted
+  in **0.35 s**, ready to sync at 4.4 s in the background, no task over 100 ms after mounting.
+  Core: `Replica::begin/add_ops/index_step/adopt` + a *partial* projector (only keys recomputed
+  since the snapshot; exactness property-tested, incl. stale snapshots and ops created while
+  opening), `projection()` serialised directly (the `canonical()` Value detour cost ~0.5 s native
+  at 100k). A stale snapshot (killed before the next save) falls back to the old full open once.
+  **Setting + Sync everything now** (*Your data → This device*): per-device IndexedDB setting,
+  default on in the installed app; on = files (attachments ≤ 20 MB, thumbnails, avatars, emoji)
+  fetched into the offline blob cache once a session (`sync/keep.ts`, via `loadBlob`; blobs.ts
+  untouched). The button sends the core's `recheck()` (a `pull` per scope; the `caught` digest
+  repairs any mismatch; `repairing()` for progress), then fills files, then shows
+  `storage.estimate()`. **Offline search:** `JournalIndex` (posts: title/text/tags/CW, from:,
+  dates; switches: member names and note, dates) — the Posts tab merges it with the server
+  search, a new Switches tab is local. Tests: core unit tests (recheck, open from a snapshot, the
+  overflow the first wasm run hit), `projector_props` snapshot property, vitest for the journal
+  index (incl. 5k posts + 10k switches < 16 ms), browser tests for the Switches tab and Sync
+  everything now. **Sol:** `recheck`/`repairing` are in `chorus-ffi` too; the Android open path
+  can use `begin/add_ops/index_step/adopt` the same way (not exposed in FFI yet — say if wanted).

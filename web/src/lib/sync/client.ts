@@ -7,6 +7,7 @@ import { renew } from './device';
 import { applyDelta, type Delta } from './delta';
 import { flushUploads } from './uploads';
 import { keepStorage } from './blobs';
+import { fillFiles, keepEverything } from './keep';
 
 export type Status = 'offline' | 'connecting' | 'live' | 'no-device';
 
@@ -69,6 +70,9 @@ export class SyncClient {
   private opening = false;
   private snapshotTimer: ReturnType<typeof setTimeout> | null = null;
   private snapshotDirty = false;
+  /** told about each `caught` frame while "Sync everything now" runs */
+  private caughtWatch: ((scope: string) => void) | null = null;
+  private keptFiles = false;
 
   async start(): Promise<void> {
     // open-time marks (CLIENTS.md §4.3: a 100k-op device opens in ≤ 2 s); web/perf measures them
@@ -132,6 +136,16 @@ export class SyncClient {
     performance.mark('chorus:restored');
     this.emit();
     this.connect();
+  }
+
+  /** With "keep everything" on, fetch files into the offline cache once a session (keep.ts). */
+  private async keepFiles(): Promise<void> {
+    if (this.keptFiles || !(await keepEverything())) return;
+    this.keptFiles = true;
+    // after the catch-up has had a moment, so the files of what it brought are included
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+    const p = this.projection();
+    if (p) await fillFiles(p, this.device, () => {}).catch((e) => console.warn('keeping files failed', e));
   }
 
   private scheduleSnapshot(): void {
@@ -235,6 +249,37 @@ export class SyncClient {
     return out.added;
   }
 
+  /**
+   * "Sync everything now" (CLIENTS.md §4.3): ask the server for every scope again; each answer
+   * ends with its digest, and a scope that doesn't match is repaired. Resolves once every scope
+   * has answered and none is being repaired.
+   */
+  recheckAll(onProgress: (checked: number, total: number) => void): Promise<void> {
+    if (!this.replica || this.status !== 'live') return Promise.reject(new Error("Not connected to the server right now."));
+    const replica = this.replica;
+    const frames = JSON.parse(replica.recheck()) as { scope: string }[];
+    const waiting = new Set(frames.map((f) => f.scope));
+    const total = waiting.size;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.caughtWatch = null;
+        reject(new Error('The server stopped answering; try again.'));
+      }, 120_000);
+      const check = () => {
+        const repairing = (JSON.parse(replica.repairing()) as string[]).length;
+        onProgress(Math.max(0, total - waiting.size - repairing), total);
+        if (!waiting.size && !repairing) {
+          clearTimeout(timer);
+          this.caughtWatch = null;
+          resolve();
+        }
+      };
+      this.caughtWatch = (scope) => { waiting.delete(scope); check(); };
+      check();
+      this.sendAll(frames);
+    });
+  }
+
   newId(): string {
     return newId(Date.now(), randomBytes());
   }
@@ -289,10 +334,12 @@ export class SyncClient {
         this.status = 'live';
         this.backoff = 1000;
         void flushUploads(this.device);
+        void this.keepFiles();
       }
       const out = JSON.parse(this.replica!.onFrame(ev.data as string, Date.now())) as unknown[];
       this.sendAll(out);
       this.changed();
+      if (frame.t === 'caught') this.caughtWatch?.(frame.scope);
     };
     ws.onclose = () => {
       if (this.ws !== ws) return;

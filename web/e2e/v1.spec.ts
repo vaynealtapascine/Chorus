@@ -193,6 +193,18 @@ test('search finds messages and posts', async () => {
   await expect(friend.page.locator('.results article', { hasText: `tomatoes are in ${run}` })).toBeVisible();
   await friend.page.getByLabel('Search posts').fill(`nothing-like-this-${run}`);
   await expect(friend.page.getByText('No matching posts.')).toBeVisible();
+
+  // switches, searched on the device (works offline)
+  await stars.page.getByRole('tab', { name: 'Switches' }).click();
+  await stars.page.getByLabel('Search switches').fill('kai');
+  await expect(stars.page.locator('.results article', { hasText: 'Kai' }).first()).toBeVisible();
+});
+
+test('sync everything now', async () => {
+  await go(stars.page, 'data');
+  await stars.page.getByRole('button', { name: 'Sync everything now' }).click();
+  await expect(stars.page.getByText('Everything is on this device.')).toBeVisible();
+  await expect(stars.page.getByText(/This app uses .* on this device/)).toBeVisible();
 });
 
 test('a feed shared with followers', async () => {

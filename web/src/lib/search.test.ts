@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SearchIndex, parseSearch } from './search';
+import { JournalIndex, SearchIndex, parseSearch } from './search';
 import { applyDelta, type Delta } from './sync/delta';
 import type { Projection } from './sync/client';
 
@@ -57,5 +57,70 @@ describe('local message search', () => {
     const start = performance.now();
     for (let i = 0; i < 20; i++) expect(index.search(query).length).toBe(1);
     expect((performance.now() - start) / 20).toBeLessThan(16);
+  });
+});
+
+describe('offline post and switch search', () => {
+  const journal = (): Projection => ({
+    rows: {
+      member: { kai: { exists: true, fields: { name: 'Kai' } }, rin: { exists: true, fields: { name: 'Rin', display_name: 'Rin Vale' } } },
+      post: {
+        p1: { exists: true, fields: { kind: 'note', title: 'Tomatoes', text: 'the garden is ripe', tags: ['garden'], authors: ['kai'], occurred_at: 100 } },
+        p2: { exists: true, fields: { kind: 'entry', text: 'rainy day inside', tags: [], authors: ['rin'], occurred_at: 200 } },
+        gone: { exists: true, fields: { text: 'garden deleted', authors: ['kai'], occurred_at: 300, deleted_at: 301 } },
+      },
+    },
+    sets: {},
+    fronts: {
+      me: {
+        current: [], intervals: [],
+        switches: [
+          { id: 's1', kind: 'switch', occurred_at: 1000, device_id: 'd', entries: [{ subject_type: 'member', subject_id: 'kai', level: 'front', is_primary: true }], resulting_front: [], note: 'after the storm', retracted: false, amended: false },
+          { id: 's2', kind: 'switch', occurred_at: 2000, device_id: 'd', entries: [{ subject_type: 'member', subject_id: 'rin', level: 'front', is_primary: true }], resulting_front: [], note: null, retracted: false, amended: false },
+          { id: 's3', kind: 'switch', occurred_at: 3000, device_id: 'd', entries: [{ subject_type: 'member', subject_id: 'rin', level: 'front', is_primary: true }], resulting_front: [], note: null, retracted: true, amended: false },
+        ],
+      },
+    },
+    opaque: 0,
+  } as unknown as Projection);
+
+  it('finds posts by title, text and tags, not deleted ones, and narrows by author and date', () => {
+    const index = new JournalIndex(journal(), 'me');
+    expect(index.searchPosts(parseSearch('garden')).map((h) => h.id)).toEqual(['p1']);
+    expect(index.searchPosts(parseSearch('tomat')).map((h) => h.id)).toEqual(['p1']);
+    expect(index.searchPosts(parseSearch('from:Rin')).map((h) => h.id)).toEqual(['p2']);
+    expect(index.searchPosts(parseSearch('after:150')).map((h) => h.id)).toEqual(['p2']);
+  });
+
+  it('finds switches by who was in them and their note, and follows renames and new posts', () => {
+    let p = journal();
+    const index = new JournalIndex(p, 'me');
+    expect(index.searchSwitches(parseSearch('rin')).map((h) => h.id)).toEqual(['s2']);
+    expect(index.searchSwitches(parseSearch('storm')).map((h) => h.id)).toEqual(['s1']);
+    expect(index.searchSwitches(parseSearch('before:1500')).map((h) => h.id)).toEqual(['s1']);
+    const d: Delta = {
+      ...empty(),
+      rows: {
+        member: { kai: { exists: true, fields: { name: 'Kai', display_name: 'Kestrel' } } },
+        post: { p3: { exists: true, fields: { text: 'kestrel sighting', authors: ['kai'], occurred_at: 400 } } },
+      },
+    };
+    p = applyDelta(p, d);
+    index.apply(p, d);
+    expect(index.searchSwitches(parseSearch('kestrel')).map((h) => h.id)).toEqual(['s1']);
+    expect(index.searchPosts(parseSearch('sighting')).map((h) => h.id)).toEqual(['p3']);
+  });
+
+  it('searches 5 000 posts and 10 000 switches within the input budget', () => {
+    const p = journal();
+    const switches = p.fronts.me.switches as unknown as { id: string }[];
+    for (let i = 0; i < 5000; i++) p.rows.post[`x${i}`] = { exists: true, fields: { text: `note number ${i} about things`, tags: ['daily'], authors: ['kai'], occurred_at: i } };
+    for (let i = 0; i < 10000; i++) switches.push({ ...(switches[0] as object), id: `w${i}`, occurred_at: 5000 + i } as { id: string });
+    const index = new JournalIndex(p, 'me');
+    const q = parseSearch('things daily');
+    index.searchPosts(q); index.searchSwitches(parseSearch('kai'));
+    const start = performance.now();
+    for (let i = 0; i < 10; i++) { index.searchPosts(q); index.searchSwitches(parseSearch('kai storm')); }
+    expect((performance.now() - start) / 10).toBeLessThan(16);
   });
 });

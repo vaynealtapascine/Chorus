@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { channels, members, spaces } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
-  import { SearchIndex, parseSearch, type SearchHit, type SearchQuery } from '../search';
+  import { JournalIndex, SearchIndex, parseSearch, type SearchHit, type SearchQuery } from '../search';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
   import { sync, type Projection } from '../sync/client';
@@ -16,16 +16,18 @@
   let loadingMore = $state(false);
   let remoteError = $state('');
   let revealed = $state(new Set<string>());
-  // journal posts: server search only (other accounts' posts aren't in this device's replica)
+  // journal posts: this account's from the replica (works offline), plus the server's search of
+  // everything the account can read (other accounts' posts aren't in this device's replica)
   interface PostHit {
     id: string; account_id: string; kind: string | null; title: string | null; text: string; cw: string | null;
     occurred_at: number; author_cards: { id: string; name: string | null; display_name: string | null }[];
   }
-  let tab = $state<'messages' | 'posts'>('messages');
+  let tab = $state<'messages' | 'posts' | 'switches'>('messages');
   let posts = $state<PostHit[]>([]);
   let postCursor = $state<string | null>(null);
   let postError = $state('');
   let index: SearchIndex | null = null;
+  let journal: JournalIndex | null = null;
   const parsed = $derived(parseSearch(query));
   const local = $derived.by(() => { void revision; return query.trim() ? index?.search(parsed) ?? [] : []; });
   const known = $derived(new Set(local.map((h) => h.id)));
@@ -38,9 +40,23 @@
 
   onMount(() => {
     index = new SearchIndex(projection);
+    journal = new JournalIndex(projection, sync.accountId);
     revision++;
-    return sync.subscribeProjection((next, delta) => { index?.apply(next, delta); revision++; });
+    return sync.subscribeProjection((next, delta) => { index?.apply(next, delta); journal?.apply(next, delta); revision++; });
   });
+  const localPosts = $derived.by((): PostHit[] => {
+    void revision;
+    if (tab !== 'posts' || !query.trim()) return [];
+    return (journal?.searchPosts(parsed) ?? []).map((h) => ({
+      id: h.id, account_id: sync.accountId, kind: h.kind, title: h.title, text: h.text, cw: h.cw, occurred_at: h.occurred_at,
+      author_cards: h.authors.map((a) => ({ id: a, name: person(a), display_name: null })),
+    }));
+  });
+  const allPosts = $derived.by(() => {
+    const seen = new Set(posts.map((p) => p.id));
+    return [...posts, ...localPosts.filter((p) => !seen.has(p.id))].sort((a, b) => b.occurred_at - a.occurred_at);
+  });
+  const switches = $derived.by(() => { void revision; return tab === 'switches' && query.trim() ? journal?.searchSwitches(parsed) ?? [] : []; });
 
   const paramsFor = (filter: SearchQuery, cursor?: string) => {
     const params = new URLSearchParams({ q: filter.terms.join(' '), limit: '25' });
@@ -156,17 +172,34 @@
   <div class="tabs" role="tablist" aria-label="What to search">
     <button role="tab" aria-selected={tab === 'messages'} class:on={tab === 'messages'} onclick={() => (tab = 'messages')}>Messages</button>
     <button role="tab" aria-selected={tab === 'posts'} class:on={tab === 'posts'} onclick={() => (tab = 'posts')}>Posts</button>
+    <button role="tab" aria-selected={tab === 'switches'} class:on={tab === 'switches'} onclick={() => (tab = 'switches')}>Switches</button>
   </div>
-  <input type="search" aria-label={tab === 'posts' ? 'Search posts' : 'Search messages'}
-    placeholder={tab === 'posts' ? 'Search journal posts' : 'Search messages'} bind:value={query} />
-  {#if tab === 'posts'}
-    <p class="hint">Titles, text and tags of posts you can read: yours, and ones shared with you.</p>
-    {#if sync.status !== 'live'}<p class="hint" role="status">Post search needs the server; you're offline.</p>{/if}
-    {#if postError}<p class="hint" role="status">Post search unavailable. {postError}</p>{/if}
-    {#if query.trim() && sync.status === 'live'}
-      <p class="count">{posts.length}{postCursor ? '+' : ''} post{posts.length === 1 ? '' : 's'}</p>
+  <input type="search" aria-label={tab === 'posts' ? 'Search posts' : tab === 'switches' ? 'Search switches' : 'Search messages'}
+    placeholder={tab === 'posts' ? 'Search journal posts' : tab === 'switches' ? 'Search switches by name or note' : 'Search messages'} bind:value={query} />
+  {#if tab === 'switches'}
+    <p class="hint">Who was in each switch and its note; before: and after: narrow it. Works offline.</p>
+    {#if query.trim()}
+      <p class="count">{switches.length} switch{switches.length === 1 ? '' : 'es'}</p>
       <div class="results">
-        {#each posts as post (post.id)}
+        {#each switches as sw (sw.id)}
+          <article>
+            <div class="meta">{new Date(sw.occurred_at).toLocaleString()}</div>
+            <p>{sw.names.length ? sw.names.join(' & ') : 'Switched out'}</p>
+            {#if sw.note}<p class="meta">{sw.note}</p>{/if}
+          </article>
+        {:else}
+          <p class="hint">No matching switches.</p>
+        {/each}
+      </div>
+    {/if}
+  {:else if tab === 'posts'}
+    <p class="hint">Titles, text and tags of posts you can read: yours, and ones shared with you.</p>
+    {#if sync.status !== 'live'}<p class="hint" role="status">Offline: searching your own posts on this device.</p>{/if}
+    {#if postError}<p class="hint" role="status">Server post search unavailable; showing your own posts. {postError}</p>{/if}
+    {#if query.trim()}
+      <p class="count">{allPosts.length}{postCursor ? '+' : ''} post{allPosts.length === 1 ? '' : 's'}</p>
+      <div class="results">
+        {#each allPosts as post (post.id)}
           <article>
             <div class="meta">{byline(post)} · {new Date(post.occurred_at).toLocaleString()}</div>
             {#if post.cw && !revealed.has(post.id)}
@@ -181,7 +214,7 @@
           <p class="hint">No matching posts.</p>
         {/each}
       </div>
-      {#if postCursor}
+      {#if postCursor && sync.status === 'live'}
         <button class="load-more" disabled={loadingMore} onclick={morePosts}>{loadingMore ? 'Loading…' : 'Load more'}</button>
       {/if}
     {/if}

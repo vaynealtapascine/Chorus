@@ -4,6 +4,7 @@
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
   import { sync } from '../sync/client';
+  import ThisDevice from './ThisDevice.svelte';
 
   interface Token { id: string; name: string; scopes: string[]; created_at: number; last_used_at: number | null }
 
@@ -212,6 +213,7 @@
       {#if healthError}<span class="error">Health unavailable: {healthError}</span>{/if}
     </section>
   {/if}
+  <ThisDevice />
   <section class="card">
     <h2>Export your data</h2>
     <button class="ghost" onclick={() => download('/exports/ops.jsonl', 'ops.jsonl')}>Download op log (JSONL)</button>

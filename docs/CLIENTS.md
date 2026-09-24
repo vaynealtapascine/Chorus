@@ -192,6 +192,37 @@ silently to installed apps and engaged sites, so an uninstalled tab may still be
 Checked 2026-09-24: enrol, add a member, stop the server, reload — Home, Chat, Journal and two
 image attachments render, a member added and switched in offline reached the server on restart.
 
+**Keep everything on this device** (D-070, R18). Every op the account may see is already kept
+on every device (the window above is not built; when it is, it applies only with this setting
+off). The setting is per device — kept in IndexedDB (`kv["setting:keep_everything"]`), never
+synced — and defaults to on in the installed app (`display-mode: standalone`), off in a tab. On,
+it also keeps the *files*: once per session, 5 s after the socket is live, every attachment
+(thumbnail, and the file itself up to 20 MB), avatar and custom emoji the projection refers to is
+fetched into the offline blob cache (`sync/keep.ts` `fillFiles`, three at a time, through
+`loadBlob`, so files already kept cost a cache lookup).
+
+*Your data → This device* has the toggle and **Sync everything now**:
+
+1. *Re-check every scope.* The core's `recheck()` gives one `pull {scope, after: cursor}` per
+   scope. Each answer ends with `caught` and the server's digest for this account; a mismatch
+   starts the usual repair (re-pull from 0, then sweep, SYNC §6.5), and `repairing()` lists the
+   scopes still in it. Progress is "checked N of M" = scopes answered minus scopes repairing; done
+   when all answered and none repairing (2 min timeout).
+2. *Files*, when the setting is on: `fillFiles` with "Files: N of M (k not available)".
+3. *Space used*: `navigator.storage.estimate()` — what the whole site stores (replica, snapshot,
+   blob cache) and what the browser allows.
+
+**Offline search** (`search.ts`): messages as before (`SearchIndex`); `JournalIndex` adds this
+account's posts (title, text, tags, CW; `from:`, `before:`, `after:`) and switches (names of who
+was in them at search time, and the note; `before:`/`after:`), both from the replica. The Posts
+tab merges these with the server's `/search/posts` (other accounts' readable posts) when online;
+the Switches tab is local only. 5 000 posts + 10 000 switches search in < 16 ms (unit test).
+
+Android (Sol): same protocol — a per-device setting (default on), the file fill after connect,
+"Sync everything now" as the same `pull` per scope with progress from `caught` frames and the
+engine's repairing list (`JsonReplica::recheck`/`repairing` are in the FFI facade too), offline
+search over posts and switches from the replica.
+
 **Opening a big replica** (R18, D-070: a 100k-op device opens in ≤ 2 s). Projecting 100k ops
 takes seconds in wasm, so the app opens from the last projection it showed:
 
