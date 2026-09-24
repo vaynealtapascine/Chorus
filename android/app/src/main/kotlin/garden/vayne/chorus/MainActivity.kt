@@ -51,6 +51,7 @@ import garden.vayne.chorus.ui.Chat
 import garden.vayne.chorus.ui.Members
 import garden.vayne.chorus.ui.Onboarding
 import garden.vayne.chorus.ui.People
+import garden.vayne.chorus.ui.SettingsScreen
 import garden.vayne.chorus.ui.Journal
 
 class MainActivity : ComponentActivity() {
@@ -104,6 +105,7 @@ private fun App(chorus: Chorus, invite: String?) {
     var chatSpace by rememberSaveable { mutableStateOf<String?>(null) }
     var journalReplyPost by rememberSaveable { mutableStateOf<String?>(null) }
     var linking by rememberSaveable { mutableStateOf(false) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
     if (linking && status != Status.NoDevice && status != Status.Loading) DeviceLink(chorus) { linking = false }
 
     when (status) {
@@ -120,6 +122,8 @@ private fun App(chorus: Chorus, invite: String?) {
             ) {
                 Text("Chorus", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = p.ink)
                 Spacer(Modifier.weight(1f))
+                Text(if (settingsOpen) "Close settings" else "Settings", fontSize = 12.sp, color = p.accent,
+                    modifier = Modifier.clickable { settingsOpen = !settingsOpen }.padding(horizontal = 10.dp, vertical = 6.dp))
                 Text("Link device", fontSize = 12.sp, color = p.accent,
                     modifier = Modifier.clickable { linking = true }.padding(horizontal = 10.dp, vertical = 6.dp))
                 val (dot, label) = when (status) {
@@ -132,7 +136,8 @@ private fun App(chorus: Chorus, invite: String?) {
                 Text(label, fontSize = 12.sp, color = p.ink3)
             }
             Box(Modifier.weight(1f)) {
-                when (if (person && (tab == Tab.Members || tab == Tab.History)) Tab.Home else tab) {
+                if (settingsOpen) SettingsScreen(chorus, model)
+                else when (if (person && (tab == Tab.Members || tab == Tab.History)) Tab.Home else tab) {
                     Tab.Home -> if (person) {
                         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                             Text("Chorus quick switching is for systems. Your personal profile and journal are available on the web.", color = p.ink2)
@@ -148,7 +153,7 @@ private fun App(chorus: Chorus, invite: String?) {
                 }
             }
             // the keyboard covers the tabs anyway; hiding them lets a screen's imePadding sit on it
-            if (!WindowInsets.isImeVisible) Row(
+            if (!settingsOpen && !WindowInsets.isImeVisible) Row(
                 Modifier.fillMaxWidth().background(p.surface).navigationBarsPadding().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {

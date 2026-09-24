@@ -97,6 +97,7 @@ class Model(
     val profileFields: Map<String, List<ProfileField>> = emptyMap(),
     val relationshipTypes: List<RelationshipType> = emptyList(),
     val relationships: List<MemberRelationship> = emptyList(),
+    val accountPrefs: AccountPrefs = AccountPrefs(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -317,7 +318,7 @@ class Model(
             return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages,
                 followCeilings, posts, postReactions, memberLists, savedFeeds, highlights, frontSpans, systemZone,
                 messageCounts, LocalProfileFields.fromProjection(p), LocalRelationships.types(p),
-                LocalRelationships.links(p))
+                LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId))
         }
     }
 }
