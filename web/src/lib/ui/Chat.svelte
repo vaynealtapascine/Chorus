@@ -13,6 +13,7 @@
   import EmojiImage from './EmojiImage.svelte';
   import SpaceRail from './SpaceRail.svelte';
   import { authorCards, listSpaces, spaceTitle, type SpaceInfo } from '../spaces';
+  import ChannelPermissions from './ChannelPermissions.svelte';
   import { selfMember, type MemberRow } from '../data';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
@@ -397,6 +398,16 @@
   }
 
   let newChannel = $state('');
+  // may this account add channels and change permissions here? (perms.rs: the owner, admins; in a DM, both)
+  const canManage = $derived.by(() => {
+    if (!space) return false;
+    const info = directory.get(space.id);
+    if (info?.guest) return false;
+    if (space.kind === 'dm') return true;
+    const owner = info?.owner_account_id ?? (space.kind === 'internal' ? sync.accountId : undefined);
+    return owner === sync.accountId || projection.rows.space_member?.[`${space.id}|${sync.accountId}`]?.fields.role === 'admin';
+  });
+
   function addChannel(e: SubmitEvent) {
     e.preventDefault();
     const name = newChannel.trim().toLowerCase().replace(/\s+/g, '-');
@@ -561,7 +572,7 @@
         ># {c.name}{#if n}<span class="badge">{n}</span>{/if}</a
       >
     {/each}
-    {#if space}
+    {#if space && canManage}
       <form onsubmit={addChannel}>
         <input bind:value={newChannel} placeholder="new channel" aria-label="New channel name" />
       </form>
@@ -595,6 +606,9 @@
           <div class="menu-items">
             <a href="#/stage/{current.id}">Stage… (screenshot)</a>
             <a href="#/trash/{current.id}">Show deleted</a>
+            {#if space && canManage && space.kind !== 'dm' && current.kind !== 'thread'}
+              <ChannelPermissions {projection} channelId={current.id} spaceId={space.id} info={directory.get(space.id)} />
+            {/if}
             {#if space && space.kind !== 'internal'}
               <label class="notify">Notify me
                 <select value={notifyLevel} onchange={(e) => setNotifyLevel(e.currentTarget.value)} aria-label="Notifications for this channel">
@@ -948,7 +962,7 @@
   .thread-back { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
   .room-menu { position: relative; color: var(--ink-3); }
   .room-menu summary { cursor: pointer; list-style: none; }
-  .menu-items { position: absolute; right: 0; top: 100%; z-index: 2; width: max-content; display: grid; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .menu-items { position: absolute; right: 0; top: 100%; z-index: 2; width: max-content; max-width: min(24rem, 90vw); max-height: 70dvh; overflow-y: auto; display: grid; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
   .room-menu a { padding: var(--s-2) var(--s-3); color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
   .room-menu .notify { display: grid; gap: 2px; padding: var(--s-2) var(--s-3); font-size: var(--fs-sm); border-top: 1px solid var(--line); }
   .room-menu select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); }

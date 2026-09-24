@@ -116,6 +116,36 @@ test('a shared space between two accounts', async () => {
   await expect(friend.page.getByText(welcome)).toBeVisible();
 });
 
+test('one internal channel shared with a follower (channel permissions)', async () => {
+  const note = `news for Robin ${run}`;
+  const inside = `inside only ${run}`;
+  await stars.page.setViewportSize({ width: 1000, height: 900 }); // the new-channel field is desktop-only
+  await go(stars.page, 'chat');
+  await stars.page.locator('nav[aria-label="Spaces"] a', { hasText: 'Home' }).click();
+  await stars.page.getByLabel('Message', { exact: true }).fill(inside);
+  await stars.page.getByLabel('Message', { exact: true }).press('Enter');
+  await stars.page.getByLabel('New channel name').fill(`news-${run}`);
+  await stars.page.getByLabel('New channel name').press('Enter');
+  await expect(stars.page.locator('section.room h1')).toContainText(`news-${run}`);
+  await stars.page.getByLabel('Message', { exact: true }).fill(note);
+  await stars.page.getByLabel('Message', { exact: true }).press('Enter');
+  await stars.page.getByLabel('Channel menu').click();
+  await stars.page.locator('details.perms summary').click();
+  await stars.page.getByLabel('Permission target').selectOption({ label: 'Robin' });
+  await stars.page.getByLabel('See it permission').selectOption('allow');
+  await expect(stars.page.getByText('this shares just this channel with them')).toBeVisible();
+  await stars.page.locator('details.perms').getByRole('button', { name: 'Save' }).click();
+  await expect(stars.page.locator('details.perms li', { hasText: 'Robin' })).toContainText('can view');
+
+  await expect(async () => {
+    await go(friend.page, 'chat');
+    await friend.page.locator('nav[aria-label="Spaces"] a', { hasText: 'shared with you' }).click({ timeout: 2_000 });
+    await expect(friend.page.getByText(note)).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+  await expect(friend.page.getByText(inside)).toHaveCount(0);
+  await stars.page.setViewportSize({ width: 420, height: 900 });
+});
+
 test('a post with a reply and a reaction across accounts', async () => {
   const text = `tomatoes are in ${run}`;
   await go(stars.page, 'journal');
