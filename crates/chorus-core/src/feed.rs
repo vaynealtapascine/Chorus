@@ -297,7 +297,8 @@ pub fn parse(src: &str) -> Result<Expr, ParseError> {
 // ─── evaluation ──────────────────────────────────────────────────────────────
 
 /// A timeline item as the evaluator sees it.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Item {
     pub kind: String,
     pub author_ids: Vec<String>,

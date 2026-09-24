@@ -51,6 +51,8 @@ export const core = {
   frontDaily: (intervals: Json, now: number, offsets: [number, number][]): Json =>
     JSON.parse(wasm.frontDaily(JSON.stringify(intervals), now, JSON.stringify(offsets))),
   feedParse: (q: string): Json => JSON.parse(wasm.feedParse(q)),
+  feedFilter: (ast: Json, items: Json[], context: Json): number[] =>
+    JSON.parse(wasm.feedFilter(JSON.stringify(ast), JSON.stringify(items), JSON.stringify(context))),
   adaptColor: (color: string, dark: boolean, intensity: 'off' | 'subtle' | 'vivid' = 'subtle'): MemberColors =>
     JSON.parse(wasm.adaptColor(color, dark, intensity)),
   hlcTick: (last: string, node: number, now = Date.now()): string => wasm.hlcTick(last, node, now),
