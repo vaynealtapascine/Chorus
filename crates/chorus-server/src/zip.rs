@@ -314,7 +314,10 @@ mod tests {
     }
 
     fn python() -> Option<&'static str> {
-        ["python3", "python"].into_iter().find(|p| std::process::Command::new(p).arg("--version").output().is_ok())
+        // `--version` must succeed: on Windows `python3` may be the Store's installer stub
+        ["python3", "python"]
+            .into_iter()
+            .find(|p| std::process::Command::new(p).arg("--version").output().is_ok_and(|o| o.status.success()))
     }
 
     /// Python's zipfile reads what we write back byte for byte, classic and ZIP64 alike.
@@ -343,7 +346,12 @@ mod tests {
                  hashlib.sha256(z.read('blobs/ü-name')).hexdigest(), sorted(z.namelist()))",
                 path.display()
             );
-            let out = std::process::Command::new(py).arg("-c").arg(&script).output().unwrap();
+            let out = std::process::Command::new(py)
+                .env("PYTHONIOENCODING", "utf-8")
+                .arg("-c")
+                .arg(&script)
+                .output()
+                .unwrap();
             assert!(out.status.success(), "zip64={zip64}: {}", String::from_utf8_lossy(&out.stderr));
             let text = String::from_utf8(out.stdout).unwrap();
             use sha2::Digest as _;

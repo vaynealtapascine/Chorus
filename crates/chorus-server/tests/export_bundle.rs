@@ -134,7 +134,10 @@ fn seed() -> Seeded {
 }
 
 fn python() -> Option<&'static str> {
-    ["python3", "python"].into_iter().find(|p| std::process::Command::new(p).arg("--version").output().is_ok())
+    // `--version` must succeed: on Windows `python3` may be the Store's installer stub
+    ["python3", "python"]
+        .into_iter()
+        .find(|p| std::process::Command::new(p).arg("--version").output().is_ok_and(|o| o.status.success()))
 }
 
 #[tokio::test(flavor = "multi_thread")]

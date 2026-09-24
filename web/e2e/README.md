@@ -19,8 +19,8 @@ Handles carry a per-run suffix, so the suite can run again against the same serv
 on a temporary data directory (port `CHORUS_E2E_PORT`, default 5399) and runs Playwright
 (`--no-build` skips the builds; arguments after `--` go to Playwright, e.g. `-- --headed`).
 `CHORUS_E2E_KEEP=1` keeps the data directory. Playwright is pinned (`@playwright/test` 1.56.1);
-install its Chromium once with `npx playwright install chromium`, or point
-`PLAYWRIGHT_BROWSERS_PATH` at one.
+install its Chromium once with `npx playwright install chromium`, point
+`PLAYWRIGHT_BROWSERS_PATH` at one, or use an installed Chrome with `CHORUS_E2E_CHANNEL=chrome`.
 
 **Against a running server** (the v1 check on the owner's server): from `web/`,
 

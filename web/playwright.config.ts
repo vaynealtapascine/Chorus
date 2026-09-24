@@ -14,6 +14,8 @@ export default defineConfig({
   use: {
     baseURL: process.env.CHORUS_E2E_BASE ?? 'http://127.0.0.1:5399',
     browserName: 'chromium',
+    // e.g. `chrome`: an installed Chrome instead of Playwright's own Chromium download
+    channel: process.env.CHORUS_E2E_CHANNEL || undefined,
     viewport: { width: 420, height: 900 },
     trace: 'retain-on-failure',
   },
