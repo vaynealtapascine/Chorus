@@ -166,7 +166,14 @@ fn prepare(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Re
     };
     // the create is the entity's only op: nothing derived from it has been written yet
     let fresh = ops.len() == 1;
-    let first = ops.iter().min_by_key(|o| (o.hlc, o.id.clone()));
+    // the op that made the row: its create (a set written with an earlier clock must not move
+    // `created_at` or the owner), or the earliest op for tables that have no create
+    let creates = |o: &&Op| op::spec(&o.kind).is_some_and(|s| matches!(s.action, Action::Create | Action::Append));
+    let first = ops
+        .iter()
+        .filter(creates)
+        .min_by_key(|o| (o.hlc, o.id.clone()))
+        .or_else(|| ops.iter().min_by_key(|o| (o.hlc, o.id.clone())));
     let mut vals: BTreeMap<String, Value> = row.fields.clone().into_iter().collect();
     vals.insert("id".into(), Value::String(id.into()));
     vals.insert("clocks".into(), row.clocks.to_json());
@@ -195,6 +202,12 @@ fn prepare(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Re
         if table == "post" {
             vals.insert("repost_of_id".into(), row.fields.get("repost_of").cloned().unwrap_or(Value::Null));
         }
+    }
+    // drafts keep when they were last written (the column is NOT NULL)
+    if table == "draft"
+        && let Some(last) = ops.iter().max_by_key(|o| (o.hlc, o.id.clone()))
+    {
+        vals.insert("updated_at".into(), Value::from(last.time()));
     }
     if table == "custom_emoji" {
         vals.entry("created_by".into()).or_insert(Value::from(first.and_then(|f| f.account_id.clone())));
@@ -569,10 +582,15 @@ fn element_set(conn: &Connection, table: &str, o: &Op) -> anyhow::Result<()> {
             .collect()
     };
     let want = key_of(o);
-    // All ops on the same element: same entity, same table, same key.
+    // All adds and removes of the same element: same entity, same table, same key. Only those:
+    // `space.set_role` shares the table, and counting it as a remove made a rebuild drop every
+    // member whose role had been changed.
     let ops: Vec<Op> = oplog::for_entity(conn, o.entity().unwrap_or(""))?
         .into_iter()
-        .filter(|x| op::spec(&x.kind).is_some_and(|s| s.table == table))
+        .filter(|x| {
+            op::spec(&x.kind)
+                .is_some_and(|s| s.table == table && matches!(s.action, Action::SetAdd | Action::SetRemove))
+        })
         .filter(|x| key_of(x) == want)
         .collect();
     let mut e = SetElem::default();

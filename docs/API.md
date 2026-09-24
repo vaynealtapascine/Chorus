@@ -10,7 +10,9 @@ is for reads, auth, blobs, exports and third-party scripts.
 
 - Errors: `{"error":{"code":"forbidden","message":"…","retry":false}}` with a matching HTTP status.
   Codes: `bad_request`, `unauthenticated`, `forbidden`, `not_found`, `conflict`, `too_large`,
-  `rate_limited`, `too_many_connections`, `unsupported_version`, `internal`.
+  `rate_limited`, `too_many_connections`, `unsupported_version`, `internal`; per op in a sync
+  `ack`, also `unprocessable` (valid-looking, but the server couldn't store it; never retried,
+  and a gap in `op::validate` to fix: DATA_MODEL §2.2).
 - Pagination: cursor-based, `?limit=100&before=<id>` / `after=<id>`; responses carry
   `{"items":[…],"next":"<cursor>|null"}`.
 - Versioning: `/api/v1` is stable. Additive changes only; breaking ones get `/api/v2`. The sync

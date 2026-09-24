@@ -105,6 +105,25 @@ Rules:
 The server adds `seq`, `account_id`, `device_id` (from the authenticated session — never trusted
 from the payload), `occurred_at`, `received_at`.
 
+### 2.2 Payload rules
+
+`op::validate` (core, run by every client when creating an op and by the server at ingest) checks
+more than field names: every payload field stored in a constrained column obeys
+`op::FIELD_RULES` (never `null` for a NOT NULL column, an object or list for a JSON column,
+`true`/`false` for a flag, one of the allowed values for an `IN (…)` check), plus per-kind rules
+(`channel.set_permission` needs a `target_type`/`target_id` and known permissions, reactions a
+`target_type`/`target_id`/`emoji`, message and post `text` is text and `entities`/`tags` lists,
+`space.set_roles` a list of `{id, name, perms}`). A test compares `FIELD_RULES` with the SQL
+schema, so a migration that adds a constraint must add its rule.
+
+Why it matters: the server stores and projects each pushed op in its own savepoint. An op the
+projection can't apply is refused on its own (`unprocessable`, logged) instead of failing the
+batch, which would otherwise be resent forever with the device's outbox stuck behind it. Two
+fuzz tests keep this honest: `chorus-server/tests/ingest_fuzz.rs` (random ops of every kind
+through ingest: never a failed batch, never `unprocessable`, and a rebuild reproduces the live
+tables) and `chorus-core/tests/payload_fuzz.rs` (the client projection: no panic, same state in
+any order). `CHORUS_FUZZ_CASES=<n>` runs the server one longer.
+
 ## 3. Op catalogue (v1)
 
 Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW element set

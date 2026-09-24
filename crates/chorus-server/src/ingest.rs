@@ -153,9 +153,31 @@ pub fn accept(
         o.device_id = Some(s.device_id.clone());
         o.received_at = Some(now);
     }
-    let seq = oplog::insert(conn, &o, suspect, preserved)?;
+    // Storing and projecting run in a savepoint: an op the projection can't apply (a payload of a
+    // shape `op::validate` let through) is refused on its own. Failing here would roll back the
+    // whole pushed batch, and the device would resend it forever, its outbox stuck behind one op.
+    conn.execute_batch("SAVEPOINT accept_op")?;
+    match store_and_project(conn, &mut o, suspect, preserved, now) {
+        Ok(()) => {
+            conn.execute_batch("RELEASE accept_op")?;
+            Ok((AckResult::ok(&o), Some(o)))
+        }
+        Err(e) if !is_transient(&e) => {
+            conn.execute_batch("ROLLBACK TO accept_op; RELEASE accept_op")?;
+            tracing::warn!(op = %o.id, kind = %o.kind, error = %format!("{e:#}"), "ingest: op refused, the projection can't apply it");
+            Ok((AckResult::err(o.id, "unprocessable", format!("{} can't be applied: {e:#}", o.kind), false), None))
+        }
+        Err(e) => {
+            conn.execute_batch("ROLLBACK TO accept_op; RELEASE accept_op")?;
+            Err(e)
+        }
+    }
+}
+
+fn store_and_project(conn: &Connection, o: &mut Op, suspect: bool, preserved: bool, now: i64) -> anyhow::Result<()> {
+    let seq = oplog::insert(conn, o, suspect, preserved)?;
     o.seq = Some(seq);
-    project::after_insert(conn, &o)?;
+    project::after_insert(conn, o)?;
     // follower notifications are queued from live ingest only (never from a rebuild or a restore)
     if !preserved
         && o.kind.starts_with("front.")
@@ -164,9 +186,23 @@ pub fn accept(
         crate::notifier::on_front_change(conn, account, now)?;
     }
     if !preserved {
-        crate::activity::on_op(conn, &o, now)?;
+        crate::activity::on_op(conn, o, now)?;
     }
-    Ok((AckResult::ok(&o), Some(o)))
+    Ok(())
+}
+
+/// A database failure that says nothing about the op (a full disk, I/O, a lock): the batch fails
+/// and the device retries it later, rather than the op being refused for good.
+fn is_transient(e: &anyhow::Error) -> bool {
+    use rusqlite::ErrorCode::*;
+    e.chain().any(|c| {
+        matches!(
+            c.downcast_ref::<rusqlite::Error>(),
+            Some(rusqlite::Error::SqliteFailure(f, _))
+                if matches!(f.code, DiskFull | SystemIoFailure | DatabaseBusy | DatabaseLocked | OutOfMemory
+                    | ReadOnly | DatabaseCorrupt | NotADatabase | CannotOpen | FileLockingProtocolFailed)
+        )
+    })
 }
 
 /// The server's own HLC, persisted in `server_meta`.
