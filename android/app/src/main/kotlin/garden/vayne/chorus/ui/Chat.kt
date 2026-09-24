@@ -1,6 +1,7 @@
 package garden.vayne.chorus.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -19,14 +21,19 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.ChatMessage
+import garden.vayne.chorus.data.ChatAttachment
 import garden.vayne.chorus.data.ChatCompose
 import garden.vayne.chorus.data.ChatSpace
 import garden.vayne.chorus.data.Chorus
@@ -38,6 +45,8 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Local chat view: internal channels, shared spaces and account DMs use the same projection. */
 @Composable
@@ -101,7 +110,7 @@ fun Chat(chorus: Chorus, model: Model) {
         LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), reverseLayout = true,
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(messages.asReversed(), key = { it.id }) { message ->
-                ChatMessageCard(message, model)
+                ChatMessageCard(message, model, chorus)
             }
             if (messages.isEmpty()) item {
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
@@ -183,7 +192,7 @@ private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
 }
 
 @Composable
-private fun ChatMessageCard(message: ChatMessage, model: Model) {
+private fun ChatMessageCard(message: ChatMessage, model: Model, chorus: Chorus) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
     val authors = message.authors.map { model.member(it)?.shownName ?: "Someone" }.joinToString(" & ").ifEmpty { "Someone" }
@@ -204,9 +213,47 @@ private fun ChatMessageCard(message: ChatMessage, model: Model) {
         if (message.cw == null || revealed) {
             Text(message.text, color = p.ink, fontSize = 16.sp)
             for (attachment in message.attachments) {
-                Text("Attachment: ${attachment.filename}${if (attachment.spoiler) " · spoiler" else ""}", color = p.ink2, fontSize = 13.sp)
-                if (attachment.altText.isNotBlank()) Text(attachment.altText, color = p.ink3, fontSize = 12.sp)
+                ChatAttachmentView(attachment, chorus)
             }
         }
     }
+}
+
+@Composable
+private fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
+    val p = LocalChorusPalette.current
+    val ctx = LocalContext.current
+    val device = chorus.device
+    val image = attachment.mime.startsWith("image/")
+    var opened by rememberSaveable(attachment.id) { mutableStateOf(false) }
+    if (attachment.spoiler && !opened) {
+        Text("Spoiler attachment · Reveal", color = p.accent, fontSize = 13.sp,
+            modifier = Modifier.clickable { opened = true })
+        return
+    }
+    Text("Attachment: ${attachment.filename}", color = p.ink2, fontSize = 13.sp)
+    if (attachment.altText.isNotBlank()) Text(attachment.altText, color = p.ink3, fontSize = 12.sp)
+    if (!image) {
+        if (attachment.spoiler) Text("Hide attachment", color = p.accent, fontSize = 12.sp,
+            modifier = Modifier.clickable { opened = false })
+        return
+    }
+    if (!opened) {
+        Text(if (attachment.spoiler) "Reveal image spoiler" else "View image", color = p.accent,
+            modifier = Modifier.clickable { opened = true }.padding(vertical = 4.dp))
+        return
+    }
+    val hash = attachment.thumbHash ?: attachment.blobHash
+    val bitmap by produceState<android.graphics.Bitmap?>(null, hash, device?.session) {
+        value = if (device == null) null else withContext(Dispatchers.IO) {
+            AvatarBlobs.load(ctx.applicationContext, hash, device)
+        }
+    }
+    if (bitmap == null) {
+        Text("Loading image, or unavailable offline.", color = p.ink3, fontSize = 12.sp)
+    } else {
+        Image(bitmap!!.asImageBitmap(), contentDescription = attachment.altText.ifBlank { attachment.filename },
+            contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().height(200.dp))
+    }
+    Text("Hide image", color = p.accent, fontSize = 12.sp, modifier = Modifier.clickable { opened = false })
 }
