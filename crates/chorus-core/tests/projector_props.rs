@@ -253,3 +253,81 @@ proptest! {
         }
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(300))]
+
+    /// Opening from a snapshot (CLIENTS.md §4.3): index the persisted ops, adopt the projection
+    /// the UI saved earlier — exact, stale (ops changed after it), with ops created while opening
+    /// — and a client that started from that snapshot and applies the deltas stays equal to the
+    /// reference through later steps.
+    #[test]
+    fn opening_from_a_snapshot_continues_exactly(
+        raw in prop::collection::vec((any::<u8>(), any::<u8>(), 0u64..5_000, 1u32..4), 1..60),
+        before in prop::collection::vec((0usize..60, 0u8..10), 1..25),
+        stale in prop::collection::vec((0usize..60, 0u8..10), 0..4),
+        fresh in prop::collection::vec(0usize..60, 0..4),
+        after in prop::collection::vec((0usize..60, 0u8..10), 0..12),
+    ) {
+        let all: Vec<Op> = raw.iter().enumerate()
+            .map(|(i, (pick, x, dt, node))| make(i, *pick, *x, 1_790_000_000_000 + dt * 1000, *node))
+            .collect();
+        let mut seq = 0i64;
+        let mut step = |visible: &mut BTreeMap<String, Op>, idx: usize, action: u8| {
+            let o = &all[idx % all.len()];
+            match action {
+                0 => { visible.remove(&o.id); }
+                1..=5 => { seq += 1; visible.insert(o.id.clone(), stamped(o, seq)); }
+                _ => { visible.entry(o.id.clone()).or_insert_with(|| o.clone()); }
+            }
+        };
+        // the session that saved the snapshot
+        let mut visible: BTreeMap<String, Op> = BTreeMap::new();
+        for (idx, action) in &before {
+            step(&mut visible, *idx, *action);
+        }
+        let mut first = Projector::new();
+        first.sync(visible.values());
+        let snapshot = model::project(visible.values()).canonical();
+        let digest = first.digest();
+        // ops saved after the snapshot was (it's stale then)
+        for (idx, action) in &stale {
+            step(&mut visible, *idx, *action);
+        }
+        // opening: index what was persisted, in any order; some ops get created meanwhile
+        let mut p = Projector::new();
+        for o in visible.values().rev() {
+            p.index_op(o);
+        }
+        let mut created = std::collections::BTreeSet::new();
+        for (n, idx) in fresh.iter().enumerate() {
+            let mut o = all[idx % all.len()].clone();
+            o.id = new_id(9, [200, n as u8, 0, 0, 0, 0, 0, 0, 0, 1]);
+            if n % 2 == 0 {
+                p.index_op(&o); // created before its slice was indexed
+            }
+            created.insert(o.id.clone());
+            visible.insert(o.id.clone(), o);
+        }
+        let exact = stale.is_empty();
+        let adopted = p.adopt(Some(digest), &created);
+        prop_assert!(!exact || adopted, "an exact snapshot is adopted");
+        p.sync(visible.values());
+        let mut client = snapshot;
+        let reference = model::project(visible.values()).canonical();
+        let d = p.take_delta();
+        prop_assert_eq!(d.full, !adopted);
+        apply(&mut client, &d, &reference);
+        prop_assert_eq!(&client, &reference);
+        for (idx, action) in &after {
+            step(&mut visible, *idx, *action);
+            p.sync(visible.values());
+            let reference = model::project(visible.values()).canonical();
+            let d = p.take_delta();
+            apply(&mut client, &d, &reference);
+            prop_assert_eq!(&client, &reference);
+        }
+        p.materialize();
+        prop_assert_eq!(p.projection().canonical(), model::project(visible.values()).canonical());
+    }
+}

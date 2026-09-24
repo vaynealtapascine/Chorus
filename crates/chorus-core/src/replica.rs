@@ -21,6 +21,8 @@ pub struct Replica {
     pub clock: HlcClock,
     /// Incremental projection of `store.visible()` (projector.rs), refreshed on read.
     projector: Projector,
+    /// Opening from a snapshot: the ops still to index, and how far along (see [`Replica::begin`]).
+    indexing: Option<(Vec<String>, usize)>,
 }
 
 /// What to persist after a call.
@@ -74,6 +76,7 @@ impl Replica {
             store: MemStore::default(),
             clock: HlcClock::new(node),
             projector: Projector::new(),
+            indexing: None,
         }
     }
 
@@ -87,7 +90,58 @@ impl Replica {
             Some(h) => HlcClock::resume(node, h),
             None => HlcClock::new(node),
         };
-        Replica { engine: ClientEngine::new(device_id), store, clock, projector: Projector::new() }
+        Replica { engine: ClientEngine::new(device_id), store, clock, projector: Projector::new(), indexing: None }
+    }
+
+    /// Open from a snapshot (CLIENTS.md §4.3): start with the persisted metadata only, feed the
+    /// ops in slices ([`Replica::add_ops`]), index them a slice at a time
+    /// ([`Replica::index_step`]), then [`Replica::adopt`] the snapshot the UI is already showing.
+    /// Local ops can be created meanwhile; don't read the projection or sync until adopted.
+    pub fn begin(device_id: &str, node: u32, meta: Option<MemStore>, hlc_last: Option<Hlc>) -> Replica {
+        Replica::restore(device_id, node, meta, Vec::new(), hlc_last)
+    }
+
+    /// Persisted ops (a slice of them). A copy this session already holds wins.
+    pub fn add_ops(&mut self, ops: Vec<Op>) {
+        for o in ops {
+            self.store.ops.entry(o.id.clone()).or_insert(o);
+        }
+    }
+
+    /// Index up to `n` more ops; true when all are.
+    pub fn index_step(&mut self, n: usize) -> bool {
+        let (ids, at) = self.indexing.get_or_insert_with(|| {
+            let ids = self.store.visible().map(|o| o.id.clone()).collect();
+            (ids, 0)
+        });
+        let end = at.saturating_add(n).min(ids.len());
+        for id in &ids[*at..end] {
+            if let Some(o) = self.store.ops.get(id).filter(|o| !self.store.rejected.contains_key(&o.id)) {
+                self.projector.index_op(o);
+            }
+        }
+        *at = end;
+        end == ids.len()
+    }
+
+    /// Continue from the snapshot the UI shows (made at `snapshot`, a
+    /// [`Replica::projection_digest`]) if the ops match it; true if so. Otherwise the whole
+    /// projection is computed and the next delta says `full`.
+    pub fn adopt(&mut self, snapshot: Option<crate::sync::Digest>) -> bool {
+        while !self.index_step(usize::MAX) {}
+        self.indexing = None;
+        // ops created or changed while opening: the snapshot can't include them
+        let fresh = self.store.take_touched();
+        let ok = self.projector.adopt(snapshot, &fresh);
+        let store = &self.store;
+        self.projector.sync_ids(fresh, |id| store.ops.get(id).filter(|o| !store.rejected.contains_key(&o.id)));
+        ok
+    }
+
+    /// Identifies the op copies the current projection reflects: save it with a snapshot.
+    pub fn projection_digest(&mut self) -> crate::sync::Digest {
+        self.refresh();
+        self.projector.digest()
     }
 
     pub fn state(&self) -> ClientState {
@@ -180,6 +234,7 @@ impl Replica {
     /// `model::project(self.store.visible())`, kept up to date incrementally.
     pub fn projection(&mut self) -> &Projection {
         self.refresh();
+        self.projector.materialize();
         self.projector.projection()
     }
 
@@ -265,6 +320,45 @@ mod tests {
         let r2 = Replica::restore("dev", 7, ch.meta, ch.ops, Some(ch.hlc_last));
         assert_eq!(r2.store.ops[&o.id], o);
         assert_eq!(r2.store.local_order, vec![o.id.clone()]);
+    }
+
+    /// CLIENTS.md §4.3: open from a snapshot — metadata, ops in slices, a local op created while
+    /// opening — and go on from the snapshot without projecting; a stale one projects it all.
+    #[test]
+    fn opens_from_a_snapshot() {
+        let scope = format!("account:{}", crate::id::new_id(1, [1; 10]));
+        let member = |name: &str, n: u8| NewOp {
+            kind: "member.create".into(),
+            scope: scope.clone(),
+            entity_id: Some(crate::id::new_id(1, [n; 10])),
+            payload: json!({"name": name}),
+            member_id: None,
+            user_time: None,
+        };
+        let mut r = Replica::new("dev", 7);
+        for n in 0..5u8 {
+            r.create(member(&format!("M{n}"), n + 10), &now(1000 + i64::from(n)), [n; 10]).unwrap();
+        }
+        let snapshot = r.projection().canonical();
+        let digest = r.projection_digest();
+        let ch = r.take_changes();
+        for stale in [false, true] {
+            let mut o = Replica::begin("dev", 7, ch.meta.clone(), Some(ch.hlc_last));
+            o.add_ops(ch.ops[..2].to_vec());
+            o.add_ops(ch.ops[2..].to_vec());
+            assert!(!o.index_step(2));
+            o.create(member("June", 40), &now(2000), [9; 10]).unwrap();
+            let snap = if stale { crate::sync::Digest::of(["something else"]) } else { digest };
+            assert_eq!(o.adopt(Some(snap)), !stale);
+            let d = o.projection_delta();
+            assert_eq!(d.full, stale);
+            if !stale {
+                assert_eq!(d.rows["member"].len(), 1, "only the op created while opening");
+            }
+            let whole = crate::model::project(o.store.visible()).canonical();
+            assert_ne!(whole, snapshot);
+            assert_eq!(o.projection().canonical(), whole);
+        }
     }
 
     #[test]

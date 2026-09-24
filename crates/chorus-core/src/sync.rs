@@ -43,6 +43,15 @@ impl Digest {
         self.count += 1;
     }
 
+    /// Toggle one op id back out (the inverse of [`Digest::add`]).
+    pub fn remove(&mut self, op_id: &str) {
+        let h = Sha256::digest(op_id.as_bytes());
+        for (x, b) in self.xor.iter_mut().zip(h.iter()) {
+            *x ^= b;
+        }
+        self.count = self.count.wrapping_sub(1);
+    }
+
     pub fn of<'a>(ids: impl IntoIterator<Item = &'a str>) -> Digest {
         let mut d = Digest::default();
         for id in ids {
