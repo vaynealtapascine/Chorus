@@ -119,3 +119,8 @@ take **0007** if you need one; Sol takes 0008.
   `web/e2e/README.md` has the command (`CHORUS_E2E_BASE`, `CHORUS_E2E_CLI`) and the cleanup.
   Found on the way: the author had no way to see other accounts' reactions to their posts; the
   thread view (`PostReplies.svelte`) now lists them from `GET /posts/{id}`.
+- CI is **green** on `handoff/opus-remote-1` (run 35993624647 at `d50b33a`): rust 10 min with a
+  warm cache (14 min cold; the release test step dominates), web < 1 min, e2e 3 min. Pushes in
+  quick succession cancel older runs (`concurrency`), so the first rust cache was only saved once
+  a run finished. `scripts/e2e-web.sh` also handles Git Bash on Windows (`.exe`, `cygpath`).
+- R14 skipped: Q14 isn't answered.
