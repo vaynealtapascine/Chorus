@@ -326,6 +326,13 @@ pub fn challenge(conn: &Connection, device_id: &str, now: i64) -> Result<String,
         "INSERT INTO auth_nonce (nonce, device_id, expires_at) VALUES (?1, ?2, ?3)",
         params![nonce, device_id, now + NONCE_TTL_MS],
     )?;
+    // device ids aren't secret (they travel in synced ops): keep a few outstanding challenges
+    // per device, so asking for more can't pile rows up
+    conn.execute(
+        "DELETE FROM auth_nonce WHERE device_id = ?1 AND nonce NOT IN
+           (SELECT nonce FROM auth_nonce WHERE device_id = ?1 ORDER BY expires_at DESC LIMIT 5)",
+        [device_id],
+    )?;
     Ok(nonce)
 }
 
@@ -470,6 +477,13 @@ pub(crate) mod tests {
         let bad: Signature = other.sign(challenge_message(&n2, &e.device_id, "inst").as_bytes());
         let bad = base64::engine::general_purpose::STANDARD.encode(bad.to_der().as_bytes());
         assert!(matches!(verify(&c, &e.device_id, &n2, &bad, "inst", now, 1000), Err(AuthError::BadSignature)));
+        // asking over and over keeps only a few outstanding challenges
+        for i in 0..20 {
+            challenge(&c, &e.device_id, now + i).unwrap();
+        }
+        let held: i64 =
+            c.query_row("SELECT count(*) FROM auth_nonce WHERE device_id = ?1", [&e.device_id], |r| r.get(0)).unwrap();
+        assert_eq!(held, 5);
         // a second device on the same account
         let dcode =
             create_invite(&c, InviteKind::Device, Some(&e.account_id), &e.device_id, INVITE_TTL_MS, 1, now).unwrap();
