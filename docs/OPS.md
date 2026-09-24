@@ -144,6 +144,12 @@ updates). What differs from the PC:
   and registry cache in `F:\DunBuild\chorus-linux`), builds the web app, and writes
   `chorus-linux-<git describe>.tar.gz` with `install.sh`, `files/` and `README.txt`.
   `-WithData` adds `chorus-server backup` output from the PC install as `import/`.
+- **Test**: `pwsh scripts/test-linux.ps1 [-Keep]` boots a throwaway Debian 12 container running
+  systemd (Docker in WSL, `deploy/linux/test/`), installs the newest bundle for
+  `https://localhost` (Caddy's local CA), checks HTTPS, headers, the sync WebSocket and the
+  systemd sandbox score through Caddy, reruns it as an update, then imports a snapshot of
+  `./data-dev`. First run 2026-09-24: all passed (after fixing the static link and Caddy's log
+  file ownership).
 - **Layout**: `/opt/chorus/{app,data,backups}` (data and backups owned by the `chorus` user),
   `/etc/chorus/chorus.toml`, unit `chorus.service` (sandboxed: only data and backups writable),
   Caddy site `/etc/caddy/sites/chorus.caddy`, imported from the main Caddyfile.

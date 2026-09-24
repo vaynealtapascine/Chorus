@@ -200,6 +200,8 @@ if [ "$CADDY" = 1 ]; then
     rm -f /etc/caddy/sites/chorus.caddy
     fail "Caddy rejected the configuration; it was put back as it was"
   fi
+  # validating as root creates the site's log file as root; the caddy user must own it
+  chown -R caddy:caddy /var/log/caddy
   systemctl enable -q caddy
   systemctl reload caddy 2> /dev/null || systemctl restart caddy
   ok "https://$DOMAIN -> 127.0.0.1:5250"

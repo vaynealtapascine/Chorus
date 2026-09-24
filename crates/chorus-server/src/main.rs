@@ -82,7 +82,11 @@ enum ExportKind {
 }
 
 fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
+    // colour only on a terminal: the journal (systemd) and NSSM's log files get plain text
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
+        .init();
     let cli = Cli::parse();
     let cfg = if cli.dev { Config::dev() } else { Config::load(Some(&cli.config))? };
     match cli.cmd {
