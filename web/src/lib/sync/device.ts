@@ -1,6 +1,7 @@
 // Device identity: a non-extractable P-256 key, enrolment by invite, session renewal by signing a
 // server nonce (docs/API.md §2).
 import { saveDevice, type DeviceRecord } from './persist';
+import { apiFetch } from '../http';
 
 const b64 = (buf: ArrayBuffer): string => btoa(String.fromCharCode(...new Uint8Array(buf)));
 
@@ -9,7 +10,7 @@ export function apiBase(): string {
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetch(`${apiBase()}${path}`, {
+  const r = await apiFetch(`${apiBase()}${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),

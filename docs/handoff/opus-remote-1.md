@@ -157,3 +157,9 @@ a new dependency (a zip crate) is acceptable. The owner decides.
   resolved) must appear with its method in API.md; self-test on a sample and the real router.
   It found 4 gaps, now documented: `GET /android/latest`, `GET /sync` (new §6a), and the two
   routes outside `/api/v1` (new §9). `/stream/ws` is marked planned (not served).
+- R2 — `web/src/lib/http.ts` `apiFetch` (+ vitest): GET/HEAD 429s retried after `Retry-After`
+  (twice, ≤ 10 s each), writes and exhausted reads throw a friendly `RateLimitedError`. Used by
+  every REST call except `data.ts`, `MemberEditor`, `Profile` (Sol) and blob reads; blob uploads
+  back off for `Retry-After`. Chat history and search now show `error.message`, not `Error: …`.
+  CLIENTS.md §4.2 describes it. **For Sol:** `data.ts`, `MemberEditor.svelte` and
+  `Profile.svelte` can switch `fetch` → `apiFetch` the same way.

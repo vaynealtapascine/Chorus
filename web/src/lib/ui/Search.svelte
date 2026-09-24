@@ -4,6 +4,7 @@
   import { activeViewers, memberVisible } from '../hidden';
   import { SearchIndex, parseSearch, type SearchHit, type SearchQuery } from '../search';
   import { apiBase } from '../sync/device';
+  import { apiFetch } from '../http';
   import { sync, type Projection } from '../sync/client';
 
   let { projection }: { projection: Projection } = $props();
@@ -44,7 +45,7 @@
   };
 
   const fetchPage = async (filter: SearchQuery, cursor: string | null, signal?: AbortSignal) => {
-    const response = await fetch(`${apiBase()}/search/messages?${paramsFor(filter, cursor ?? undefined)}`, {
+    const response = await apiFetch(`${apiBase()}/search/messages?${paramsFor(filter, cursor ?? undefined)}`, {
       headers: { authorization: `Bearer ${sync.device?.session ?? ''}` }, signal,
     });
     if (!response.ok) throw new Error(`Search HTTP ${response.status}`);
@@ -69,7 +70,7 @@
         remoteCursor = page.cursor;
         remoteError = '';
       } catch (error) {
-        if (!abort.signal.aborted) remoteError = String(error);
+        if (!abort.signal.aborted) remoteError = error instanceof Error ? error.message : String(error);
       }
     }, 250);
     return () => { clearTimeout(timer); abort.abort(); };
@@ -87,7 +88,7 @@
       remoteCursor = page.cursor;
       remoteError = '';
     } catch (error) {
-      if (query === currentQuery) remoteError = String(error);
+      if (query === currentQuery) remoteError = error instanceof Error ? error.message : String(error);
     } finally { loadingMore = false; }
   };
 

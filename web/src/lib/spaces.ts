@@ -1,6 +1,7 @@
 // Shared spaces and DMs (M6.2, API.md §3 "Shared spaces"): who is in each space, and author
 // cards for other accounts' members, which never sync into this account's projection.
 import { apiBase } from './sync/device';
+import { apiFetch } from './http';
 import { sync } from './sync/client';
 import type { MemberRow } from './data';
 
@@ -9,7 +10,7 @@ export interface SpaceInfo { id: string; kind: 'internal' | 'shared' | 'dm'; nam
 interface Card { id: string; account_id: string; name: string | null; display_name: string | null; pronouns: string | null; color: string | null; sigils: string[]; avatar_blob: string | null }
 
 async function call(method: string, path: string, body?: unknown) {
-  const r = await fetch(`${apiBase()}${path}`, {
+  const r = await apiFetch(`${apiBase()}${path}`, {
     method,
     headers: { 'content-type': 'application/json', authorization: `Bearer ${sync.device?.session ?? ''}` },
     body: body === undefined ? undefined : JSON.stringify(body),

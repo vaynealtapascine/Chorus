@@ -2,6 +2,7 @@
   // Your data for scripts, dashboards and stream overlays (API.md §2.3, §3, §6): personal API
   // tokens, read-only and limited to your own account. The secret is shown once.
   import { apiBase } from '../sync/device';
+  import { apiFetch } from '../http';
   import { sync } from '../sync/client';
 
   interface Token { id: string; name: string; scopes: string[]; created_at: number; last_used_at: number | null }
@@ -33,7 +34,7 @@
   const size = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
   async function api(path: string, init: RequestInit = {}) {
-    const r = await fetch(`${apiBase()}${path}`, {
+    const r = await apiFetch(`${apiBase()}${path}`, {
       ...init,
       headers: { 'content-type': 'application/json', authorization: `Bearer ${sync.device?.session ?? ''}` },
     });
@@ -142,7 +143,7 @@
   async function download(path: string, filename: string) {
     error = '';
     try {
-      const response = await fetch(`${apiBase()}${path}`, {
+      const response = await apiFetch(`${apiBase()}${path}`, {
         headers: { authorization: `Bearer ${sync.device?.session ?? ''}` },
       });
       if (!response.ok) throw new Error(`Export failed (HTTP ${response.status})`);
