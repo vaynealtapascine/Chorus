@@ -5,6 +5,7 @@ import org.json.JSONObject
 /** A post detail is always read through the server's current audience check. */
 data class ThreadReply(val id: String, val authorNames: List<String>, val text: String,
     val title: String?, val cw: String?, val occurredAt: Long)
+data class PostDetail(val replies: List<ThreadReply>, val reactions: List<PostReaction>)
 
 object PostThreads {
     fun parse(j: JSONObject): List<ThreadReply> {
@@ -24,8 +25,10 @@ object PostThreads {
         } }
     }
 
-    suspend fun load(dev: DeviceRecord, id: String): List<ThreadReply> =
-        parse(Api.call("GET", dev.base, "/posts/$id?depth=1", null, dev.session))
+    fun parseDetail(j: JSONObject): PostDetail = PostDetail(parse(j), PostReactions.fromServer(j))
+
+    suspend fun load(dev: DeviceRecord, id: String): PostDetail =
+        parseDetail(Api.call("GET", dev.base, "/posts/$id?depth=1", null, dev.session))
 
     /** Own-account replies still appear offline and while their op is waiting to sync. */
     fun ownReplies(model: Model, id: String): List<ThreadReply> = model.posts.filter { it.replyTo == id }.map { post ->

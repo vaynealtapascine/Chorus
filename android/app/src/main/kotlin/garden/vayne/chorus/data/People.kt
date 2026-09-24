@@ -25,13 +25,7 @@ object PeopleApi {
             val names = if (cards == null) emptyList() else (0 until cards.length()).mapNotNull { n ->
                 cards.getJSONObject(n).let { it.optionalText("display_name") ?: it.optionalText("name") }
             }
-            val reactions = post.optJSONArray("reactions")?.let { rows -> (0 until rows.length()).mapNotNull { n ->
-                rows.optJSONObject(n)?.let { row ->
-                    val emoji = row.optionalText("emoji") ?: return@let null
-                    val memberId = row.optionalText("member_id") ?: return@let null
-                    PostReaction(emoji, memberId, row.optionalText("member_name") ?: "Someone")
-                }
-            } } ?: emptyList()
+            val reactions = PostReactions.fromServer(post)
             SharedPost(post.getString("id"), post.getString("kind"), post.optionalText("title"),
                 post.getString("text"), post.optionalText("cw"), post.getLong("occurred_at"), names, reactions)
         }

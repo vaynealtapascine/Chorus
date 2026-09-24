@@ -63,7 +63,7 @@ data class ChatMessage(
 data class JournalPost(
     val id: String, val kind: String, val authors: List<String>, val title: String?, val text: String,
     val occurredAt: Long, val cw: String?, val visibility: String, val replyTo: String?,
-    val mood: String?, val tags: List<String>,
+    val mood: String?, val tags: List<String>, val reactions: List<PostReaction> = emptyList(),
 )
 
 class Model(
@@ -81,6 +81,7 @@ class Model(
     /** Own account's per-follower ceiling overrides; absent means inherit the account default. */
     val followCeilings: Map<String, JSONObject> = emptyMap(),
     val posts: List<JournalPost> = emptyList(),
+    val postReactions: Map<String, List<PostReaction>> = emptyMap(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -261,13 +262,14 @@ class Model(
                     stringSet(visibility?.optJSONArray("member_ids")), f.str("account_id"), f.str("reply_to"), files)
             } }
             val followCeilings = rows(p, "follow").associate { (id, f) -> id to (f.optJSONObject("ceiling") ?: JSONObject()) }
+            val postReactions = PostReactions.fromProjection(p.optJSONObject("sets"), members.associate { it.id to it.shownName })
             val posts = rows(p, "post").filter { (_, f) -> !f.present("deleted_at") }
                 .map { (id, f) -> JournalPost(id, f.str("kind") ?: "note", strings(f.optJSONArray("authors")),
                     f.str("title"), f.str("text").orEmpty(), f.optLong("occurred_at"), f.str("cw"),
                     f.optJSONObject("visibility")?.str("mode") ?: "private", f.str("reply_to"),
-                    f.str("mood"), strings(f.optJSONArray("tags"))) }
+                    f.str("mood"), strings(f.optJSONArray("tags")), postReactions[id].orEmpty()) }
                 .sortedWith(compareByDescending<JournalPost> { it.occurredAt }.thenByDescending { it.id })
-            return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages, followCeilings, posts)
+            return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages, followCeilings, posts, postReactions)
         }
     }
 }

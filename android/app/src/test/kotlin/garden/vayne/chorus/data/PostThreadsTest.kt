@@ -22,4 +22,10 @@ class PostThreadsTest {
         assertEquals("synced", PostThreads.merge(local, remote)[1].text)
         assertEquals(listOf("mine"), PostThreads.merge(local, emptyList()).map { it.id })
     }
+
+    @Test fun detailKeepsReactionsFromTheServer() {
+        val detail = PostThreads.parseDetail(JSONObject("""{"replies":[],"reactions":[{"emoji":"💜","member_id":"june","member_name":"June"}]}"""))
+        assertEquals(emptyList<ThreadReply>(), detail.replies)
+        assertEquals(listOf(PostReaction("💜", "june", "June")), detail.reactions)
+    }
 }

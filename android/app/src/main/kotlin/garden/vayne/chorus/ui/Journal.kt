@@ -32,6 +32,9 @@ import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.JournalPost
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PostCompose
+import garden.vayne.chorus.data.PostDetail
+import garden.vayne.chorus.data.PostReaction
+import garden.vayne.chorus.data.PostReactions
 import garden.vayne.chorus.data.PostThreads
 import garden.vayne.chorus.data.Reply
 import garden.vayne.chorus.data.ThreadReply
@@ -59,6 +62,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     var audience by rememberSaveable { mutableStateOf("private") }
     var busy by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var reactionError by remember { mutableStateOf<String?>(null) }
+    var reactionBusy by remember { mutableStateOf(false) }
     val actions = rememberCoroutineScope()
     val mine = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId }
     val author = mine.find { it.id == authorId } ?: Reply.speaker(model)?.takeIf { it in mine } ?: mine.firstOrNull()
@@ -171,11 +176,27 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 TextButton(onClick = { editing = true }) { Text("Write") }
             }
         }
+        if (reactionError != null) item { Text(reactionError.orEmpty(), color = p.danger) }
         if (events.isEmpty()) item { Text("No posts or switches yet. Write the first note.", color = p.ink2) }
         for (event in events) item(key = "${if (event.post == null) "switch" else "post"}:${event.id}") {
             if (event.post != null) JournalPostCard(event.post, model,
                 onReply = { replyTo = event.post.id; editing = true },
                 onThread = { threadPostId = event.post.id },
+                reactMemberId = Reply.speaker(model)?.id,
+                reactionEnabled = !reactionBusy,
+                onReact = { post ->
+                    val member = Reply.speaker(model) ?: return@JournalPostCard
+                    if (reactionBusy) return@JournalPostCard
+                    reactionBusy = true; reactionError = null
+                    actions.launch {
+                        try {
+                            val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == member.id }
+                            chorus.create(if (selected) "post.unreact" else "post.react", post.id,
+                                PostReactions.payload(post.id, member.id))
+                        } catch (e: Exception) { reactionError = e.message ?: "Could not react to this post." }
+                        finally { reactionBusy = false }
+                    }
+                },
                 onProfile = { profileId = it })
             else Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
                 Text(event.switchLabel.orEmpty(), color = p.ink2)
@@ -199,6 +220,8 @@ private fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit)
 @Composable
 internal fun JournalPostCard(post: JournalPost, model: Model, onReply: () -> Unit,
     onThread: (() -> Unit)? = null,
+    reactMemberId: String? = null, reactionEnabled: Boolean = true,
+    onReact: ((JournalPost) -> Unit)? = null,
     onProfile: (String) -> Unit = {}) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
@@ -219,6 +242,14 @@ internal fun JournalPostCard(post: JournalPost, model: Model, onReply: () -> Uni
             Text(post.text, color = p.ink)
             if (post.mood != null) Text(post.mood, color = p.ink2)
             if (post.tags.isNotEmpty()) Text(post.tags.joinToString(" ") { "#$it" }, color = p.ink2)
+            if (post.reactions.isNotEmpty()) ReactionNames(post.reactions)
+            if (reactMemberId != null && onReact != null) {
+                val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == reactMemberId }
+                TextButton(enabled = reactionEnabled, onClick = { onReact(post) }) {
+                    Text(if (selected) "Remove 💜 reaction" else "React 💜")
+                }
+                Text("Reacting shows this member to post readers right away.", color = p.ink3, fontSize = 12.sp)
+            }
         }
         Row {
             TextButton(onClick = onReply) { Text("Reply") }
@@ -231,9 +262,12 @@ internal fun JournalPostCard(post: JournalPost, model: Model, onReply: () -> Uni
 @Composable
 internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose: () -> Unit, onReply: () -> Unit) {
     val p = LocalChorusPalette.current
-    var remote by remember(postId) { mutableStateOf<List<ThreadReply>?>(null) }
+    val actions = rememberCoroutineScope()
+    var remote by remember(postId) { mutableStateOf<PostDetail?>(null) }
     var error by remember(postId) { mutableStateOf<String?>(null) }
     var refresh by remember(postId) { mutableStateOf(0) }
+    var reactionError by remember(postId) { mutableStateOf<String?>(null) }
+    var reactionBusy by remember(postId) { mutableStateOf(false) }
     val local = PostThreads.ownReplies(model, postId)
     LaunchedEffect(postId, chorus.device?.session, refresh) {
         val dev = chorus.device ?: return@LaunchedEffect
@@ -245,7 +279,9 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
             error = e.message ?: "Could not load replies."
         }
     }
-    val replies = PostThreads.merge(local, remote.orEmpty())
+    val replies = PostThreads.merge(local, remote?.replies.orEmpty())
+    val reactions = PostReactions.merge(model.postReactions[postId].orEmpty(), remote?.reactions.orEmpty())
+    val reactMember = Reply.speaker(model)?.takeIf { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId }
     LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
@@ -257,12 +293,37 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
             }
         }
         if (error != null) item { Text("Showing replies on this device. ${error.orEmpty()}", color = p.ink2) }
+        if (reactionError != null) item { Text(reactionError.orEmpty(), color = p.danger) }
+        if (reactions.isNotEmpty()) item { ReactionNames(reactions) }
+        if (reactMember != null) item {
+            val selected = reactions.any { it.emoji == PostReactions.HEART && it.memberId == reactMember.id }
+            TextButton(enabled = !reactionBusy, onClick = {
+                if (reactionBusy) return@TextButton
+                reactionBusy = true; reactionError = null
+                actions.launch {
+                    try {
+                        chorus.create(if (selected) "post.unreact" else "post.react", postId,
+                            PostReactions.payload(postId, reactMember.id))
+                        remote = remote?.copy(reactions = PostReactions.toggle(remote?.reactions.orEmpty(),
+                            reactMember.id, reactMember.shownName))
+                    } catch (e: Exception) { reactionError = e.message ?: "Could not react to this post." }
+                    finally { reactionBusy = false }
+                }
+            }) { Text(if (selected) "Remove 💜 reaction" else "React 💜") }
+            Text("Reacting shows this member to post readers right away.", color = p.ink3, fontSize = 12.sp)
+        }
         if (replies.isEmpty()) item {
             Text(if (remote == null && error == null) "Loading replies…" else "No replies yet.", color = p.ink2)
         }
         items(replies, key = { it.id }) { reply -> ThreadReplyCard(reply) }
         item { TextButton(onClick = onReply) { Text("Write a reply") } }
     }
+}
+
+@Composable
+private fun ReactionNames(reactions: List<PostReaction>) {
+    val p = LocalChorusPalette.current
+    Text(reactions.joinToString(" · ") { "${it.emoji} ${it.memberName}" }, color = p.ink2)
 }
 
 @Composable
