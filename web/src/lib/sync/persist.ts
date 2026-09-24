@@ -12,13 +12,6 @@ export interface DeviceRecord {
   keys: CryptoKeyPair;
 }
 
-export interface Persisted {
-  device: DeviceRecord | null;
-  meta: unknown | null;
-  ops: unknown[];
-  hlc: string;
-}
-
 export interface Changes {
   ops: { id: string }[];
   /** ops this device no longer holds (the account lost sight of them; SYNC.md §4.2) */
@@ -52,15 +45,41 @@ function db(): Promise<IDBPDatabase> {
   return dbp;
 }
 
-export async function load(): Promise<Persisted> {
+/** The last projection the UI showed and the op copies it came from (CLIENTS.md §4.3). */
+export interface Snapshot {
+  projection: string;
+  /** the core's `projectionDigest()` when it was taken */
+  digest: string;
+  at: number;
+}
+
+export interface Head {
+  device: DeviceRecord | null;
+  meta: unknown | null;
+  hlc: string;
+  snapshot: Snapshot | null;
+}
+
+/** Everything but the ops: enough to show the app from a snapshot at once. */
+export async function loadHead(): Promise<Head> {
   const d = await db();
-  const [device, meta, hlc, ops] = await Promise.all([
+  const [device, meta, hlc, snapshot] = await Promise.all([
     d.get('kv', 'device'),
     d.get('kv', 'meta'),
     d.get('kv', 'hlc'),
-    d.getAll('ops'),
+    d.get('kv', 'snapshot'),
   ]);
-  return { device: device ?? null, meta: meta ?? null, ops, hlc: hlc ?? '' };
+  return { device: device ?? null, meta: meta ?? null, hlc: hlc ?? '', snapshot: snapshot ?? null };
+}
+
+/** Up to `n` persisted ops with ids after `after`, in id order (a slice of the replica). */
+export async function loadOps(after: string | undefined, n: number): Promise<{ id: string }[]> {
+  const range = after === undefined ? undefined : IDBKeyRange.lowerBound(after, true);
+  return (await db()).getAll('ops', range, n);
+}
+
+export async function saveSnapshot(snapshot: Snapshot): Promise<void> {
+  await (await db()).put('kv', snapshot, 'snapshot');
 }
 
 export async function save(ch: Changes): Promise<void> {

@@ -2,7 +2,7 @@
 // All protocol logic is in chorus-core (WebReplica); this file only moves bytes and timers.
 import { WebReplica, newId } from '../core/pkg/chorus_wasm.js';
 import type { SwitchRow } from '../front.svelte';
-import { load, save, type Changes, type DeviceRecord } from './persist';
+import { loadHead, loadOps, save, saveSnapshot, type Changes, type DeviceRecord, type Snapshot } from './persist';
 import { renew } from './device';
 import { applyDelta, type Delta } from './delta';
 import { flushUploads } from './uploads';
@@ -43,6 +43,17 @@ function randomBytes(): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(10));
 }
 
+/** Let the page paint and handle input between slices of opening work. */
+function yieldToUi(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+// opening in slices small enough to keep the page responsive (≈ tens of ms each)
+const OPS_PER_READ = 5000;
+const OPS_PER_INDEX = 2000;
+/** a snapshot is rewritten this long after the last change (and whenever the page is hidden) */
+const SNAPSHOT_AFTER_MS = 10_000;
+
 export class SyncClient {
   device: DeviceRecord | null = null;
   status: Status = 'offline';
@@ -54,9 +65,16 @@ export class SyncClient {
   private projectionListeners = new Set<ProjectionListener>();
   private cached: Projection | null = null;
   private saving: Promise<void> = Promise.resolve();
+  /** ops are still being read and indexed (opening from a snapshot); no sync until done */
+  private opening = false;
+  private snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+  private snapshotDirty = false;
 
   async start(): Promise<void> {
-    const p = await load();
+    // open-time marks (CLIENTS.md §4.3: a 100k-op device opens in ≤ 2 s); web/perf measures them
+    performance.mark('chorus:start');
+    const p = await loadHead();
+    performance.mark('chorus:loaded');
     this.device = p.device;
     if (!this.device) {
       this.status = 'no-device';
@@ -69,20 +87,65 @@ export class SyncClient {
     if (this.device.is_admin === undefined && navigator.onLine) {
       try { this.device = await renew(this.device); } catch { /* reconnect will retry auth later */ }
     }
-    this.replica = WebReplica.restore(
-      this.device.device_id,
-      nodeOf(this.device.short_id),
-      p.meta ? JSON.stringify(p.meta) : '',
-      JSON.stringify(p.ops),
-      p.hlc,
-    );
-    this.emit();
+    // Open from the last projection shown, at once; read and index the ops behind it in slices
+    // (CLIENTS.md §4.3). Without a snapshot (first start) the app waits for the ops, as before.
+    this.replica = WebReplica.begin(this.device.device_id, nodeOf(this.device.short_id), p.meta ? JSON.stringify(p.meta) : '', p.hlc);
+    this.opening = true;
+    if (p.snapshot) {
+      this.cached = JSON.parse(p.snapshot.projection) as Projection;
+      performance.mark('chorus:projected');
+    }
     addEventListener('online', () => this.reconnectNow());
-    // coming back to the tab: don't wait out a long backoff (e.g. after a server restart)
+    // coming back to the tab: don't wait out a long backoff (e.g. after a server restart); leaving
+    // it: keep the snapshot current, since the page may not come back
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) this.reconnectNow();
+      else if (this.snapshotDirty) this.writeSnapshot();
     });
+    const opened = this.openOps(p.snapshot).catch((e) => console.error('opening the replica failed', e));
+    if (!p.snapshot) await opened;
+    this.emit();
+  }
+
+  /** Read every persisted op into the core and index it, a slice at a time; then sync. */
+  private async openOps(snapshot: Snapshot | null): Promise<void> {
+    const replica = this.replica!;
+    let after: string | undefined;
+    for (;;) {
+      const ops = await loadOps(after, OPS_PER_READ);
+      if (!ops.length) break;
+      replica.addOps(JSON.stringify(ops));
+      after = ops[ops.length - 1].id;
+      if (ops.length < OPS_PER_READ) break;
+      await yieldToUi();
+    }
+    performance.mark('chorus:ops-read');
+    while (!replica.indexStep(OPS_PER_INDEX)) await yieldToUi();
+    const adopted = replica.adopt(snapshot && this.cached ? snapshot.digest : '');
+    this.opening = false;
+    if (adopted) this.refresh(); // ops created while opening
+    else {
+      this.cached = null; // the snapshot was stale: projection() computes it whole
+      this.snapshotDirty = true;
+      this.scheduleSnapshot();
+    }
+    performance.mark('chorus:restored');
+    this.emit();
     this.connect();
+  }
+
+  private scheduleSnapshot(): void {
+    if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
+    this.snapshotTimer = setTimeout(() => this.writeSnapshot(), SNAPSHOT_AFTER_MS);
+  }
+
+  /** Save what the UI shows, with the digest of the ops it came from (after those ops are saved). */
+  private writeSnapshot(): void {
+    if (!this.replica || this.opening || !this.projection()) return;
+    this.refresh();
+    const snapshot: Snapshot = { projection: JSON.stringify(this.cached), digest: this.replica.projectionDigest(), at: Date.now() };
+    this.snapshotDirty = false;
+    this.saving = this.saving.then(() => saveSnapshot(snapshot)).catch((e) => console.error('snapshot failed', e));
   }
 
   /** After enrolment. */
@@ -105,15 +168,17 @@ export class SyncClient {
   projection(): Projection | null {
     if (!this.replica) return null;
     if (!this.cached) {
+      if (this.opening) return null;
       this.cached = JSON.parse(this.replica.projection()) as Projection;
       this.replica.projectionDelta(); // the next delta starts from here
+      performance.mark('chorus:projected');
     }
     return this.cached;
   }
 
   /** Bring the cached projection up to date with only what changed (SPEC §9). */
   private refresh(): void {
-    if (!this.replica || !this.cached) return;
+    if (!this.replica || !this.cached || this.opening) return;
     const d = JSON.parse(this.replica.projectionDelta()) as Delta;
     this.cached = d.full ? (JSON.parse(this.replica.projection()) as Projection) : applyDelta(this.cached, d);
     for (const listener of this.projectionListeners) listener(this.cached, d);
@@ -182,6 +247,10 @@ export class SyncClient {
     this.refresh();
     const ch = JSON.parse(this.replica!.takeChanges()) as Changes;
     this.saving = this.saving.then(() => save(ch)).catch((e) => console.error('persist failed', e));
+    if (!this.opening) {
+      this.snapshotDirty = true;
+      this.scheduleSnapshot();
+    }
     this.emit();
   }
 
@@ -196,7 +265,7 @@ export class SyncClient {
   }
 
   private connect(): void {
-    if (!this.replica || !this.device) return;
+    if (!this.replica || !this.device || this.opening) return;
     this.status = 'connecting';
     this.emit();
     const ws = new WebSocket(this.url());
