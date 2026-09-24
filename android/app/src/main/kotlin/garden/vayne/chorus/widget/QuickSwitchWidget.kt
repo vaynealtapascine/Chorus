@@ -82,6 +82,7 @@ class QuickSwitchWidget : AppWidgetProvider() {
     }
 
     private suspend fun onTile(ctx: Context, state: WidgetState, widgetId: Int, intent: Intent) {
+        if (Chorus.get(ctx).awaitModel().isPerson) return
         val type = intent.getStringExtra(EXTRA_TYPE) ?: return
         val id = intent.getStringExtra(EXTRA_ID) ?: return
         if (type == "folder") {
@@ -163,6 +164,16 @@ class QuickSwitchWidget : AppWidgetProvider() {
             val state = WidgetState(ctx)
             val v = RemoteViews(ctx.packageName, R.layout.widget_quick_switch)
             val signedIn = Chorus.get(ctx).device != null
+
+            if (model.isPerson) {
+                v.setTextViewText(R.id.w_front, "Chorus for systems")
+                v.setTextViewText(R.id.w_empty, "Quick switching is for systems")
+                for (id in listOf(R.id.w_mode, R.id.w_search, R.id.w_undo_row, R.id.w_crumb, R.id.w_grid)) {
+                    v.setViewVisibility(id, View.GONE)
+                }
+                v.setViewVisibility(R.id.w_empty, View.VISIBLE)
+                return v
+            }
 
             val front = model.current.filter { it.level == "front" }
             val since = model.since?.let { " · " + ago(it).replace("just now", "now") }.orEmpty()

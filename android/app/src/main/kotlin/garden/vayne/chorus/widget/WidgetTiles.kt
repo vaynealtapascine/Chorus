@@ -15,6 +15,7 @@ internal sealed interface WidgetTile {
  * front. Pure, so it is unit-tested without a device.
  */
 internal fun widgetTiles(model: Model, folder: String?, recentLimit: Int = 8): List<WidgetTile> {
+    if (model.isPerson) return emptyList()
     val subsystems = model.groups.filter { it.isSubsystem }
     val active = model.active
     val recent = model.recents(Int.MAX_VALUE)

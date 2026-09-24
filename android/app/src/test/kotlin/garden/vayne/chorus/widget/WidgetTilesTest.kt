@@ -44,4 +44,10 @@ class WidgetTilesTest {
     fun aMissingFolderFallsBackToRoot() {
         assertEquals(names(widgetTiles(model, null)), names(widgetTiles(model, "gone")))
     }
+
+    @Test
+    fun personAccountHasNoQuickSwitchTiles() {
+        val person = Model(listOf(m("self").copy(isSelf = true)), emptyList(), emptyMap(), emptyList(), null, emptyList())
+        assertEquals(emptyList<WidgetTile>(), widgetTiles(person, null))
+    }
 }

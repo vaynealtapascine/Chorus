@@ -97,6 +97,15 @@ private fun Launcher(chorus: Chorus, close: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val results = remember(model, query) { searchSubjects(model, query) }
 
+    if (model.isPerson) {
+        Box(Modifier.fillMaxSize().background(Color(0x66000000)).clickable(onClick = close).statusBarsPadding().padding(16.dp),
+            contentAlignment = Alignment.TopCenter) {
+            Text("Quick switching is for systems", color = p.ink,
+                modifier = Modifier.fillMaxWidth().background(p.bg, RoundedCornerShape(24.dp)).padding(20.dp))
+        }
+        return
+    }
+
     fun pick(s: Subject) {
         scope.launch {
             try {
