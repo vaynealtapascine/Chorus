@@ -12,6 +12,9 @@ pub struct Config {
     pub backup: Backup,
     pub limits: Limits,
     pub security: Security,
+    /// The file this was read from (Chorus Home's settings page writes it back; D-071).
+    #[serde(skip)]
+    pub source: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -21,6 +24,9 @@ pub struct Server {
     /// Chorus Home (D-071): also listen here with TLS for phones on the home wifi, e.g.
     /// `0.0.0.0:5251`, using a self-signed certificate that invites pin (`tls.rs`).
     pub lan_listen: Option<String>,
+    /// A Chorus Home install (D-071, docs/HOME.md): enables the setup and settings routes for
+    /// requests from this PC itself. Never set behind a reverse proxy (every request looks local).
+    pub home: bool,
     pub public_url: String,
     pub data_dir: PathBuf,
     /// Serve the built web app from this directory (the PWA), if set.
@@ -129,6 +135,7 @@ impl Default for Server {
         Server {
             listen: "127.0.0.1:5250".into(),
             lan_listen: None,
+            home: false,
             public_url: "http://127.0.0.1:5250".into(),
             data_dir: PathBuf::from("data"),
             web_dir: None,
@@ -164,7 +171,9 @@ impl Config {
             return Ok(Config::default());
         }
         let text = std::fs::read_to_string(path)?;
-        toml::from_str(&text).map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))
+        let mut cfg: Config = toml::from_str(&text).map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
+        cfg.source = Some(path.to_path_buf());
+        Ok(cfg)
     }
 
     /// Development profile (docs/OPS.md §8): port 5251, data in ./data-dev.

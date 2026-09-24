@@ -131,7 +131,12 @@ impl TlsListener {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         tokio::spawn(async move {
             loop {
-                let (stream, peer) = match tcp.accept().await {
+                // stop (and free the port) once the listener side is dropped
+                let accepted = tokio::select! {
+                    a = tcp.accept() => a,
+                    () = tx.closed() => return,
+                };
+                let (stream, peer) = match accepted {
                     Ok(c) => c,
                     Err(e) => {
                         tracing::warn!(error = %e, "home-wifi accept failed");
@@ -149,9 +154,6 @@ impl TlsListener {
                         Err(_) => tracing::debug!(%peer, "TLS handshake timed out"),
                     }
                 });
-                if tx.is_closed() {
-                    return;
-                }
             }
         });
         Ok(TlsListener { rx, local })

@@ -79,7 +79,7 @@ impl Shared {
         }))
     }
 
-    fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
+    pub(crate) fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.db.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -164,6 +164,8 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/sync", get(sync_ws))
         .layer(axum::middleware::from_fn_with_state(state.clone(), crate::ratelimit::limit));
+    // Chorus Home's setup and settings, for this PC only (home.rs, D-071)
+    let api = if state.cfg.server.home { api.merge(crate::home::routes()) } else { api };
     let mut app = Router::new()
         .nest("/api/v1", api)
         .route("/download/android", get(android_download))
@@ -199,7 +201,7 @@ async fn web_app_headers(mut r: Response) -> Response {
 
 // ─── errors ──────────────────────────────────────────────────────────────────
 
-pub struct ApiError(StatusCode, &'static str, String);
+pub struct ApiError(pub StatusCode, pub &'static str, pub String);
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
@@ -1846,6 +1848,7 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     run_notifier(state.clone());
     crate::backup::start_nightly(state.cfg.clone())?;
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+    let mut lan_task = None;
     if let Some(lan) = state.cfg.server.lan_listen.clone() {
         // Chorus Home (D-071): the same app over TLS for phones on the home wifi
         let id = crate::tls::load_or_create(&state.cfg.server.data_dir)?;
@@ -1853,16 +1856,19 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
         tracing::info!(addr = %lan, pin = %id.pin, "home-wifi TLS listening");
         let app =
             crate::tls::with_peer(router(state.clone())).into_make_service_with_connect_info::<crate::tls::Peer>();
-        tokio::spawn(async move {
+        lan_task = Some(tokio::spawn(async move {
             if let Err(e) = axum::serve(listener, app).await {
                 tracing::error!(error = %e, "home-wifi listener stopped");
             }
-        });
+        }));
     }
     let app = router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
     let server = axum::serve(listener, app).with_graceful_shutdown(async {
-        stop_signal().await;
-        tracing::info!("stopping");
+        tokio::select! {
+            () = stop_signal() => tracing::info!("stopping"),
+            // Chorus Home's settings changed: main starts again with the new config
+            () = crate::home::restart_requested() => tracing::info!("restarting with new settings"),
+        }
         let _ = stop_tx.send(());
     });
     // Open sync sockets would hold a graceful shutdown forever; give them a moment, then go.
@@ -1873,6 +1879,11 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     tokio::select! {
         r = server => r?,
         _ = deadline => tracing::info!("sockets still open after 2 s; exiting anyway"),
+    }
+    // frees the home-wifi port for a restart (tls.rs stops accepting once its listener is gone)
+    if let Some(t) = lan_task {
+        t.abort();
+        let _ = t.await;
     }
     Ok(())
 }

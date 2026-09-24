@@ -14,6 +14,7 @@ pub mod exports;
 pub mod feeds;
 pub mod follows;
 pub mod health;
+pub mod home;
 pub mod ingest;
 pub mod messages;
 pub mod notifier;

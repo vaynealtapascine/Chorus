@@ -119,9 +119,10 @@ fn main() -> anyhow::Result<()> {
         .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
         .init();
     let cli = Cli::parse();
-    let cfg = if cli.dev { Config::dev() } else { Config::load(Some(&cli.config))? };
+    let mut cfg = if cli.dev { Config::dev() } else { Config::load(Some(&cli.config))? };
     match cli.cmd {
-        Cmd::Serve => {
+        // Chorus Home's settings page restarts the server with the new file (home.rs)
+        Cmd::Serve => loop {
             let conn = chorus_server::open_and_migrate(&cfg)?;
             if cli.dev && conn.query_row("SELECT count(*) = 0 FROM account", [], |r| r.get::<_, bool>(0))? {
                 let code = chorus_server::auth::create_invite(
@@ -139,9 +140,14 @@ fn main() -> anyhow::Result<()> {
             if fixed > 0 {
                 tracing::info!(accounts = fixed, "gave person accounts their self member (D-003)");
             }
-            let state = chorus_server::app::Shared::new(conn, cfg)?;
+            let state = chorus_server::app::Shared::new(conn, cfg.clone())?;
+            // a fresh runtime each time: dropping it ends the last run's background tasks
             tokio::runtime::Runtime::new()?.block_on(chorus_server::app::serve(state))?;
-        }
+            if !chorus_server::home::take_restart() {
+                break;
+            }
+            cfg = Config::load(Some(&cli.config))?;
+        },
         Cmd::Migrate => {
             let conn = chorus_server::open_and_migrate(&cfg)?;
             println!("schema version {}", db::schema_version(&conn)?);

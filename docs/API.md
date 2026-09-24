@@ -390,6 +390,24 @@ Non-admins get 403 from both endpoints; API tokens can't call them.
 
 Same operations exist on the CLI (`chorus-server --help`, OPS.md).
 
+### 8a. Chorus Home (D-071, HOME.md)
+
+Only on a Chorus Home install (`[server] home = true`), and only for requests from the PC itself
+(a loopback peer with no `X-Forwarded-For`/`Forwarded`; anything else gets `403
+not_this_computer`). A technical install behind Caddy never has these routes: every request
+there looks local.
+
+```
+GET  /home            → {needs_setup, version, port, lan, lan_port, lan_address, pin, data_dir,
+                         backup: {dir, keep_daily}}
+POST /home/setup      → {code}   one-use system invite for the first account; 409 once one exists
+PUT  /home/settings   {port?, lan?, keep_daily?}   admin device session → 202 {url}
+```
+
+`PUT /home/settings` rewrites `chorus.toml` (`listen = 127.0.0.1:<port>`, `lan_listen =
+0.0.0.0:<port+1>` when `lan`) after checking the new file loads, answers, then restarts the server
+in place with it (a fresh runtime, so nothing of the old run is left listening).
+
 ## 9. Outside the API
 
 ```
