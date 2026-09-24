@@ -199,6 +199,16 @@ impl WebReplica {
         self.0.disconnect();
     }
 
+    /// "Sync everything now": frames asking for every scope again (empty unless live).
+    pub fn recheck(&self) -> String {
+        self.0.recheck()
+    }
+
+    /// Scopes still being repaired after a digest mismatch (JSON array).
+    pub fn repairing(&self) -> String {
+        self.0.repairing()
+    }
+
     #[wasm_bindgen(js_name = takeChanges)]
     pub fn take_changes(&mut self) -> String {
         self.0.take_changes()

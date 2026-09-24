@@ -219,6 +219,11 @@ impl Replica {
         self.engine.on_frame(&mut self.store, frame)
     }
 
+    /// Frames asking for every scope again (see [`ClientEngine::recheck`]).
+    pub fn recheck(&self) -> Vec<Frame> {
+        self.engine.recheck(&self.store)
+    }
+
     pub fn disconnect(&mut self) {
         self.engine.on_disconnect();
     }

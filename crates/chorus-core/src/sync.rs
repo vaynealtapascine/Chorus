@@ -356,6 +356,22 @@ impl ClientEngine {
         out
     }
 
+    /// "Sync everything now" (CLIENTS.md §4.3): ask for every scope from where this device is.
+    /// Each answer ends with the server's digest, so a scope that diverged is repaired.
+    pub fn recheck(&self, store: &dyn ClientStore) -> Vec<Frame> {
+        if self.state != ClientState::Live {
+            return Vec::new();
+        }
+        store.scopes().into_iter().map(|scope| Frame::Pull { after: store.cursor(&scope), scope }).collect()
+    }
+
+    /// Scopes being re-pulled after a digest mismatch.
+    pub fn repairing(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.repairing.keys().cloned().collect();
+        v.sort();
+        v
+    }
+
     pub fn on_frame(&mut self, store: &mut dyn ClientStore, frame: Frame) -> Vec<Frame> {
         let mut out = Vec::new();
         match frame {
@@ -947,6 +963,35 @@ mod tests {
             store.ops.keys().cloned().collect::<BTreeSet<_>>(),
             BTreeSet::from([confirmed(2, "").id, pending.id])
         );
+    }
+
+    #[test]
+    fn recheck_asks_for_every_scope_from_its_cursor_once_live() {
+        let mut store = MemStore::default();
+        let mut engine = ClientEngine::new("d");
+        assert!(engine.recheck(&store).is_empty(), "not before the server answers");
+        let scopes = vec!["account:a".to_string(), "space:s".to_string()];
+        let welcome = Frame::Welcome {
+            server_time: 0,
+            epoch: "1".into(),
+            account_id: "a".into(),
+            offset_ms: 0,
+            scopes: scopes.clone(),
+            max_seq: BTreeMap::new(),
+            reconcile: false,
+            core_min: String::new(),
+        };
+        engine.on_frame(&mut store, welcome);
+        store.set_cursor("space:s", 7);
+        let frames = engine.recheck(&store);
+        assert_eq!(
+            frames,
+            vec![
+                Frame::Pull { scope: "account:a".into(), after: 0 },
+                Frame::Pull { scope: "space:s".into(), after: 7 }
+            ]
+        );
+        assert!(engine.repairing().is_empty());
     }
 
     #[test]

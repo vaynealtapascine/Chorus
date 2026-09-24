@@ -318,6 +318,16 @@ impl JsonReplica {
         self.0.disconnect();
     }
 
+    /// Frames to send to check every scope again (JSON array; empty unless live).
+    pub fn recheck(&self) -> String {
+        js(&self.0.recheck())
+    }
+
+    /// Scopes still being repaired (JSON array).
+    pub fn repairing(&self) -> String {
+        js(&self.0.engine.repairing())
+    }
+
     pub fn take_changes(&mut self) -> String {
         js(&self.0.take_changes())
     }
