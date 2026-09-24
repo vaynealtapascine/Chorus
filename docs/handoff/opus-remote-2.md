@@ -95,3 +95,9 @@ take **0007** if you need one; Sol takes 0008.
   it" (Only us / Our followers; locked private with `fronting:`) and a "Shared with you" list
   with paging. Test in `tests/posts.rs` (follower vs stranger vs private feed, name resolution,
   fronting, paging). Not yet looked at in a browser; R12's suite will cover it.
+- R11 — REST reads for M7 (`api_journal.rs`): `GET /profiles/{member_id}` (`read:members`;
+  member + relationships + stats, highlights only with `read:posts`), `GET /lists` and
+  `GET /lists/{id}/timeline` (`read:posts`); `GET /posts` and `/posts/{id}` now take API tokens
+  with `read:posts` (own account's posts and replies only; a device session still reads
+  cross-account). No new scope beyond `read:posts`, which API.md already named. Tests in
+  `tests/posts.rs`; API.md and `api-check.py` in step (68 routes).

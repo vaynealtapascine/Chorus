@@ -156,8 +156,8 @@ GET  /posts/{id}                           with replies ?depth=
   parent/repost links. Authors include ordered member ids and small author cards. Each post also
   includes ordered attachment metadata and blob hashes, plus present post reactions with emoji and
   reactor member id/name; blob downloads enforce the same current
-  audience. API tokens do
-  not use these cross-account routes.
+  audience. API tokens (`read:posts`) get only their own account's posts here, and only their
+  own account's replies under one.
 GET  /timeline?before=&limit=              combined system timeline
 GET  /profiles/{member_id}                 profile bundle (fields, stats, highlights, relationships)
 GET  /lists  /lists/{id}/timeline
@@ -225,7 +225,16 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   that uses `fronting:` answers 400 to anyone but its owner (it would reveal when members
   fronted; OPEN_QUESTIONS Q15). A feed you can't read is a 404. Tokens need `read:posts` and
   see only their own account's feeds and posts.
-- **Not yet:** profiles (M7).
+- **Journal** (`api_journal.rs`, M7; the caller's own account):
+  - `GET /profiles/{member_id}` (`read:members`): `{member}` as `/members/{id}` (groups,
+    fields), `relationships` from that member (`to_kind`, `to_id`, `to_label`, `to_name`, `note`,
+    `type {id, name, inverse_name, symmetric}`), `stats {posts, entries, notes, first_post_at,
+    last_post_at}`, and with `read:posts` too `highlights` (readable posts, `sort_key` order;
+    `null` without the scope). Another account's member is a 404.
+  - `GET /lists` (`read:posts`): `[{id, name, description, visibility, member_ids}]`.
+  - `GET /lists/{id}/timeline?before=&limit=` (`read:posts`): posts by the list's members that
+    the caller can read, newest first, 1–100 (default 50); `before` is an exclusive occurred-at.
+- **Not yet:** `/timeline` and `POST /feeds/preview`.
 
 ## 4. Writes (non-sync)
 

@@ -139,6 +139,9 @@ pub fn router(state: AppState) -> Router {
         .route("/search/messages", get(search_messages))
         .route("/search/posts", get(search_posts))
         .route("/feeds", get(feeds_list))
+        .route("/profiles/{id}", get(profile_one))
+        .route("/lists", get(lists_list))
+        .route("/lists/{id}/timeline", get(list_timeline))
         .route("/feeds/{id}/items", get(feed_items))
         .route("/messages/{id}", get(search_message))
         .route("/messages/{id}/thread", get(message_thread))
@@ -874,14 +877,33 @@ async fn channel_send(
 
 /// Posts are account-scoped data with an explicit audience. Only signed-in devices can use the
 /// cross-account view; API tokens remain limited to their own-account data APIs.
+/// Posts a device can read, or (API tokens with `read:posts`) the token's own account's.
+fn posts_principal(
+    s: &AppState,
+    conn: &Connection,
+    headers: &axum::http::HeaderMap,
+) -> Result<crate::api_data::Principal, ApiError> {
+    let p = principal(s, conn, headers)?;
+    if !p.allows("read:posts") {
+        return Err(crate::api_data::DataError::Scope("read:posts").into());
+    }
+    Ok(p)
+}
+
 async fn posts_list(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
-    axum::extract::Query(q): axum::extract::Query<crate::posts::PostQuery>,
+    axum::extract::Query(mut q): axum::extract::Query<crate::posts::PostQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let conn = s.db();
-    let me = who(&s, &conn, &headers)?;
-    Ok(Json(crate::posts::list(&conn, &me.account_id, &q)?))
+    let p = posts_principal(&s, &conn, &headers)?;
+    if !p.is_device() {
+        if q.account.as_deref().is_some_and(|a| a != p.account_id) {
+            return Ok(Json(json!({"items": []})));
+        }
+        q.account = Some(p.account_id.clone());
+    }
+    Ok(Json(crate::posts::list(&conn, &p.account_id, &q)?))
 }
 
 #[derive(Deserialize)]
@@ -896,11 +918,57 @@ async fn post_one(
     axum::extract::Query(q): axum::extract::Query<PostDetailQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let conn = s.db();
-    let me = who(&s, &conn, &headers)?;
-    let mut item = crate::posts::one(&conn, &me.account_id, &id)?
+    let p = posts_principal(&s, &conn, &headers)?;
+    let own_only = !p.is_device();
+    let mut item = crate::posts::one(&conn, &p.account_id, &id)?
+        .filter(|item| !own_only || item["account_id"].as_str() == Some(p.account_id.as_str()))
         .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "post unavailable".into()))?;
-    item["replies"] = json!(crate::posts::replies(&conn, &me.account_id, &id, q.depth.unwrap_or(1).min(3))?);
+    let mut replies = crate::posts::replies(&conn, &p.account_id, &id, q.depth.unwrap_or(1).min(3))?;
+    if own_only {
+        own_replies(&mut replies, &p.account_id);
+    }
+    item["replies"] = json!(replies);
     Ok(Json(item))
+}
+
+/// API tokens read only their own account's posts: drop other accounts' replies (and theirs).
+fn own_replies(replies: &mut Vec<serde_json::Value>, account: &str) {
+    replies.retain(|r| r["account_id"].as_str() == Some(account));
+    for r in replies.iter_mut() {
+        if let Some(inner) = r.get_mut("replies").and_then(|v| v.as_array_mut()) {
+            own_replies(inner, account);
+        }
+    }
+}
+
+async fn profile_one(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    crate::api_journal::profile(&conn, &p, &id)?.map(Json).ok_or_else(|| not_found("member"))
+}
+
+async fn lists_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::api_journal::lists(&conn, &p)?))
+}
+
+async fn list_timeline(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<crate::api_journal::TimelineQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    crate::api_journal::list_timeline(&conn, &p, &id, &q)?.map(Json).ok_or_else(|| not_found("list"))
 }
 
 /// Log a switch from a script, NFC tag or Tasker (`write:front`, api_writes.rs).
