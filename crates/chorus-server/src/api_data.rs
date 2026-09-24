@@ -14,7 +14,8 @@ use serde_json::{Value, json};
 
 use crate::auth;
 
-pub const SCOPES: &[&str] = &["read:front", "read:members", "read:messages", "stream", "write:front", "export"];
+pub const SCOPES: &[&str] =
+    &["read:front", "read:members", "read:messages", "write:messages", "stream", "write:front", "export"];
 
 /// Who is calling: a device session (everything) or an API token (its scopes).
 pub struct Principal {

@@ -949,6 +949,51 @@ async fn friends_share_spaces_and_dms() {
     laptop.drain(Q).await;
     assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(public_thread.as_str())));
 
+    // REST reads (API.md §3): the friend sees the channels and public messages, not the aside
+    // or its thread
+    let get = |path: String, auth: String| {
+        let http = http.clone();
+        async move {
+            let r = http.get(path).bearer_auth(auth).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap_or(Value::Null))
+        }
+    };
+    let (st, chans) = get(url(&format!("/spaces/{dm}/channels")), tok(&friend)).await;
+    assert_eq!(st, 200);
+    let ids: Vec<&str> = chans["items"].as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap()).collect();
+    assert!(ids.contains(&chan.as_str()) && ids.contains(&public_thread.as_str()), "{ids:?}");
+    assert!(!ids.contains(&aside_thread.as_str()), "a thread under an aside isn't listed");
+    let (st, msgs) = get(url(&format!("/channels/{chan}/messages")), tok(&friend)).await;
+    assert_eq!(st, 200);
+    let texts: Vec<&str> = msgs["items"].as_array().unwrap().iter().map(|m| m["text"].as_str().unwrap()).collect();
+    assert!(texts.contains(&"hi alex") && texts.contains(&"public with image"), "{texts:?}");
+    assert!(!texts.iter().any(|t| t.contains("aside")), "{texts:?}");
+    assert_eq!(get(url(&format!("/channels/{aside_thread}/messages")), tok(&friend)).await.0, 404);
+    assert_eq!(get(url(&format!("/channels/{chan}/messages")), tok(&stranger)).await.0, 404);
+    // `around` a message, and one page back
+    let (_, around) = get(url(&format!("/channels/{chan}/messages?around={public}&limit=2")), tok(&friend)).await;
+    assert!(around["items"].as_array().unwrap().iter().any(|m| m["id"] == public.as_str()));
+
+    // a bot token writes as Kai (markup parsed); it reads only its own account's messages
+    let (_, t) =
+        post(url("/tokens"), tok(&sys), json!({"name": "bot", "scopes": ["read:messages", "write:messages"]})).await;
+    let bot = t["token"].as_str().unwrap().to_string();
+    let (st, sent) = post(
+        url(&format!("/channels/{chan}/messages")),
+        bot.clone(),
+        json!({"text": "from a **bot**", "authors": ["Kai"]}),
+    )
+    .await;
+    assert_eq!(st, 201, "{sent}");
+    assert_eq!(sent["message"]["text"], "from a bot");
+    assert_eq!(sent["message"]["entities"][0]["type"], "bold");
+    laptop.drain(Q).await;
+    assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == sent["message_id"].as_str()), "fanned out live");
+    let (_, mine) = get(url(&format!("/channels/{chan}/messages")), bot.clone()).await;
+    assert!(mine["items"].as_array().unwrap().iter().all(|m| m["account_id"] == id_of(&sys).as_str()));
+    let (st, _) = post(url(&format!("/channels/{chan}/messages")), tok(&stranger), json!({"text": "hi"})).await;
+    assert_eq!(st, 404, "not in the space");
+
     laptop.disconnect();
     let later_aside = new_id(3, [95; 10]);
     phone

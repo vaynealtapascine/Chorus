@@ -9,9 +9,10 @@
   const SCOPES = [
     { id: 'read:front', label: 'Who is fronting, switches and front history' },
     { id: 'read:members', label: 'Member list' },
-    { id: 'read:messages', label: 'Search message history' },
+    { id: 'read:messages', label: 'Read and search your messages' },
     { id: 'stream', label: 'Live stream (overlays)' },
     { id: 'write:front', label: 'Log switches (NFC tags, Tasker, Home Assistant)' },
+    { id: 'write:messages', label: 'Send messages (bots, bridges)' },
     { id: 'export', label: 'Download your op log and data exports' },
   ];
   const CSV_EXPORTS = ['members', 'groups', 'switches', 'front_intervals', 'front_daily', 'messages', 'posts'];

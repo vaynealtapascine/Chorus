@@ -194,8 +194,12 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
     display name, pronouns, colour, sigils, avatar) for other accounts' members who wrote a message
     everyone in the space can read.
   - A space you aren't in is a 404.
-- **Not yet:** message list/thread reads, profiles, feeds and insights, which come with
-  M5.7/M5.8/M7/M10.1.
+- **Messages** (`messages.rs`, 2026-09-24): `GET /spaces/{id}/channels`,
+  `GET /channels/{id}/messages?before=&after=&around=&limit=` (epoch ms, exclusive; `around` is a
+  message id; oldest first, 1–100, default 50) and `GET /messages/{id}/thread`. Same rule as
+  search: spaces you're in, public or own messages, threads under messages you can't see are
+  hidden (404). API tokens with `read:messages` get only their own account's messages (§2.3).
+- **Not yet:** profiles and feeds (M7).
 
 ## 4. Writes (non-sync)
 
@@ -229,7 +233,12 @@ archives and is not yet served.
 The switch becomes an ordinary `front.switch` op attributed to `token:<token id>` (or to `server`
 from a session), so devices, followers, the stream and webhooks see it like a switch from the app.
 The answer is `201 {switch_id, op_id, occurred_at}`, plus `front` if the caller may `read:front`.
-`POST /channels/{id}/messages` waits for M5.7 visibility.
+**`POST /channels/{id}/messages`** is implemented (`messages.rs`): API tokens need
+`write:messages`. `authors` are member ids or names of the account's own members (default: the
+primary fronter, else a person account's own member); `format` is `markup` (default, parsed with
+the apps' parser, mentioning your own members and the server's emoji), `plain` or `entities`;
+`reply_to` must be a message you can read. It becomes an ordinary `message.send` op attributed to
+`token:<id>` and answers `201 {message_id, op_id, message}`.
 
 ## 5. Blobs
 

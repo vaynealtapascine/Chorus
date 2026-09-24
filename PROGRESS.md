@@ -69,7 +69,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M2.4 Projections for all tables + rebuild-from-log command
 - [x] M2.5 Sync WebSocket (hello/push/pull/ack/snapshot/hash) per SYNC.md
 - [x] M2.6 Blob store (content-addressed, resumable upload) — gpt-6-sol batch 2 T1 (merged 18e4d6e)
-- [~] M2.7 Read API (REST) + follower views — /me, /members(/{id}), /groups, /fields, /states, /front, /front/switches|intervals|daily|reviews, /accounts/{id}/view done; messages/posts/profiles/feeds reads wait for M5.7/M5.8/M7
+- [~] M2.7 Read API (REST) + follower views — /me, /members(/{id}), /groups, /fields, /states, /front, /front/switches|intervals|daily|reviews, /accounts/{id}/view done; channel/message/thread reads and POST /channels/{id}/messages (write:messages) done 2026-09-24; profiles/feeds wait for M7
 - [x] M2.8 Nightly backups + `chorus-server backup|restore|rebuild|export` CLI — batch 3 T6 (snapshot directories, D-064)
 
 ### M3 — Web client foundation

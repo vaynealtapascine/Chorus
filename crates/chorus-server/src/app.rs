@@ -118,6 +118,9 @@ pub fn router(state: AppState) -> Router {
         .route("/front/reviews", get(front_reviews))
         .route("/search/messages", get(search_messages))
         .route("/messages/{id}", get(search_message))
+        .route("/messages/{id}/thread", get(message_thread))
+        .route("/spaces/{id}/channels", get(space_channels))
+        .route("/channels/{id}/messages", get(channel_messages).post(channel_send))
         .route("/posts", get(posts_list))
         .route("/posts/{id}", get(post_one))
         .route("/me", get(me))
@@ -720,6 +723,57 @@ async fn search_message(
     let message = crate::search::message_by_id(&conn, &p, &id)?
         .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "message unavailable".into()))?;
     Ok(Json(message))
+}
+
+fn not_found(what: &str) -> ApiError {
+    ApiError(StatusCode::NOT_FOUND, "not_found", format!("{what} unavailable"))
+}
+
+async fn space_channels(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::messages::channels(&conn, &p, &id)?.ok_or_else(|| not_found("space"))?))
+}
+
+async fn channel_messages(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<crate::messages::Page>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::messages::list(&conn, &p, &id, &q)?.ok_or_else(|| not_found("channel"))?))
+}
+
+async fn message_thread(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<crate::messages::Page>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::messages::thread(&conn, &p, &id, &q)?.ok_or_else(|| not_found("message"))?))
+}
+
+async fn channel_send(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    Json(b): Json<crate::messages::MessageIn>,
+) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    let o = crate::messages::send(&conn, &p, &id, &b, now_ms())?.ok_or_else(|| not_found("channel"))?;
+    fan_out(&s, &conn, std::slice::from_ref(&o), None)?;
+    let message = crate::messages::one(&conn, &p, o.entity().unwrap_or_default())?;
+    Ok((StatusCode::CREATED, Json(json!({"message_id": o.entity_id, "op_id": o.id, "message": message})))
+        .into_response())
 }
 
 /// Posts are account-scoped data with an explicit audience. Only signed-in devices can use the
