@@ -116,6 +116,33 @@ async fn http_search_applies_account_visibility_and_filters() {
         get("bob-session", "").send().await.unwrap().json::<Value>().await.unwrap()["items"].as_array().unwrap().len(),
         3
     );
+    let first = get("bob-session", "&limit=2").send().await.unwrap().json::<Value>().await.unwrap();
+    assert_eq!(first["items"].as_array().unwrap().len(), 2);
+    let cursor = first["next_cursor"].as_str().unwrap();
+    let second =
+        get("bob-session", &format!("&limit=2&cursor={cursor}")).send().await.unwrap().json::<Value>().await.unwrap();
+    assert_eq!(second["items"].as_array().unwrap().len(), 1);
+    assert!(second["next_cursor"].is_null());
+    let mut paged = first["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(second["items"].as_array().unwrap())
+        .map(|v| v["id"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    paged.sort();
+    assert_eq!(paged, ["bob", "public", "segmented"]);
+    assert_eq!(get("bob-session", "&cursor=bad").send().await.unwrap().status(), 400);
+    assert_eq!(
+        client
+            .get(format!("{base}?q=garden&cursor={cursor}"))
+            .bearer_auth("bob-session")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
     assert_eq!(
         get("alice-session", "").send().await.unwrap().json::<Value>().await.unwrap()["items"]
             .as_array()

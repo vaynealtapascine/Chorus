@@ -1,8 +1,15 @@
 //! Public journal reads must enforce the stored audience at request time.
 
-use chorus_server::{api_data, app, auth, config::Config, db};
+use chorus_core::{
+    hlc::Hlc,
+    id::new_id,
+    op::Op,
+    time::{ClockSample, TimeSource},
+};
+use chorus_server::{api_data, app, auth, config::Config, db, ingest, posts};
 use rusqlite::{Connection, params};
 use serde_json::Value;
+use serde_json::json;
 
 const ALICE: &str = "0192f8c2-0000-7000-8000-0000000000a1";
 const BOB: &str = "0192f8c2-0000-7000-8000-0000000000b2";
@@ -73,6 +80,31 @@ fn seed() -> Connection {
         conn.execute("INSERT INTO post_author(post_id,member_id,position) VALUES (?1,?2,0)", params![id, member])
             .unwrap();
     }
+    conn.execute(
+        "INSERT INTO attachment(id,account_id,blob_hash,thumb_blob_hash,filename,mime,size,alt_text,is_spoiler,created_at)
+         VALUES ('a','0192f8c2-0000-7000-8000-0000000000a1','full-hash','thumb-hash','photo.png','image/png',42,'A picture',1,0)",
+        [],
+    )
+    .unwrap();
+    for id in ["server", "private"] {
+        conn.execute(
+            "INSERT INTO item_attachment(owner_type,owner_id,attachment_id,position) VALUES ('post',?1,'a',0)",
+            [id],
+        )
+        .unwrap();
+    }
+    for (id, emoji, member, added, removed) in [
+        ("server", "💜", "bob", Some("2:0:1"), None),
+        ("server", "👍", "carol", Some("2:0:1"), Some("3:0:1")),
+        ("private", "💜", "bob", Some("2:0:1"), None),
+    ] {
+        conn.execute(
+            "INSERT INTO reaction(target_type,target_id,emoji,member_id,added_hlc,removed_hlc)
+             VALUES ('post',?1,?2,?3,?4,?5)",
+            params![id, emoji, member, added, removed],
+        )
+        .unwrap();
+    }
     conn
 }
 
@@ -109,6 +141,15 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
     assert!(bob["items"][0].get("front_snapshot").is_none());
     assert!(bob["items"][1]["reply_to"].is_null());
     assert_eq!(bob["items"][1]["author_cards"][0]["name"], "alice");
+    let shared = bob["items"].as_array().unwrap().iter().find(|p| p["id"] == "server").unwrap();
+    assert_eq!(shared["attachments"][0]["blob_hash"], "full-hash");
+    assert_eq!(shared["attachments"][0]["thumb_blob_hash"], "thumb-hash");
+    assert_eq!(shared["attachments"][0]["alt_text"], "A picture");
+    assert_eq!(shared["attachments"][0]["is_spoiler"], true);
+    assert_eq!(shared["attachments"].as_array().unwrap().len(), 1);
+    assert_eq!(shared["reactions"].as_array().unwrap().len(), 1);
+    assert_eq!(shared["reactions"][0]["emoji"], "💜");
+    assert_eq!(shared["reactions"][0]["member_name"], "bob");
     let carol = get("carol-session", "").send().await.unwrap().json::<Value>().await.unwrap();
     assert_eq!(ids(&carol), ["server"]);
     let alice = get("alice-session", "?account=0192f8c2-0000-7000-8000-0000000000a1")
@@ -119,6 +160,8 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
         .await
         .unwrap();
     assert_eq!(ids(&alice).len(), 8);
+    let owner_server = alice["items"].as_array().unwrap().iter().find(|p| p["id"] == "server").unwrap();
+    assert_eq!(owner_server["reactions"][0]["member_id"], "bob");
     assert_eq!(get("bob-session", "/private").send().await.unwrap().status(), 404);
     assert_eq!(get("carol-session", "/bucket").send().await.unwrap().status(), 404);
     assert_eq!(
@@ -160,4 +203,46 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
     let after = chorus_server::posts::list(&ended, BOB, &Default::default()).unwrap();
     assert_eq!(ids(&after), ["own-bob", "server"]);
     assert!(chorus_server::posts::one(&ended, BOB, "bucket").unwrap().is_none());
+}
+
+#[test]
+fn post_reactions_require_an_owned_member_and_a_readable_existing_post() {
+    let conn = seed();
+    let scope = format!("account:{BOB}");
+    ingest::grant(&conn, BOB, &scope).unwrap();
+    let now = chorus_server::now_ms();
+    let session = ingest::Session {
+        account_id: BOB.into(),
+        device_id: BOB.into(),
+        sample: ClockSample { server_time: now, mono: None, boot_id: None, offset_ms: 0 },
+    };
+    let make = |serial: u8, target: &str, member: &str| Op {
+        id: new_id(now as u64, [serial; 10]),
+        kind: "post.react".into(),
+        v: 1,
+        scope: scope.clone(),
+        entity_id: Some(new_id(now as u64, [serial + 20; 10])),
+        hlc: Hlc::new(now as u64, 0, 1),
+        device_at: now,
+        tz_offset_min: 0,
+        mono: None,
+        boot_id: None,
+        time_source: TimeSource::Auto,
+        seen_seq: 0,
+        member_id: None,
+        payload: json!({"target_type":"post","target_id":target,"emoji":"🎉","member_id":member}),
+        seq: None,
+        account_id: None,
+        device_id: None,
+        occurred_at: None,
+        received_at: None,
+    };
+    let (private, _) = ingest::accept(&conn, &session, make(1, "private", "bob"), now, false).unwrap();
+    assert_eq!(private.error.unwrap().code, "forbidden");
+    let (forged, _) = ingest::accept(&conn, &session, make(2, "server", "alice"), now, false).unwrap();
+    assert_eq!(forged.error.unwrap().code, "forbidden");
+    let (valid, _) = ingest::accept(&conn, &session, make(3, "server", "bob"), now, false).unwrap();
+    assert!(valid.error.is_none(), "{:?}", valid.error);
+    let owner = posts::one(&conn, ALICE, "server").unwrap().unwrap();
+    assert!(owner["reactions"].as_array().unwrap().iter().any(|r| r["emoji"] == "🎉" && r["member_id"] == "bob"));
 }

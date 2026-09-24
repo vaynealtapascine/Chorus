@@ -123,11 +123,13 @@ GET  /messages/{id}                        incl. revisions if ?revisions=1
   The current read-only history view returns the same scoped message fields as search;
   revisions are reserved for a later API pass.
 GET  /messages/{id}/thread
-GET  /search/messages?q=&in=&from=&before=&after=&has=
-  → {items:[{id,channel_id,space_id,account_id,occurred_at,text,cw,visibility,authors}]}
+GET  /search/messages?q=&in=&from=&before=&after=&has=&limit=&cursor=
+  → {items:[{id,channel_id,space_id,account_id,occurred_at,text,cw,visibility,authors}],next_cursor}
   Uses FTS5; `in` accepts a channel id/name, `from` a member id/name, before/after are
-  exclusive epoch milliseconds, and `has` is attachment/image/file. Results are capped at
-  100 and limited to accessible spaces plus public or own messages. API tokens need
+  exclusive epoch milliseconds, and `has` is attachment/image/file. Pages contain 1–100
+  results (default 100). Pass `next_cursor` back with the same search and filters to continue;
+  a null cursor means the results are exhausted. Results are ordered by FTS rank, occurred time,
+  then id and limited to accessible spaces plus public or own messages. API tokens need
   `read:messages`; device sessions inherit access.
 GET  /pins?channel=
 
@@ -138,7 +140,10 @@ GET  /posts/{id}                           with replies ?depth=
   the list to one account. `before` is an exclusive occurred-at millisecond value; `limit` is
   clamped to 1–100. Detail replies are filtered by the same rule (`depth` 0–3, at most 50 per
   level). Hidden/deleted posts return 404. Responses omit `front_snapshot` and remove unreadable
-  parent/repost links. Authors include ordered member ids and small author cards. API tokens do
+  parent/repost links. Authors include ordered member ids and small author cards. Each post also
+  includes ordered attachment metadata and blob hashes, plus present post reactions with emoji and
+  reactor member id/name; blob downloads enforce the same current
+  audience. API tokens do
   not use these cross-account routes.
 GET  /timeline?before=&limit=              combined system timeline
 GET  /profiles/{member_id}                 profile bundle (fields, stats, highlights, relationships)
@@ -305,7 +310,9 @@ Implemented (M10.2, `webhooks.rs`):
 ```
 GET  /admin/accounts   /admin/devices   /admin/jobs
 POST /admin/backup                      run a backup now
-GET  /admin/health                      db size, WAL size, op count, last backup, ntfy reachability
+GET  /admin/health                      admin device session only; DB/WAL bytes, applied op count,
+                                        connected devices, pending notifications, latest backup
+                                        {at,size_bytes}, last recorded error, ntfy reachability
 POST /admin/rebuild                     rebuild projections from the op log (maintenance mode)
 ```
 

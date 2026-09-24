@@ -100,6 +100,7 @@ private fun App(chorus: Chorus, invite: String?) {
             Text("The local replica could not be opened or saved. Keep this app's data intact and check the device storage.", color = p.danger)
         }
         else -> Column(Modifier.fillMaxSize().background(p.bg)) {
+            val person = model.isPerson
             Row(
                 Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -118,13 +119,17 @@ private fun App(chorus: Chorus, invite: String?) {
                 Text(label, fontSize = 12.sp, color = p.ink3)
             }
             Box(Modifier.weight(1f)) {
-                when (tab) {
-                    Tab.Home -> Home(chorus, model)
+                when (if (person) Tab.Home else tab) {
+                    Tab.Home -> if (person) {
+                        Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                            Text("Chorus quick switching is for systems. Your personal profile and journal are available on the web.", color = p.ink2)
+                        }
+                    } else Home(chorus, model)
                     Tab.Members -> Members(chorus, model)
                     Tab.History -> History(chorus, model)
                 }
             }
-            Row(
+            if (!person) Row(
                 Modifier.fillMaxWidth().background(p.surface).navigationBarsPadding().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {

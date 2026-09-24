@@ -15,6 +15,7 @@ data class Member(
     val description: String?,
     val archived: Boolean,
     val avatarBlob: String? = null,
+    val isSelf: Boolean = false,
 ) {
     val shownName: String get() = displayName ?: name
     val glyph: String get() = sigils.firstOrNull() ?: name.take(1).uppercase()
@@ -64,6 +65,8 @@ class Model(
     }
 
     val active: List<Member> get() = members.filter { !it.archived }
+    /** The server creates one self member for a person account. */
+    val isPerson: Boolean get() = members.any { it.isSelf }
 
     /** Members most recently switched in, newest first (for the quick-switch grid). */
     fun recents(limit: Int = 12): List<String> {
@@ -153,6 +156,7 @@ class Model(
                         f.str("color") ?: "#A09184", strings(f.optJSONArray("sigils")), f.str("description"),
                         f.present("archived_at"),
                         f.str("avatar_blob"),
+                        f.optBoolean("is_self") || f.optInt("is_self") == 1,
                     )
                 }
                 .sortedBy { it.shownName.lowercase() }

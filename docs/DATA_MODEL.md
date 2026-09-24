@@ -513,9 +513,11 @@ CREATE TABLE item_attachment (
   PRIMARY KEY (owner_type, owner_id, attachment_id)
 );
 
--- Full-text search (server; Android keeps its own FTS table for local scopes)
-CREATE VIRTUAL TABLE message_fts USING fts5(text, cw, content='message', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2');
-CREATE VIRTUAL TABLE post_fts USING fts5(title, text, tags, content='post', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2');
+-- Full-text search (server; Android keeps its own FTS table for local scopes).
+-- These FTS5 tables store their own content; the projector writes matching rowids explicitly.
+CREATE VIRTUAL TABLE message_fts USING fts5(text, cw, tokenize='unicode61 remove_diacritics 2');
+CREATE VIRTUAL TABLE post_fts USING fts5(title, text, tags, tokenize='unicode61 remove_diacritics 2');
+-- Current server projection populates message_fts; post_fts is reserved and not populated yet.
 
 -- ─── posts, profiles, social ─────────────────────────────────────────
 CREATE TABLE post (

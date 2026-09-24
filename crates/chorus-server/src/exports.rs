@@ -5,11 +5,20 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{
-    Connection, params_from_iter,
+    Connection, OpenFlags, params_from_iter,
     types::{Value, ValueRef},
 };
 
 use crate::{db, oplog, project};
+
+/// A WAL reader for HTTP exports. The read transaction keeps account, device and op rows from
+/// one snapshot while ingest continues on the server's primary connection.
+pub fn read_snapshot(path: &Path) -> anyhow::Result<Connection> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    conn.execute_batch("PRAGMA query_only=ON; BEGIN")?;
+    Ok(conn)
+}
 
 /// Applied operations authored by this account, in server sequence order. The op envelope is
 /// preserved so a later importer can replay it without inferring fields from projections.

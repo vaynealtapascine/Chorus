@@ -131,8 +131,10 @@ chorus-server migrate                   # run pending schema migrations (also au
 - `npm run dev` in `web/` → Vite on 5252 proxying `/api` to 5251.
 - Android emulator reaches the dev server at `http://10.0.2.2:5251` (cleartext allowed only in
   the debug build's network security config).
-- Seed data: `chorus-server seed --members 300 --switches 20000 --messages 100000` for
-  performance testing against the SPEC §9 budgets.
+- Seed data: `chorus-server seed --members 300 --switches 20000 --messages 100000 --to data-seed`
+  for performance testing against the SPEC §9 budgets. The destination must be a new directory;
+  the command refuses to overwrite even an empty existing directory. Omit `--to` only when the
+  configured data directory does not exist yet.
 
 ## 9. Linux server (public VPS)
 

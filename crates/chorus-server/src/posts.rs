@@ -26,7 +26,22 @@ const COLUMNS: &str = "p.id,p.account_id,p.kind,p.title,p.text,p.entities,p.mood
        (SELECT member_id FROM post_author WHERE post_id=p.id ORDER BY position)), '[]'),
     COALESCE((SELECT json_group_array(json_object('id',id,'name',name,'display_name',display_name,'color',color))
        FROM (SELECT m.id,m.name,m.display_name,m.color FROM post_author pa JOIN member m ON m.id=pa.member_id
-             WHERE pa.post_id=p.id ORDER BY pa.position)), '[]')";
+             WHERE pa.post_id=p.id ORDER BY pa.position)), '[]'),
+    COALESCE((SELECT json_group_array(json_object('id',id,'blob_hash',blob_hash,
+        'thumb_blob_hash',thumb_blob_hash,'filename',filename,'mime',mime,'size',size,
+        'width',width,'height',height,'alt_text',alt_text,
+        'is_spoiler',json(CASE WHEN is_spoiler THEN 'true' ELSE 'false' END)))
+       FROM (SELECT a.id,a.blob_hash,a.thumb_blob_hash,COALESCE(a.filename,'attachment') AS filename,
+                    COALESCE(a.mime,'application/octet-stream') AS mime,COALESCE(a.size,0) AS size,
+                    a.width,a.height,COALESCE(a.alt_text,'') AS alt_text,a.is_spoiler
+             FROM item_attachment ia JOIN attachment a ON a.id=ia.attachment_id
+             WHERE ia.owner_type='post' AND ia.owner_id=p.id AND a.blob_hash IS NOT NULL
+             ORDER BY ia.position,a.id)), '[]'),
+    COALESCE((SELECT json_group_array(json_object('emoji',emoji,'member_id',member_id,'member_name',member_name))
+       FROM (SELECT r.emoji,r.member_id,COALESCE(m.display_name,m.name) AS member_name
+             FROM reaction r JOIN member m ON m.id=r.member_id
+             WHERE r.target_type='post' AND r.target_id=p.id AND r.is_present
+             ORDER BY r.emoji,r.member_id)), '[]')";
 
 #[derive(Default, Deserialize)]
 pub struct PostQuery {
@@ -60,6 +75,8 @@ fn row(r: &Row<'_>) -> rusqlite::Result<Value> {
         "edited_at": r.get::<_, Option<i64>>(14)?,
         "authors": parsed(r.get(15)?),
         "author_cards": parsed(r.get(16)?),
+        "attachments": parsed(r.get(17)?),
+        "reactions": parsed(r.get(18)?),
     }))
 }
 

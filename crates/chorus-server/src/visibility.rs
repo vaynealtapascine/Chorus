@@ -1,8 +1,10 @@
 //! Structured chat visibility shared by notifications and cross-account reads.
 
+use std::collections::HashSet;
+
 use chorus_core::op::Op;
 use chorus_core::sync::Digest;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use serde_json::Value;
 
 use crate::oplog;
@@ -43,6 +45,24 @@ fn channel_public(conn: &Connection, channel: &str) -> anyhow::Result<bool> {
 /// A participant cannot mutate a private aside owned by another account, even with a guessed
 /// message id. Normal public-message authorization remains in the existing scope rules.
 pub fn related_write_allowed(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<bool> {
+    if matches!(o.kind.as_str(), "post.react" | "post.unreact") {
+        let Some(target) = o.payload.get("target_id").and_then(Value::as_str) else { return Ok(false) };
+        let Some(member) = o.payload.get("member_id").and_then(Value::as_str) else { return Ok(false) };
+        let owned: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM member WHERE id=?1 AND account_id=?2 AND deleted_at IS NULL)",
+            params![member, author],
+            |r| r.get(0),
+        )?;
+        if !owned {
+            return Ok(false);
+        }
+        let readable = crate::posts::readable_sql("?2");
+        let sql = format!("SELECT p.deleted_at IS NULL AND {readable} FROM post p WHERE p.id=?1");
+        // A reaction may sync before its post. The row, once present, is always checked through
+        // the same audience predicate as GET /posts; an absent target reveals no post data.
+        let visible: Option<bool> = conn.query_row(&sql, params![target, author], |r| r.get(0)).optional()?;
+        return Ok(visible.unwrap_or(true));
+    }
     let message_id = if matches!(o.kind.as_str(), "message.send" | "message.forward") {
         o.payload.get("reply_to").and_then(Value::as_str)
     } else if o.kind.starts_with("message.") || o.kind.starts_with("reaction.") || o.kind.starts_with("read.") {
@@ -66,48 +86,144 @@ pub fn related_write_allowed(conn: &Connection, author: &str, o: &Op) -> anyhow:
 
 /// The effective per-account sync rule for a shared-space op. The sender always retains their
 /// own ops. Attachment metadata waits for a public message link, avoiding pre-send leakage.
-pub fn op_visible_to(conn: &Connection, account: &str, o: &Op) -> anyhow::Result<bool> {
+fn visible_with(
+    account: &str,
+    o: &Op,
+    message_public: &mut impl FnMut(&str) -> anyhow::Result<bool>,
+    channel_public: &mut impl FnMut(&str) -> anyhow::Result<bool>,
+    attachment_public: &mut impl FnMut(&str) -> anyhow::Result<bool>,
+) -> anyhow::Result<bool> {
     if o.account_id.as_deref() == Some(account) || !o.scope.starts_with("space:") {
         return Ok(true);
     }
     if o.kind == "message.send" || o.kind == "message.forward" {
         let channel = o.payload.get("channel_id").and_then(Value::as_str).unwrap_or_default();
-        return Ok(is_public(o.payload.get("visibility")) && channel_public(conn, channel)?);
+        return Ok(is_public(o.payload.get("visibility")) && channel_public(channel)?);
     }
     if o.kind.starts_with("channel.") {
         // a new thread names its parent; later channel ops find it in the projection
         if let Some(parent) = o.payload.get("parent_message_id").and_then(Value::as_str) {
-            return message_public(conn, parent);
+            return message_public(parent);
         }
-        return o.entity().map_or(Ok(true), |id| channel_public(conn, id));
+        return o.entity().map_or(Ok(true), channel_public);
     }
     if o.kind.starts_with("message.") {
         let id = o.payload.get("message_id").and_then(Value::as_str).or_else(|| o.entity());
-        return id.map_or(Ok(false), |id| message_public(conn, id));
+        return id.map_or(Ok(false), message_public);
     }
     if (o.kind.starts_with("reaction.") || o.kind.starts_with("read."))
         && let Some(id) = o.payload.get("message_id").and_then(Value::as_str)
     {
-        return message_public(conn, id);
+        return message_public(id);
     }
     if o.kind.starts_with("attachment.") {
         let Some(id) = o.entity() else { return Ok(false) };
-        return Ok(conn.query_row(
-            &format!(
-                "SELECT EXISTS(
-                SELECT 1 FROM item_attachment ia JOIN message m ON m.id=ia.owner_id
-                WHERE ia.owner_type='message' AND ia.attachment_id=?1 AND {})",
-                PUBLIC_MESSAGE_SQL
-            ),
-            [id],
-            |r| r.get(0),
-        )?);
+        return attachment_public(id);
     }
     Ok(true)
 }
 
+fn attachment_public(conn: &Connection, id: &str) -> anyhow::Result<bool> {
+    Ok(conn.query_row(
+        &format!(
+            "SELECT EXISTS(SELECT 1 FROM item_attachment ia JOIN message m ON m.id=ia.owner_id
+             WHERE ia.owner_type='message' AND ia.attachment_id=?1 AND {PUBLIC_MESSAGE_SQL})"
+        ),
+        [id],
+        |r| r.get(0),
+    )?)
+}
+
+pub fn op_visible_to(conn: &Connection, account: &str, o: &Op) -> anyhow::Result<bool> {
+    visible_with(account, o, &mut |id| message_public(conn, id), &mut |id| channel_public(conn, id), &mut |id| {
+        attachment_public(conn, id)
+    })
+}
+
+fn matching_ids(conn: &Connection, ids: &HashSet<String>, query: &str) -> anyhow::Result<HashSet<String>> {
+    if ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let marks = std::iter::repeat_n("?", ids.len()).collect::<Vec<_>>().join(",");
+    let sql = query.replace("{ids}", &marks).replace("{public}", PUBLIC_MESSAGE_SQL);
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map(params_from_iter(ids.iter()), |r| r.get::<_, String>(0))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Three set lookups for a page, regardless of how many message/reaction/attachment ops it holds.
+fn visible_page(conn: &Connection, account: &str, page: &[Op]) -> anyhow::Result<Digest> {
+    let mut messages = HashSet::new();
+    let mut channels = HashSet::new();
+    let mut attachments = HashSet::new();
+    for o in page {
+        if o.account_id.as_deref() == Some(account) || !o.scope.starts_with("space:") {
+            continue;
+        }
+        if matches!(o.kind.as_str(), "message.send" | "message.forward") {
+            if is_public(o.payload.get("visibility")) {
+                channels.insert(o.payload.get("channel_id").and_then(Value::as_str).unwrap_or_default().to_string());
+            }
+        } else if o.kind.starts_with("channel.") {
+            if let Some(id) = o.payload.get("parent_message_id").and_then(Value::as_str) {
+                messages.insert(id.to_string());
+            } else if let Some(id) = o.entity() {
+                channels.insert(id.to_string());
+            }
+        } else if o.kind.starts_with("message.") {
+            if let Some(id) = o.payload.get("message_id").and_then(Value::as_str).or_else(|| o.entity()) {
+                messages.insert(id.to_string());
+            }
+        } else if o.kind.starts_with("reaction.") || o.kind.starts_with("read.") {
+            if let Some(id) = o.payload.get("message_id").and_then(Value::as_str) {
+                messages.insert(id.to_string());
+            }
+        } else if o.kind.starts_with("attachment.")
+            && let Some(id) = o.entity()
+        {
+            attachments.insert(id.to_string());
+        }
+    }
+    let public_messages =
+        matching_ids(conn, &messages, "SELECT m.id FROM message m WHERE m.id IN ({ids}) AND {public}")?;
+    let hidden_channels = matching_ids(
+        conn,
+        &channels,
+        "SELECT c.id FROM channel c WHERE c.id IN ({ids}) AND c.kind='thread' AND c.parent_message_id IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM message m WHERE m.id=c.parent_message_id AND {public})",
+    )?;
+    let public_attachments = matching_ids(
+        conn,
+        &attachments,
+        "SELECT DISTINCT ia.attachment_id FROM item_attachment ia JOIN message m ON m.id=ia.owner_id
+         WHERE ia.owner_type='message' AND ia.attachment_id IN ({ids}) AND {public}",
+    )?;
+    let mut digest = Digest::default();
+    for o in page {
+        if visible_with(
+            account,
+            o,
+            &mut |id| Ok(public_messages.contains(id)),
+            &mut |id| Ok(!hidden_channels.contains(id)),
+            &mut |id| Ok(public_attachments.contains(id)),
+        )? {
+            digest.add(&o.id);
+        }
+    }
+    Ok(digest)
+}
+
 /// The digest must contain exactly the op ids this account can receive in catch-up.
 pub fn visible_digest(conn: &Connection, account: &str, scope: &str) -> anyhow::Result<Digest> {
+    if !scope.starts_with("space:")
+        || !conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM op WHERE scope=?1 AND status='applied' AND account_id<>?2)",
+            params![scope, account],
+            |r| r.get::<_, bool>(0),
+        )?
+    {
+        return oplog::digest(conn, scope);
+    }
     let mut digest = Digest::default();
     let mut cursor = 0;
     loop {
@@ -115,11 +231,11 @@ pub fn visible_digest(conn: &Connection, account: &str, scope: &str) -> anyhow::
         let Some(last) = page.last().and_then(|o| o.seq) else { break };
         cursor = last;
         let short = page.len() < 1000;
-        for op in page {
-            if op_visible_to(conn, account, &op)? {
-                digest.add(&op.id);
-            }
+        let part = visible_page(conn, account, &page)?;
+        for (total, page_part) in digest.xor.iter_mut().zip(part.xor) {
+            *total ^= page_part;
         }
+        digest.count += part.count;
         if short {
             break;
         }

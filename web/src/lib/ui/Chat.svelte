@@ -711,12 +711,7 @@
     {#if !editing}
       <details class="chat-advanced">
         <summary>Advanced chat settings</summary>
-        <label><input type="checkbox" checked={parseSegments} onchange={(e) => sync.create('pref.set', sync.accountScope, null, {
-          device: '', key: 'chat.segment_parsing', value: (e.currentTarget as HTMLInputElement).checked,
-        })} /> Parse speaker annotations on new lines</label>
-        <label><input type="checkbox" checked={cwAutoExpand} onchange={(e) => sync.create('pref.set', sync.accountScope, null, {
-          device: '', key: 'chat.cw_auto_expand', value: e.currentTarget.checked,
-        })} /> Auto-expand content warnings on this account</label>
+        <p>Speaker parsing and content warning preferences are in <a href="#/settings">Settings</a>.</p>
         <label>Content warning <input aria-label="Content warning" bind:value={cw} placeholder="Optional label" /></label>
         <label>Visibility
           <select aria-label="Message visibility" bind:value={visibilityMode}>
