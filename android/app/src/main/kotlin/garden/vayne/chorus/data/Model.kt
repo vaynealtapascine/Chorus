@@ -94,6 +94,7 @@ class Model(
     val frontSpans: List<FrontSpan> = emptyList(),
     val systemZone: String? = null,
     val messageCounts: Map<String, Int> = emptyMap(),
+    val profileFields: Map<String, List<ProfileField>> = emptyMap(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -313,7 +314,7 @@ class Model(
             val systemZone = rows(p, "system").firstOrNull { it.first == accountId }?.second?.str("timezone")
             return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages,
                 followCeilings, posts, postReactions, memberLists, savedFeeds, highlights, frontSpans, systemZone,
-                messageCounts)
+                messageCounts, LocalProfileFields.fromProjection(p))
         }
     }
 }

@@ -43,7 +43,7 @@ import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
-/** Own member profile: local posts stay visible offline; server adds stats and readable highlights. */
+/** Own member profile: local details stay visible offline; server adds readable outside highlights. */
 @Composable
 internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     onClose: () -> Unit, onWrite: () -> Unit, onReply: (String) -> Unit) {
@@ -120,6 +120,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
             if (member.description != null) Text(member.description, color = p.ink)
             val groups = model.membership.filter { memberId in it.value }.keys.mapNotNull { model.group(it)?.name }
             if (groups.isNotEmpty()) Text(groups.joinToString(" · "), color = p.ink2)
+            for (field in model.profileFields[memberId].orEmpty()) Text("${field.name}: ${field.value}", color = p.ink2)
             Text("Front: ${"%.1f".format(metrics.weekHours)} h in 7 days · ${"%.1f".format(metrics.monthHours)} h in 28 days",
                 color = p.ink2)
             Text(metrics.lastFrontAt?.let { "Last fronted ${DateFormat.getDateInstance().format(Date(it))}" }
@@ -127,7 +128,6 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
             Text("${metrics.messages} messages", color = p.ink2)
             bundle?.let { details ->
                 Text("${details.posts} posts · ${details.entries} entries · ${details.notes} notes", color = p.ink2)
-                for (field in details.fields) Text("${field.name}: ${field.value}", color = p.ink2)
             }
             if (error != null) Text(error.orEmpty(), color = p.ink3)
         }
