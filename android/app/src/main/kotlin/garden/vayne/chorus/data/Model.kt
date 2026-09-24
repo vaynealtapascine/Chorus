@@ -66,6 +66,7 @@ data class JournalPost(
     val id: String, val kind: String, val authors: List<String>, val title: String?, val text: String,
     val occurredAt: Long, val cw: String?, val visibility: String, val replyTo: String?,
     val mood: String?, val tags: List<String>, val reactions: List<PostReaction> = emptyList(),
+    val attachments: List<ChatAttachment> = emptyList(),
 )
 
 data class MemberList(val id: String, val name: String, val description: String?, val memberIds: Set<String>)
@@ -167,6 +168,16 @@ class Model(
         private fun strings(a: JSONArray?): List<String> = if (a == null) emptyList() else List(a.length()) { a.getString(it) }
 
         private fun stringSet(a: JSONArray?): Set<String> = strings(a).toSet()
+
+        private fun files(ids: JSONArray?, attachments: Map<String, JSONObject>): List<ChatAttachment> =
+            if (ids == null) emptyList() else (0 until ids.length()).mapNotNull { i ->
+                val id = ids.optString(i)
+                val row = attachments[id] ?: return@mapNotNull null
+                val hash = row.str("blob_hash") ?: return@mapNotNull null
+                ChatAttachment(id, hash, row.str("thumb_blob_hash"), row.str("filename") ?: "file",
+                    row.str("mime") ?: "application/octet-stream", row.optLong("size"),
+                    row.str("alt_text").orEmpty(), row.optBoolean("is_spoiler"))
+            }
 
         private fun entries(a: JSONArray?): List<Entry> = if (a == null) emptyList() else List(a.length()) {
             val e = a.getJSONObject(it)
@@ -283,15 +294,7 @@ class Model(
                 .groupBy { (_, f) -> f.str("channel_id").orEmpty() }
                 .mapValues { (_, values) -> values.sortedWith(compareBy<Pair<String, JSONObject>> { it.second.optLong("occurred_at") }.thenBy { it.first }).takeLast(100) }
             val chatMessages = selected.mapValues { (_, values) -> values.map { (id, f) ->
-                val links = f.optJSONArray("attachments")
-                val files = if (links == null) emptyList() else (0 until links.length()).mapNotNull { i ->
-                    val attachmentId = links.optString(i)
-                    val a = attachments[attachmentId] ?: return@mapNotNull null
-                    val hash = a.str("blob_hash") ?: return@mapNotNull null
-                    ChatAttachment(attachmentId, hash, a.str("thumb_blob_hash"), a.str("filename") ?: "file",
-                        a.str("mime") ?: "application/octet-stream", a.optLong("size"), a.str("alt_text").orEmpty(),
-                        a.optBoolean("is_spoiler"))
-                }
+                val files = files(f.optJSONArray("attachments"), attachments)
                 val visibility = f.optJSONObject("visibility")
                 ChatMessage(id, f.str("channel_id").orEmpty(), strings(f.optJSONArray("authors")), f.str("text").orEmpty(),
                     f.optLong("occurred_at"), f.str("cw"), visibility?.optString("mode")?.ifEmpty { "all" } ?: "all",
@@ -303,7 +306,8 @@ class Model(
                 .map { (id, f) -> JournalPost(id, f.str("kind") ?: "note", strings(f.optJSONArray("authors")),
                     f.str("title"), f.str("text").orEmpty(), f.optLong("occurred_at"), f.str("cw"),
                     f.optJSONObject("visibility")?.str("mode") ?: "private", f.str("reply_to"),
-                    f.str("mood"), strings(f.optJSONArray("tags")), postReactions[id].orEmpty()) }
+                    f.str("mood"), strings(f.optJSONArray("tags")), postReactions[id].orEmpty(),
+                    files(f.optJSONArray("attachments"), attachments)) }
                 .sortedWith(compareByDescending<JournalPost> { it.occurredAt }.thenByDescending { it.id })
             val listItems = HashMap<String, MutableSet<String>>()
             p.optJSONObject("sets")?.optJSONObject("member_list_item")?.let { set ->

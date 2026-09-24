@@ -475,7 +475,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
 }
 
 @Composable
-private fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
+internal fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val device = chorus.device

@@ -82,6 +82,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     }
 
     val ownPosts = model.posts.filter { memberId in it.authors }
+    val media = ownPosts.flatMap { post -> post.attachments.map { post to it } }
     val metrics = ProfileMetrics.compute(model, memberId)
     val pinned = model.posts.find { it.id == member.pinnedPostId }
     val highlightedIds = model.highlights[memberId].orEmpty()
@@ -145,7 +146,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
         }
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (choice in listOf("Posts", "Replies", "Journal", "Highlights", "Relationships")) item {
+                for (choice in listOf("Posts", "Replies", "Journal", "Highlights", "Media", "Relationships")) item {
                     Text(choice, color = if (tab == choice) p.accent else p.ink2,
                         modifier = Modifier.background(if (tab == choice) p.surface2 else p.surface)
                             .clickable { tab = choice }.padding(horizontal = 10.dp, vertical = 8.dp))
@@ -172,6 +173,20 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
             }
             "Relationships" -> {
                 item { ProfileRelationships(chorus, model, memberId) }
+            }
+            "Media" -> {
+                if (media.isEmpty()) item { Text("No media from this member on this device yet.", color = p.ink2) }
+                for ((post, attachment) in media) item(key = "media:${post.id}:${attachment.id}") {
+                    var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
+                    Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(post.title ?: DateFormat.getDateInstance().format(Date(post.occurredAt)),
+                            color = p.ink, fontWeight = FontWeight.SemiBold)
+                        if (post.cw != null) Text("Content warning: ${post.cw} · ${if (revealed) "Hide" else "Show"}",
+                            color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
+                        if (post.cw == null || revealed) ChatAttachmentView(attachment, chorus)
+                    }
+                }
             }
             else -> {
                 if (selectedPosts.isEmpty()) item { Text("No ${tab.lowercase()} yet.", color = p.ink2) }
