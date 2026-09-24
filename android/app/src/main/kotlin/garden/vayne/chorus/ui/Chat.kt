@@ -32,6 +32,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -78,6 +80,7 @@ fun Chat(chorus: Chorus, model: Model) {
     var draft by rememberSaveable { mutableStateOf("") }
     var cw by rememberSaveable { mutableStateOf("") }
     var moreOpen by rememberSaveable { mutableStateOf(false) }
+    var followNext by remember { mutableStateOf(false) }
     var audience by rememberSaveable { mutableStateOf("all") }
     var visibleTo by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
@@ -154,7 +157,15 @@ fun Chat(chorus: Chorus, model: Model) {
             Text("No channels in this space yet.", color = p.ink2, modifier = Modifier.padding(24.dp))
             return@Column
         }
-        LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), reverseLayout = true,
+        // A reversed list keeps its place on the message that was newest, so a new one would land
+        // just out of view: follow it while the reader is at (or near) the bottom, and after sending.
+        val listState = rememberLazyListState()
+        val newest = messages.lastOrNull()?.id
+        LaunchedEffect(newest) {
+            if (newest != null && (listState.firstVisibleItemIndex <= 2 || followNext)) listState.animateScrollToItem(0)
+            followNext = false
+        }
+        LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), state = listState, reverseLayout = true,
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(messages.asReversed(), key = { it.id }) { message ->
                 ChatMessageCard(message, model, chorus) { replyTo = message.id }
@@ -272,6 +283,7 @@ fun Chat(chorus: Chorus, model: Model) {
                                     val attachmentIds = attachments.map { a -> sendAttachment(chorus, ctx, a, scope) }
                                     val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
                                         audience, visibleTo.toSet(), space.kind, replyTo = target?.id, attachmentIds = attachmentIds)
+                                    followNext = true
                                     chorus.create("message.send", chorus.newId(), payload, scope = scope)
                                     if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
                                     attachments.clear()

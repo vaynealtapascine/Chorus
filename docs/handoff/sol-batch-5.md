@@ -19,11 +19,12 @@ You ran out of usage mid-V1; local Claude picked up from your uncommitted work. 
   Sent as a chosen member with a CW and replied as another; both reached the server correctly.
 - **V3 plumbing (Claude, `data/Blobs.kt`):** staging under SHA-256, a JPEG thumbnail, `UploadWork`
   (WorkManager, HEAD-resume, 4 MB chunks), a separate chat cache, and Attach in the composer's
-  options (alt text, spoiler). Avatars now load through `Api.http` too. **Not yet sent from the
-  phone:** the document picker couldn't find a pushed test file (not media-indexed). That device
-  check is yours: index it first (`adb shell content call --uri content://media/external/file
-  --method scan_file --arg /sdcard/Download/<file>` or open it once in the Files app), or pick it
-  from the picker's Downloads root.
+  options (alt text, spoiler). Avatars now load through `Api.http` too. **Sent from the phone
+  and checked:** the attachment op, its thumbnail and the fully uploaded blob reached the server
+  and the image shows from the chat cache. The chat list now also follows new messages (a
+  reversed LazyColumn kept its place, so a just-sent message landed out of view). Left for you:
+  opening non-image files, and a share-into-Chorus intent. To pick a test file with adb, index it
+  first: `adb shell content call --uri content://media --method scan_volume --arg external_primary`.
 - **Chorus Home (Claude, D-071, `docs/HOME.md`):** one-click install on a home PC; the Android
   side is `data/Pins.kt` (a `chorus://<lan ip>:<port>/i/<code>#pin=sha256/…` invite pins the
   server's self-signed certificate). Unit-tested, not run on a phone yet (below).
@@ -43,7 +44,7 @@ frames exist, Claude will write you a hand-off mapping frames to code, and you'l
 Until then: favour the data, sync and logic side of each task, keep new screens plain (tokens,
 simple layout), and don't spend time on visual polish that a design will replace.
 
-**Order now:** V2 → V4 (the biggest gap) → V5 → V3's device check and file opening → V6 → V9 →
+**Order now:** V2 → V4 (the biggest gap) → V5 → V3's file opening → V6 → V9 →
 V7 → V8. V1 is done.
 
 - **V9 · Chorus Home on a phone (M13.5).** Once the owner agrees to a session with an app that
