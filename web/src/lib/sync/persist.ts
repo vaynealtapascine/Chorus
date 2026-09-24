@@ -21,6 +21,8 @@ export interface Persisted {
 
 export interface Changes {
   ops: { id: string }[];
+  /** ops this device no longer holds (the account lost sight of them; SYNC.md §4.2) */
+  removed?: string[];
   meta?: unknown;
   hlc_last: string;
 }
@@ -62,7 +64,7 @@ export async function load(): Promise<Persisted> {
 }
 
 export async function save(ch: Changes): Promise<void> {
-  if (!ch.ops.length && ch.meta === undefined) {
+  if (!ch.ops.length && !ch.removed?.length && ch.meta === undefined) {
     const d = await db();
     await d.put('kv', ch.hlc_last, 'hlc');
     return;
@@ -71,6 +73,7 @@ export async function save(ch: Changes): Promise<void> {
   const tx = d.transaction(['ops', 'kv'], 'readwrite');
   const ops = tx.objectStore('ops');
   for (const o of ch.ops) void ops.put(o);
+  for (const id of ch.removed ?? []) void ops.delete(id);
   const kv = tx.objectStore('kv');
   if (ch.meta !== undefined) void kv.put(ch.meta, 'meta');
   void kv.put(ch.hlc_last, 'hlc');

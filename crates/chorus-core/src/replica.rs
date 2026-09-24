@@ -28,6 +28,10 @@ pub struct Replica {
 pub struct Changes {
     /// Ops to upsert (by id).
     pub ops: Vec<Op>,
+    /// Op ids to delete: confirmed ops the account may no longer see (a repair's sweep, a scope
+    /// taken away). The server still has them; this device just stops holding them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<String>,
     /// The store's metadata (cursors, epoch, scopes, queues, rejected), when it changed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<MemStore>,
@@ -168,7 +172,8 @@ impl Replica {
     pub fn take_changes(&mut self) -> Changes {
         self.store.compact();
         let (ops, meta) = self.store.take_dirty();
-        Changes { ops, meta: meta.then(|| self.store.clone_meta()), hlc_last: self.clock.last }
+        let removed = std::mem::take(&mut self.store.removed).into_iter().collect();
+        Changes { ops, removed, meta: meta.then(|| self.store.clone_meta()), hlc_last: self.clock.last }
     }
 
     /// What the UI shows: confirmed + pending ops, minus rejected ones. Equal to
@@ -210,6 +215,7 @@ impl MemStore {
             dirty: Default::default(),
             meta_dirty: false,
             touched: Default::default(),
+            removed: Default::default(),
         }
     }
 }

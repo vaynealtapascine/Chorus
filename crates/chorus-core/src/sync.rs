@@ -258,6 +258,9 @@ pub trait ClientStore {
     fn digest(&self, scope: &str) -> Digest;
     /// Forget confirmed-state bookkeeping so the scope can be re-pulled (ops are kept).
     fn reset_scope(&mut self, scope: &str);
+    /// Drop the scope's confirmed ops whose ids aren't in `keep` (the sweep that ends a repair,
+    /// or a scope the device no longer reads). Pending and restoring ops stay.
+    fn evict(&mut self, scope: &str, keep: &BTreeSet<String>);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -278,6 +281,10 @@ pub struct ClientEngine {
     /// Scopes whose digest check failed and are being re-pulled.
     pub repairs: u64,
     pub account_id: Option<String>,
+    /// Scopes being re-pulled after a digest mismatch, with the ids the re-pull has delivered so
+    /// far: at the next `caught` for the scope, confirmed ops not among them are swept (the
+    /// account may no longer see them, e.g. it lost `view` on a channel).
+    repairing: HashMap<String, BTreeSet<String>>,
 }
 
 impl ClientEngine {
@@ -290,6 +297,7 @@ impl ClientEngine {
             last_offset_ms: 0,
             repairs: 0,
             account_id: None,
+            repairing: HashMap::new(),
         }
     }
 
@@ -346,6 +354,11 @@ impl ClientEngine {
                 self.last_offset_ms = offset_ms;
                 self.account_id = Some(account_id);
                 store.set_epoch(&epoch);
+                // scopes the account lost while this device was away
+                for gone in store.scopes().into_iter().filter(|s| !scopes.contains(s)) {
+                    store.evict(&gone, &BTreeSet::new());
+                }
+                self.repairing.clear();
                 store.set_scopes(&scopes);
                 self.state = ClientState::Live;
                 if reconcile {
@@ -387,6 +400,10 @@ impl ClientEngine {
                 out.extend(self.pump(store));
             }
             Frame::Ops { scope, ops, to } => {
+                let repair = self.repairing.get_mut(&scope);
+                if let Some(seen) = repair {
+                    seen.extend(ops.iter().map(|o| o.id.clone()));
+                }
                 for o in ops {
                     store.put_remote(o);
                 }
@@ -398,10 +415,15 @@ impl ClientEngine {
                 if to > store.cursor(&scope) {
                     store.set_cursor(&scope, to);
                 }
-                if store.digest(&scope) != digest {
+                if let Some(seen) = self.repairing.remove(&scope) {
+                    // a re-pull ended: what it didn't deliver, the account no longer sees. If the
+                    // digests still differ, stop here rather than loop; the next catch-up retries.
+                    store.evict(&scope, &seen);
+                } else if store.digest(&scope) != digest {
                     // Something diverged: re-pull the whole scope. Ops are idempotent.
                     self.repairs += 1;
                     store.reset_scope(&scope);
+                    self.repairing.insert(scope.clone(), BTreeSet::new());
                     out.push(Frame::Pull { scope, after: 0 });
                 }
             }
@@ -409,6 +431,8 @@ impl ClientEngine {
                 let mut s: BTreeSet<String> = store.scopes().into_iter().collect();
                 for r in &remove {
                     s.remove(r);
+                    self.repairing.remove(r);
+                    store.evict(r, &BTreeSet::new());
                 }
                 for a in &add {
                     s.insert(a.clone());
@@ -448,6 +472,9 @@ pub struct MemStore {
     /// ([`MemStore::take_touched`]); every op mutation below records here.
     #[serde(skip)]
     pub touched: BTreeSet<String>,
+    /// Op ids evicted since the last [`MemStore::take_dirty`] (to delete from storage).
+    #[serde(skip)]
+    pub removed: BTreeSet<String>,
 }
 
 impl MemStore {
@@ -577,6 +604,20 @@ impl ClientStore for MemStore {
     fn reset_scope(&mut self, scope: &str) {
         self.cursors.insert(scope.into(), 0);
         self.meta_dirty = true;
+    }
+    fn evict(&mut self, scope: &str, keep: &BTreeSet<String>) {
+        let gone: Vec<String> = self
+            .ops
+            .values()
+            .filter(|o| o.scope == scope && o.seq.is_some() && !keep.contains(&o.id) && !self.restoring.contains(&o.id))
+            .map(|o| o.id.clone())
+            .collect();
+        for id in gone {
+            self.ops.remove(&id);
+            self.dirty.remove(&id);
+            self.touched.insert(id.clone());
+            self.removed.insert(id);
+        }
     }
 }
 
@@ -828,6 +869,75 @@ mod tests {
         assert_ne!(a, Digest::of(["x", "y"]));
         let j = serde_json::to_string(&a).unwrap();
         assert_eq!(serde_json::from_str::<Digest>(&j).unwrap(), a);
+    }
+
+    fn confirmed(n: i64, scope: &str) -> Op {
+        Op {
+            id: crate::id::new_id(n as u64, [n as u8; 10]),
+            kind: "message.send".into(),
+            v: 1,
+            scope: scope.into(),
+            entity_id: None,
+            hlc: crate::hlc::Hlc::new(n as u64, 0, 1),
+            device_at: n,
+            tz_offset_min: 0,
+            mono: None,
+            boot_id: None,
+            time_source: time::TimeSource::Auto,
+            seen_seq: 0,
+            member_id: None,
+            payload: serde_json::json!({}),
+            seq: Some(n),
+            account_id: Some("a".into()),
+            device_id: Some("d".into()),
+            occurred_at: Some(n),
+            received_at: Some(n),
+        }
+    }
+
+    /// Losing sight of ops (a channel's `view` taken away, SYNC.md §4.2): the mismatch starts a
+    /// re-pull, and what the re-pull doesn't deliver is swept, once — never a pull loop.
+    #[test]
+    fn a_repair_sweeps_what_the_account_no_longer_sees() {
+        let scope = "space:s";
+        let mut store = MemStore::default();
+        let mut engine = ClientEngine::new("d");
+        let ops: Vec<Op> = (1..=3).map(|n| confirmed(n, scope)).collect();
+        for o in &ops {
+            store.put_remote(o.clone());
+        }
+        let kept = Digest::of([ops[0].id.as_str(), ops[2].id.as_str()]);
+        let caught = |d: Digest| Frame::Caught { scope: scope.into(), to: 3, digest: d };
+        let out = engine.on_frame(&mut store, caught(kept));
+        assert!(matches!(&out[..], [Frame::Pull { after: 0, .. }]), "a mismatch re-pulls");
+        let redelivered = Frame::Ops { scope: scope.into(), ops: vec![ops[0].clone(), ops[2].clone()], to: 3 };
+        assert!(engine.on_frame(&mut store, redelivered).is_empty());
+        assert!(engine.on_frame(&mut store, caught(kept)).is_empty());
+        assert_eq!(store.digest(scope), kept, "swept down to what the server sends");
+        assert!(!store.ops.contains_key(&ops[1].id));
+        assert_eq!(store.removed, BTreeSet::from([ops[1].id.clone()]), "and told to storage");
+        // a digest that still differs after a sweep ends the repair instead of looping
+        let out = engine.on_frame(&mut store, caught(Digest::of(["other"])));
+        assert_eq!(out.len(), 1, "one new repair");
+        assert!(engine.on_frame(&mut store, caught(Digest::of(["other"]))).is_empty(), "and it ends");
+        assert_eq!(engine.repairs, 2);
+    }
+
+    #[test]
+    fn a_removed_scope_is_evicted_but_pending_ops_stay() {
+        let mut store = MemStore::default();
+        let mut engine = ClientEngine::new("d");
+        store.put_remote(confirmed(1, "space:s"));
+        store.put_remote(confirmed(2, "space:t"));
+        let mut pending = confirmed(3, "space:s");
+        pending.seq = None;
+        store.add_local(pending.clone());
+        store.set_scopes(&["space:s".into(), "space:t".into()]);
+        engine.on_frame(&mut store, Frame::Scope { add: vec![], remove: vec!["space:s".into()] });
+        assert_eq!(
+            store.ops.keys().cloned().collect::<BTreeSet<_>>(),
+            BTreeSet::from([confirmed(2, "").id, pending.id])
+        );
     }
 
     #[test]
