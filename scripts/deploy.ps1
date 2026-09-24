@@ -15,6 +15,8 @@ param([switch]$NoBuild, [switch]$Android, [string]$Target = (Join-Path $HOME 'se
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 
+# Build everything before copying anything, so a failed build leaves the live copy untouched
+# (a web app newer than its server can call routes the server doesn't have yet).
 if (-not $NoBuild) {
     Push-Location $root
     try {
@@ -22,10 +24,36 @@ if (-not $NoBuild) {
         if ($LASTEXITCODE) { throw 'server build failed' }
         & (Join-Path $PSScriptRoot 'build-web-core.ps1')
         Push-Location web
-        npm run build
-        if ($LASTEXITCODE) { throw 'web build failed' }
-        Pop-Location
+        try {
+            npm run build
+            if ($LASTEXITCODE) { throw 'web build failed' }
+        } finally { Pop-Location }
+        if ($Android) {
+            # AGP needs Java 11+; the machine JAVA_HOME may be an old Java 8 JRE, so prefer Studio's JBR
+            $jbr = 'C:\Program Files\Android\Android Studio\jbr'
+            if (Test-Path "$jbr\bin\java.exe") { $env:JAVA_HOME = $jbr }
+            elseif (-not $env:JAVA_HOME -or -not (Test-Path "$env:JAVA_HOME\bin\java.exe")) { throw 'no JDK found: install Android Studio or set JAVA_HOME to a Java 17+ JDK' }
+            if (-not $env:GRADLE_USER_HOME) { $env:GRADLE_USER_HOME = 'F:\DunBuild\gradle' }
+            & (Join-Path $PSScriptRoot 'build-android-core.ps1')
+            Push-Location android
+            try {
+                .\gradlew.bat assembleRelease --offline --console=plain -q
+                if ($LASTEXITCODE) { throw 'android build failed' }
+            } finally { Pop-Location }
+        }
     } finally { Pop-Location }
+}
+
+# Check every input exists before copying (a -NoBuild run may lack one).
+# Honour CARGO_TARGET_DIR: builds may live off the small C: drive (see NOTES).
+$targetRoot = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $root 'target' }
+$serverExe = Join-Path $targetRoot 'release\chorus-server.exe'
+if (-not (Test-Path $serverExe)) { throw "no server build at $serverExe" }
+if (-not (Test-Path (Join-Path $root 'web\dist\index.html'))) { throw 'no web build in web\dist' }
+if ($Android) {
+    $outRoot = if ($env:CHORUS_GRADLE_BUILD_DIR) { Join-Path $env:CHORUS_GRADLE_BUILD_DIR 'app' } else { Join-Path $root 'android\app\build' }
+    $apk = Get-ChildItem (Join-Path $outRoot 'outputs\apk\release') -Filter *.apk -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $apk) { throw "no release APK under $outRoot" }
 }
 
 $app = Join-Path $Target 'app'
@@ -43,22 +71,6 @@ foreach ($f in 'install.ps1', 'install.cmd', 'check.cmd', 'README.txt') {
 
 # Android: phones on the tailnet pick this up within hours (or on next app start)
 if ($Android) {
-    # AGP needs Java 11+; the machine JAVA_HOME may be an old Java 8 JRE, so prefer Studio's JBR
-    $jbr = 'C:\Program Files\Android\Android Studio\jbr'
-    if (Test-Path "$jbr\bin\java.exe") { $env:JAVA_HOME = $jbr }
-    elseif (-not $env:JAVA_HOME -or -not (Test-Path "$env:JAVA_HOME\bin\java.exe")) { throw 'no JDK found: install Android Studio or set JAVA_HOME to a Java 17+ JDK' }
-    if (-not $env:GRADLE_USER_HOME) { $env:GRADLE_USER_HOME = 'F:\DunBuild\gradle' }
-    if (-not $NoBuild) {
-        & (Join-Path $PSScriptRoot 'build-android-core.ps1')
-        Push-Location (Join-Path $root 'android')
-        try {
-            .\gradlew.bat assembleRelease --offline --console=plain -q
-            if ($LASTEXITCODE) { throw 'android build failed' }
-        } finally { Pop-Location }
-    }
-    $outRoot = if ($env:CHORUS_GRADLE_BUILD_DIR) { Join-Path $env:CHORUS_GRADLE_BUILD_DIR 'app' } else { Join-Path $root 'android\app\build' }
-    $apk = Get-ChildItem (Join-Path $outRoot 'outputs\apk\release') -Filter *.apk | Select-Object -First 1
-    if (-not $apk) { throw "no release APK under $outRoot" }
     $dir = Join-Path $app 'android'
     New-Item -ItemType Directory -Force $dir | Out-Null
     Copy-Item $apk.FullName (Join-Path $dir 'chorus.apk') -Force
@@ -79,9 +91,7 @@ $exe = Join-Path $app 'chorus-server.exe'
 $old = Join-Path $app 'chorus-server.old.exe'
 if (Test-Path $old) { Remove-Item $old -Force -ErrorAction SilentlyContinue }
 if (Test-Path $exe) { Rename-Item $exe 'chorus-server.old.exe' }
-# honour CARGO_TARGET_DIR (builds may live off the small C: drive, see NOTES)
-$targetRoot = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $root 'target' }
-Copy-Item (Join-Path $targetRoot 'release\chorus-server.exe') $exe
+Copy-Item $serverExe $exe
 
 $up = $false
 foreach ($i in 1..20) {

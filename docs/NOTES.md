@@ -170,8 +170,12 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   filter). Code by crate (unstripped build, before wasm-bindgen): alloc 237 KB (generic
   collections monomorphised per type), chorus_core 196 KB (sync 36, feed 35, text 23, front 17,
   api 16, float formatting 16), serde_json 157 KB, core 150 KB, serde 143 KB. Fat LTO saves
-  ~0.1 % (codegen-units is already 1). Next levers, in order: `wasm-opt -Oz` (binaryen; not
-  installed here, needs the owner's OK to download; typically 10–20 %), fewer serde-derived
-  types crossing the wasm boundary (pass JSON strings through, as most exports already do),
-  avoiding f64 formatting in core. To measure: build with `CARGO_PROFILE_WASM_STRIP=false` into
+  ~0.1 % (codegen-units is already 1). `wasm-opt` (binaryen 133, re-measured on the 267 KB gz
+  build): `-Oz` 313 KB gz and `-Os` 312 KB — smaller raw, but its inlining compresses worse, as
+  the 2026-09-23 note found; with inlining off (`-aimfs 0 -fimfs 0 -ocimfs 0`) `-Os` gives
+  264 KB (−1 %), too little to add a tool to the build. It needs the Rust-default feature flags
+  (`--enable-bulk-memory --enable-bulk-memory-opt --enable-nontrapping-float-to-int
+  --enable-sign-ext --enable-mutable-globals --enable-reference-types --enable-multivalue`).
+  The remaining levers are in the code: fewer serde-derived types crossing the wasm boundary
+  (pass JSON strings through, as most exports already do), avoiding f64 formatting in core. To measure: build with `CARGO_PROFILE_WASM_STRIP=false` into
   a spare target dir and rank function bodies by the name section.
