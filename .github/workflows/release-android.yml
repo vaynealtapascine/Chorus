@@ -6,8 +6,9 @@ name: release-android
 # `Chorus-<tag>.apk` on the GitHub release (next to Chorus Home's download); a manual run keeps
 # it as a workflow artifact. Builds on the owner's PC keep the debug key (D-060).
 #
-# ANDROID_SIGNING_KEY is the JSON that scripts/new-android-key.ps1 prints:
-#   {"alias": "chorus", "password": "…", "keystore": "<base64 PKCS12>"}
+# ANDROID_SIGNING_KEY is the JSON that scripts/pack-android-key.ps1 (an existing .jks/.p12) or
+# scripts/new-android-key.ps1 (a new key) makes:
+#   {"alias": "…", "password": "…", "key_password": "…", "keystore": "<base64 JKS or PKCS12>"}
 # (a bare base64 PKCS12 also works, with its password in ANDROID_SIGNING_PASSWORD).
 on:
   push:
@@ -44,8 +45,9 @@ jobs:
           if ($raw.StartsWith('{')) {
             $k = $raw | ConvertFrom-Json
             $store = $k.keystore; $password = $k.password; $alias = if ($k.alias) { $k.alias } else { 'chorus' }
+            $keyPassword = if ($k.key_password) { $k.key_password } else { $password }
           } else {
-            $store = $raw; $password = $env:ANDROID_SIGNING_PASSWORD; $alias = 'chorus'
+            $store = $raw; $password = $env:ANDROID_SIGNING_PASSWORD; $alias = 'chorus'; $keyPassword = $password
           }
           if (-not $password) {
             # say what the value looks like (never the value), so the owner knows what to change
@@ -57,11 +59,16 @@ jobs:
             } catch {
               if ($store.StartsWith('-----BEGIN')) { 'PEM text' } else { "not base64 or JSON ($($store.Length) characters)" }
             }
-            throw "ANDROID_SIGNING_KEY has no password: it is $shape. Use the JSON from scripts/new-android-key.ps1, or add ANDROID_SIGNING_PASSWORD."
+            throw "ANDROID_SIGNING_KEY has no password: it is $shape. Replace it with the JSON from scripts/pack-android-key.ps1."
           }
           "::add-mask::$password"
-          $path = Join-Path $env:RUNNER_TEMP 'chorus-release.p12'
-          [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($store))
+          "::add-mask::$keyPassword"
+          $bytes = [Convert]::FromBase64String($store)
+          $jks = $bytes.Length -ge 4 -and $bytes[0] -eq 0xFE -and $bytes[1] -eq 0xED -and $bytes[2] -eq 0xFE -and $bytes[3] -eq 0xED
+          $path = Join-Path $env:RUNNER_TEMP 'chorus-release.keystore'
+          [IO.File]::WriteAllBytes($path, $bytes)
+          "CHORUS_SIGNING_STORE_TYPE=$(if ($jks) { 'jks' } else { 'pkcs12' })" >> $env:GITHUB_ENV
+          "CHORUS_SIGNING_KEY_PASSWORD=$keyPassword" >> $env:GITHUB_ENV
           "CHORUS_SIGNING_STORE=$path" >> $env:GITHUB_ENV
           "CHORUS_SIGNING_PASSWORD=$password" >> $env:GITHUB_ENV
           "CHORUS_SIGNING_ALIAS=$alias" >> $env:GITHUB_ENV

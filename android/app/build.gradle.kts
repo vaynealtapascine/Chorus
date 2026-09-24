@@ -26,10 +26,10 @@ android {
         if (releaseStore != null) {
             create("release") {
                 storeFile = releaseStore
-                storeType = "pkcs12"
+                storeType = System.getenv("CHORUS_SIGNING_STORE_TYPE") ?: "pkcs12"
                 storePassword = System.getenv("CHORUS_SIGNING_PASSWORD")
                 keyAlias = System.getenv("CHORUS_SIGNING_ALIAS") ?: "chorus"
-                keyPassword = System.getenv("CHORUS_SIGNING_PASSWORD")
+                keyPassword = System.getenv("CHORUS_SIGNING_KEY_PASSWORD") ?: System.getenv("CHORUS_SIGNING_PASSWORD")
             }
         }
     }
