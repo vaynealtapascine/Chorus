@@ -40,6 +40,7 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.ui.History
 import garden.vayne.chorus.ui.Home
 import garden.vayne.chorus.ui.DeviceLink
+import garden.vayne.chorus.ui.Chat
 import garden.vayne.chorus.ui.Members
 import garden.vayne.chorus.ui.Onboarding
 
@@ -82,7 +83,7 @@ class MainActivity : ComponentActivity() {
         i?.data?.toString()?.takeIf { "/i/" in it } ?: i?.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { "/i/" in it }
 }
 
-private enum class Tab(val label: String) { Home("Home"), Members("Members"), History("History") }
+private enum class Tab(val label: String) { Home("Home"), Chat("Chat"), Members("Members"), History("History") }
 
 @Composable
 private fun App(chorus: Chorus, invite: String?) {
@@ -119,21 +120,22 @@ private fun App(chorus: Chorus, invite: String?) {
                 Text(label, fontSize = 12.sp, color = p.ink3)
             }
             Box(Modifier.weight(1f)) {
-                when (if (person) Tab.Home else tab) {
+                when (if (person && (tab == Tab.Members || tab == Tab.History)) Tab.Home else tab) {
                     Tab.Home -> if (person) {
                         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                             Text("Chorus quick switching is for systems. Your personal profile and journal are available on the web.", color = p.ink2)
                         }
                     } else Home(chorus, model)
+                    Tab.Chat -> Chat(chorus, model)
                     Tab.Members -> Members(chorus, model)
                     Tab.History -> History(chorus, model)
                 }
             }
-            if (!person) Row(
+            Row(
                 Modifier.fillMaxWidth().background(p.surface).navigationBarsPadding().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                Tab.entries.forEach { t ->
+                Tab.entries.filter { !person || (it != Tab.Members && it != Tab.History) }.forEach { t ->
                     Text(
                         t.label,
                         color = if (t == tab) p.accent else p.ink2,
