@@ -161,7 +161,7 @@ GET  /posts/{id}                           with replies ?depth=
 GET  /timeline?before=&limit=              combined system timeline
 GET  /profiles/{member_id}                 profile bundle (fields, stats, highlights, relationships)
 GET  /lists  /lists/{id}/timeline
-GET  /feeds  /feeds/{id}/items?before=     evaluates the feed query
+GET  /feeds  /feeds/{id}/items?limit=&cursor=   evaluates the feed query (below)
 POST /feeds/preview {query}                → parsed AST + first 20 items (for the editor)
 
 GET  /android/latest                       the published Android build for in-app updates (no auth):
@@ -214,7 +214,18 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   message id; oldest first, 1–100, default 50) and `GET /messages/{id}/thread`. Same rule as
   search: spaces you're in, public or own messages, threads under messages you can't see are
   hidden (404). API tokens with `read:messages` get only their own account's messages (§2.3).
-- **Not yet:** profiles and feeds (M7).
+- **Feeds** (`feeds.rs`, M7.4): `GET /feeds` lists your feeds and the ones other accounts share
+  with you (`shared: true`, with `owner {handle, display_name}`). A feed is shared like a post:
+  its `visibility` (`private`, `followers`, `buckets`, `server`) is checked with the same rule.
+  `GET /feeds/{id}/items?limit=&cursor=` evaluates it with the core filter (`chorus_core::feed`)
+  over the posts **the caller** can read (never the owner's view), newest first, 1–100 a page
+  (default 50) with an opaque `next_cursor`; one request looks at up to 2 000 posts, so a sparse
+  feed may return a short page with a cursor. Names (`from:@kai`, groups, `list:"…"`) resolve
+  against the owner's members, groups and lists; dates use the owner's latest UTC offset. A feed
+  that uses `fronting:` answers 400 to anyone but its owner (it would reveal when members
+  fronted; OPEN_QUESTIONS Q15). A feed you can't read is a 404. Tokens need `read:posts` and
+  see only their own account's feeds and posts.
+- **Not yet:** profiles (M7).
 
 ## 4. Writes (non-sync)
 

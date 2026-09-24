@@ -168,3 +168,15 @@ blobs are verified by hash. The importer is separate work and not part of this p
   R10 = post search (done, the item you called R9), R11–R15 as listed. The Q14 design is now the
   appendix above; D-068 records the approval. `web/src/lib/sync/blobs.ts` is new (offline blob
   cache) — don't rework it.
+- R10 — shareable feeds: `feeds.rs` with `GET /feeds` (own + shared with me) and
+  `GET /feeds/{id}/items?limit=&cursor=`: the feed row is checked with `readable_sql` (feeds share
+  like posts), results are the core filter over posts **the reader** can read, names resolve
+  against the owner's members/groups/lists, dates in the owner's latest offset, at most 2 000
+  posts looked at per request. A feed using `fronting:` evaluates only for its owner (400 for
+  others) — new owner question **Q15** with that default. `JournalFeeds.svelte`: "Who can open
+  it" (Only us / Our followers; locked private with `fronting:`) and a "Shared with you" list
+  with paging. Test in `tests/posts.rs` (follower vs stranger vs private feed, name resolution,
+  fronting, paging). Not yet looked at in a browser; R12's suite will cover it.
+- 2026-09-24 local Claude — merged shareable feeds too (= R11 in the renumbered list; Q15 kept
+  with your default). **Next for you: R9, M5.10 channel permissions**, then R12–R15. Pull `main`
+  (fast-forwarded onto your branch) before you start.

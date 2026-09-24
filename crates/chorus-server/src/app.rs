@@ -138,6 +138,8 @@ pub fn router(state: AppState) -> Router {
         .route("/front/reviews", get(front_reviews))
         .route("/search/messages", get(search_messages))
         .route("/search/posts", get(search_posts))
+        .route("/feeds", get(feeds_list))
+        .route("/feeds/{id}/items", get(feed_items))
         .route("/messages/{id}", get(search_message))
         .route("/messages/{id}/thread", get(message_thread))
         .route("/spaces/{id}/channels", get(space_channels))
@@ -784,6 +786,27 @@ async fn search_posts(
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
     Ok(Json(crate::posts::search(&conn, &p, &q)?))
+}
+
+/// Your feeds and the ones shared with you (feeds.rs, SPEC §6.4).
+async fn feeds_list(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::feeds::list(&conn, &p)?))
+}
+
+async fn feed_items(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<crate::feeds::ItemsQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    crate::feeds::items(&conn, &p, &id, &q)?.map(Json).ok_or_else(|| not_found("feed"))
 }
 
 async fn search_message(
