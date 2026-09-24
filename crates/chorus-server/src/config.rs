@@ -65,6 +65,25 @@ pub struct Security {
     /// sustained rate (API.md §1; default 50 and 10/s). `rate_per_second = 0` turns limits off.
     pub rate_burst: Option<u32>,
     pub rate_per_second: Option<f64>,
+    /// Open sync sockets per account (default 20); a new one closes the oldest with
+    /// `too_many_connections`. 0 = no limit.
+    pub sync_sockets_per_account: Option<u32>,
+    /// Sync sockets per client address that haven't signed in yet (default 30); more are refused
+    /// with 429. 0 = no limit.
+    pub sync_sockets_per_address: Option<u32>,
+    /// Frames a sync socket may send: burst and sustained rate (default 200 and 50/s); over it,
+    /// the socket is closed with `rate_limited`. `sync_frames_per_second = 0` turns it off.
+    pub sync_frame_burst: Option<u32>,
+    pub sync_frames_per_second: Option<f64>,
+}
+
+/// Sync socket limits (OPS.md §9), with their defaults applied.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SyncLimits {
+    pub per_account: usize,
+    pub per_address: usize,
+    pub frame_burst: f64,
+    pub frames_per_second: f64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -82,6 +101,15 @@ pub enum WebhookTargets {
 impl Security {
     pub fn rate(&self) -> (u32, f64) {
         (self.rate_burst.unwrap_or(50), self.rate_per_second.unwrap_or(10.0))
+    }
+
+    pub fn sync_limits(&self) -> SyncLimits {
+        SyncLimits {
+            per_account: self.sync_sockets_per_account.unwrap_or(20) as usize,
+            per_address: self.sync_sockets_per_address.unwrap_or(30) as usize,
+            frame_burst: f64::from(self.sync_frame_burst.unwrap_or(200).max(1)),
+            frames_per_second: self.sync_frames_per_second.unwrap_or(50.0),
+        }
     }
 
     pub fn webhook_targets(&self) -> WebhookTargets {
@@ -180,5 +208,8 @@ mod tests {
         assert_eq!(c.backup.keep_weekly, 8);
         assert_eq!(c.limits.max_blob_mb, 100);
         assert!(toml::from_str::<Config>("[server]\nlisten_on = 1").is_err(), "typos are errors");
+        let limits = c.security.sync_limits();
+        assert_eq!((limits.per_account, limits.per_address), (20, 30));
+        assert_eq!((limits.frame_burst, limits.frames_per_second), (200.0, 50.0));
     }
 }

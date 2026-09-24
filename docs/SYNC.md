@@ -265,7 +265,15 @@ Reviews are computed by the server (it knows `seq`) and sync down as rows.
 
 // S→C when membership changes
 {"t":"scope","add":["space:…"],"remove":["space:…"]}
+
+// S→C before the server closes the socket
+{"t":"error","code":"unauthenticated"|"too_many_connections"|"rate_limited"|…,"message":"…"}
 ```
+
+Socket limits (OPS.md §9): an account's 21st open socket closes its oldest
+(`too_many_connections`); a socket sending more than 200 frames at once or 50 a second sustained
+is closed (`rate_limited`). Both are configurable. The client simply reconnects with its usual
+backoff.
 
 ### 6.3 Session flow
 

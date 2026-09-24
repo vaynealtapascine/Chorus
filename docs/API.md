@@ -10,7 +10,7 @@ is for reads, auth, blobs, exports and third-party scripts.
 
 - Errors: `{"error":{"code":"forbidden","message":"…","retry":false}}` with a matching HTTP status.
   Codes: `bad_request`, `unauthenticated`, `forbidden`, `not_found`, `conflict`, `too_large`,
-  `rate_limited`, `unsupported_version`, `internal`.
+  `rate_limited`, `too_many_connections`, `unsupported_version`, `internal`.
 - Pagination: cursor-based, `?limit=100&before=<id>` / `after=<id>`; responses carry
   `{"items":[…],"next":"<cursor>|null"}`.
 - Versioning: `/api/v1` is stable. Additive changes only; breaking ones get `/api/v2`. The sync
@@ -291,7 +291,11 @@ GET /sync                             WebSocket upgrade; frames are JSON (SYNC.m
 
 The device signs in with its first frame (`Hello` with its session), within 15 s or the socket is
 closed. Everything after that is SYNC.md's protocol: `Push`/`Ack`, `Pull`/`Ops`/`Caught`, `Ping`.
-The upgrade request counts against the rate limit (§1) like any other request.
+The upgrade request counts against the rate limit (§1) like any other request. The socket has
+its own limits (OPS.md §9): per client address, sockets that haven't signed in yet (default 30;
+more are refused with `429 too_many_connections`); per account, open sockets (default 20; the
+oldest is closed with an error frame `too_many_connections`); per socket, frames (200 burst,
+50/s; over it an error frame `rate_limited`, then the socket closes).
 
 ## 7. Webhooks
 

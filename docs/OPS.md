@@ -75,6 +75,10 @@ tailscale_whois = false                      # D-034 optional second factor
 webhook_targets = "internal"                 # internal (tailnet/LAN, never loopback) | public | any
 rate_burst = 50                              # API requests per token/session (else per address)
 rate_per_second = 10                         # sustained; 0 turns request limits off
+sync_sockets_per_account = 20                # open sync sockets per account; a new one closes the oldest
+sync_sockets_per_address = 30                # sync sockets per address not signed in yet; more get 429
+sync_frame_burst = 200                       # frames a sync socket may send at once …
+sync_frames_per_second = 50                  # … and sustained; 0 turns the frame budget off
 ```
 
 Every option also has a default in code; the file may be empty.
@@ -180,8 +184,14 @@ updates). What differs from the PC:
   Sync sockets that don't sign in within 15 s are closed; each device keeps at most 5 open
   sign-in challenges. API requests are rate limited in the server (`ratelimit.rs`): 50 burst /
   10 per second per token or session (else per client address), sign-in 20 burst / 1 per second
-  per address; over it, `429 rate_limited` with `Retry-After`. Blob reads and the sync socket's
-  frames aren't counted. The web app is served with a strict Content-Security-Policy (same origin
+  per address; over it, `429 rate_limited` with `Retry-After`. Blob reads aren't counted.
+  The sync socket has its own limits (`[security]` `sync_*`, above): an account keeps at most 20
+  open sockets (a 21st closes its oldest with the error frame `too_many_connections`); an
+  address may hold 30 sockets that haven't signed in yet (more are refused with `429
+  too_many_connections`; signing in or closing frees the slot); and each socket may send 200
+  frames at once, 50 a second sustained, else it's closed with `rate_limited`. Apps send a
+  handful of frames a second (pushes go 500 ops a frame, 4 in flight; a 5 000-op catch-up is
+  about a dozen frames), so only a broken or hostile client meets these. The web app is served with a strict Content-Security-Policy (same origin
   only, plus `wasm-unsafe-eval` for the core); blob downloads are `private`, `nosniff` and
   sandboxed, so an uploaded file never runs as a page. The address comes from Caddy's `X-Forwarded-For`, trusted only on
   loopback connections. For floods below HTTP (SYN, many sockets), use the provider's firewall

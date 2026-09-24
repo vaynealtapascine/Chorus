@@ -185,3 +185,12 @@ a new dependency (a zip crate) is acceptable. The owner decides.
   verification (it compares `front_review`) would refuse such a backup. The replay now folds the
   log up to the op being projected (`REPLAYED_UPTO`); `in_order_switches_match_refolding`
   compares all four front tables after a rebuild (it failed before the fix). NOTES.md has it.
+- R5 — sync socket limits (`[security]` `sync_sockets_per_account` 20, `sync_sockets_per_address`
+  30, `sync_frame_burst` 200, `sync_frames_per_second` 50; 0 = off): an account's 21st socket
+  closes its oldest with `Frame::Error too_many_connections`; unsigned sockets per address past
+  30 get `429 too_many_connections` at the upgrade (signing in or closing frees the slot); a
+  socket over its frame budget (`ratelimit::Bucket`, now shared) gets `rate_limited` and is
+  closed. Also fixed on the way: a socket closing removed its device's peer registration even
+  when the device had already connected again (only the same channel is removed now). E2E tests
+  for all three; `sync_budgets` in release: switch p95 0.98 ms, 5 000-op reconnect 1.1 s.
+  OPS §3/§9, API.md §1/§6a, SYNC.md §6.2.
