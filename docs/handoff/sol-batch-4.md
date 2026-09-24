@@ -136,3 +136,6 @@ Merged as is (verify with Android passes). Follow-ups:
 - wasm is 260 KB gz of the 300 KB budget after the feed filter; keep an eye on it.
 - `post.create` replies to a parent the server doesn't have yet are accepted (offline order);
   fine, the same rule as reactions.
+- Smoke-tested the merge in the browser (dev data): Home, Journal (Timeline/Lists/Feeds), Members,
+  a profile, People, Settings, Your data, Search render with no console errors. Copy nit on Feeds:
+  "Save filters … on this device" then "Feed definitions sync to your devices": say one thing.

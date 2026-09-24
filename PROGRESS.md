@@ -113,10 +113,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M7 — Profiles & journals
 
-- [~] M7.1 Profile page (banner, fields, pinned, stats) — member profile with Posts/Replies tabs (batch 3 T12); banner/fields/pinned/stats in batch 4 U4
-- [~] M7.2 Posts (notes) + long-form entries, replies/quotes/reposts/reactions — web composer, audiences, GET /posts with per-read audience checks (batch 3); cross-account reactions/replies in batch 4 U4
-- [ ] M7.3 Highlights, relationships + relationship types
-- [ ] M7.4 Lists, feeds (filter language), sharing feeds
+- [~] M7.1 Profile page (banner, fields, pinned, stats) — member profile with Posts/Replies tabs (batch 3 T12); banner, pinned post and stats (batch 4 U4, merged 2026-09-24)
+- [~] M7.2 Posts (notes) + long-form entries, replies/quotes/reposts/reactions — web composer, audiences, GET /posts with per-read audience checks (batch 3); cross-account reactions and replies (readable-parent check) merged 2026-09-24; reposts/quotes UI not yet
+- [~] M7.3 Highlights, relationships + relationship types — local highlights curation and profile relationships on the web (batch 4 U4, merged 2026-09-24)
+- [~] M7.4 Lists, feeds (filter language), sharing feeds — private member lists and saved feeds with the core filter (wasm `feedFilter`) on the web, over the local replica (batch 4 U4, merged 2026-09-24); sharing feeds needs a server endpoint with `posts::readable_sql`
 - [x] M7.5 Combined system timeline — web Journal (batch 3 T12)
 
 ### M8 — Notifications
