@@ -89,6 +89,7 @@ class Model(
     val postReactions: Map<String, List<PostReaction>> = emptyMap(),
     val memberLists: List<MemberList> = emptyList(),
     val savedFeeds: List<SavedFeed> = emptyList(),
+    val highlights: Map<String, Set<String>> = emptyMap(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -294,8 +295,9 @@ class Model(
                 .map { (id, f) -> SavedFeed(id, f.str("name") ?: "Untitled", f.str("description"), f.str("query").orEmpty(),
                     f.optJSONObject("visibility")?.str("mode") ?: "private") }
                 .sortedWith(compareBy<SavedFeed> { it.name.lowercase() }.thenBy { it.id })
+            val highlights = ProfileHighlights.fromProjection(p.optJSONObject("sets"))
             return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages,
-                followCeilings, posts, postReactions, memberLists, savedFeeds)
+                followCeilings, posts, postReactions, memberLists, savedFeeds, highlights)
         }
     }
 }

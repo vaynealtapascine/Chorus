@@ -34,6 +34,7 @@ import garden.vayne.chorus.data.Blobs
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.ProfileApi
 import garden.vayne.chorus.data.ProfileBundle
+import garden.vayne.chorus.data.ProfileHighlights
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -52,6 +53,8 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     var bundle by remember(memberId, dev?.accountId) { mutableStateOf<ProfileBundle?>(null) }
     var error by remember(memberId, dev?.accountId) { mutableStateOf<String?>(null) }
     var pinBusy by remember(memberId) { mutableStateOf(false) }
+    var highlightBusy by remember(memberId) { mutableStateOf(false) }
+    var removedHighlights by remember(memberId) { mutableStateOf<Set<String>>(emptySet()) }
     val banner = produceState<android.graphics.Bitmap?>(initialValue = null, member?.bannerBlob, dev?.session) {
         value = if (member?.bannerBlob != null && dev != null) withContext(Dispatchers.IO) {
             Blobs.image(ctx.applicationContext, member.bannerBlob, dev, kind = "profile", maxPx = 1400,
@@ -77,6 +80,20 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
 
     val ownPosts = model.posts.filter { memberId in it.authors }
     val pinned = model.posts.find { it.id == member.pinnedPostId }
+    val highlightedIds = model.highlights[memberId].orEmpty()
+    val localHighlights = model.posts.filter { it.id in highlightedIds }
+    fun setHighlight(postId: String, add: Boolean) {
+        if (highlightBusy) return
+        highlightBusy = true; error = null
+        actions.launch {
+            try {
+                chorus.create(if (add) "highlight.add" else "highlight.remove", memberId,
+                    ProfileHighlights.payload(memberId, postId))
+                removedHighlights = if (add) removedHighlights - postId else removedHighlights + postId
+            } catch (e: Exception) { error = e.message ?: "Could not update this highlight." }
+            finally { highlightBusy = false }
+        }
+    }
     val selectedPosts = when (tab) {
         "Replies" -> ownPosts.filter { it.replyTo != null }
         "Journal" -> ownPosts.filter { it.kind == "entry" && it.replyTo == null }
@@ -128,10 +145,20 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
         }
         when (tab) {
             "Highlights" -> {
-                val highlights = bundle?.highlights.orEmpty()
-                if (highlights.isEmpty()) item { Text(if (bundle == null) "Highlights need a connection." else "No highlights yet.", color = p.ink2) }
-                for (post in highlights) item(key = "highlight:${post.id}") {
+                val foreign = bundle?.highlights.orEmpty().filter { post ->
+                    model.posts.none { it.id == post.id } && post.id !in removedHighlights
+                }
+                if (localHighlights.isEmpty() && foreign.isEmpty()) item {
+                    Text(if (bundle == null && localHighlights.isEmpty()) "No saved highlights on this device. Connect to load others."
+                        else "No highlights yet.", color = p.ink2)
+                }
+                for (post in localHighlights) item(key = "local-highlight:${post.id}") {
+                    JournalPostCard(post, model, onReply = { onReply(post.id) })
+                    TextButton(enabled = !highlightBusy, onClick = { setHighlight(post.id, false) }) { Text("Remove highlight") }
+                }
+                for (post in foreign) item(key = "remote-highlight:${post.id}") {
                     SharedPostPreview(post, member.shownName)
+                    TextButton(enabled = !highlightBusy, onClick = { setHighlight(post.id, false) }) { Text("Remove highlight") }
                 }
             }
             "Relationships" -> {
@@ -156,6 +183,9 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
                             finally { pinBusy = false }
                         }
                     }) { Text("Pin to profile") }
+                    TextButton(enabled = !highlightBusy, onClick = {
+                        setHighlight(post.id, post.id !in highlightedIds)
+                    }) { Text(if (post.id in highlightedIds) "Remove highlight" else "Highlight post") }
                 }
             }
         }
