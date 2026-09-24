@@ -21,6 +21,10 @@ fn batched_digest_matches_individual_visibility_across_pages() {
     db::migrate(&mut conn).unwrap();
     conn.execute("INSERT INTO space(id,owner_account_id,kind,created_at) VALUES ('s','alice','shared',0)", []).unwrap();
     conn.execute("INSERT INTO channel(id,space_id,kind,created_at) VALUES ('public','s','text',0)", []).unwrap();
+    for who in ["alice", "bob"] {
+        conn.execute("INSERT INTO space_member(space_id,account_id,joined_hlc) VALUES ('s',?1,'1:0:1')", [who])
+            .unwrap();
+    }
     for (id, rule) in [("open", None), ("aside", Some(r#"{"mode":"system_only"}"#))] {
         conn.execute(
             "INSERT INTO message(id,channel_id,account_id,text,visibility,occurred_at)

@@ -210,3 +210,10 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   that backup. The replay now folds the log up to the op being projected (`REPLAYED_UPTO`);
   `tests/projection.rs` `in_order_switches_match_refolding` rebuilds and compares all four front
   tables. Entity rows don't need this: they're a function of the full op set either way.
+- 2026-09-24 claude-opus-5.5 (remote) — core/server — A client's digest repair used to re-pull a
+  scope without dropping anything, so a device holding ops it may no longer see (a channel whose
+  `view` was taken away — R9 made that possible) never matched and re-pulled forever on every
+  catch-up. The repair now sweeps what the re-pull didn't deliver and ends after one pass
+  (SYNC §6.5). And `perms::can_sql` is spliced into queries that already use `c`, `m`, `s`;
+  its own aliases are all `perm_*`, because a nested `channel c` silently shadowed the outer one
+  (a DM message stopped reaching the other participant).

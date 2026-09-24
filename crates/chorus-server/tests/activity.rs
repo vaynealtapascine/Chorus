@@ -11,6 +11,8 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 
 const NOW: i64 = 1_790_000_000_000;
+/// The shared space's #general (W::new makes it).
+const GENERAL: &str = "0192f8c2-0000-7000-8000-0000000000e1";
 
 struct W {
     c: Connection,
@@ -37,7 +39,15 @@ impl W {
             ingest::grant(&c, id, &format!("account:{id}")).unwrap();
             ingest::grant(&c, id, &space).unwrap();
         }
-        W { c, a, b, space, n: 0, last_op: String::new() }
+        let mut w = W { c, a: a.clone(), b: b.clone(), space: space.clone(), n: 0, last_op: String::new() };
+        // a real shared space with a #general, so channel permissions (perms.rs) have rows to read
+        let id = space.strip_prefix("space:").unwrap().to_string();
+        w.push(&a, "space.create", &space, &id, json!({"kind": "shared", "name": "Club"}));
+        for who in [&a, &b] {
+            w.push(&a, "space.join", &space, &id, json!({"account_id": who}));
+        }
+        w.push(&a, "channel.create", &space, GENERAL, json!({"space_id": id, "kind": "text", "name": "general"}));
+        w
     }
 
     fn push(&mut self, who: &str, kind: &str, scope: &str, entity: &str, payload: Value) {
@@ -87,7 +97,7 @@ impl W {
 }
 
 fn msg(text: &str, authors: &[&str], entities: Value) -> Value {
-    json!({"channel_id": "general", "authors": authors, "text": text, "entities": entities})
+    json!({"channel_id": GENERAL, "authors": authors, "text": text, "entities": entities})
 }
 
 #[test]
@@ -174,17 +184,17 @@ fn each_recipient_chooses_per_channel_and_per_kind() {
     };
 
     // "all": plain chatter in this channel now reaches Alex
-    pref(&mut w, "notify_channel:general", json!("all"));
+    pref(&mut w, &format!("notify_channel:{GENERAL}"), json!("all"));
     send(&mut w, "chatter", json!([]));
     assert_eq!(w.inbox(&b)[0], ("message".to_string(), "chatter".to_string()));
 
     // "none": even a mention stays quiet
-    pref(&mut w, "notify_channel:general", json!("none"));
+    pref(&mut w, &format!("notify_channel:{GENERAL}"), json!("none"));
     send(&mut w, "@June muted", mention.clone());
     assert_eq!(w.inbox(&b).len(), 1);
 
     // back to mentions, but mentions switched off as a kind
-    pref(&mut w, "notify_channel:general", json!("mentions"));
+    pref(&mut w, &format!("notify_channel:{GENERAL}"), json!("mentions"));
     pref(&mut w, "notify_chat", json!({"mention": false}));
     send(&mut w, "@June again", mention.clone());
     assert_eq!(w.inbox(&b).len(), 1);

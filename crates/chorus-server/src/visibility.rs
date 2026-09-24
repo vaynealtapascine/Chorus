@@ -21,25 +21,29 @@ pub fn is_public(value: Option<&Value>) -> bool {
     value.is_none_or(|v| v.is_null() || v.get("mode").and_then(Value::as_str) == Some("all"))
 }
 
-fn message_public(conn: &Connection, id: &str) -> anyhow::Result<bool> {
-    // a related op that arrived before its message stays hidden; the public send reveals it
-    Ok(conn.query_row(
-        &format!("SELECT EXISTS(SELECT 1 FROM message m WHERE m.id = ?1 AND {PUBLIC_MESSAGE_SQL})"),
-        [id],
-        |r| r.get(0),
-    )?)
+/// A message every account that may view its channel may see (not a private aside), for the
+/// account in the SQL expression `account` (e.g. `?2`): public, and the channel's `view`
+/// permission (perms.rs). Readers add "or it's their own".
+pub fn visible_message_sql(account: &str) -> String {
+    format!("({PUBLIC_MESSAGE_SQL} AND {})", crate::perms::can_sql(account, "m.channel_id", "view"))
 }
 
-/// A channel everyone in its space may see: anything but a thread under a non-public message
-/// (a thread whose parent hasn't arrived yet stays hidden until it does).
-fn channel_public(conn: &Connection, channel: &str) -> anyhow::Result<bool> {
-    let parent: Option<Option<String>> = conn
-        .query_row("SELECT parent_message_id FROM channel WHERE id = ?1 AND kind = 'thread'", [channel], |r| r.get(0))
-        .optional()?;
-    match parent.flatten() {
-        Some(p) => message_public(conn, &p),
-        None => Ok(true),
-    }
+/// A channel the account may view that isn't a thread under a message it can't see (a thread
+/// whose parent hasn't arrived yet stays hidden until it does). `c` is the channel.
+fn visible_channel_sql(account: &str) -> String {
+    format!(
+        "({} AND NOT (c.kind = 'thread' AND c.parent_message_id IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM message m WHERE m.id = c.parent_message_id AND {PUBLIC_MESSAGE_SQL})))",
+        crate::perms::can_sql(account, "c.id", "view")
+    )
+}
+
+fn visible_attachment_sql(account: &str) -> String {
+    format!(
+        "EXISTS (SELECT 1 FROM item_attachment ia JOIN message m ON m.id = ia.owner_id
+                 WHERE ia.owner_type = 'message' AND ia.attachment_id = a.id AND {})",
+        visible_message_sql(account)
+    )
 }
 
 /// A participant cannot mutate a private aside owned by another account, even with a guessed
@@ -94,129 +98,190 @@ pub fn related_write_allowed(conn: &Connection, author: &str, o: &Op) -> anyhow:
     Ok(visibility.as_deref().is_none_or(|s| serde_json::from_str::<Value>(s).is_ok_and(|v| is_public(Some(&v)))))
 }
 
+/// What the sync rule needs to know about the things an op points at, for one account.
+trait Lookups {
+    /// The account is in the op's space (its owner or a present member), not just a guest.
+    fn member(&mut self) -> anyhow::Result<bool>;
+    fn message(&mut self, id: &str) -> anyhow::Result<bool>;
+    fn channel(&mut self, id: &str) -> anyhow::Result<bool>;
+    fn attachment(&mut self, id: &str) -> anyhow::Result<bool>;
+}
+
 /// The effective per-account sync rule for a shared-space op. The sender always retains their
-/// own ops. Attachment metadata waits for a public message link, avoiding pre-send leakage.
-fn visible_with(
-    account: &str,
-    o: &Op,
-    message_public: &mut impl FnMut(&str) -> anyhow::Result<bool>,
-    channel_public: &mut impl FnMut(&str) -> anyhow::Result<bool>,
-    attachment_public: &mut impl FnMut(&str) -> anyhow::Result<bool>,
-) -> anyhow::Result<bool> {
+/// own ops. Everything tied to a channel needs that channel's `view` permission (perms.rs) and,
+/// for messages, public visibility; attachment metadata waits for a visible message link. A guest
+/// of a channel (not in the space) gets that channel's ops and the space's name, nothing else.
+fn visible_with(account: &str, o: &Op, look: &mut dyn Lookups) -> anyhow::Result<bool> {
     if o.account_id.as_deref() == Some(account) || !o.scope.starts_with("space:") {
         return Ok(true);
     }
-    if o.kind == "message.send" || o.kind == "message.forward" {
-        let channel = o.payload.get("channel_id").and_then(Value::as_str).unwrap_or_default();
-        return Ok(is_public(o.payload.get("visibility")) && channel_public(channel)?);
+    let str_of = |key: &str| o.payload.get(key).and_then(Value::as_str);
+    let k = o.kind.as_str();
+    if k.starts_with("space.") {
+        return Ok(matches!(k, "space.create" | "space.set") || look.member()?);
     }
-    if o.kind.starts_with("channel.") {
+    if k == "message.send" || k == "message.forward" {
+        return Ok(is_public(o.payload.get("visibility")) && look.channel(str_of("channel_id").unwrap_or_default())?);
+    }
+    if k.starts_with("channel.") {
         // a new thread names its parent; later channel ops find it in the projection
-        if let Some(parent) = o.payload.get("parent_message_id").and_then(Value::as_str) {
-            return message_public(parent);
+        if let Some(parent) = str_of("parent_message_id") {
+            return look.message(parent);
         }
-        return o.entity().map_or(Ok(true), channel_public);
+        return o.entity().map_or(Ok(false), |c| look.channel(c));
     }
-    if o.kind.starts_with("message.") {
-        let id = o.payload.get("message_id").and_then(Value::as_str).or_else(|| o.entity());
-        return id.map_or(Ok(false), message_public);
+    if k.starts_with("message.") {
+        let id = str_of("message_id").or_else(|| o.entity());
+        return id.map_or(Ok(false), |m| look.message(m));
     }
-    if (o.kind.starts_with("reaction.") || o.kind.starts_with("read."))
-        && let Some(id) = o.payload.get("message_id").and_then(Value::as_str)
-    {
-        return message_public(id);
+    if k.starts_with("reaction.") {
+        let id = str_of("target_id").or_else(|| str_of("message_id")).or_else(|| o.entity());
+        return id.map_or(Ok(false), |m| look.message(m));
     }
-    if o.kind.starts_with("attachment.") {
-        let Some(id) = o.entity() else { return Ok(false) };
-        return attachment_public(id);
+    if k.starts_with("read.") {
+        return match (str_of("message_id"), str_of("channel_id")) {
+            (Some(m), _) => look.message(m),
+            (None, Some(c)) => look.channel(c),
+            (None, None) => look.member(),
+        };
     }
-    Ok(true)
+    if k.starts_with("attachment.") {
+        return o.entity().map_or(Ok(false), |a| look.attachment(a));
+    }
+    look.member()
 }
 
-fn attachment_public(conn: &Connection, id: &str) -> anyhow::Result<bool> {
-    Ok(conn.query_row(
-        &format!(
-            "SELECT EXISTS(SELECT 1 FROM item_attachment ia JOIN message m ON m.id=ia.owner_id
-             WHERE ia.owner_type='message' AND ia.attachment_id=?1 AND {PUBLIC_MESSAGE_SQL})"
-        ),
-        [id],
-        |r| r.get(0),
-    )?)
+/// Straight from the database, one question at a time.
+struct Direct<'a> {
+    conn: &'a Connection,
+    account: &'a str,
+    space: &'a str,
+}
+
+impl Lookups for Direct<'_> {
+    fn member(&mut self) -> anyhow::Result<bool> {
+        Ok(crate::perms::is_member(self.conn, self.account, self.space)?)
+    }
+    fn message(&mut self, id: &str) -> anyhow::Result<bool> {
+        let sql = format!("SELECT EXISTS(SELECT 1 FROM message m WHERE m.id = ?2 AND {})", visible_message_sql("?1"));
+        Ok(self.conn.prepare_cached(&sql)?.query_row(params![self.account, id], |r| r.get(0))?)
+    }
+    fn channel(&mut self, id: &str) -> anyhow::Result<bool> {
+        let sql = format!("SELECT EXISTS(SELECT 1 FROM channel c WHERE c.id = ?2 AND {})", visible_channel_sql("?1"));
+        Ok(self.conn.prepare_cached(&sql)?.query_row(params![self.account, id], |r| r.get(0))?)
+    }
+    fn attachment(&mut self, id: &str) -> anyhow::Result<bool> {
+        let sql = format!("SELECT {} FROM (SELECT ?2 AS id) a", visible_attachment_sql("?1"));
+        Ok(self.conn.prepare_cached(&sql)?.query_row(params![self.account, id], |r| r.get(0))?)
+    }
 }
 
 pub fn op_visible_to(conn: &Connection, account: &str, o: &Op) -> anyhow::Result<bool> {
-    visible_with(account, o, &mut |id| message_public(conn, id), &mut |id| channel_public(conn, id), &mut |id| {
-        attachment_public(conn, id)
-    })
+    let space = o.scope.strip_prefix("space:").unwrap_or_default();
+    visible_with(account, o, &mut Direct { conn, account, space })
 }
 
-fn matching_ids(conn: &Connection, ids: &HashSet<String>, query: &str) -> anyhow::Result<HashSet<String>> {
+/// First pass over a page: answer yes to everything and note what was asked.
+#[derive(Default)]
+struct Record {
+    messages: HashSet<String>,
+    channels: HashSet<String>,
+    attachments: HashSet<String>,
+}
+
+impl Lookups for Record {
+    fn member(&mut self) -> anyhow::Result<bool> {
+        Ok(true)
+    }
+    fn message(&mut self, id: &str) -> anyhow::Result<bool> {
+        self.messages.insert(id.to_string());
+        Ok(true)
+    }
+    fn channel(&mut self, id: &str) -> anyhow::Result<bool> {
+        self.channels.insert(id.to_string());
+        Ok(true)
+    }
+    fn attachment(&mut self, id: &str) -> anyhow::Result<bool> {
+        self.attachments.insert(id.to_string());
+        Ok(true)
+    }
+}
+
+/// Second pass: the answers, fetched in one query per kind.
+struct Known {
+    member: bool,
+    messages: HashSet<String>,
+    channels: HashSet<String>,
+    attachments: HashSet<String>,
+}
+
+impl Lookups for Known {
+    fn member(&mut self) -> anyhow::Result<bool> {
+        Ok(self.member)
+    }
+    fn message(&mut self, id: &str) -> anyhow::Result<bool> {
+        Ok(self.messages.contains(id))
+    }
+    fn channel(&mut self, id: &str) -> anyhow::Result<bool> {
+        Ok(self.channels.contains(id))
+    }
+    fn attachment(&mut self, id: &str) -> anyhow::Result<bool> {
+        Ok(self.attachments.contains(id))
+    }
+}
+
+/// The ids in `ids` for which `query` (with `?1` = the account and `{ids}` = the list) holds.
+fn matching_ids(
+    conn: &Connection,
+    account: &str,
+    ids: &HashSet<String>,
+    query: &str,
+) -> anyhow::Result<HashSet<String>> {
     if ids.is_empty() {
         return Ok(HashSet::new());
     }
-    let marks = std::iter::repeat_n("?", ids.len()).collect::<Vec<_>>().join(",");
-    let sql = query.replace("{ids}", &marks).replace("{public}", PUBLIC_MESSAGE_SQL);
+    let marks = (2..ids.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(",");
+    let sql = query.replace("{ids}", &marks);
     let mut statement = conn.prepare(&sql)?;
-    let rows = statement.query_map(params_from_iter(ids.iter()), |r| r.get::<_, String>(0))?;
+    let args = std::iter::once(account).chain(ids.iter().map(String::as_str));
+    let rows = statement.query_map(params_from_iter(args), |r| r.get::<_, String>(0))?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// Three set lookups for a page, regardless of how many message/reaction/attachment ops it holds.
-fn visible_page(conn: &Connection, account: &str, page: &[Op]) -> anyhow::Result<Digest> {
-    let mut messages = HashSet::new();
-    let mut channels = HashSet::new();
-    let mut attachments = HashSet::new();
+/// A page's digest for one account: the same rule as [`op_visible_to`], with one query per kind
+/// of thing the page points at instead of one per op.
+fn visible_page(conn: &Connection, account: &str, space: &str, page: &[Op]) -> anyhow::Result<Digest> {
+    let mut asked = Record::default();
     for o in page {
-        if o.account_id.as_deref() == Some(account) || !o.scope.starts_with("space:") {
-            continue;
-        }
-        if matches!(o.kind.as_str(), "message.send" | "message.forward") {
-            if is_public(o.payload.get("visibility")) {
-                channels.insert(o.payload.get("channel_id").and_then(Value::as_str).unwrap_or_default().to_string());
-            }
-        } else if o.kind.starts_with("channel.") {
-            if let Some(id) = o.payload.get("parent_message_id").and_then(Value::as_str) {
-                messages.insert(id.to_string());
-            } else if let Some(id) = o.entity() {
-                channels.insert(id.to_string());
-            }
-        } else if o.kind.starts_with("message.") {
-            if let Some(id) = o.payload.get("message_id").and_then(Value::as_str).or_else(|| o.entity()) {
-                messages.insert(id.to_string());
-            }
-        } else if o.kind.starts_with("reaction.") || o.kind.starts_with("read.") {
-            if let Some(id) = o.payload.get("message_id").and_then(Value::as_str) {
-                messages.insert(id.to_string());
-            }
-        } else if o.kind.starts_with("attachment.")
-            && let Some(id) = o.entity()
-        {
-            attachments.insert(id.to_string());
-        }
+        visible_with(account, o, &mut asked)?;
     }
-    let public_messages =
-        matching_ids(conn, &messages, "SELECT m.id FROM message m WHERE m.id IN ({ids}) AND {public}")?;
-    let hidden_channels = matching_ids(
-        conn,
-        &channels,
-        "SELECT c.id FROM channel c WHERE c.id IN ({ids}) AND c.kind='thread' AND c.parent_message_id IS NOT NULL
-         AND NOT EXISTS (SELECT 1 FROM message m WHERE m.id=c.parent_message_id AND {public})",
-    )?;
-    let public_attachments = matching_ids(
-        conn,
-        &attachments,
-        "SELECT DISTINCT ia.attachment_id FROM item_attachment ia JOIN message m ON m.id=ia.owner_id
-         WHERE ia.owner_type='message' AND ia.attachment_id IN ({ids}) AND {public}",
-    )?;
+    let mut known = Known {
+        member: crate::perms::is_member(conn, account, space)?,
+        messages: matching_ids(
+            conn,
+            account,
+            &asked.messages,
+            &format!("SELECT m.id FROM message m WHERE m.id IN ({{ids}}) AND {}", visible_message_sql("?1")),
+        )?,
+        channels: matching_ids(
+            conn,
+            account,
+            &asked.channels,
+            &format!("SELECT c.id FROM channel c WHERE c.id IN ({{ids}}) AND {}", visible_channel_sql("?1")),
+        )?,
+        attachments: matching_ids(
+            conn,
+            account,
+            &asked.attachments,
+            &format!(
+                "SELECT a.id FROM (SELECT value AS id FROM json_each(json_array({{ids}}))) a WHERE {}",
+                visible_attachment_sql("?1")
+            ),
+        )?,
+    };
     let mut digest = Digest::default();
     for o in page {
-        if visible_with(
-            account,
-            o,
-            &mut |id| Ok(public_messages.contains(id)),
-            &mut |id| Ok(!hidden_channels.contains(id)),
-            &mut |id| Ok(public_attachments.contains(id)),
-        )? {
+        if visible_with(account, o, &mut known)? {
             digest.add(&o.id);
         }
     }
@@ -241,7 +306,7 @@ pub fn visible_digest(conn: &Connection, account: &str, scope: &str) -> anyhow::
         let Some(last) = page.last().and_then(|o| o.seq) else { break };
         cursor = last;
         let short = page.len() < 1000;
-        let part = visible_page(conn, account, &page)?;
+        let part = visible_page(conn, account, scope.strip_prefix("space:").unwrap_or_default(), &page)?;
         for (total, page_part) in digest.xor.iter_mut().zip(part.xor) {
             *total ^= page_part;
         }

@@ -1851,6 +1851,18 @@ pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Optio
             }
         }
     }
+    // ops that change who may view which channel (perms.rs): connected devices get the scope's
+    // digest again, and one that gained or lost a channel repairs by re-pulling (SYNC.md §4.2)
+    let rechecked: BTreeSet<&str> = fresh
+        .iter()
+        .filter(|o| {
+            matches!(
+                o.kind.as_str(),
+                "channel.set_permission" | "space.set_role" | "space.set_roles" | "space.join" | "space.leave"
+            )
+        })
+        .map(|o| o.scope.as_str())
+        .collect();
     let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
     for (device, p) in peers.iter_mut() {
         // scope changes (e.g. someone was added to a space)
@@ -1873,6 +1885,11 @@ pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Optio
         for (scope, ops) in by_scope {
             let to = ops.last().and_then(|o| o.seq).unwrap_or(0);
             send(&p.tx, Frame::Ops { scope: scope.into(), ops, to });
+        }
+        for scope in rechecked.iter().filter(|sc| p.scopes.contains(**sc)) {
+            let to = oplog::max_seq(conn, scope)?;
+            let digest = crate::visibility::visible_digest(conn, &p.account, scope)?;
+            send(&p.tx, Frame::Caught { scope: (*scope).into(), to, digest });
         }
     }
     Ok(())

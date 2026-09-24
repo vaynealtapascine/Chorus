@@ -45,6 +45,11 @@ fn seed() -> Connection {
             params![account, format!("space:{SPACE}")],
         )
         .unwrap();
+        conn.execute(
+            "INSERT INTO space_member(space_id,account_id,joined_hlc) VALUES (?1,?2,'1:0:1')",
+            params![SPACE, account],
+        )
+        .unwrap();
     }
     conn.execute("INSERT INTO member(id,account_id,name,created_at) VALUES ('rose',?1,'Rose',0)", [ALICE]).unwrap();
     for (id, owner, text, at, visibility, deleted) in [

@@ -620,6 +620,8 @@ fn space_access(conn: &Connection, o: &Op, account: &str, present: bool) -> anyh
         ingest::grant(conn, account, &o.scope)?;
     } else if !present && ((manages && account != author) || self_leave) {
         exec(conn, "DELETE FROM scope_access WHERE account_id = ?1 AND scope = ?2", params![account, o.scope])?;
+        // still a guest of one of its channels?
+        crate::perms::refresh_guest(conn, account, space)?;
     }
     Ok(())
 }
@@ -976,6 +978,17 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
                 names.extend(["allow".into(), "deny".into(), "hlc".into()]);
                 vals.extend([Sql::Text(allow.to_string()), Sql::Text(deny.to_string()), Sql::Text(o.hlc.to_string())]);
                 upsert(conn, "channel_permission", &["channel_id", "target_type", "target_id"], &names, &vals)?;
+                // an account override can make an outside account a guest of the space (perms.rs)
+                if p("target_type") == "account"
+                    && let Some(space) = conn
+                        .query_row("SELECT space_id FROM channel WHERE id = ?1", [o.entity().unwrap_or("")], |r| {
+                            r.get::<_, Option<String>>(0)
+                        })
+                        .optional()?
+                        .flatten()
+                {
+                    crate::perms::refresh_guest(conn, &p("target_id"), &space)?;
+                }
             }
             Ok(())
         }

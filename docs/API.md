@@ -203,7 +203,8 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   `share_stats` (NOTIFICATIONS §3).
 - `/front/intervals` also takes `subject` (an id) and `level`.
 - **Shared spaces and DMs** (M6.2, `spaces.rs`, signed-in devices only):
-  - `GET /spaces` returns your spaces with the accounts in each.
+  - `GET /spaces` returns your spaces with the accounts in each, plus spaces where a channel is
+    shared with you (`guest: true`; DATA_MODEL §4.4).
   - `POST /spaces {kind: "shared"|"dm", name?, accounts: [account ids]}` answers
     `201 {id}`, or `200 {id}` when that DM already exists. It works only with accounts connected
     to you by an active follow, in either direction.
@@ -217,8 +218,11 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
 - **Messages** (`messages.rs`, 2026-09-24): `GET /spaces/{id}/channels`,
   `GET /channels/{id}/messages?before=&after=&around=&limit=` (epoch ms, exclusive; `around` is a
   message id; oldest first, 1–100, default 50) and `GET /messages/{id}/thread`. Same rule as
-  search: spaces you're in, public or own messages, threads under messages you can't see are
-  hidden (404). API tokens with `read:messages` get only their own account's messages (§2.3).
+  search: public or own messages in channels you may `view` (channel permissions, DATA_MODEL
+  §4.4; a guest sees only the channels shared with them), threads under messages you can't see
+  are hidden (404). A pushed op the permissions refuse is acked `forbidden` with the reason
+  (e.g. "you don't have the send permission in this channel"). API tokens with `read:messages`
+  get only their own account's messages (§2.3).
 - **Feeds** (`feeds.rs`, M7.4): `GET /feeds` lists your feeds and the ones other accounts share
   with you (`shared: true`, with `owner {handle, display_name}`). A feed is shared like a post:
   its `visibility` (`private`, `followers`, `buckets`, `server`) is checked with the same rule.

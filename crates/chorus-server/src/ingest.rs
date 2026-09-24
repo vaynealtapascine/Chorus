@@ -82,6 +82,10 @@ pub fn accept(
     if !preserved && !crate::visibility::related_write_allowed(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", "message is private to another account".into(), false), None));
     }
+    // channel permissions (perms.rs, D-047)
+    if !preserved && let Some(why) = crate::perms::write_denied(conn, &author, &o)? {
+        return Ok((AckResult::err(o.id, "forbidden", why, false), None));
+    }
     // Follow requests and a follower's prefs are written by the server on the follower's behalf
     // (follows.rs); a client forging one could make someone else receive its switches.
     if !preserved && matches!(o.kind.as_str(), "follow.request" | "follow.set_prefs") && s.device_id != SERVER_DEVICE {

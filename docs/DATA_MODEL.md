@@ -677,6 +677,32 @@ Message-only extra modes: `{"mode":"members","member_ids":[…]}` (soft in-syste
  "subsystem": ["subsystem","subsystems"], "cocon": "co-con", "present": "present"}
 ```
 
+### 4.4 Channel permissions: the rule (D-047, M5.10)
+
+One rule, `chorus-server/src/perms.rs::can_sql`, is spliced into every server path that decides
+what an account may see or do in a space: writes (`perms::write_denied`, from `ingest::accept`),
+sync fan-out and catch-up (`visibility::op_visible_to` and the batched `visible_digest`), the REST
+message reads, search, blobs, author cards and notification recipients. `can(account, channel,
+perm)` holds when both `perm` and `view` resolve to allow:
+
+1. A thread uses its parent message's channel.
+2. The space's owner, an `admin`, and any participant of a `dm` space: everything.
+3. Otherwise the most specific override that mentions `perm` decides — the account's own
+   override, then its role's, then the role `everyone` — and at one level `deny` beats `allow`.
+4. With no override: the role's base set. `member`: view, send, react, thread, pin. `read_only`:
+   view, react. A custom role (`space.roles[].perms`): its list. `manage` is never in a base set.
+5. An account that isn't a present member of the space gets only what an account override
+   allows — a **guest**. Allowing a guest `view` gives them the space's scope (`scope_access`,
+   `perms::refresh_guest`), but only that channel's ops sync to them (plus `space.create` and
+   `space.set`, so they can name it). Removing the last `view` removes the scope.
+
+Writes: `space.*` needs an admin (never in a DM; leaving is your own); `channel.create` needs a
+manager (admin, or a DM participant), or `thread` on the parent's channel for a thread; other
+`channel.*` need `manage`; `message.send`/`forward` need `send`; `message.pin`/`unpin` need `pin`;
+other `message.*` need `view` on your own message and `manage` on someone else's; `reaction.*`
+needs `react`; `read.*` needs `view`. A refused op is acked `forbidden` with the reason.
+Property-tested against an independent model of these rules in `tests/permissions.rs`.
+
 ## 5. What each device stores
 
 | Device | Holds |

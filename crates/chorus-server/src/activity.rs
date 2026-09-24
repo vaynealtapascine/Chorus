@@ -181,7 +181,15 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
         return queue(conn, o, why, channel_name, now);
     }
     let mut st = conn.prepare_cached("SELECT account_id FROM scope_access WHERE scope = ?1 AND account_id <> ?2")?;
-    let others: Vec<String> = st.query_map(params![o.scope, author], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    let mut others: Vec<String> = st.query_map(params![o.scope, author], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    // only accounts that may view the channel hear about it (perms.rs)
+    let mut viewers = Vec::with_capacity(others.len());
+    for a in others.drain(..) {
+        if crate::perms::can(conn, &a, channel_id, "view")? {
+            viewers.push(a);
+        }
+    }
+    let others = viewers;
     if others.is_empty() {
         return Ok(());
     }

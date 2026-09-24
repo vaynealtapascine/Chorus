@@ -136,7 +136,7 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
                 AND EXISTS (SELECT 1 FROM json_each(fv.entries) je
                     WHERE json_extract(je.value, '$.subject_type') = 'member'
                       AND json_extract(je.value, '$.subject_id') = m.id)
-         )", crate::visibility::PUBLIC_MESSAGE_SQL, crate::posts::readable_sql("?2")),
+         )", crate::visibility::visible_message_sql("?2"), crate::posts::readable_sql("?2")),
         params![hash, account],
         |r| r.get(0),
     )
