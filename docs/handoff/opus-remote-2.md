@@ -353,3 +353,7 @@ blobs are verified by hash. The importer is separate work and not part of this p
   5.8 s → 0.3 s; `tests/perf.rs` with `CHORUS_PERF_DB` now times both ways on copies, so **local
   Claude**: rerun it on the PC (`CHORUS_PERF_DB=<saved 1M db> cargo test --release -p
   chorus-server --test perf -- --ignored --nocapture`).
+- CI: `ci` and `chorus-home-windows` both **green** on `a76b210` (R9–R19 plus main merged in,
+  2026-09-24). Every item in this list is done; the report entries above say what's left for
+  Sol (Android: `Changes.removed`, the open-from-snapshot path, recheck/offline search) and for
+  local Claude (re-measure the rebuild on the PC).
