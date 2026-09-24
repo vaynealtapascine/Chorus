@@ -1,8 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { bucketAssignments, buckets, customEmojis, fuzzy, groupPath, membership, messages, segmentParsing, threadSummaries, type GroupRow } from './data';
+import { bucketAssignments, buckets, customEmojis, fuzzy, groupPath, memberListItems, memberLists, membership, messages, relationshipTypes, relationships, segmentParsing, threadSummaries, type GroupRow } from './data';
 import type { Projection } from './sync/client';
 
 describe('data helpers', () => {
+  it('keeps only live member lists and present list members', () => {
+    const row = (fields: Record<string, unknown>) => ({ exists: true, fields });
+    const p = { rows: { member_list: { a: row({ name: 'Close', visibility: { mode: 'private' } }),
+      b: row({ name: 'Old', deleted_at: 1 }) } }, sets: { member_list_item: {
+        'a|{"member_id":"kai"}': true, 'a|{"member_id":"juniper"}': false, 'a|broken': true,
+      } }, fronts: {}, opaque: 0 } as unknown as Projection;
+    expect(memberLists(p).map((list) => list.name)).toEqual(['Close']);
+    expect([...memberListItems(p).get('a')!]).toEqual(['kai']);
+  });
+  it('shows live typed relationships and excludes tombstones or incomplete links', () => {
+    const row = (fields: Record<string, unknown>) => ({ exists: true, fields });
+    const p = { rows: {
+      relationship_type: { friend: row({ name: 'Friend', inverse_name: 'Friend of', is_symmetric: 1 }), gone: row({ name: 'Gone', deleted_at: 9 }) },
+      relationship: { link: row({ from_member_id: 'm1', to_kind: 'external', to_label: 'Sam', type_id: 'friend', visibility: { mode: 'private' } }),
+        deleted: row({ from_member_id: 'm1', to_kind: 'member', to_id: 'm2', type_id: 'friend', deleted_at: 10 }),
+        incomplete: row({ from_member_id: 'm1', type_id: 'friend' }) },
+    }, sets: {}, fronts: {}, opaque: 0 } as unknown as Projection;
+    expect(relationshipTypes(p)).toEqual([{ id: 'friend', name: 'Friend', inverse_name: 'Friend of', is_symmetric: true, color: undefined }]);
+    expect(relationships(p)).toEqual([{ id: 'link', from_member_id: 'm1', to_kind: 'external', to_id: undefined, to_label: 'Sam',
+      type_id: 'friend', note: undefined, visibility: { mode: 'private' } }]);
+  });
   it('reads live buckets and only present follower assignments', () => {
     const p = { rows: { bucket: {
       close: { exists: true, fields: { name: 'Close', ceiling: { delay: { min_s: 0, max_s: 0 } } } },

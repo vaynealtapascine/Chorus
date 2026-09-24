@@ -18,6 +18,8 @@ export interface MemberRow {
   description?: string;
   birthday?: string;
   avatar_blob?: string;
+  banner_blob?: string;
+  pinned_post_id?: string;
   archived: boolean;
   deleted: boolean;
   created_at?: number;
@@ -62,6 +64,85 @@ export interface BucketRow {
   id: string;
   name: string;
   ceiling: Record<string, unknown>;
+}
+
+export interface RelationshipTypeRow {
+  id: string;
+  name: string;
+  inverse_name?: string;
+  is_symmetric: boolean;
+  color?: string;
+}
+
+export interface RelationshipRow {
+  id: string;
+  from_member_id: string;
+  to_kind: 'member' | 'account' | 'external';
+  to_id?: string;
+  to_label?: string;
+  type_id: string;
+  note?: string;
+  visibility: { mode: string };
+}
+
+export interface MemberListRow {
+  id: string;
+  name: string;
+  description?: string;
+  visibility: { mode: string };
+}
+
+export function memberLists(p: Projection): MemberListRow[] {
+  return Object.entries((p.rows.member_list ?? {}) as Rows)
+    .filter(([, row]) => row.exists && row.fields.deleted_at == null)
+    .map(([id, row]) => ({ id, name: str(row.fields.name) ?? 'Untitled', description: str(row.fields.description),
+      visibility: row.fields.visibility && typeof row.fields.visibility === 'object' && !Array.isArray(row.fields.visibility)
+        ? row.fields.visibility as { mode: string } : { mode: 'private' } }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** list ID → present member IDs in the LWW element set. */
+export function memberListItems(p: Projection): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const [key, present] of Object.entries(p.sets.member_list_item ?? {})) {
+    if (!present) continue;
+    const bar = key.indexOf('|');
+    if (bar < 0) continue;
+    try {
+      const member = (JSON.parse(key.slice(bar + 1)) as { member_id?: unknown }).member_id;
+      if (typeof member !== 'string' || !member) continue;
+      const list = key.slice(0, bar);
+      const ids = out.get(list) ?? new Set<string>();
+      ids.add(member);
+      out.set(list, ids);
+    } catch { /* malformed set keys cannot add a member */ }
+  }
+  return out;
+}
+
+/** Live relationship definitions and links from the current account's replica. */
+export function relationshipTypes(p: Projection): RelationshipTypeRow[] {
+  return Object.entries((p.rows.relationship_type ?? {}) as Rows)
+    .filter(([, row]) => row.exists && row.fields.deleted_at == null && str(row.fields.name))
+    .map(([id, row]) => ({ id, name: str(row.fields.name)!, inverse_name: str(row.fields.inverse_name),
+      is_symmetric: row.fields.is_symmetric === true || row.fields.is_symmetric === 1,
+      color: str(row.fields.color) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function relationships(p: Projection): RelationshipRow[] {
+  return Object.entries((p.rows.relationship ?? {}) as Rows)
+    .filter(([, row]) => row.exists && row.fields.deleted_at == null)
+    .map(([id, row]): RelationshipRow => ({
+      id,
+      from_member_id: str(row.fields.from_member_id) ?? '',
+      to_kind: row.fields.to_kind === 'member' || row.fields.to_kind === 'account' ? row.fields.to_kind : 'external',
+      to_id: str(row.fields.to_id), to_label: str(row.fields.to_label),
+      type_id: str(row.fields.type_id) ?? '', note: str(row.fields.note),
+      visibility: row.fields.visibility && typeof row.fields.visibility === 'object' && !Array.isArray(row.fields.visibility)
+        ? row.fields.visibility as { mode: string } : { mode: 'private' },
+    }))
+    .filter((row) => row.from_member_id && row.type_id && (row.to_id || row.to_label));
 }
 
 export function buckets(p: Projection): BucketRow[] {
@@ -129,6 +210,8 @@ export function members(p: Projection): MemberRow[] {
         description: str(f.description),
         birthday: str(f.birthday),
         avatar_blob: str(f.avatar_blob),
+        banner_blob: str(f.banner_blob),
+        pinned_post_id: str(f.pinned_post_id),
         archived: f.archived_at != null,
         deleted: f.deleted_at != null,
         created_at: typeof f.created_at === 'number' ? f.created_at : undefined,

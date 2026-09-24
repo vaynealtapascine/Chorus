@@ -45,6 +45,16 @@ fn channel_public(conn: &Connection, channel: &str) -> anyhow::Result<bool> {
 /// A participant cannot mutate a private aside owned by another account, even with a guessed
 /// message id. Normal public-message authorization remains in the existing scope rules.
 pub fn related_write_allowed(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<bool> {
+    if o.kind == "post.create"
+        && let Some(parent) = o.payload.get("reply_to").and_then(Value::as_str)
+    {
+        let readable = crate::posts::readable_sql("?2");
+        let sql = format!("SELECT p.deleted_at IS NULL AND {readable} FROM post p WHERE p.id=?1");
+        // Own offline replies may reach the server before their parent. An existing parent,
+        // including one owned by another account, must be readable when the reply is accepted.
+        let visible: Option<bool> = conn.query_row(&sql, params![parent, author], |r| r.get(0)).optional()?;
+        return Ok(visible.unwrap_or(true));
+    }
     if matches!(o.kind.as_str(), "post.react" | "post.unreact") {
         let Some(target) = o.payload.get("target_id").and_then(Value::as_str) else { return Ok(false) };
         let Some(member) = o.payload.get("member_id").and_then(Value::as_str) else { return Ok(false) };

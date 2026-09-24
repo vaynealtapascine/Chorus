@@ -37,6 +37,21 @@
   let cropX = $state(0);
   let cropY = $state(0);
   let avatarError = $state('');
+  let bannerError = $state('');
+  async function chooseBanner(e: Event) {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/') || file.size > 4 * 1024 * 1024) {
+      bannerError = 'Choose an image smaller than 4 MB.';
+      return;
+    }
+    try {
+      const upload = await stageBlob(file, file.type, sync.accountId);
+      set({ banner_blob: upload.hash });
+      if (sync.status === 'live') void flushUploads(sync.device);
+      bannerError = '';
+    } catch (error) { bannerError = String(error); }
+  }
   onDestroy(() => cropBitmap?.close());
   async function chooseAvatar(e: Event) {
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
@@ -187,6 +202,11 @@
             </div>
           {/if}
           {#if avatarError}<p role="alert">{avatarError}</p>{/if}
+        </div>
+        <div class="wide avatar-picker">
+          <label>Profile banner <input type="file" accept="image/*" onchange={chooseBanner} aria-label="Choose member banner" /></label>
+          {#if m.banner_blob}<button class="ghost" onclick={() => set({ banner_blob: null })}>Remove banner</button>{/if}
+          {#if bannerError}<p role="alert">{bannerError}</p>{/if}
         </div>
         <label>Name <input value={m.name} onchange={(e) => set({ name: text(e).trim() || m!.name })} /></label>
         <label>Display name <input value={m.display_name ?? ''} onchange={(e) => set({ display_name: opt(text(e)) })} /></label>

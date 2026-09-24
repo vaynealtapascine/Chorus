@@ -30,4 +30,14 @@ describe('chorus-core in the browser build', () => {
   it('reports feed errors with a position', () => {
     expect(() => core.feedParse('kind:banana')).toThrow(/"pos":0/);
   });
+
+  it('filters a batch through the core feed evaluator', () => {
+    const ast = core.feedParse('from:@kai kind:entry -tag:vent');
+    const matches = core.feedFilter(ast, [
+      { kind: 'entry', author_ids: ['m1'], tags: [], occurred_at: 10 },
+      { kind: 'entry', author_ids: ['m1'], tags: ['vent'], occurred_at: 11 },
+      { kind: 'note', author_ids: ['m1'], tags: [], occurred_at: 12 },
+    ], { now: 20, members: { kai: ['m1'] } });
+    expect(matches).toEqual([0]);
+  });
 });

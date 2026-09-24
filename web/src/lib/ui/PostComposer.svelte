@@ -4,14 +4,14 @@
   import { canWriteAs } from '../posts';
   import { sync, type Projection } from '../sync/client';
 
-  let { projection, initialAuthors = [], replyTo, onsent }: { projection: Projection; initialAuthors?: string[]; replyTo?: string; onsent?: () => void } = $props();
+  let { projection, initialAuthors = [], replyTo, defaultVisibility = 'private', onsent }: { projection: Projection; initialAuthors?: string[]; replyTo?: string; defaultVisibility?: 'private' | 'followers' | 'server'; onsent?: () => void } = $props();
   const active = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
   const availableBuckets = $derived(buckets(projection));
   const frontAuthors = () => (projection.fronts[sync.accountId]?.current ?? []).filter((e) => e.subject_type === 'member' && e.level === 'front').map((e) => e.subject_id);
   let authors = $state<string[]>([]);
   let initialized = $state(false);
   $effect(() => {
-    if (!initialized) { authors = initialAuthors.length ? [...initialAuthors] : frontAuthors(); initialized = true; }
+    if (!initialized) { authors = initialAuthors.length ? [...initialAuthors] : frontAuthors(); visibility = defaultVisibility; initialized = true; }
   });
   let kind = $state<'note' | 'entry'>('note');
   let title = $state('');

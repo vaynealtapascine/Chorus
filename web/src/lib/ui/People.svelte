@@ -11,6 +11,7 @@
   import AvatarImage from './AvatarImage.svelte';
   import AttachmentView from './AttachmentView.svelte';
   import RichText from './RichText.svelte';
+  import PostComposer from './PostComposer.svelte';
   import type { Entity } from '../core';
   import { disablePush, enablePush, pushActive, pushSupported } from '../push';
   import { createShared, openDm } from '../spaces';
@@ -282,6 +283,7 @@
       : [...(post.reactions ?? []), { emoji: '💜', member_id: reactMember, member_name: members(projection).find((m) => m.id === reactMember)?.display_name ?? 'You' }];
   }
   let choice = $state<Record<string, string>>({});
+  let replyingPost = $state<string | null>(null);
 </script>
 
 <section class="page">
@@ -427,6 +429,7 @@
                     {/each}
                     {#if post.reactions?.length}<p class="post-reactions">{post.reactions.map((r) => `${r.emoji} ${r.member_name}`).join(' · ')}</p>{/if}
                     {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button>{/if}
+                    {#if reactMember}<button class="ghost" onclick={() => (replyingPost = replyingPost === post.id ? null : post.id)}>{replyingPost === post.id ? 'Cancel reply' : 'Reply'}</button>{/if}
                   </details>
                 {:else}
                   {#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
@@ -435,6 +438,12 @@
                   {/each}
                   {#if post.reactions?.length}<p class="post-reactions">{post.reactions.map((r) => `${r.emoji} ${r.member_name}`).join(' · ')}</p>{/if}
                   {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button>{/if}
+                  {#if reactMember}<button class="ghost" onclick={() => (replyingPost = replyingPost === post.id ? null : post.id)}>{replyingPost === post.id ? 'Cancel reply' : 'Reply'}</button>{/if}
+                {/if}
+                {#if replyingPost === post.id && reactMember}
+                  <div class="reply-composer"><p class="hint">This reply is visible to everyone on this server. You can change that before posting.</p>
+                    <PostComposer {projection} initialAuthors={[reactMember]} replyTo={post.id} defaultVisibility="server" onsent={() => { replyingPost = null; void loadViews(); }} />
+                  </div>
                 {/if}
               </article>
             {/each}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canWriteAs, memberPosts, postReaction, posts } from './posts';
+import { canWriteAs, highlightedPostIds, memberPosts, postReaction, posts } from './posts';
 import type { Projection } from './sync/client';
 
 describe('journal projection', () => {
@@ -30,5 +30,15 @@ describe('journal projection', () => {
     expect(canWriteAs(p, 'own', 'a')).toBe(true);
     expect(canWriteAs(p, 'other', 'a')).toBe(false);
     expect(canWriteAs(p, 'archived', 'a')).toBe(false);
+  });
+
+  it('only shows present highlights attached to the requested profile', () => {
+    const p = { sets: { highlight: {
+      'kai|{"post_id":"a","profile_member_id":"kai"}': true,
+      'kai|{"post_id":"b","profile_member_id":"kai"}': false,
+      'rin|{"post_id":"c","profile_member_id":"rin"}': true,
+      'kai|broken': true,
+    } } } as unknown as Projection;
+    expect([...highlightedPostIds(p, 'kai')]).toEqual(['a']);
   });
 });

@@ -44,6 +44,21 @@ export function postReaction(postId: string, emoji: string, memberId: string) {
   return { target_type: 'post', target_id: postId, emoji, member_id: memberId };
 }
 
+/** Present highlight set entries for one profile; malformed keys grant no association. */
+export function highlightedPostIds(p: Projection, profileId: string): Set<string> {
+  const ids = new Set<string>();
+  for (const [key, present] of Object.entries(p.sets.highlight ?? {})) {
+    if (!present) continue;
+    const bar = key.indexOf('|');
+    if (bar < 0) continue;
+    try {
+      const value = JSON.parse(key.slice(bar + 1));
+      if (value?.profile_member_id === profileId && typeof value.post_id === 'string') ids.add(value.post_id);
+    } catch { /* malformed projection keys cannot add a highlight */ }
+  }
+  return ids;
+}
+
 /** Only posts written by this member; replies have their own profile tab. */
 export function memberPosts(rows: PostRow[], memberId: string, replies: boolean): PostRow[] {
   return rows.filter((post) => !post.deleted && post.authors.includes(memberId) && Boolean(post.reply_to) === replies);

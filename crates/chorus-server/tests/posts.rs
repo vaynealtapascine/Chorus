@@ -246,3 +246,63 @@ fn post_reactions_require_an_owned_member_and_a_readable_existing_post() {
     let owner = posts::one(&conn, ALICE, "server").unwrap().unwrap();
     assert!(owner["reactions"].as_array().unwrap().iter().any(|r| r["emoji"] == "🎉" && r["member_id"] == "bob"));
 }
+
+#[tokio::test]
+async fn cross_account_replies_require_a_readable_parent_and_reach_its_author() {
+    let conn = seed();
+    let scope = format!("account:{BOB}");
+    ingest::grant(&conn, BOB, &scope).unwrap();
+    let now = chorus_server::now_ms();
+    let session = ingest::Session {
+        account_id: BOB.into(),
+        device_id: BOB.into(),
+        sample: ClockSample { server_time: now, mono: None, boot_id: None, offset_ms: 0 },
+    };
+    let make = |serial: u8, parent: &str| Op {
+        id: new_id(now as u64, [serial; 10]),
+        kind: "post.create".into(),
+        v: 1,
+        scope: scope.clone(),
+        entity_id: Some(new_id(now as u64, [serial + 20; 10])),
+        hlc: Hlc::new(now as u64, 0, 1),
+        device_at: now,
+        tz_offset_min: 0,
+        mono: None,
+        boot_id: None,
+        time_source: TimeSource::Auto,
+        seen_seq: 0,
+        member_id: None,
+        payload: json!({"kind":"note","authors":["bob"],"text":"A reply from Bob",
+            "entities":[],"visibility":{"mode":"server"},"reply_to":parent}),
+        seq: None,
+        account_id: None,
+        device_id: None,
+        occurred_at: None,
+        received_at: None,
+    };
+    for (serial, target) in [(1, "private"), (2, "deleted")] {
+        let (ack, _) = ingest::accept(&conn, &session, make(serial, target), now, false).unwrap();
+        assert_eq!(ack.error.unwrap().code, "forbidden");
+    }
+    let (ack, reply) = ingest::accept(&conn, &session, make(3, "server"), now, false).unwrap();
+    assert!(ack.error.is_none(), "{:?}", ack.error);
+    let reply = reply.unwrap();
+    let reply_id = reply.entity_id.unwrap();
+    let owner_replies = posts::replies(&conn, ALICE, "server", 1).unwrap();
+    assert!(owner_replies.iter().any(|p| p["id"] == reply_id));
+    let follower_replies = posts::replies(&conn, BOB, "server", 1).unwrap();
+    assert!(follower_replies.iter().any(|p| p["id"] == reply_id));
+
+    let mut cfg = Config::default();
+    cfg.server.data_dir = std::path::PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap())
+        .join(format!("post-reply-http-test-{:016x}", rand::random::<u64>()));
+    let state = app::Shared::new(conn, cfg).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/api/v1/posts/server?depth=1", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app::router(state)).await.unwrap() });
+    let client = reqwest::Client::new();
+    for session in ["alice-session", "bob-session"] {
+        let body: Value = client.get(&base).bearer_auth(session).send().await.unwrap().json().await.unwrap();
+        assert!(body["replies"].as_array().unwrap().iter().any(|p| p["id"] == reply_id));
+    }
+}

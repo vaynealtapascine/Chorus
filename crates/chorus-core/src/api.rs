@@ -145,6 +145,47 @@ pub fn feed_parse(query: &str) -> Result<String, String> {
     feed::parse(query).map(|e| js(&e)).map_err(|e| js(&serde_json::json!({"pos": e.pos, "message": e.message})))
 }
 
+#[derive(Deserialize)]
+struct FeedContextIn {
+    now: i64,
+    #[serde(default)]
+    members: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    lists: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    dates: BTreeMap<String, i64>,
+}
+
+impl feed::Context for FeedContextIn {
+    fn now(&self) -> i64 {
+        self.now
+    }
+    fn members(&self, from: &feed::FromRef) -> Vec<String> {
+        match from {
+            feed::FromRef::Name { name } => self.members.get(&name.to_lowercase()),
+            feed::FromRef::List { name } => self.lists.get(&name.to_lowercase()),
+        }
+        .cloned()
+        .unwrap_or_default()
+    }
+    fn date_start(&self, date: &str) -> Option<i64> {
+        self.dates.get(date).copied()
+    }
+}
+
+/// Feed AST, items and resolved names/dates → indexes of matching items. The caller resolves
+/// local names and timezone dates, while core owns the filter semantics on every client.
+pub fn feed_filter(ast_json: &str, items_json: &str, context_json: &str) -> Result<String, String> {
+    let ast: feed::Expr = parse("feed AST", ast_json)?;
+    let items: Vec<feed::Item> = parse("feed items", items_json)?;
+    let context: FeedContextIn = parse("feed context", context_json)?;
+    Ok(js(&items
+        .iter()
+        .enumerate()
+        .filter_map(|(i, item)| feed::eval(&ast, item, &context).then_some(i))
+        .collect::<Vec<_>>()))
+}
+
 /// Member colour variants: `{"name", "ring", "tint"}`. `intensity`: off | subtle | vivid.
 pub fn adapt_color(color: &str, dark: bool, intensity: &str) -> String {
     let i = match intensity {
@@ -314,5 +355,34 @@ mod tests {
         assert_eq!(h, "0000000003e8-0000-00000007");
         assert!(hlc_observe(&h, 7, "0000000007d0-0005-00000009", 1000).unwrap().starts_with("0000000007d0-0006"));
         assert_eq!(fold_front("[]").unwrap(), r#"{"switches":[],"intervals":[],"current":[]}"#);
+    }
+
+    #[test]
+    fn feed_batch_filter_uses_core_expression_and_resolved_context() {
+        let ast = feed_parse(r#"from:list:"close friends" kind:entry since:30d -tag:vent"#).unwrap();
+        let items = js(&vec![
+            feed::Item { kind: "entry".into(), author_ids: vec!["kai".into()], occurred_at: 90, ..Default::default() },
+            feed::Item {
+                kind: "entry".into(),
+                author_ids: vec!["kai".into()],
+                tags: vec!["vent".into()],
+                occurred_at: 95,
+                ..Default::default()
+            },
+            feed::Item { kind: "note".into(), author_ids: vec!["kai".into()], occurred_at: 95, ..Default::default() },
+            feed::Item {
+                kind: "entry".into(),
+                author_ids: vec!["other".into()],
+                occurred_at: 95,
+                ..Default::default()
+            },
+        ]);
+        let context = js(&serde_json::json!({"now":100,"lists":{"close friends":["kai"]}}));
+        assert_eq!(feed_filter(&ast, &items, &context).unwrap(), "[0]");
+        let date = feed_parse("since:2026-09-01").unwrap();
+        assert_eq!(
+            feed_filter(&date, &items, &js(&serde_json::json!({"now":100,"dates":{"2026-09-01":92}}))).unwrap(),
+            "[1,2,3]"
+        );
     }
 }
