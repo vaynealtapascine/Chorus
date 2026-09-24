@@ -194,3 +194,8 @@ a new dependency (a zip crate) is acceptable. The owner decides.
   when the device had already connected again (only the same channel is removed now). E2E tests
   for all three; `sync_budgets` in release: switch p95 0.98 ms, 5 000-op reconnect 1.1 s.
   OPS §3/§9, API.md §1/§6a, SYNC.md §6.2.
+- R7 — design only: `docs/OPEN_QUESTIONS.md` Q14, the export bundle with files (zip layout,
+  blobs from the account's own ops only, hand-written *stored* zip with no dependency vs the
+  `zip` crate for deflate, disk guard and 24 h retention, `POST /exports` / `GET /jobs/{id}` /
+  download with Range, an `export_job` table numbered after Sol's 0006). Nothing built; the
+  owner decides.
