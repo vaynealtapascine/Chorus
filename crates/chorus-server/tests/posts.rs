@@ -73,6 +73,19 @@ fn seed() -> Connection {
         conn.execute("INSERT INTO post_author(post_id,member_id,position) VALUES (?1,?2,0)", params![id, member])
             .unwrap();
     }
+    conn.execute(
+        "INSERT INTO attachment(id,account_id,blob_hash,thumb_blob_hash,filename,mime,size,alt_text,is_spoiler,created_at)
+         VALUES ('a','0192f8c2-0000-7000-8000-0000000000a1','full-hash','thumb-hash','photo.png','image/png',42,'A picture',1,0)",
+        [],
+    )
+    .unwrap();
+    for id in ["server", "private"] {
+        conn.execute(
+            "INSERT INTO item_attachment(owner_type,owner_id,attachment_id,position) VALUES ('post',?1,'a',0)",
+            [id],
+        )
+        .unwrap();
+    }
     conn
 }
 
@@ -109,6 +122,12 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
     assert!(bob["items"][0].get("front_snapshot").is_none());
     assert!(bob["items"][1]["reply_to"].is_null());
     assert_eq!(bob["items"][1]["author_cards"][0]["name"], "alice");
+    let shared = bob["items"].as_array().unwrap().iter().find(|p| p["id"] == "server").unwrap();
+    assert_eq!(shared["attachments"][0]["blob_hash"], "full-hash");
+    assert_eq!(shared["attachments"][0]["thumb_blob_hash"], "thumb-hash");
+    assert_eq!(shared["attachments"][0]["alt_text"], "A picture");
+    assert_eq!(shared["attachments"][0]["is_spoiler"], true);
+    assert_eq!(shared["attachments"].as_array().unwrap().len(), 1);
     let carol = get("carol-session", "").send().await.unwrap().json::<Value>().await.unwrap();
     assert_eq!(ids(&carol), ["server"]);
     let alice = get("alice-session", "?account=0192f8c2-0000-7000-8000-0000000000a1")

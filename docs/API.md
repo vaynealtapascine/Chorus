@@ -133,7 +133,9 @@ GET  /posts/{id}                           with replies ?depth=
   the list to one account. `before` is an exclusive occurred-at millisecond value; `limit` is
   clamped to 1–100. Detail replies are filtered by the same rule (`depth` 0–3, at most 50 per
   level). Hidden/deleted posts return 404. Responses omit `front_snapshot` and remove unreadable
-  parent/repost links. Authors include ordered member ids and small author cards. API tokens do
+  parent/repost links. Authors include ordered member ids and small author cards. Each post also
+  includes ordered attachment metadata and blob hashes; blob downloads enforce the same current
+  audience. API tokens do
   not use these cross-account routes.
 GET  /timeline?before=&limit=              combined system timeline
 GET  /profiles/{member_id}                 profile bundle (fields, stats, highlights, relationships)

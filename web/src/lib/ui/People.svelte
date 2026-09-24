@@ -3,11 +3,12 @@
   // Follows live in the followed account's scope, so accepting and the privacy preset are ordinary
   // ops; asking to follow, unfollowing and your own prefs go through /api/v1/follows.
   import { notifyPreset } from '../core/pkg/chorus_wasm.js';
-  import { bucketAssignments, buckets } from '../data';
+  import { bucketAssignments, buckets, type AttachmentRow } from '../data';
   import { apiBase } from '../sync/device';
   import { sync, type Projection } from '../sync/client';
   import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
   import AvatarImage from './AvatarImage.svelte';
+  import AttachmentView from './AttachmentView.svelte';
   import { disablePush, enablePush, pushActive, pushSupported } from '../push';
   import { createShared, openDm } from '../spaces';
 
@@ -21,6 +22,7 @@
   interface SharedPost {
     id: string; kind: 'note' | 'entry'; title: string | null; text: string; cw: string | null;
     occurred_at: number; author_cards: { id: string; name: string | null; display_name: string | null }[];
+    attachments: AttachmentRow[];
   }
   interface Note {
     id: string;
@@ -394,9 +396,15 @@
                 {#if post.cw}
                   <details><summary>Content warning: {post.cw}</summary>
                     {#if post.title}<strong>{post.title}</strong>{/if}<p>{post.text}</p>
+                    {#each post.attachments ?? [] as attachment (attachment.id)}
+                      <AttachmentView {attachment} />
+                    {/each}
                   </details>
                 {:else}
                   {#if post.title}<strong>{post.title}</strong>{/if}<p>{post.text}</p>
+                  {#each post.attachments ?? [] as attachment (attachment.id)}
+                    <AttachmentView {attachment} />
+                  {/each}
                 {/if}
               </article>
             {/each}
