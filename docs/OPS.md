@@ -165,6 +165,10 @@ updates). What differs from the PC:
   `tailscale_whois` is meaningless there. Backups land on the same disk: copy them off the box.
   Caddy's access log redacts `?token=` (the OBS overlay and EventSource streams carry API tokens
   in the URL).
+  Sync sockets that don't sign in within 15 s are closed; each device keeps at most 5 open
+  sign-in challenges. **Not done: general request rate limiting** (stock Caddy has none; a
+  flood of requests would load the server). If that becomes a problem, add Caddy's
+  `rate_limit` plugin or fail2ban on `/var/log/caddy/chorus.log`.
 - **Coexisting with the selfhost VPS bundle** (memos, ntfy, Arbor, …): that bundle's Caddyfile
   imports `/etc/caddy/sites/*.caddy`, so Chorus's site survives its reinstalls. Chorus can use
   that ntfy as its push distributor (`ntfy_url`).
