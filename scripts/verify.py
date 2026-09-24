@@ -50,6 +50,7 @@ def main():
 
     if shutil.which('node'):
         run(['node', 'scripts/gen-tokens.mjs', '--check'])
+    run([sys.executable, 'scripts/projection-check.py'])
     run(['cargo', 'fmt', '--all', '--check'])
     run(['cargo', 'clippy', '--workspace', '--all-targets', '--', '-D', 'warnings'])
     if quick:

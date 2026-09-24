@@ -192,6 +192,9 @@ fn prepare(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Re
             // until migration 0006 their column stayed empty).
             vals.insert("reply_to_id".into(), row.fields.get("reply_to").cloned().unwrap_or(Value::Null));
         }
+        if table == "post" {
+            vals.insert("repost_of_id".into(), row.fields.get("repost_of").cloned().unwrap_or(Value::Null));
+        }
     }
     if table == "custom_emoji" {
         vals.entry("created_by".into()).or_insert(Value::from(first.and_then(|f| f.account_id.clone())));

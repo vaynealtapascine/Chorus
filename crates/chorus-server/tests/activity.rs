@@ -378,3 +378,28 @@ fn message_and_post_webhooks_go_to_their_author() {
     let body = &d.iter().find(|d| d.event == "message.created").unwrap().body;
     assert!(body.contains("hello hooks"), "{body}");
 }
+
+/// Reposts keep their link in SQL (the posts API reads `repost_of_id`), and migration 0006 fills
+/// it in for posts projected before.
+#[test]
+fn reposts_keep_their_source() {
+    let mut w = W::new();
+    let a = w.a.clone();
+    let acct = format!("account:{a}");
+    let kai = new_id(NOW as u64, [40; 10]);
+    w.push(&a, "member.create", &acct, &kai, json!({"name": "Kai"}));
+    let note = |text: &str| json!({"kind": "note", "authors": [kai], "text": text, "entities": [], "visibility": {"mode": "private"}});
+    let first = new_id(NOW as u64, [60; 10]);
+    w.push(&a, "post.create", &acct, &first, note("original"));
+    let second = new_id(NOW as u64, [61; 10]);
+    let mut repost = note("");
+    repost["repost_of"] = json!(first);
+    w.push(&a, "post.create", &acct, &second, repost);
+    let link = |w: &W| -> Option<String> {
+        w.c.query_row("SELECT repost_of_id FROM post WHERE id = ?1", [&second], |r| r.get(0)).unwrap()
+    };
+    assert_eq!(link(&w).as_deref(), Some(first.as_str()));
+    w.c.execute("UPDATE post SET repost_of_id = NULL", []).unwrap();
+    w.c.execute_batch(include_str!("../migrations/0006_message_reply_to.sql")).unwrap();
+    assert_eq!(link(&w).as_deref(), Some(first.as_str()));
+}
