@@ -11,7 +11,7 @@
 use std::collections::BTreeSet;
 use std::io::Write as _;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
 use crate::{config::Config, project};
@@ -25,12 +25,23 @@ pub enum Target {
     /// A message: every op on it (send, edits, deletes, pins), every op that points at it
     /// (`message_id`), the reactions to it, and the attachments it carries.
     Message(String),
+    /// A whole (non-admin) account, e.g. a test account: every op it wrote, everything in its
+    /// own scope and internal space, its follows either way, and its devices, sessions, tokens,
+    /// webhooks and notifications. Other accounts' ops stay; a shared space it created goes.
+    Account(String),
 }
 
 /// The ops a purge would rewrite (not yet purged ones only).
 pub fn ops_for(conn: &Connection, target: &Target) -> anyhow::Result<Vec<String>> {
     let (sql, id) = match target {
         Target::Op(id) => ("SELECT id FROM op WHERE id = ?1", id),
+        Target::Account(id) => (
+            "SELECT id FROM op WHERE account_id = ?1 OR scope = 'account:' || ?1
+               OR scope IN (SELECT 'space:' || id FROM space WHERE owner_account_id = ?1)
+               OR entity_id IN (SELECT id FROM follow WHERE follower_account_id = ?1 OR target_account_id = ?1)
+               OR json_extract(payload, '$.follower_account_id') = ?1",
+            id,
+        ),
         Target::Message(id) => (
             "SELECT id FROM op WHERE entity_id = ?1
                OR json_extract(payload, '$.message_id') = ?1
@@ -82,14 +93,55 @@ fn drop_unused_blob(cfg: &Config, conn: &Connection, hash: &str) -> anyhow::Resu
     Ok(true)
 }
 
+/// Refuse to erase an admin account (the owner's): a mistyped id must not take it.
+pub fn check(conn: &Connection, target: &Target) -> anyhow::Result<()> {
+    if let Target::Account(id) = target {
+        let admin: Option<bool> =
+            conn.query_row("SELECT is_admin FROM account WHERE id = ?1", [id], |r| r.get(0)).optional()?;
+        match admin {
+            None => anyhow::bail!("no account {id}"),
+            Some(true) => anyhow::bail!("{id} is an admin account; refusing to purge it"),
+            Some(false) => {}
+        }
+    }
+    Ok(())
+}
+
+/// The server-side records of an account that no op carries.
+fn drop_account_rows(conn: &Connection, account: &str) -> anyhow::Result<()> {
+    let devices = "(SELECT id FROM device WHERE account_id = ?1)";
+    for sql in [
+        format!("DELETE FROM session WHERE device_id IN {devices}"),
+        format!("DELETE FROM auth_nonce WHERE device_id IN {devices}"),
+        format!("DELETE FROM invite WHERE account_id = ?1 OR created_by IN {devices}"),
+        "DELETE FROM api_token WHERE account_id = ?1".into(),
+        "DELETE FROM webhook WHERE account_id = ?1".into(),
+        "DELETE FROM notification WHERE recipient_account_id = ?1".into(),
+        "DELETE FROM follower_front_view WHERE follower_account_id = ?1 OR target_account_id = ?1".into(),
+        "DELETE FROM follower_front_log WHERE follower_account_id = ?1 OR target_account_id = ?1".into(),
+        "DELETE FROM scope_access WHERE account_id = ?1 OR scope = 'account:' || ?1
+           OR scope IN (SELECT 'space:' || id FROM space WHERE owner_account_id = ?1)"
+            .into(),
+        "DELETE FROM device WHERE account_id = ?1".into(),
+        "DELETE FROM account WHERE id = ?1".into(),
+    ] {
+        conn.execute(&sql, [account])?;
+    }
+    Ok(())
+}
+
 /// Rewrite the target's ops as purged, rebuild every projection, drop files nothing uses any
 /// more, and log it. Returns the op ids.
 pub fn run(cfg: &Config, conn: &mut Connection, target: &Target, asked: &str) -> anyhow::Result<Vec<String>> {
+    check(conn, target)?;
     let ids = ops_for(conn, target)?;
-    if ids.is_empty() {
+    let mut blobs = blobs_of(conn, &ids)?;
+    if let Target::Account(account) = target {
+        let mut st = conn.prepare("SELECT hash FROM blob WHERE uploaded_by = ?1")?;
+        blobs.extend(st.query_map([account], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?);
+    } else if ids.is_empty() {
         return Ok(ids);
     }
-    let blobs = blobs_of(conn, &ids)?;
     {
         let tx = conn.transaction()?;
         {
@@ -97,6 +149,10 @@ pub fn run(cfg: &Config, conn: &mut Connection, target: &Target, asked: &str) ->
             for id in &ids {
                 st.execute(params![id, PURGED])?;
             }
+        }
+        if let Target::Account(account) = target {
+            // (the space ids are needed for scope_access, so before the rebuild drops them)
+            drop_account_rows(&tx, account)?;
         }
         tx.commit()?;
     }

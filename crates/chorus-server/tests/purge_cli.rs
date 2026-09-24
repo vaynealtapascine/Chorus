@@ -136,3 +136,119 @@ fn purge_erases_a_message_its_edits_attachment_and_file() {
     drop(c);
     let _ = fs::remove_dir_all(&root);
 }
+
+#[test]
+fn purge_removes_a_test_account_and_refuses_an_admin() {
+    const ADMIN: &str = "0192f8c2-0000-7000-8000-0000000000aa";
+    const TEST: &str = "0192f8c2-0000-7000-8000-0000000000bb";
+    const HOME: &str = "0192f8c2-0000-7000-8000-0000000000dd";
+    const TEST_HOME: &str = "0192f8c2-0000-7000-8000-0000000000de";
+    const FOLLOW: &str = "0192f8c2-0000-7000-8000-0000000000f1";
+    let target = std::env::var_os("CARGO_TARGET_DIR").expect("test requires CARGO_TARGET_DIR");
+    let root = PathBuf::from(target).join(format!("purge-account-test-{:016x}", rand::random::<u64>()));
+    let data = root.join("data");
+    fs::create_dir_all(&data).unwrap();
+    {
+        let mut c = db::open(&data.join("chorus.db")).unwrap();
+        db::migrate(&mut c).unwrap();
+        for (id, admin, handle) in [(ADMIN, true, "owner"), (TEST, false, "tester")] {
+            c.execute(
+                "INSERT INTO account(id,kind,handle,is_admin,created_at) VALUES (?1,'system',?2,?3,0)",
+                params![id, handle, admin],
+            )
+            .unwrap();
+            ingest::grant(&c, id, &format!("account:{id}")).unwrap();
+        }
+        c.execute(
+            "INSERT INTO device(id,account_id,short_id,name,platform,public_key,created_at) VALUES ('dev-test',?1,'dt','Phone','android','k',0)",
+            [TEST],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO session(token_hash,device_id,created_at,expires_at) VALUES ('h','dev-test',0,9999999999999)",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO api_token(id,account_id,name,token_hash,scopes,created_at) VALUES ('tok',?1,'t','th','[]',0)",
+            [TEST],
+        )
+        .unwrap();
+        let now = chorus_server::now_ms();
+        let op = |who: &str, kind: &str, scope: &str, id: &str, p: serde_json::Value| {
+            ingest::server_op(&c, who, kind, scope, Some(id), p, now).unwrap();
+        };
+        for (who, home, text) in [(ADMIN, HOME, "the owner's note"), (TEST, TEST_HOME, "a tester's note")] {
+            let space = format!("space:{home}");
+            ingest::grant(&c, who, &space).unwrap();
+            op(who, "space.create", &space, home, json!({"kind": "internal", "name": "Home"}));
+            let chan = if who == ADMIN {
+                "0192f8c2-0000-7000-8000-0000000000c1"
+            } else {
+                "0192f8c2-0000-7000-8000-0000000000c2"
+            };
+            op(who, "channel.create", &space, chan, json!({"space_id": home, "kind": "text", "name": "general"}));
+            let msg = if who == ADMIN {
+                "0192f8c2-0000-7000-8000-000000000301"
+            } else {
+                "0192f8c2-0000-7000-8000-000000000302"
+            };
+            op(
+                who,
+                "message.send",
+                &space,
+                msg,
+                json!({"channel_id": chan, "authors": [], "text": text, "entities": []}),
+            );
+        }
+        // the tester follows the owner (the request lives in the owner's scope)
+        op(
+            ADMIN,
+            "follow.request",
+            &format!("account:{ADMIN}"),
+            FOLLOW,
+            json!({"follower_account_id": TEST, "target_account_id": ADMIN}),
+        );
+    }
+    fs::write(
+        root.join("chorus.toml"),
+        format!("[server]\ndata_dir = '{}'\n", data.to_string_lossy().replace('\\', "/")),
+    )
+    .unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_chorus-server"))
+            .arg("--config")
+            .arg(root.join("chorus.toml"))
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    let refused = run(&["purge", "--account", ADMIN, "--yes"]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("admin"), "{}", String::from_utf8_lossy(&refused.stderr));
+
+    let out = run(&["purge", "--account", TEST, "--yes"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let c = Connection::open(data.join("chorus.db")).unwrap();
+    let count = |sql: &str| -> i64 { c.query_row(sql, [TEST], |r| r.get(0)).unwrap() };
+    assert_eq!(count("SELECT count(*) FROM account WHERE id = ?1"), 0);
+    assert_eq!(count("SELECT count(*) FROM device WHERE account_id = ?1"), 0);
+    assert_eq!(count("SELECT count(*) FROM api_token WHERE account_id = ?1"), 0);
+    assert_eq!(count("SELECT count(*) FROM scope_access WHERE account_id = ?1"), 0);
+    assert_eq!(count("SELECT count(*) FROM follow WHERE follower_account_id = ?1"), 0);
+    assert_eq!(c.query_row("SELECT count(*) FROM session", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    let leaks: i64 = c
+        .query_row(
+            "SELECT count(*) FROM op WHERE instr(payload, 'tester') > 0 OR instr(payload, ?1) > 0",
+            [TEST],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(leaks, 0, "nothing of the tester left in the log");
+    let kept: String = c.query_row("SELECT text FROM message WHERE text LIKE 'the owner%'", [], |r| r.get(0)).unwrap();
+    assert_eq!(kept, "the owner's note");
+    assert_eq!(c.query_row("SELECT count(*) FROM account WHERE id = ?1", [ADMIN], |r| r.get::<_, i64>(0)).unwrap(), 1);
+    drop(c);
+    let _ = fs::remove_dir_all(&root);
+}

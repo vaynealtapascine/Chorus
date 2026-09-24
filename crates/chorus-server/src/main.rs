@@ -68,8 +68,11 @@ enum Cmd {
     /// Asks for confirmation unless --yes; logged to <data_dir>/purge.log.
     Purge {
         /// A message: all of its ops, ops that point at it, and reactions to it.
-        #[arg(long, conflicts_with = "op")]
+        #[arg(long, conflicts_with_all = ["op", "account"])]
         message: Option<String>,
+        /// A whole non-admin account (e.g. a test account) and everything it wrote.
+        #[arg(long, conflicts_with = "op")]
+        account: Option<String>,
         /// One op.
         #[arg(long)]
         op: Option<String>,
@@ -213,16 +216,23 @@ fn main() -> anyhow::Result<()> {
                 seed_cfg.server.data_dir.display()
             );
         }
-        Cmd::Purge { message, op, yes } => {
+        Cmd::Purge { message, op, account, yes } => {
             use chorus_server::purge::{self, Target};
-            let (target, asked) = match (message, op) {
-                (Some(m), None) => (Target::Message(m.clone()), format!("message {m}")),
-                (None, Some(o)) => (Target::Op(o.clone()), format!("op {o}")),
-                _ => anyhow::bail!("say what to purge: --message <id> or --op <id>"),
+            let (target, asked) = match (message, op, account) {
+                (Some(m), None, None) => (Target::Message(m.clone()), format!("message {m}")),
+                (None, Some(o), None) => (Target::Op(o.clone()), format!("op {o}")),
+                (None, None, Some(a)) => (Target::Account(a.clone()), format!("account {a}")),
+                _ => anyhow::bail!("say what to purge: --message <id>, --op <id> or --account <id>"),
             };
             let mut conn = chorus_server::open_and_migrate(&cfg)?;
+            purge::check(&conn, &target)?;
             let ids = purge::ops_for(&conn, &target)?;
-            if ids.is_empty() {
+            let whole_account = matches!(target, Target::Account(_));
+            if whole_account {
+                println!("This removes account {} with its devices, sessions, tokens and webhooks.", asked);
+                println!("Shared spaces it created disappear for everyone in them.");
+            }
+            if ids.is_empty() && !whole_account {
                 println!("nothing to purge for {asked}");
                 return Ok(());
             }

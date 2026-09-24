@@ -87,9 +87,11 @@ chorus-server restore --from <snapshot> --into <new dir>   # verifies, bumps epo
 chorus-server rebuild                   # rebuild all projections from the op log
 chorus-server export --account <id> --kind full|csv|sqlite
 chorus-server check                     # integrity_check, digests, orphan blobs, config
-chorus-server purge --message <id> | --op <id> [--yes]   # the only true erase (D-053): asks to
+chorus-server purge --message <id> | --op <id> | --account <id> [--yes]   # the only true erase (D-053): asks to
                                         # confirm, rebuilds projections, deletes files nothing uses,
                                         # logs to data/purge.log; devices and old backups keep copies
+                                        # --account removes a non-admin account (e.g. a test
+                                        # account) with everything it wrote; admins are refused
 chorus-server seed --to <new dir>       # test data for the SPEC §9 budgets
 chorus-server reconcile-status          # (not built yet) devices that re-synced since last restore
 chorus-server migrate                   # run pending schema migrations (also automatic on serve)
