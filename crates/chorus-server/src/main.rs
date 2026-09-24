@@ -308,6 +308,9 @@ fn main() -> anyhow::Result<()> {
                 chorus_server::now_ms(),
             )?;
             println!("{}/i/{code}", cfg.server.public_url.trim_end_matches('/'));
+            if let Some(lan) = chorus_server::tls::home_invite(&cfg, &code) {
+                println!("on the home wifi (phones): {lan}");
+            }
         }
     }
     Ok(())

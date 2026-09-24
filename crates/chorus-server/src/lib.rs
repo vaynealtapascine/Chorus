@@ -28,6 +28,7 @@ pub mod reconcile;
 pub mod search;
 pub mod seed;
 pub mod spaces;
+pub mod tls;
 pub mod visibility;
 pub mod webhooks;
 

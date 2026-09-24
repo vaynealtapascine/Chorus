@@ -18,6 +18,9 @@ pub struct Config {
 #[serde(default, deny_unknown_fields)]
 pub struct Server {
     pub listen: String,
+    /// Chorus Home (D-071): also listen here with TLS for phones on the home wifi, e.g.
+    /// `0.0.0.0:5251`, using a self-signed certificate that invites pin (`tls.rs`).
+    pub lan_listen: Option<String>,
     pub public_url: String,
     pub data_dir: PathBuf,
     /// Serve the built web app from this directory (the PWA), if set.
@@ -125,6 +128,7 @@ impl Default for Server {
     fn default() -> Self {
         Server {
             listen: "127.0.0.1:5250".into(),
+            lan_listen: None,
             public_url: "http://127.0.0.1:5250".into(),
             data_dir: PathBuf::from("data"),
             web_dir: None,
