@@ -10,3 +10,4 @@ local.properties
 /data-dev-sol
 /sol-dev.toml
 /crates/chorus-server/data/
+__pycache__/
