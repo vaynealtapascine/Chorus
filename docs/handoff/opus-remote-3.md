@@ -92,6 +92,12 @@ asked for; take **0010** and up.
      (proposal: enforced at ingest on the server's `received_at`, per account per channel,
      owner/admin/`manage` exempt, a refused send goes to *Sync issues* with the wait time) and
      build that default behind the channel setting.
+  8. **Space roles.** Channel permissions (R9) apply per role, but nothing sends
+     `space.set_role` or `space.set_roles`: no client can make someone an admin or `read_only`,
+     or define a custom role. Add it (web: the space's settings, Advanced; owner/admin only;
+     server rules already in `perms::write_denied`) with an e2e test. Note from local Claude's
+     fuzzing (`0e22431`): the membership set used to count `space.set_role` as a leave, so a
+     rebuild dropped such members; fixed, with a regression test in `projection.rs`.
 - **R23 · windowed replica for browser tabs (SYNC §6.5, CLIENTS §4.3).** With "keep everything"
   off (a browser tab, not the installed app), messages older than the window are evicted
   locally and scrolling past it pages over REST. The hard part is the digest: an evicted op must
@@ -107,3 +113,9 @@ asked for; take **0010** and up.
 ## 5. Report (append below; newest last)
 
 - 2026-09-25 local Claude — batch R3 written; `handoff/opus-remote-1` fast-forwarded to `main`.
+- 2026-09-25 local Claude — validation hardening landed on `main` (`0e22431`): ingest refuses an
+  op it can't project on its own (`unprocessable`) instead of failing the batch; `op::validate`
+  checks values via `op::FIELD_RULES` (compared with the schema by a test) and per-kind rules;
+  fuzz tests `tests/ingest_fuzz.rs` + `chorus-core/tests/payload_fuzz.rs` (DATA_MODEL §2.2).
+  If a migration of yours adds a NOT NULL/JSON/IN constraint, add its rule, or
+  `field_rules_match_the_schema` fails. R22 gained item 8 (space roles). Pull before starting.
