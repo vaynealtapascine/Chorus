@@ -136,7 +136,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 ### M10 — Data
 
 - [x] M10.1 Insights dashboards — web (batch 3 T10), DST-aware days
-- [x] M10.2 API tokens, SSE stream, webhooks — tokens + webhooks on the web "Your data" page, front/members reads, SSE front stream, OBS overlay; message/post webhook events wait for M5.7/M7
+- [x] M10.2 API tokens, SSE stream, webhooks — tokens + webhooks on the web "Your data" page, front/members reads, SSE front stream, OBS overlay; message.created/post.created webhook events for the account's own messages and posts (2026-09-24)
 - [x] M10.3 Exports (JSONL op log, tidy CSVs, SQLite copy), documented views — batch 3 T7 (direct downloads, D-065); zip archive + background jobs later
 
 ### M11 — Import
@@ -227,3 +227,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-24 claude-opus-5.5 — audited and merged gpt-6-sol batch 3 (cda38c8: backups, exports, hidden messages, search, insights, Android switcher, journals, T13); fixed B1/B2/B3/B6 on main (935d04c); accepted D-S2-1..3 as D-063..D-065; Linux/VPS deployment (e8db205, D-062) incl. webhook target policy and SIGTERM; batch 4 handoff for Sol (sol-batch-4.md)
 - 2026-09-24 claude-opus-5.5 — SPEC §9 at 1M ops: ingest 4 465 ops/s (budget met); rebuild 89.8 s (was ~260 s; budget 60 s, next steps in NOTES). Fixed along the way: restore failed on time-dependent projections and on older-schema snapshots (ec96958, 68ffdf8); rebuild left stale FTS rows (c3c5676)
 - 2026-09-24 claude-opus-5.5 — Linux deployment tested for real (owner OK'd WSL): static musl build in rust:1.98-bookworm (fixed: musl-gcc as linker made a dynamic PIE that segfaulted), install.sh on a Debian 12 systemd container (fixed: Caddy couldn't open its log created by validate as root), update rerun (clean SIGTERM stop), import of a Windows-made schema-3 snapshot (147 ops, migrated). scripts/test-linux.ps1 repeats it; logs are plain text off a terminal
+- 2026-09-24 claude-opus-5.5 — merged gpt-6-sol batch 4 progress (b074b24; audit notes in sol-batch-4.md); D-066 privacy fix: follower prefs no longer sync to or list for the followed account (268f8d1); message.created/post.created webhooks; rebuild single-op path (1M rebuild 84 s)

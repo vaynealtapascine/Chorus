@@ -294,3 +294,49 @@ fn own_switches_ping_only_when_asked_and_not_when_undone() {
     w.push(&a, "front.retract", &acct, &r, json!({"target_op_id": sw}));
     assert_eq!(w.inbox(&a).len(), 1);
 }
+
+/// Webhooks (API.md §7): `message.created` and `post.created` go to the author's own account's
+/// hooks, never to another account in the same space.
+#[test]
+fn message_and_post_webhooks_go_to_their_author() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    for (id, acct) in [("hook-a", &a), ("hook-b", &b)] {
+        w.c.execute(
+            "INSERT INTO webhook (id, account_id, url, secret, events, created_at)
+             VALUES (?1, ?2, 'https://example.org/h', 's', '[\"message.created\",\"post.created\"]', 0)",
+            [id, acct.as_str()],
+        )
+        .unwrap();
+    }
+    let kai = new_id(NOW as u64, [40; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai"}));
+    let space_id = space.strip_prefix("space:").unwrap().to_string();
+    w.push(&a, "space.create", &space, &space_id, json!({"kind": "shared", "name": "Club"}));
+    let chan = new_id(NOW as u64, [49; 10]);
+    w.push(&a, "channel.create", &space, &chan, json!({"space_id": space_id, "kind": "text", "name": "general"}));
+    let m = new_id(NOW as u64, [50; 10]);
+    let mut body = msg("hello hooks", &[&kai], json!([]));
+    body["channel_id"] = json!(chan);
+    w.push(&a, "message.send", &space, &m, body);
+    let p = new_id(NOW as u64, [51; 10]);
+    w.push(
+        &a,
+        "post.create",
+        &format!("account:{a}"),
+        &p,
+        json!({"kind": "note", "authors": [kai], "text": "a note", "entities": [], "visibility": {"mode": "private"}}),
+    );
+    let ops: Vec<chorus_core::op::Op> = chorus_server::oplog::scope_after(&w.c, &space, 0, 100)
+        .unwrap()
+        .into_iter()
+        .chain(chorus_server::oplog::scope_after(&w.c, &format!("account:{a}"), 0, 100).unwrap())
+        .collect();
+    let d = chorus_server::webhooks::deliveries_for(&w.c, &ops, NOW).unwrap();
+    let got: Vec<(String, String)> = d.iter().map(|d| (d.webhook_id.clone(), d.event.clone())).collect();
+    assert!(got.contains(&("hook-a".into(), "message.created".into())), "{got:?}");
+    assert!(got.contains(&("hook-a".into(), "post.created".into())), "{got:?}");
+    assert!(!got.iter().any(|(h, _)| h == "hook-b"), "another account in the space gets nothing: {got:?}");
+    let body = &d.iter().find(|d| d.event == "message.created").unwrap().body;
+    assert!(body.contains("hello hooks"), "{body}");
+}

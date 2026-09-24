@@ -2,8 +2,9 @@
 //! happens in their account.
 //!
 //! - Configured from a signed-in device (never an API token); the signing secret is shown once.
-//! - Events: `front.switch`, `member.created`, `member.updated`, `follow.requested`, plus `ping`
-//!   from the "send a test" button. Message and post events wait for M5.7 visibility and M7.
+//! - Events: `front.switch`, `member.created`, `member.updated`, `follow.requested`,
+//!   `message.created` and `post.created` (the account's own messages and posts, as its author
+//!   sees them), plus `ping` from the "send a test" button.
 //! - `Chorus-Signature: t=<unix s>,v1=<hex HMAC-SHA256(secret, t + "." + body)>`.
 //! - Retries after 1 m, 5 m, 30 m, 2 h, 12 h; after that the webhook is disabled and the reason is
 //!   shown in the app. Pending retries live in memory, so a restart drops them (the next event
@@ -25,7 +26,8 @@ use sha2::Sha256;
 use crate::api_data::{self, DataError, Principal};
 use crate::config::WebhookTargets;
 
-pub const EVENTS: &[&str] = &["front.switch", "member.created", "member.updated", "follow.requested"];
+pub const EVENTS: &[&str] =
+    &["front.switch", "member.created", "member.updated", "follow.requested", "message.created", "post.created"];
 
 /// Delay before retry n (after the first attempt fails).
 pub const RETRY_MS: [i64; 5] = [60_000, 300_000, 1_800_000, 7_200_000, 43_200_000];
@@ -269,6 +271,16 @@ fn events_for(conn: &Connection, fresh: &[Op]) -> anyhow::Result<Vec<(String, &'
     let mut created: BTreeSet<(&str, &str)> = BTreeSet::new();
     let mut updated: BTreeSet<(&str, &str)> = BTreeSet::new();
     for o in fresh {
+        // a message is its author's event, in whatever space it was said
+        if matches!(o.kind.as_str(), "message.send" | "message.forward")
+            && let (Some(author), Some(id)) = (o.account_id.as_deref(), o.entity_id.as_deref())
+        {
+            let owner = Principal::owner(author);
+            if let Some(m) = crate::search::message_by_id(conn, &owner, id).map_err(|e| anyhow::anyhow!("{e}"))? {
+                out.push((author.to_string(), "message.created", m));
+            }
+            continue;
+        }
         let Some(account) = o.scope.strip_prefix("account:") else { continue };
         match (o.kind.as_str(), o.entity_id.as_deref()) {
             (k, _) if k.starts_with("front.") => {
@@ -279,6 +291,11 @@ fn events_for(conn: &Connection, fresh: &[Op]) -> anyhow::Result<Vec<(String, &'
             }
             (k, Some(id)) if k.starts_with("member.") => {
                 updated.insert((account, id));
+            }
+            ("post.create", Some(id)) => {
+                if let Some(post) = crate::posts::one(conn, account, id)? {
+                    out.push((account.to_string(), "post.created", post));
+                }
             }
             ("follow.request", Some(id)) => {
                 let follower = o.payload.get("follower_account_id").and_then(Value::as_str).unwrap_or_default();

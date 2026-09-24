@@ -290,9 +290,11 @@ Implemented (M10.2, `webhooks.rs`):
   - `PUT /webhooks/{id} {enabled?, events?}` and `DELETE /webhooks/{id}`.
   - `POST /webhooks/{id}/test` sends a `ping` and answers `{ok, status, error}`. A failed test
     never counts towards turning the webhook off.
-- **Events so far:** `front.switch`, `member.created`, `member.updated`, `follow.requested`.
-  `message.created` waits for M5.7 visibility, `post.created` for M7, and `front.review` for
-  later. The body also carries `delivery` (the same value as `Chorus-Delivery`).
+- **Events so far:** `front.switch`, `member.created`, `member.updated`, `follow.requested`,
+  `message.created` and `post.created`. The last two carry the account's *own* messages (in
+  any space, private asides included) and posts, shaped like `GET /messages/{id}` and
+  `GET /posts/{id}` for their author; other accounts' messages never trigger them.
+  `front.review` comes later. The body also carries `delivery` (the same value as `Chorus-Delivery`).
 - **Targets** (`security.webhook_targets` in `chorus.toml`, D-062), checked on save and before
   each delivery:
   - `internal` (default): RFC 1918, link-local, Tailscale's 100.64/10 and fd00::/8, bare names,

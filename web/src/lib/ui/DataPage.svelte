@@ -87,6 +87,8 @@
     { id: 'member.created', label: 'New members' },
     { id: 'member.updated', label: 'Member edits' },
     { id: 'follow.requested', label: 'Follow requests' },
+    { id: 'message.created', label: 'Your messages' },
+    { id: 'post.created', label: 'Your posts' },
   ];
   let hooks = $state<Hook[]>([]);
   let hookUrl = $state('');
