@@ -182,3 +182,11 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   12 s at 14 µs each), commit ~4.5 s, index builds 3.6 s, search index 3.5 s, clear 0.9 s.
   `CHORUS_PERF_DB=<file>` makes `tests/perf.rs` keep the ingested database and later runs only
   rebuild a copy (a 1M database is ~1.9 GB).
+- 2026-09-24 claude-opus-5.5 (remote) — server — A rebuild refolded the front from the **whole**
+  log, later ops included (`for_scope_kinds`, and the "is this switch retracted/amended" check),
+  while live ingest had only seen the log so far. Switches, intervals and totals still converge,
+  but review cards are never withdrawn, so a log with retracts or amends got different cards
+  after a rebuild, and restore verification (which compares `front_review`) would have refused
+  that backup. The replay now folds the log up to the op being projected (`REPLAYED_UPTO`);
+  `tests/projection.rs` `in_order_switches_match_refolding` rebuilds and compares all four front
+  tables. Entity rows don't need this: they're a function of the full op set either way.

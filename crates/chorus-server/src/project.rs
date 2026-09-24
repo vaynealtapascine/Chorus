@@ -781,9 +781,10 @@ fn append_front(conn: &Connection, o: &Op) -> anyhow::Result<bool> {
     let targeted: bool = conn
         .prepare_cached(
             "SELECT EXISTS (SELECT 1 FROM op WHERE kind IN ('front.retract', 'front.unretract', 'front.amend')
-               AND +scope = ?1 AND status = 'applied' AND json_extract(payload, '$.target_op_id') = ?2)",
+               AND +scope = ?1 AND status = 'applied' AND json_extract(payload, '$.target_op_id') = ?2
+               AND seq <= ?3)",
         )?
-        .query_row(params![o.scope, o.id], |r| r.get(0))?;
+        .query_row(params![o.scope, o.id, REPLAYED_UPTO.with(std::cell::Cell::get)], |r| r.get(0))?;
     if targeted {
         return Ok(false);
     }
@@ -874,8 +875,12 @@ fn rebuild_daily(conn: &Connection) -> anyhow::Result<()> {
 /// ops: a full refold, for amends, retracts and switches that arrive out of order.
 pub fn account_front(conn: &Connection, scope: &str) -> anyhow::Result<()> {
     let Some(account) = account_of(scope) else { return Ok(()) };
-    let ops: Vec<FrontOp> =
-        oplog::for_scope_kinds(conn, scope, "front.")?.iter().filter_map(|o| FrontOp::from_op(o).ok()).collect();
+    let upto = REPLAYED_UPTO.with(std::cell::Cell::get);
+    let ops: Vec<FrontOp> = oplog::for_scope_kinds(conn, scope, "front.")?
+        .iter()
+        .filter(|o| o.seq.is_none_or(|seq| seq <= upto))
+        .filter_map(|o| FrontOp::from_op(o).ok())
+        .collect();
     let folded = front::fold(&ops);
     exec(conn, "DELETE FROM switch WHERE account_id = ?1", [account])?;
     exec(conn, "DELETE FROM front_interval WHERE account_id = ?1", [account])?;
@@ -1140,6 +1145,10 @@ pub(crate) const DERIVED: &[&str] = &[
 const BULK_INDEXES: &[&str] = &["message_channel_time", "message_reply", "message_author_member", "msa_member"];
 
 thread_local! {
+    /// While a rebuild replays the log: the seq of the op being projected. The front is refolded
+    /// from the log as it was then, not from ops that came later, so review cards (never
+    /// withdrawn) come out as they did live.
+    static REPLAYED_UPTO: std::cell::Cell<i64> = const { std::cell::Cell::new(i64::MAX) };
     /// Set while [`rebuild_timed`] replays the log on this thread.
     static REBUILDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// During a rebuild: the entities with more than one op. Any other entity's op is its only
@@ -1233,6 +1242,7 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
         let mut apply = |batch: &Batch| -> anyhow::Result<()> {
             for (o, ready) in batch {
                 let t = std::time::Instant::now();
+                REPLAYED_UPTO.with(|u| u.set(o.seq.unwrap_or(i64::MAX)));
                 match ready {
                     Some(Some(p)) => write(&tx, p)?,
                     Some(None) => {}
@@ -1298,6 +1308,7 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
         }
     })();
     REBUILDING.with(|r| r.set(false));
+    REPLAYED_UPTO.with(|u| u.set(i64::MAX));
     SINGLE_OP.with(|m| *m.borrow_mut() = None);
     replayed?;
     time("(waiting for the log)", waited);

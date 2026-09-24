@@ -713,11 +713,11 @@ fn in_order_switches_match_refolding() {
         for q in FRONT_TABLES {
             assert_eq!(dump(&fast, q), dump(&slow, q), "seed {seed}: {q}");
         }
-        let live: Vec<Vec<String>> = FRONT_TABLES[..3].iter().map(|q| dump(&fast, q)).collect();
+        let live: Vec<Vec<String>> = FRONT_TABLES.iter().map(|q| dump(&fast, q)).collect();
         // a rebuild replays the same order, writing daily totals once at the end
         let mut fast = fast;
         project::rebuild(&mut fast).unwrap();
-        for (i, q) in FRONT_TABLES[..3].iter().enumerate() {
+        for (i, q) in FRONT_TABLES.iter().enumerate() {
             assert_eq!(live[i], dump(&fast, q), "seed {seed}: rebuild, {q}");
         }
         project::account_front(&fast, &acct).unwrap();

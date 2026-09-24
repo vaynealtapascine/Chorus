@@ -180,3 +180,8 @@ a new dependency (a zip crate) is acceptable. The owner decides.
   check in `in_order_switches_match_refolding`. **To check on the owner's PC**: the 1M test
   (`CHORUS_PERF_OPS=1000000 cargo test --release -p chorus-server --test perf -- --ignored
   --nocapture`); glibc's arena behaviour is Linux-specific, Windows' allocator may gain less.
+- Fix found during R1: a rebuild refolded the front from the whole log (later ops included), so
+  review cards could differ from live ingest when retracts/amends exist, and restore
+  verification (it compares `front_review`) would refuse such a backup. The replay now folds the
+  log up to the op being projected (`REPLAYED_UPTO`); `in_order_switches_match_refolding`
+  compares all four front tables after a rebuild (it failed before the fix). NOTES.md has it.
