@@ -406,6 +406,91 @@ fn a_file_rebuild_is_identical_and_keeps_its_indexes() {
     }
 }
 
+/// R19: `rebuild` builds into a fresh file and swaps it in; the result must equal an in-place
+/// rebuild table for table (the same exceptions as restore's check: daily totals and review
+/// stamps depend on when they ran), keep the schema, and refuse while the database is open
+/// elsewhere (a running server).
+#[test]
+fn a_swapped_rebuild_equals_an_in_place_one() {
+    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "rebuild-swap-{}-{:x}",
+        std::process::id(),
+        T
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (a_path, b_path) = (dir.join("a.db"), dir.join("b.db"));
+    {
+        let mut c = db::open(&a_path).unwrap();
+        db::migrate(&mut c).unwrap();
+        let a = new_id(1, [200; 10]);
+        c.execute("INSERT INTO account(id, kind, created_at) VALUES (?1, 'system', 0)", [&a]).unwrap();
+        let acct = format!("account:{a}");
+        let space = format!("space:{}", new_id(1, [201; 10]));
+        ingest::grant(&c, &a, &acct).unwrap();
+        ingest::grant(&c, &a, &space).unwrap();
+        let s = ingest::Session {
+            account_id: a,
+            device_id: "d".into(),
+            sample: ClockSample { server_time: T, mono: None, boot_id: None, offset_ms: 0 },
+        };
+        for seed in 1..=3u64 {
+            let tx = c.transaction().unwrap();
+            for o in gen_ops(seed, 400, &acct, &space) {
+                let (res, _) = ingest::accept(&tx, &s, o, T + 200_000, false).unwrap();
+                assert!(res.error.is_none(), "seed {seed}: {:?}", res.error);
+            }
+            tx.commit().unwrap();
+        }
+        db::backup_to(&c, &b_path).unwrap();
+    }
+    // refused while something else has it open
+    let other = db::open(&b_path).unwrap();
+    let _: i64 = other.query_row("SELECT count(*) FROM op", [], |r| r.get(0)).unwrap();
+    let err = project::rebuild_swap(&b_path).unwrap_err().to_string();
+    assert!(err.contains("in use"), "{err}");
+    drop(other);
+
+    let mut a = db::open(&a_path).unwrap();
+    let n_in_place = project::rebuild(&mut a).unwrap();
+    let n_swapped = project::rebuild_swap(&b_path).unwrap();
+    assert_eq!(n_in_place, n_swapped);
+    let leftovers: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("b.db") && n != "b.db")
+        .collect();
+    assert!(leftovers.is_empty(), "nothing left beside it: {leftovers:?}");
+    let b = db::open(&b_path).unwrap();
+    let mode: String = b.query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
+    assert_eq!(mode, "wal");
+    let check: String = b.query_row("PRAGMA integrity_check", [], |r| r.get(0)).unwrap();
+    assert_eq!(check, "ok");
+    let schema = |c: &Connection| dump(c, "SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'");
+    assert_eq!(schema(&a), schema(&b), "the same tables and indexes");
+    let tables: Vec<String> = a
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND sql NOT LIKE 'CREATE VIRTUAL%'")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert!(tables.len() > 40, "{tables:?}");
+    for table in &tables {
+        let cols = match table.as_str() {
+            "front_daily" => continue,
+            "front_review" => "id, account_id, switch_a, switch_b, resolution, resolved_at",
+            _ => "*",
+        };
+        let q = format!("SELECT {cols} FROM \"{table}\"");
+        assert_eq!(dump(&a, &q), dump(&b, &q), "{table} differs");
+    }
+    let q = "SELECT m.id, f.text FROM message_fts f JOIN message m ON m.rowid = f.rowid";
+    assert_eq!(dump(&a, q), dump(&b, q), "the search index too");
+    drop((a, b));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn thread_reverse_link_survives_arrival_order_and_rebuild() {
     let (mut c, account, _, scope) = setup();

@@ -59,6 +59,12 @@ pub fn serve_until_stopped(config: &std::path::Path) -> anyhow::Result<()> {
 
 pub fn open_and_migrate(cfg: &config::Config) -> anyhow::Result<Connection> {
     let path = cfg.db_path();
+    // a `rebuild` interrupted mid-swap (project::rebuild_swap) left the database set aside
+    let aside = project::set_aside_path(&path);
+    if !path.exists() && aside.exists() {
+        std::fs::rename(&aside, &path)?;
+        tracing::warn!("put back the database an interrupted rebuild had set aside");
+    }
     let existed = path.exists();
     let mut conn = db::open(&path)?;
     if existed && db::schema_version(&conn)? > 0 && db::pending_migrations(&conn)? > 0 {

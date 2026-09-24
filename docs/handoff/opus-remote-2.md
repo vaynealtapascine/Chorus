@@ -343,3 +343,13 @@ blobs are verified by hash. The importer is separate work and not part of this p
   restart and expiry), a browser test downloading the zip. API.md §4, DATA_MODEL (§7 + table),
   OPS layout, DECISIONS §Versions updated. The importer (`import-account --from <zip>`) is
   separate later work, as the design said.
+- R19 — `chorus-server rebuild` builds into a fresh file and swaps it in
+  (`project::rebuild_swap`; `--in-place` keeps the old way; purge/restore still rebuild in place,
+  on copies or in their own transactions). Details and traps in NOTES.md (2026-09-24,
+  "`chorus-server rebuild` now builds into a fresh file"). Byte-identical: `tests/projection.rs`
+  `a_swapped_rebuild_equals_an_in_place_one` compares every table (restore's exceptions: daily
+  totals, review stamps), the search index and the schema, checks it refuses while the file is
+  open elsewhere, and leaves no stray files. Measured at 1M ops here: 35.9 s → 31.3 s, commit
+  5.8 s → 0.3 s; `tests/perf.rs` with `CHORUS_PERF_DB` now times both ways on copies, so **local
+  Claude**: rerun it on the PC (`CHORUS_PERF_DB=<saved 1M db> cargo test --release -p
+  chorus-server --test perf -- --ignored --nocapture`).

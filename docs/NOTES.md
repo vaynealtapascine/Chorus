@@ -229,3 +229,16 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   old schema by setting `schema_version` back on a current database, so every later migration
   runs again. And the workspace sets `unsafe_code = "forbid"`, which a local `allow` can't lift:
   platform calls go through safe wrappers already in the lockfile (e.g. `rustix` for `statvfs`).
+- 2026-09-24 claude-opus-5.5 (remote) — server — `chorus-server rebuild` now builds into a fresh
+  file (`project::rebuild_swap`): the schema by migration, the op log and server tables copied
+  through the source connection (`ATTACH`), `journal_mode=OFF`/`synchronous=OFF`, the usual
+  rebuild, `quick_check` + row counts of everything copied, `journal_mode=WAL`, then swap
+  (old aside → new in → old deleted; `open_and_migrate` puts an aside file back if a swap was cut
+  short). Traps: (1) the rebuild reads the log on a second connection, and a second connection
+  to a journal-less file blocks the writer, so the locked *source* connection is lent to the
+  reader thread (`LOG_READER`); (2) the source is held with `locking_mode=EXCLUSIVE`, which fails
+  at once if a server has the file open (even idle), so a running server can't race the swap;
+  (3) the old file's `-wal` must be gone before the new file takes its name, or SQLite would
+  replay it into the new file. 1M ops on the remote Linux box: 35.9 s in place (commit 5.8 s) →
+  31.3 s swapped (commit 0.3 s, copy 4.1 s, check 4.0 s, replay 16.9 s instead of 20.1 s without
+  the WAL). The owner's Windows commit was 20 s, so the gain there should be larger.

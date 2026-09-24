@@ -92,7 +92,8 @@ chorus-server serve                     # what the service runs
 chorus-server invite --kind system|person [--expires 7d]   # prints URL + QR in terminal
 chorus-server backup [--to path]        # online backup (SQLite backup API) + blob manifest
 chorus-server restore --from <snapshot> --into <new dir>   # verifies, bumps epoch (SYNC.md §7.3)
-chorus-server rebuild                   # rebuild all projections from the op log
+chorus-server rebuild [--in-place]      # rebuild all projections from the op log, server stopped: built in a
+                                        # fresh file (no journal), checked, swapped in (R19); --in-place: the old way
 chorus-server export --account <id> --kind full|csv|sqlite
 chorus-server check                     # integrity_check, digests, orphan blobs, config
 chorus-server purge --message <id> | --op <id> | --account <id> [--yes]   # the only true erase (D-053): asks to
