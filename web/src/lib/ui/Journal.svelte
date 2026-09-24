@@ -5,6 +5,7 @@
   import PostCard from './PostCard.svelte';
   import PostComposer from './PostComposer.svelte';
   import PostReplies from './PostReplies.svelte';
+  import JournalLists from './JournalLists.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
@@ -24,6 +25,7 @@
   let actingAs = $state('');
   const speaker = $derived(actingAs || frontSpeaker || active[0]?.id || null);
   let replyTo = $state<PostRow | null>(null);
+  let section = $state<'timeline' | 'lists'>('timeline');
   const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
   const frontName = (e: { subject_id: string }) => subjectNames.get(e.subject_id) ?? 'Someone';
   function react(post: PostRow, emoji: string, add: boolean) {
@@ -34,6 +36,8 @@
 
 <section class="journal">
   <header><h1 class="display">Journal</h1><label>React as <select bind:value={actingAs} aria-label="React as member"><option value="">Current front</option>{#each active as person (person.id)}<option value={person.id}>{person.display_name ?? person.name}</option>{/each}</select></label></header>
+  <nav aria-label="Journal sections"><button class:on={section === 'timeline'} onclick={() => (section = 'timeline')}>Timeline</button><button class:on={section === 'lists'} onclick={() => (section = 'lists')}>Lists</button></nav>
+  {#if section === 'lists'}<JournalLists {projection} {dark} />{:else}
   {#if replyTo}<p class="replying">Replying to {replyTo.authors.map(name).join(' & ')} <button onclick={() => (replyTo = null)}>Cancel</button></p>{/if}
   {#key replyTo?.id}<PostComposer {projection} initialAuthors={speaker ? [speaker] : []} replyTo={replyTo?.id} onsent={() => (replyTo = null)} />{/key}
   <div class="timeline">
@@ -48,12 +52,16 @@
       {/if}
     {:else}<p class="empty">No posts or switches yet. Write the first note above.</p>{/each}
   </div>
+  {/if}
 </section>
 
 <style>
   .journal { max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); }
   header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s-3); }
   h1, p { margin: 0; }
+  nav { display: flex; gap: var(--s-2); border-bottom: 1px solid var(--line); }
+  nav button { border: 0; background: none; padding: var(--s-2) var(--s-3); cursor: pointer; color: var(--ink); }
+  nav button.on { border-bottom: 2px solid var(--accent); font-weight: 600; }
   header label { color: var(--ink-3); font-size: var(--fs-sm); }
   select { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: var(--s-2); }
   .timeline { display: grid; gap: var(--s-3); }

@@ -85,6 +85,41 @@ export interface RelationshipRow {
   visibility: { mode: string };
 }
 
+export interface MemberListRow {
+  id: string;
+  name: string;
+  description?: string;
+  visibility: { mode: string };
+}
+
+export function memberLists(p: Projection): MemberListRow[] {
+  return Object.entries((p.rows.member_list ?? {}) as Rows)
+    .filter(([, row]) => row.exists && row.fields.deleted_at == null)
+    .map(([id, row]) => ({ id, name: str(row.fields.name) ?? 'Untitled', description: str(row.fields.description),
+      visibility: row.fields.visibility && typeof row.fields.visibility === 'object' && !Array.isArray(row.fields.visibility)
+        ? row.fields.visibility as { mode: string } : { mode: 'private' } }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** list ID → present member IDs in the LWW element set. */
+export function memberListItems(p: Projection): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const [key, present] of Object.entries(p.sets.member_list_item ?? {})) {
+    if (!present) continue;
+    const bar = key.indexOf('|');
+    if (bar < 0) continue;
+    try {
+      const member = (JSON.parse(key.slice(bar + 1)) as { member_id?: unknown }).member_id;
+      if (typeof member !== 'string' || !member) continue;
+      const list = key.slice(0, bar);
+      const ids = out.get(list) ?? new Set<string>();
+      ids.add(member);
+      out.set(list, ids);
+    } catch { /* malformed set keys cannot add a member */ }
+  }
+  return out;
+}
+
 /** Live relationship definitions and links from the current account's replica. */
 export function relationshipTypes(p: Projection): RelationshipTypeRow[] {
   return Object.entries((p.rows.relationship_type ?? {}) as Rows)

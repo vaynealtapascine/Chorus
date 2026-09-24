@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { bucketAssignments, buckets, customEmojis, fuzzy, groupPath, membership, messages, relationshipTypes, relationships, segmentParsing, threadSummaries, type GroupRow } from './data';
+import { bucketAssignments, buckets, customEmojis, fuzzy, groupPath, memberListItems, memberLists, membership, messages, relationshipTypes, relationships, segmentParsing, threadSummaries, type GroupRow } from './data';
 import type { Projection } from './sync/client';
 
 describe('data helpers', () => {
+  it('keeps only live member lists and present list members', () => {
+    const row = (fields: Record<string, unknown>) => ({ exists: true, fields });
+    const p = { rows: { member_list: { a: row({ name: 'Close', visibility: { mode: 'private' } }),
+      b: row({ name: 'Old', deleted_at: 1 }) } }, sets: { member_list_item: {
+        'a|{"member_id":"kai"}': true, 'a|{"member_id":"juniper"}': false, 'a|broken': true,
+      } }, fronts: {}, opaque: 0 } as unknown as Projection;
+    expect(memberLists(p).map((list) => list.name)).toEqual(['Close']);
+    expect([...memberListItems(p).get('a')!]).toEqual(['kai']);
+  });
   it('shows live typed relationships and excludes tombstones or incomplete links', () => {
     const row = (fields: Record<string, unknown>) => ({ exists: true, fields });
     const p = { rows: {
