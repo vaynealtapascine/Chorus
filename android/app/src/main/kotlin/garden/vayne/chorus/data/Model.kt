@@ -67,6 +67,7 @@ data class JournalPost(
 )
 
 data class MemberList(val id: String, val name: String, val description: String?, val memberIds: Set<String>)
+data class SavedFeed(val id: String, val name: String, val description: String?, val query: String, val visibility: String)
 
 class Model(
     val members: List<Member>,
@@ -85,6 +86,7 @@ class Model(
     val posts: List<JournalPost> = emptyList(),
     val postReactions: Map<String, List<PostReaction>> = emptyMap(),
     val memberLists: List<MemberList> = emptyList(),
+    val savedFeeds: List<SavedFeed> = emptyList(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -286,8 +288,12 @@ class Model(
             val memberLists = rows(p, "member_list").filter { (_, f) -> !f.present("deleted_at") }
                 .map { (id, f) -> MemberList(id, f.str("name") ?: "Untitled", f.str("description"), listItems[id].orEmpty()) }
                 .sortedWith(compareBy<MemberList> { it.name.lowercase() }.thenBy { it.id })
+            val savedFeeds = rows(p, "feed").filter { (_, f) -> !f.present("deleted_at") && f.present("query_ast") && !f.str("query").isNullOrBlank() }
+                .map { (id, f) -> SavedFeed(id, f.str("name") ?: "Untitled", f.str("description"), f.str("query").orEmpty(),
+                    f.optJSONObject("visibility")?.str("mode") ?: "private") }
+                .sortedWith(compareBy<SavedFeed> { it.name.lowercase() }.thenBy { it.id })
             return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages,
-                followCeilings, posts, postReactions, memberLists)
+                followCeilings, posts, postReactions, memberLists, savedFeeds)
         }
     }
 }

@@ -171,6 +171,10 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             onThread = { threadPostId = it })
         return
     }
+    if (section == "feeds") {
+        JournalFeeds(chorus, model, onTimeline = { section = "timeline" })
+        return
+    }
 
     val events = (model.posts.map { JournalEvent(it.id, it.occurredAt, it, null) } +
         model.switches.map { JournalEvent(it.id, it.occurredAt, null,
@@ -186,6 +190,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                     modifier = Modifier.padding(top = 14.dp))
                 Row {
                     TextButton(onClick = { section = "lists" }) { Text("Lists") }
+                    TextButton(onClick = { section = "feeds" }) { Text("Feeds") }
                     TextButton(onClick = { editing = true }) { Text("Write") }
                 }
             }
