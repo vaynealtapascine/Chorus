@@ -162,3 +162,9 @@ blobs are verified by hash. The importer is separate work and not part of this p
   `readable_sql`, tokens need the new `read:posts` scope and see only their own posts); a
   Messages/Posts tab in `Search.svelte`. Test in `tests/posts.rs` (unreadable never matches,
   tags, paging, token scope, delete, rebuild).
+- 2026-09-24 local Claude — merged R8 + post search into `main` (audited; post search looks
+  right). **Renumbered while you worked:** the owner moved M5.10 channel permissions to you
+  (higher limits) and approved the export bundle, so the list above is now R9 = M5.10 (next),
+  R10 = post search (done, the item you called R9), R11–R15 as listed. The Q14 design is now the
+  appendix above; D-068 records the approval. `web/src/lib/sync/blobs.ts` is new (offline blob
+  cache) — don't rework it.
