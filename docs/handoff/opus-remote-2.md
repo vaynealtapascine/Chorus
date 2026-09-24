@@ -24,18 +24,19 @@ The owner asked for one full, stable build that works end to end on phone, web a
 installed PWA). After that, local Claude builds a GitHub Pages landing page. Split:
 
 - **gpt-6-sol** (`docs/handoff/sol-batch-5.md`): Android parity, on the owner's phone.
-- **local Claude:** M5.10 channel permissions (`ingest.rs`, `visibility.rs`, `spaces.rs`,
-  `project.rs` permission projection, `search.rs`, `blobs.rs`), then the end-to-end v1 run on
-  the owner's server with the phone and a desktop browser, Web Push, the landing page.
-- **you:** CI, the server/web gaps below, and a browser end-to-end suite that makes the v1 run
-  repeatable.
+- **you:** CI, **M5.10 channel permissions** (moved to you: the owner says your limits are
+  higher, so the long tasks are yours), the server/web gaps below, the export bundle, and a
+  browser end-to-end suite that makes the v1 run repeatable.
+- **local Claude:** audits and merges, the end-to-end v1 run on the owner's server with the
+  phone and a desktop browser, Web Push in the owner's Chrome, deploys, the landing page. The
+  offline PWA (server down) is done: CLIENTS.md §4.3.
 
 ## Don't touch
 
-`ingest.rs`, `visibility.rs`, `spaces.rs`, `search.rs`, `blobs.rs` (local Claude, M5.10);
-`project.rs` except where R5 below says; anything under `android/`; `web/src/lib/data.ts`,
-`MemberEditor.svelte`, `Profile.svelte` (Sol's V7); `deploy/`, `scripts/*.ps1`. Migrations:
-take **0007** if you need one; Sol takes 0008.
+Anything under `android/`; `web/src/lib/data.ts`, `MemberEditor.svelte`, `Profile.svelte`
+(Sol's V7); `web/src/lib/sync/blobs.ts` (local Claude's offline blob cache: use it, don't
+rework it); `deploy/`, `scripts/*.ps1`. Migrations: take **0007** and up if you need them; Sol
+takes 0008 only if it asks first in its log, so check `migrations/` after each `git pull`.
 
 ## Tasks (in this order)
 
@@ -47,30 +48,105 @@ take **0007** if you need one; Sol takes 0008.
   them to `CARGO_TARGET_TMPDIR` like the others; add `scripts/projection-check.py` and
   `scripts/api-check.py`. Keep it under ~15 min (rust-cache; `CHORUS_SIM_SEEDS` as now). Once it's
   green on your branch, say so in §5.
-- **R9 · post search.** `post_fts` exists in `0001_init.sql` but nothing writes it (DATA_MODEL
+- **R9 · M5.10 channel permissions** (was Sol's U3, then local Claude's; D-047, DATA_MODEL
+  `channel_permission`, `space.roles`). Roles and per-role/per-account allow/deny overrides in
+  shared spaces, including sharing one internal channel with outside accounts. Today
+  `scope_access` grants a whole space, so enforce in every path at once or you leave a hole:
+  writes (`ingest::can_write`), sync fan-out and catch-up (`visibility::op_visible_to` and the
+  batched `visible_digest`, which must still equal applying `op_visible_to` per op), search,
+  blobs, the REST message reads and webhooks. One rule in one place, like `PUBLIC_MESSAGE_SQL`.
+  The projection (`channel.set_permission` → `channel_permission` rows) is already in
+  `project.rs::special`. Two-account e2e tests like `friends_share_spaces_and_dms`, a property
+  test that no op leaks to an account the rule denies, and the web UI (a channel's permission
+  editor in shared spaces; Advanced). Write the rule into DATA_MODEL/SYNC as you go.
+- **R10 · post search.** `post_fts` exists in `0001_init.sql` but nothing writes it (DATA_MODEL
   says so since Sol's B7). Fill it from the post projection (a new function in `project.rs`
   called from the `post` arm of `write`, plus the rebuild's bulk fill next to `message_fts`),
   `GET /search/posts` with the same cursor shape as `/search/messages` and every row through
   `posts::readable_sql`, and a Posts tab in the web `Search.svelte`. Tests: an unreadable post
   never matches; a rebuild keeps search working.
-- **R10 · shareable feeds (M7.4).** SPEC §6.4: a feed has a visibility. A server endpoint that
+- **R11 · shareable feeds (M7.4).** SPEC §6.4: a feed has a visibility. A server endpoint that
   evaluates a shared feed definition for a reader over posts they can read (`readable_sql`, then
   the core filter `chorus_core::feed`), and in `JournalFeeds.svelte` a share control and a
   "feeds shared with me" list. Follower-visible only through the existing follow ceilings.
-- **R11 · REST reads for M7 (M2.7).** Profiles, posts, lists and feeds for API tokens
+- **R12 · REST reads for M7 (M2.7).** Profiles, posts, lists and feeds for API tokens
   (`read:journal` or the scope API.md already names; check before inventing one). API.md and
   `api-check.py` stay in step.
-- **R12 · web end-to-end suite.** Playwright (pin it; `web/e2e/`, a `scripts/e2e-web.sh`) against
+- **R13 · web end-to-end suite.** Playwright (pin it; `web/e2e/`, a `scripts/e2e-web.sh`) against
   a server started on a temp data dir: onboarding by invite, a switch reaching a second device
   (two browser contexts), a follower seeing a switch only after its delay, a shared space and a
   DM between two accounts, a post with a reply and a reaction across accounts, search, and the
   CSP (no console errors). Run it in CI as a separate job. This is what local Claude will rerun
   against the real server before calling v1.
-- **R13 · webhook task shutdown.** Sol found that `app::router`'s webhook task keeps the shared
+- **R14 · webhook task shutdown.** Sol found that `app::router`'s webhook task keeps the shared
   SQLite connection alive after the HTTP task ends (tests can't delete their data dir on
   Windows). Give `Shared` a shutdown signal the task watches; the tests then clean up at once.
-- **R14 · export bundle (Q14)** only if `docs/OPEN_QUESTIONS.md` Q14 is marked answered by the
-  owner when you get there; otherwise skip it.
+- **R15 · export bundle (D-068, approved for v1).** Build the design in the appendix below with
+  its defaults (the owner approved the feature; the sub-choices stay as proposed). Migration
+  0007 (or the next free number) for `export_job`. The web *Your data* page gets "Prepare a full
+  export" with progress and a download link; Android can come later (Sol).
+
+## Appendix: export bundle design (Q14 → D-068) — the DATA_MODEL §7 "full backup" zip, as a background job
+
+**What's in it.** `chorus-<handle>-<YYYYMMDD>.zip`:
+
+```
+manifest.json        format 1; account {id, handle, kind}; created_at; server version; instance_id;
+                     ops {count, sha256}; blobs [{hash, size, mime, filenames: […]}]; csv [names]
+ops.jsonl            exactly GET /exports/ops.jsonl (the account's authored ops, seq order)
+csv/<name>.csv       the seven tidy tables of DATA_MODEL §7.1
+blobs/<sha256>       every file the account's own ops point at
+README.txt           three lines: what this is, that blobs/ is named by hash (manifest has names)
+```
+
+The SQLite copy stays its own download (it's derived: a rebuild of `ops.jsonl`). Blobs are named
+by hash, not filename: two attachments may share a name, and the manifest keeps every filename a
+blob was sent under, so a reader can restore names.
+
+**Where the files come from.** The blob store (`data/blobs/`, content-addressed, D-064's pool
+for backups), chosen from the **account's own ops**, the same set as `ops.jsonl`: `attachment.*`
+ops' `blob_hash`/`thumb_blob_hash`, member/group/system `avatar_blob`/`banner_blob` in its
+`.create`/`.set` ops, and custom emoji it created. Not other accounts' files, even ones it can
+see in a shared space: those are theirs to export (same line as D-066 and the direct exports).
+Each blob is checked against its hash while copied; a missing or damaged one is listed in the
+manifest (`missing: […]`) instead of failing the whole export.
+
+**Format and dependency.** A ZIP with *stored* entries (no compression) can be written in ~150
+lines with no dependency: local headers, a CRC-32 per entry (a table-driven function), the
+central directory, and ZIP64 records past 4 GB or 65 535 entries. Media files don't compress
+anyway; `ops.jsonl` and the CSVs would (roughly 5–10× smaller), which is the only reason to take
+the `zip` crate (2.x, pure Rust with `flate2`/`miniz_oxide` for deflate). Tar is simpler still
+but Windows users open zips natively, so the proposal is a hand-written stored zip, tested by
+reading it back with Python's `zipfile` and `unzip -t` in a test. The owner decides whether
+compression is worth a dependency.
+
+**Size.** No cap on what an account may export, but the server protects its disk: the job
+streams straight into `data/exports/<job id>.zip.part` (never in memory), first estimating the
+size (op bytes + blob sizes) and refusing with `too_large` if free space would fall below twice
+that. One running job per account, two at a time server-wide (others queue). A finished file
+is kept 24 h (or until an hour after its first full download), then deleted; an export is not a
+backup (OPS §5 is).
+
+**The job protocol** (API.md §4 already names it):
+
+```
+POST   /exports {kind: "full"}          → 202 {id}      (sessions, or tokens with `export`)
+GET    /jobs/{id}                       → {id, kind, status: queued|running|done|failed,
+                                           phase: "ops"|"csv"|"blobs"|"zip", done, total,
+                                           bytes, error, result_url, expires_at}
+GET    /exports/{id}/download           the zip; Range supported so a phone can resume
+DELETE /jobs/{id}                       cancel, or delete the finished file now
+```
+
+Jobs live in a table (`export_job`, a migration numbered after Sol's `0006`) so a restart marks
+running ones `failed` ("server restarted; start it again") instead of losing them. Progress is
+counted in items (ops, then CSV tables, then blobs) and bytes; the web app polls `GET /jobs/{id}`
+every 2 s while its Data page is open, and a finished export also becomes an in-app notification
+(`kind: "export_ready"`), not a push: it's the account's own action, seconds to minutes long.
+
+**Round trip.** The manifest and `ops.jsonl` carry everything an importer needs
+(`chorus-server import-account --from <zip>`, later): ops keep their ids, authors and times,
+blobs are verified by hash. The importer is separate work and not part of this proposal.
 
 ## 5. Report (append below; newest last)
 

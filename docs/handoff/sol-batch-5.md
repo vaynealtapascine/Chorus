@@ -13,8 +13,9 @@ desktop (the desktop is the installed PWA; there is no separate desktop app). CL
 Android the **primary** client, and it is the biggest gap: the web has Journal, People, Profile,
 Search, Settings, Stage, Insights, Trash and Your data; Android has Home, Switcher, Members,
 History, Chat and device linking. This batch is yours because you have the phone and the Android
-toolchain. Claude does channel permissions and the end-to-end v1 run; the remote Claude does
-server/web pieces (`docs/handoff/opus-remote-2.md`).
+toolchain. The remote Claude does channel permissions (M5.10), CI, search, feeds, the export
+bundle and a browser e2e suite (`docs/handoff/opus-remote-2.md`); local Claude does audits, the
+end-to-end v1 run on the real server, Web Push and the landing page.
 
 ## Step 0
 
@@ -32,16 +33,16 @@ server/web pieces (`docs/handoff/opus-remote-2.md`).
 
 Same rules as before: dev servers on 5261/5262, `verify.py --quick --android` before every
 commit, log in `sol-batch-2.md` under a new `### Batch 5` heading, what ran vs what only compiled.
-Migrations: the next free number is **0007**. If you need one, say so in your log first; the remote
-Claude may also need one, so take **0008** and let it take 0007.
+Migrations: the remote Claude takes **0007** and up (channel permissions, export jobs). If you
+need one, say so in your log first and check `migrations/` after merging `main`.
 
 ## Don't touch
 
-- **Claude (M5.10 channel permissions):** `ingest.rs`, `visibility.rs`, `spaces.rs`,
-  `project.rs`, `search.rs`, `blobs.rs` and their tests. If Android needs a server change,
-  write it in your log.
-- **Remote Claude:** `app.rs`, `api_reads.rs`, `posts.rs`, `webhooks.rs`, `exports.rs`, web
-  `Journal*.svelte`, `Search.svelte`, `.github/`, `web/e2e/`.
+- **Remote Claude:** M5.10 channel permissions (`ingest.rs`, `visibility.rs`, `spaces.rs`,
+  `project.rs`, `search.rs`, `blobs.rs` and their tests; if Android needs a server change, write
+  it in your log), and `app.rs`, `api_reads.rs`, `posts.rs`, `webhooks.rs`, `exports.rs`, web
+  `Journal*.svelte`, `Search.svelte`, `DataPage.svelte`, `.github/`, `web/e2e/`.
+- **Local Claude:** `web/src/lib/sync/blobs.ts` (the offline blob cache).
 - `deploy/`, `scripts/deploy.ps1`, `scripts/pack-linux.ps1`.
 
 ## Tasks (in this order)
