@@ -5,7 +5,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateListOf
 import android.net.Uri
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.Intent
 import android.provider.OpenableColumns
+import androidx.core.content.FileProvider
 import garden.vayne.chorus.data.Blobs
 import garden.vayne.chorus.data.UploadWork
 import org.json.JSONObject
@@ -480,6 +484,9 @@ internal fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
     val ctx = LocalContext.current
     val device = chorus.device
     val image = attachment.mime.startsWith("image/")
+    val scope = rememberCoroutineScope()
+    var opening by remember(attachment.id) { mutableStateOf(false) }
+    var openError by remember(attachment.id) { mutableStateOf<String?>(null) }
     var opened by rememberSaveable(attachment.id) { mutableStateOf(false) }
     if (attachment.spoiler && !opened) {
         Text("Spoiler attachment · Reveal", color = p.accent, fontSize = 13.sp,
@@ -488,29 +495,58 @@ internal fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
     }
     Text("Attachment: ${attachment.filename}", color = p.ink2, fontSize = 13.sp)
     if (attachment.altText.isNotBlank()) Text(attachment.altText, color = p.ink3, fontSize = 12.sp)
-    if (!image) {
-        if (attachment.spoiler) Text("Hide attachment", color = p.accent, fontSize = 12.sp,
-            modifier = Modifier.clickable { opened = false })
-        return
-    }
-    if (!opened) {
-        Text(if (attachment.spoiler) "Reveal image spoiler" else "View image", color = p.accent,
-            modifier = Modifier.clickable { opened = true }.padding(vertical = 4.dp))
-        return
-    }
-    val hash = attachment.thumbHash ?: attachment.blobHash
-    val bitmap by produceState<android.graphics.Bitmap?>(null, hash, device?.session) {
-        value = if (device == null) null else withContext(Dispatchers.IO) {
-            Blobs.image(ctx.applicationContext, hash, device)
+    if (image) {
+        if (!opened) {
+            Text(if (attachment.spoiler) "Reveal image spoiler" else "View image", color = p.accent,
+                modifier = Modifier.clickable { opened = true }.padding(vertical = 4.dp))
+        } else {
+            val hash = attachment.thumbHash ?: attachment.blobHash
+            val bitmap by produceState<android.graphics.Bitmap?>(null, hash, device?.session) {
+                value = withContext(Dispatchers.IO) { Blobs.image(ctx.applicationContext, hash, device) }
+            }
+            if (bitmap == null) {
+                Text("Loading image, or unavailable offline.", color = p.ink3, fontSize = 12.sp)
+            } else {
+                Image(bitmap!!.asImageBitmap(), contentDescription = attachment.altText.ifBlank { attachment.filename },
+                    contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().height(200.dp))
+            }
+            Text("Hide image", color = p.accent, fontSize = 12.sp, modifier = Modifier.clickable { opened = false })
         }
     }
-    if (bitmap == null) {
-        Text("Loading image, or unavailable offline.", color = p.ink3, fontSize = 12.sp)
-    } else {
-        Image(bitmap!!.asImageBitmap(), contentDescription = attachment.altText.ifBlank { attachment.filename },
-            contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().height(200.dp))
+    TextButton(enabled = !opening, onClick = {
+        opening = true
+        openError = null
+        scope.launch {
+            val file = withContext(Dispatchers.IO) {
+                Blobs.file(ctx.applicationContext, attachment.blobHash, device)
+            }
+            if (file == null) {
+                openError = "File unavailable offline or download failed."
+            } else {
+                try {
+                    val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, attachment.mime.ifBlank { "application/octet-stream" })
+                        clipData = ClipData.newUri(ctx.contentResolver, attachment.filename, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    ctx.startActivity(Intent.createChooser(intent, "Open ${attachment.filename}"))
+                } catch (_: ActivityNotFoundException) {
+                    openError = "No app can open this file type."
+                } catch (_: SecurityException) {
+                    openError = "Could not share this file."
+                } catch (_: IllegalArgumentException) {
+                    openError = "Could not share this file."
+                }
+            }
+            opening = false
+        }
+    }) { Text(if (opening) "Opening…" else "Open file") }
+    if (openError != null) Text(openError.orEmpty(), color = p.danger, fontSize = 12.sp)
+    if (attachment.spoiler && !image) {
+        Text("Hide attachment", color = p.accent, fontSize = 12.sp,
+            modifier = Modifier.clickable { opened = false })
     }
-    Text("Hide image", color = p.accent, fontSize = 12.sp, modifier = Modifier.clickable { opened = false })
 }
 
 /** A file picked for the next message: named and described, not yet copied. */
