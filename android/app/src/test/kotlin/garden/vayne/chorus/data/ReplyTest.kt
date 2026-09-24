@@ -21,4 +21,13 @@ class ReplyTest {
         assertEquals("me", Reply.speaker(model(listOf(m("me"), m("gone", archived = true)), emptyList()))?.id)
         assertNull(Reply.speaker(model(listOf(m("kai"), m("june")), listOf(Entry("member", "kai", "cocon", false)))))
     }
+
+    @Test
+    fun theMentionedMemberSpeaksWhileActive() {
+        val all = listOf(m("kai"), m("june"), m("old", archived = true))
+        val cur = listOf(Entry("member", "kai", "front", true))
+        assertEquals("june", Reply.speaker(model(all, cur), "june")?.id)
+        assertEquals("kai", Reply.speaker(model(all, cur), "old")?.id)
+        assertEquals("kai", Reply.speaker(model(all, cur), null)?.id)
+    }
 }

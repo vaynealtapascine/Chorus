@@ -19,7 +19,9 @@ import org.json.JSONObject
 /**
  * Inline reply from a chat notification (NOTIFICATIONS.md §7): the text becomes a `message.send`
  * op in the same channel, replying to the notified message, written as the current primary
- * fronter. It is queued like any other op, so it works offline and syncs later.
+ * fronter (or, with Advanced "reply as mentioned member" on, as the member the message names: the
+ * server puts it in the push as `reply_as`). It is queued like any other op, so it works offline
+ * and syncs later.
  */
 object Reply {
     private const val TAG = "ChorusReply"
@@ -29,6 +31,7 @@ object Reply {
     private const val EXTRA_MESSAGE = "message_id"
     private const val EXTRA_NOTE = "note_id"
     private const val EXTRA_TITLE = "title"
+    private const val EXTRA_AS = "reply_as"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -41,6 +44,10 @@ object Reply {
         val id = (fronting.firstOrNull { it.isPrimary } ?: fronting.firstOrNull())?.subjectId
         return id?.let { model.member(it) } ?: model.active.singleOrNull()
     }
+
+    /** The speaker for a reply: the mentioned member when the push named one still active. */
+    fun speaker(model: Model, replyAs: String?): Member? =
+        replyAs?.let { id -> model.active.firstOrNull { it.id == id } } ?: speaker(model)
 
     /** The payload for the reply op. */
     fun payload(channelId: String, replyTo: String?, author: String, text: String): JSONObject = JSONObject()
@@ -58,6 +65,7 @@ object Reply {
             .putExtra(EXTRA_SCOPE, space).putExtra(EXTRA_CHANNEL, channel)
             .putExtra(EXTRA_MESSAGE, p.optString("message_id").takeIf { it.isNotEmpty() })
             .putExtra(EXTRA_NOTE, noteId).putExtra(EXTRA_TITLE, p.optString("title", "Chorus"))
+            .putExtra(EXTRA_AS, p.optString("reply_as").takeIf { it.isNotEmpty() })
         // the system writes the typed text into this intent, so it has to be mutable
         val pi = PendingIntent.getBroadcast(
             ctx, noteId, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
@@ -80,7 +88,7 @@ object Reply {
             val result = try {
                 val chorus = Chorus.get(app)
                 val model = chorus.awaitModel()
-                val who = speaker(model)
+                val who = speaker(model, intent.getStringExtra(EXTRA_AS))
                 if (who == null) {
                     "Nobody is fronting; open Chorus to reply"
                 } else {

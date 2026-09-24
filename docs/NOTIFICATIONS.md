@@ -225,7 +225,10 @@ Implemented (M8.4, `activity.rs`), for other accounts in shared spaces and DMs:
 - Android inline reply (`data/Reply.kt`): chat notifications carry a Reply action; the text is
   queued as a `message.send` replying to the notified message, as the primary fronter (else the
   first fronter, else a person's own member), and the notification changes to "Sent as Kai".
-  Built and unit-tested; needs a device check. "Reply as mentioned member" is not done.
+  Built and unit-tested; needs a device check. Advanced "reply as mentioned member"
+  (`notify_chat.reply_as_mentioned`, Settings → Advanced): the server adds `reply_as` (the first
+  of the recipient's members the message mentions, never one of its authors) to the push, and the
+  reply speaks as that member while they're active.
 
 Android: MessagingStyle notifications with member avatars as `Person`s, grouped per channel;
 inline reply (`RemoteInput`) sends as the current primary fronter (or the member the notification

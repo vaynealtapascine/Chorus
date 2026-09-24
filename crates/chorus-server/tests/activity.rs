@@ -256,6 +256,35 @@ fn own_internal_chat_follows_each_members_rule() {
     send(&mut w, &general, "@front hi", json!([{"type": "mention", "offset": 0, "length": 6, "target_type": "front"}]));
     assert_eq!(w.inbox(&a)[0], ("mention".to_string(), "@front hi".to_string()));
     assert!(w.inbox(&w.b.clone()).is_empty(), "nothing leaves the internal space");
+
+    // Advanced "reply as mentioned member": the push names June as the inline reply's speaker
+    let reply_as = |w: &W| -> Option<String> {
+        let p: String =
+            w.c.query_row("SELECT payload FROM notification WHERE source_op_id = ?1", [&w.last_op], |r| r.get(0))
+                .unwrap();
+        serde_json::from_str::<Value>(&p).unwrap()["reply_as"].as_str().map(str::to_string)
+    };
+    // June's mentions ping only while fronting (set above), so make June front
+    let sw2 = new_id(NOW as u64, [71; 10]);
+    w.push(
+        &a,
+        "front.switch",
+        &acct,
+        &sw2,
+        json!({"entries": [{"subject_type": "member", "subject_id": june, "level": "front"}]}),
+    );
+    send(&mut w, &general, "@June one", mention(&june));
+    assert_eq!(reply_as(&w), None, "off by default");
+    let chat = new_id(NOW as u64, [81; 10]);
+    w.push(
+        &a,
+        "pref.set",
+        &acct,
+        &chat,
+        json!({"device": "", "key": "notify_chat", "value": {"reply_as_mentioned": true}}),
+    );
+    send(&mut w, &general, "@June two", mention(&june));
+    assert_eq!(reply_as(&w), Some(june.clone()));
 }
 
 #[test]

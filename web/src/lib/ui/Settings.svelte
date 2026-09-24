@@ -115,6 +115,7 @@
     <summary>Advanced</summary>
     <div class="advanced">
       {#if isSystem}<label><input type="checkbox" checked={kinds.own_switch === true} onchange={(e) => chatKind('own_switch', e.currentTarget.checked)} /> Ping my other devices when the front changes</label>{/if}
+      {#if isSystem}<label><input type="checkbox" checked={kinds.reply_as_mentioned === true} onchange={(e) => chatKind('reply_as_mentioned', e.currentTarget.checked)} /> Replies from a notification speak as the member it mentions</label>{/if}
       {#if isSystem}
         <label><input type="checkbox" checked={ceiling.share_history === true} onchange={(e) => sharingDetail('share_history', e.currentTarget.checked)} /> Followers can look back at who fronted</label>
         <label><input type="checkbox" checked={ceiling.share_stats === true} onchange={(e) => sharingDetail('share_stats', e.currentTarget.checked)} /> Followers can see fronting stats</label>

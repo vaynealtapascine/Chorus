@@ -110,3 +110,7 @@ Good work; merged as is. Three follow-ups:
   same visibility rule as search. **U3 channel permissions must extend these too** (and
   `webhooks.rs` `message.created`, which reads through `search::message_by_id`).
 - Webhook events `message.created` and `post.created`.
+- **main is public** (github.com/vaynealtapascine/Chorus, pushed by Claude after each merge).
+  Keep secrets, real hostnames and personal data out of commits, fixtures and test data.
+- **Rebuild** (`project.rs`) now decodes the log and prepares single-op entity rows on a reader
+  thread (`prepare`/`write`); if you add a table with derived rows, put them in `write`.

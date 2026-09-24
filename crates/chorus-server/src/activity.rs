@@ -322,6 +322,25 @@ fn queue(
             "t": "message", "kind": kind, "title": title, "text": text,
             "channel_id": channel_id, "message_id": o.entity_id, "scope": o.scope,
         });
+        // Advanced "reply as mentioned member" (§7): an inline reply speaks as the recipient's
+        // member this message names (not one of its authors) instead of whoever is fronting
+        if pref(conn, &recipient, "notify_chat")?.and_then(|v| v.get("reply_as_mentioned").and_then(Value::as_bool))
+            == Some(true)
+        {
+            let written_by =
+                |m: &str| p.get("authors").and_then(Value::as_array).is_some_and(|a| a.iter().any(|x| x == m));
+            for e in p.get("entities").and_then(Value::as_array).into_iter().flatten() {
+                if e.get("type").and_then(Value::as_str) == Some("mention")
+                    && e.get("target_type").and_then(Value::as_str) == Some("member")
+                    && let Some(m) = e.get("target_id").and_then(Value::as_str)
+                    && !written_by(m)
+                    && account_of_member(conn, m)?.as_deref() == Some(recipient.as_str())
+                {
+                    payload["reply_as"] = json!(m);
+                    break;
+                }
+            }
+        }
         // your own message: the device it was written on doesn't need the ping
         if o.account_id.as_deref() == Some(recipient.as_str())
             && let Some(d) = &o.device_id
