@@ -2,39 +2,79 @@ name: ci
 
 on:
   push:
-    branches: [main]
   pull_request:
+
+# a newer push to the same branch supersedes a running check
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # DECISIONS §Versions
+  RUST_VERSION: "1.98"
+  WASM_BINDGEN_VERSION: "0.2.128"
 
 jobs:
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
         with:
+          node-version: 22
+      - name: Docs and generated files are in step
+        run: |
+          node scripts/gen-tokens.mjs --check
+          python3 scripts/projection-check.py
+          python3 scripts/api-check.py
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt, clippy
-          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: rust
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # release: the convergence simulator and proptests are CPU-heavy (verify.py does the same)
       - run: cargo test --workspace --release
         env:
           CHORUS_SIM_SEEDS: "1000"
-      - run: cargo build -p chorus-wasm --target wasm32-unknown-unknown --profile wasm
 
   web:
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('web/package-lock.json') != '' }}
-    defaults:
-      run:
-        working-directory: web
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm
+      # the CLI must equal the wasm-bindgen crate's version; a prebuilt binary, not a compile
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ env.WASM_BINDGEN_VERSION }}
+      - name: Core for the web app (scripts/build-web-core.ps1)
+        run: |
+          cargo build -p chorus-wasm --target wasm32-unknown-unknown --profile wasm
+          wasm-bindgen target/wasm32-unknown-unknown/wasm/chorus_wasm.wasm --out-dir web/src/lib/core/pkg --target web
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+        working-directory: web
       - run: npm run check
+        working-directory: web
       - run: npm test
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - name: Bundle budgets (SPEC §9)
+        run: python3 -c "import sys; sys.path.insert(0, 'scripts'); import verify; verify.bundle_budgets('web/dist/assets')"
