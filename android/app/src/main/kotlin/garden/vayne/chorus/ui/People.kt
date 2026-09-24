@@ -1,5 +1,6 @@
 package garden.vayne.chorus.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -56,6 +57,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
     var refresh by remember { mutableStateOf(0) }
     var loadedAccount by remember { mutableStateOf<String?>(null) }
     var requestChoices by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var threadPostId by rememberSaveable { mutableStateOf<String?>(null) }
     val reactMember = Reply.speaker(model)?.takeIf { member ->
         member.createdByAccountId == null || member.createdByAccountId == chorus.device?.accountId
     }
@@ -95,6 +97,14 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
             catch (e: Exception) { error = e.message ?: "Could not update this follow." }
             finally { busy = false }
         }
+    }
+
+    if (threadPostId != null) {
+        val id = threadPostId!!
+        BackHandler { threadPostId = null }
+        JournalThread(chorus, model, id, onClose = { threadPostId = null },
+            onReply = { threadPostId = null; onReplyPost(id) })
+        return
     }
 
     LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
@@ -191,7 +201,8 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                 sharedPosts[f.account.id]?.takeIf { it.isNotEmpty() }?.let { posts ->
                     Text("Shared posts", color = p.ink2, fontWeight = FontWeight.SemiBold)
                     for (post in posts) SharedPostPreview(post, f.account.shownName,
-                        reactMember?.id, !busy, onReply = { onReplyPost(it.id) }) { selected ->
+                        reactMember?.id, !busy, onThread = { threadPostId = it.id },
+                        onReply = { onReplyPost(it.id) }) { selected ->
                         val member = reactMember ?: return@SharedPostPreview
                         if (busy) return@SharedPostPreview
                         busy = true; error = null
@@ -252,7 +263,8 @@ private fun FollowAdvanced(ceiling: JSONObject, enabled: Boolean, onChange: (Str
 
 @Composable
 internal fun SharedPostPreview(post: SharedPost, accountName: String, reactMemberId: String? = null,
-    enabled: Boolean = true, onReply: ((SharedPost) -> Unit)? = null, onReact: (SharedPost) -> Unit = {}) {
+    enabled: Boolean = true, onThread: ((SharedPost) -> Unit)? = null,
+    onReply: ((SharedPost) -> Unit)? = null, onReact: (SharedPost) -> Unit = {}) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().background(p.surface2).padding(10.dp),
@@ -267,6 +279,7 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, reactMembe
             if (post.title != null) Text(post.title, color = p.ink, fontWeight = FontWeight.SemiBold)
             Text(post.text, color = p.ink)
             if (post.reactions.isNotEmpty()) Text(post.reactions.joinToString(" · ") { "${it.emoji} ${it.memberName}" }, color = p.ink2)
+            if (onThread != null) TextButton(enabled = enabled, onClick = { onThread(post) }) { Text("Thread") }
             if (reactMemberId != null) {
                 val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == reactMemberId }
                 TextButton(enabled = enabled, onClick = { onReact(post) }) {

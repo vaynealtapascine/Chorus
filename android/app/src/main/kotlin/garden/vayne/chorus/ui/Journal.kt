@@ -229,7 +229,7 @@ internal fun JournalPostCard(post: JournalPost, model: Model, onReply: () -> Uni
 
 /** Server replies can come from other accounts, while own replies remain available offline. */
 @Composable
-private fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose: () -> Unit, onReply: () -> Unit) {
+internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose: () -> Unit, onReply: () -> Unit) {
     val p = LocalChorusPalette.current
     var remote by remember(postId) { mutableStateOf<List<ThreadReply>?>(null) }
     var error by remember(postId) { mutableStateOf<String?>(null) }
@@ -257,7 +257,9 @@ private fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose:
             }
         }
         if (error != null) item { Text("Showing replies on this device. ${error.orEmpty()}", color = p.ink2) }
-        if (replies.isEmpty()) item { Text("No replies yet.", color = p.ink2) }
+        if (replies.isEmpty()) item {
+            Text(if (remote == null && error == null) "Loading replies…" else "No replies yet.", color = p.ink2)
+        }
         items(replies, key = { it.id }) { reply -> ThreadReplyCard(reply) }
         item { TextButton(onClick = onReply) { Text("Write a reply") } }
     }
