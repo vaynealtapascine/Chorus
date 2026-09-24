@@ -420,3 +420,6 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 
 #### Batch 4 audit · test target fallback (2026-09-24)
 - Read Claude's newer `main` audit notes without switching branches. He fixed the older HTTP tests to use the system temp directory when `CARGO_TARGET_DIR` is absent, because his Linux machine does not set it. The new `tests/common` sweep helper now follows that pattern too; our Windows verification still sets `CARGO_TARGET_DIR` to F:. `verify.py --quick` passes before commit. This is a test-only portability fix; no core or server runtime semantics changed.
+
+#### Batch 4 audit · Feeds copy (2026-09-24)
+- Claude's browser smoke test found that the Feeds hint said both "on this device" and "sync to your devices." The hint now says definitions sync while each device evaluates data it has received, matching the implemented local evaluator. `verify.py --quick` passes before commit. Copy-only; no behaviour, core semantics or decision changed.
