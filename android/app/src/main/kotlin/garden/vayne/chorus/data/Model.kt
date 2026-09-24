@@ -71,6 +71,8 @@ class Model(
     val channels: List<ChatChannel> = emptyList(),
     /** Newest 100 non-deleted messages per channel, oldest first for display. */
     val chatMessages: Map<String, List<ChatMessage>> = emptyMap(),
+    /** Own account's per-follower ceiling overrides; absent means inherit the account default. */
+    val followCeilings: Map<String, JSONObject> = emptyMap(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -249,7 +251,8 @@ class Model(
                     f.optLong("occurred_at"), f.str("cw"), visibility?.optString("mode")?.ifEmpty { "all" } ?: "all",
                     stringSet(visibility?.optJSONArray("member_ids")), f.str("account_id"), f.str("reply_to"), files)
             } }
-            return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages)
+            val followCeilings = rows(p, "follow").associate { (id, f) -> id to (f.optJSONObject("ceiling") ?: JSONObject()) }
+            return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages, followCeilings)
         }
     }
 }

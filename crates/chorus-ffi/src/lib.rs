@@ -63,6 +63,11 @@ pub fn feed_parse(query: String) -> Result<String, CoreError> {
 }
 
 #[uniffi::export]
+pub fn notify_preset(name: String) -> Result<String, CoreError> {
+    wrap(api::notify_preset(&name))
+}
+
+#[uniffi::export]
 pub fn adapt_color(color: String, dark: bool, intensity: String) -> String {
     api::adapt_color(&color, dark, &intensity)
 }

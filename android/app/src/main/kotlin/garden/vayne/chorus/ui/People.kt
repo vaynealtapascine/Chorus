@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -24,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.FollowList
+import garden.vayne.chorus.data.FollowPresets
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PeopleApi
 import garden.vayne.chorus.data.Spaces
@@ -43,6 +46,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var refresh by remember { mutableStateOf(0) }
     var loadedAccount by remember { mutableStateOf<String?>(null) }
+    var requestChoices by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
 
     LaunchedEffect(chorus.device?.session, model, refresh) {
         val dev = chorus.device ?: return@LaunchedEffect
@@ -96,10 +100,14 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
             for (f in requests) item(key = "request:${f.id}") {
                 Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
                     Text("${f.account.shownName} wants to follow you", color = p.ink)
-                    Text("Your default sharing limit applies unless you change it for them.", color = p.ink2)
+                    FollowPresetPicker("They'll see switches", requestChoices[f.id] ?: "inherit") {
+                        requestChoices = requestChoices + (f.id to it)
+                    }
                     Row {
                         TextButton(enabled = !busy, onClick = { action {
                             chorus.create("follow.accept", f.id, JSONObject())
+                            chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
+                                FollowPresets.ceiling(requestChoices[f.id] ?: "inherit", model.followCeilings[f.id] ?: JSONObject())))
                         } }) { Text("Accept") }
                         TextButton(enabled = !busy, onClick = { action {
                             chorus.create("follow.end", f.id, JSONObject())
@@ -108,11 +116,20 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
                 }
             }
         }
-        item { Text("Followers", color = p.ink, fontWeight = FontWeight.SemiBold) }
+        item {
+            Text("Followers", color = p.ink, fontWeight = FontWeight.SemiBold)
+            Text("Delay hides when you switched as it happens; fuzzing hides the exact time afterwards.", color = p.ink2)
+        }
         if (follows.followers.none { it.status == "active" }) item { Text("No followers yet.", color = p.ink2) }
         for (f in follows.followers.filter { it.status == "active" }) item(key = "follower:${f.id}") {
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
                 Text(f.account.shownName, color = p.ink)
+                FollowPresetPicker("Sees switches", FollowPresets.choiceOf(model.followCeilings[f.id] ?: JSONObject())) { choice ->
+                    action {
+                        chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
+                            FollowPresets.ceiling(choice, model.followCeilings[f.id] ?: JSONObject())))
+                    }
+                }
                 Row {
                     TextButton(enabled = !busy, onClick = { action {
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
@@ -146,5 +163,27 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
         }
         item { Text("A follower sees your switches only within the sharing limit you choose for them.",
             color = p.ink2, modifier = Modifier.padding(bottom = 20.dp)) }
+    }
+}
+
+@Composable
+private fun FollowPresetPicker(label: String, choice: String, onChoice: (String) -> Unit) {
+    val p = LocalChorusPalette.current
+    var open by remember { mutableStateOf(false) }
+    val labels = mapOf(
+        "inherit" to "Account default", "close" to "Close · right away, exact time",
+        "gentle" to "Gentle · 5–20 min, rounded", "private" to "Private · 30–90 min, part of day",
+        "digest" to "Digest · daily summary", "off" to "Off · no switch alerts",
+        "custom" to "Custom (Advanced)",
+    )
+    Column {
+        Text(label, color = p.ink2)
+        TextButton(onClick = { open = true }) { Text("${labels[choice] ?: labels.getValue("custom")} ▾") }
+        DropdownMenu(open, onDismissRequest = { open = false }) {
+            for (option in FollowPresets.choices) DropdownMenuItem(text = { Text(labels.getValue(option)) }, onClick = {
+                open = false
+                onChoice(option)
+            })
+        }
     }
 }
