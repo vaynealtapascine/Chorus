@@ -6,6 +6,7 @@
   import PostComposer from './PostComposer.svelte';
   import PostReplies from './PostReplies.svelte';
   import JournalLists from './JournalLists.svelte';
+  import JournalFeeds from './JournalFeeds.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
@@ -25,7 +26,7 @@
   let actingAs = $state('');
   const speaker = $derived(actingAs || frontSpeaker || active[0]?.id || null);
   let replyTo = $state<PostRow | null>(null);
-  let section = $state<'timeline' | 'lists'>('timeline');
+  let section = $state<'timeline' | 'lists' | 'feeds'>('timeline');
   const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
   const frontName = (e: { subject_id: string }) => subjectNames.get(e.subject_id) ?? 'Someone';
   function react(post: PostRow, emoji: string, add: boolean) {
@@ -36,8 +37,8 @@
 
 <section class="journal">
   <header><h1 class="display">Journal</h1><label>React as <select bind:value={actingAs} aria-label="React as member"><option value="">Current front</option>{#each active as person (person.id)}<option value={person.id}>{person.display_name ?? person.name}</option>{/each}</select></label></header>
-  <nav aria-label="Journal sections"><button class:on={section === 'timeline'} onclick={() => (section = 'timeline')}>Timeline</button><button class:on={section === 'lists'} onclick={() => (section = 'lists')}>Lists</button></nav>
-  {#if section === 'lists'}<JournalLists {projection} {dark} />{:else}
+  <nav aria-label="Journal sections"><button class:on={section === 'timeline'} onclick={() => (section = 'timeline')}>Timeline</button><button class:on={section === 'lists'} onclick={() => (section = 'lists')}>Lists</button><button class:on={section === 'feeds'} onclick={() => (section = 'feeds')}>Feeds</button></nav>
+  {#if section === 'lists'}<JournalLists {projection} {dark} />{:else if section === 'feeds'}<JournalFeeds {projection} {dark} />{:else}
   {#if replyTo}<p class="replying">Replying to {replyTo.authors.map(name).join(' & ')} <button onclick={() => (replyTo = null)}>Cancel</button></p>{/if}
   {#key replyTo?.id}<PostComposer {projection} initialAuthors={speaker ? [speaker] : []} replyTo={replyTo?.id} onsent={() => (replyTo = null)} />{/key}
   <div class="timeline">
