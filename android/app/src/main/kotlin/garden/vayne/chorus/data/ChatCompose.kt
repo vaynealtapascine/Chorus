@@ -10,6 +10,7 @@ object ChatCompose {
         model: Model, channelId: String, selectedAuthor: String, draft: String,
         cw: String, audience: String, visibleTo: Set<String>, spaceKind: String,
         composer: (String, String, String, String, String) -> String = ::compose,
+        replyTo: String? = null,
     ): JSONObject {
         require(model.active.any { it.id == selectedAuthor }) { "Choose one of your members to speak." }
         require(draft.isNotBlank()) { "Write a message first." }
@@ -30,6 +31,7 @@ object ChatCompose {
         val payload = JSONObject().put("channel_id", channelId).put("authors", authors)
             .put("text", rich.getString("text")).put("entities", rich.getJSONArray("entities"))
             .put("segments", composed.getJSONArray("segments"))
+        if (replyTo != null) payload.put("reply_to", replyTo)
         if (cw.isNotBlank()) payload.put("cw", cw.trim())
         if (audience == "members") payload.put("visibility", JSONObject().put("mode", "members")
             .put("member_ids", JSONArray(visibleTo.sorted())))

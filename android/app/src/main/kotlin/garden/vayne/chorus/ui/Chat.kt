@@ -60,6 +60,7 @@ fun Chat(chorus: Chorus, model: Model) {
     var cw by rememberSaveable { mutableStateOf("") }
     var audience by rememberSaveable { mutableStateOf("all") }
     var visibleTo by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
     var busy by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     val actions = rememberCoroutineScope()
@@ -85,6 +86,7 @@ fun Chat(chorus: Chorus, model: Model) {
                     viewingAs = null
                     audience = "all"
                     visibleTo = emptyList()
+                    replyTo = null
                 }
             }
         }
@@ -94,7 +96,10 @@ fun Chat(chorus: Chorus, model: Model) {
         }
         LazyRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(channels, key = { it.id }) { candidate ->
-                ChatChip("#${candidate.name}", candidate.id == channel.id) { selectedChannel = candidate.id }
+                ChatChip("#${candidate.name}", candidate.id == channel.id) {
+                    selectedChannel = candidate.id
+                    replyTo = null
+                }
             }
         }
         if (space.kind == "internal") {
@@ -110,7 +115,7 @@ fun Chat(chorus: Chorus, model: Model) {
         LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), reverseLayout = true,
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(messages.asReversed(), key = { it.id }) { message ->
-                ChatMessageCard(message, model, chorus)
+                ChatMessageCard(message, model, chorus) { replyTo = message.id }
             }
             if (messages.isEmpty()) item {
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
@@ -125,6 +130,17 @@ fun Chat(chorus: Chorus, model: Model) {
                         ChatChip(member.shownName, author?.id == member.id) { selectedAuthor = member.id }
                     }
                 }
+            }
+            val target = messages.find { it.id == replyTo }
+            if (target != null) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Replying to a message", color = p.ink2, fontSize = 12.sp)
+                    Text("Cancel", color = p.accent, fontSize = 12.sp,
+                        modifier = Modifier.clickable { replyTo = null })
+                }
+            } else if (replyTo != null) {
+                Text("Reply target unavailable · Cancel", color = p.accent, fontSize = 12.sp,
+                    modifier = Modifier.clickable { replyTo = null })
             }
             OutlinedTextField(draft, { draft = it }, label = { Text("Message as ${author?.shownName ?: "choose a member"}") },
                 modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4)
@@ -152,7 +168,7 @@ fun Chat(chorus: Chorus, model: Model) {
                 Text("Everyone in this space can see who is speaking.", color = p.ink3, fontSize = 12.sp)
             }
             if (error != null) Text(error.orEmpty(), color = p.accent, fontSize = 12.sp)
-            Button(enabled = !busy && draft.isNotBlank() && author != null &&
+            Button(enabled = !busy && draft.isNotBlank() && author != null && (replyTo == null || target != null) &&
                 (audience != "members" || visibleTo.isNotEmpty()), onClick = {
                 val speakerId = author?.id ?: return@Button
                 busy = true
@@ -160,12 +176,13 @@ fun Chat(chorus: Chorus, model: Model) {
                 actions.launch {
                     try {
                         val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
-                            audience, visibleTo.toSet(), space.kind)
+                            audience, visibleTo.toSet(), space.kind, replyTo = target?.id)
                         chorus.create("message.send", chorus.newId(), payload, scope = "space:${space.id}")
                         draft = ""
                         cw = ""
                         audience = "all"
                         visibleTo = emptyList()
+                        replyTo = null
                     } catch (e: Exception) {
                         error = e.message ?: "Could not send the message."
                     } finally {
@@ -192,7 +209,7 @@ private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
 }
 
 @Composable
-private fun ChatMessageCard(message: ChatMessage, model: Model, chorus: Chorus) {
+private fun ChatMessageCard(message: ChatMessage, model: Model, chorus: Chorus, onReply: () -> Unit) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
     val authors = message.authors.map { model.member(it)?.shownName ?: "Someone" }.joinToString(" & ").ifEmpty { "Someone" }
@@ -204,6 +221,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, chorus: Chorus) 
                 color = p.ink3, fontSize = 11.sp)
         }
         if (message.replyTo != null) Text("↪ Reply", color = p.ink3, fontSize = 12.sp)
+        Text("Reply", color = p.accent, fontSize = 12.sp, modifier = Modifier.clickable(onClick = onReply))
         if (message.visibilityMode == "system_only") Text("Only this system", color = p.ink3, fontSize = 12.sp)
         if (message.visibilityMode == "members") Text("Chosen members", color = p.ink3, fontSize = 12.sp)
         if (message.cw != null) {

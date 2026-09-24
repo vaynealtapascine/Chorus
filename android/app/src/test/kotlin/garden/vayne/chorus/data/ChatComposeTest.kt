@@ -26,8 +26,10 @@ class ChatComposeTest {
 
     @Test
     fun sharedAsideIsExplicitAndInternalAsideIsRejected() {
-        val aside = ChatCompose.payload(model, "channel", "kai", "hello", "", "system_only", emptySet(), "shared", composed)
+        val aside = ChatCompose.payload(model, "channel", "kai", "hello", "", "system_only", emptySet(), "shared", composed,
+            replyTo = "parent-message")
         assertEquals("system_only", aside.getJSONObject("visibility").getString("mode"))
+        assertEquals("parent-message", aside.getString("reply_to"))
         val ordinary = ChatCompose.payload(model, "channel", "kai", "hello", "", "all", emptySet(), "shared", composed)
         assertFalse(ordinary.has("visibility"))
         var rejected = false
