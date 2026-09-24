@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.LocalSearch
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.MessageSearchApi
+import garden.vayne.chorus.data.PostSearchApi
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.SearchDocument
 import garden.vayne.chorus.designsystem.LocalChorusPalette
@@ -60,35 +61,55 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
     LaunchedEffect(query, section, chorus.device?.session, online, model) {
         remote = emptyList(); cursor = null; remoteError = null; loading = false
         val dev = chorus.device ?: return@LaunchedEffect
-        if (!online || section != "Messages" || parsed.terms.isEmpty()) return@LaunchedEffect
+        if (!online || section == "Switches" || parsed.terms.isEmpty()) return@LaunchedEffect
         delay(250)
         loading = true
         try {
-            val page = MessageSearchApi.page(dev, parsed)
-            remote = page.items
-            cursor = page.nextCursor
-        } catch (e: Exception) { remoteError = e.message ?: "Older messages are unavailable." }
+            if (section == "Messages") {
+                val page = MessageSearchApi.page(dev, parsed)
+                remote = page.items
+                cursor = page.nextCursor
+            } else {
+                val page = PostSearchApi.page(dev, parsed)
+                remote = page.items
+                cursor = page.nextCursor
+            }
+        } catch (e: Exception) { remoteError = e.message ?: "Server search is unavailable." }
         finally { loading = false }
     }
     val known = results.mapTo(HashSet()) { it.id }
-    val shown = if (section == "Messages") results + remote.filter { it.id !in known } else results
+    val shown = if (section == "Switches") results else results + remote.filter { doc ->
+        doc.id !in known && (section != "Posts" || parsed.from == null ||
+            doc.authors.any { it == parsed.from } || doc.authorNames.any { it.contains(parsed.from, ignoreCase = true) })
+    }
 
     fun loadMore() {
         val next = cursor ?: return
         val dev = chorus.device ?: return
         if (loading) return
         val requestedQuery = query
+        val requestedSection = section
         loading = true
         actions.launch {
             try {
-                val page = MessageSearchApi.page(dev, parsed, next)
-                if (query == requestedQuery && currentSession == dev.session && cursor == next) {
-                    remote = remote + page.items
-                    cursor = page.nextCursor
-                    remoteError = null
+                if (requestedSection == "Messages") {
+                    val page = MessageSearchApi.page(dev, parsed, next)
+                    if (query == requestedQuery && section == requestedSection && currentSession == dev.session && cursor == next) {
+                        remote = remote + page.items
+                        cursor = page.nextCursor
+                        remoteError = null
+                    }
+                } else {
+                    val page = PostSearchApi.page(dev, parsed, next)
+                    if (query == requestedQuery && section == requestedSection && currentSession == dev.session && cursor == next) {
+                        remote = remote + page.items
+                        cursor = page.nextCursor
+                        remoteError = null
+                    }
                 }
             } catch (e: Exception) {
-                if (query == requestedQuery && currentSession == dev.session) remoteError = e.message ?: "Could not load more messages."
+                if (query == requestedQuery && section == requestedSection && currentSession == dev.session)
+                    remoteError = e.message ?: "Could not load more results."
             } finally { loading = false }
         }
     }
@@ -113,12 +134,12 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
         }
         if (index == null) item { Text("Preparing local search…", color = p.ink2) }
         else if (query.isBlank()) item { Text("Type to search messages, posts and switches on this device.", color = p.ink2) }
-        else if (shown.isEmpty() && !loading) item { Text("No $section matches on this device${if (online && section == "Messages") " or server" else ""}.", color = p.ink2) }
+        else if (shown.isEmpty() && !loading) item { Text("No $section matches on this device${if (online && section != "Switches") " or server" else ""}.", color = p.ink2) }
         for (doc in shown) item(key = "${doc.kind}:${doc.id}") { SearchCard(doc, model) }
         if (results.size == 100) item { Text("Showing the newest 100 local matches. Narrow the search for more.", color = p.ink2) }
-        if (loading) item { Text("Searching older messages…", color = p.ink2) }
-        if (remoteError != null && section == "Messages") item { Text("Older messages unavailable: ${remoteError.orEmpty()}", color = p.ink2) }
-        if (section == "Messages" && cursor != null) item {
+        if (loading) item { Text("Searching server…", color = p.ink2) }
+        if (remoteError != null && section != "Switches") item { Text("Server search unavailable: ${remoteError.orEmpty()}", color = p.ink2) }
+        if (section != "Switches" && cursor != null) item {
             TextButton(enabled = !loading, onClick = ::loadMore) { Text("Load more from server") }
         }
         item { Text("", modifier = Modifier.padding(bottom = 16.dp)) }
@@ -131,7 +152,8 @@ private fun SearchCard(doc: SearchDocument, model: Model) {
     var revealed by rememberSaveable(doc.id) { mutableStateOf(false) }
     val label = when (doc.kind) {
         "Messages" -> model.channels.find { it.id == doc.channelId }?.name?.let { "#$it" } ?: "Message"
-        "Posts" -> doc.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Post" }
+        "Posts" -> (doc.authorNames.ifEmpty { doc.authors.mapNotNull { model.member(it)?.shownName } })
+            .joinToString(" & ").ifBlank { "Post" }
         else -> "Switch"
     }
     Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
