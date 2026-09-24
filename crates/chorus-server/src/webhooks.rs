@@ -8,10 +8,13 @@
 //! - Retries after 1 m, 5 m, 30 m, 2 h, 12 h; after that the webhook is disabled and the reason is
 //!   shown in the app. Pending retries live in memory, so a restart drops them (the next event
 //!   still goes out).
-//! - URLs must stay inside the tailnet/LAN unless `security.webhooks_allow_external` is on; the
-//!   check runs when the webhook is saved and again before every delivery (names are resolved).
+//! - Where a URL may point is `security.webhook_targets`: tailnet/LAN only (`internal`, the
+//!   default; never loopback), public addresses only (`public`, for a server on the internet), or
+//!   `any`. The check runs when the webhook is saved and again before every delivery; names are
+//!   resolved, the delivery connects to exactly the address that was checked (no DNS rebinding),
+//!   and redirects are not followed.
 
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 
 use chorus_core::op::Op;
 use hkdf::hmac::{Hmac, Mac};
@@ -20,6 +23,7 @@ use serde_json::{Value, json};
 use sha2::Sha256;
 
 use crate::api_data::{self, DataError, Principal};
+use crate::config::WebhookTargets;
 
 pub const EVENTS: &[&str] = &["front.switch", "member.created", "member.updated", "follow.requested"];
 
@@ -58,35 +62,87 @@ fn internal_ip(ip: IpAddr) -> bool {
     }
 }
 
+/// Neither internal nor special-purpose: somewhere out on the internet.
+fn public_ip(ip: IpAddr) -> bool {
+    if internal_ip(ip) || ip.is_unspecified() || ip.is_multicast() {
+        return false;
+    }
+    match ip {
+        IpAddr::V4(v) => {
+            let [a, b, c, _] = v.octets();
+            !(v.is_broadcast()
+                || v.is_documentation()
+                || a == 0
+                || (a == 192 && b == 0 && c == 0)
+                || (a == 198 && (18..20).contains(&b))
+                || a >= 240)
+        }
+        IpAddr::V6(v) => {
+            let s = v.segments();
+            // documentation, NAT64 (could wrap an internal v4 address), 6to4 / Teredo relays
+            !((s[0] == 0x2001 && s[1] == 0x0db8)
+                || (s[0] == 0x64 && s[1] == 0xff9b)
+                || s[0] == 0x2002
+                || (s[0] == 0x2001 && s[1] == 0))
+        }
+    }
+}
+
+fn allowed(ip: IpAddr, targets: WebhookTargets) -> bool {
+    match targets {
+        WebhookTargets::Internal => internal_ip(ip) && !ip.to_canonical().is_loopback(),
+        WebhookTargets::Public => public_ip(ip),
+        WebhookTargets::Any => true,
+    }
+}
+
 const INTERNAL_SUFFIXES: &[&str] = &[".ts.net", ".local", ".lan", ".internal", ".home.arpa"];
 
-/// Refuse URLs that leave the tailnet/LAN unless external webhooks are allowed. Host names are
-/// resolved and every address must be internal (Caddy sites on the tailnet resolve to 100.x).
-pub async fn check_url(url: &str, allow_external: bool) -> Result<reqwest::Url, String> {
+/// A checked webhook URL, and the address the delivery must connect to (host names only).
+#[derive(Debug)]
+pub struct Target {
+    pub url: reqwest::Url,
+    pub pin: Option<SocketAddr>,
+}
+
+/// Refuse URLs outside what `targets` allows. Host names are resolved and every address must
+/// be allowed; the first one is pinned for the connection (Caddy sites on the tailnet resolve to
+/// 100.x, so `internal` accepts them).
+pub async fn check_url(url: &str, targets: WebhookTargets) -> Result<Target, String> {
     let u = reqwest::Url::parse(url).map_err(|e| format!("not a URL: {e}"))?;
     if !matches!(u.scheme(), "http" | "https") {
         return Err("webhook URLs must be http or https".into());
     }
-    if allow_external {
-        return Ok(u);
+    if targets == WebhookTargets::Any {
+        return Ok(Target { url: u, pin: None });
     }
-    let outside = || "that address is outside the tailnet (an admin can allow external webhooks)".to_string();
+    let refused = || match targets {
+        WebhookTargets::Public => "webhooks on this server may only point to public internet addresses".to_string(),
+        _ => "that address is outside the tailnet (an admin can allow external webhooks)".to_string(),
+    };
     let host = u.host_str().unwrap_or_default().trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase();
     if let Ok(ip) = host.parse::<IpAddr>() {
-        return if internal_ip(ip) { Ok(u) } else { Err(outside()) };
+        return if allowed(ip, targets) { Ok(Target { url: u, pin: None }) } else { Err(refused()) };
     }
-    if host.is_empty() {
-        return Err(outside());
+    if host.is_empty() || host == "localhost" || host.ends_with(".localhost") {
+        return Err(refused());
     }
-    if host == "localhost" || !host.contains('.') || INTERNAL_SUFFIXES.iter().any(|s| host.ends_with(s)) {
-        return Ok(u);
-    }
+    // tailnet/LAN names that don't resolve from here (MagicDNS, mDNS) are still fine for `internal`
+    let plausible = targets == WebhookTargets::Internal
+        && (!host.contains('.') || INTERNAL_SUFFIXES.iter().any(|s| host.ends_with(s)));
     let port = u.port_or_known_default().unwrap_or(443);
-    let addrs: Vec<_> = tokio::net::lookup_host((host.as_str(), port))
-        .await
-        .map_err(|e| format!("can't resolve {host}: {e}"))?
-        .collect();
-    if !addrs.is_empty() && addrs.iter().all(|a| internal_ip(a.ip())) { Ok(u) } else { Err(outside()) }
+    let addrs: Vec<SocketAddr> = match tokio::net::lookup_host((host.as_str(), port)).await {
+        Ok(a) => a.collect(),
+        Err(_) if plausible => return Ok(Target { url: u, pin: None }),
+        Err(e) => return Err(format!("can't resolve {host}: {e}")),
+    };
+    if addrs.is_empty() && plausible {
+        return Ok(Target { url: u, pin: None });
+    }
+    match addrs.first() {
+        Some(first) if addrs.iter().all(|a| allowed(a.ip(), targets)) => Ok(Target { url: u, pin: Some(*first) }),
+        _ => Err(refused()),
+    }
 }
 
 fn check_events(events: &[String]) -> Result<(), DataError> {
@@ -295,15 +351,18 @@ pub fn signature(secret: &str, t_secs: i64, body: &str) -> String {
 }
 
 /// Make one attempt: `Ok(status)` for 2xx, `Err((status, reason))` otherwise.
-pub async fn send(
-    http: &reqwest::Client,
-    d: &Delivery,
-    allow_external: bool,
-    now: i64,
-) -> Result<u16, (Option<u16>, String)> {
-    let url = check_url(&d.url, allow_external).await.map_err(|e| (None, e))?;
+pub async fn send(d: &Delivery, targets: WebhookTargets, now: i64) -> Result<u16, (Option<u16>, String)> {
+    let target = check_url(&d.url, targets).await.map_err(|e| (None, e))?;
+    // connect to exactly the address that passed the check, and never follow a redirect
+    let mut http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none());
+    if let (Some(pin), Some(host)) = (target.pin, target.url.host_str()) {
+        http = http.resolve(host, pin);
+    }
+    let http = http.build().map_err(|e| (None, format!("can't build the request: {e}")))?;
     let r = http
-        .post(url)
+        .post(target.url)
         .header("content-type", "application/json")
         .header("user-agent", concat!("Chorus/", env!("CARGO_PKG_VERSION")))
         .header("chorus-event", &d.event)
@@ -394,14 +453,58 @@ mod tests {
         }
     }
 
+    #[test]
+    fn public_addresses() {
+        for ok in ["8.8.8.8", "1.1.1.1", "2606:4700::1111"] {
+            assert!(public_ip(ok.parse().unwrap()), "{ok}");
+        }
+        for bad in [
+            "127.0.0.1",
+            "10.1.2.3",
+            "192.168.1.9",
+            "100.101.102.103",
+            "169.254.169.254",
+            "0.0.0.0",
+            "255.255.255.255",
+            "224.0.0.1",
+            "192.0.2.1",
+            "198.18.0.1",
+            "::1",
+            "::",
+            "fd00::1",
+            "fe80::1",
+            "::ffff:127.0.0.1",
+            "64:ff9b::a01:203",
+            "2001:db8::1",
+        ] {
+            assert!(!public_ip(bad.parse().unwrap()), "{bad}");
+        }
+    }
+
     #[tokio::test]
     async fn url_rules() {
-        assert!(check_url("http://127.0.0.1:9/x", false).await.is_ok());
-        assert!(check_url("https://box.tail1234.ts.net/hook", false).await.is_ok());
-        assert!(check_url("http://nas/hook", false).await.is_ok());
-        assert!(check_url("http://8.8.8.8/hook", false).await.is_err());
-        assert!(check_url("http://8.8.8.8/hook", true).await.is_ok());
-        assert!(check_url("ftp://127.0.0.1/x", true).await.is_err());
+        use WebhookTargets::*;
+        // internal: the tailnet and LAN, but not this host's own loopback services
+        assert!(check_url("http://10.1.2.3:9/x", Internal).await.is_ok());
+        assert!(check_url("http://127.0.0.1:9/x", Internal).await.is_err());
+        assert!(check_url("http://localhost:2019/load", Internal).await.is_err());
+        assert!(check_url("http://[::ffff:127.0.0.1]/x", Internal).await.is_err());
+        assert!(check_url("https://box.tail1234.ts.net/hook", Internal).await.is_ok());
+        assert!(check_url("http://nas/hook", Internal).await.is_ok());
+        assert!(check_url("http://8.8.8.8/hook", Internal).await.is_err());
+        // public: the internet only
+        assert!(check_url("http://8.8.8.8/hook", Public).await.is_ok());
+        for bad in [
+            "http://127.0.0.1:2019/",
+            "http://10.0.0.1/",
+            "http://169.254.169.254/latest",
+            "http://nas/hook",
+            "http://localhost/",
+        ] {
+            assert!(check_url(bad, Public).await.is_err(), "{bad}");
+        }
+        assert!(check_url("http://127.0.0.1:9/x", Any).await.is_ok());
+        assert!(check_url("ftp://127.0.0.1/x", Any).await.is_err());
     }
 
     #[test]

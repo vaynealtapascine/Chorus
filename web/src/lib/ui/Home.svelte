@@ -1,7 +1,7 @@
 <script lang="ts">
   import { core } from '../core';
   import { sync, type Projection } from '../sync/client';
-  import { groups } from '../data';
+  import { groups, selfMember } from '../data';
   import { doSwitch } from '../front.svelte';
   import FrontCard from './FrontCard.svelte';
   import Reviews from './Reviews.svelte';
@@ -24,6 +24,7 @@
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
   );
+  const me = $derived(selfMember(projection));
   // the front card can show subsystems fronting as a unit, not only members
   const subjects: Member[] = $derived([
     ...members,
@@ -62,6 +63,16 @@
 </script>
 
 <div class="home">
+  {#if me}
+    <!-- a person account: no front to track and no members to manage (D-003) -->
+    <section class="person" aria-label="You">
+      <span class="avatar" aria-hidden="true"><AvatarImage hash={me.avatar_blob} glyph={me.name[0]} name={me.name} /></span>
+      <div>
+        <h1 class="display">Hi, {me.display_name ?? me.name}</h1>
+        <p class="empty">Follow friends and chat with them from <a href="#/people">People</a> and <a href="#/chat">Chat</a>.</p>
+      </div>
+    </section>
+  {:else}
   <Reviews {projection} />
   <button class="card-button" onclick={onswitch} aria-label="Change who's here">
     <FrontCard members={subjects} {front} {since} {dark} />
@@ -94,6 +105,7 @@
       {/each}
     </div>
   </section>
+  {/if}
   <LinkDevice />
   <section class="data-links" aria-label="Data">
     <h2>Data</h2>
@@ -108,6 +120,10 @@
     gap: var(--s-6);
   }
   .data-links { display: grid; gap: var(--s-1); justify-items: start; }
+  .person { display: flex; gap: var(--s-4); align-items: center; }
+  .person .avatar { width: 56px; height: 56px; flex: none; border-radius: var(--r-full); overflow: hidden; }
+  .person h1 { margin: 0; font-size: var(--fs-xl, 1.5rem); }
+  .person a { color: var(--accent); }
   .data-links a { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
   .card-button {
     all: unset;

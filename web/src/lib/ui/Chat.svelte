@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { core, type Composed } from '../core';
   import { channels, contentWarningsAutoExpand, customEmojis, lastRead, members, messageById, messages, reactions, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
@@ -13,8 +13,8 @@
   import EmojiImage from './EmojiImage.svelte';
   import SpaceRail from './SpaceRail.svelte';
   import { authorCards, listSpaces, spaceTitle, type SpaceInfo } from '../spaces';
+  import { selfMember, type MemberRow } from '../data';
   import { apiBase } from '../sync/device';
-  import type { MemberRow } from '../data';
 
   let { projection, dark, channelId, focusId }: { projection: Projection; dark: boolean; channelId?: string; focusId?: string } = $props();
 
@@ -55,12 +55,15 @@
 
   // who speaks by default: the primary fronter, else the first one fronting (SPEC §5.2)
   const fronting = $derived(projection.fronts[sync.accountId]?.current ?? []);
+  // a person account always speaks as its self member (D-003)
+  const self = $derived(selfMember(projection));
   let viewingAs = $state<string | null>(null);
   const activeMembers = $derived(activeViewers(fronting));
   const visibleMsgs = $derived(msgs.filter((m) => memberVisible(m, space?.kind, activeMembers, viewingAs)));
   const defaultSpeaker = $derived(
-    (fronting.find((e) => e.is_primary && e.subject_type === 'member') ??
-      fronting.find((e) => e.level === 'front' && e.subject_type === 'member'))?.subject_id,
+    self?.id ??
+      (fronting.find((e) => e.is_primary && e.subject_type === 'member') ??
+        fronting.find((e) => e.level === 'front' && e.subject_type === 'member'))?.subject_id,
   );
   let chosen = $state<string | null>(null);
   const speaker = $derived(chosen ?? defaultSpeaker ?? null);
@@ -417,14 +420,38 @@
     router.go(`/chat/${id}`);
   }
 
+  // only the newest pages are in the DOM; scrolling up adds older ones (SPEC §9: pages of 100)
+  const PAGE = 100;
+  let shown = $state(PAGE);
+  let shownFor = '';
+  $effect.pre(() => {
+    if (current?.id !== shownFor) {
+      shownFor = current?.id ?? '';
+      shown = PAGE;
+    }
+  });
+  const first = $derived(Math.max(0, visibleMsgs.length - shown));
   const grouped = $derived(
-    visibleMsgs.map((m, i) => {
-      const prev = visibleMsgs[i - 1];
+    visibleMsgs.slice(first).map((m, j) => {
+      const prev = visibleMsgs[first + j - 1];
       const cont =
         !!prev && !prev.deleted && prev.authors.join() === m.authors.join() && m.occurred_at - prev.occurred_at < 300_000 && m.segments.length === 1;
       return { m, cont };
     }),
   );
+  function showOlder() {
+    if (!list || !first) return;
+    const fromBottom = list.scrollHeight - list.scrollTop;
+    shown += PAGE;
+    // keep what the reader was looking at in place once the older page renders
+    void tick().then(() => list && (list.scrollTop = list.scrollHeight - fromBottom));
+  }
+  // a search result deep in history: widen the window so the message is rendered
+  $effect.pre(() => {
+    if (!focusId) return;
+    const at = visibleMsgs.findIndex((m) => m.id === focusId);
+    if (at >= 0 && at < first) shown = visibleMsgs.length - at + PAGE / 2;
+  });
   const pinned = $derived(visibleMsgs.filter((m) => m.pinned && !m.deleted));
   const reacts = $derived(reactions(projection));
 
@@ -459,6 +486,18 @@
     });
   });
   const color = (id: string) => core.adaptColor(people.get(id)?.color ?? '#A09184', dark);
+
+  // notifications for this channel (NOTIFICATIONS §7): all · mentions · none, kept as an account
+  // pref the server reads; DMs default to "all", other shared channels to "mentions"
+  const notifyKey = $derived(current ? `notify_channel:${current.id}` : '');
+  const notifyLevel = $derived.by(() => {
+    const rows = projection.rows.pref ?? {};
+    const v = (rows[`${sync.accountId}||${notifyKey}`] ?? rows[`||${notifyKey}`])?.fields.value;
+    return typeof v === 'string' ? v : space?.kind === 'dm' ? 'all' : 'mentions';
+  });
+  function setNotifyLevel(level: string) {
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: notifyKey, value: level });
+  }
 
   // who is in which space (names for DMs), refreshed when spaces come and go
   $effect(() => {
@@ -555,6 +594,15 @@
           <div class="menu-items">
             <a href="#/stage/{current.id}">Stage… (screenshot)</a>
             <a href="#/trash/{current.id}">Show deleted</a>
+            {#if space && space.kind !== 'internal'}
+              <label class="notify">Notify me
+                <select value={notifyLevel} onchange={(e) => setNotifyLevel(e.currentTarget.value)} aria-label="Notifications for this channel">
+                  <option value="all">for every message</option>
+                  <option value="mentions">for mentions and replies</option>
+                  <option value="none">never</option>
+                </select>
+              </label>
+            {/if}
           </div>
         </details>
       {/if}
@@ -582,7 +630,10 @@
       </div>
     {/if}
 
-    <div class="list" bind:this={list}>
+    <div class="list" bind:this={list} onscroll={() => { if (list && list.scrollTop < 200) showOlder(); }}>
+      {#if first}
+        <button class="ghost older" onclick={showOlder}>Show older messages ({first})</button>
+      {/if}
       {#if focusId && !visibleMsgs.some((m) => m.id === focusId)}
         {#if history && memberVisible(history, ss.find((s) => s.id === history?.space_id)?.kind, activeMembers, viewingAs)}
           <article class="history-message" data-message-id={history.id}>
@@ -903,6 +954,8 @@
   .room-menu summary { cursor: pointer; list-style: none; }
   .menu-items { position: absolute; right: 0; top: 100%; z-index: 2; width: max-content; display: grid; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
   .room-menu a { padding: var(--s-2) var(--s-3); color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
+  .room-menu .notify { display: grid; gap: 2px; padding: var(--s-2) var(--s-3); font-size: var(--fs-sm); border-top: 1px solid var(--line); }
+  .room-menu select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); }
   .thread-origin {
     display: grid;
     gap: 2px;
@@ -938,6 +991,7 @@
     color: var(--ink-3);
     margin: 0;
   }
+  .older { display: block; margin: 0 auto var(--s-2); font-size: var(--fs-sm); }
   .list {
     flex: 1;
     overflow-y: auto;

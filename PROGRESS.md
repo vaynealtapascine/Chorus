@@ -14,10 +14,10 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** gpt-6-sol batch 3 on branch `sol/batch-2` (worktree `F:\DunBuild\Chorus-sol`): merge main, finish T6, audit items A1–A4, then T7–T13 — see `docs/handoff/sol-batch-3.md`. Claude audits and merges afterwards; don't start those tasks on `main`.
+- **In progress:** two in parallel. **Claude**: SPEC §9 server budgets (incremental entity projections, batched rebuild; `tests/perf.rs`) and the Linux deployment (D-062: build verification waits for the owner to allow the toolchain download). **gpt-6-sol**: batch 4 (U1–U6) in `docs/handoff/sol-batch-4.md` on `sol/batch-2`; its "don't touch" list keeps the two apart.
 - **Owner:** —
 - **Next concrete step:** see Notes
-- **Notes:** State 2026-09-23 (end of Claude session 2). Since gpt-6-sol's turn: audited + finished M5.12 Trash (fixed early out-of-order restores being rejected permanently); Android quick-switch widget + search launcher (RemoteViews, D-058; built + unit-tested, **not yet run on a device** — the phone dropped off adb); follows end to end (M6.1: server-written requests/prefs, People page with presets; per-member "followers hear when X fronts"); switch notifications core (`chorus_core::notify`) + server scheduler (`notifier.rs`) + follower view/inbox on the web — verified in the browser that nothing is revealed before due. **C: has <1 GB free: always `CARGO_TARGET_DIR=F:\DunBuild\chorus-target` and `CHORUS_GRADLE_BUILD_DIR=F:\DunBuild\chorus-gradle`** (deploy/web/android scripts honour them now; the dev-server launch config runs the F: release exe, so stop it before `cargo build --release`). The stale `Chorus\target` on C: was cargo-cleaned on 2026-09-23 (C: had hit 0 bytes free); keep building on F:. Owner's Chorus service is stuck in StopPending: rerunning install.cmd (fixed installer) ends it. Suggested next: device check of M4.2/M4.5/M4.6 when the phone is on adb; M8.1 push (ntfy/UnifiedPush) so followers get pings off-page; bucket UI (M6.1 rest); M2.6 blobs → attachments/avatars; M9 stage mode; M7 journals.
+- **Notes:** State 2026-09-23 (end of Claude session 2). Since gpt-6-sol's turn: audited + finished M5.12 Trash (fixed early out-of-order restores being rejected permanently); Android quick-switch widget + search launcher (RemoteViews, D-058; built + unit-tested, **not yet run on a device** — the phone dropped off adb); follows end to end (M6.1: server-written requests/prefs, People page with presets; per-member "followers hear when X fronts"); switch notifications core (`chorus_core::notify`) + server scheduler (`notifier.rs`) + follower view/inbox on the web — verified in the browser that nothing is revealed before due. **C: has <1 GB free: always `CARGO_TARGET_DIR=F:\DunBuild\chorus-target` and `CHORUS_GRADLE_BUILD_DIR=F:\DunBuild\chorus-gradle`** (deploy/web/android scripts honour them now; the dev-server launch config runs the F: release exe, so stop it before `cargo build --release`). The stale `Chorus\target` on C: was cargo-cleaned on 2026-09-23 (C: had hit 0 bytes free), and deleted again later that day after verify runs had refilled it to 12.7 GB; `verify.py` now defaults `CARGO_TARGET_DIR` to `F:\DunBuild\chorus-target` when unset. Keep building on F:. Owner reran install.cmd on 2026-09-23; the Chorus service is running again. Session 3 (same day) added: webhooks, more REST reads, write:front tokens + POST /front/switch, Web Push (D-061, owner question Q13), shared spaces + DMs (M6.2 server + web), QR device invites, device sign-out — see the log. Suggested next: device check of M4.2/M4.5/M4.6 when the phone is on adb; M6.2 on Android; a real-browser Web Push check once Q13 is answered; M9 stage mode; M7 journals.
 
 ---
 
@@ -70,11 +70,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M2.5 Sync WebSocket (hello/push/pull/ack/snapshot/hash) per SYNC.md
 - [x] M2.6 Blob store (content-addressed, resumable upload) — gpt-6-sol batch 2 T1 (merged 18e4d6e)
 - [~] M2.7 Read API (REST) + follower views — /me, /members(/{id}), /groups, /fields, /states, /front, /front/switches|intervals|daily|reviews, /accounts/{id}/view done; messages/posts/profiles/feeds reads wait for M5.7/M5.8/M7
-- [ ] M2.8 Nightly backups + `chorus-server backup|restore|rebuild|export` CLI
+- [x] M2.8 Nightly backups + `chorus-server backup|restore|rebuild|export` CLI — batch 3 T6 (snapshot directories, D-064)
 
 ### M3 — Web client foundation
 
-- [ ] M3.1 Design tokens + base components (DESIGN.md)
+- [x] M3.1 Design tokens + base components (DESIGN.md)
 - [x] M3.2 Local store (IndexedDB) + outbox + sync engine (via core wasm)
 - [x] M3.3 Onboarding (invite → device key), system setup, terminology
 - [x] M3.4 Members list/grid, groups tree, member editor, custom fields
@@ -82,10 +82,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M4 — Android foundation
 
-- [ ] M4.1 Theme + components mirroring DESIGN.md
+- [x] M4.1 Theme + components mirroring DESIGN.md
 - [~] M4.2 Room (SQLCipher) + outbox + sync engine (via core UniFFI) + WorkManager
 - [~] M4.3 Onboarding via invite link / QR — the web "Link another device" now shows a QR of the one-use link (server qr.rs, decoded with OpenCV); in-app camera scanning not needed while the phone camera opens the link
-- [ ] M4.4 Members, groups, switcher, front history
+- [~] M4.4 Members, groups, switcher, front history — Android switcher sheet, History undo/redo, device linking (batch 3 T11); person-account hiding and full parity in batch 4 U5
 - [~] M4.5 Quick-switch widget (RemoteViews, D-058): recent grid, folders, mode chip, undo — built + unit-tested; needs a device check; pins not done
 - [~] M4.6 Search launcher activity + app shortcuts — SearchActivity + static "Switch…" shortcut; dynamic pinned shortcuts not done; needs a device check
 
@@ -97,10 +97,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M5.4 Reactions, mentions, read states, unread badges
 - [x] M5.5 Threads
 - [x] M5.6 Attachments + images (offline-queued upload) — web (batch 2 T2); Android display not yet
-- [ ] M5.7 Hidden messages: spoilers, CW/collapsed, member-visible, system-only
-- [ ] M5.8 Search (FTS5 server, local search on Android)
+- [x] M5.7 Hidden messages: spoilers, CW/collapsed, member-visible, system-only — batch 3 T8 (server filters + web); threads inherit their parent (B1 fix); Android controls in batch 4 U5
+- [~] M5.8 Search (FTS5 server, local search on Android) — server FTS + web local index (batch 3 T9); tokens own-account only (B2); Android local search and paging (batch 4 U1) not yet
 - [x] M5.9 Segmented messages (newline annotations) — parse, store `message_segment`, render
-- [ ] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward
+- [ ] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward — batch 4 U3 (gpt-6-sol)
 - [x] M5.11 Forward/quote a selection (range or multi-message bundle)
 - [x] M5.12 Trash + restore for messages, posts, members, groups, channels
 - [x] M5.13 Custom emoji: server-wide set, upload/crop, picker + `:name:` autocomplete, reactions (D-054) — web (batch 2 T4)
@@ -109,22 +109,22 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 - [x] M6.1 Person accounts, follows, privacy buckets — follows (Claude) + buckets, account default ceiling, per-member bucket announce (batch 2 T5)
 - [~] M6.2 Shared spaces + DMs between accounts — server (spaces.rs: create/add/leave/authors, connected accounts only) + web (spaces rail, DM from People, new shared space, author cards) done; Android not yet; roles/permissions are M5.10
-- [~] M6.3 Follower views (delayed/fuzzed front state per NOTIFICATIONS.md §5) — server reveal + GET /accounts/{id}/view + web People page (fuzzed "since", recent switches, browser notifications while open) done; history/stats surfaces not yet
+- [x] M6.3 Follower views (delayed/fuzzed front state per NOTIFICATIONS.md §5) — server reveal + GET /accounts/{id}/view + web People page; shared history and whole-day stats from the reveal-time log (share_history / share_stats, migration 0003)
 
 ### M7 — Profiles & journals
 
-- [ ] M7.1 Profile page (banner, fields, pinned, stats)
-- [ ] M7.2 Posts (notes) + long-form entries, replies/quotes/reposts/reactions
+- [~] M7.1 Profile page (banner, fields, pinned, stats) — member profile with Posts/Replies tabs (batch 3 T12); banner/fields/pinned/stats in batch 4 U4
+- [~] M7.2 Posts (notes) + long-form entries, replies/quotes/reposts/reactions — web composer, audiences, GET /posts with per-read audience checks (batch 3); cross-account reactions/replies in batch 4 U4
 - [ ] M7.3 Highlights, relationships + relationship types
 - [ ] M7.4 Lists, feeds (filter language), sharing feeds
-- [ ] M7.5 Combined system timeline
+- [x] M7.5 Combined system timeline — web Journal (batch 3 T12)
 
 ### M8 — Notifications
 
 - [~] M8.1 ntfy/UnifiedPush plumbing (server publisher, Android distributor registration) — server encrypt+send and Android connector/decrypt/notification done (D-059); needs a device check with the ntfy app installed and pointed at ntfy.vayne.garden
 - [~] M8.2 Rule resolution: per-switch × per-member × system ceiling × recipient prefs — core + server scheduler done (notifier.rs: queue on front change, reveal/deliver loop, GET /notifications); push delivery is M8.1
-- [~] M8.3 Random delay, time fuzzing, supersede/collapse, digests, quiet hours — core rules + property tests done; server pending (digest text too)
-- [~] M8.4 Chat notifications (mentions, DMs, replies), inline reply — cross-account mentions/replies/DMs queued on ingest, inbox + push (activity.rs); per-channel/per-member settings and inline reply not yet; hidden messages skipped until M5.7
+- [x] M8.3 Random delay, time fuzzing, supersede/collapse, digests, quiet hours — core rules + property tests; server scheduler with digests (one summary per follower/account), quiet hours (follower's own time zone via prefs.tz_offset_min), collapse/sequence; §5 invariant test over random sequences
+- [~] M8.4 Chat notifications (mentions, DMs, replies), inline reply — cross-account mentions/replies/DMs queued on ingest, inbox + push (activity.rs); per-channel level (all/mentions/none) + per-kind switches as account prefs, web controls; own internal space: member mentions, @front and member DMs under per-member rules (always/fronting/never), push skips the writing device; opt-in own-switch pings after the settle (undo stays quiet); Android inline reply built + unit-tested (needs a device check); "reply as mentioned member" not done
 
 ### M9 — Stage (screenshot) mode
 
@@ -135,9 +135,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M10 — Data
 
-- [ ] M10.1 Insights dashboards
+- [x] M10.1 Insights dashboards — web (batch 3 T10), DST-aware days
 - [x] M10.2 API tokens, SSE stream, webhooks — tokens + webhooks on the web "Your data" page, front/members reads, SSE front stream, OBS overlay; message/post webhook events wait for M5.7/M7
-- [ ] M10.3 Exports (JSONL op log, tidy CSVs, SQLite copy), documented views
+- [x] M10.3 Exports (JSONL op log, tidy CSVs, SQLite copy), documented views — batch 3 T7 (direct downloads, D-065); zip archive + background jobs later
 
 ### M11 — Import
 
@@ -156,7 +156,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [ ] L3 Render stage to PNG in-app
 - [ ] L4 Quick Settings tile, Wear OS
 - [ ] L5 Sealed (client-encrypted) member-private entries
-- [~] L6 Web push for the PWA — server VAPID + service-worker push/click handlers + People-page opt-in (D-061); not yet tried against a real browser push service; owner to confirm Q13
+- [~] L6 Web push for the PWA — server VAPID + service-worker push/click handlers + People-page opt-in (D-061); not yet tried against a real browser push service; owner confirmed Q13 (opt-in per browser)
 
 ---
 
@@ -212,3 +212,17 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-23 claude-opus-5.5 — L6 Web Push (D-061, Q13): VAPID key in server_meta + GET /push/vapid, RFC 8292 header for web devices only, SW push/notificationclick handlers, web/src/lib/push.ts + People-page opt-in. Unit tests (JWT verifies, web-only VAPID) + SW handlers run in a Node harness; real browser push not tried (the pane has notifications denied).
 - 2026-09-23 claude-opus-5.5 — M6.2 shared spaces + DMs: POST /spaces (shared|dm, one DM per pair, follow-connected accounts only), add (owner), leave (self-leave now revokes access), author cards for other accounts' members; web spaces rail + DM header, People 'Message' + 'Start a shared space'. E2E test (live scope grant, message delivery, cards, leave); verified in the browser (DM + Book club created, message sent). Sol's A1 note updated to share the author rule.
 - 2026-09-23 claude-opus-5.5 — QR codes for device invites: dependency-free encoder (qr.rs, byte/M/v1–10, masks scored) → qr_svg on POST /devices/invite, shown in Link another device; samples decoded by OpenCV (scripts/qr-check.py) incl. versions 7–9. Shared-space hint about the chat side channel (NOTIFICATIONS §5.6).
+- 2026-09-23 claude-opus-5.5 — Device sign-out: POST /devices/{id}/revoke (own account, not the calling device) ends sessions, drops the peer and closes its socket on the next frame; web 'Your devices' list with Sign out beside Link another device. E2E test; verified in the browser with a throwaway linked device.
+- 2026-09-23 claude-opus-5.5 — M8.3 closed: follower quiet hours/digest time now use the follower's UTC offset (Prefs.tz_offset_min; the ceiling's stay in system time), and the NOTIFICATIONS §5 invariant test (random switch sequences × ceilings: ingest never changes follower surfaces, changes only in passes that handled something due, view shows a real past state ≥ settle+min delay old in order, hidden member never named). Verified the test fails on a 1-minute-early mutation.
+- 2026-09-23 claude-opus-5.5 — Web quiet hours (DESIGN §6 Basic): one control under People → Following, saved into every follow's prefs with this device's UTC offset (re-saved when the offset changes, e.g. DST); merges the rest of each follow's prefs. Verified in the browser with a second person account (127.0.0.1 origin) following/accepted: on, reload, off.
+- 2026-09-23 claude-opus-5.5 — D-003 implemented: person accounts get one is_self member at enrolment (and a start-up backfill for older ones); the web hides Members/History/front card/quick switch for a person (detected from the synced self member, so offline and old devices work) and chat speaks as the self member. Verified in the browser with a person account (127.0.0.1 origin): backfill, person home, DM as the self member, seen by name on the system side; live scope grant for a new shared space.
+- 2026-09-23 claude-opus-5.5 — M6.3 done: follower_front_log (migration 0003, written only at reveal) feeds view.history (30 days, newest first, fuzzed times) and view.stats (share of revealed front time, whole days only, 5 % steps) when the ceiling shares them; web: follower card shows 'Most often' + 'Earlier', system toggles in Advanced sharing default (kept out of preset matching). §5 invariant test now covers both. Verified in the browser (person follows the system, Close preset: Moss now, Kai earlier). Note for Sol: use migration 0004+.
+- 2026-09-23 claude-opus-5.5 — M8.4 settings: per-channel all/mentions/none (pref notify_channel:<id>, DMs default all) and per-kind switches (pref notify_chat) read by activity.rs; 'message' kind for plain chatter at level all; web: channel ⋯ menu + People 'Chat pings for'. Test + verified in the browser (Live check set to all, plain message from the person account reached stars' inbox). Also reviewed sol/batch-2 (B1–B7 in the batch-3 handoff) and, on the phone: build 1 was the M0.3 skeleton (sample data, never enrolled); installed 0.1.102 over it (same cert), sync + update workers run, widget provider and Switch… shortcut registered; enrolment pending the owner's choice.
+- 2026-09-23 claude-opus-5.5 — M8.4 own-account chat pings: mentions/@front/member DMs in the internal space under per-member rules (pref notify_member:<id>), writing device skipped (push::prepare_except); member editor "Chat notifications"; test + browser check (Moss mentioning Kai reached the inbox)
+- 2026-09-23 claude-opus-5.5 — M8.4 own switches from other devices (opt-in notify_chat.own_switch): settle-delayed, superseded, dropped on retract, text from the front at delivery; People checkbox; test + browser check ("Front changed on Browser: Rin")
+- 2026-09-23 claude-opus-5.5 — M8.4 Android inline reply: RemoteInput action on chat notifications → queued message.send (reply_to) as the primary fronter; ReplyReceiver; ReplyTest; assembleDebug + unit tests pass, not run on a device yet
+- 2026-09-23 claude-opus-5.5 — M3.1 + M4.1 ticked after an audit: design/tokens.json → tokens.css + base.css (web) and Tokens.kt + ChorusTheme (Android) have been in place since M0; verify.py now fails on token drift (gen-tokens.mjs --check)
+- 2026-09-23 claude-opus-5.5 — web chat at scale (SPEC §9): only the newest 100 messages are rendered (older pages on scroll-up / button, scroll position kept); messages() cached per channel and patched from delta-touched keys; messageById no longer rebuilds the channel per reply; unread() stops at the read mark. data.perf.test.ts (PERF=1): 50k channel opens in ~90 ms, send ~33 ms (was ~90). Randomized incremental-vs-fresh test. Merge note for Sol's focusId jump in sol-batch-3.md
+- 2026-09-24 claude-opus-5.5 — SPEC §9 server budgets measured (crates/chorus-server/tests/perf.rs, ignored): front and read-state projections made incremental (core front::append + review_of, model::read_best/read_effective; migration 0004_incremental_projections; project.rs fast path tested against refold-on-every-op). 100k ops: 327 → ~2 500 ops/s. Still short: 1M ops average 1 734 ops/s (member.set entity refold 8 ms), rebuild ~4–5× the 60 s budget (needs batch rebuild). verify.py builds on F: by default; C: target deleted (12.7 GB)
+- 2026-09-24 claude-opus-5.5 — audited and merged gpt-6-sol batch 3 (cda38c8: backups, exports, hidden messages, search, insights, Android switcher, journals, T13); fixed B1/B2/B3/B6 on main (935d04c); accepted D-S2-1..3 as D-063..D-065; Linux/VPS deployment (e8db205, D-062) incl. webhook target policy and SIGTERM; batch 4 handoff for Sol (sol-batch-4.md)
+- 2026-09-24 claude-opus-5.5 — SPEC §9 at 1M ops: ingest 4 465 ops/s (budget met); rebuild 89.8 s (was ~260 s; budget 60 s, next steps in NOTES). Fixed along the way: restore failed on time-dependent projections and on older-schema snapshots (ec96958, 68ffdf8); rebuild left stale FTS rows (c3c5676)

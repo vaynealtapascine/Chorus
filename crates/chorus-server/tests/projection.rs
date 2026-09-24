@@ -285,9 +285,22 @@ fn sql_matches_model_and_rebuild_is_identical() {
         let m = model::project(all.iter());
         // members: every existing model row is in SQL with the same fields
         for (id, row) in m.rows.get("member").into_iter().flatten().filter(|(_, r)| r.exists) {
-            let (name, deleted): (Option<String>, Option<i64>) = c
-                .query_row("SELECT name, deleted_at FROM member WHERE id = ?1", [id], |x| Ok((x.get(0)?, x.get(1)?)))
+            let (name, deleted, color, clocks): (Option<String>, Option<i64>, Option<String>, String) = c
+                .query_row("SELECT name, deleted_at, color, clocks FROM member WHERE id = ?1", [id], |x| {
+                    Ok((x.get(0)?, x.get(1)?, x.get(2)?, x.get(3)?))
+                })
                 .unwrap();
+            // `.set` is applied in place (project.rs set_in_place): same fields and clocks as the model
+            assert_eq!(
+                color.as_deref(),
+                row.fields.get("color").and_then(Value::as_str),
+                "seed {seed} member {id} color"
+            );
+            assert_eq!(
+                serde_json::from_str::<Value>(&clocks).unwrap(),
+                row.clocks.to_json(),
+                "seed {seed} member {id} clocks"
+            );
             assert_eq!(name.as_deref(), row.fields.get("name").and_then(Value::as_str), "seed {seed} member {id}");
             assert_eq!(
                 deleted,
@@ -525,4 +538,225 @@ fn selection_snapshots_survive_projection_rebuild() {
     project::rebuild(&mut c).unwrap();
     assert_eq!(read(&c, &quote_id, "quote"), json!({"items":[item]}));
     assert_eq!(read(&c, &forward_id, "forward_snapshot"), json!([item]));
+}
+
+/// Live switches in time order take the one-step path (project.rs `append_front`). Whatever mix of
+/// devices, offsets, retracts and amends comes along, the tables equal what refolding on every
+/// op gives, and switches, intervals and daily totals equal one final refold.
+#[test]
+fn in_order_switches_match_refolding() {
+    const FRONT_TABLES: &[&str] = &[
+        "SELECT id, kind, occurred_at, tz_offset_min, device_id, entries, resulting_front, note, retracted, amended FROM switch",
+        "SELECT id, subject_type, subject_id, level, is_primary, position, start_at, end_at, start_switch_id, end_switch_id, start_tz_offset_min FROM front_interval",
+        "SELECT day, subject_type, subject_id, level, seconds, as_primary_seconds FROM front_daily",
+        // cards are never withdrawn, so these compare against refolding on every op only
+        "SELECT id, switch_a, switch_b FROM front_review",
+    ];
+    for seed in 1..=30u64 {
+        let mut r = Rng((seed * 0x9E37_79B9) | 1);
+        let members: Vec<String> = (0..5).map(|i| new_id(1, [i as u8 + 1; 10])).collect();
+        let mut at = T - 40 * 86_400_000;
+        let mut switches: Vec<String> = Vec::new();
+        let mut tz = 60;
+        let steps = 60 + r.below(60);
+        let mut ops: Vec<(Op, &str)> = Vec::new();
+        for i in 0..steps {
+            // minutes to a couple of days apart; sometimes the same instant
+            at += [0, 60_000, 3_600_000, 20 * 3_600_000, 50 * 3_600_000][r.below(5)] as i64;
+            if r.below(15) == 0 {
+                tz = [60, 120, -300][r.below(3)];
+            }
+            let m = |r: &mut Rng| members[r.below(5)].clone();
+            let level = |r: &mut Rng| ["front", "cocon", "present"][r.below(3)];
+            let id = new_id(at as u64, r.b10());
+            // the last op empties the front, so daily totals don't depend on the clock
+            let pick = if i + 1 == steps { 99 } else { r.below(12) };
+            let (kind, payload) = match pick {
+                99 => ("front.switch", json!({"entries": []})),
+                0..=3 => {
+                    let n = r.below(3);
+                    let entries: Vec<Value> = (0..n)
+                        .map(|k| json!({"subject_type": "member", "subject_id": m(&mut r), "level": level(&mut r), "is_primary": k == 0}))
+                        .collect();
+                    ("front.switch", json!({"entries": entries}))
+                }
+                4 | 5 => (
+                    "front.add",
+                    json!({"entry": {"subject_type": "member", "subject_id": m(&mut r), "level": level(&mut r)}}),
+                ),
+                6 => ("front.remove", json!({"subject_type": "member", "subject_id": m(&mut r)})),
+                7 => {
+                    ("front.update", json!({"subject_type": "member", "subject_id": m(&mut r), "level": level(&mut r)}))
+                }
+                8 if !switches.is_empty() => {
+                    ("front.retract", json!({"target_op_id": switches[r.below(switches.len())]}))
+                }
+                9 if !switches.is_empty() => {
+                    ("front.unretract", json!({"target_op_id": switches[r.below(switches.len())]}))
+                }
+                10 if !switches.is_empty() => (
+                    "front.amend",
+                    json!({"target_op_id": switches[r.below(switches.len())], "occurred_at": at - r.below(90_000_000) as i64}),
+                ),
+                _ => (
+                    "front.switch",
+                    json!({"entries": [{"subject_type": "member", "subject_id": m(&mut r), "is_primary": true}]}),
+                ),
+            };
+            if matches!(kind, "front.switch" | "front.add" | "front.remove" | "front.update") {
+                switches.push(id.clone());
+            }
+            let o = Op {
+                id,
+                kind: kind.into(),
+                v: 1,
+                scope: String::new(),
+                entity_id: Some(new_id(at as u64, r.b10())),
+                hlc: Hlc::new(at as u64, i as u16, 1 + r.below(2) as u32),
+                device_at: at,
+                tz_offset_min: tz,
+                mono: None,
+                boot_id: None,
+                time_source: TimeSource::User,
+                seen_seq: r.below(i + 1) as i64,
+                member_id: None,
+                payload,
+                seq: None,
+                account_id: None,
+                device_id: None,
+                occurred_at: None,
+                received_at: None,
+            };
+            // two devices, so concurrent switches make review cards
+            ops.push((o, if r.below(2) == 0 { "d1" } else { "d2" }));
+        }
+
+        let run = |fast: bool| -> (Connection, String) {
+            project::set_front_fast_path(fast);
+            let (c, a, acct, _) = setup();
+            let mut c = c;
+            for (o, dev) in &ops {
+                let mut o = o.clone();
+                o.scope = acct.clone();
+                let s = ingest::Session {
+                    account_id: a.clone(),
+                    device_id: (*dev).into(),
+                    sample: ClockSample { server_time: o.device_at, mono: None, boot_id: None, offset_ms: 0 },
+                };
+                let now = o.device_at + 1000;
+                let tx = c.transaction().unwrap();
+                let (res, _) = ingest::accept(&tx, &s, o, now, false).unwrap();
+                assert!(res.error.is_none(), "seed {seed}: {:?}", res.error);
+                tx.commit().unwrap();
+            }
+            project::set_front_fast_path(true);
+            (c, acct)
+        };
+        let (fast, acct) = run(true);
+        let (slow, _) = run(false);
+        for q in FRONT_TABLES {
+            assert_eq!(dump(&fast, q), dump(&slow, q), "seed {seed}: {q}");
+        }
+        let live: Vec<Vec<String>> = FRONT_TABLES[..3].iter().map(|q| dump(&fast, q)).collect();
+        project::account_front(&fast, &acct).unwrap();
+        for (i, q) in FRONT_TABLES[..3].iter().enumerate() {
+            assert_eq!(live[i], dump(&fast, q), "seed {seed}: final refold, {q}");
+        }
+        let days: i64 = fast.query_row("SELECT count(*) FROM front_daily", [], |x| x.get(0)).unwrap();
+        assert!(days > 0, "seed {seed}: daily totals were written");
+    }
+}
+
+/// Read states are kept one op at a time (a running best mark, rescans on a newer manual set);
+/// in any arrival order they equal the model's, and a rebuild reproduces them.
+#[test]
+fn read_states_match_the_model_in_any_order() {
+    for seed in 1..=40u64 {
+        let (mut c, a, acct, space) = setup();
+        let mut r = Rng((seed * 0x2545_F491) | 1);
+        let mut ops: Vec<Op> = Vec::new();
+        for i in 0..80 {
+            let at = T + r.below(1_000_000) as i64;
+            let kind = if r.below(6) == 0 { "read.set" } else { "read.mark" };
+            let channel = ["c1", "c2"][r.below(2)];
+            let reader = ["", "kai"][r.below(2)];
+            let message = format!("m{}", r.below(6));
+            let message_at = r.below(6) as i64 * 1000;
+            ops.push(Op {
+                id: new_id(at as u64, r.b10()),
+                kind: kind.into(),
+                v: 1,
+                scope: space.clone(),
+                entity_id: None,
+                hlc: Hlc::new(at as u64, i as u16, 1 + r.below(3) as u32),
+                device_at: at,
+                tz_offset_min: 0,
+                mono: None,
+                boot_id: None,
+                time_source: TimeSource::User,
+                seen_seq: 0,
+                member_id: None,
+                payload: json!({
+                    "channel_id": channel,
+                    "message_id": message,
+                    "message_at": message_at,
+                    "reader_member_id": reader,
+                }),
+                seq: None,
+                account_id: None,
+                device_id: None,
+                occurred_at: None,
+                received_at: None,
+            });
+        }
+        let s = ingest::Session {
+            account_id: a.clone(),
+            device_id: "d".into(),
+            sample: ClockSample { server_time: T, mono: None, boot_id: None, offset_ms: 0 },
+        };
+        for (i, o) in ops.into_iter().enumerate() {
+            if i == 40 {
+                // halfway, the rows look like ones written before migration 0004
+                c.execute(
+                    "UPDATE read_state SET state_ok = 0, mark_at = NULL, mark_id = NULL, mark_hlc = NULL,
+                       set_at = NULL, set_id = NULL, set_hlc = NULL",
+                    [],
+                )
+                .unwrap();
+            }
+            let tx = c.transaction().unwrap();
+            let (res, _) = ingest::accept(&tx, &s, o, T + 2_000_000, false).unwrap();
+            assert!(res.error.is_none(), "seed {seed}: {:?}", res.error);
+            tx.commit().unwrap();
+        }
+        let log = oplog::scope_after(&c, &space, 0, 100_000).unwrap();
+        let m = model::project(log.iter());
+        let mut want: Vec<String> = m
+            .rows
+            .get("read_state")
+            .into_iter()
+            .flatten()
+            .map(|(k, row)| {
+                format!(
+                    "{k}|{}|{}",
+                    row.fields["last_read_message_id"].as_str().unwrap(),
+                    row.fields["last_read_message_at"]
+                )
+            })
+            .collect();
+        want.sort();
+        let q = "SELECT channel_id || '|' || account_id || '|' || reader_member_id || '|' || last_read_message_id || '|' || last_read_message_at FROM read_state";
+        let got: Vec<String> = dump(&c, q)
+            .into_iter()
+            .map(|s| s.trim_start_matches("Text(\"").trim_end_matches("\")").to_string())
+            .collect();
+        assert_eq!(got, want, "seed {seed}");
+        let _ = acct;
+        project::rebuild(&mut c).unwrap();
+        let rebuilt: Vec<String> = dump(&c, q)
+            .into_iter()
+            .map(|s| s.trim_start_matches("Text(\"").trim_end_matches("\")").to_string())
+            .collect();
+        assert_eq!(rebuilt, want, "seed {seed}: rebuild");
+    }
 }

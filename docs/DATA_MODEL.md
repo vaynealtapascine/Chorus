@@ -344,6 +344,9 @@ CREATE TABLE front_interval (
 );
 CREATE INDEX fi_account_time ON front_interval(account_id, start_at);
 CREATE INDEX fi_subject ON front_interval(subject_id, start_at);
+-- migration 0004: a live switch folds one step on the open intervals (server append path)
+CREATE INDEX fi_open ON front_interval(account_id) WHERE end_at IS NULL;
+CREATE INDEX fi_account_end ON front_interval(account_id, end_at);
 
 -- Derived: seconds per subject per local day (split across midnights in the system timezone).
 CREATE TABLE front_daily (
@@ -479,7 +482,12 @@ CREATE TABLE mention (                            -- derived from entities on se
 CREATE TABLE read_state (
   channel_id TEXT NOT NULL, account_id TEXT NOT NULL,
   reader_member_id TEXT NOT NULL DEFAULT '',     -- '' = account-level
-  last_read_message_id TEXT NOT NULL, last_read_at INTEGER NOT NULL,
+  last_read_message_id TEXT NOT NULL, last_read_message_at INTEGER NOT NULL,
+  -- server only (migration 0004): the parts kept so one op at a time suffices — the furthest
+  -- mark after the manual set, and that set (model::read_best / read_effective); state_ok = 0
+  -- on rows from before 0004, which are recomputed from the log when next touched
+  mark_at INTEGER, mark_id TEXT, mark_hlc TEXT, set_at INTEGER, set_id TEXT, set_hlc TEXT,
+  state_ok INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (channel_id, account_id, reader_member_id)
 );
 

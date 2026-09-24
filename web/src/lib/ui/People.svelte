@@ -3,7 +3,7 @@
   // Follows live in the followed account's scope, so accepting and the privacy preset are ordinary
   // ops; asking to follow, unfollowing and your own prefs go through /api/v1/follows.
   import { notifyPreset } from '../core/pkg/chorus_wasm.js';
-  import { bucketAssignments, buckets, type AttachmentRow } from '../data';
+  import { bucketAssignments, buckets, selfMember, type AttachmentRow } from '../data';
   import { apiBase } from '../sync/device';
   import { sync, type Projection } from '../sync/client';
   import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
@@ -15,10 +15,19 @@
   let { projection }: { projection: Projection } = $props();
 
   interface Person { id: string; handle: string | null; display_name: string | null; kind: string; avatar_blob?: string | null }
-  interface FollowRow { id: string; account: Person; status: string; created_at: number }
+  interface FollowRow { id: string; account: Person; status: string; created_at: number; prefs?: Record<string, unknown> }
 
   interface ViewEntry { t: string; name: string; level: string; color?: string | null; glyph?: string | null; avatar_blob?: string | null }
-  interface View { entries: ViewEntry[]; since: number | null; time?: { mode?: string }; shared?: boolean }
+  interface When { at: number | null; precision: Precision; part?: Part | null }
+  interface View {
+    entries: ViewEntry[];
+    since: number | null;
+    time?: { mode?: string };
+    shared?: boolean;
+    /** only when they share it: past revealed fronts, newest first */
+    history?: { entries: { name: string }[]; time: When }[];
+    stats?: { days: number; members: { name: string; share_pct: number }[] };
+  }
   interface SharedPost {
     id: string; kind: 'note' | 'entry'; title: string | null; text: string; cw: string | null;
     occurred_at: number; author_cards: { id: string; name: string | null; display_name: string | null }[];
@@ -26,7 +35,7 @@
   }
   interface Note {
     id: string;
-    kind: 'switch' | 'mention' | 'dm' | 'reply';
+    kind: 'switch' | 'mention' | 'dm' | 'reply' | 'message' | 'member_dm' | 'own_switch';
     text: string;
     title?: string;
     channel_id?: string;
@@ -71,14 +80,28 @@
   let newBucket = $state('');
   let newBucketPreset = $state('gentle');
 
+  // what followers may browse besides the current front (NOTIFICATIONS §3); kept apart from the
+  // timing presets, so choosing a preset never changes them and they don't make a preset "custom"
+  const SHARING = ['share_history', 'share_stats'] as const;
+  const withoutSharing = (c: Record<string, unknown>) =>
+    Object.fromEntries(Object.entries(c).filter(([k]) => !(SHARING as readonly string[]).includes(k)));
+
   function presetOf(ceiling: unknown): string {
-    const raw = JSON.stringify(ceiling ?? {});
+    const raw = JSON.stringify(withoutSharing((ceiling ?? {}) as Record<string, unknown>));
     return PRESETS.find((p) => JSON.stringify(JSON.parse(presetJson[p.id])) === raw)?.id ?? (raw === '{}' ? 'gentle' : 'custom');
   }
 
   function setDefault(preset: string) {
+    // one pref per setting (D-S2-1), so another device's edit of a different key can't clobber it
+    const keep = Object.fromEntries(SHARING.filter((k) => k in defaultCeiling).map((k) => [k, defaultCeiling[k]]));
     sync.create('pref.set', sync.accountScope, null, {
-      device: '', key: 'follow_ceiling', value: JSON.parse(presetJson[preset]),
+      device: '', key: 'follow_ceiling', value: { ...JSON.parse(presetJson[preset]), ...keep },
+    });
+  }
+
+  function setSharing(key: (typeof SHARING)[number], on: boolean) {
+    sync.create('pref.set', sync.accountScope, null, {
+      device: '', key: 'follow_ceiling', value: { ...defaultCeiling, [key]: on },
     });
   }
 
@@ -113,10 +136,62 @@
       const j = await api('/follows');
       following = j.following;
       followers = j.followers;
+      readQuiet();
       await loadViews();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
+  }
+
+  // Quiet hours (DESIGN §6 Basic → Notifications): one setting for everyone you follow, saved into
+  // each follow's prefs with this device's UTC offset so it's your night, not theirs
+  // (NOTIFICATIONS §4). Prefs are replaced whole, so the rest of each follow's prefs is kept.
+  let quietFrom = $state('23:00');
+  let quietTo = $state('08:00');
+  let quietOn = $state(false);
+  let quietNote = $state('');
+  const tzOffset = () => -new Date().getTimezoneOffset();
+  type Quiet = { from: string; to: string } | null;
+
+  function readQuiet() {
+    const q = following.find((f) => f.status === 'active' && f.prefs?.quiet_hours)?.prefs?.quiet_hours as Quiet;
+    quietOn = !!q;
+    if (q) [quietFrom, quietTo] = [q.from, q.to];
+    // the clocks changed (or another device saved a different offset): bring the prefs up to date
+    if (q && following.some((f) => f.prefs?.quiet_hours && f.prefs.tz_offset_min !== tzOffset())) {
+      void saveQuiet(q, true);
+    }
+  }
+
+  async function saveQuiet(q: Quiet, quiet = false) {
+    quietNote = '';
+    try {
+      for (const f of following.filter((x) => x.status === 'active')) {
+        const prefs = { ...(f.prefs ?? {}), quiet_hours: q, tz_offset_min: tzOffset() };
+        await api(`/follows/${f.id}/prefs`, { method: 'PUT', body: JSON.stringify(prefs) });
+        f.prefs = prefs;
+      }
+      quietOn = !!q;
+      if (!quiet) quietNote = q ? `Quiet from ${q.from} to ${q.to}, your time.` : 'Quiet hours off.';
+    } catch (e) {
+      quietNote = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  // which chat activity pings you (NOTIFICATIONS §7), an account pref the server reads
+  const CHAT_KINDS = [
+    { id: 'mention', label: 'mentions' },
+    { id: 'dm', label: 'direct messages' },
+    { id: 'reply', label: 'replies' },
+  ];
+  const chatKinds = $derived.by(() => {
+    const rows = projection.rows.pref ?? {};
+    const v = (rows[`${sync.accountId}||notify_chat`] ?? rows['||notify_chat'])?.fields.value;
+    return (v && typeof v === 'object' ? v : {}) as Record<string, boolean>;
+  });
+  const isSystem = $derived(!selfMember(projection));
+  function setChatKind(kind: string, on: boolean) {
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: 'notify_chat', value: { ...chatKinds, [kind]: on } });
   }
 
   /** What we may see of the accounts we follow, and our switch notifications (polled). */
@@ -364,6 +439,11 @@
           {#each PRESETS as p (p.id)}<option value={p.id}>{p.label} — {p.hint}</option>{/each}
         </select>
       </label>
+      <label class="check"><input type="checkbox" checked={defaultCeiling.share_history === true}
+        onchange={(e) => setSharing('share_history', e.currentTarget.checked)} /> Followers can look back at who fronted</label>
+      <label class="check"><input type="checkbox" checked={defaultCeiling.share_stats === true}
+        onchange={(e) => setSharing('share_stats', e.currentTarget.checked)} /> Followers can see who fronts most (last 30 days)</label>
+      <p class="hint">Both only ever show what followers were already told, with the same delay and fuzzed times.</p>
     </details>
   </section>
 
@@ -381,6 +461,20 @@
                 <span class="front-avatar" title={e.name}><AvatarImage hash={e.avatar_blob} glyph={e.glyph ?? e.name[0]} name={e.name} /></span>
               {/each}
             </span>
+          {/if}
+          {#if views[f.account.id]?.stats?.members.length}
+            <span>Most often, last {views[f.account.id].stats!.days} days:
+              {views[f.account.id].stats!.members.filter((m) => m.share_pct > 0).map((m) => `${m.name} ${m.share_pct}%`).join(' · ')}</span>
+          {/if}
+          {#if views[f.account.id]?.history && views[f.account.id].history!.length > 1}
+            <details class="history">
+              <summary>Earlier</summary>
+              <ol>
+                {#each views[f.account.id].history!.slice(1) as h, i (i)}
+                  <li>{h.entries.map((e) => e.name).join(' & ') || 'Nobody shared'} <time>{fuzzyWhen(h.time.at, h.time.precision, h.time.part)}</time></li>
+                {/each}
+              </ol>
+            </details>
           {/if}
         </div>
         <div class="actions">
@@ -415,6 +509,26 @@
       <li class="muted">You're not following anyone yet.</li>
     {/each}
   </ul>
+  {#if following.some((f) => f.status === 'active')}
+    <form class="quiet" onsubmit={(e) => { e.preventDefault(); void saveQuiet({ from: quietFrom, to: quietTo }); }}>
+      <span>Quiet hours</span>
+      <input type="time" bind:value={quietFrom} aria-label="Quiet from" required />
+      <span>to</span>
+      <input type="time" bind:value={quietTo} aria-label="Quiet until" required />
+      <button class="ghost">{quietOn ? 'Update' : 'Turn on'}</button>
+      {#if quietOn}<button type="button" class="ghost" onclick={() => saveQuiet(null)}>Turn off</button>{/if}
+    </form>
+    <p class="hint">Switch pings wait until quiet hours end; you still see who's fronting here.{quietNote ? ` ${quietNote}` : ''}</p>
+  {/if}
+  {#if connections.length}
+    <div class="quiet" role="group" aria-label="Chat notifications">
+      <span>Chat pings for</span>
+      {#each CHAT_KINDS as k (k.id)}
+        <label class="check"><input type="checkbox" checked={chatKinds[k.id] !== false} onchange={(e) => setChatKind(k.id, e.currentTarget.checked)} /> {k.label}</label>
+      {/each}
+    </div>
+    <p class="hint">Each channel's ⋯ menu can also ping for every message, or never.</p>
+  {/if}
 
   {#if connections.length}
     <h2>Shared spaces</h2>
@@ -433,7 +547,7 @@
     </form>
   {/if}
 
-  {#if notes.length || following.length}
+  {#if notes.length || following.length || isSystem}
     <div class="notes-head">
       <h2>Recent</h2>
       {#if pushOn}
@@ -443,6 +557,12 @@
       {/if}
     </div>
     {#if pushNote}<p class="muted">{pushNote} Notifications will show while this page is open.</p>{/if}
+    {#if isSystem}
+      <label class="check">
+        <input type="checkbox" checked={chatKinds.own_switch === true} onchange={(e) => setChatKind('own_switch', e.currentTarget.checked)} />
+        Ping my other devices when the front changes
+      </label>
+    {/if}
     <ul>
       {#each notes as n (n.id)}
         <li class="note">
@@ -489,6 +609,12 @@
   .bucket-checks { width: 100%; font-size: var(--fs-sm); }
   .new-space input:not([type='checkbox']) { font: inherit; flex: 1; min-width: 12ch; padding: var(--s-1) var(--s-2); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
   .primary:disabled { opacity: 0.5; }
+  .history { font-size: var(--fs-sm); color: var(--ink-3); }
+  .history ol { margin: var(--s-1) 0 0; padding-left: var(--s-4); display: grid; gap: 2px; }
+  .history time { margin-left: var(--s-2); }
+  .check { display: flex; gap: var(--s-2); align-items: center; font-size: var(--fs-sm); }
+  .quiet { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); font-size: var(--fs-sm); color: var(--ink-2); }
+  .quiet input { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-1) var(--s-2); }
   .preset { display: grid; gap: 2px; flex: 1; min-width: 14em; }
   select {
     font: inherit; font-size: var(--fs-sm); color: var(--ink); background: var(--surface-2);

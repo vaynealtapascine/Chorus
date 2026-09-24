@@ -473,71 +473,134 @@ pub fn fold(ops: &[FrontOp]) -> FoldResult {
     let mut open: BTreeMap<Subject, Interval> = BTreeMap::new();
     let mut result = FoldResult::default();
     for it in &items {
-        let op = it.op;
-        let mut row = SwitchRow {
-            id: op.id.clone(),
-            kind: op.action.kind(),
-            occurred_at: it.at,
-            tz_offset_min: op.tz_offset_min,
-            device_id: op.device_id.clone(),
-            based_on: op.action.based_on().map(str::to_string),
-            entries: op_entries(&op.action, it.entries_override),
-            resulting_front: Vec::new(),
-            note: it.note.clone(),
-            notify: op.action.notify(),
-            was_offline: op.was_offline,
-            retracted: it.retracted,
-            amended: it.amended,
-        };
-        if it.retracted {
-            row.resulting_front = front.clone();
-            result.switches.push(row);
-            continue;
-        }
-        let mut next = front.clone();
-        apply(&mut next, &op.action, it.entries_override);
-
-        // Close intervals whose (level, primary) changed or that left.
-        let keys: Vec<Subject> = open.keys().cloned().collect();
-        for s in keys {
-            let still = next.iter().find(|e| e.subject() == s);
-            let iv = &open[&s];
-            if still.is_none_or(|e| e.level != iv.level || e.is_primary != iv.is_primary) {
-                let mut iv = open.remove(&s).unwrap_or_else(|| unreachable!());
-                iv.end_at = Some(it.at);
-                iv.end_switch_id = Some(op.id.clone());
-                result.intervals.push(iv);
-            }
-        }
-        for (pos, e) in next.iter().enumerate() {
-            let s = e.subject();
-            if !open.contains_key(&s) {
-                open.insert(
-                    s.clone(),
-                    Interval {
-                        id: interval_id(&s, e.level, &op.id),
-                        subject_type: e.subject_type,
-                        subject_id: e.subject_id.clone(),
-                        level: e.level,
-                        is_primary: e.is_primary,
-                        position: pos,
-                        start_at: it.at,
-                        end_at: None,
-                        start_switch_id: op.id.clone(),
-                        end_switch_id: None,
-                        start_tz_offset_min: op.tz_offset_min,
-                    },
-                );
-            }
-        }
-        front = next;
-        row.resulting_front = front.clone();
+        let row = step(
+            &mut front,
+            &mut open,
+            &mut result.intervals,
+            it.op,
+            it.at,
+            it.entries_override,
+            it.note.clone(),
+            it.amended,
+            it.retracted,
+        );
         result.switches.push(row);
     }
     result.intervals.extend(open.into_values());
     result.intervals.sort_by(|a, b| (a.start_at, &a.id).cmp(&(b.start_at, &b.id)));
     result.current = front;
     result
+}
+
+/// One switch-like op applied to the fold state: the running front, the open intervals (closed
+/// ones are pushed to `closed`). Shared by [`fold`] and [`append`] so both give the same rows.
+#[allow(clippy::too_many_arguments)]
+fn step(
+    front: &mut Front,
+    open: &mut BTreeMap<Subject, Interval>,
+    closed: &mut Vec<Interval>,
+    op: &FrontOp,
+    at: i64,
+    entries_override: Option<&Vec<Entry>>,
+    note: Option<String>,
+    amended: bool,
+    retracted: bool,
+) -> SwitchRow {
+    let mut row = SwitchRow {
+        id: op.id.clone(),
+        kind: op.action.kind(),
+        occurred_at: at,
+        tz_offset_min: op.tz_offset_min,
+        device_id: op.device_id.clone(),
+        based_on: op.action.based_on().map(str::to_string),
+        entries: op_entries(&op.action, entries_override),
+        resulting_front: Vec::new(),
+        note,
+        notify: op.action.notify(),
+        was_offline: op.was_offline,
+        retracted,
+        amended,
+    };
+    if retracted {
+        row.resulting_front = front.clone();
+        return row;
+    }
+    let mut next = front.clone();
+    apply(&mut next, &op.action, entries_override);
+
+    // Close intervals whose (level, primary) changed or that left.
+    let keys: Vec<Subject> = open.keys().cloned().collect();
+    for s in keys {
+        let still = next.iter().find(|e| e.subject() == s);
+        let iv = &open[&s];
+        if still.is_none_or(|e| e.level != iv.level || e.is_primary != iv.is_primary) {
+            let mut iv = open.remove(&s).unwrap_or_else(|| unreachable!());
+            iv.end_at = Some(at);
+            iv.end_switch_id = Some(op.id.clone());
+            closed.push(iv);
+        }
+    }
+    for (pos, e) in next.iter().enumerate() {
+        let s = e.subject();
+        if !open.contains_key(&s) {
+            open.insert(
+                s.clone(),
+                Interval {
+                    id: interval_id(&s, e.level, &op.id),
+                    subject_type: e.subject_type,
+                    subject_id: e.subject_id.clone(),
+                    level: e.level,
+                    is_primary: e.is_primary,
+                    position: pos,
+                    start_at: at,
+                    end_at: None,
+                    start_switch_id: op.id.clone(),
+                    end_switch_id: None,
+                    start_tz_offset_min: op.tz_offset_min,
+                },
+            );
+        }
+    }
+    *front = next;
+    row.resulting_front = front.clone();
+    row
+}
+
+/// The effect of one switch-like op that sorts after every other one (see [`append`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Appended {
+    pub row: SwitchRow,
+    /// Intervals this op ended (`end_at` set).
+    pub closed: Vec<Interval>,
+    /// Intervals this op started.
+    pub opened: Vec<Interval>,
+}
+
+/// Apply a switch-like op (switch / add / remove / update) on top of an already folded state:
+/// `front` is the last row's `resulting_front`, `open` the intervals still open. Gives exactly what
+/// [`fold`] would add for it, provided the op sorts after every folded op and no amend or
+/// retract targets it; callers check both and refold otherwise. `None` for other op kinds.
+pub fn append(front: &Front, open: Vec<Interval>, op: &FrontOp) -> Option<Appended> {
+    if !matches!(
+        op.action,
+        FrontAction::Switch(_) | FrontAction::Add(_) | FrontAction::Remove(_) | FrontAction::Update(_)
+    ) {
+        return None;
+    }
+    let mut front = front.clone();
+    let mut open: BTreeMap<Subject, Interval> = open
+        .into_iter()
+        .map(|iv| (Subject { subject_type: iv.subject_type, subject_id: iv.subject_id.clone() }, iv))
+        .collect();
+    let before: std::collections::HashSet<String> = open.values().map(|iv| iv.id.clone()).collect();
+    let note = match &op.action {
+        FrontAction::Switch(p) => p.note.clone(),
+        _ => None,
+    };
+    let mut closed = Vec::new();
+    let row = step(&mut front, &mut open, &mut closed, op, op.occurred_at, None, note, false, false);
+    let opened = open.into_values().filter(|iv| !before.contains(&iv.id)).collect();
+    Some(Appended { row, closed, opened })
 }
 
 // ─── daily totals ────────────────────────────────────────────────────────────
@@ -629,28 +692,33 @@ pub fn reviews(ops: &[FrontOp], folded: &FoldResult, window_ms: i64) -> Vec<Revi
                 break; // rows are time-sorted
             }
             let (Some(oa), Some(ob)) = (by_id.get(a.id.as_str()), by_id.get(b.id.as_str())) else { continue };
-            let (Some(sa), Some(sb)) = (oa.seq, ob.seq) else { continue };
-            if oa.device_id == ob.device_id {
-                continue;
-            }
-            let concurrent = sa > ob.seen_seq && sb > oa.seen_seq;
-            if concurrent && a.resulting_front != b.resulting_front {
-                let (x, y) = if a.id < b.id { (a, b) } else { (b, a) };
-                let mut h = Sha256::new();
-                h.update(&x.id);
-                h.update(b"|");
-                h.update(&y.id);
-                let d = h.finalize();
-                out.push(Review {
-                    id: d[..16].iter().map(|b| format!("{b:02x}")).collect(),
-                    switch_a: x.id.clone(),
-                    switch_b: y.id.clone(),
-                });
-            }
+            out.extend(review_of((oa, &a.resulting_front), (ob, &b.resulting_front)));
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     out
+}
+
+/// The review card for two non-retracted switches within the review window, if they need one:
+/// written concurrently on different devices, with different outcomes. Each side is the op and
+/// its row's `resulting_front`.
+pub fn review_of(a: (&FrontOp, &Front), b: (&FrontOp, &Front)) -> Option<Review> {
+    let ((oa, fa), (ob, fb)) = (a, b);
+    let (sa, sb) = (oa.seq?, ob.seq?);
+    if oa.device_id == ob.device_id {
+        return None;
+    }
+    let concurrent = sa > ob.seen_seq && sb > oa.seen_seq;
+    if !concurrent || fa == fb {
+        return None;
+    }
+    let (x, y) = if oa.id < ob.id { (&oa.id, &ob.id) } else { (&ob.id, &oa.id) };
+    let mut h = Sha256::new();
+    h.update(x);
+    h.update(b"|");
+    h.update(y);
+    let d = h.finalize();
+    Some(Review { id: d[..16].iter().map(|b| format!("{b:02x}")).collect(), switch_a: x.clone(), switch_b: y.clone() })
 }
 
 #[cfg(test)]

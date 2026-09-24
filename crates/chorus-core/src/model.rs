@@ -79,7 +79,28 @@ pub fn dedupe<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Vec<&'a Op> {
 }
 
 /// A read mark: (message time, message id, op clock).
-pub(crate) type ReadMark = (i64, String, Hlc);
+pub type ReadMark = (i64, String, Hlc);
+
+/// The mark a `read.mark` / `read.set` op carries.
+pub fn read_mark_of(o: &Op) -> ReadMark {
+    let at = o.payload.get("message_at").and_then(Value::as_i64).unwrap_or(0);
+    (at, str_field(o, "message_id").to_string(), o.hlc)
+}
+
+/// The furthest mark written after the manual `read.set` (all of them if there is none).
+/// `read_best(prev_best ∪ new marks)` equals `read_best(all marks)`, so it can be kept running.
+pub fn read_best(marks: impl IntoIterator<Item = ReadMark>, manual: Option<&ReadMark>) -> Option<ReadMark> {
+    let floor = manual.map(|m| m.2);
+    marks.into_iter().filter(|m| floor.is_none_or(|f| m.2 > f)).max_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)))
+}
+
+/// The effective read position: the later of the best mark and the manual set.
+pub fn read_effective(best: Option<ReadMark>, manual: Option<ReadMark>) -> Option<ReadMark> {
+    match (best, manual) {
+        (Some(m), Some(s)) => Some(if (m.0, &m.1) > (s.0, &s.1) { m } else { s }),
+        (m, s) => m.or(s),
+    }
+}
 /// Per read-state key: all `read.mark`s, and the latest `read.set`.
 pub(crate) type Reads = BTreeMap<String, (Vec<ReadMark>, Option<ReadMark>)>;
 
@@ -138,21 +159,8 @@ pub fn project<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Projection {
 /// The effective read position for one read-state key: the furthest mark newer than the last
 /// manual `read.set`, or that set.
 pub(crate) fn read_row(marks: Vec<ReadMark>, manual: Option<ReadMark>) -> Option<Row> {
-    let floor = manual.as_ref().map(|m| m.2);
-    let best_mark =
-        marks.into_iter().filter(|m| floor.is_none_or(|f| m.2 > f)).max_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
-    let effective = match (best_mark, manual) {
-        (Some(m), Some(s)) => {
-            if (m.0, &m.1) > (s.0, &s.1) {
-                m
-            } else {
-                s
-            }
-        }
-        (Some(m), None) => m,
-        (None, Some(s)) => s,
-        (None, None) => return None,
-    };
+    let best = read_best(marks, manual.as_ref());
+    let effective = read_effective(best, manual)?;
     let mut row = Row { exists: true, ..Default::default() };
     row.fields.insert("last_read_message_id".into(), json!(effective.1));
     row.fields.insert("last_read_message_at".into(), json!(effective.0));
@@ -279,8 +287,7 @@ fn special(p: &mut Projection, o: &Op, payload: &Map<String, Value>, reads: &mut
         }
         "read.mark" | "read.set" => {
             let key = format!("{}|{acct}|{}", str_field(o, "channel_id"), str_field(o, "reader_member_id"));
-            let at = payload.get("message_at").and_then(Value::as_i64).unwrap_or(0);
-            let v = (at, str_field(o, "message_id").to_string(), o.hlc);
+            let v = read_mark_of(o);
             let e = reads.entry(key).or_default();
             if o.kind == "read.mark" {
                 e.0.push(v);

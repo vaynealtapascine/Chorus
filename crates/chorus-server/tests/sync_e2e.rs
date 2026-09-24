@@ -459,7 +459,7 @@ async fn api_tokens_read_the_front_and_stream_switches() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn webhooks_post_signed_events() {
-    // a receiver on the loopback (inside the "tailnet")
+    // a receiver on the loopback
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(axum::http::HeaderMap, String)>();
     let receiver = axum::Router::new().route(
         "/hook",
@@ -475,7 +475,10 @@ async fn webhooks_post_signed_events() {
     let hook = format!("http://{}/hook", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, receiver).await.unwrap() });
 
-    let s = start().await;
+    // the receiver is on loopback, which only `any` allows
+    let mut cfg = Config::default();
+    cfg.security.webhook_targets = Some(chorus_server::config::WebhookTargets::Any);
+    let s = start_with(cfg).await;
     let sys = enrol(&s, auth::InviteKind::System, None, 51, "stars").await;
     let mut phone = Device::new(&sys, 51);
     phone.connect(&s).await;
@@ -485,15 +488,7 @@ async fn webhooks_post_signed_events() {
     let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
     let session = sys["session"].as_str().unwrap().to_string();
 
-    // outside the tailnet is refused unless allowed
-    let r = http
-        .post(url("/webhooks"))
-        .bearer_auth(&session)
-        .json(&json!({"url": "http://8.8.8.8/hook", "events": ["front.switch"]}))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 400);
+    // (which targets each `webhook_targets` mode refuses is covered by webhooks::tests::url_rules)
     let created: Value = http
         .post(url("/webhooks"))
         .bearer_auth(&session)
@@ -864,6 +859,31 @@ async fn friends_share_spaces_and_dms() {
     assert!(phone.store.confirmed().any(|o| o.entity_id.as_deref() == Some(aside.as_str())));
     assert!(!laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(aside.as_str())));
     assert!(!laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(private_attachment.as_str())));
+    // a thread under the aside is as private as the aside: neither it nor what's said in it leaks
+    let aside_thread = new_id(3, [96; 10]);
+    phone
+        .create(
+            "channel.create",
+            &scope,
+            &aside_thread,
+            json!({"space_id": dm, "kind": "thread", "name": "about the aside", "parent_message_id": aside}),
+        )
+        .await;
+    let in_thread = new_id(3, [97; 10]);
+    phone
+        .create(
+            "message.send",
+            &scope,
+            &in_thread,
+            json!({"channel_id": aside_thread, "authors": [kai], "text": "said in the aside's thread", "entities": []}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    for hidden in [&aside_thread, &in_thread] {
+        assert!(phone.store.confirmed().any(|o| o.entity_id.as_deref() == Some(hidden.as_str())));
+        assert!(!laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(hidden.as_str())), "{hidden}");
+    }
     laptop
         .create("message.edit", &scope, &aside, json!({"message_id": aside, "text": "guessed edit", "entities": []}))
         .await;
@@ -904,6 +924,19 @@ async fn friends_share_spaces_and_dms() {
     laptop.drain(Q).await;
     assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(public.as_str())));
     assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(public_attachment.as_str())));
+    // a thread under a public message is public
+    let public_thread = new_id(3, [98; 10]);
+    phone
+        .create(
+            "channel.create",
+            &scope,
+            &public_thread,
+            json!({"space_id": dm, "kind": "thread", "name": "about the image", "parent_message_id": public}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(public_thread.as_str())));
 
     laptop.disconnect();
     let later_aside = new_id(3, [95; 10]);
@@ -962,4 +995,42 @@ async fn friends_share_spaces_and_dms() {
         403,
         "leaving the space revokes access to its authors' avatars"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lost_device_can_be_signed_out() {
+    let s = start().await;
+    let a = enrol(&s, auth::InviteKind::System, None, 91, "stars").await;
+    let acct = a["account_id"].as_str().unwrap().to_string();
+    let lost_e = enrol(&s, auth::InviteKind::Device, Some(&acct), 92, "").await;
+    let other = enrol(&s, auth::InviteKind::Person, None, 93, "sam").await;
+    let mut lost = Device::new(&lost_e, 92);
+    lost.connect(&s).await;
+    lost.drain(Q).await;
+
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+    let dev = |e: &Value| e["device_id"].as_str().unwrap().to_string();
+    let revoke = |who: &Value, id: String| {
+        let (http, url, t) = (http.clone(), url(&format!("/devices/{id}/revoke")), tok(who));
+        async move { http.post(url).bearer_auth(t).send().await.unwrap().status().as_u16() }
+    };
+
+    let me: Value = http.get(url("/me")).bearer_auth(tok(&a)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(me["devices"].as_array().unwrap().len(), 2);
+    assert_eq!(revoke(&a, dev(&a)).await, 400, "not the device you're on");
+    assert_eq!(revoke(&other, dev(&lost_e)).await, 404, "not someone else's device");
+    assert_eq!(revoke(&a, dev(&lost_e)).await, 204);
+
+    // its session no longer works, and its open socket is closed on the next frame
+    assert_eq!(http.get(url("/me")).bearer_auth(tok(&lost_e)).send().await.unwrap().status(), 401);
+    let ws = lost.ws.as_mut().unwrap();
+    let ping = Frame::Ping { clock: ClockReading { wall: chorus_server::now_ms(), mono: None, boot_id: None } };
+    ws.send(Message::Text(serde_json::to_string(&ping).unwrap().into())).await.unwrap();
+    let reply = tokio::time::timeout(Duration::from_secs(2), ws.next()).await.unwrap().unwrap().unwrap();
+    let f: Frame = serde_json::from_str(reply.to_text().unwrap()).unwrap();
+    assert!(matches!(f, Frame::Error { ref code, .. } if code == "unauthenticated"), "{f:?}");
+    let me: Value = http.get(url("/me")).bearer_auth(tok(&a)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(me["devices"].as_array().unwrap().len(), 1);
 }

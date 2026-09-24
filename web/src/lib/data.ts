@@ -1,5 +1,6 @@
 // Typed views over the core projection (the reference model's output, DATA_MODEL.md §4).
 import type { Projection } from './sync/client';
+import { patchedFrom } from './sync/delta';
 
 export interface ProxyTag {
   prefix: string;
@@ -20,6 +21,8 @@ export interface MemberRow {
   archived: boolean;
   deleted: boolean;
   created_at?: number;
+  /** The one member of a person account (D-003). */
+  is_self?: boolean;
 }
 
 export interface GroupRow {
@@ -129,9 +132,16 @@ export function members(p: Projection): MemberRow[] {
         archived: f.archived_at != null,
         deleted: f.deleted_at != null,
         created_at: typeof f.created_at === 'number' ? f.created_at : undefined,
+        is_self: f.is_self === true || f.is_self === 1,
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** A person account's self member (D-003); present means this account is a person, whose member
+ *  and switching UI is hidden. Only the server creates it, at enrolment. */
+export function selfMember(p: Projection): MemberRow | undefined {
+  return members(p).find((m) => m.is_self && !m.deleted);
 }
 
 export function groups(p: Projection): GroupRow[] {
@@ -416,50 +426,172 @@ export function threadSummaries(p: Projection): Map<string, ThreadSummary> {
   return summaries;
 }
 
-export function messages(p: Projection, channelId: string): MessageRow[] {
-  const rows = (p.rows.message ?? {}) as Record<string, { exists: boolean; fields: Record<string, unknown>; edits?: number }>;
-  const attachmentRows = p.rows.attachment ?? {};
-  const attachment = (id: string): AttachmentRow | null => {
-    const r = attachmentRows[id];
-    if (!r?.exists) return null;
-    const f = r.fields;
+type MessageRecord = { exists: boolean; fields: Record<string, unknown>; edits?: number };
+
+// Tables are copy-on-write (sync/delta.ts): a table object changes only when one of its rows does,
+// and untouched row objects are shared. So the per-channel order is cached per message table, and
+// each built row per (attachment table, row object): opening a 50k-message channel or sending one
+// message doesn't rebuild every row (SPEC §9).
+const channelOrder = new WeakMap<object, Map<string, string[]>>();
+const builtRows = new WeakMap<object, WeakMap<object, MessageRow>>();
+const NO_ATTACHMENTS = {};
+
+function orderOf(rows: Record<string, MessageRecord>): Map<string, string[]> {
+  let order = channelOrder.get(rows);
+  if (order) return order;
+  // a table from a delta: patch the order of the table it came from, if that one was indexed
+  const from = patchedFrom.get(rows);
+  const prevOrder = from && channelOrder.get(from.prev);
+  order = from && prevOrder
+    ? patchOrder(from.prev as Record<string, MessageRecord>, prevOrder, rows, from.keys)
+    : buildOrder(rows);
+  channelOrder.set(rows, order);
+  return order;
+}
+
+const atOf = (r: MessageRecord) => (typeof r.fields.occurred_at === 'number' ? r.fields.occurred_at : 0);
+
+/** The previous order with the changed rows moved (a send, an edit, a delete). */
+function patchOrder(
+  prev: Record<string, MessageRecord>,
+  prevOrder: Map<string, string[]>,
+  rows: Record<string, MessageRecord>,
+  changed: string[],
+): Map<string, string[]> {
+  if (changed.length > 512) return buildOrder(rows);
+  const order = new Map(prevOrder);
+  const touched = new Set(changed);
+  // first take every changed row out of the lists it was in (so the rest stays sorted)…
+  const copied = new Set<string>();
+  for (const id of changed) {
+    const old = prev[id];
+    if (old?.exists) copied.add(String(old.fields.channel_id ?? ''));
+  }
+  for (const id of changed) {
+    const r = rows[id];
+    if (r?.exists) copied.add(String(r.fields.channel_id ?? ''));
+  }
+  for (const ch of copied) {
+    const before = order.get(ch) ?? [];
+    const ids = before.filter((id) => !touched.has(id));
+    derivedList.set(ids, { prev: before, changed: touched });
+    order.set(ch, ids);
+  }
+  // …then put the ones that still exist back where they now sort
+  for (const id of changed) {
+    const r = rows[id];
+    if (!r?.exists) continue;
+    const ids = order.get(String(r.fields.channel_id ?? ''))!;
+    const at = atOf(r);
+    // binary search for the first message sorting after this one (newest is the usual case)
+    let lo = 0;
+    let hi = ids.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      const other = atOf(rows[ids[mid]]);
+      if (other < at || (other === at && ids[mid] < id)) lo = mid + 1;
+      else hi = mid;
+    }
+    ids.splice(lo, 0, id);
+  }
+  return order;
+}
+
+function buildOrder(rows: Record<string, MessageRecord>): Map<string, string[]> {
+  const at = (id: string) => atOf(rows[id]);
+  const order = new Map<string, string[]>();
+  for (const [id, r] of Object.entries(rows)) {
+    if (!r.exists) continue;
+    const ch = String(r.fields.channel_id ?? '');
+    let ids = order.get(ch);
+    if (!ids) order.set(ch, (ids = []));
+    ids.push(id);
+  }
+  for (const ids of order.values()) ids.sort((a, b) => at(a) - at(b) || (a < b ? -1 : a > b ? 1 : 0));
+  return order;
+}
+
+function messageRow(p: Projection, id: string): MessageRow | undefined {
+  const r = ((p.rows.message ?? {}) as Record<string, MessageRecord>)[id];
+  if (!r?.exists) return undefined;
+  const attachmentRows = p.rows.attachment ?? NO_ATTACHMENTS;
+  let cache = builtRows.get(attachmentRows);
+  if (!cache) builtRows.set(attachmentRows, (cache = new WeakMap()));
+  const hit = cache.get(r);
+  if (hit) return hit;
+  const attachment = (aid: string): AttachmentRow | null => {
+    const a = (attachmentRows as Rows)[aid];
+    if (!a?.exists) return null;
+    const f = a.fields;
     const blob_hash = str(f.blob_hash);
     if (!blob_hash) return null;
     return {
-      id, blob_hash, thumb_blob_hash: str(f.thumb_blob_hash), filename: str(f.filename) ?? 'file',
+      id: aid, blob_hash, thumb_blob_hash: str(f.thumb_blob_hash), filename: str(f.filename) ?? 'file',
       mime: str(f.mime) ?? 'application/octet-stream', size: Number(f.size ?? 0),
       alt_text: str(f.alt_text) ?? '', is_spoiler: f.is_spoiler === true,
     };
   };
-  return Object.entries(rows)
-    .filter(([, r]) => r.exists && r.fields.channel_id === channelId)
-    .map(([id, r]) => {
-      const f = r.fields;
-      const authors = Array.isArray(f.authors) ? (f.authors as string[]) : [];
-      const text = typeof f.text === 'string' ? f.text : '';
-      const segs = Array.isArray(f.segments) && f.segments.length ? (f.segments as Segment[]) : [{ offset: 0, length: text.length, authors }];
-      return {
-        id,
-        channel_id: channelId,
-        authors,
-        text,
-        entities: Array.isArray(f.entities) ? (f.entities as MessageRow['entities']) : [],
-        segments: segs,
-        occurred_at: typeof f.occurred_at === 'number' ? f.occurred_at : 0,
-        account_id: str(f.account_id),
-        sent_offline: f.sent_offline === true,
-        edited: (r.edits ?? 0) > 0,
-        deleted: f.deleted_at != null,
-        pinned: f.pinned_at != null,
-        cw: str(f.cw),
-        visibility: f.visibility && typeof f.visibility === 'object' ? f.visibility as MessageRow['visibility'] : undefined,
-        reply_to: str(f.reply_to),
-        quote: f.quote && typeof f.quote === 'object' ? (f.quote as QuoteValue) : undefined,
-        forward_snapshot: Array.isArray(f.forward_snapshot) ? (f.forward_snapshot as MessageRow['forward_snapshot']) : undefined,
-        attachments: Array.isArray(f.attachments) ? (f.attachments as string[]).map(attachment).filter((a): a is AttachmentRow => !!a) : [],
-      };
-    })
-    .sort((a, b) => a.occurred_at - b.occurred_at || a.id.localeCompare(b.id));
+  const f = r.fields;
+  const authors = Array.isArray(f.authors) ? (f.authors as string[]) : [];
+  const text = typeof f.text === 'string' ? f.text : '';
+  const segs = Array.isArray(f.segments) && f.segments.length ? (f.segments as Segment[]) : [{ offset: 0, length: text.length, authors }];
+  const m: MessageRow = {
+    id,
+    channel_id: String(f.channel_id ?? ''),
+    authors,
+    text,
+    entities: Array.isArray(f.entities) ? (f.entities as MessageRow['entities']) : [],
+    segments: segs,
+    occurred_at: typeof f.occurred_at === 'number' ? f.occurred_at : 0,
+    account_id: str(f.account_id),
+    sent_offline: f.sent_offline === true,
+    edited: (r.edits ?? 0) > 0,
+    deleted: f.deleted_at != null,
+    pinned: f.pinned_at != null,
+    cw: str(f.cw),
+    visibility: f.visibility && typeof f.visibility === 'object' ? f.visibility as MessageRow['visibility'] : undefined,
+    reply_to: str(f.reply_to),
+    quote: f.quote && typeof f.quote === 'object' ? (f.quote as QuoteValue) : undefined,
+    forward_snapshot: Array.isArray(f.forward_snapshot) ? (f.forward_snapshot as MessageRow['forward_snapshot']) : undefined,
+    attachments: Array.isArray(f.attachments) ? (f.attachments as string[]).map(attachment).filter((a): a is AttachmentRow => !!a) : [],
+  };
+  cache.set(r, m);
+  return m;
+}
+
+// a patched channel list → the list it came from and the ids that changed; built rows per list
+const derivedList = new WeakMap<string[], { prev: string[]; changed: Set<string> }>();
+const builtLists = new WeakMap<string[], { attachments: object; rows: MessageRow[] }>();
+
+/** A channel's messages, oldest first. */
+export function messages(p: Projection, channelId: string): MessageRow[] {
+  const rows = (p.rows.message ?? {}) as Record<string, MessageRecord>;
+  const ids = orderOf(rows).get(channelId);
+  if (!ids) return [];
+  const attachments = p.rows.attachment ?? NO_ATTACHMENTS;
+  const hit = builtLists.get(ids);
+  if (hit?.attachments === attachments) return hit.rows;
+  const from = derivedList.get(ids);
+  const prev = from && builtLists.get(from.prev);
+  let out: MessageRow[];
+  if (from && prev?.attachments === attachments) {
+    // unchanged rows keep their place relative to each other: walk both lists once
+    out = new Array(ids.length);
+    let j = 0;
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      if (from.changed.has(id)) {
+        out[i] = messageRow(p, id)!;
+        continue;
+      }
+      while (from.prev[j] !== id) j++;
+      out[i] = prev.rows[j++];
+    }
+  } else {
+    out = ids.map((id) => messageRow(p, id)!);
+  }
+  builtLists.set(ids, { attachments, rows: out });
+  return out;
 }
 
 /** message id → emoji → member ids (LWW element set, DATA_MODEL `reaction`). */
@@ -486,8 +618,18 @@ export function lastRead(p: Projection, channelId: string, accountId: string): n
 
 export function unread(p: Projection, channelId: string, accountId: string): number {
   const since = lastRead(p, channelId, accountId);
-  // a message without an account id is still pending on this device, so it's ours
-  return messages(p, channelId).filter((m) => !m.deleted && m.occurred_at > since && m.account_id && m.account_id !== accountId).length;
+  const rows = (p.rows.message ?? {}) as Record<string, MessageRecord>;
+  const ids = orderOf(rows).get(channelId) ?? [];
+  let n = 0;
+  // newest first, stopping at the read mark
+  for (let i = ids.length - 1; i >= 0; i--) {
+    const f = rows[ids[i]].fields;
+    const at = typeof f.occurred_at === 'number' ? f.occurred_at : 0;
+    if (at <= since) break;
+    // a message without an account id is still pending on this device, so it's ours
+    if (f.deleted_at == null && f.account_id && f.account_id !== accountId) n++;
+  }
+  return n;
 }
 
 /** Any message by id, across channels (for replies elsewhere and forwards). */
@@ -495,7 +637,7 @@ export function messageById(p: Projection, id: string): (MessageRow & { channel_
   const r = (p.rows.message ?? {})[id];
   if (!r?.exists) return undefined;
   const ch = String(r.fields.channel_id ?? '');
-  const m = messages(p, ch).find((x) => x.id === id);
+  const m = messageRow(p, id);
   const name = (p.rows.channel ?? {})[ch]?.fields?.name;
   return m ? { ...m, channel_name: typeof name === 'string' ? name : undefined } : undefined;
 }

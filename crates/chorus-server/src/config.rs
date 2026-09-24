@@ -56,7 +56,33 @@ pub struct Limits {
 #[serde(default, deny_unknown_fields)]
 pub struct Security {
     pub tailscale_whois: bool,
+    /// Legacy switch: `true` means `webhook_targets = "any"`.
     pub webhooks_allow_external: bool,
+    /// Where webhooks may point (API.md §7). Default `internal` (a tailnet/LAN install); a public
+    /// server (deploy/linux) uses `public`, so accounts can't reach the host's own services.
+    pub webhook_targets: Option<WebhookTargets>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WebhookTargets {
+    /// Tailnet and LAN addresses only (never loopback: the host's own admin ports).
+    #[default]
+    Internal,
+    /// Globally routable addresses only: for a server on the public internet.
+    Public,
+    /// Anything, including loopback (tests, or an owner who knows what's listening).
+    Any,
+}
+
+impl Security {
+    pub fn webhook_targets(&self) -> WebhookTargets {
+        self.webhook_targets.unwrap_or(if self.webhooks_allow_external {
+            WebhookTargets::Any
+        } else {
+            WebhookTargets::Internal
+        })
+    }
 }
 
 impl Default for Server {

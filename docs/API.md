@@ -41,6 +41,11 @@ POST /devices/invite            Authorization: Bearer <session>
 can scan it from the web app. `CHORUS_QR_SAMPLES=<dir> cargo test -p chorus-server --lib qr`
 followed by `python scripts/qr-check.py <dir>` decodes samples with OpenCV.
 
+Sign out another device of the same account (a lost phone): `POST /devices/{id}/revoke` → 204.
+Its sessions end, it can't renew, and its open sync socket is closed on its next frame. Revoking
+the device you're calling from is a 400; another account's device is a 404. `GET /me` lists the
+account's devices.
+
 `GET /push/vapid` → `{public_key}` is the server's VAPID key for browsers' `pushManager.subscribe`
 (D-061). Browsers then register below like any device.
 
@@ -169,7 +174,10 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   - `/front`, `/front/switches`, `/front/intervals`;
   - `/front/daily?from=&to=&level=` (days are `YYYY-MM-DD`, `to` inclusive);
   - `/front/reviews?open=1`.
-- **Other accounts:** `/accounts/{id}/view`, `/follows`, `/notifications`.
+- **Other accounts:** `/accounts/{id}/view`, `/follows`, `/notifications`. The view is
+  `{entries, since, revealed_at, time}`, plus `history: [{entries, time}]` and
+  `stats: {days, members: [{name, share_pct}]}` when the ceiling has `share_history` or
+  `share_stats` (NOTIFICATIONS §3).
 - `/front/intervals` also takes `subject` (an id) and `level`.
 - **Shared spaces and DMs** (M6.2, `spaces.rs`, signed-in devices only):
   - `GET /spaces` returns your spaces with the accounts in each.
@@ -270,7 +278,7 @@ Chorus-Signature: t=1790000000,v1=<hex HMAC-SHA256(secret, t + "." + body)>
 
 Events: `front.switch`, `front.review`, `member.created`, `member.updated`, `message.created`,
 `post.created`, `follow.requested`. Retries: 1 m, 5 m, 30 m, 2 h, 12 h; then disabled with an
-in-app notice. Webhook URLs may point outside the tailnet only if `webhooks.allow_external` is on.
+in-app notice. Where webhook URLs may point is `security.webhook_targets` (below).
 
 Implemented (M10.2, `webhooks.rs`):
 
@@ -282,10 +290,16 @@ Implemented (M10.2, `webhooks.rs`):
 - **Events so far:** `front.switch`, `member.created`, `member.updated`, `follow.requested`.
   `message.created` waits for M5.7 visibility, `post.created` for M7, and `front.review` for
   later. The body also carries `delivery` (the same value as `Chorus-Delivery`).
-- **Internal URLs** are loopback, RFC 1918, link-local, Tailscale's 100.64/10 and fd00::/8, bare
-  names, and `.ts.net`/`.local`/`.lan`/`.internal`/`.home.arpa`. Any other name is resolved and
-  must resolve only to internal addresses; this is checked on save and before each delivery. The
-  switch is `security.webhooks_allow_external` in `chorus.toml`.
+- **Targets** (`security.webhook_targets` in `chorus.toml`, D-062), checked on save and before
+  each delivery:
+  - `internal` (default): RFC 1918, link-local, Tailscale's 100.64/10 and fd00::/8, bare names,
+    and `.ts.net`/`.local`/`.lan`/`.internal`/`.home.arpa`. **Never loopback** (`localhost`,
+    127/8, ::1), which would reach the host's own admin ports.
+  - `public` (the Linux/VPS install): only globally routable addresses; no loopback, private,
+    link-local (cloud metadata), CGNAT, multicast, documentation or NAT64 ranges.
+  - `any`: everything (the legacy `webhooks_allow_external = true` means this).
+  Names are resolved and every address must pass; the delivery then connects to the checked
+  address (no DNS rebinding) and doesn't follow redirects.
 - **Retries** are kept in memory, so a restart drops pending retries.
 
 ## 8. Admin

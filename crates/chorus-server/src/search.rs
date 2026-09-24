@@ -31,16 +31,19 @@ pub fn messages(conn: &Connection, principal: &Principal, query: &MessageQuery) 
     }
     let sql = format!(
         "SELECT m.id, m.channel_id, c.space_id, m.account_id, m.occurred_at, m.text, m.cw, m.visibility,
-                COALESCE((SELECT json_group_array(ma.member_id) FROM message_author ma WHERE ma.message_id=m.id), '[]')
+                COALESCE((SELECT json_group_array(member_id) FROM (SELECT member_id FROM message_author WHERE message_id=m.id
+                    UNION SELECT member_id FROM message_segment_author WHERE message_id=m.id)), '[]')
          FROM message_fts JOIN message m ON m.rowid=message_fts.rowid
          JOIN channel c ON c.id=m.channel_id
          WHERE message_fts MATCH ?1 AND m.deleted_at IS NULL AND c.deleted_at IS NULL
            AND EXISTS (SELECT 1 FROM scope_access sa WHERE sa.account_id=?2 AND sa.scope='space:'||c.space_id)
-           AND (m.account_id=?2 OR {PUBLIC_MESSAGE_SQL})
+           AND (m.account_id=?2 OR ({PUBLIC_MESSAGE_SQL} AND ?8 = 0))
            AND (?3 IS NULL OR c.id=?3 OR c.name=?3)
-           AND (?4 IS NULL OR EXISTS (SELECT 1 FROM message_author ma
+           AND (?4 IS NULL OR EXISTS (SELECT 1 FROM
+                     (SELECT member_id FROM message_author WHERE message_id=m.id
+                      UNION SELECT member_id FROM message_segment_author WHERE message_id=m.id) ma
                      LEFT JOIN member author ON author.id=ma.member_id
-                     WHERE ma.message_id=m.id AND (ma.member_id=?4 OR author.name=?4 COLLATE NOCASE)))
+                     WHERE ma.member_id=?4 OR author.name=?4 COLLATE NOCASE))
            AND (?5 IS NULL OR m.occurred_at<?5)
            AND (?6 IS NULL OR m.occurred_at>?6)
            AND (?7 IS NULL OR EXISTS (SELECT 1 FROM item_attachment ia JOIN attachment a ON a.id=ia.attachment_id
@@ -51,7 +54,16 @@ pub fn messages(conn: &Connection, principal: &Principal, query: &MessageQuery) 
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(
-        params![q, principal.account_id, query.channel, query.author, query.before, query.after, query.has],
+        params![
+            q,
+            principal.account_id,
+            query.channel,
+            query.author,
+            query.before,
+            query.after,
+            query.has,
+            !principal.is_device()
+        ],
         |r| {
             let authors: String = r.get(8)?;
             let visibility: Option<String> = r.get(7)?;
@@ -81,14 +93,15 @@ pub fn message_by_id(conn: &Connection, principal: &Principal, id: &str) -> Resu
     use rusqlite::OptionalExtension;
     let sql = format!(
         "SELECT m.id, m.channel_id, c.space_id, m.account_id, m.occurred_at, m.text, m.cw, m.visibility,
-                COALESCE((SELECT json_group_array(ma.member_id) FROM message_author ma WHERE ma.message_id=m.id), '[]')
+                COALESCE((SELECT json_group_array(member_id) FROM (SELECT member_id FROM message_author WHERE message_id=m.id
+                    UNION SELECT member_id FROM message_segment_author WHERE message_id=m.id)), '[]')
          FROM message m JOIN channel c ON c.id=m.channel_id
          WHERE m.id=?1 AND m.deleted_at IS NULL AND c.deleted_at IS NULL
            AND EXISTS (SELECT 1 FROM scope_access sa WHERE sa.account_id=?2 AND sa.scope='space:'||c.space_id)
-           AND (m.account_id=?2 OR {PUBLIC_MESSAGE_SQL})"
+           AND (m.account_id=?2 OR ({PUBLIC_MESSAGE_SQL} AND ?3 = 0))"
     );
     let row = conn
-        .query_row(&sql, params![id, principal.account_id], |r| {
+        .query_row(&sql, params![id, principal.account_id, !principal.is_device()], |r| {
             let authors: String = r.get(8)?;
             let visibility: Option<String> = r.get(7)?;
             Ok(json!({

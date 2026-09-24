@@ -19,6 +19,17 @@
   const values = $derived(fieldValues(projection).get(id) ?? new Map());
   const colors = $derived(m ? core.adaptColor(m.color, dark) : null);
 
+  // when this member's mentions and member DMs ping the system (NOTIFICATIONS §7), a pref the server reads
+  const notifyRule = $derived.by(() => {
+    const rows = projection.rows.pref ?? {};
+    const key = `notify_member:${id}`;
+    const v = (rows[`${sync.accountId}||${key}`] ?? rows[`||${key}`])?.fields.value;
+    return (v && typeof v === 'object' ? v : {}) as { mentions?: string; dms?: string };
+  });
+  function setNotifyRule(which: 'mentions' | 'dms', rule: string) {
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: `notify_member:${id}`, value: { ...notifyRule, [which]: rule } });
+  }
+
   let cropBitmap: ImageBitmap | null = null;
   let cropReady = $state(false);
   let cropCanvas: HTMLCanvasElement | undefined = $state();
@@ -236,6 +247,29 @@
           <button class="ghost" onclick={() => (tags = [...tags, { prefix: '', suffix: '' }])}>Add proxy tag</button>
         </div>
       </div>
+    </section>
+
+    <section>
+      <h2>Chat notifications</h2>
+      <div class="fields">
+        <label>
+          When someone mentions {m.name}
+          <select value={notifyRule.mentions ?? 'always'} onchange={(e) => setNotifyRule('mentions', text(e))}>
+            <option value="always">always ping</option>
+            <option value="fronting">only while {m.name} is fronting</option>
+            <option value="never">never ping</option>
+          </select>
+        </label>
+        <label>
+          Member DMs to {m.name}
+          <select value={notifyRule.dms ?? 'fronting'} onchange={(e) => setNotifyRule('dms', text(e))}>
+            <option value="always">always ping</option>
+            <option value="fronting">only while {m.name} is fronting</option>
+            <option value="never">never ping</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">Pings go to your other devices, never the one you wrote on. "Fronting" includes co-con.</p>
     </section>
 
     {#if gs.length}

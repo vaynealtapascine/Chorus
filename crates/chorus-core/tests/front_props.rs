@@ -115,4 +115,49 @@ proptest! {
         ids.dedup();
         prop_assert_eq!(ids.len(), len);
     }
+
+    /// Appending an op that sorts last (and that nothing amends or retracts) gives exactly what
+    /// a full refold gives: the server's fast path for live switches (project.rs).
+    #[test]
+    fn append_matches_fold(ops in ops(), last in action(20), node in 0u32..3) {
+        let n = ops.len();
+        let op = FrontOp {
+            id: format!("op{n}"),
+            action: last,
+            occurred_at: 2000,
+            tz_offset_min: 0,
+            hlc: Hlc::new(2000, n as u16, node),
+            device_id: format!("d{node}"),
+            seq: Some(n as i64 + 1),
+            seen_seq: 0,
+            was_offline: false,
+        };
+        // precondition: nothing already amends or retracts the new op (callers refold then)
+        let targets_it = |o: &FrontOp| match &o.action {
+            FrontAction::Retract(t) | FrontAction::Unretract(t) => t.target_op_id == op.id,
+            FrontAction::Amend(a) => a.target_op_id == op.id,
+            _ => false,
+        };
+        prop_assume!(!ops.iter().any(targets_it));
+        let before = fold(&ops);
+        let open: Vec<Interval> = before.intervals.iter().filter(|i| i.end_at.is_none()).cloned().collect();
+        let front = before.switches.last().map(|r| r.resulting_front.clone()).unwrap_or_default();
+        let mut all = ops.clone();
+        all.push(op.clone());
+        let after = fold(&all);
+        match append(&front, open, &op) {
+            None => prop_assert_eq!(after.switches.len(), before.switches.len()),
+            Some(a) => {
+                prop_assert_eq!(after.switches.last(), Some(&a.row));
+                prop_assert_eq!(&after.current, &a.row.resulting_front);
+                // the refold's intervals = the old ones, with `closed` ended and `opened` added
+                let mut expect: Vec<Interval> = before.intervals.iter()
+                    .map(|i| a.closed.iter().find(|c| c.id == i.id).cloned().unwrap_or_else(|| i.clone()))
+                    .chain(a.opened.iter().cloned())
+                    .collect();
+                expect.sort_by(|x, y| (x.start_at, &x.id).cmp(&(y.start_at, &y.id)));
+                prop_assert_eq!(after.intervals, expect);
+            }
+        }
+    }
 }

@@ -10,8 +10,7 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   lost on disconnect — demote confirmed ops into the outbox instead. Digest-mismatch repairs occur
   only around restores (race between other devices' restore pushes and Caught); they self-heal.
 - 2026-09-23 claude-opus-5.5 — text — The markup round-trip property test drove the serializer
-  design: `\&` empty separator (Telegram uses `
-` for the same problem), whitespace at entity
+  design: `\&` empty separator (Telegram uses `\r` for the same problem), whitespace at entity
   edges, url/mention atoms that would re-grow, code blocks only at top level, escape-aware scans.
 - 2026-09-23 claude-opus-5.5 — tooling — Git Bash here mangles backslashes in heredocs passed to
   python; for Rust source edits use the Edit tool, not sed/python.
@@ -23,8 +22,7 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
 - 2026-09-23 claude-opus-5.5 — server — Projections re-project the touched entity through
   `chorus_core::model` (SQL = model by construction; `tests/projection.rs` checks 40 scrambled
   seeds and that `rebuild` is byte-identical). Known shortcuts to revisit when they cost:
-  (1) the front is refolded in full per front op (fine for thousands of switches; make it
-  incremental from the op's time when accounts reach tens of thousands);
+  (1) *done 2026-09-23, see below:* the front was refolded in full per front op;
   (2) `front_daily` uses the account's latest UTC offset, not the system's IANA timezone (add
   `jiff` with tzdb on the server when DST-exact local days matter);
   (3) digests are computed per Hello by scanning a scope's op ids (cache per scope if slow).
@@ -82,6 +80,40 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   setting every newly accepted follower to the Gentle preset would mask
   `account.settings.follow_ceiling`. Bucket assignments use follower **account IDs** in the
   element-set payload, while follow IDs are used only for per-follow ceiling ops.
+- 2026-09-23 claude-opus-5.5 — server — Ingest budget (SPEC §9, `tests/perf.rs`, ignored; run it
+  with `--release -- --ignored --nocapture`). Two projections were quadratic: every front op
+  refolded the account's whole front (9.6 ms per switch at 900 switches, growing), and every
+  `read.mark` re-projected every read op of its channel (4.9 ms at 2k). Now:
+  (a) a switch-like op that sorts after every folded one and that nothing amends or retracts is one
+  `front::append` step (the fold's loop body, shared; `front_props` checks append = fold) on the
+  stored last `resulting_front` and open intervals. Daily totals are redone from the first local
+  day of anything open, or all days if the offset moved; review cards pair the new switch with
+  the window. Anything else still refolds. `tests/projection.rs` compares against refolding on
+  every op (`project::set_front_fast_path(false)`).
+  (b) `read_state` keeps the running best mark and the manual set (migration 0004); only a newer
+  `read.set` rescans its key.
+  Traps found on the way: a `kind IN (…) AND scope = ?` lookup on `op` picked the scope index and
+  scanned the whole account (steer it with `+scope`); `ORDER BY occurred_at, op.hlc` over a join
+  sorted every switch (take `max(occurred_at)` first).
+  Result at 100k ops: ~2 500 ops/s flat (switch 0.8 ms, read mark 0.08 ms, message 0.29 ms).
+  At 1M ops (2026-09-24): 1 734 ops/s on average, drifting to ~1 150 at the end; still short.
+  What's left is `member.set` at 8 ms (every `.set` re-runs the model over all ops of that entity,
+  ~500 edits per member here) and `front.switch` at 1.1 ms. Next step: apply a `Set` op straight
+  onto the stored row's LWW `clocks` when the row exists (same `lww::apply_fields` as the model).
+  Later on 2026-09-24 (commits 91a3ea5, ec96958, c3c5676): `.set` applied in place; projection
+  statements cached (rusqlite re-prepares on every `conn.execute`; the cache is now 256); fresh
+  entities skip clearing derived rows; rebuild loads ops in one query per page, fills
+  `message_fts` in one pass and runs with a 256 MB page cache. Perf test ops are 30 s apart
+  (~90 switches a day). **At 1M ops: ingest 4 465 ops/s (slowest 10k window 3 613): met.
+  Rebuild 89.8 s: still 1.5× the 60 s budget** (message projection 57 s at 68 µs each, commit
+  11 s, search index 5 s). Next: in a rebuild, count ops per entity up front and project
+  single-op entities from the op in hand (no `for_entity` query + JSON parse); consider rebuilding
+  into fresh tables instead of DELETE + INSERT (halves the WAL). The 1M test needs ~5 GB free
+  for the database and its WAL; F: ran out, so run it with `CHORUS_PERF_DIR` on a roomier drive.
+  **Still over budget: rebuild** (~26 s per 100k, so ~4–5× the 60 s for 1M), because it replays
+  `after_insert` op by op, each one re-running the model over its entity. A batch rebuild
+  (project whole scopes in memory, bulk insert) is the fix. Clients' core projector still
+  refolds the front per front op (fine at their sizes; `front::append` is there when needed).
 - 2026-09-23 gpt-6-sol — insights — `front::daily` expects a caller-supplied UTC offset. The web
   dashboard derives the account system's IANA zone with `Intl`, splits intervals at offset
   transitions in its wasm adapter, and lets core assign each segment to a local day. This keeps

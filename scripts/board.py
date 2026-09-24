@@ -6,7 +6,7 @@
   python scripts/board.py note  "free text for the Notes line"
 
 `start` marks the task [~] and fills the Now block; `done` ticks it [x], appends a dated log
-line and clears Now (the next agent picks the next unticked task).
+line and clears Now if it names that task (the next agent picks the next unticked task).
 """
 import datetime
 import io
@@ -49,7 +49,9 @@ def main():
     elif cmd == "done":
         task, owner, line = args
         s = mark(s, task, "x")
-        s = set_now(s, "—", "—", "claim the next unticked task on the board")
+        # clear Now only if it names this task (another agent's work may be recorded there)
+        if re.search(rf"^- \*\*In progress:\*\* {re.escape(task)}\b", s, flags=re.M):
+            s = set_now(s, "—", "—", "claim the next unticked task on the board")
         s = s.rstrip("\n") + f"\n- {today} {owner} — {task} {line}\n"
     elif cmd == "note":
         (text,) = args

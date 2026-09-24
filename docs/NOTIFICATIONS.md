@@ -99,6 +99,18 @@ follower's buckets → account default.
 }
 ```
 
+`share_history` and `share_stats` (implemented, M6.3) add `history` and `stats` to the follower
+view. Both are computed from `follower_front_log`, which gets a row only at reveal time, with the
+fuzzed displayed time and without avatars.
+
+- `history` is the last 30 days of revealed states, newest first, up to 50.
+- `stats` is each name's share of revealed front time, rounded to 5 %. It counts **whole days
+  only**: nothing after the start of today (UTC) counts, so it moves at a reveal or at midnight,
+  never at a switch.
+
+The web sets both in People → Advanced sharing default. They are kept out of the presets:
+choosing a preset keeps them, and they never make a preset read as "Custom".
+
 **Presets** (Basic UI shows only these, per follower or per bucket):
 
 | Preset | Delay | Time shown | Other |
@@ -125,9 +137,14 @@ fuzzing hides the exact time afterwards — use both for real privacy.*
   "quiet_hours": { "from": "23:00", "to": "08:00" },
   "quiet_behaviour": "hold",              // hold | drop
   "mute_until": null,
+  "tz_offset_min": 540,                   // the follower's UTC offset, sent by their client
   "channel": "switches"                   // Android channel/sound choice
 }
 ```
+
+`quiet_hours` and `digest_time` here are the **follower's** local time, using `tz_offset_min`.
+Clients send their current offset whenever they save prefs. Without it, the switch's (system's)
+offset is used, as it always is for the ceiling's own `quiet_hours`.
 
 ## 5. The follower-view invariant (D-016)
 
@@ -156,6 +173,10 @@ Tests (M8): for random switch sequences and ceilings, assert that the sequence o
 states over time (from every surface) equals the sequence of revealed states, and that no surface
 changes between reveal times.
 
+Implemented as `follower_surfaces_only_change_at_reveal_times` in
+`crates/chorus-server/tests/notifier.rs`. It covers the follower view and the inbox; add any new
+follower surface to its `surfaces` closure. A mutation that reveals one minute early fails it.
+
 ## 6. Late arrivals and server downtime
 
 - Switches that reach the server late (offline phone) are scheduled from their real
@@ -179,6 +200,29 @@ changes between reveal times.
 | Follow request | on | |
 | Own switches from other devices | off | "Switched to Kai (from phone)" on the PC browser. |
 | Sync issues | on | Rejected ops. |
+
+Implemented (M8.4, `activity.rs`), for other accounts in shared spaces and DMs:
+
+- The recipient's `pref` key `notify_channel:<channel id>` = `all` / `mentions` / `none` sets the
+  channel level. DMs default to `all`, other channels to `mentions`, and `all` adds a `message`
+  kind for plain messages.
+- `notify_chat` = `{mention, dm, reply, message}` holds the per-kind switches, all on by default.
+- The web sets the level in each channel's ⋯ menu, and the kinds under People.
+- In your own internal space, a mention of one of your members (or `@front`, which reaches the
+  current fronters and co-cons) and a member DM ping your account under each member's rule: `pref`
+  key `notify_member:<member id>` = `{"mentions": rule, "dms": rule}`, where rule is `always`,
+  `fronting` (fronting or co-con) or `never`. Mentions default to `always`, member DMs to
+  `fronting`. The authors of the message never ping themselves. Channel levels apply here too
+  (internal channels default to `mentions`), and so does `notify_chat` (with a `member_dm` kind).
+  The push skips the device the message was written on. The member editor sets both rules.
+- Own switches from other devices: off unless `notify_chat.own_switch` is `true` (a checkbox under
+  People → Recent). Queued after the 15 s settle; a newer switch replaces a pending one, an undone
+  (retracted) switch is dropped, silent switches never ping, and the text is the front as it is at
+  delivery ("Front changed on <device>: Kai & June · co-con Rin"). The writing device is skipped.
+- Android inline reply (`data/Reply.kt`): chat notifications carry a Reply action; the text is
+  queued as a `message.send` replying to the notified message, as the primary fronter (else the
+  first fronter, else a person's own member), and the notification changes to "Sent as Kai".
+  Built and unit-tested; needs a device check. "Reply as mentioned member" is not done.
 
 Android: MessagingStyle notifications with member avatars as `Person`s, grouped per channel;
 inline reply (`RemoteInput`) sends as the current primary fronter (or the member the notification

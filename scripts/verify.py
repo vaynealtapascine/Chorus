@@ -23,10 +23,33 @@ def run(cmd, cwd=ROOT, env=None):
         sys.exit(r.returncode)
 
 
+def bundle_budgets(assets):
+    """SPEC §9: initial JS ≤ 200 KB gz (checked on all chunks, which is stricter), wasm ≤ 300 KB gz."""
+    import gzip
+    js = wasm = 0
+    for name in os.listdir(assets):
+        with open(os.path.join(assets, name), 'rb') as f:
+            size = len(gzip.compress(f.read(), 9))
+        if name.endswith('.js'):
+            js += size
+        elif name.endswith('.wasm'):
+            wasm += size
+    print(f'\nbundle: JS {js / 1024:.0f} KB gz (≤ 200), wasm {wasm / 1024:.0f} KB gz (≤ 300)')
+    if js > 200 * 1024 or wasm > 300 * 1024:
+        print('\n✗ failed: SPEC §9 bundle budget', file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
+    # the owner's C: is nearly full: build on F: there unless told otherwise (NOTES, PROGRESS)
+    roomy = r'F:\DunBuild\chorus-target'
+    if os.name == 'nt' and 'CARGO_TARGET_DIR' not in os.environ and os.path.isdir(roomy):
+        os.environ['CARGO_TARGET_DIR'] = roomy
     quick = '--quick' in sys.argv
     android = '--android' in sys.argv
 
+    if shutil.which('node'):
+        run(['node', 'scripts/gen-tokens.mjs', '--check'])
     run(['cargo', 'fmt', '--all', '--check'])
     run(['cargo', 'clippy', '--workspace', '--all-targets', '--', '-D', 'warnings'])
     if quick:
@@ -40,6 +63,8 @@ def main():
     if os.path.isdir(os.path.join(web, 'node_modules')):
         run(['npm', 'run', 'check'], cwd=web)
         run(['npm', 'test'], cwd=web)
+        run(['npm', 'run', 'build'], cwd=web)
+        bundle_budgets(os.path.join(web, 'dist', 'assets'))
     elif os.path.isdir(web):
         print('\n(web: skipped — run `npm ci` in web/ first)')
 

@@ -119,3 +119,40 @@ describe('data helpers', () => {
     expect(segmentParsing(p, 'account')).toBe(true);
   });
 });
+
+describe('incremental message lists', () => {
+  it('match a fresh rebuild after random sends, edits, moves, deletes and attachment changes', async () => {
+    const { applyDelta } = await import('./sync/delta');
+    const { unread } = await import('./data');
+    let seed = 7;
+    const rand = (n: number) => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) % n);
+    const row = (ch: string, at: number, extra: Record<string, unknown> = {}) =>
+      ({ exists: true, fields: { channel_id: ch, authors: ['k'], text: `t${at}`, entities: [], occurred_at: at, account_id: 'x', ...extra } });
+    const message: Projection['rows'][string] = {};
+    for (let i = 0; i < 40; i++) message[`m${i}`] = row(i % 2 ? 'a' : 'b', i * 10);
+    let p: Projection = { rows: { message, attachment: { f1: { exists: true, fields: { blob_hash: 'h1' } } } }, sets: {}, fronts: {}, opaque: 0 };
+    const fresh = (q: Projection): Projection => ({ ...q, rows: Object.fromEntries(Object.entries(q.rows).map(([k, v]) => [k, { ...v }])) });
+    for (let step = 0; step < 300; step++) {
+      for (const ch of ['a', 'b']) void messages(p, ch); // index the current version
+      const ids = Object.keys(p.rows.message ?? {});
+      const changes: Record<string, unknown> = {};
+      for (let k = 0; k <= rand(3); k++) {
+        const kind = rand(5);
+        const id = ids[rand(ids.length)];
+        if (kind === 0) changes[`n${step}_${k}`] = row(rand(2) ? 'a' : 'b', rand(500), rand(4) === 0 ? { attachments: ['f1'] } : {});
+        else if (kind === 1) changes[id] = row(String(p.rows.message[id].fields.channel_id), rand(500));
+        else if (kind === 2) changes[id] = row(rand(2) ? 'a' : 'b', Number(p.rows.message[id].fields.occurred_at));
+        else if (kind === 3) changes[id] = null;
+        else changes[id] = { ...p.rows.message[id], fields: { ...p.rows.message[id].fields, deleted_at: 1 } };
+      }
+      const rows: Record<string, Record<string, unknown>> = { message: changes };
+      if (rand(10) === 0) rows.attachment = { f1: { exists: true, fields: { blob_hash: `h${step}` } } };
+      p = applyDelta(p, { rows: rows as never, sets: {}, fronts: {}, reviews: {}, opaque: step, full: false });
+      const q = fresh(p);
+      for (const ch of ['a', 'b']) {
+        expect(messages(p, ch)).toEqual(messages(q, ch));
+        expect(unread(p, ch, 'me')).toBe(unread(q, ch, 'me'));
+      }
+    }
+  });
+});

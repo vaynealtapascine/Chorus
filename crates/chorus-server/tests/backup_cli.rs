@@ -129,3 +129,83 @@ fn backup_and_restore_commands_verify_blobs_and_refuse_overwrite() {
     assert!(String::from_utf8_lossy(&bad_projection.stderr).contains("projection mismatch"));
     assert!(!inconsistent.exists());
 }
+
+/// Restore rebuilds the snapshot and compares it, but not what depends on when projections ran:
+/// daily totals (open intervals are cut at "now"), when review cards were made, and the read
+/// state's running parts, which rows from before migration 0004 don't have yet.
+#[test]
+fn restore_accepts_time_dependent_and_pre_0004_projections() {
+    let fixture = Fixture::new();
+    {
+        let conn = db::open(&fixture.root.join("data/chorus.db")).unwrap();
+        let sys = "0192f8c2-0000-7000-8000-0000000000a1";
+        let (acct, home) = (format!("account:{sys}"), "space:0192f8c2-0000-7000-8000-0000000000d1".to_string());
+        conn.execute("INSERT INTO account(id,kind,handle,created_at) VALUES (?1,'system','sys',0)", [sys]).unwrap();
+        chorus_server::ingest::grant(&conn, sys, &acct).unwrap();
+        chorus_server::ingest::grant(&conn, sys, &home).unwrap();
+        let t = chorus_server::now_ms() - 3 * 86_400_000;
+        let kai = "0192f8c2-0000-7000-8000-00000000000a";
+        chorus_server::ingest::server_op(
+            &conn,
+            sys,
+            "member.create",
+            &acct,
+            Some(kai),
+            serde_json::json!({"name": "Kai"}),
+            t,
+        )
+        .unwrap();
+        let sw = "0192f8c2-0000-7000-8000-00000000000b";
+        let entries = serde_json::json!({"entries": [{"subject_type": "member", "subject_id": kai, "level": "front"}]});
+        chorus_server::ingest::server_op(&conn, sys, "front.switch", &acct, Some(sw), entries, t).unwrap();
+        chorus_server::ingest::server_op(
+            &conn,
+            sys,
+            "read.mark",
+            &home,
+            None,
+            serde_json::json!({"channel_id": "c", "message_id": "m", "message_at": 5, "reader_member_id": ""}),
+            t,
+        )
+        .unwrap();
+        // as if computed at another time, and written before migration 0004
+        assert!(conn.execute("UPDATE front_daily SET seconds = seconds + 7", []).unwrap() > 0);
+        let stale = "UPDATE read_state SET state_ok = 0, mark_at = NULL, mark_id = NULL, mark_hlc = NULL";
+        assert_eq!(conn.execute(stale, []).unwrap(), 1);
+    }
+    let backup = fixture.run(&["backup"]);
+    assert!(backup.status.success(), "{}", String::from_utf8_lossy(&backup.stderr));
+    let snapshot = String::from_utf8(backup.stdout).unwrap().trim().to_string();
+    let into = fixture.root.join("restored");
+    let restored = fixture.run(&["restore", "--from", &snapshot, "--into", &into.to_string_lossy()]);
+    assert!(restored.status.success(), "{}", String::from_utf8_lossy(&restored.stderr));
+}
+
+/// A snapshot taken by an older build (here: before migration 0004) restores with this one: the
+/// restored copy is migrated before it's verified. The snapshot itself stays as it was.
+#[test]
+fn restore_migrates_a_snapshot_from_an_older_schema() {
+    let fixture = Fixture::new();
+    {
+        let conn = db::open(&fixture.root.join("data/chorus.db")).unwrap();
+        conn.execute_batch(
+            "DROP INDEX fi_open; DROP INDEX fi_account_end;
+             ALTER TABLE read_state DROP COLUMN mark_at; ALTER TABLE read_state DROP COLUMN mark_id;
+             ALTER TABLE read_state DROP COLUMN mark_hlc; ALTER TABLE read_state DROP COLUMN set_at;
+             ALTER TABLE read_state DROP COLUMN set_id; ALTER TABLE read_state DROP COLUMN set_hlc;
+             ALTER TABLE read_state DROP COLUMN state_ok;",
+        )
+        .unwrap();
+        db::set_meta(&conn, "schema_version", "3").unwrap();
+    }
+    let backup = fixture.run(&["backup"]);
+    assert!(backup.status.success(), "{}", String::from_utf8_lossy(&backup.stderr));
+    let snapshot = PathBuf::from(String::from_utf8(backup.stdout).unwrap().trim());
+    let into = fixture.root.join("restored");
+    let restored = fixture.run(&["restore", "--from", &snapshot.to_string_lossy(), "--into", &into.to_string_lossy()]);
+    assert!(restored.status.success(), "{}", String::from_utf8_lossy(&restored.stderr));
+    let conn = Connection::open(into.join("chorus.db")).unwrap();
+    assert_eq!(db::schema_version(&conn).unwrap(), db::MIGRATIONS.len());
+    let old = Connection::open(snapshot.join("chorus.db")).unwrap();
+    assert_eq!(db::schema_version(&old).unwrap(), 3, "the snapshot itself is untouched");
+}

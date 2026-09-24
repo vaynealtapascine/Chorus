@@ -173,6 +173,8 @@ object Push {
         )
         val time = p.optJSONObject("time")
         val at = time?.optLong("at", 0L)?.takeIf { it > 0 && time.optString("precision") != "none" }
+        // one notification per followed account (latest state wins); one per message
+        val key = if (isMessage) p.optString("message_id") else p.optString("account_id")
         val n = NotificationCompat.Builder(ctx, if (isMessage) CHANNEL_MESSAGES else CHANNEL_SWITCHES)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(p.optString("title", "Chorus"))
@@ -182,10 +184,9 @@ object Push {
             .setGroup(if (isMessage) "messages:" + p.optString("channel_id") else "switches:" + p.optString("account_id"))
             // the shown time is the fuzzed one the follower may know, never the real switch time
             .apply { if (at != null) setWhen(at).setShowWhen(true) else setShowWhen(false) }
+            .apply { if (isMessage) Reply.action(ctx, p, key.hashCode())?.let { addAction(it) } }
             .build()
         if (NotificationManagerCompat.from(ctx).areNotificationsEnabled()) {
-            // one notification per followed account (latest state wins); one per message
-            val key = if (isMessage) p.optString("message_id") else p.optString("account_id")
             runCatching { NotificationManagerCompat.from(ctx).notify(key.hashCode(), n) }
         }
     }

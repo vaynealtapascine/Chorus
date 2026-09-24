@@ -1,0 +1,23 @@
+# /etc/caddy/sites/chorus.caddy - written by Chorus's install.sh; edits here are replaced.
+# Imported by /etc/caddy/Caddyfile ("import /etc/caddy/sites/*.caddy").
+@DOMAIN@ {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		?X-Frame-Options "SAMEORIGIN"
+		-Server
+	}
+	# attachments go up in chunks; this caps one request, not the file (limits.max_blob_mb)
+	request_body {
+		max_size 64MB
+	}
+	log {
+		output file /var/log/caddy/chorus.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+	reverse_proxy 127.0.0.1:5250
+}
