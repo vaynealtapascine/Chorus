@@ -36,7 +36,7 @@ class Store(private val ctx: Context) {
     /** All ops for `CoreReplica.restore`. Stable order makes startup reproducible. */
     fun opsJson(): String = dao.opJson().joinToString(prefix = "[", postfix = "]")
 
-    /** Persist `{"ops": […], "meta"?: …, "hlc_last": "…"}` from the Rust replica. */
+    /** Persist `{"ops": […], "removed"?: […], "meta"?: …, "hlc_last": "…"}` from the Rust replica. */
     fun save(changesJson: String) {
         val changes = JSONObject(changesJson)
         database.runInTransaction {
@@ -46,6 +46,7 @@ class Store(private val ctx: Context) {
                     dao.put(StoredOp(op.getString("id"), op.toString()))
                 }
             }
+            removedOpIds(changes).takeIf { it.isNotEmpty() }?.let(dao::deleteOps)
             if (changes.has("meta") && !changes.isNull("meta")) {
                 dao.put(StoredValue("meta", changes.get("meta").toString()))
             }
@@ -123,3 +124,8 @@ class Store(private val ctx: Context) {
         const val MIGRATED = "__chorus_legacy_migrated__"
     }
 }
+
+internal fun removedOpIds(changes: JSONObject): List<String> =
+    changes.optJSONArray("removed")?.let { ids ->
+        (0 until ids.length()).map(ids::getString)
+    } ?: emptyList()
