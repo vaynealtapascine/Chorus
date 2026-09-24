@@ -1,0 +1,152 @@
+# Hand-off: remote Claude Opus 5.5, batch R1 (2026-09-24)
+
+From: Claude Opus 5.5 working on the owner's PC ("local Claude").
+To: a Claude Opus 5.5 agent working remotely, from the GitHub repo only.
+
+You have the repository and nothing else: not the owner's PC, the F: drive, the phone, the
+running Chorus service, WSL or the owner's servers. Everything below is doable from a Linux
+machine with Rust, Node and Python. Read `AGENTS.md` first (read order, handoff protocol,
+engineering rules); this file adds what is specific to working remotely.
+
+## 0. How we exchange work
+
+- This file lives on branch **`handoff/opus-remote-1`** (cut from `main` at the commit that
+  added it). Create your working branch from it: `git switch -c opus-remote/batch-1`.
+- **Push only to `opus-remote/batch-1`.** Never push to `main` or `sol/*`. Local Claude
+  audits your branch and merges it (the owner asked for `main` to be pushed after each commit,
+  so a merge publishes your work: keep secrets, real hostnames and personal data out).
+- **Don't edit `PROGRESS.md`.** Three agents write to it and it would conflict on every merge.
+  Instead, append to §5 *Report* at the bottom of this file: one line per finished piece
+  (`R? — what, commit`), plus anything non-obvious. Local Claude moves it into PROGRESS on merge.
+  Other docs (`docs/*.md`, `NOTES.md`, `DECISIONS.md`) you do edit, as AGENTS.md says.
+- Atomic commits with the repo's prefixes (`feat(server):`, `fix(web):`, `perf(server):`,
+  `test:`, `docs:`); tests land with the code. End each commit message with
+  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Push after every commit, so a stop for usage loses nothing. If you stop mid-task, commit what
+  you have with a `wip:` prefix and write the next step in §5.
+
+## 1. Setting up (Linux)
+
+```bash
+rustup toolchain install 1.98 && rustup default 1.98        # DECISIONS §Versions: Rust 1.98
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.128 --locked   # must equal the crate's version
+# the web app's wasm core is git-ignored; this is scripts/build-web-core.ps1 in bash:
+cargo build -p chorus-wasm --target wasm32-unknown-unknown --profile wasm
+wasm-bindgen target/wasm32-unknown-unknown/wasm/chorus_wasm.wasm --out-dir web/src/lib/core/pkg --target web
+(cd web && npm ci)                                          # Node 22
+python3 scripts/verify.py --quick                           # must pass before every commit
+```
+
+- Rebuild the wasm package whenever you change `chorus-core` or `chorus-wasm`, before the web
+  checks, or `npm run check` sees stale bindings.
+- Android (`--android`) needs JDK 17 + the Android SDK/NDK; if you don't have them, skip it and
+  don't touch Kotlin. None of your tasks need Android.
+- `scripts/*.ps1` are the owner's Windows scripts; don't run or "port" them unless a task says so.
+
+## 2. Where things stand (read these, don't redo them)
+
+- `main` at hand-off: everything through the phone device checks (see the end of `PROGRESS.md`
+  *Log*). SPEC §9 server budgets are all met and measured: ingest ~4 600 ops/s and rebuild 57 s
+  at 1M ops (`crates/chorus-server/tests/perf.rs`, ignored), 5 000-op reconnect 1.3 s and switch
+  fan-out ~1 ms (`tests/sync_e2e.rs` `sync_budgets`, ignored). `docs/NOTES.md` has the profiles.
+- Recent server work you'll build on: `ratelimit.rs` (API rate limits), `reconcile.rs`
+  (restore window, D-067), `purge.rs`, the prepare/write split and reader thread in
+  `project.rs::rebuild_in`, migration `0005_op_message_ref`.
+- **gpt-6-sol** is working on batch 4 on its own branch (`docs/handoff/sol-batch-4.md`, U1–U6):
+  search paging and export locking (U1), channel permissions (U3, may add migration `0006`),
+  journals M7 (U4), Android parity (U5). **Don't touch** what it owns: `search.rs`, `posts.rs`,
+  `visibility.rs` beyond reading, `web/src/lib/data.ts`, `MemberEditor.svelte`,
+  `Profile.svelte`, anything under `android/`, and don't add a migration numbered `0006` (use
+  `0007` if you truly need one, and say so in §5).
+
+## 3. Rules that bite
+
+- `chorus-core` is pure (no IO, clocks or randomness except passed in); the web and Android run
+  the same code through wasm/UniFFI.
+- Op log is append-only; projections are derived. A rebuild must reproduce exactly what live
+  ingest produced: `tests/backup_cli.rs` (restore verification) and `tests/projection.rs` check it.
+- Privacy invariants (NOTIFICATIONS.md §5) and visibility rules (`visibility.rs`,
+  `PUBLIC_MESSAGE_SQL`) are requirements. A follower never learns more through the API than
+  through notifications.
+- Pin any new dependency's version in DECISIONS §Versions, and prefer none.
+- The UI is cozy and quiet: new controls go behind Advanced unless obviously Basic (DESIGN §6).
+- Spec changes that alter visible behaviour need the owner: write them into
+  `docs/OPEN_QUESTIONS.md` with a default, use the default, and mention it in §5.
+
+## 4. Tasks, in this order
+
+Each is independent; if one blocks, note it in §5 and go on.
+
+### R1 · Rebuild margin (SPEC §9: 1M-op rebuild ≤ 60 s; now 57 s on the owner's PC)
+
+The margin is thin. Profile at 1M (`CHORUS_PERF_OPS=1000000 cargo test --release -p
+chorus-server --test perf -- --ignored --nocapture`, needs ~5 GB free; your hardware differs,
+so report before/after on *your* machine). Last profile on the owner's PC: `message.send` 24 s,
+commit ~10 s (about half WAL checkpoint), fronts 7 s (30 k switches, 0.23 ms each), search index
+5 s, clear 1.3 s. Ideas, unverified:
+- fronts: `append_front` per switch; see whether the per-switch SQL (interval upserts, daily
+  rows) can batch during `REBUILDING` without changing results. NOTES explains why a single fold
+  at the end is *not* allowed (review cards).
+- search index: FTS5 bulk insert tuning (`automerge`, `crisismerge`, insert order), or building
+  it on the reader connection's side is impossible (one writer), so measure options.
+- commit: fewer dirty pages (e.g. `DELETE` vs recreating derived tables, see NOTES).
+Acceptance: `verify.py --quick` passes; `tests/backup_cli.rs` restore verification passes;
+at 1M your rebuild improves ≥ 10 % with ingest not worse; numbers in NOTES.md.
+
+### R2 · The web app copes with `429 rate_limited`
+
+The server now answers 429 with `Retry-After` (API.md §1). The web app calls `fetch` directly in
+about a dozen places and shows a raw error. Add one small helper (e.g. `web/src/lib/http.ts`):
+retries idempotent GET/HEAD after `Retry-After` (capped, once or twice), and turns a 429 on a
+write into a friendly message. Use it at the call sites *except* in `data.ts`,
+`MemberEditor.svelte` and `Profile.svelte` (Sol). Blob reads are exempt server-side, so leave
+`AvatarImage`/`AttachmentView`/`EmojiImage` alone unless trivial. Vitest for the helper.
+
+### R3 · Restore window in the admin view
+
+`reconcile.rs` has the restore window (SYNC §7.3, D-067) but only a CLI. Add it to
+`GET /api/v1/admin/health` (admins only; `health.rs`): `restore_window: {open, closes_at,
+devices: [{account, name, platform, last_seen_at, back_at}]}`, plus
+`POST /api/v1/admin/reconcile/close` (admin only, 204). Show it on the web "Your data" page's
+admin section (`DataPage.svelte`) only while open: "Restore in progress — N of M devices back"
+with a Close button and a one-line explanation. E2E test for the endpoint (non-admins get 403),
+API.md and OPS.md updated.
+
+### R4 · API.md can't drift from the router
+
+Write `scripts/api-check.py`: collect every `.route("…", …)` path and method in
+`crates/chorus-server/src/app.rs` (and nested routers) and fail if one isn't documented in
+`docs/API.md`, listing the gaps. Wire it into `verify.py` like `gen-tokens.mjs --check`. Then
+fix the gaps it finds (document, don't delete routes). Keep the parser simple and tested on the
+real file.
+
+### R5 · Socket-level limits for a public server
+
+HTTP requests are rate limited; the sync WebSocket isn't. Add, with config defaults in
+`config.rs` `Security` and docs in OPS §9:
+- at most N concurrent sync sockets per account (default 20; oldest closed with a `Frame::Error`
+  `too_many_connections`), and per client address before hello (default 30);
+- a frame budget per socket (e.g. 200 frames/s burst, 50/s sustained; reuse the bucket logic in
+  `ratelimit.rs`), closing with `rate_limited` when exceeded. Normal clients send a handful of
+  frames per second; check `ClientEngine` in `chorus-core/src/sync.rs` so a big catch-up (the
+  5 000-op reconnect test) stays well inside the budget.
+E2E tests in `tests/sync_e2e.rs` for both, and `sync_budgets` still passing in release.
+
+### R6 · (optional) A bash runner for the Linux container test
+
+`scripts/test-linux.ps1` runs `deploy/linux/test/` in Docker under WSL. Write
+`scripts/test-linux.sh` doing the same on a Linux host with Docker (build the bundle the way
+`pack-linux.ps1` does, then the same container steps). Only if your machine has Docker; run
+it and paste the result summary into §5. Don't change `install.sh` behaviour.
+
+### R7 · (optional, ask first via OPEN_QUESTIONS) Export bundle with files
+
+D-065 left "the DATA_MODEL §7 zip with blobs and `POST /exports` background jobs" for later.
+If R1–R5 are done, write the design (not code) into `docs/OPEN_QUESTIONS.md` as a proposal:
+format, where files come from, size limits, how a background job reports progress, and whether
+a new dependency (a zip crate) is acceptable. The owner decides.
+
+## 5. Report (append below; newest last)
+
+- 2026-09-24 local Claude — hand-off written; branch `handoff/opus-remote-1` cut from `main`.
