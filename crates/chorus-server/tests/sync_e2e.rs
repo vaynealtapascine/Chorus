@@ -461,6 +461,39 @@ async fn api_tokens_read_the_front_and_stream_switches() {
         http.get(url("/front/switches")).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
     assert_eq!(switches["items"].as_array().unwrap().len(), 1);
 
+    // messages on the stream need read:messages; a message-only stream gets just messages
+    assert_eq!(http.get(url(&format!("/stream?token={token}&events=message"))).send().await.unwrap().status(), 403);
+    let (_, t) = {
+        let r = http
+            .post(url("/tokens"))
+            .bearer_auth(&session)
+            .json(&json!({"name": "log", "scopes": ["read:messages", "stream"]}))
+            .send()
+            .await
+            .unwrap();
+        (r.status(), r.json::<Value>().await.unwrap())
+    };
+    let logger = t["token"].as_str().unwrap().to_string();
+    let mut msse = http.get(url(&format!("/stream?token={logger}&events=message"))).send().await.unwrap();
+    assert_eq!(msse.status(), 200);
+    let home = phone.scope("space:");
+    let p = model::project(phone.store.confirmed());
+    let general = p.rows["channel"].iter().find(|(_, r)| r.fields["name"] == "general").unwrap().0.clone();
+    let m = new_id(3, [44; 10]);
+    phone
+        .create(
+            "message.send",
+            &home,
+            &m,
+            json!({"channel_id": general, "authors": [kai], "text": "on the stream", "entities": []}),
+        )
+        .await;
+    phone.drain(Q).await;
+    let mut mbuf = String::new();
+    until(&mut msse, &mut mbuf, "on the stream").await;
+    assert!(mbuf.starts_with("event: message"), "no front event first on a message-only stream: {mbuf}");
+    assert!(mbuf.contains("\"channel\":\"general\""), "{mbuf}");
+
     // revoke: the token stops working
     let list: Value = http.get(url("/tokens")).bearer_auth(&session).send().await.unwrap().json().await.unwrap();
     let id = list["items"][0]["id"].as_str().unwrap().to_string();

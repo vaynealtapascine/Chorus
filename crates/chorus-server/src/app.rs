@@ -663,6 +663,10 @@ struct Range {
     level: Option<String>,
     /// EventSource can't send headers, so the stream (only) also takes `?token=`.
     token: Option<String>,
+    /// Stream: which events (`front`, `message`; comma-separated). Default: all you may read.
+    events: Option<String>,
+    /// Stream: only messages in these channels (ids, comma-separated).
+    channels: Option<String>,
 }
 
 async fn front_now(
@@ -998,27 +1002,65 @@ async fn stream(
             Some(t) => crate::api_data::principal(&conn, t, now_ms(), s.session_ttl())?,
             None => principal(&s, &conn, &headers)?,
         };
-        if !(p.allows("stream") && p.allows("read:front")) {
+        if !p.allows("stream") {
             return Err(crate::api_data::DataError::Scope("stream").into());
         }
-        let v = crate::api_data::current_front(&conn, &p)?;
-        (p.account_id.clone(), json!({"type": "front", "at": now_ms(), "front": v["front"], "since": v["since"]}))
-    };
-    let rx = s.events.subscribe();
-    let first = futures_util::stream::once(async move {
-        Ok::<_, std::convert::Infallible>(Event::default().event("front").data(first.to_string()))
-    });
-    let rest = futures_util::stream::unfold((rx, account), |(mut rx, account)| async move {
-        loop {
-            match rx.recv().await {
-                Ok((a, v)) if a == account => {
-                    return Some((Ok(Event::default().event("front").data(v.to_string())), (rx, account)));
-                }
-                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(_) => return None,
-            }
+        // each event type needs its read scope; asking for one you can't read is a 403
+        let may = |e: &str| match e {
+            "front" => p.allows("read:front"),
+            "message" => p.allows("read:messages"),
+            _ => false,
+        };
+        let wanted: Vec<String> = match q.events.as_deref() {
+            Some(list) => list.split(',').map(|e| e.trim().to_string()).filter(|e| !e.is_empty()).collect(),
+            None => ["front", "message"].iter().filter(|e| may(e)).map(|e| e.to_string()).collect(),
+        };
+        if wanted.is_empty() {
+            return Err(crate::api_data::DataError::Scope("read:front").into());
         }
-    });
+        if let Some(e) = wanted.iter().find(|e| !may(e)) {
+            return Err(match e.as_str() {
+                "front" => crate::api_data::DataError::Scope("read:front"),
+                "message" => crate::api_data::DataError::Scope("read:messages"),
+                other => crate::api_data::DataError::Bad(format!("unknown event {other:?}; use front or message")),
+            }
+            .into());
+        }
+        let first = if wanted.iter().any(|e| e == "front") {
+            let v = crate::api_data::current_front(&conn, &p)?;
+            Some(json!({"type": "front", "at": now_ms(), "front": v["front"], "since": v["since"]}))
+        } else {
+            None
+        };
+        (p.account_id.clone(), (first, wanted))
+    };
+    let (first, wanted) = first;
+    let channels: Option<Vec<String>> =
+        q.channels.as_deref().map(|c| c.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect());
+    let rx = s.events.subscribe();
+    let first = futures_util::stream::iter(
+        first.map(|v| Ok::<_, std::convert::Infallible>(Event::default().event("front").data(v.to_string()))),
+    );
+    let rest = futures_util::stream::unfold(
+        (rx, account, wanted, channels),
+        |(mut rx, account, wanted, channels)| async move {
+            loop {
+                match rx.recv().await {
+                    Ok((a, v)) if a == account => {
+                        let kind = v["type"].as_str().unwrap_or("front").to_string();
+                        let in_channel = kind != "message"
+                            || channels.as_ref().is_none_or(|c| c.iter().any(|x| v["channel_id"] == x.as_str()));
+                        if wanted.contains(&kind) && in_channel {
+                            let event = Event::default().event(kind).data(v.to_string());
+                            return Some((Ok(event), (rx, account, wanted, channels)));
+                        }
+                    }
+                    Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(_) => return None,
+                }
+            }
+        },
+    );
     Ok(Sse::new(futures_util::StreamExt::chain(first, rest)).keep_alive(KeepAlive::default()).into_response())
 }
 
@@ -1422,6 +1464,27 @@ pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Optio
         {
             let event = json!({"type": "front", "at": now_ms(), "front": v["front"], "since": v["since"]});
             let _ = s.events.send((account.to_string(), event));
+        }
+    }
+    // and each of its own new messages (API.md §6), as its author sees them
+    if s.events.receiver_count() > 0 {
+        for o in fresh.iter().filter(|o| matches!(o.kind.as_str(), "message.send" | "message.forward")) {
+            let (Some(author), Some(id)) = (o.account_id.as_deref(), o.entity()) else { continue };
+            let owner = crate::api_data::Principal::owner(author);
+            if let Ok(Some(mut m)) = crate::messages::one(conn, &owner, id) {
+                m["type"] = json!("message");
+                m["at"] = m["occurred_at"].clone();
+                m["channel"] = conn
+                    .query_row(
+                        "SELECT name FROM channel WHERE id = ?1",
+                        [m["channel_id"].as_str().unwrap_or("")],
+                        |r| r.get::<_, Option<String>>(0),
+                    )
+                    .ok()
+                    .flatten()
+                    .map_or(serde_json::Value::Null, |n| json!(n));
+                let _ = s.events.send((author.to_string(), m));
+            }
         }
     }
     match crate::webhooks::deliveries_for(conn, fresh, now_ms()) {

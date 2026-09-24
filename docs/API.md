@@ -96,7 +96,10 @@ Implemented so far (M10.2 and M5.8, `api_data.rs`): scopes `read:front`, `read:m
 `POST /tokens {name, scopes}` → `{id, token}` (shown once), `GET /tokens`, `DELETE /tokens/{id}` —
 from a signed-in device only (tokens can't mint tokens). Reads: `GET /front`, `/front/switches`,
 `/front/intervals`, `/members`. `GET /stream` sends `event: front` (current front first, then each
-change); EventSource clients pass `?token=`. `/overlay/front?token=…` is a transparent OBS pill.
+change; needs `read:front`) and `event: message` (the account's own new messages, with
+`channel` name and `channel_id`; needs `read:messages`). `?events=front,message` picks (default:
+all you may read; asking for one you can't read is a 403), `?channels=<ids>` filters messages.
+EventSource clients pass `?token=`. `/overlay/front?token=…` is a transparent OBS pill.
 
 ## 3. Read endpoints
 
