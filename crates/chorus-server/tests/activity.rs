@@ -112,6 +112,15 @@ fn mentions_and_replies_notify_the_other_account_only() {
     reply["reply_to"] = json!(m1);
     w.push(&b, "message.send", &space, &m2, reply);
     assert_eq!(w.inbox(&a), [("reply".to_string(), "hello!".to_string())]);
+    // the projection keeps the link (the REST API and exports read reply_to_id)
+    let linked = |w: &W| -> Option<String> {
+        w.c.query_row("SELECT reply_to_id FROM message WHERE id = ?1", [&m2], |r| r.get(0)).unwrap()
+    };
+    assert_eq!(linked(&w).as_deref(), Some(m1.as_str()));
+    // and migration 0006 fills it in for rows projected before the fix
+    w.c.execute("UPDATE message SET reply_to_id = NULL", []).unwrap();
+    w.c.execute_batch(include_str!("../migrations/0006_message_reply_to.sql")).unwrap();
+    assert_eq!(linked(&w).as_deref(), Some(m1.as_str()));
 
     // plain chatter notifies nobody; restricted visibility never notifies
     let m3 = new_id(NOW as u64, [52; 10]);

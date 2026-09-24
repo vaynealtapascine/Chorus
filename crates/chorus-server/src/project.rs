@@ -187,8 +187,9 @@ fn prepare(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Re
             vals.insert("tz_offset_min".into(), Value::from(f.tz_offset_min));
             vals.insert("revision_count".into(), Value::from(row.edits + 1));
         }
-        if table == "post" {
-            // The op/model field is `reply_to`; the SQL column is `reply_to_id`.
+        if matches!(table, "message" | "post") {
+            // The op/model field is `reply_to`; the SQL column is `reply_to_id` (messages too:
+            // until migration 0006 their column stayed empty).
             vals.insert("reply_to_id".into(), row.fields.get("reply_to").cloned().unwrap_or(Value::Null));
         }
     }
