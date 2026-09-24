@@ -25,16 +25,19 @@ if [ "$build" = 1 ]; then
   (cd "$root/web" && npm run build)
 fi
 server="$target/debug/chorus-server"
-[ -x "$server" ] || { echo "no server build at $server" >&2; exit 1; }
+[ -x "$server" ] || server="$server.exe" # Git Bash on Windows
+[ -x "$server" ] || { echo "no server build at $target/debug/chorus-server" >&2; exit 1; }
 
+# paths the server (and node) read: Windows form under Git Bash
+native() { if command -v cygpath > /dev/null; then cygpath -m "$1"; else echo "$1"; fi; }
 data="$(mktemp -d "${TMPDIR:-/tmp}/chorus-e2e-XXXXXX")"
 port="${CHORUS_E2E_PORT:-5399}"
 cat > "$data/chorus.toml" <<TOML
 [server]
 listen = "127.0.0.1:$port"
 public_url = "http://127.0.0.1:$port"
-data_dir = "$data/data"
-web_dir = "$root/web/dist"
+data_dir = "$(native "$data/data")"
+web_dir = "$(native "$root/web/dist")"
 TOML
 "$server" --config "$data/chorus.toml" serve > "$data/server.log" 2>&1 &
 pid=$!
@@ -51,7 +54,7 @@ done
 curl -sf "http://127.0.0.1:$port/api/v1/server" > /dev/null || { cat "$data/server.log"; exit 1; }
 
 export CHORUS_E2E_BASE="http://127.0.0.1:$port"
-export CHORUS_E2E_CLI="$server --config $data/chorus.toml"
+export CHORUS_E2E_CLI="$(native "$server") --config $(native "$data/chorus.toml")"
 set +e
 (cd "$root/web" && npx playwright test "$@")
 status=$?
