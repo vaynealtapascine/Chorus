@@ -392,3 +392,94 @@ fn post_search_matches_only_readable_posts_and_survives_a_rebuild() {
     assert_eq!(ids(&search(&c, &bob, "tomatoes")), Vec::<String>::new(), "deleted stays out");
     assert_eq!(ids(&search(&c, &bob, "beans")).len(), 5);
 }
+
+/// Shared feeds (M7.4, feeds.rs): a follower evaluates the owner's feed over posts the follower
+/// can read, names resolve against the owner's members, a feed that filters by fronting stays the
+/// owner's, and an unshared feed is invisible.
+#[test]
+fn shared_feeds_evaluate_over_what_the_reader_can_read() {
+    let mut c = db::open_memory().unwrap();
+    db::migrate(&mut c).unwrap();
+    for id in [ALICE, BOB, CAROL] {
+        c.execute("INSERT INTO account(id,kind,handle,created_at) VALUES (?1,'person',?1,0)", [id]).unwrap();
+        ingest::grant(&c, id, &format!("account:{id}")).unwrap();
+    }
+    c.execute(
+        "INSERT INTO follow(id,follower_account_id,target_account_id,status,created_at) VALUES ('f',?1,?2,'active',0)",
+        params![BOB, ALICE],
+    )
+    .unwrap();
+    let scope = format!("account:{ALICE}");
+    let t0 = 1_790_000_000_000;
+    let kai = new_id(1, [40; 10]);
+    let rin = new_id(1, [41; 10]);
+    for (id, name) in [(&kai, "Kai"), (&rin, "Rin")] {
+        ingest::server_op(&c, ALICE, "member.create", &scope, Some(id), json!({"name": name}), t0).unwrap();
+    }
+    let post = |n: i64, author: &str, mode: &str, tags: Value| {
+        let payload = json!({"kind": "note", "authors": [author], "text": format!("post {n}"), "entities": [],
+            "tags": tags, "visibility": {"mode": mode}});
+        ingest::server_op(&c, ALICE, "post.create", &scope, Some(&new_id(2, [n as u8; 10])), payload, t0 + n).unwrap();
+    };
+    post(1, &kai, "server", json!(["garden"]));
+    post(2, &kai, "private", json!(["garden"]));
+    post(3, &kai, "followers", json!(["garden"]));
+    post(4, &rin, "followers", json!(["garden"]));
+    post(5, &kai, "followers", json!(["kitchen"]));
+    let feed = |id: &str, query: &str, mode: &str| {
+        let ast: Value = serde_json::from_str(&chorus_core::api::feed_parse(query).unwrap()).unwrap();
+        let payload = json!({"name": id, "query": query, "query_ast": ast, "visibility": {"mode": mode}});
+        ingest::server_op(&c, ALICE, "feed.set", &scope, Some(id), payload, t0 + 50).unwrap();
+    };
+    let (garden, secret, fronting) = (new_id(3, [1; 10]), new_id(3, [2; 10]), new_id(3, [3; 10]));
+    feed(&garden, "from:@kai tag:garden", "followers");
+    feed(&secret, "tag:garden", "private");
+    feed(&fronting, "tag:garden fronting:true", "followers");
+
+    let texts = |v: Value| -> Vec<String> {
+        v["items"].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap().to_string()).collect()
+    };
+    let items = |who: &str, id: &str| {
+        chorus_server::feeds::items(&c, &api_data::Principal::owner(who), id, &Default::default())
+    };
+    assert_eq!(texts(items(ALICE, &garden).unwrap().unwrap()), ["post 3", "post 2", "post 1"], "the owner sees all");
+    assert_eq!(
+        texts(items(BOB, &garden).unwrap().unwrap()),
+        ["post 3", "post 1"],
+        "a follower: only posts it can read, names resolved as the owner wrote them"
+    );
+    assert!(items(CAROL, &garden).unwrap().is_none(), "no follow, no feed");
+    assert!(items(BOB, &secret).unwrap().is_none(), "a private feed isn't shared");
+    assert!(matches!(items(BOB, &fronting), Err(api_data::DataError::Bad(_))), "fronting stays the owner's");
+    assert!(items(ALICE, &fronting).unwrap().is_some());
+
+    let listed = |who: &str| -> Vec<(String, bool)> {
+        chorus_server::feeds::list(&c, &api_data::Principal::owner(who)).unwrap()["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| (f["id"].as_str().unwrap().to_string(), f["shared"].as_bool().unwrap()))
+            .collect()
+    };
+    assert_eq!(listed(ALICE).len(), 3);
+    let mut bob = listed(BOB);
+    bob.sort();
+    let mut want = vec![(garden.clone(), true), (fronting.clone(), true)];
+    want.sort();
+    assert_eq!(bob, want);
+    assert!(listed(CAROL).is_empty());
+
+    // paging: one at a time, the cursor walks the rest and ends
+    let mut seen = Vec::new();
+    let mut cursor = None;
+    loop {
+        let q = chorus_server::feeds::ItemsQuery { limit: Some(1), cursor: cursor.take() };
+        let page = chorus_server::feeds::items(&c, &api_data::Principal::owner(ALICE), &garden, &q).unwrap().unwrap();
+        seen.extend(texts(page.clone()));
+        match page["next_cursor"].as_str() {
+            Some(next) => cursor = Some(next.to_string()),
+            None => break,
+        }
+    }
+    assert_eq!(seen, ["post 3", "post 2", "post 1"]);
+}

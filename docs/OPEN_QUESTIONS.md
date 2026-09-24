@@ -8,6 +8,7 @@ All questions from the 2026-09-23 spec round are answered (D-045 to D-054). Add 
 | # | Question | Default until answered |
 | --- | --- | --- |
 | Q14 | **Export bundle with files** (D-065 left it for later; proposal below, from the remote batch R7). Zip or tar? Only files this account uploaded, or also ones it can see in shared spaces? Is a zip dependency acceptable? | Not built until answered. If built before an answer: zip, *stored* (uncompressed) and written by hand (no new dependency), own files only, one job per account, kept 24 h. |
+| Q15 | A shared feed whose filter uses `fronting:` would tell followers when members fronted, which follow ceilings (NOTIFICATIONS §3) otherwise govern. Share it anyway (evaluated with the follower's ceiling), or keep such feeds private? | Kept private: the web app won't share them and `GET /feeds/{id}/items` answers 400 to anyone but the owner (remote batch R10). |
 
 ### Q14 proposal — the DATA_MODEL §7 "full backup" zip, as a background job
 

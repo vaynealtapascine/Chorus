@@ -20,7 +20,7 @@ pub(crate) fn readable_sql(viewer: &str) -> String {
     )
 }
 
-const COLUMNS: &str = "p.id,p.account_id,p.kind,p.title,p.text,p.entities,p.mood,p.tags,p.cw,
+pub(crate) const COLUMNS: &str = "p.id,p.account_id,p.kind,p.title,p.text,p.entities,p.mood,p.tags,p.cw,
     p.reply_to_id,p.quote,p.repost_of_id,p.visibility,p.occurred_at,p.edited_at,
     COALESCE((SELECT json_group_array(member_id) FROM
        (SELECT member_id FROM post_author WHERE post_id=p.id ORDER BY position)), '[]'),
@@ -56,7 +56,7 @@ fn parsed(s: Option<String>) -> Value {
     s.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(Value::Null)
 }
 
-fn row(r: &Row<'_>) -> rusqlite::Result<Value> {
+pub(crate) fn row(r: &Row<'_>) -> rusqlite::Result<Value> {
     Ok(json!({
         "id": r.get::<_, String>(0)?,
         "account_id": r.get::<_, String>(1)?,
@@ -86,7 +86,7 @@ fn readable_id(conn: &Connection, viewer: &str, id: &str) -> rusqlite::Result<bo
     conn.query_row(&sql, params![viewer, id], |r| r.get(0))
 }
 
-fn hide_unreadable_links(conn: &Connection, viewer: &str, item: &mut Value) -> rusqlite::Result<()> {
+pub(crate) fn hide_unreadable_links(conn: &Connection, viewer: &str, item: &mut Value) -> rusqlite::Result<()> {
     for key in ["reply_to", "repost_of"] {
         if let Some(id) = item[key].as_str()
             && !readable_id(conn, viewer, id)?

@@ -86,3 +86,12 @@ take **0007** if you need one; Sol takes 0008.
   `readable_sql`, tokens need the new `read:posts` scope and see only their own posts); a
   Messages/Posts tab in `Search.svelte`. Test in `tests/posts.rs` (unreadable never matches,
   tags, paging, token scope, delete, rebuild).
+- R10 — shareable feeds: `feeds.rs` with `GET /feeds` (own + shared with me) and
+  `GET /feeds/{id}/items?limit=&cursor=`: the feed row is checked with `readable_sql` (feeds share
+  like posts), results are the core filter over posts **the reader** can read, names resolve
+  against the owner's members/groups/lists, dates in the owner's latest offset, at most 2 000
+  posts looked at per request. A feed using `fronting:` evaluates only for its owner (400 for
+  others) — new owner question **Q15** with that default. `JournalFeeds.svelte`: "Who can open
+  it" (Only us / Our followers; locked private with `fronting:`) and a "Shared with you" list
+  with paging. Test in `tests/posts.rs` (follower vs stranger vs private feed, name resolution,
+  fronting, paging). Not yet looked at in a browser; R12's suite will cover it.

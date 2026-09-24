@@ -11,6 +11,7 @@ pub mod blobs;
 pub mod config;
 pub mod db;
 pub mod exports;
+pub mod feeds;
 pub mod follows;
 pub mod health;
 pub mod ingest;
