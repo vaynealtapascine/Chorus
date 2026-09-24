@@ -149,6 +149,15 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [~] M12.2 Disclosure card, screenshots, README, publish to GitHub — card (Disclosure Studio: claude-opus-5.5 + gpt-6-sol), fresh screenshots and README done; published 2026-09-24 at github.com/vaynealtapascine/Chorus (public; push main after each commit)
 - [~] M12.3 In-app APK updates + silent OTA (CLIENTS.md §5a) — server endpoints, deploy -Android, app updater (D-060) done; needs a device check
 
+
+### M13 · Chorus Home (D-071, docs/HOME.md)
+
+- [ ] M13.1 LAN TLS listener with a self-signed certificate; fingerprint in `/server` and LAN invites
+- [ ] M13.2 Loopback-only setup + *This computer* settings API (first account, port, wifi on/off, backups, restart)
+- [ ] M13.3 Windows service mode + self-install / update / uninstall (ChorusHome service, firewall, shortcut)
+- [ ] M13.4 Web setup page and settings
+- [ ] M13.5 Android: pinned self-signed certificate from `#pin=` invites; mDNS rediscovery
+- [ ] M13.6 Release build (`ChorusHome-<version>.exe`) in CI, linked from the landing page
 ### Later (not v1)
 
 - [ ] L1 Voice messages, video messages
