@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { channels, members, spaces } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
-  import { SearchIndex, parseSearch, type SearchHit } from '../search';
+  import { SearchIndex, parseSearch, type SearchHit, type SearchQuery } from '../search';
   import { apiBase } from '../sync/device';
   import { sync, type Projection } from '../sync/client';
 
@@ -11,6 +11,8 @@
   let viewingAs = $state<string | null>(null);
   let revision = $state(0);
   let remote = $state<SearchHit[]>([]);
+  let remoteCursor = $state<string | null>(null);
+  let loadingMore = $state(false);
   let remoteError = $state('');
   let revealed = $state(new Set<string>());
   let index: SearchIndex | null = null;
@@ -30,24 +32,41 @@
     return sync.subscribeProjection((next, delta) => { index?.apply(next, delta); revision++; });
   });
 
+  const paramsFor = (filter: SearchQuery, cursor?: string) => {
+    const params = new URLSearchParams({ q: filter.terms.join(' '), limit: '25' });
+    if (filter.in) params.set('in', filter.in);
+    if (filter.from) params.set('from', filter.from);
+    if (filter.has) params.set('has', filter.has);
+    if (filter.before !== undefined) params.set('before', String(filter.before));
+    if (filter.after !== undefined) params.set('after', String(filter.after));
+    if (cursor) params.set('cursor', cursor);
+    return params;
+  };
+
+  const fetchPage = async (filter: SearchQuery, cursor: string | null, signal?: AbortSignal) => {
+    const response = await fetch(`${apiBase()}/search/messages?${paramsFor(filter, cursor ?? undefined)}`, {
+      headers: { authorization: `Bearer ${sync.device?.session ?? ''}` }, signal,
+    });
+    if (!response.ok) throw new Error(`Search HTTP ${response.status}`);
+    const body = await response.json() as { items: SearchHit[]; next_cursor: string | null };
+    return {
+      items: body.items.map((item) => ({ ...item, attachments: [], has_image: false, has_file: false })),
+      cursor: body.next_cursor,
+    };
+  };
+
   $effect(() => {
-    const terms = parsed.terms;
-    if (!terms.length || sync.status !== 'live') { remote = []; remoteError = ''; return; }
+    const filter = parsed;
+    if (!filter.terms.length || sync.status !== 'live') { remote = []; remoteCursor = null; remoteError = ''; return; }
+    remote = [];
+    remoteCursor = null;
     const abort = new AbortController();
     const timer = setTimeout(async () => {
-      const params = new URLSearchParams({ q: terms.join(' ') });
-      if (parsed.in) params.set('in', parsed.in);
-      if (parsed.from) params.set('from', parsed.from);
-      if (parsed.has) params.set('has', parsed.has);
-      if (parsed.before !== undefined) params.set('before', String(parsed.before));
-      if (parsed.after !== undefined) params.set('after', String(parsed.after));
       try {
-        const response = await fetch(`${apiBase()}/search/messages?${params}`, {
-          headers: { authorization: `Bearer ${sync.device?.session ?? ''}` }, signal: abort.signal,
-        });
-        if (!response.ok) throw new Error(`Search HTTP ${response.status}`);
-        const body = await response.json() as { items: SearchHit[] };
-        remote = body.items.map((item) => ({ ...item, attachments: [], has_image: false, has_file: false }));
+        const page = await fetchPage(filter, null, abort.signal);
+        if (abort.signal.aborted) return;
+        remote = page.items;
+        remoteCursor = page.cursor;
         remoteError = '';
       } catch (error) {
         if (!abort.signal.aborted) remoteError = String(error);
@@ -55,6 +74,22 @@
     }, 250);
     return () => { clearTimeout(timer); abort.abort(); };
   });
+
+  const loadMore = async () => {
+    if (!remoteCursor || loadingMore) return;
+    const cursor = remoteCursor;
+    const currentQuery = query;
+    loadingMore = true;
+    try {
+      const page = await fetchPage(parsed, cursor);
+      if (query !== currentQuery || remoteCursor !== cursor) return;
+      remote = [...remote, ...page.items];
+      remoteCursor = page.cursor;
+      remoteError = '';
+    } catch (error) {
+      if (query === currentQuery) remoteError = String(error);
+    } finally { loadingMore = false; }
+  };
 
   const person = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
   const channel = (id: string) => ch.get(id)?.name ?? 'channel';
@@ -93,6 +128,9 @@
         <p class="hint">No matching messages here.</p>
       {/each}
     </div>
+    {#if remoteCursor && sync.status === 'live'}
+      <button class="load-more" disabled={loadingMore} onclick={loadMore}>{loadingMore ? 'Loading…' : 'Load more from server'}</button>
+    {/if}
   {/if}
 </section>
 
@@ -107,4 +145,5 @@
   article p { margin: var(--s-2) 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   article a { color: var(--accent); }
   .cw { margin: var(--s-2) 0; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-2); cursor: pointer; }
+  .load-more { justify-self: start; border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-2) var(--s-3); background: var(--surface); color: var(--ink); cursor: pointer; }
 </style>

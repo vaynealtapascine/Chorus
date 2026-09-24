@@ -123,11 +123,13 @@ GET  /messages/{id}                        incl. revisions if ?revisions=1
   The current read-only history view returns the same scoped message fields as search;
   revisions are reserved for a later API pass.
 GET  /messages/{id}/thread
-GET  /search/messages?q=&in=&from=&before=&after=&has=
-  → {items:[{id,channel_id,space_id,account_id,occurred_at,text,cw,visibility,authors}]}
+GET  /search/messages?q=&in=&from=&before=&after=&has=&limit=&cursor=
+  → {items:[{id,channel_id,space_id,account_id,occurred_at,text,cw,visibility,authors}],next_cursor}
   Uses FTS5; `in` accepts a channel id/name, `from` a member id/name, before/after are
-  exclusive epoch milliseconds, and `has` is attachment/image/file. Results are capped at
-  100 and limited to accessible spaces plus public or own messages. API tokens need
+  exclusive epoch milliseconds, and `has` is attachment/image/file. Pages contain 1–100
+  results (default 100). Pass `next_cursor` back with the same search and filters to continue;
+  a null cursor means the results are exhausted. Results are ordered by FTS rank, occurred time,
+  then id and limited to accessible spaces plus public or own messages. API tokens need
   `read:messages`; device sessions inherit access.
 GET  /pins?channel=
 
