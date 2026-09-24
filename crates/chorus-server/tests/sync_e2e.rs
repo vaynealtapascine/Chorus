@@ -1022,8 +1022,19 @@ async fn friends_share_spaces_and_dms() {
     assert_eq!(sent["message"]["entities"][0]["type"], "bold");
     laptop.drain(Q).await;
     assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == sent["message_id"].as_str()), "fanned out live");
+    // a reply reads back with its link (reply_to_id was never projected before migration 0006)
+    let first = sent["message_id"].as_str().unwrap().to_string();
+    let (st, reply) = post(
+        url(&format!("/channels/{chan}/messages")),
+        bot.clone(),
+        json!({"text": "and a reply", "authors": ["Kai"], "reply_to": first}),
+    )
+    .await;
+    assert_eq!(st, 201, "{reply}");
     let (_, mine) = get(url(&format!("/channels/{chan}/messages")), bot.clone()).await;
     assert!(mine["items"].as_array().unwrap().iter().all(|m| m["account_id"] == id_of(&sys).as_str()));
+    let got = mine["items"].as_array().unwrap().iter().find(|m| m["id"] == reply["message_id"]).unwrap();
+    assert_eq!(got["reply_to"], first.as_str(), "{got}");
     let (st, _) = post(url(&format!("/channels/{chan}/messages")), tok(&stranger), json!({"text": "hi"})).await;
     assert_eq!(st, 404, "not in the space");
 
