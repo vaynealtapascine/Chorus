@@ -314,3 +314,81 @@ async fn cross_account_replies_require_a_readable_parent_and_reach_its_author() 
     let _ = server.await;
     let _ = std::fs::remove_dir_all(test_dir);
 }
+
+/// `GET /search/posts`: projected posts are indexed (title, text, tags), a reader never matches a
+/// post it can't read, tokens (`read:posts`) see only their own account, pages continue with the
+/// cursor, and a rebuild keeps search working.
+#[test]
+fn post_search_matches_only_readable_posts_and_survives_a_rebuild() {
+    let mut c = db::open_memory().unwrap();
+    db::migrate(&mut c).unwrap();
+    for id in [ALICE, BOB] {
+        c.execute("INSERT INTO account(id,kind,created_at) VALUES (?1,'person',0)", [id]).unwrap();
+        ingest::grant(&c, id, &format!("account:{id}")).unwrap();
+    }
+    let scope = format!("account:{ALICE}");
+    let t0 = 1_790_000_000_000;
+    let post = |c: &Connection, n: i64, id: &str, mode: &str, title: &str, tags: Value| {
+        let payload = json!({"kind": "entry", "authors": [], "title": title, "text": format!("garden notes {n}"),
+            "entities": [], "tags": tags, "visibility": {"mode": mode}});
+        ingest::server_op(c, ALICE, "post.create", &scope, Some(id), payload, t0 + n).unwrap();
+    };
+    post(&c, 1, &new_id(1, [1; 10]), "server", "Tomatoes", json!(["harvest"]));
+    post(&c, 2, &new_id(1, [2; 10]), "private", "Secret tomatoes", json!(["diary"]));
+    post(&c, 3, &new_id(1, [3; 10]), "followers", "Followers only", json!([]));
+    for n in 4..9 {
+        post(&c, n, &new_id(1, [n as u8; 10]), "server", "Beans", json!([]));
+    }
+    let ids = |v: &Value| -> Vec<String> {
+        v["items"].as_array().unwrap().iter().map(|i| i["title"].as_str().unwrap_or("").to_string()).collect()
+    };
+    let search = |c: &Connection, p: &api_data::Principal, q: &str| {
+        posts::search(c, p, &posts::PostSearch { q: q.into(), ..Default::default() }).unwrap()
+    };
+    let alice = api_data::Principal::owner(ALICE);
+    let bob = api_data::Principal::owner(BOB);
+    let check = |c: &Connection| {
+        assert_eq!(ids(&search(c, &alice, "tomatoes")).len(), 2, "the author finds their private post too");
+        assert_eq!(ids(&search(c, &bob, "tomatoes")), ["Tomatoes"], "an unreadable post never matches");
+        assert_eq!(ids(&search(c, &bob, "followers")), Vec::<String>::new(), "no follow, no followers post");
+        assert_eq!(ids(&search(c, &bob, "harvest")), ["Tomatoes"], "tags are searched");
+        assert_eq!(ids(&search(c, &bob, "diary")), Vec::<String>::new());
+        // pages of two through the five beans, then the end
+        let mut seen = Vec::new();
+        let mut cursor = None;
+        loop {
+            let q =
+                posts::PostSearch { q: "beans".into(), limit: Some(2), cursor: cursor.take(), ..Default::default() };
+            let page = posts::search(c, &bob, &q).unwrap();
+            seen.extend(page["items"].as_array().unwrap().iter().map(|i| i["id"].as_str().unwrap().to_string()));
+            match page["next_cursor"].as_str() {
+                Some(next) => cursor = Some(next.to_string()),
+                None => break,
+            }
+        }
+        seen.sort();
+        seen.dedup();
+        assert_eq!(seen.len(), 5, "every page is new and none is lost");
+    };
+    check(&c);
+    // an API token with read:posts sees only its own account's posts
+    let token = api_data::create_token(&c, &bob, "script", &["read:posts".to_string()], t0).unwrap();
+    let tp = api_data::principal(&c, token["token"].as_str().unwrap(), t0, 86_400_000).unwrap();
+    assert_eq!(ids(&search(&c, &tp, "tomatoes")), Vec::<String>::new());
+    let front_only = api_data::create_token(&c, &bob, "front", &["read:front".to_string()], t0).unwrap();
+    let fp = api_data::principal(&c, front_only["token"].as_str().unwrap(), t0, 86_400_000).unwrap();
+    assert!(posts::search(&c, &fp, &posts::PostSearch { q: "tomatoes".into(), ..Default::default() }).is_err());
+    // a cursor from another search, and a malformed query, are refused
+    let bad = posts::PostSearch { q: "\"unclosed".into(), ..Default::default() };
+    assert!(matches!(posts::search(&c, &bob, &bad), Err(api_data::DataError::Bad(_))));
+    // deleting a post takes it out of the index
+    ingest::server_op(&c, ALICE, "post.delete", &scope, Some(&new_id(1, [1; 10])), json!({}), t0 + 20).unwrap();
+    assert_eq!(ids(&search(&c, &bob, "tomatoes")), Vec::<String>::new());
+
+    chorus_server::project::rebuild(&mut c).unwrap();
+    let after = search(&c, &alice, "garden");
+    assert!(!after["items"].as_array().unwrap().is_empty(), "search works after a rebuild");
+    assert_eq!(ids(&search(&c, &bob, "diary")), Vec::<String>::new(), "and still hides what it hid");
+    assert_eq!(ids(&search(&c, &bob, "tomatoes")), Vec::<String>::new(), "deleted stays out");
+    assert_eq!(ids(&search(&c, &bob, "beans")).len(), 5);
+}

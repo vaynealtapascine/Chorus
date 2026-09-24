@@ -75,3 +75,14 @@ take **0007** if you need one; Sol takes 0008.
 ## 5. Report (append below; newest last)
 
 - 2026-09-24 local Claude — batch R2 written; `handoff/opus-remote-1` fast-forwarded to `main`.
+- R8 — CI (`.github/workflows/ci.yml`): the job-level `hashFiles()` is gone; runs on every push;
+  Rust pinned to 1.98; the web job builds the wasm core (prebuilt `wasm-bindgen` 0.2.128 via
+  `taiki-e/install-action`) then check, vitest, build and the bundle budgets; the rust job runs
+  gen-tokens/projection-check/api-check first. `backup_cli`, `purge_cli` and the backup rotation
+  unit test no longer need `CARGO_TARGET_DIR`. Green status reported below once seen.
+- R9 — post search: `post_fts` filled from the post projection (`post_search` in `project.rs`'s
+  `post` arm, bulk fill + drop/recreate in the rebuild), migration **0007** indexes existing
+  posts; `GET /search/posts` (`posts::search`, cursor like messages, every hit through
+  `readable_sql`, tokens need the new `read:posts` scope and see only their own posts); a
+  Messages/Posts tab in `Search.svelte`. Test in `tests/posts.rs` (unreadable never matches,
+  tags, paging, token scope, delete, rebuild).

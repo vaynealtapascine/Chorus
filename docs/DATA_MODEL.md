@@ -522,7 +522,8 @@ CREATE TABLE item_attachment (
 -- These FTS5 tables store their own content; the projector writes matching rowids explicitly.
 CREATE VIRTUAL TABLE message_fts USING fts5(text, cw, tokenize='unicode61 remove_diacritics 2');
 CREATE VIRTUAL TABLE post_fts USING fts5(title, text, tags, tokenize='unicode61 remove_diacritics 2');
--- Current server projection populates message_fts; post_fts is reserved and not populated yet.
+-- The server projection fills both: message_fts (text, cw) per message, post_fts (title, text,
+-- tags joined by spaces) per post; deleted rows drop out. Migration 0007 indexed existing posts.
 
 -- ─── posts, profiles, social ─────────────────────────────────────────
 CREATE TABLE post (

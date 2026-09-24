@@ -137,6 +137,7 @@ pub fn router(state: AppState) -> Router {
         .route("/front/daily", get(front_daily))
         .route("/front/reviews", get(front_reviews))
         .route("/search/messages", get(search_messages))
+        .route("/search/posts", get(search_posts))
         .route("/messages/{id}", get(search_message))
         .route("/messages/{id}/thread", get(message_thread))
         .route("/spaces/{id}/channels", get(space_channels))
@@ -773,6 +774,16 @@ async fn search_messages(
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
     Ok(Json(crate::search::messages(&conn, &p, &q)?))
+}
+
+async fn search_posts(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<crate::posts::PostSearch>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::posts::search(&conn, &p, &q)?))
 }
 
 async fn search_message(

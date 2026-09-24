@@ -11,6 +11,7 @@
     { id: 'read:front', label: 'Who is fronting, switches and front history' },
     { id: 'read:members', label: 'Member list' },
     { id: 'read:messages', label: 'Read and search your messages' },
+    { id: 'read:posts', label: 'Read and search your journal posts' },
     { id: 'stream', label: 'Live stream (overlays)' },
     { id: 'write:front', label: 'Log switches (NFC tags, Tasker, Home Assistant)' },
     { id: 'write:messages', label: 'Send messages (bots, bridges)' },
