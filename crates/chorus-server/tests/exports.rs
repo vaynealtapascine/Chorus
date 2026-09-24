@@ -4,6 +4,7 @@ use chorus_core::hlc::Hlc;
 use chorus_server::{api_data, app, auth, config::Config, db};
 use rusqlite::{Connection, params};
 use std::process::Command;
+mod common;
 
 const ALICE: &str = "0192f8c2-0000-7000-8000-0000000000a1";
 const BOB: &str = "0192f8c2-0000-7000-8000-0000000000b2";
@@ -81,8 +82,8 @@ async fn exports_exclude_other_accounts_and_require_export_scope() {
         .unwrap()
         .to_string();
     let mut cfg = Config::default();
-    cfg.server.data_dir = std::path::PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap())
-        .join(format!("export-http-test-{:016x}", rand::random::<u64>()));
+    cfg.server.data_dir = common::http_test_dir("export-http-test");
+    let test_dir = cfg.server.data_dir.clone();
     let sqlite_path = cfg.server.data_dir.join("download.sqlite");
     std::fs::create_dir_all(&cfg.server.data_dir).unwrap();
     db::backup_to(&conn, &cfg.db_path()).unwrap();
@@ -90,7 +91,7 @@ async fn exports_exclude_other_accounts_and_require_export_scope() {
     let state = app::Shared::new(db::open(&cfg.db_path()).unwrap(), cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/api/v1/exports", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, app::router(state)).await.unwrap() });
+    let server = tokio::spawn(async move { axum::serve(listener, app::router(state)).await.unwrap() });
     let client = reqwest::Client::new();
 
     let denied = client.get(format!("{base}/ops.jsonl")).bearer_auth(&read_token).send().await.unwrap();
@@ -134,6 +135,9 @@ async fn exports_exclude_other_accounts_and_require_export_scope() {
     );
     drop(copy);
     std::fs::remove_file(sqlite_path).unwrap();
+    server.abort();
+    let _ = server.await;
+    let _ = std::fs::remove_dir_all(test_dir);
 }
 
 #[test]

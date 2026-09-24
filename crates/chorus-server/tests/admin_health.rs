@@ -1,12 +1,13 @@
 use chorus_server::{app, auth, config::Config, db};
 use rusqlite::params;
 use serde_json::Value;
+mod common;
 
 #[tokio::test]
 async fn health_requires_admin_session_and_reports_live_counts() {
     let mut cfg = Config::default();
-    cfg.server.data_dir = std::path::PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap())
-        .join(format!("health-http-test-{:016x}", rand::random::<u64>()));
+    cfg.server.data_dir = common::http_test_dir("health-http-test");
+    let test_dir = cfg.server.data_dir.clone();
     let mut conn = db::open(&cfg.db_path()).unwrap();
     db::migrate(&mut conn).unwrap();
     let now = chorus_server::now_ms();
@@ -69,4 +70,7 @@ async fn health_requires_admin_session_and_reports_live_counts() {
     assert_eq!(health["last_error"]["source"], "backup");
     assert_eq!(health["ntfy_reachable"], true);
     server.abort();
+    let _ = server.await;
+    drop(state);
+    let _ = std::fs::remove_dir_all(test_dir);
 }

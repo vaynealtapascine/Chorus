@@ -3,6 +3,7 @@
 use chorus_server::{api_data, app, auth, config::Config, db};
 use rusqlite::{Connection, params};
 use serde_json::Value;
+mod common;
 
 const ALICE: &str = "0192f8c2-0000-7000-8000-0000000000a1";
 const BOB: &str = "0192f8c2-0000-7000-8000-0000000000b2";
@@ -96,12 +97,12 @@ async fn http_search_applies_account_visibility_and_filters() {
         .unwrap()
         .to_string();
     let mut cfg = Config::default();
-    cfg.server.data_dir = std::path::PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap())
-        .join(format!("search-http-test-{:016x}", rand::random::<u64>()));
+    cfg.server.data_dir = common::http_test_dir("search-http-test");
+    let test_dir = cfg.server.data_dir.clone();
     let state = app::Shared::new(conn, cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/api/v1/search/messages", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, app::router(state)).await.unwrap() });
+    let server = tokio::spawn(async move { axum::serve(listener, app::router(state)).await.unwrap() });
     let client = reqwest::Client::new();
     let get = |auth: &str, suffix: &str| client.get(format!("{base}?q=violet{suffix}")).bearer_auth(auth);
 
@@ -216,4 +217,7 @@ async fn http_search_applies_account_visibility_and_filters() {
     );
     assert_eq!(client.get(format!("{message_base}/public")).bearer_auth(&token).send().await.unwrap().status(), 404);
     assert_eq!(client.get(format!("{message_base}/bob")).bearer_auth(&token).send().await.unwrap().status(), 200);
+    server.abort();
+    let _ = server.await;
+    let _ = std::fs::remove_dir_all(test_dir);
 }
