@@ -1478,3 +1478,58 @@ async fn a_socket_over_its_frame_budget_is_closed() {
     assert_eq!(pongs, 4, "hello + 4 pings fit the burst of 5");
     assert!(next_frame(&mut ws).await.is_none(), "then the socket is closed");
 }
+
+/// API.md §2: "Send a test" pushes to the calling device only, encrypted to its keys.
+#[tokio::test]
+async fn a_device_can_send_itself_a_test_notification() {
+    use chorus_server::push;
+    use p256::elliptic_curve::sec1::ToSec1Point;
+    // a push service on the loopback
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    let service = axum::Router::new().route(
+        "/push/{who}",
+        axum::routing::post(move |body: axum::body::Bytes| {
+            let tx = tx.clone();
+            async move {
+                let _ = tx.send(body.to_vec());
+                axum::http::StatusCode::CREATED
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/push/", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, service).await.unwrap() });
+
+    let s = start().await;
+    let phone = enrol(&s, auth::InviteKind::System, None, 61, "stars").await;
+    let account = phone["account_id"].as_str().unwrap();
+    let laptop = enrol(&s, auth::InviteKind::Device, Some(account), 62, "stars").await;
+    let http = reqwest::Client::new();
+    let url = format!("http://{}/api/v1/devices/push/test", s.base);
+    let session = |d: &Value| d["session"].as_str().unwrap().to_string();
+
+    // no registration yet
+    let r = http.post(&url).bearer_auth(session(&phone)).send().await.unwrap();
+    assert_eq!(r.status(), 409);
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "no_push");
+
+    // both devices register; only the caller gets the test
+    let keys: Vec<p256::SecretKey> = [7u8, 9].iter().map(|b| p256::SecretKey::from_slice(&[*b; 32]).unwrap()).collect();
+    for (dev, (key, who)) in [&phone, &laptop].into_iter().zip(keys.iter().zip(["phone", "laptop"])) {
+        let reg = json!({
+            "endpoint": format!("{endpoint}{who}"),
+            "p256dh": push::b64url(key.public_key().to_sec1_point(false).as_bytes()),
+            "auth": push::b64url(&[3; 16]),
+        });
+        let put = http.put(format!("http://{}/api/v1/devices/push", s.base)).bearer_auth(session(dev)).json(&reg);
+        assert_eq!(put.send().await.unwrap().status(), 204);
+    }
+    assert_eq!(http.post(&url).bearer_auth(session(&phone)).send().await.unwrap().status(), 204);
+    let got = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await.unwrap().unwrap();
+    let plain = push::decrypt(&keys[0], &[3; 16], &got).expect("encrypted to the phone's keys");
+    let v: Value = serde_json::from_slice(&plain).unwrap();
+    assert_eq!(v["t"], "test");
+    assert!(push::decrypt(&keys[1], &[3; 16], &got).is_none(), "not to the laptop's");
+    assert!(rx.try_recv().is_err(), "one push, to the caller only");
+}

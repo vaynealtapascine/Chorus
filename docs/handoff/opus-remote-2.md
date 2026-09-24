@@ -86,6 +86,16 @@ takes 0008 only if it asks first in its log, so check `migrations/` after each `
   0007 (or the next free number) for `export_job`. The web *Your data* page gets "Prepare a full
   export" with progress and a download link; Android can come later (Sol).
 
+- **R16 · push endpoints get the webhook target rules (security).** `push::register` accepts
+  any `http(s)://` endpoint, so on a public server any signed-in device can make the server POST
+  (encrypted, blind) to internal addresses: SSRF, like webhooks before `security.webhook_targets`.
+  `POST /devices/push/test` (local Claude, 2026-09-24) makes it triggerable on demand, rate
+  limited. Apply the same rule as webhooks (`webhooks.rs`: resolve, check against
+  `webhook_targets`, pin the checked address, no redirects) at register *and* send time, https
+  only outside `any`; keep the owner's setup working (ntfy at `https://ntfy.vayne.garden`, a
+  tailnet name) and the loopback test in `sync_e2e.rs` (`webhook_targets = any`). Do this right
+  after R9.
+
 ## Appendix: export bundle design (Q14 → D-068) — the DATA_MODEL §7 "full backup" zip, as a background job
 
 **What's in it.** `chorus-<handle>-<YYYYMMDD>.zip`:

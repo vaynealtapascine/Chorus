@@ -57,7 +57,12 @@ Register this device for push (UnifiedPush endpoint + Web Push keys, NOTIFICATIO
 ```
 PUT    /devices/push {endpoint, p256dh: <b64url uncompressed P-256>, auth: <b64url 16 bytes>}  → 204
 DELETE /devices/push                                                                          → 204
+POST   /devices/push/test                                                                     → 204
 ```
+
+`POST /devices/push/test` sends a test notification (`{"t":"test","title","text"}`) to the
+calling device only, to check the whole push path without a switch or a mention: `409 no_push`
+when it has no registration, `502 push_gone` / `push_failed` when the push service refuses.
 
 Payloads are RFC 8291 `aes128gcm`, one record, ≤ 3 KB plaintext (else `{"t":"sync"}`). A 404/410
 from the endpoint clears the registration.

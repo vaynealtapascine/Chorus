@@ -14,7 +14,7 @@
   import RichText from './RichText.svelte';
   import PostComposer from './PostComposer.svelte';
   import type { Entity } from '../core';
-  import { disablePush, enablePush, pushActive, pushSupported } from '../push';
+  import { disablePush, enablePush, pushActive, pushSupported, testPush } from '../push';
   import { createShared, openDm } from '../spaces';
 
   let { projection }: { projection: Projection } = $props();
@@ -58,6 +58,7 @@
   // Web Push: notifications even with no Chorus tab open (only in the built app)
   let pushOn = $state(false);
   let pushNote = $state('');
+  let testNote = $state('');
   pushActive().then((on) => (pushOn = on));
   let following = $state<FollowRow[]>([]);
   let followers = $state<FollowRow[]>([]);
@@ -177,6 +178,11 @@
       }
     }
     canNotify = (await Notification.requestPermission()) === 'granted';
+  }
+
+  async function sendTest() {
+    const err = await testPush();
+    testNote = err ? `The test didn't go out: ${err}` : 'Sent. It should arrive in a few seconds, even with this tab closed.';
   }
 
   async function turnOffPush() {
@@ -478,12 +484,14 @@
     <div class="notes-head">
       <h2>Recent</h2>
       {#if pushOn}
+        <button class="ghost" onclick={sendTest}>Send a test</button>
         <button class="ghost" onclick={turnOffPush}>Stop notifying this browser</button>
       {:else if typeof Notification !== 'undefined' && (!canNotify || pushSupported())}
         <button class="ghost" onclick={enableNotifications}>Notify me in this browser</button>
       {/if}
     </div>
     {#if pushNote}<p class="muted">{pushNote} Notifications will show while this page is open.</p>{/if}
+    {#if testNote}<p class="muted">{testNote}</p>{/if}
     <ul>
       {#each notes as n (n.id)}
         <li class="note">
