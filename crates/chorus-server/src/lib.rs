@@ -15,6 +15,7 @@ pub mod feeds;
 pub mod follows;
 pub mod health;
 pub mod home;
+pub mod home_install;
 pub mod ingest;
 pub mod messages;
 pub mod notifier;
@@ -36,6 +37,22 @@ pub mod webhooks;
 use rusqlite::Connection;
 
 /// Open the database, backing it up before any pending migration (docs/OPS.md §5).
+/// Run the server from `config` until stopped, starting again whenever Chorus Home's settings
+/// page changed the file (home.rs). What the Windows service runs (home_install.rs).
+pub fn serve_until_stopped(config: &std::path::Path) -> anyhow::Result<()> {
+    loop {
+        let cfg = config::Config::load(Some(config))?;
+        let conn = open_and_migrate(&cfg)?;
+        auth::backfill_self_members(&conn, now_ms())?;
+        let state = app::Shared::new(conn, cfg)?;
+        // a fresh runtime each time: dropping it ends the last run's background tasks
+        tokio::runtime::Runtime::new()?.block_on(app::serve(state))?;
+        if !home::take_restart() {
+            return Ok(());
+        }
+    }
+}
+
 pub fn open_and_migrate(cfg: &config::Config) -> anyhow::Result<Connection> {
     let path = cfg.db_path();
     let existed = path.exists();

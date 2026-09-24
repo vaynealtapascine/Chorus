@@ -36,6 +36,15 @@ tower-http = { version = "0.7.1", features = ["trace", "cors", "fs"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 
+include_dir = { version = "0.7", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8"
+
+[features]
+# Chorus Home's Windows download (D-071): the web app (web/dist) travels inside the program
+home-bundle = ["dep:include_dir"]
+
 [dev-dependencies]
 proptest = "1"
 reqwest = { version = "0.13.5", features = ["json"] }

@@ -18,6 +18,24 @@ use crate::app::{ApiError, AppState};
 static RESTART: tokio::sync::Notify = tokio::sync::Notify::const_new();
 static RESTARTING: AtomicBool = AtomicBool::new(false);
 
+/// Asked to stop (the Windows service manager, home_install.rs): `serve` ends and doesn't restart.
+static STOP: tokio::sync::Notify = tokio::sync::Notify::const_new();
+static STOPPING: AtomicBool = AtomicBool::new(false);
+
+pub fn request_stop() {
+    STOPPING.store(true, Ordering::SeqCst);
+    STOP.notify_one();
+}
+
+/// Resolves once a stop was asked for (at once if it already was).
+pub async fn stop_requested() {
+    let notified = STOP.notified();
+    if STOPPING.load(Ordering::SeqCst) {
+        return;
+    }
+    notified.await;
+}
+
 /// Resolves when the settings page asked for a restart.
 pub async fn restart_requested() {
     RESTART.notified().await;

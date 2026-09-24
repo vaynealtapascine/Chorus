@@ -1866,6 +1866,7 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     let server = axum::serve(listener, app).with_graceful_shutdown(async {
         tokio::select! {
             () = stop_signal() => tracing::info!("stopping"),
+            () = crate::home::stop_requested() => tracing::info!("stopping (service)"),
             // Chorus Home's settings changed: main starts again with the new config
             () = crate::home::restart_requested() => tracing::info!("restarting with new settings"),
         }
