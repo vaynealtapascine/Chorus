@@ -5,6 +5,7 @@
   import { sync, type Projection } from '../sync/client';
   import PostCard from './PostCard.svelte';
   import PostComposer from './PostComposer.svelte';
+  import PostReplies from './PostReplies.svelte';
   import AvatarImage from './AvatarImage.svelte';
 
   let { projection, id, dark }: { projection: Projection; id: string; dark: boolean } = $props();
@@ -63,7 +64,7 @@
       {#key replying?.id}<PostComposer {projection} initialAuthors={[writeAs]} replyTo={replying?.id} onsent={() => (replying = null)} />{/key}
     {/if}
     <nav aria-label="Profile posts"><button class:on={tab === 'posts'} onclick={() => (tab = 'posts')}>Posts</button><button class:on={tab === 'replies'} onclick={() => (tab = 'replies')}>Replies</button><button class:on={tab === 'highlights'} onclick={() => (tab = 'highlights')}>Highlights</button></nav>
-    <div class="list">{#each shown as post (post.id)}<PostCard {post} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} speaker={writeAs} onreply={() => (replying = post)} onreact={(emoji, add) => react(post, emoji, add)} />{#if own}<div class="post-tools">{#if member.pinned_post_id !== post.id}<button onclick={() => pin(post.id)}>Pin to profile</button>{/if}<button onclick={() => highlight(post.id)}>{highlighted.has(post.id) ? 'Remove highlight' : 'Highlight post'}</button></div>{/if}{:else}<p class="empty">No {tab} yet.</p>{/each}</div>
+    <div class="list">{#each shown as post (post.id)}<PostCard {post} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} speaker={writeAs} onreply={() => (replying = post)} onreact={(emoji, add) => react(post, emoji, add)} /><PostReplies postId={post.id} />{#if own}<div class="post-tools">{#if member.pinned_post_id !== post.id}<button onclick={() => pin(post.id)}>Pin to profile</button>{/if}<button onclick={() => highlight(post.id)}>{highlighted.has(post.id) ? 'Remove highlight' : 'Highlight post'}</button></div>{/if}{:else}<p class="empty">No {tab} yet.</p>{/each}</div>
   {:else}<p>This member is unavailable.</p>{/if}
 </section>
 
