@@ -98,6 +98,8 @@ class Model(
     val relationshipTypes: List<RelationshipType> = emptyList(),
     val relationships: List<MemberRelationship> = emptyList(),
     val accountPrefs: AccountPrefs = AccountPrefs(),
+    /** All locally visible messages for search, including older chat rows outside the display window. */
+    val searchMessages: List<SearchDocument> = emptyList(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -269,6 +271,14 @@ class Model(
             for ((_, fields) in messageRows) for (author in strings(fields.optJSONArray("authors"))) {
                 messageCounts[author] = (messageCounts[author] ?: 0) + 1
             }
+            val searchMessages = messageRows.map { (id, f) ->
+                val linked = strings(f.optJSONArray("attachments"))
+                val mimes = linked.mapNotNull { attachments[it]?.str("mime") }
+                SearchDocument(id, "Messages", f.optLong("occurred_at"), f.str("text").orEmpty(),
+                    cw = f.str("cw"), authors = strings(f.optJSONArray("authors")), channelId = f.str("channel_id"),
+                    hasImage = mimes.any { it.startsWith("image/") },
+                    hasFile = mimes.any { !it.startsWith("image/") }, hasAttachment = linked.isNotEmpty())
+            }
             val selected = messageRows
                 .groupBy { (_, f) -> f.str("channel_id").orEmpty() }
                 .mapValues { (_, values) -> values.sortedWith(compareBy<Pair<String, JSONObject>> { it.second.optLong("occurred_at") }.thenBy { it.first }).takeLast(100) }
@@ -318,7 +328,7 @@ class Model(
             return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages,
                 followCeilings, posts, postReactions, memberLists, savedFeeds, highlights, frontSpans, systemZone,
                 messageCounts, LocalProfileFields.fromProjection(p), LocalRelationships.types(p),
-                LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId))
+                LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages)
         }
     }
 }
