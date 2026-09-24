@@ -129,8 +129,29 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
 
 /// [`entity`] over a given set of the entity's ops (all of them).
 fn entity_from(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Result<()> {
+    match prepare(conn, table, id, ops)? {
+        Some(p) => write(conn, p),
+        None => Ok(()),
+    }
+}
+
+/// An entity row computed from its ops, ready to write. Computing it doesn't touch the
+/// projections, so a rebuild prepares single-op entities on its reader thread.
+struct Prepared {
+    table: String,
+    id: String,
+    fields: serde_json::Map<String, Value>,
+    names: Vec<String>,
+    values: Vec<Sql>,
+    fresh: bool,
+    first_scope: Option<String>,
+}
+
+/// The row `ops` project to; `None` if the entity isn't created yet (fields wait in the log
+/// until the create arrives). `conn` is only asked for the table's columns.
+fn prepare(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Result<Option<Prepared>> {
     if id.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
     let ops: Vec<Op> = ops
         .into_iter()
@@ -141,9 +162,8 @@ fn entity_from(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow
         .collect();
     let proj = model::project(ops.iter());
     let Some(row) = proj.row(table, id).filter(|r| r.exists) else {
-        return Ok(()); // not created yet (fields wait in the log until the create arrives)
+        return Ok(None);
     };
-    let old_thread_parent = if table == "channel" { thread_parent(conn, id)? } else { None };
     // the create is the entity's only op: nothing derived from it has been written yet
     let fresh = ops.len() == 1;
     let first = ops.iter().min_by_key(|o| (o.hlc, o.id.clone()));
@@ -178,6 +198,21 @@ fn entity_from(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow
     let cols = writable(conn, table)?;
     let (names, values): (Vec<String>, Vec<Sql>) =
         vals.iter().filter(|(k, _)| cols.contains(k)).map(|(k, v)| (k.clone(), to_sql(v))).unzip();
+    Ok(Some(Prepared {
+        table: table.to_string(),
+        id: id.to_string(),
+        fields: row.fields.clone(),
+        names,
+        values,
+        fresh,
+        first_scope: first.map(|f| f.scope.clone()),
+    }))
+}
+
+fn write(conn: &Connection, p: Prepared) -> anyhow::Result<()> {
+    let Prepared { table, id, fields, names, values, fresh, first_scope } = p;
+    let (table, id) = (table.as_str(), id.as_str());
+    let old_thread_parent = if table == "channel" { thread_parent(conn, id)? } else { None };
     match table {
         // one row per account, keyed by it
         "system" => upsert(conn, table, &["account_id"], &names, values)?,
@@ -202,8 +237,8 @@ fn entity_from(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow
     }
     match table {
         "message" => {
-            message_extras(conn, id, row.fields.get("authors"), &row.fields, fresh)?;
-            item_attachments(conn, "message", id, row.fields.get("attachments"), fresh)?;
+            message_extras(conn, id, fields.get("authors"), &fields, fresh)?;
+            item_attachments(conn, "message", id, fields.get("attachments"), fresh)?;
             refresh_thread_link(conn, id)?;
         }
         "channel" => {
@@ -215,12 +250,10 @@ fn entity_from(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow
             }
         }
         "post" => {
-            authors(conn, "post_author", "post_id", id, row.fields.get("authors"), fresh)?;
-            item_attachments(conn, "post", id, row.fields.get("attachments"), fresh)?;
+            authors(conn, "post_author", "post_id", id, fields.get("authors"), fresh)?;
+            item_attachments(conn, "post", id, fields.get("attachments"), fresh)?;
         }
-        "member_group" => {
-            group_parents(conn, account_of(&first.map(|f| f.scope.clone()).unwrap_or_default()).unwrap_or(""))?
-        }
+        "member_group" => group_parents(conn, account_of(first_scope.as_deref().unwrap_or_default()).unwrap_or(""))?,
         _ => {}
     }
     Ok(())
@@ -1080,10 +1113,31 @@ thread_local! {
     static REBUILDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// During a rebuild: the entities with more than one op. Any other entity's op is its only
     /// one, so it can be projected without reading it back from the log.
-    static SINGLE_OP: std::cell::RefCell<Option<std::collections::HashSet<String>>> = const { std::cell::RefCell::new(None) };
+    static SINGLE_OP: std::cell::RefCell<Option<std::sync::Arc<std::collections::HashSet<String>>>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Rebuild every projection from the op log (`chorus-server rebuild`).
+/// A slice of the log for a rebuild: each op, with its entity's row when already prepared.
+type Batch = Vec<(Op, Option<Option<Prepared>>)>;
+
+/// For a rebuild's reader thread: the row of an entity whose create is its only op, as
+/// [`after_insert`] would project it (`Some(None)`: nothing to write), or `None` to leave the op
+/// to `after_insert`.
+fn prepare_single(
+    conn: &Connection,
+    multi: &std::collections::HashSet<String>,
+    o: &Op,
+) -> anyhow::Result<Option<Option<Prepared>>> {
+    let Ok(Known::Yes(spec)) = op::validate(o) else { return Ok(None) };
+    if !matches!(spec.action, Action::Create | Action::Append) {
+        return Ok(None);
+    }
+    match o.entity() {
+        Some(id) if !id.is_empty() && !multi.contains(id) => Ok(Some(prepare(conn, spec.table, id, vec![o.clone()])?)),
+        _ => Ok(None),
+    }
+}
+
 pub fn rebuild(conn: &mut Connection) -> anyhow::Result<u64> {
     rebuild_timed(conn, &mut |_, _| {})
 }
@@ -1112,19 +1166,24 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
     let mut n = 0u64;
     let mut seq = 0i64;
     REBUILDING.with(|r| r.set(true));
-    let multi: std::collections::HashSet<String> = {
+    let multi: std::sync::Arc<std::collections::HashSet<String>> = {
         let mut st = tx.prepare(
             "SELECT entity_id FROM op WHERE status = 'applied' AND entity_id IS NOT NULL
              GROUP BY entity_id HAVING count(*) > 1",
         )?;
-        st.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?
+        std::sync::Arc::new(st.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?)
     };
-    SINGLE_OP.with(|m| *m.borrow_mut() = Some(multi));
+    SINGLE_OP.with(|m| *m.borrow_mut() = Some(multi.clone()));
     let replayed = (|| -> anyhow::Result<()> {
-        let mut apply = |batch: &[Op]| -> anyhow::Result<()> {
-            for o in batch {
+        // an op, and its entity's row if the reader thread already prepared it
+        let mut apply = |batch: Batch| -> anyhow::Result<()> {
+            for (o, ready) in batch {
                 let t = std::time::Instant::now();
-                after_insert(&tx, o)?;
+                match ready {
+                    Some(Some(p)) => write(&tx, p)?,
+                    Some(None) => {}
+                    None => after_insert(&tx, &o)?,
+                }
                 time(&o.kind, t.elapsed());
                 n += 1;
             }
@@ -1134,7 +1193,8 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
             // decode the log on a second (read-only) connection while this one writes; the op
             // table doesn't change during a rebuild, so its committed snapshot is the same log
             Some(path) => std::thread::scope(|s| {
-                let (send, recv) = std::sync::mpsc::sync_channel::<anyhow::Result<Vec<Op>>>(4);
+                let (send, recv) = std::sync::mpsc::sync_channel::<anyhow::Result<Batch>>(4);
+                let multi = multi.clone();
                 s.spawn(move || {
                     let read = || -> anyhow::Result<()> {
                         let conn = Connection::open_with_flags(
@@ -1146,7 +1206,12 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
                             let batch = oplog::applied_after(&conn, seq, 1000)?;
                             let Some(last) = batch.last() else { return Ok(()) };
                             seq = last.seq.unwrap_or(seq);
-                            if send.send(Ok(batch)).is_err() {
+                            let mut ready = Batch::with_capacity(batch.len());
+                            for o in batch {
+                                let p = prepare_single(&conn, &multi, &o)?;
+                                ready.push((o, p));
+                            }
+                            if send.send(Ok(ready)).is_err() {
                                 return Ok(()); // the writer stopped early
                             }
                         }
@@ -1156,7 +1221,7 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
                     }
                 });
                 for batch in recv {
-                    apply(&batch?)?;
+                    apply(batch?)?;
                 }
                 Ok(())
             }),
@@ -1164,7 +1229,7 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
                 let batch = oplog::applied_after(&tx, seq, 1000)?;
                 let Some(last) = batch.last() else { return Ok(()) };
                 seq = last.seq.unwrap_or(seq);
-                apply(&batch)?;
+                apply(batch.into_iter().map(|o| (o, None)).collect())?;
             },
         }
     })();
