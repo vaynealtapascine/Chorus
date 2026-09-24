@@ -47,7 +47,18 @@ jobs:
           } else {
             $store = $raw; $password = $env:ANDROID_SIGNING_PASSWORD; $alias = 'chorus'
           }
-          if (-not $password) { throw 'no keystore password in ANDROID_SIGNING_KEY' }
+          if (-not $password) {
+            # say what the value looks like (never the value), so the owner knows what to change
+            $shape = try {
+              $b = [Convert]::FromBase64String($store)
+              if ($b.Length -ge 4 -and $b[0] -eq 0xFE -and $b[1] -eq 0xED -and $b[2] -eq 0xFE -and $b[3] -eq 0xED) { "base64 of a JKS keystore ($($b.Length) bytes)" }
+              elseif ($b.Length -ge 2 -and $b[0] -eq 0x30) { "base64 of a DER/PKCS12 file ($($b.Length) bytes)" }
+              else { "base64 of $($b.Length) bytes of an unknown kind" }
+            } catch {
+              if ($store.StartsWith('-----BEGIN')) { 'PEM text' } else { "not base64 or JSON ($($store.Length) characters)" }
+            }
+            throw "ANDROID_SIGNING_KEY has no password: it is $shape. Use the JSON from scripts/new-android-key.ps1, or add ANDROID_SIGNING_PASSWORD."
+          }
           "::add-mask::$password"
           $path = Join-Path $env:RUNNER_TEMP 'chorus-release.p12'
           [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($store))
