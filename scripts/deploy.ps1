@@ -43,7 +43,10 @@ foreach ($f in 'install.ps1', 'install.cmd', 'check.cmd', 'README.txt') {
 
 # Android: phones on the tailnet pick this up within hours (or on next app start)
 if ($Android) {
-    $env:JAVA_HOME = if ($env:JAVA_HOME -and (Test-Path "$env:JAVA_HOME\bin\java.exe")) { $env:JAVA_HOME } else { 'C:\Program Files\Android\Android Studio\jbr' }
+    # AGP needs Java 11+; the machine JAVA_HOME may be an old Java 8 JRE, so prefer Studio's JBR
+    $jbr = 'C:\Program Files\Android\Android Studio\jbr'
+    if (Test-Path "$jbr\bin\java.exe") { $env:JAVA_HOME = $jbr }
+    elseif (-not $env:JAVA_HOME -or -not (Test-Path "$env:JAVA_HOME\bin\java.exe")) { throw 'no JDK found: install Android Studio or set JAVA_HOME to a Java 17+ JDK' }
     if (-not $env:GRADLE_USER_HOME) { $env:GRADLE_USER_HOME = 'F:\DunBuild\gradle' }
     if (-not $NoBuild) {
         & (Join-Path $PSScriptRoot 'build-android-core.ps1')
