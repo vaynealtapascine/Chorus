@@ -217,3 +217,10 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   (SYNC §6.5). And `perms::can_sql` is spliced into queries that already use `c`, `m`, `s`;
   its own aliases are all `perm_*`, because a nested `channel c` silently shadowed the outer one
   (a DM message stopped reaching the other participant).
+- 2026-09-24 claude-opus-5.5 — perf — The R1 rebuild changes measured on the owner's Windows PC
+  (1M ops, release): **rebuild 58.7 s** (57 s before R1; budget 60 s), ingest 3 897 ops/s. The
+  replay itself fell to 27.1 s, but the single rebuild transaction's **commit takes 20.0 s** here
+  (it was small on the remote Linux box), plus indexes 4.6 s and search index 4.4 s. The win on
+  Linux was eaten by Windows' commit of a ~GB WAL. Next lever: rebuild into a fresh database file
+  with `journal_mode=OFF`/`synchronous=OFF` (nothing to protect until it's swapped in), then
+  swap files atomically, instead of one giant WAL transaction on the live file.

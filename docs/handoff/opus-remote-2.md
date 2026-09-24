@@ -111,6 +111,13 @@ takes 0008 only if it asks first in its log, so check `migrations/` after each `
   100k-op device open in ≤ 2 s (e.g. persist the projection and load ops lazily). Sol does the
   Android side from your notes, so write the protocol/UX in CLIENTS.md §4.3 as you go.
 
+- **R19 · rebuild on Windows (after R9/R16–R18, or whenever convenient).** Your R1 changes
+  measured on the owner's PC: rebuild 58.7 s at 1M (was 57 s), because the rebuild's single
+  commit takes 20 s on Windows (NOTES.md, 2026-09-24 "measured on the owner's Windows PC").
+  Rebuild into a fresh file with journal off and synchronous off, verify it, then swap it in
+  (the restore path already swaps directories safely), so no ~GB WAL is committed. Keep the
+  rebuild's output byte-identical (`tests/projection.rs`). Local Claude will re-measure on the PC.
+
 ## Appendix: export bundle design (Q14 → D-068) — the DATA_MODEL §7 "full backup" zip, as a background job
 
 **What's in it.** `chorus-<handle>-<YYYYMMDD>.zip`:
