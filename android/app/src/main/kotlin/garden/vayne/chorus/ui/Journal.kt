@@ -42,7 +42,8 @@ import kotlinx.coroutines.launch
 
 /** Own posts and switches remain readable from the local replica while offline. */
 @Composable
-fun Journal(chorus: Chorus, model: Model) {
+fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
+    onExternalReplyConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     var editing by rememberSaveable { mutableStateOf(false) }
     var profileId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -61,6 +62,18 @@ fun Journal(chorus: Chorus, model: Model) {
     val actions = rememberCoroutineScope()
     val mine = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId }
     val author = mine.find { it.id == authorId } ?: Reply.speaker(model)?.takeIf { it in mine } ?: mine.firstOrNull()
+
+    LaunchedEffect(externalReplyPost) {
+        if (externalReplyPost != null) {
+            profileId = null; threadPostId = null
+            replyTo = externalReplyPost
+            kind = "note"; title = ""; body = ""; cw = ""; mood = ""; tags = ""
+            audience = "server" // the foreign parent author must be able to read this reply
+            authorId = Reply.speaker(model)?.id.orEmpty()
+            editing = true
+            onExternalReplyConsumed()
+        }
+    }
 
     if (!editing && profileId != null) {
         val id = profileId!!
@@ -102,7 +115,9 @@ fun Journal(chorus: Chorus, model: Model) {
                 }) { Text(if (busy) "Posting…" else "Post") }
             }
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (replyTo != null) item { Text("Replying to a post", color = p.ink2) }
+                if (replyTo != null) item {
+                    Text("Replying to a post. Check the audience before posting.", color = p.ink2)
+                }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         JournalChoice("Note", kind == "note") { kind = "note" }

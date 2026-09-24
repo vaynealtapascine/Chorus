@@ -29,4 +29,12 @@ class PostComposeTest {
         catch (_: IllegalArgumentException) { rejected = true }
         assertTrue(rejected)
     }
+
+    @Test fun replyToAnotherAccountUsesOwnAuthorAndReadableDefaultAudience() {
+        val p = PostCompose.payload(model, "mine", "note", "own", "**hello**", "", "", "server",
+            "", "", "foreign-post", markup)
+        assertEquals("foreign-post", p.getString("reply_to"))
+        assertEquals("own", p.getJSONArray("authors").getString(0))
+        assertEquals("server", p.getJSONObject("visibility").getString("mode"))
+    }
 }

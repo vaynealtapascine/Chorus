@@ -102,6 +102,7 @@ private fun App(chorus: Chorus, invite: String?) {
     val model by chorus.model.collectAsState()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var chatSpace by rememberSaveable { mutableStateOf<String?>(null) }
+    var journalReplyPost by rememberSaveable { mutableStateOf<String?>(null) }
     var linking by rememberSaveable { mutableStateOf(false) }
     if (linking && status != Status.NoDevice && status != Status.Loading) DeviceLink(chorus) { linking = false }
 
@@ -138,8 +139,10 @@ private fun App(chorus: Chorus, invite: String?) {
                         }
                     } else Home(chorus, model)
                     Tab.Chat -> Chat(chorus, model, chatSpace)
-                    Tab.Journal -> Journal(chorus, model)
-                    Tab.People -> People(chorus, model) { spaceId -> chatSpace = spaceId; tab = Tab.Chat }
+                    Tab.Journal -> Journal(chorus, model, journalReplyPost) { journalReplyPost = null }
+                    Tab.People -> People(chorus, model,
+                        onOpenChat = { spaceId -> chatSpace = spaceId; tab = Tab.Chat },
+                        onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal })
                     Tab.Members -> Members(chorus, model)
                     Tab.History -> History(chorus, model)
                 }

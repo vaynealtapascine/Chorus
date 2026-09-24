@@ -44,7 +44,7 @@ import org.json.JSONObject
 
 /** Account relationships. Other accounts' presence is read only through the filtered server view. */
 @Composable
-fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
+fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPost: (String) -> Unit) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var follows by remember { mutableStateOf(FollowList(emptyList(), emptyList())) }
@@ -191,7 +191,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
                 sharedPosts[f.account.id]?.takeIf { it.isNotEmpty() }?.let { posts ->
                     Text("Shared posts", color = p.ink2, fontWeight = FontWeight.SemiBold)
                     for (post in posts) SharedPostPreview(post, f.account.shownName,
-                        reactMember?.id, !busy) { selected ->
+                        reactMember?.id, !busy, onReply = { onReplyPost(it.id) }) { selected ->
                         val member = reactMember ?: return@SharedPostPreview
                         if (busy) return@SharedPostPreview
                         busy = true; error = null
@@ -252,7 +252,7 @@ private fun FollowAdvanced(ceiling: JSONObject, enabled: Boolean, onChange: (Str
 
 @Composable
 internal fun SharedPostPreview(post: SharedPost, accountName: String, reactMemberId: String? = null,
-    enabled: Boolean = true, onReact: (SharedPost) -> Unit = {}) {
+    enabled: Boolean = true, onReply: ((SharedPost) -> Unit)? = null, onReact: (SharedPost) -> Unit = {}) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().background(p.surface2).padding(10.dp),
@@ -273,6 +273,7 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, reactMembe
                     Text(if (selected) "Remove 💜 reaction" else "React 💜")
                 }
                 Text("Reacting shows this member to post readers right away.", color = p.ink3, fontSize = 12.sp)
+                if (onReply != null) TextButton(enabled = enabled, onClick = { onReply(post) }) { Text("Reply") }
             }
         }
     }
