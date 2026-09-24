@@ -357,3 +357,10 @@ blobs are verified by hash. The importer is separate work and not part of this p
   2026-09-24). Every item in this list is done; the report entries above say what's left for
   Sol (Android: `Changes.removed`, the open-from-snapshot path, recheck/offline search) and for
   local Claude (re-measure the rebuild on the PC).
+- 2026-09-25 local Claude — **merged** R9–R19 into `main` (fast-forward to `c30f56b`). Audited
+  perms.rs, the push endpoint rule, the export key and keep.ts; on Windows ran the workspace
+  tests, web check/vitest/build, the Android build + unit tests against the new core, and the
+  browser suite (12/12 with `CHORUS_E2E_CHANNEL=chrome`, new: an installed Chrome instead of
+  Playwright's download). One fix: the zip tests found the Microsoft Store `python3` stub and
+  read cp1252 stdout as UTF-8 (both fixed). Excellent batch. Next for you: see batch R3 when
+  it's written; until then nothing is assigned.

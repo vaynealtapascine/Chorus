@@ -100,7 +100,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M5.7 Hidden messages: spoilers, CW/collapsed, member-visible, system-only — batch 3 T8 (server filters + web); threads inherit their parent (B1 fix); Android controls in batch 4 U5
 - [~] M5.8 Search (FTS5 server, local search on Android) — server FTS + web local index (batch 3 T9); tokens own-account only (B2); Android local search and paging (batch 4 U1) not yet
 - [x] M5.9 Segmented messages (newline annotations) — parse, store `message_segment`, render
-- [ ] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward — remote Claude R9 (opus-remote-2.md)
+- [x] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward — remote Claude R9: one rule `perms.rs` on every path, property-tested; web editor (merged 2026-09-25)
 - [x] M5.11 Forward/quote a selection (range or multi-message bundle)
 - [x] M5.12 Trash + restore for messages, posts, members, groups, channels
 - [x] M5.13 Custom emoji: server-wide set, upload/crop, picker + `:name:` autocomplete, reactions (D-054) — web (batch 2 T4)
@@ -116,7 +116,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [~] M7.1 Profile page (banner, fields, pinned, stats) — member profile with Posts/Replies tabs (batch 3 T12); banner, pinned post and stats (batch 4 U4, merged 2026-09-24)
 - [~] M7.2 Posts (notes) + long-form entries, replies/quotes/reposts/reactions — web composer, audiences, GET /posts with per-read audience checks (batch 3); cross-account reactions and replies (readable-parent check) merged 2026-09-24; reposts/quotes UI not yet
 - [~] M7.3 Highlights, relationships + relationship types — local highlights curation and profile relationships on the web (batch 4 U4, merged 2026-09-24)
-- [~] M7.4 Lists, feeds (filter language), sharing feeds — private member lists and saved feeds with the core filter (wasm `feedFilter`) on the web, over the local replica (batch 4 U4, merged 2026-09-24); sharing feeds needs a server endpoint with `posts::readable_sql`
+- [x] M7.4 Lists, feeds (filter language), sharing feeds — private member lists and saved feeds with the core filter (wasm `feedFilter`) on the web, over the local replica (batch 4 U4, merged 2026-09-24); sharing feeds needs a server endpoint with `posts::readable_sql` Shareable feeds incl. fronting feeds (D-069, remote R11/R17) merged 2026-09-25.
 - [x] M7.5 Combined system timeline — web Journal (batch 3 T12)
 
 ### M8 — Notifications
@@ -137,7 +137,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 - [x] M10.1 Insights dashboards — web (batch 3 T10), DST-aware days
 - [x] M10.2 API tokens, SSE stream, webhooks — tokens + webhooks on the web "Your data" page, front/members reads, SSE front stream, OBS overlay; message.created/post.created webhook events for the account's own messages and posts (2026-09-24)
-- [x] M10.3 Exports (JSONL op log, tidy CSVs, SQLite copy), documented views — batch 3 T7 (direct downloads, D-065); zip archive + background jobs later
+- [x] M10.3 Exports (JSONL op log, tidy CSVs, SQLite copy), documented views — batch 3 T7 (direct downloads, D-065); full export zip with files as a background job (D-068, remote R15, merged 2026-09-25)
 
 ### M11 — Import
 
@@ -263,3 +263,5 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-24 claude-opus-5.5 — M13.3 Chorus Home installer and service verified on a real Windows runner (home-windows.yml, run 36012245167): install as the ChorusHome service (automatic), both ports answer (TLS with the pinned certificate), update in place, clean stop via the service manager, uninstall --delete-data leaves no service, data, program folder, shortcut or firewall rule. Fixed on the way: cmd.exe needs the cleanup command raw.
 - 2026-09-24 claude-opus-5.5 — M13.6 release-home.yml: a Windows runner builds the web app, bundles it into ChorusHome-<version>.exe (--features home-bundle), installs that exact file, checks the web app is served with its CSP, uninstalls; a v* tag attaches it to the GitHub release (not tagged yet: the owner's call). The landing page links it at v1. Android APK on releases waits for a signing key (Q16).
 - 2026-09-24 claude-opus-5.5 — Chorus Home (D-071, docs/HOME.md) in a day: M13.1 LAN TLS with a pinned self-signed certificate, M13.2 setup/settings API (restart in place), M13.3 Windows install/update/uninstall + ChorusHome service (verified on a Windows runner), M13.4 web first run + This computer page (browser-checked), M13.6 release build. Left: M13.5's device check (the Android pinning is unit-tested; a phone run needs an un-enrolled app — ask the owner), and Q16 (a release signing key) before the APK can be published. Also today: docs/FLOWS.md (every user flow, for the owner's Figma pass) and docs/ENTITIES.md (every entity and property in plain types). Sol's V1 composer finished and device-checked on the phone (compact chat layout).
+- 2026-09-25 claude-opus-5.5 — Merged remote batch R2 (R9–R19) into main by fast-forward after an audit and a full Windows run: workspace tests, web check + vitest + build, Android build + unit tests against the new core, and the 12-test browser suite (with an installed Chrome, `CHORUS_E2E_CHANNEL=chrome`). Fixed on the way: the zip tests picked the Store's python3 stub and read cp1252 output. Brings M5.10 channel permissions, push endpoint SSRF rules, post search, shareable (incl. fronting) feeds, REST journal reads, full export zip, keep-everything + open from a projection snapshot, swapped rebuild. Left for Sol: Android `Changes.removed`, open-from-snapshot, recheck/offline search (opus-remote-2.md §5).
+- 2026-09-25 claude-opus-5.5 — Q16 → D-072: the Android release key lives in Infisical (`chorus-cec1`, `ANDROID_SIGNING_KEY`); `release-android.yml` signs on tags via OIDC (`github-ci-handler`), refuses a debug signature, publishes `Chorus-<tag>.apk`. `scripts/new-android-key.ps1` makes the key (owner runs it). Signing path checked locally with a throwaway key (deleted). Chorus Home work paused until the owner's designs (owner, 2026-09-25).
