@@ -14,9 +14,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -24,14 +27,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.ChatMessage
+import garden.vayne.chorus.data.ChatCompose
 import garden.vayne.chorus.data.ChatSpace
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.Reply
 import garden.vayne.chorus.data.accountVisible
 import garden.vayne.chorus.data.memberVisible
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.launch
 
 /** Local chat view: internal channels, shared spaces and account DMs use the same projection. */
 @Composable
@@ -40,6 +46,14 @@ fun Chat(chorus: Chorus, model: Model) {
     var selectedSpace by rememberSaveable { mutableStateOf("") }
     var selectedChannel by rememberSaveable { mutableStateOf("") }
     var viewingAs by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedAuthor by rememberSaveable { mutableStateOf("") }
+    var draft by rememberSaveable { mutableStateOf("") }
+    var cw by rememberSaveable { mutableStateOf("") }
+    var audience by rememberSaveable { mutableStateOf("all") }
+    var visibleTo by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var busy by rememberSaveable { mutableStateOf(false) }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    val actions = rememberCoroutineScope()
     val space = model.spaces.find { it.id == selectedSpace } ?: model.spaces.firstOrNull()
     val channels = model.channels.filter { it.spaceId == space?.id }
     val channel = channels.find { it.id == selectedChannel } ?: channels.firstOrNull()
@@ -60,6 +74,8 @@ fun Chat(chorus: Chorus, model: Model) {
                     selectedSpace = candidate.id
                     selectedChannel = ""
                     viewingAs = null
+                    audience = "all"
+                    visibleTo = emptyList()
                 }
             }
         }
@@ -82,7 +98,7 @@ fun Chat(chorus: Chorus, model: Model) {
                 }
             }
         }
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), reverseLayout = true,
+        LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), reverseLayout = true,
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(messages.asReversed(), key = { it.id }) { message ->
                 ChatMessageCard(message, model)
@@ -90,6 +106,64 @@ fun Chat(chorus: Chorus, model: Model) {
             if (messages.isEmpty()) item {
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
             }
+        }
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            val author = model.active.find { it.id == selectedAuthor } ?: Reply.speaker(model)
+            if (model.active.size > 1) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(model.active, key = { it.id }) { member ->
+                        ChatChip(member.shownName, author?.id == member.id) { selectedAuthor = member.id }
+                    }
+                }
+            }
+            OutlinedTextField(draft, { draft = it }, label = { Text("Message as ${author?.shownName ?: "choose a member"}") },
+                modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4)
+            OutlinedTextField(cw, { cw = it }, label = { Text("Content warning (optional)") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                item { ChatChip("Everyone here", audience == "all") { audience = "all" } }
+                if (space.kind == "internal") item {
+                    ChatChip("Chosen members", audience == "members") { audience = "members" }
+                }
+                if (space.kind != "internal") item {
+                    ChatChip("Only my system", audience == "system_only") { audience = "system_only" }
+                }
+            }
+            if (audience == "members" && space.kind == "internal") {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(model.active, key = { it.id }) { member ->
+                        ChatChip(member.shownName, member.id in visibleTo) {
+                            visibleTo = if (member.id in visibleTo) visibleTo - member.id else visibleTo + member.id
+                        }
+                    }
+                }
+            }
+            if (space.kind != "internal" && audience == "all") {
+                Text("Everyone in this space can see who is speaking.", color = p.ink3, fontSize = 12.sp)
+            }
+            if (error != null) Text(error.orEmpty(), color = p.accent, fontSize = 12.sp)
+            Button(enabled = !busy && draft.isNotBlank() && author != null &&
+                (audience != "members" || visibleTo.isNotEmpty()), onClick = {
+                val speakerId = author?.id ?: return@Button
+                busy = true
+                error = null
+                actions.launch {
+                    try {
+                        val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
+                            audience, visibleTo.toSet(), space.kind)
+                        chorus.create("message.send", chorus.newId(), payload, scope = "space:${space.id}")
+                        draft = ""
+                        cw = ""
+                        audience = "all"
+                        visibleTo = emptyList()
+                    } catch (e: Exception) {
+                        error = e.message ?: "Could not send the message."
+                    } finally {
+                        busy = false
+                    }
+                }
+            }) { Text(if (busy) "Sending…" else "Send") }
         }
     }
 }

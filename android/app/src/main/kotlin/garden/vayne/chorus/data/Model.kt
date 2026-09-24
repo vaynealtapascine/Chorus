@@ -16,10 +16,13 @@ data class Member(
     val archived: Boolean,
     val avatarBlob: String? = null,
     val isSelf: Boolean = false,
+    val proxyTags: List<ProxyTag> = emptyList(),
 ) {
     val shownName: String get() = displayName ?: name
     val glyph: String get() = sigils.firstOrNull() ?: name.take(1).uppercase()
 }
+
+data class ProxyTag(val prefix: String, val suffix: String)
 
 data class Group(val id: String, val name: String, val kind: String, val parentId: String?, val color: String?) {
     val isSubsystem: Boolean get() = kind == "subsystem"
@@ -176,6 +179,9 @@ class Model(
                         f.present("archived_at"),
                         f.str("avatar_blob"),
                         f.optBoolean("is_self") || f.optInt("is_self") == 1,
+                        f.optJSONArray("proxy_tags")?.let { tags -> (0 until tags.length()).mapNotNull { i ->
+                            tags.optJSONObject(i)?.let { ProxyTag(it.optString("prefix"), it.optString("suffix")) }
+                        } } ?: emptyList(),
                     )
                 }
                 .sortedBy { it.shownName.lowercase() }
