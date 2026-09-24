@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Chorus</title>
+  <meta name="description" content="A cozy, local-first home for plural systems: chat as your members, keep journals, switch in one tap, and share who's around on your terms.">
+  <meta name="theme-color" content="#FBF7F2" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1B1714" media="(prefers-color-scheme: dark)">
+  <meta property="og:title" content="Chorus">
+  <meta property="og:description" content="A cozy, local-first home for plural systems.">
+  <meta property="og:image" content="assets/screenshot-web-light.png">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=Fraunces:opsz,wght,SOFT@9..144,500..600,100&display=swap" rel="stylesheet">
+  <style>
+    /* Chorus's own tokens (design/tokens.json): "Paper" light, "Ink" dark */
+    :root {
+      --bg: #FBF7F2; --surface: #FFFFFF; --surface-2: #F4EDE4; --line: #E4D8CA;
+      --ink: #2B2521; --ink-2: #6F6259; --ink-3: #A09184;
+      --accent: #C0694E; --accent-soft: #F6E1D8; --ok: #5E8C61;
+      --r-md: 14px; --r-lg: 20px; --r-full: 999px;
+      --display: 'Fraunces', Georgia, serif; --body: 'Figtree', system-ui, sans-serif;
+      --shadow: 0 1px 2px rgb(43 37 33 / .06), 0 12px 40px rgb(43 37 33 / .10);
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #1B1714; --surface: #231E1A; --surface-2: #2B2520; --line: #3A322B;
+        --ink: #F1E9E0; --ink-2: #BCAEA1; --ink-3: #85776B;
+        --accent: #E08A6D; --accent-soft: #3E2A22; --ok: #86B489;
+        --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 12px 40px rgb(0 0 0 / .35);
+        color-scheme: dark;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #1B1714; --surface: #231E1A; --surface-2: #2B2520; --line: #3A322B;
+      --ink: #F1E9E0; --ink-2: #BCAEA1; --ink-3: #85776B;
+      --accent: #E08A6D; --accent-soft: #3E2A22; --ok: #86B489;
+      --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 12px 40px rgb(0 0 0 / .35);
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0; background: var(--bg); color: var(--ink);
+      font: 17px/1.6 var(--body); -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-underline-offset: 3px; }
+    h1, h2, h3 { font-family: var(--display); font-weight: 560; font-variation-settings: 'SOFT' 100; line-height: 1.15; margin: 0; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+    header.top { display: flex; align-items: center; justify-content: space-between; padding-top: 22px; padding-bottom: 22px; }
+    .brand { font-family: var(--display); font-size: 26px; font-weight: 600; color: var(--ink); text-decoration: none; }
+    header.top nav { display: flex; gap: 20px; font-size: 15px; }
+    header.top nav a { color: var(--ink-2); text-decoration: none; }
+    header.top nav a:hover { color: var(--accent); }
+
+    .hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 48px; align-items: center; padding-top: 40px; padding-bottom: 72px; }
+    .hero h1 { font-size: clamp(40px, 6vw, 64px); letter-spacing: -.01em; }
+    .hero h1 em { font-style: italic; color: var(--accent); }
+    .lede { font-size: 20px; color: var(--ink-2); margin: 20px 0 28px; max-width: 34ch; }
+    .cta { display: flex; flex-wrap: wrap; gap: 12px; }
+    .button {
+      display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: var(--r-full);
+      font-weight: 600; font-size: 16px; text-decoration: none; border: 1px solid transparent;
+    }
+    .button.primary { background: var(--accent); color: #fff; }
+    .button.ghost { border-color: var(--line); color: var(--ink); background: var(--surface); }
+    .button:hover { filter: brightness(1.05); }
+    .note { font-size: 14px; color: var(--ink-3); margin-top: 16px; }
+
+    .phone {
+      justify-self: center; width: min(320px, 80vw); border-radius: 36px; padding: 10px;
+      background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow);
+    }
+    .phone img { display: block; width: 100%; height: auto; border-radius: 28px; }
+
+    section { padding: 64px 0; border-top: 1px solid var(--line); }
+    .kicker { font-size: 14px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
+    section > .wrap > h2 { font-size: clamp(28px, 4vw, 38px); max-width: 22ch; }
+    .intro { color: var(--ink-2); max-width: 60ch; margin: 14px 0 0; }
+
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 36px; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 24px; }
+    .card h3 { font-size: 21px; margin-bottom: 8px; }
+    .card p { margin: 0; color: var(--ink-2); font-size: 16px; }
+    .glyph {
+      width: 44px; height: 44px; border-radius: var(--r-full); display: grid; place-items: center;
+      background: var(--accent-soft); color: var(--accent); margin-bottom: 16px;
+    }
+    .glyph svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; margin-top: 32px; }
+    .list { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+    .list li { display: grid; grid-template-columns: 22px 1fr; gap: 12px; color: var(--ink-2); }
+    .list li strong { color: var(--ink); font-weight: 600; }
+    .tick { color: var(--ok); margin-top: 2px; }
+    .tick svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    .notif {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 20px;
+      box-shadow: var(--shadow); max-width: 380px;
+    }
+    .notif .row { display: flex; gap: 12px; align-items: center; padding: 10px 0; }
+    .notif .row + .row { border-top: 1px solid var(--line); }
+    .dot { width: 36px; height: 36px; border-radius: var(--r-full); display: grid; place-items: center; background: var(--surface-2); font-size: 18px; flex: none; }
+    .notif .who { font-weight: 600; }
+    .notif .when { font-size: 14px; color: var(--ink-3); }
+    .notif .caption { font-size: 14px; color: var(--ink-3); margin: 12px 0 0; }
+
+    pre {
+      background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md);
+      padding: 16px 18px; overflow-x: auto; font: 14px/1.6 ui-monospace, 'JetBrains Mono', monospace; margin: 0;
+    }
+    .steps { display: grid; gap: 20px; }
+    .steps h3 { font-size: 19px; margin-bottom: 8px; }
+    .steps p { margin: 0 0 10px; color: var(--ink-2); font-size: 16px; }
+
+    .made { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 360px); gap: 48px; align-items: center; }
+    .made img { display: block; width: 100%; max-width: 360px; height: auto; border-radius: var(--r-md); border: 1px solid var(--line); }
+
+    footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--ink-3); font-size: 15px; }
+    footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+
+    @media (max-width: 860px) {
+      .hero, .split, .made { grid-template-columns: 1fr; }
+      .hero { padding-top: 16px; gap: 40px; }
+      .grid { grid-template-columns: 1fr 1fr; }
+      header.top nav a.hide-sm { display: none; }
+    }
+    @media (max-width: 560px) {
+      .wrap { padding: 0 16px; }
+      .grid { grid-template-columns: 1fr; }
+      .lede { font-size: 18px; }
+      section { padding: 48px 0; }
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .button { transition: filter .15s; }
+    }
+  </style>
+</head>
+<body>
+  <header class="wrap top">
+    <a class="brand" href="#">Chorus</a>
+    <nav aria-label="Page">
+      <a class="hide-sm" href="#features">Features</a>
+      <a class="hide-sm" href="#privacy">Privacy</a>
+      <a href="#run">Run it</a>
+      <a href="https://github.com/vaynealtapascine/Chorus">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="wrap hero">
+      <div>
+        <h1>A cozy home for <em>plural</em> systems.</h1>
+        <p class="lede">Chat as your members, keep journals, switch in one tap, and let the people you trust know who's around, on your terms.</p>
+        <div class="cta">
+          <a class="button primary" href="#run">Host your own</a>
+          <a class="button ghost" href="https://github.com/vaynealtapascine/Chorus">See the code</a>
+        </div>
+        <p class="note">Self-hosted and local-first. Android app, installable web app. Free and MIT-licensed.</p>
+      </div>
+      <div class="phone">
+        <picture>
+          <source srcset="assets/screenshot-web-dark.png" media="(prefers-color-scheme: dark)">
+          <img src="assets/screenshot-web-light.png" width="840" height="1440" alt="Chorus's home screen: Rin is fronting, with quick-switch tiles for June, Kai, Moss, Rin and Wren, and an undo toast.">
+        </picture>
+      </div>
+    </div>
+
+    <section id="features">
+      <div class="wrap">
+        <p class="kicker">Everything in one place</p>
+        <h2>Built for the way systems actually live.</h2>
+        <p class="intro">A replacement for PluralKit that doesn't need Discord: your own chat, your own journals, your own server.</p>
+        <div class="grid">
+          <article class="card">
+            <div class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg></div>
+            <h3>Chat as your members</h3>
+            <p>Spaces and channels where every message is sent as one or more members, with proxy tags, sigils, replies, threads, reactions and rich formatting.</p>
+          </article>
+          <article class="card">
+            <div class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 14h6l-1 7 8-11h-6z"/></svg></div>
+            <h3>Switch in one tap</h3>
+            <p>A home-screen widget and quick switcher that stay fast with hundreds of members, subsystems, co-fronting and co-con. Undo is always one tap away.</p>
+          </article>
+          <article class="card">
+            <div class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M9 10h6M9 14h6M9 18h3"/></svg></div>
+            <h3>Profiles and journals</h3>
+            <p>Each member gets a profile with posts, long-form entries, highlights and relationships, plus lists and custom feeds you can share.</p>
+          </article>
+          <article class="card">
+            <div class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M8 5l1.5-2h5L16 5"/></svg></div>
+            <h3>Stage mode</h3>
+            <p>Share a screenshot of just the messages you mean to. Hide or grey out the rest, redact names, and pick a style.</p>
+          </article>
+          <article class="card">
+            <div class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h3M19 12h3M12 2v3M12 19v3"/><circle cx="12" cy="12" r="6"/><path d="M12 9v3l2 1"/></svg></div>
+            <h3>Works offline</h3>
+            <p>The Android app and the installed web app keep working with no connection, or with your server switched off, and catch up quietly afterwards.</p>
+          </article>
+          <article class="card">
+            <div class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg></div>
+            <h3>Your data, readable</h3>
+            <p>Plain SQL tables, documented views, CSV and SQLite exports, a live event stream and webhooks, for dashboards, overlays and your own analysis.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="privacy">
+      <div class="wrap">
+        <p class="kicker">Sharing, on your terms</p>
+        <h2>Let people know who's around, without telling them everything.</h2>
+        <div class="split">
+          <ul class="list">
+            <li><span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><span><strong>Delays and fuzzing.</strong> Friends can hear about a switch later, or only roughly when it happened, so switching never feels like being watched.</span></li>
+            <li><span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><span><strong>Per person, per member.</strong> Choose who hears about whom, set a daily digest instead, or keep a member private altogether.</span></li>
+            <li><span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><span><strong>No side doors.</strong> Profiles, feeds and the API never show a follower more, or sooner, than their notifications would.</span></li>
+            <li><span class="tick"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><span><strong>Your server.</strong> Everything lives on a machine you control: a home PC over Tailscale, or a small VPS.</span></li>
+          </ul>
+          <div class="notif" aria-label="Example notifications a friend might see">
+            <div class="row"><div class="dot" aria-hidden="true">🌿</div><div><div class="who">Moss is here</div><div class="when">around 2 PM</div></div></div>
+            <div class="row"><div class="dot" aria-hidden="true">🌙</div><div><div class="who">Wren and June are co-fronting</div><div class="when">this evening</div></div></div>
+            <div class="row"><div class="dot" aria-hidden="true">☀️</div><div><div class="who">Today with the Stars</div><div class="when">daily digest · 9 PM</div></div></div>
+            <p class="caption">What a friend with a two-hour delay and fuzzy times might see.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="run">
+      <div class="wrap">
+        <p class="kicker">Host your own</p>
+        <h2>One small server for your system and the people close to you.</h2>
+        <p class="intro">Chorus is a single program with a SQLite database. Run it on a home PC reached over Tailscale, or on a Linux VPS with Caddy in front. Then open the invite link on your phone or in your browser.</p>
+        <div class="split">
+          <div class="steps">
+            <div>
+              <h3>On a Windows PC</h3>
+              <p>Build it, then run the installer once as administrator. It sets up the service, Caddy and your first invite.</p>
+              <pre><code>pwsh scripts/deploy.ps1 -Android
+~\selfhost\chorus\install.cmd</code></pre>
+            </div>
+          </div>
+          <div class="steps">
+            <div>
+              <h3>On a Linux VPS</h3>
+              <p>Build a bundle, copy it over, and install. Debian 12 or Ubuntu 22.04 and up.</p>
+              <pre><code>pwsh scripts/pack-linux.ps1
+sudo ./install.sh</code></pre>
+            </div>
+          </div>
+        </div>
+        <p class="intro">The full guide, backups and restores are in <a href="https://github.com/vaynealtapascine/Chorus/blob/main/docs/OPS.md">the operations docs</a>.</p>
+      </div>
+    </section>
+
+    <section id="made">
+      <div class="wrap made">
+        <div>
+          <p class="kicker">How it's made</p>
+          <h2>Written by AI, directed by a person.</h2>
+          <p class="intro">Chorus's code was written by two AI models, Claude Opus 5.5 and GPT-6-sol, working in turns from a shared spec, with a human owner making the product decisions. Every decision, and every finding along the way, is in the repository.</p>
+        </div>
+        <img src="assets/ai-transparency-disclosure.png" alt="AI disclosure: repo code is fully AI-generated. Makes use of anthropic/claude-opus-5.5 and openai/gpt-6-sol." loading="lazy">
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>Chorus · MIT licensed · © 2026 Vayne Altapascine</span>
+      <span><a href="https://github.com/vaynealtapascine/Chorus">github.com/vaynealtapascine/Chorus</a></span>
+    </div>
+  </footer>
+</body>
+</html>
