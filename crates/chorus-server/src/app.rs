@@ -101,6 +101,7 @@ pub fn router(state: AppState) -> Router {
         .route("/exports/ops.jsonl", get(export_ops))
         .route("/exports/csv/{name}", get(export_csv))
         .route("/exports/account.sqlite", get(export_sqlite))
+        .route("/admin/health", get(admin_health))
         .route("/webhooks", get(webhooks_list).post(webhooks_create))
         .route("/webhooks/{id}", put(webhooks_update).delete(webhooks_remove))
         .route("/webhooks/{id}/test", post(webhooks_test))
@@ -491,6 +492,36 @@ fn principal(
     headers: &axum::http::HeaderMap,
 ) -> Result<crate::api_data::Principal, ApiError> {
     Ok(crate::api_data::principal(conn, bearer(headers)?, now_ms(), s.session_ttl())?)
+}
+
+async fn admin_health(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let mut health = {
+        let conn = s.db();
+        let who = auth::authenticate(&conn, bearer(&headers)?, now_ms(), s.session_ttl())?;
+        let is_admin: bool = conn
+            .query_row("SELECT is_admin FROM account WHERE id=?1", [&who.account_id], |r| r.get(0))
+            .map_err(anyhow::Error::from)?;
+        if !is_admin {
+            return Err(ApiError(StatusCode::FORBIDDEN, "forbidden", "admin account required".into()));
+        }
+        let connected = s.peers.lock().unwrap_or_else(|e| e.into_inner()).len();
+        crate::health::snapshot(&conn, &s.cfg, connected)?
+    };
+    if let Some(url) = &s.cfg.push.ntfy_url {
+        let reachable = reqwest::Client::new()
+            .head(url)
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+            .is_ok_and(|response| response.status().is_success());
+        health["ntfy_reachable"] = json!(reachable);
+    } else {
+        health["ntfy_reachable"] = serde_json::Value::Null;
+    }
+    Ok(Json(health))
 }
 
 async fn export_ops(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<Response, ApiError> {

@@ -309,7 +309,9 @@ Implemented (M10.2, `webhooks.rs`):
 ```
 GET  /admin/accounts   /admin/devices   /admin/jobs
 POST /admin/backup                      run a backup now
-GET  /admin/health                      db size, WAL size, op count, last backup, ntfy reachability
+GET  /admin/health                      admin device session only; DB/WAL bytes, applied op count,
+                                        connected devices, pending notifications, latest backup
+                                        {at,size_bytes}, last recorded error, ntfy reachability
 POST /admin/rebuild                     rebuild projections from the op log (maintenance mode)
 ```
 

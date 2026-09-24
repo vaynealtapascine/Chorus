@@ -21,6 +21,15 @@
   let chosen = $state<string[]>(['read:front']);
   let fresh = $state<{ token: string; scopes: string[] } | null>(null);
   let error = $state('');
+  interface Health {
+    db_bytes: number; wal_bytes: number; op_count: number; connected_devices: number;
+    pending_notifications: number; last_backup: { at: number; size_bytes: number } | null;
+    last_error: { source: string; at: number; message: string } | null;
+    ntfy_configured: boolean; ntfy_reachable: boolean | null;
+  }
+  let health = $state<Health | null>(null);
+  let healthError = $state('');
+  const size = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
   async function api(path: string, init: RequestInit = {}) {
     const r = await fetch(`${apiBase()}${path}`, {
@@ -41,6 +50,17 @@
     }
   }
   load();
+
+  async function loadHealth() {
+    if (!sync.device?.is_admin) return;
+    try {
+      health = await api('/admin/health') as Health;
+      healthError = '';
+    } catch (e) {
+      healthError = e instanceof Error ? e.message : String(e);
+    }
+  }
+  loadHealth();
 
   async function create(e: SubmitEvent) {
     e.preventDefault();
@@ -138,6 +158,19 @@
 <section class="page">
   <a class="back" href="#/">‹ Home</a>
   <h1 class="display">Your data</h1>
+  {#if sync.device?.is_admin}
+    <section class="card" aria-label="Server health">
+      <div class="row"><h2>Server health</h2><button class="ghost" onclick={loadHealth}>Refresh</button></div>
+      {#if health}
+        <span>Database {size(health.db_bytes)} · WAL {size(health.wal_bytes)} · {health.op_count.toLocaleString()} ops</span>
+        <span>{health.connected_devices} connected devices · {health.pending_notifications} pending notifications</span>
+        <span>Last backup: {health.last_backup ? `${when(health.last_backup.at)} · ${size(health.last_backup.size_bytes)}` : 'none yet'}</span>
+        {#if health.ntfy_configured}<span>ntfy: {health.ntfy_reachable ? 'reachable' : 'unreachable'}</span>{/if}
+        {#if health.last_error}<span class="error">Last {health.last_error.source} error: {health.last_error.message}</span>{/if}
+      {/if}
+      {#if healthError}<span class="error">Health unavailable: {healthError}</span>{/if}
+    </section>
+  {/if}
   <section class="card">
     <h2>Export your data</h2>
     <button class="ghost" onclick={() => download('/exports/ops.jsonl', 'ops.jsonl')}>Download op log (JSONL)</button>

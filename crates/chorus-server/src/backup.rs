@@ -287,6 +287,7 @@ pub fn start_nightly(cfg: Config) -> anyhow::Result<()> {
     tokio::spawn(async move {
         loop {
             let cfg = cfg.clone();
+            let error_cfg = cfg.clone();
             if let Err(error) = tokio::task::spawn_blocking(move || {
                 let (stamp, time) = local_stamp()?;
                 let date = &stamp[..8];
@@ -305,6 +306,10 @@ pub fn start_nightly(cfg: Config) -> anyhow::Result<()> {
             .unwrap_or_else(|e| Err(e.into()))
             {
                 tracing::error!(error = %error, "nightly backup failed");
+                if let Ok(conn) = db::open(&error_cfg.db_path()) {
+                    let detail = serde_json::json!({"source":"backup","at":now_ms(),"message":error.to_string()});
+                    let _ = db::set_meta(&conn, "last_error", &detail.to_string());
+                }
             }
             tokio::time::sleep(Duration::from_secs(60)).await;
         }

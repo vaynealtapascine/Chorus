@@ -12,6 +12,7 @@ pub mod config;
 pub mod db;
 pub mod exports;
 pub mod follows;
+pub mod health;
 pub mod ingest;
 pub mod notifier;
 pub mod oplog;
