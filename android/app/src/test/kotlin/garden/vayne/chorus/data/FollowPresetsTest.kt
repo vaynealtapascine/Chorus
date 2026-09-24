@@ -34,4 +34,17 @@ class FollowPresetsTest {
         assertEquals(300, next.getJSONObject("delay").getInt("min_s"))
         assertEquals(false, old.getBoolean("share_stats"))
     }
+
+    @Test fun sharingToggleFollowsTheUpdatedProjection() {
+        val projection = JSONObject("""{"rows":{"follow":{"follow-1":{"exists":true,"fields":{"ceiling":{"delay":{"min_s":300},"share_history":false,"share_stats":true}}}}}}""")
+        val before = Model.parse(projection, "acct").followCeilings.getValue("follow-1")
+        assertEquals(false, before.getBoolean("share_history"))
+        val updated = FollowPresets.withSharing(before, "share_history", true)
+        Model.applyDelta(projection, JSONObject().put("rows", JSONObject().put("follow", JSONObject().put("follow-1",
+            JSONObject().put("exists", true).put("fields", JSONObject().put("ceiling", updated))))))
+        val after = Model.parse(projection, "acct").followCeilings.getValue("follow-1")
+        assertEquals(true, after.getBoolean("share_history"))
+        assertEquals(true, after.getBoolean("share_stats"))
+        assertEquals("custom", FollowPresets.choiceOf(after, core))
+    }
 }
