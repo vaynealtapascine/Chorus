@@ -163,6 +163,8 @@ updates). What differs from the PC:
 - **Exposure**: public, not tailnet-only. Invites stay the only way in; `webhook_targets =
   "public"` keeps webhooks off the host's own services (Caddy admin API, ntfy, other apps);
   `tailscale_whois` is meaningless there. Backups land on the same disk: copy them off the box.
+  Caddy's access log redacts `?token=` (the OBS overlay and EventSource streams carry API tokens
+  in the URL).
 - **Coexisting with the selfhost VPS bundle** (memos, ntfy, Arbor, …): that bundle's Caddyfile
   imports `/etc/caddy/sites/*.caddy`, so Chorus's site survives its reinstalls. Chorus can use
   that ntfy as its push distributor (`ntfy_url`).
