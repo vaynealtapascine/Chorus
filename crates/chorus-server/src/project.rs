@@ -256,6 +256,7 @@ fn write(conn: &Connection, p: &Prepared) -> anyhow::Result<()> {
         "post" => {
             authors(conn, "post_author", "post_id", id, fields.get("authors"), fresh)?;
             item_attachments(conn, "post", id, fields.get("attachments"), fresh)?;
+            post_search(conn, id, fresh)?;
         }
         "member_group" => group_parents(conn, account_of(first_scope.as_deref().unwrap_or_default()).unwrap_or(""))?,
         _ => {}
@@ -444,6 +445,29 @@ fn message_extras(
             "INSERT INTO message_fts(rowid, text, cw) SELECT rowid, text, coalesce(cw, '') FROM message WHERE rowid = ?1 AND deleted_at IS NULL",
             [rowid],
         )?;
+    }
+    Ok(())
+}
+
+/// A post's row in `post_fts` (title, text and tags), what `GET /search/posts` matches. Like
+/// `message_fts` it keeps its own copy keyed by the post's rowid; deleted posts drop out.
+/// A rebuild fills it in one pass at the end instead.
+const POST_FTS_FILL: &str = "INSERT INTO post_fts(rowid, title, text, tags)
+     SELECT rowid, coalesce(title, ''), text,
+            coalesce((SELECT group_concat(value, ' ') FROM json_each(CASE WHEN json_valid(tags) THEN tags ELSE '[]' END)), '')
+     FROM post WHERE deleted_at IS NULL";
+
+fn post_search(conn: &Connection, id: &str, fresh: bool) -> anyhow::Result<()> {
+    if REBUILDING.with(std::cell::Cell::get) {
+        return Ok(());
+    }
+    let rowid: Option<i64> =
+        conn.prepare_cached("SELECT rowid FROM post WHERE id = ?1")?.query_row([id], |r| r.get(0)).optional()?;
+    if let Some(rowid) = rowid {
+        if !fresh {
+            exec(conn, "DELETE FROM post_fts WHERE rowid = ?1", [rowid])?;
+        }
+        exec(conn, &format!("{POST_FTS_FILL} AND rowid = ?1"), [rowid])?;
     }
     Ok(())
 }
@@ -1207,9 +1231,11 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
     // message_fts keeps its own copy of the text (not external content), so 'delete-all' doesn't
     // apply to it, and a DELETE takes it apart row by row (3 s at 1M ops): make it anew instead
     let t = std::time::Instant::now();
-    let fts: String =
-        tx.query_row("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'message_fts'", [], |r| r.get(0))?;
-    tx.execute_batch(&format!("DROP TABLE message_fts; {fts};"))?;
+    for name in ["message_fts", "post_fts"] {
+        let fts: String =
+            tx.query_row("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1", [name], |r| r.get(0))?;
+        tx.execute_batch(&format!("DROP TABLE {name}; {fts};"))?;
+    }
     time("(clear search index)", t.elapsed());
     // indexes no projection reads through: built again after the replay, one sort each instead
     // of a million scattered inserts
@@ -1336,6 +1362,7 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
         "INSERT INTO message_fts(rowid, text, cw) SELECT rowid, text, coalesce(cw, '') FROM message WHERE deleted_at IS NULL",
         [],
     )?;
+    tx.execute(POST_FTS_FILL, [])?;
     time("(search index)", t.elapsed());
     let t = std::time::Instant::now();
     tx.commit()?;

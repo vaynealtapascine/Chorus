@@ -16,6 +16,15 @@
   let loadingMore = $state(false);
   let remoteError = $state('');
   let revealed = $state(new Set<string>());
+  // journal posts: server search only (other accounts' posts aren't in this device's replica)
+  interface PostHit {
+    id: string; account_id: string; kind: string | null; title: string | null; text: string; cw: string | null;
+    occurred_at: number; author_cards: { id: string; name: string | null; display_name: string | null }[];
+  }
+  let tab = $state<'messages' | 'posts'>('messages');
+  let posts = $state<PostHit[]>([]);
+  let postCursor = $state<string | null>(null);
+  let postError = $state('');
   let index: SearchIndex | null = null;
   const parsed = $derived(parseSearch(query));
   const local = $derived.by(() => { void revision; return query.trim() ? index?.search(parsed) ?? [] : []; });
@@ -76,6 +85,51 @@
     return () => { clearTimeout(timer); abort.abort(); };
   });
 
+  const fetchPosts = async (terms: string, cursor: string | null, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ q: terms, limit: '25' });
+    if (cursor) params.set('cursor', cursor);
+    const response = await apiFetch(`${apiBase()}/search/posts?${params}`, {
+      headers: { authorization: `Bearer ${sync.device?.session ?? ''}` }, signal,
+    });
+    if (!response.ok) throw new Error(`Search HTTP ${response.status}`);
+    return await response.json() as { items: PostHit[]; next_cursor: string | null };
+  };
+
+  $effect(() => {
+    const terms = parsed.terms.join(' ');
+    if (tab !== 'posts' || !terms || sync.status !== 'live') { posts = []; postCursor = null; postError = ''; return; }
+    const abort = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const page = await fetchPosts(terms, null, abort.signal);
+        if (abort.signal.aborted) return;
+        posts = page.items;
+        postCursor = page.next_cursor;
+        postError = '';
+      } catch (error) {
+        if (!abort.signal.aborted) postError = error instanceof Error ? error.message : String(error);
+      }
+    }, 250);
+    return () => { clearTimeout(timer); abort.abort(); };
+  });
+
+  const morePosts = async () => {
+    if (!postCursor || loadingMore) return;
+    const cursor = postCursor;
+    const terms = parsed.terms.join(' ');
+    loadingMore = true;
+    try {
+      const page = await fetchPosts(terms, cursor);
+      if (parsed.terms.join(' ') !== terms || postCursor !== cursor) return;
+      posts = [...posts, ...page.items];
+      postCursor = page.next_cursor;
+    } catch (error) {
+      postError = error instanceof Error ? error.message : String(error);
+    } finally { loadingMore = false; }
+  };
+  const byline = (p: PostHit) =>
+    p.author_cards.map((a) => a.display_name ?? a.name ?? 'Someone').join(' & ') || (p.account_id === sync.accountId ? 'You' : 'Someone');
+
   const loadMore = async () => {
     if (!remoteCursor || loadingMore) return;
     const cursor = remoteCursor;
@@ -99,7 +153,39 @@
 
 <section class="search-page">
   <h1 class="display">Search</h1>
-  <input type="search" aria-label="Search messages" placeholder="Search messages" bind:value={query} />
+  <div class="tabs" role="tablist" aria-label="What to search">
+    <button role="tab" aria-selected={tab === 'messages'} class:on={tab === 'messages'} onclick={() => (tab = 'messages')}>Messages</button>
+    <button role="tab" aria-selected={tab === 'posts'} class:on={tab === 'posts'} onclick={() => (tab = 'posts')}>Posts</button>
+  </div>
+  <input type="search" aria-label={tab === 'posts' ? 'Search posts' : 'Search messages'}
+    placeholder={tab === 'posts' ? 'Search journal posts' : 'Search messages'} bind:value={query} />
+  {#if tab === 'posts'}
+    <p class="hint">Titles, text and tags of posts you can read: yours, and ones shared with you.</p>
+    {#if sync.status !== 'live'}<p class="hint" role="status">Post search needs the server; you're offline.</p>{/if}
+    {#if postError}<p class="hint" role="status">Post search unavailable. {postError}</p>{/if}
+    {#if query.trim() && sync.status === 'live'}
+      <p class="count">{posts.length}{postCursor ? '+' : ''} post{posts.length === 1 ? '' : 's'}</p>
+      <div class="results">
+        {#each posts as post (post.id)}
+          <article>
+            <div class="meta">{byline(post)} · {new Date(post.occurred_at).toLocaleString()}</div>
+            {#if post.cw && !revealed.has(post.id)}
+              <button class="cw" onclick={() => reveal(post.id)}>Content warning: {post.cw} · Show content</button>
+            {:else}
+              {#if post.title}<strong>{post.title}</strong>{/if}
+              <p>{post.text.slice(0, 400)}</p>
+            {/if}
+            {#if post.account_id === sync.accountId}<a href="#/journal">Open journal</a>{/if}
+          </article>
+        {:else}
+          <p class="hint">No matching posts.</p>
+        {/each}
+      </div>
+      {#if postCursor}
+        <button class="load-more" disabled={loadingMore} onclick={morePosts}>{loadingMore ? 'Loading…' : 'Load more'}</button>
+      {/if}
+    {/if}
+  {:else}
   <p class="hint">Use from:, in:, has:image, has:file, before: and after:. Search works offline on this device.</p>
   <label class="viewer">Viewing as
     <select aria-label="Search viewing as member" value={viewingAs ?? ''} onchange={(e) => (viewingAs = e.currentTarget.value || null)}>
@@ -133,10 +219,14 @@
       <button class="load-more" disabled={loadingMore} onclick={loadMore}>{loadingMore ? 'Loading…' : 'Load more from server'}</button>
     {/if}
   {/if}
+  {/if}
 </section>
 
 <style>
   .search-page { display: grid; gap: var(--s-3); }
+  .tabs { display: flex; gap: var(--s-1); }
+  .tabs button { font: inherit; border: 1px solid var(--line); border-radius: var(--r-full); padding: var(--s-1) var(--s-3); background: var(--surface); color: var(--ink-2); cursor: pointer; }
+  .tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--surface); }
   h1 { margin: 0; }
   input, select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-2) var(--s-3); }
   .hint, .meta, .count { margin: 0; color: var(--ink-3); font-size: var(--fs-sm); }

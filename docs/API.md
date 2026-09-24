@@ -95,7 +95,7 @@ from the endpoint clears the registration.
 Writes through tokens are turned into ops server-side with the token's pseudo-device id.
 
 Implemented so far (M10.2 and M5.8, `api_data.rs`): scopes `read:front`, `read:members`,
-`read:messages`, `stream`, `write:front`, `export` (see §4);
+`read:messages`, `read:posts`, `stream`, `write:front`, `export` (see §4);
 `POST /tokens {name, scopes}` → `{id, token}` (shown once), `GET /tokens`, `DELETE /tokens/{id}` —
 from a signed-in device only (tokens can't mint tokens). Reads: `GET /front`, `/front/switches`,
 `/front/intervals`, `/members`. `GET /stream` sends `event: front` (current front first, then each
@@ -138,6 +138,13 @@ GET  /search/messages?q=&in=&from=&before=&after=&has=&limit=&cursor=
   then id and limited to accessible spaces plus public or own messages. API tokens need
   `read:messages`; device sessions inherit access.
 GET  /pins?channel=
+GET  /search/posts?q=&account=&kind=&before=&after=&limit=&cursor=
+  → {items:[post, as GET /posts],next_cursor}
+  FTS5 over post titles, text and tags (post_fts). Every hit passes the post's audience check
+  (`posts::readable_sql`, as `/posts`): own posts, server-visible ones, and ones shared with an
+  active follower or an assigned bucket; deleted posts never match. Ranking, pages (1–100,
+  default 100) and the opaque cursor work like `/search/messages`. API tokens need `read:posts`
+  and search only their own account's posts.
 
 GET  /posts?author=&kind=&before=&limit=
 GET  /posts/{id}                           with replies ?depth=

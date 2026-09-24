@@ -145,3 +145,132 @@ pub fn replies(conn: &Connection, viewer: &str, parent: &str, depth: usize) -> a
     }
     Ok(rows)
 }
+
+#[derive(Default, Deserialize)]
+pub struct PostSearch {
+    pub q: String,
+    /// Only this account's posts.
+    pub account: Option<String>,
+    pub kind: Option<String>,
+    pub before: Option<i64>,
+    pub after: Option<i64>,
+    pub limit: Option<usize>,
+    pub cursor: Option<String>,
+}
+
+/// Where a page of post search results ended; it only continues the same search.
+#[derive(serde::Serialize, Deserialize)]
+struct SearchCursor {
+    q: String,
+    account: Option<String>,
+    kind: Option<String>,
+    before: Option<i64>,
+    after: Option<i64>,
+    score: f64,
+    occurred_at: i64,
+    id: String,
+}
+
+/// `GET /search/posts` (API.md §3): FTS over titles, text and tags, ranked like message search
+/// (`bm25`, then newest first), pages of 1–100 with the same opaque `next_cursor`. Every hit goes
+/// through [`readable_sql`]; API tokens (`read:posts`) search only their own account's posts.
+pub fn search(
+    conn: &Connection,
+    principal: &crate::api_data::Principal,
+    query: &PostSearch,
+) -> Result<Value, crate::api_data::DataError> {
+    use crate::api_data::DataError;
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    if !principal.allows("read:posts") {
+        return Err(DataError::Scope("read:posts"));
+    }
+    let q = query.q.trim();
+    if q.is_empty() || q.len() > 200 {
+        return Err(DataError::Bad("q must be 1–200 characters".into()));
+    }
+    let cursor: Option<SearchCursor> = match &query.cursor {
+        None => None,
+        Some(raw) => {
+            let bad = || DataError::Bad("invalid cursor".into());
+            let c: SearchCursor =
+                serde_json::from_slice(&URL_SAFE_NO_PAD.decode(raw).map_err(|_| bad())?).map_err(|_| bad())?;
+            if c.q != q
+                || c.account != query.account
+                || c.kind != query.kind
+                || c.before != query.before
+                || c.after != query.after
+                || !c.score.is_finite()
+                || c.id.is_empty()
+            {
+                return Err(DataError::Bad("cursor does not match search".into()));
+            }
+            Some(c)
+        }
+    };
+    let limit = query.limit.unwrap_or(100).clamp(1, 100);
+    let readable = readable_sql("?1");
+    let sql = format!(
+        "WITH hits AS (SELECT {COLUMNS}, bm25(post_fts) AS score
+           FROM post_fts JOIN post p ON p.rowid = post_fts.rowid
+           WHERE post_fts MATCH ?2 AND p.deleted_at IS NULL AND {readable}
+             AND (?3 = 0 OR p.account_id = ?1)
+             AND (?4 IS NULL OR p.account_id = ?4)
+             AND (?5 IS NULL OR p.kind = ?5)
+             AND (?6 IS NULL OR p.occurred_at < ?6)
+             AND (?7 IS NULL OR p.occurred_at > ?7))
+         SELECT * FROM hits WHERE (?8 IS NULL OR score > ?8 OR
+           (score = ?8 AND (occurred_at < ?9 OR (occurred_at = ?9 AND id < ?10))))
+         ORDER BY score, occurred_at DESC, id DESC LIMIT ?11"
+    );
+    let mut st = conn.prepare(&sql)?;
+    let rows = st.query_map(
+        params![
+            principal.account_id,
+            q,
+            !principal.is_device(),
+            query.account,
+            query.kind,
+            query.before,
+            query.after,
+            cursor.as_ref().map(|c| c.score),
+            cursor.as_ref().map(|c| c.occurred_at),
+            cursor.as_ref().map(|c| c.id.as_str()),
+            (limit + 1) as i64,
+        ],
+        |r| Ok((row(r)?, r.get::<_, f64>(19)?)),
+    );
+    let rows = match rows {
+        Ok(rows) => rows,
+        Err(rusqlite::Error::SqliteFailure(_, _)) => return Err(DataError::Bad("invalid search query".into())),
+        Err(e) => return Err(e.into()),
+    };
+    let mut rows = match rows.collect::<Result<Vec<_>, _>>() {
+        Ok(rows) => rows,
+        // FTS5 reports a malformed MATCH expression when the rows are stepped
+        Err(rusqlite::Error::SqliteFailure(_, _)) => return Err(DataError::Bad("invalid search query".into())),
+        Err(e) => return Err(e.into()),
+    };
+    let next_cursor = if rows.len() > limit {
+        rows.truncate(limit);
+        let (last, score) = rows.last().expect("a paged search has a last row");
+        let anchor = SearchCursor {
+            q: q.to_string(),
+            account: query.account.clone(),
+            kind: query.kind.clone(),
+            before: query.before,
+            after: query.after,
+            score: *score,
+            occurred_at: last["occurred_at"].as_i64().unwrap_or_default(),
+            id: last["id"].as_str().unwrap_or_default().to_string(),
+        };
+        Some(URL_SAFE_NO_PAD.encode(serde_json::to_vec(&anchor).map_err(|e| DataError::Bad(e.to_string()))?))
+    } else {
+        None
+    };
+    let mut items = Vec::with_capacity(rows.len());
+    for (mut item, _) in rows {
+        hide_unreadable_links(conn, &principal.account_id, &mut item)?;
+        items.push(item);
+    }
+    Ok(json!({"items": items, "next_cursor": next_cursor}))
+}

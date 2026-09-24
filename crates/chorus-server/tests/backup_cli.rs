@@ -15,7 +15,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let target = std::env::var_os("CARGO_TARGET_DIR").expect("test requires CARGO_TARGET_DIR on F:");
+        let target = env!("CARGO_TARGET_TMPDIR");
         let root = PathBuf::from(target).join(format!("backup-cli-test-{:016x}", rand::random::<u64>()));
         let data = root.join("data");
         fs::create_dir_all(&data).unwrap();

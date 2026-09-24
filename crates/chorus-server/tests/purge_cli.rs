@@ -19,7 +19,7 @@ const PHOTO: &str = "0192f8c2-0000-7000-8000-000000000201";
 
 #[test]
 fn purge_erases_a_message_its_edits_attachment_and_file() {
-    let target = std::env::var_os("CARGO_TARGET_DIR").expect("test requires CARGO_TARGET_DIR");
+    let target = env!("CARGO_TARGET_TMPDIR");
     let root = PathBuf::from(target).join(format!("purge-cli-test-{:016x}", rand::random::<u64>()));
     let data = root.join("data");
     fs::create_dir_all(&data).unwrap();
@@ -144,7 +144,7 @@ fn purge_removes_a_test_account_and_refuses_an_admin() {
     const HOME: &str = "0192f8c2-0000-7000-8000-0000000000dd";
     const TEST_HOME: &str = "0192f8c2-0000-7000-8000-0000000000de";
     const FOLLOW: &str = "0192f8c2-0000-7000-8000-0000000000f1";
-    let target = std::env::var_os("CARGO_TARGET_DIR").expect("test requires CARGO_TARGET_DIR");
+    let target = env!("CARGO_TARGET_TMPDIR");
     let root = PathBuf::from(target).join(format!("purge-account-test-{:016x}", rand::random::<u64>()));
     let data = root.join("data");
     fs::create_dir_all(&data).unwrap();
