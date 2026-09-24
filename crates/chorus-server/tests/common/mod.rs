@@ -4,7 +4,7 @@ use std::time::Duration;
 /// SQLite stays open in the webhook task until the test process exits on Windows.
 /// Sweep only this test's old, randomly named folders when its next run starts.
 pub fn http_test_dir(prefix: &str) -> PathBuf {
-    let root = PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").expect("CARGO_TARGET_DIR"));
+    let root = std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
     if let Ok(entries) = std::fs::read_dir(&root) {
         for entry in entries.flatten() {
             let name = entry.file_name();
