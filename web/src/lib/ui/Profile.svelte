@@ -1,6 +1,6 @@
 <script lang="ts">
   import { channels, fieldDefs, fieldValues, members, messages, reactions, type MemberRow } from '../data';
-  import { canWriteAs, memberPosts, postReaction, posts, type PostRow } from '../posts';
+  import { canWriteAs, highlightedPostIds, memberPosts, postReaction, posts, type PostRow } from '../posts';
   import { frontDaily, windowStart } from '../insights';
   import { sync, type Projection } from '../sync/client';
   import PostCard from './PostCard.svelte';
@@ -14,9 +14,10 @@
   const writeAs = $derived(own ? id : members(projection).find((m) => canWriteAs(projection, m.id, sync.accountId))?.id ?? null);
   const all = $derived(posts(projection));
   const reacts = $derived(reactions(projection));
-  let tab = $state<'posts' | 'replies'>('posts');
+  let tab = $state<'posts' | 'replies' | 'highlights'>('posts');
   let replying = $state<PostRow | null>(null);
-  const shown = $derived(memberPosts(all, id, tab === 'replies'));
+  const highlighted = $derived(highlightedPostIds(projection, id));
+  const shown = $derived(tab === 'highlights' ? all.filter((post) => highlighted.has(post.id) && !post.deleted) : memberPosts(all, id, tab === 'replies'));
   const pinned = $derived(all.find((post) => post.id === member?.pinned_post_id && !post.deleted));
   const custom = $derived(fieldDefs(projection).map((def) => ({
     name: def.name, value: fieldValues(projection).get(id)?.get(def.id),
@@ -33,6 +34,11 @@
   const messageCount = $derived(channels(projection).reduce((count, channel) => count + messages(projection, channel.id).filter((message) => message.authors.includes(id) && !message.deleted).length, 0));
   function pin(postId: string | null) {
     if (own) sync.create('member.set', sync.accountScope, id, { pinned_post_id: postId });
+  }
+  function highlight(postId: string) {
+    if (!own) return;
+    const payload = { profile_member_id: id, post_id: postId };
+    sync.create(highlighted.has(postId) ? 'highlight.remove' : 'highlight.add', sync.accountScope, id, payload);
   }
   function react(post: PostRow, emoji: string, add: boolean) {
     if (writeAs) sync.create(add ? 'post.react' : 'post.unreact', sync.accountScope, post.id, postReaction(post.id, emoji, writeAs));
@@ -56,8 +62,8 @@
       {#if replying}<p>Replying to a post <button onclick={() => (replying = null)}>Cancel</button></p>{/if}
       {#key replying?.id}<PostComposer {projection} initialAuthors={[writeAs]} replyTo={replying?.id} onsent={() => (replying = null)} />{/key}
     {/if}
-    <nav aria-label="Profile posts"><button class:on={tab === 'posts'} onclick={() => (tab = 'posts')}>Posts</button><button class:on={tab === 'replies'} onclick={() => (tab = 'replies')}>Replies</button></nav>
-    <div class="list">{#each shown as post (post.id)}<PostCard {post} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} speaker={writeAs} onreply={() => (replying = post)} onreact={(emoji, add) => react(post, emoji, add)} />{#if own && member.pinned_post_id !== post.id}<button class="pin-button" onclick={() => pin(post.id)}>Pin to profile</button>{/if}{:else}<p class="empty">No {tab} yet.</p>{/each}</div>
+    <nav aria-label="Profile posts"><button class:on={tab === 'posts'} onclick={() => (tab = 'posts')}>Posts</button><button class:on={tab === 'replies'} onclick={() => (tab = 'replies')}>Replies</button><button class:on={tab === 'highlights'} onclick={() => (tab = 'highlights')}>Highlights</button></nav>
+    <div class="list">{#each shown as post (post.id)}<PostCard {post} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} speaker={writeAs} onreply={() => (replying = post)} onreact={(emoji, add) => react(post, emoji, add)} />{#if own}<div class="post-tools">{#if member.pinned_post_id !== post.id}<button onclick={() => pin(post.id)}>Pin to profile</button>{/if}<button onclick={() => highlight(post.id)}>{highlighted.has(post.id) ? 'Remove highlight' : 'Highlight post'}</button></div>{/if}{:else}<p class="empty">No {tab} yet.</p>{/each}</div>
   {:else}<p>This member is unavailable.</p>{/if}
 </section>
 
@@ -75,7 +81,8 @@
   .stats { font-size: var(--fs-sm); }
   .pinned { display: grid; gap: var(--s-2); }
   .pinned h2 { margin: 0; font-size: var(--fs-md); }
-  .pinned > button, .pin-button { justify-self: start; }
+  .pinned > button { justify-self: start; }
+  .post-tools { display: flex; gap: var(--s-2); }
   a, button { color: var(--accent); }
   nav { display: flex; gap: var(--s-2); border-bottom: 1px solid var(--line); }
   nav button { border: 0; background: none; padding: var(--s-2) var(--s-3); cursor: pointer; }
