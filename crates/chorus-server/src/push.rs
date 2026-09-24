@@ -6,6 +6,17 @@
 //! push service only ever relays ciphertext, and POSTs it to the endpoint. Browser push services
 //! also want a VAPID signature (RFC 8292): web devices get one, signed with a server key kept in
 //! `server_meta`; UnifiedPush endpoints don't (ntfy reads `Authorization` as its own auth).
+//!
+//! Where an endpoint may point ([`check_endpoint`], at registration and again before every
+//! send): https only (unless `security.webhook_targets = "any"`); names are resolved, every
+//! address must be allowed, the send connects to exactly the checked address and follows no
+//! redirect — the webhook rules (webhooks.rs), so a device can't make the server POST to the
+//! host's own services. Allowed: under `public`, public addresses only; under `internal`, the
+//! tailnet/LAN or public addresses (browser push services are on the internet), never loopback
+//! or link-local;
+//! and always the operator's own `push.ntfy_url` host, whatever it resolves to.
+
+use std::net::IpAddr;
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes128Gcm, Nonce};
@@ -17,6 +28,8 @@ use p256::{PublicKey, SecretKey};
 use rusqlite::{Connection, params};
 use serde::Deserialize;
 use sha2::Sha256;
+
+use crate::config::WebhookTargets;
 
 /// Record size advertised in the header; payloads are always a single record.
 const RS: u32 = 4096;
@@ -247,6 +260,47 @@ pub fn prepare_test(conn: &Connection, account: &str, device_id: &str) -> anyhow
     Ok(prepare_except(conn, account, &payload, None)?.into_iter().find(|o| o.device_id == device_id))
 }
 
+/// May a push endpoint point here? See the module docs.
+pub async fn check_endpoint(
+    endpoint: &str,
+    targets: WebhookTargets,
+    ntfy_url: Option<&str>,
+) -> Result<crate::webhooks::Target, String> {
+    let u = reqwest::Url::parse(endpoint).map_err(|e| format!("not a URL: {e}"))?;
+    match (u.scheme(), targets) {
+        ("https", _) | ("http", WebhookTargets::Any) => {}
+        _ => return Err("push endpoints must be https".into()),
+    }
+    if targets == WebhookTargets::Any {
+        return Ok(crate::webhooks::Target { url: u, pin: None });
+    }
+    let same =
+        |n: &reqwest::Url| n.host_str() == u.host_str() && n.port_or_known_default() == u.port_or_known_default();
+    let operator = ntfy_url.and_then(|n| reqwest::Url::parse(n).ok()).is_some_and(|n| same(&n));
+    let ok = move |ip: IpAddr| {
+        use crate::webhooks::{internal_ip, public_ip};
+        operator
+            || match targets {
+                // never loopback, nor link-local (169.254.169.254 is a cloud's metadata service)
+                WebhookTargets::Internal => {
+                    let ip = ip.to_canonical();
+                    let link_local = match ip {
+                        IpAddr::V4(v) => v.is_link_local(),
+                        IpAddr::V6(v) => (v.segments()[0] & 0xffc0) == 0xfe80,
+                    };
+                    public_ip(ip) || (internal_ip(ip) && !ip.is_loopback() && !link_local)
+                }
+                WebhookTargets::Public => public_ip(ip),
+                WebhookTargets::Any => true,
+            }
+    };
+    let refused = match targets {
+        WebhookTargets::Public => "push endpoints on this server must be on the public internet",
+        _ => "push endpoints can't point at this server's own machine",
+    };
+    crate::webhooks::resolve_checked(u, ok, operator || targets == WebhookTargets::Internal, operator, refused).await
+}
+
 /// What to do with a device after a send attempt.
 pub enum Sent {
     Ok,
@@ -255,7 +309,20 @@ pub enum Sent {
     Failed,
 }
 
-pub async fn send(http: &reqwest::Client, o: &Outbound) -> Sent {
+/// Check the endpoint again (the address may have changed since it was registered), then POST
+/// to exactly the checked address.
+pub async fn send(o: &Outbound, targets: WebhookTargets, ntfy_url: Option<&str>) -> Sent {
+    let http = match check_endpoint(&o.endpoint, targets, ntfy_url).await {
+        Ok(target) => crate::webhooks::pinned_client(&target),
+        Err(e) => Err(e),
+    };
+    let http = match http {
+        Ok(h) => h,
+        Err(e) => {
+            tracing::warn!(device = %o.device_id, error = %e, "push: endpoint refused before sending");
+            return Sent::Failed;
+        }
+    };
     let mut req = http
         .post(&o.endpoint)
         .header("Content-Encoding", "aes128gcm")
@@ -323,6 +390,40 @@ mod tests {
 
     fn key(seed: u8) -> SecretKey {
         SecretKey::from_slice(&[seed; 32]).unwrap()
+    }
+
+    /// R16: endpoints get the webhook target rules (no DNS here: IP literals and a tailnet-style
+    /// name that doesn't resolve).
+    #[tokio::test]
+    async fn endpoints_follow_the_target_rules() {
+        use WebhookTargets::*;
+        let ntfy = Some("https://10.9.8.7:8443");
+        let cases: &[(&str, WebhookTargets, bool)] = &[
+            ("https://8.8.8.8/fcm/send/x", Internal, true), // browser push services are public
+            ("https://100.101.102.103/up", Internal, true), // a tailnet address
+            ("https://192.168.1.20/up", Internal, true),
+            ("https://127.0.0.1/up", Internal, false), // the host's own services
+            ("https://[::1]/up", Internal, false),
+            ("https://[::ffff:127.0.0.1]/up", Internal, false),
+            ("https://169.254.169.254/latest", Internal, false), // cloud metadata
+            ("https://localhost/up", Internal, false),
+            ("http://8.8.8.8/up", Internal, false), // https only outside `any`
+            ("ftp://8.8.8.8/up", Internal, false),
+            ("https://8.8.8.8/up", Public, true),
+            ("https://100.101.102.103/up", Public, false),
+            ("https://10.0.0.5/up", Public, false),
+            ("https://10.9.8.7:8443/upABC", Public, true), // the operator's own ntfy
+            ("https://10.9.8.7:9999/upABC", Public, false), // not on its port
+            ("http://10.9.8.7:8443/upABC", Public, false),
+            ("http://127.0.0.1:5000/push/phone", Any, true),
+        ];
+        for (url, targets, ok) in cases {
+            let got = check_endpoint(url, *targets, ntfy).await;
+            assert_eq!(got.is_ok(), *ok, "{url} under {targets:?}: {got:?}");
+        }
+        // a tailnet name that doesn't resolve from here passes unpinned under `internal` only
+        assert!(check_endpoint("https://ntfy-box/up", Internal, None).await.is_ok());
+        assert!(check_endpoint("https://ntfy-box/up", Public, None).await.is_err());
     }
 
     #[test]

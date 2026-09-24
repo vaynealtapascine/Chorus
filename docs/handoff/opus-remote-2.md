@@ -268,3 +268,18 @@ blobs are verified by hash. The importer is separate work and not part of this p
   participant), per-target allow/deny/inherit, outsiders get a "shares just this channel" hint;
   guest spaces show as "{owner} · shared with you"; the new-channel field shows only to those
   who may add channels; the ⋯ menu scrolls now (it overflowed the screen).
+- R16 — push endpoints get the webhook target rules. `push::check_endpoint` runs at `PUT
+  /devices/push` (400 with the reason) and again in `push::send` before every POST (both the
+  notifier and `/devices/push/test`); it shares `webhooks::resolve_checked` (resolve, every
+  address must pass, pin the first) and `pinned_client` (no redirects, 15 s) with webhooks.
+  https only outside `any`. What passes: `public` → public addresses only; `internal` → the
+  tailnet/LAN **or** public addresses, never loopback or link-local — webhooks' `internal` is
+  tailnet-only, but browser push services (FCM, Mozilla, Apple) are on the internet, and Web Push
+  works in production on the owner's `internal` server, so the literal webhook rule would have
+  broken it; the SSRF risk is the host's own services, which stay refused. The operator's own
+  `push.ntfy_url` host+port always passes (pinned to what it resolves to), so
+  `https://ntfy.vayne.garden` keeps working whether it resolves to the tailnet, the internet or
+  the host. An endpoint refused at send time counts as a failed push (logged). Tests:
+  `push::tests::endpoints_follow_the_target_rules` (17 cases), and the loopback test in
+  `sync_e2e.rs` now runs with `webhook_targets = any` after checking that a default server
+  refuses loopback endpoints. API.md §2.1, NOTIFICATIONS §1, OPS §3 updated.

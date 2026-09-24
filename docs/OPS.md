@@ -72,7 +72,7 @@ snapshot_threshold = 20000
 
 [security]
 tailscale_whois = false                      # D-034 optional second factor
-webhook_targets = "internal"                 # internal (tailnet/LAN, never loopback) | public | any
+webhook_targets = "internal"                 # internal (tailnet/LAN, never loopback) | public | any; push endpoints too (API.md §2.1)
 rate_burst = 50                              # API requests per token/session (else per address)
 rate_per_second = 10                         # sustained; 0 turns request limits off
 sync_sockets_per_account = 20                # open sync sockets per account; a new one closes the oldest
@@ -180,7 +180,8 @@ updates). What differs from the PC:
   (checksums, integrity, projection rebuild, epoch bump), so devices re-send anything newer.
   Keep the same domain and move its DNS record; devices remember the address.
 - **Exposure**: public, not tailnet-only. Invites stay the only way in; `webhook_targets =
-  "public"` keeps webhooks off the host's own services (Caddy admin API, ntfy, other apps);
+  "public"` keeps webhooks and push endpoints off the host's own services (Caddy admin API,
+  other apps; the configured `ntfy_url` is the one exception, reached at its checked address);
   `tailscale_whois` is meaningless there. Backups land on the same disk: copy them off the box.
   Caddy's access log redacts `?token=` (the OBS overlay and EventSource streams carry API tokens
   in the URL).

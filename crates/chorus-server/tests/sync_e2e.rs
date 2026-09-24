@@ -1500,13 +1500,33 @@ async fn a_device_can_send_itself_a_test_notification() {
     let endpoint = format!("http://{}/push/", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, service).await.unwrap() });
 
-    let s = start().await;
+    // a default server refuses a push endpoint on its own machine (R16, push.rs `check_endpoint`)
+    let http = reqwest::Client::new();
+    let session = |d: &Value| d["session"].as_str().unwrap().to_string();
+    let keys: Vec<p256::SecretKey> = [7u8, 9].iter().map(|b| p256::SecretKey::from_slice(&[*b; 32]).unwrap()).collect();
+    let reg = |endpoint: String, key: &p256::SecretKey| {
+        json!({
+            "endpoint": endpoint,
+            "p256dh": push::b64url(key.public_key().to_sec1_point(false).as_bytes()),
+            "auth": push::b64url(&[3; 16]),
+        })
+    };
+    let strict = start().await;
+    let someone = enrol(&strict, auth::InviteKind::System, None, 63, "moon").await;
+    for bad in [format!("{endpoint}x"), "https://127.0.0.1:9/push/x".to_string()] {
+        let put = http.put(format!("http://{}/api/v1/devices/push", strict.base)).bearer_auth(session(&someone));
+        let r = put.json(&reg(bad.clone(), &keys[0])).send().await.unwrap();
+        assert_eq!(r.status(), 400, "{bad} refused");
+    }
+
+    // the rest runs with `webhook_targets = any` (tests, or an owner who knows what's listening)
+    let mut cfg = Config::default();
+    cfg.security.webhook_targets = Some(chorus_server::config::WebhookTargets::Any);
+    let s = start_with(cfg).await;
     let phone = enrol(&s, auth::InviteKind::System, None, 61, "stars").await;
     let account = phone["account_id"].as_str().unwrap();
     let laptop = enrol(&s, auth::InviteKind::Device, Some(account), 62, "stars").await;
-    let http = reqwest::Client::new();
     let url = format!("http://{}/api/v1/devices/push/test", s.base);
-    let session = |d: &Value| d["session"].as_str().unwrap().to_string();
 
     // no registration yet
     let r = http.post(&url).bearer_auth(session(&phone)).send().await.unwrap();
@@ -1515,14 +1535,11 @@ async fn a_device_can_send_itself_a_test_notification() {
     assert_eq!(body["error"]["code"], "no_push");
 
     // both devices register; only the caller gets the test
-    let keys: Vec<p256::SecretKey> = [7u8, 9].iter().map(|b| p256::SecretKey::from_slice(&[*b; 32]).unwrap()).collect();
     for (dev, (key, who)) in [&phone, &laptop].into_iter().zip(keys.iter().zip(["phone", "laptop"])) {
-        let reg = json!({
-            "endpoint": format!("{endpoint}{who}"),
-            "p256dh": push::b64url(key.public_key().to_sec1_point(false).as_bytes()),
-            "auth": push::b64url(&[3; 16]),
-        });
-        let put = http.put(format!("http://{}/api/v1/devices/push", s.base)).bearer_auth(session(dev)).json(&reg);
+        let put = http
+            .put(format!("http://{}/api/v1/devices/push", s.base))
+            .bearer_auth(session(dev))
+            .json(&reg(format!("{endpoint}{who}"), key));
         assert_eq!(put.send().await.unwrap().status(), 204);
     }
     assert_eq!(http.post(&url).bearer_auth(session(&phone)).send().await.unwrap().status(), 204);

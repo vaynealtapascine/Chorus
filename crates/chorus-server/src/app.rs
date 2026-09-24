@@ -479,6 +479,11 @@ async fn push_register(
     headers: axum::http::HeaderMap,
     Json(b): Json<crate::push::Registration>,
 ) -> Result<StatusCode, ApiError> {
+    who(&s, &s.db(), &headers)?;
+    // where it points is checked before the database lock is taken (it resolves names)
+    crate::push::check_endpoint(b.endpoint.trim(), s.cfg.security.webhook_targets(), s.cfg.push.ntfy_url.as_deref())
+        .await
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "bad_request", e))?;
     let conn = s.db();
     let me = who(&s, &conn, &headers)?;
     crate::push::register(&conn, &me.device_id, &b)
@@ -509,8 +514,7 @@ async fn push_test(State(s): State<AppState>, headers: axum::http::HeaderMap) ->
         let message = "this device hasn't turned notifications on".to_string();
         return Err(ApiError(StatusCode::CONFLICT, "no_push", message));
     };
-    let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap_or_default();
-    let sent = crate::push::send(&http, &o).await;
+    let sent = crate::push::send(&o, s.cfg.security.webhook_targets(), s.cfg.push.ntfy_url.as_deref()).await;
     crate::push::record(&s.db(), &o.device_id, &sent)?;
     match sent {
         crate::push::Sent::Ok => Ok(StatusCode::NO_CONTENT),
@@ -1428,7 +1432,6 @@ fn run_notifier(state: AppState) {
     let weak = Arc::downgrade(&state);
     drop(state);
     tokio::spawn(async move {
-        let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap_or_default();
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
         loop {
             tokio::select! {
@@ -1447,8 +1450,9 @@ fn run_notifier(state: AppState) {
                 }
             };
             // send without holding the database lock
+            let (targets, ntfy) = (state.cfg.security.webhook_targets(), state.cfg.push.ntfy_url.clone());
             for o in pushes {
-                let sent = crate::push::send(&http, &o).await;
+                let sent = crate::push::send(&o, targets, ntfy.as_deref()).await;
                 if let Err(e) = crate::push::record(&state.db(), &o.device_id, &sent) {
                     tracing::error!(error = %e, "push: can't record outcome");
                 }

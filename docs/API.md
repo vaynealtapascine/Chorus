@@ -67,6 +67,13 @@ when it has no registration, `502 push_gone` / `push_failed` when the push servi
 Payloads are RFC 8291 `aes128gcm`, one record, ≤ 3 KB plaintext (else `{"t":"sync"}`). A 404/410
 from the endpoint clears the registration.
 
+Where an endpoint may point follows `security.webhook_targets` (§7), checked at `PUT` (`400
+bad_request` with the reason) and again before every send, with the same resolve-pin-no-redirect
+handling: **https only** unless `any`; under `public` only globally routable addresses; under
+`internal` the tailnet/LAN or public addresses (browser push services are on the internet), never
+loopback or link-local; and always the operator's own `push.ntfy_url` host and port, whatever it
+resolves to. A device can't make the server POST to the host's own services.
+
 ### 2.2 Sessions
 
 - Session token: opaque random 256-bit, stored hashed, 30-day sliding expiry, bound to a device.
