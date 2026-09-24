@@ -711,7 +711,10 @@ Message-only extra modes: `{"mode":"members","member_ids":[…]}` (soft in-syste
 One rule, `chorus-server/src/perms.rs::can_sql`, is spliced into every server path that decides
 what an account may see or do in a space: writes (`perms::write_denied`, from `ingest::accept`),
 sync fan-out and catch-up (`visibility::op_visible_to` and the batched `visible_digest`), the REST
-message reads, search, blobs, author cards and notification recipients. `can(account, channel,
+message reads, search, blobs, author cards and notification recipients. Before any of it, a
+write must stay in its own space (`perms::foreign_space`, for everyone including the owner): the
+channel, message or thread parent an op names, and a `channel.create`'s `space_id`, belong to the
+op's `space:` scope. `can(account, channel,
 perm)` holds when both `perm` and `view` resolve to allow:
 
 1. A thread uses its parent message's channel.

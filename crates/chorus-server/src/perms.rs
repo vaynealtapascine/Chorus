@@ -125,6 +125,12 @@ pub fn write_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<O
         .query_row([space], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()?;
     let Some((owner, kind)) = row else { return Ok(None) };
+    // Whatever the op points at (a channel, a message, a thread's parent) must be in the op's own
+    // space, whoever the author is: otherwise an op in one space could put a message, reaction,
+    // pin or thread into another space's channel.
+    if let Some(elsewhere) = foreign_space(conn, o, space)? {
+        return Ok(Some(format!("that {elsewhere} is in another space")));
+    }
     if owner == author {
         return Ok(None);
     }
@@ -184,6 +190,53 @@ pub fn write_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<O
         _ if k.starts_with("attachment.") => None,
         _ => role.is_none().then(|| "only the space's members can do that".into()),
     })
+}
+
+/// What `o` refers to in a space other than `space` ("channel" or "message"), if anything.
+/// Things not projected yet are left alone (their op waits in the log like any early op).
+fn foreign_space(conn: &Connection, o: &Op, space: &str) -> anyhow::Result<Option<&'static str>> {
+    let p = &o.payload;
+    let k = o.kind.as_str();
+    let channel_space = |id: &str| -> rusqlite::Result<Option<String>> {
+        conn.prepare_cached(
+            "SELECT c.space_id FROM channel c WHERE c.id = coalesce((SELECT pm.channel_id FROM channel t
+               JOIN message pm ON pm.id = t.parent_message_id WHERE t.id = ?1 AND t.kind = 'thread'), ?1)",
+        )?
+        .query_row([id], |r| r.get(0))
+        .optional()
+        .map(Option::flatten)
+    };
+    let message_space = |id: &str| -> rusqlite::Result<Option<String>> {
+        match message_channel(conn, id)? {
+            Some((channel, _)) => channel_space(&channel),
+            None => Ok(None),
+        }
+    };
+    let (what, home) = if k == "channel.create" {
+        // a channel is created in the op's space: `space_id` may only repeat it
+        if str_of(p, "space_id").is_some_and(|s| s != space) {
+            return Ok(Some("channel"));
+        }
+        match str_of(p, "parent_message_id") {
+            Some(parent) => ("message", message_space(parent)?),
+            None => return Ok(None),
+        }
+    } else if k.starts_with("channel.") {
+        ("channel", o.entity().map(channel_space).transpose()?.flatten())
+    } else if matches!(k, "message.send" | "message.forward")
+        || (k.starts_with("read.") && str_of(p, "channel_id").is_some())
+    {
+        ("channel", str_of(p, "channel_id").map(channel_space).transpose()?.flatten())
+    } else if k.starts_with("message.") || k.starts_with("reaction.") || k.starts_with("read.") {
+        let id = str_of(p, "target_id").or_else(|| str_of(p, "message_id")).or_else(|| o.entity());
+        if k.starts_with("reaction.") && str_of(p, "target_type") == Some("post") {
+            return Ok(None);
+        }
+        ("message", id.map(message_space).transpose()?.flatten())
+    } else {
+        return Ok(None);
+    };
+    Ok(home.is_some_and(|h| h != space).then_some(what))
 }
 
 /// Keep a guest's scope in step with its overrides: an account that isn't in the space has the

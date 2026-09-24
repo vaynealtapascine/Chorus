@@ -212,3 +212,74 @@ fn enrolment_ops_are_readable_through_the_log() {
     assert_eq!(oplog::scope_after(&c, space, 0, 100).unwrap().len(), 3);
     assert_eq!(oplog::digest(&c, space).unwrap().count, 3);
 }
+
+/// An op in one space can't reach into another space the author is also in: not a message into
+/// its channel, a channel created in it, a reaction or a pin on its messages, or a thread under
+/// one of them — not even from the first space's owner, whom the channel rules let do anything.
+#[test]
+fn ops_stay_in_their_own_space() {
+    let (c, a, b) = setup();
+    let (x, y) = (new_id(2, [30; 10]), new_id(2, [31; 10]));
+    let (sx, sy) = (format!("space:{x}"), format!("space:{y}"));
+    let (cx, cy, my) = (new_id(2, [32; 10]), new_id(2, [33; 10]), new_id(2, [34; 10]));
+    // a owns X; b owns Y and lets a in (spaces.rs grants the scope before the ops)
+    ingest::grant(&c, &a, &sx).unwrap();
+    ingest::grant(&c, &b, &sy).unwrap();
+    ingest::grant(&c, &a, &sy).unwrap();
+    ingest::server_op(&c, &a, "space.create", &sx, Some(&x), json!({"kind": "shared", "name": "X"}), NOW).unwrap();
+    ingest::server_op(&c, &a, "space.join", &sx, Some(&x), json!({"account_id": a}), NOW).unwrap();
+    ingest::server_op(&c, &b, "space.create", &sy, Some(&y), json!({"kind": "shared", "name": "Y"}), NOW).unwrap();
+    ingest::server_op(&c, &b, "space.join", &sy, Some(&y), json!({"account_id": b}), NOW).unwrap();
+    ingest::server_op(&c, &b, "space.join", &sy, Some(&y), json!({"account_id": a}), NOW).unwrap();
+    ingest::server_op(&c, &a, "channel.create", &sx, Some(&cx), json!({"space_id": x, "name": "x"}), NOW).unwrap();
+    ingest::server_op(&c, &b, "channel.create", &sy, Some(&cy), json!({"space_id": y, "name": "y"}), NOW).unwrap();
+    ingest::server_op(
+        &c,
+        &b,
+        "message.send",
+        &sy,
+        Some(&my),
+        json!({"channel_id": cy, "text": "hi", "authors": []}),
+        NOW,
+    )
+    .unwrap();
+
+    let s = session(&a, 0);
+    let mut n = 60u8;
+    let mut push = |scope: &str, kind: &str, entity: Option<String>, payload: Value| {
+        n += 1;
+        let mut o = op(n, kind, scope, payload, NOW);
+        o.entity_id = entity.or(o.entity_id);
+        let (r, _) = ingest::accept(&c, &s, o, NOW, false).unwrap();
+        r.error.map(|e| e.message)
+    };
+    let refused = |r: Option<String>| r.is_some_and(|m| m.contains("in another space"));
+    assert!(refused(push(&sx, "message.send", None, json!({"channel_id": cy, "text": "in", "authors": []}))));
+    assert!(refused(push(&sx, "channel.create", None, json!({"space_id": y, "name": "planted"}))));
+    assert!(refused(push(
+        &sx,
+        "channel.create",
+        None,
+        json!({"space_id": x, "name": "t", "kind": "thread", "parent_message_id": my})
+    )));
+    assert!(refused(push(
+        &sx,
+        "reaction.add",
+        Some(my.clone()),
+        json!({"target_type": "message", "target_id": my, "emoji": "👍", "member_id": a})
+    )));
+    assert!(refused(push(&sx, "message.pin", Some(my.clone()), json!({}))));
+    assert!(refused(push(&sx, "channel.set", Some(cy.clone()), json!({"name": "renamed"}))));
+    // the same ops in their own spaces are fine
+    assert_eq!(push(&sx, "message.send", None, json!({"channel_id": cx, "text": "ok", "authors": []})), None);
+    assert_eq!(push(&sy, "message.send", None, json!({"channel_id": cy, "text": "ok", "authors": []})), None);
+    assert_eq!(
+        push(
+            &sy,
+            "reaction.add",
+            Some(my.clone()),
+            json!({"target_type": "message", "target_id": my, "emoji": "👍", "member_id": a})
+        ),
+        None
+    );
+}
