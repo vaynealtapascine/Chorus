@@ -647,6 +647,14 @@ CREATE TABLE stage (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT
 CREATE TABLE pref (account_id TEXT NOT NULL, device_id TEXT NOT NULL DEFAULT '', key TEXT NOT NULL, value TEXT NOT NULL CHECK (json_valid(value)), hlc TEXT NOT NULL, PRIMARY KEY (account_id, device_id, key));
 CREATE TABLE api_token (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, scopes TEXT NOT NULL, created_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER);
 CREATE TABLE webhook (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, url TEXT NOT NULL, secret TEXT NOT NULL, events TEXT NOT NULL, is_enabled INTEGER NOT NULL DEFAULT 1, last_status INTEGER, last_error TEXT, created_at INTEGER NOT NULL);
+CREATE TABLE export_job (                           -- the export bundle (0008, D-068): server state,
+  id TEXT PRIMARY KEY, account_id TEXT NOT NULL,     -- not a projection; rebuilds leave it alone
+  kind TEXT NOT NULL CHECK (kind IN ('full')),
+  status TEXT NOT NULL CHECK (status IN ('queued','running','done','failed','cancelled','expired')),
+  phase TEXT, done INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0, bytes INTEGER NOT NULL DEFAULT 0,
+  error TEXT, file_name TEXT, download_key TEXT,     -- the key is the download URL's credential
+  created_at INTEGER NOT NULL, finished_at INTEGER, expires_at INTEGER, downloaded_at INTEGER
+);
 CREATE TABLE server_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);  -- schema_version, instance_id, …
 ```
 
@@ -785,5 +793,7 @@ and applied authored ops, then rebuilds projections. It includes `v_member`, `v_
 `v_switch`, `v_front_interval`, `v_front_daily`, `v_message`, and `v_post` views with the CSV
 columns above. No full-server pages are copied into the file. The CLI uses
 `chorus-server export --account ID --kind full|csv|sqlite [--to DIR]`; `full` currently writes
-`ops.jsonl`, `csv` writes seven files, and `sqlite` writes `account.sqlite`. The archive with
-blobs and the job-progress protocol in §7 remain later work.
+`ops.jsonl`, `csv` writes seven files, and `sqlite` writes `account.sqlite`. The full backup
+with files is the export bundle job (`POST /exports {kind:"full"}`, API.md §4, D-068):
+`README.txt`, `ops.jsonl`, `csv/`, `blobs/<sha256>` (files the account's own ops point at) and
+`manifest.json`, as a stored ZIP built in the background (`export_job`).

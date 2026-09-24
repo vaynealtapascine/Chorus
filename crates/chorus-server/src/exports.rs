@@ -23,15 +23,32 @@ pub fn read_snapshot(path: &Path) -> anyhow::Result<Connection> {
 /// Applied operations authored by this account, in server sequence order. The op envelope is
 /// preserved so a later importer can replay it without inferring fields from projections.
 pub fn ops_jsonl(conn: &Connection, account: &str) -> anyhow::Result<Vec<u8>> {
+    let mut out = Vec::new();
+    write_ops_jsonl(conn, account, &mut out, |_| true)?;
+    Ok(out)
+}
+
+/// [`ops_jsonl`], streamed into `out`. `each` is told how many ops are written so far and may
+/// stop the export by returning false (then this errors). Returns the op count.
+pub fn write_ops_jsonl(
+    conn: &Connection,
+    account: &str,
+    out: &mut dyn std::io::Write,
+    mut each: impl FnMut(u64) -> bool,
+) -> anyhow::Result<u64> {
     let mut st = conn.prepare("SELECT id FROM op WHERE account_id = ?1 AND status = 'applied' ORDER BY seq")?;
     let ids: Vec<String> = st.query_map([account], |r| r.get(0))?.collect::<Result<_, _>>()?;
-    let mut out = Vec::new();
+    let mut n = 0u64;
     for id in ids {
         let op = oplog::by_id(conn, &id)?.with_context(|| format!("op {id} disappeared during export"))?;
-        serde_json::to_writer(&mut out, &op)?;
-        out.push(b'\n');
+        serde_json::to_writer(&mut *out, &op)?;
+        out.write_all(b"\n")?;
+        n += 1;
+        if !each(n) {
+            anyhow::bail!("stopped");
+        }
     }
-    Ok(out)
+    Ok(n)
 }
 
 struct CsvSpec {

@@ -265,7 +265,7 @@ pub async fn put_blob(
     Ok(StatusCode::CREATED.into_response())
 }
 
-fn read_range(h: &HeaderMap, size: u64) -> Result<Option<(u64, u64)>, BlobError> {
+pub(crate) fn read_range(h: &HeaderMap, size: u64) -> Result<Option<(u64, u64)>, BlobError> {
     let Some(raw) = h.get(header::RANGE) else { return Ok(None) };
     let text = raw.to_str().map_err(|_| bad("invalid_range"))?;
     let span = text.strip_prefix("bytes=").ok_or(bad("invalid_range"))?;

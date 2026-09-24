@@ -224,3 +224,8 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   Linux was eaten by Windows' commit of a ~GB WAL. Next lever: rebuild into a fresh database file
   with `journal_mode=OFF`/`synchronous=OFF` (nothing to protect until it's swapped in), then
   swap files atomically, instead of one giant WAL transaction on the live file.
+- 2026-09-24 claude-opus-5.5 (remote) — server — Migrations must be idempotent (`IF NOT EXISTS`,
+  delete-then-fill): `backup_cli.rs` `restore_migrates_a_snapshot_from_an_older_schema` fakes an
+  old schema by setting `schema_version` back on a current database, so every later migration
+  runs again. And the workspace sets `unsafe_code = "forbid"`, which a local `allow` can't lift:
+  platform calls go through safe wrappers already in the lockfile (e.g. `rustix` for `statvfs`).

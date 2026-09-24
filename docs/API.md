@@ -267,16 +267,36 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
 POST /front/switch     (API tokens with write:front)  {entries, occurred_at?, note?, notify?}
 POST /channels/{id}/messages (write:messages)          {authors?, text, format:"markup"|"plain"|"entities", entities?}
 POST /import/pluralkit  multipart file | {token}       → job id
-POST /exports           {kind:"full"|"csv"|"sqlite"|"pluralkit", from?, to?} → job id
-GET  /jobs/{id}         progress, result URL
+POST /exports           {kind:"full"}                  → 202 {id}   (409 conflict while one runs)
+GET  /exports/latest    the account's latest export job (204 if none)
+GET  /jobs/{id}         {id, kind, status, phase, done, total, bytes, error, file_name,
+                         result_url, created_at, finished_at, expires_at}
+DELETE /jobs/{id}       cancel it, or delete its finished file now          → 204
+GET  /exports/{id}/download?key=…   the zip (no Authorization: the key is the credential; Range)
 POST /invites           (admin) {kind, expires_in_s, max_uses}  → {url, qr_svg}
 ```
+
+**The export bundle (D-068, `export_job.rs`)** — the DATA_MODEL §7 full backup as a background
+job, for a device session or a token with `export`. `chorus-<handle>-<YYYYMMDD>.zip`, stored (no
+compression, ZIP64 when needed): `README.txt`, `ops.jsonl` (exactly the direct export below),
+`csv/<name>.csv` (the seven tables), `blobs/<sha256>` (every file the account's **own** ops point
+at — attachments and their thumbnails, avatars, banners, custom emoji; never another account's,
+even one visible in a shared space), and `manifest.json` (format 1: account, times, server
+version, instance, `ops {count, sha256}`, `blobs [{hash, size, mime, filenames, file}]`,
+`missing` and `damaged` hashes — a file that's gone or fails its hash is listed, not fatal).
+`status`: `queued` → `running` (`phase` `ops`, `csv`, `blobs`, `zip`; `done`/`total` count ops,
+then tables, then files; `bytes` written) → `done` | `failed` (`error` says why, e.g. not enough
+free disk: a job refuses to leave less free space than twice its estimated size) | `cancelled`
+| `expired`. One job per account at a time, two server-wide (others wait `queued`); a restart
+fails running ones ("the server restarted; start it again"). `result_url` (while `done`) carries
+a random key; the file is kept 24 h, or an hour after its first complete download. A finished
+export is also an in-app notification (`kind: "export_ready"`), not a push. PluralKit, CSV-only
+and SQLite jobs aren't served: those are the direct exports.
 
 **Direct exports (M10.3):** `GET /exports/ops.jsonl`, `GET /exports/csv/{name}` (seven names
 in DATA_MODEL.md §7.1), and `GET /exports/account.sqlite` accept a device session or an API
 token with the `export` scope. Each contains only the principal account's authored data. They
-return attachment filenames. The `POST /exports` job protocol above is planned for larger
-archives and is not yet served.
+return attachment filenames. Files come only in the bundle above.
 
 `format: "markup"` parses Chorus markup with the same core parser the apps use.
 

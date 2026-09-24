@@ -55,6 +55,8 @@ pub struct Shared {
     /// Set by [`Shared::shutdown`]: the background tasks (webhook deliveries, the notifier) stop
     /// and let go of the state, and with it the database connection.
     stop: tokio::sync::watch::Sender<bool>,
+    /// Export bundles building at once, server-wide (export_job.rs).
+    export_slots: Arc<tokio::sync::Semaphore>,
 }
 
 pub type AppState = Arc<Shared>;
@@ -69,6 +71,8 @@ impl Shared {
         let (events, _) = tokio::sync::broadcast::channel(256);
         let (hooks, hook_rx) = mpsc::unbounded_channel();
         let (burst, per_second) = cfg.security.rate();
+        // export jobs that were running when the server stopped won't finish now
+        crate::export_job::fail_interrupted(&conn, &cfg, now_ms())?;
         Ok(Arc::new(Shared {
             limiter: crate::ratelimit::Limiter::new(burst, per_second),
             db: Mutex::new(conn),
@@ -80,6 +84,7 @@ impl Shared {
             hook_rx: Mutex::new(Some(hook_rx)),
             sockets: Mutex::new(Sockets::default()),
             stop: tokio::sync::watch::channel(false).0,
+            export_slots: Arc::new(tokio::sync::Semaphore::new(crate::export_job::SLOTS)),
         }))
     }
 
@@ -132,6 +137,10 @@ pub fn router(state: AppState) -> Router {
         .route("/exports/ops.jsonl", get(export_ops))
         .route("/exports/csv/{name}", get(export_csv))
         .route("/exports/account.sqlite", get(export_sqlite))
+        .route("/exports", post(export_start))
+        .route("/exports/latest", get(export_latest))
+        .route("/exports/{id}/download", get(export_download))
+        .route("/jobs/{id}", get(job_get).delete(job_delete))
         .route("/admin/health", get(admin_health))
         .route("/admin/reconcile/close", post(admin_reconcile_close))
         .route("/webhooks", get(webhooks_list).post(webhooks_create))
@@ -239,6 +248,12 @@ impl From<AuthError> for ApiError {
             tracing::error!(error = %e, "internal error");
         }
         ApiError(s, c, e.to_string())
+    }
+}
+
+impl From<rusqlite::Error> for ApiError {
+    fn from(e: rusqlite::Error) -> Self {
+        ApiError::from(anyhow::Error::from(e))
     }
 }
 
@@ -702,6 +717,192 @@ async fn export_csv(
             .map_err(anyhow::Error::from)?,
     );
     Ok(response)
+}
+
+#[derive(Deserialize)]
+struct ExportStart {
+    kind: String,
+}
+
+/// `POST /exports {kind: "full"}`: build the export bundle in the background (export_job.rs).
+async fn export_start(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<ExportStart>,
+) -> Result<(StatusCode, Json<serde_json::Value>), ApiError> {
+    if b.kind != "full" {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "bad_request", "kind must be \"full\"".into()));
+    }
+    let (id, account) = {
+        let conn = s.db();
+        let p = principal(&s, &conn, &headers)?;
+        if !p.allows("export") {
+            return Err(crate::api_data::DataError::Scope("export").into());
+        }
+        match crate::export_job::create(&conn, &p.account_id, now_ms())? {
+            crate::export_job::Created::New(id) => (id, p.account_id),
+            crate::export_job::Created::Busy(_) => {
+                let message = "an export is already being prepared for this account".to_string();
+                return Err(ApiError(StatusCode::CONFLICT, "conflict", message));
+            }
+        }
+    };
+    let st = s.clone();
+    let job = id.clone();
+    tokio::spawn(async move {
+        let Ok(_slot) = st.export_slots.clone().acquire_owned().await else { return };
+        let worker = st.clone();
+        let jid = job.clone();
+        let built = tokio::task::spawn_blocking(move || {
+            let reader = crate::exports::read_snapshot(&worker.cfg.db_path())?;
+            let mut progress =
+                |p: &crate::export_job::Progress| crate::export_job::report(&worker.db(), &jid, p).unwrap_or(false);
+            crate::export_job::build(&worker.cfg, &reader, &jid, &account, now_ms(), &mut progress)
+        })
+        .await;
+        let outcome = match built {
+            Ok(Ok(done)) => Ok(done),
+            Ok(Err(e)) => Err(e.to_string()),
+            Err(e) => Err(format!("the export stopped: {e}")),
+        };
+        if let Err(e) = &outcome {
+            tracing::warn!(job = %job, error = %e, "export failed");
+        }
+        if let Err(e) = crate::export_job::finish(&st.db(), &job, outcome, now_ms()) {
+            tracing::error!(job = %job, error = %e, "export: can't record the outcome");
+        }
+    });
+    Ok((StatusCode::ACCEPTED, Json(json!({"id": id}))))
+}
+
+/// The account's latest export job (the web page picks up where it was), or 204.
+async fn export_latest(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<Response, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    if !p.allows("export") {
+        return Err(crate::api_data::DataError::Scope("export").into());
+    }
+    Ok(match crate::export_job::latest(&conn, &p.account_id)? {
+        Some(v) => Json(v).into_response(),
+        None => StatusCode::NO_CONTENT.into_response(),
+    })
+}
+
+async fn job_get(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    if !p.allows("export") {
+        return Err(crate::api_data::DataError::Scope("export").into());
+    }
+    crate::export_job::view(&conn, &p.account_id, &id)?
+        .map(Json)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "no such job".into()))
+}
+
+/// Cancel a job, or delete its finished file now.
+async fn job_delete(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    if !p.allows("export") {
+        return Err(crate::api_data::DataError::Scope("export").into());
+    }
+    if crate::export_job::cancel(&conn, &s.cfg, &p.account_id, &id, now_ms())? {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError(StatusCode::NOT_FOUND, "not_found", "no such job".into()))
+    }
+}
+
+#[derive(Deserialize)]
+struct DownloadKey {
+    #[serde(default)]
+    key: String,
+}
+
+/// The finished zip, streamed from disk, with Range so a phone can resume. The URL's key is
+/// the credential (no Authorization header: browsers download it natively).
+async fn export_download(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<DownloadKey>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    use axum::http::{HeaderValue, header};
+    let found = crate::export_job::download(&s.db(), &s.cfg, &id, &q.key);
+    let Ok(Some((path, name))) = found else {
+        return ApiError(StatusCode::NOT_FOUND, "not_found", "no such export (or it has expired)".into())
+            .into_response();
+    };
+    let Ok(file) = tokio::fs::File::open(&path).await else {
+        return ApiError(StatusCode::NOT_FOUND, "not_found", "no such export (or it has expired)".into())
+            .into_response();
+    };
+    let size = match file.metadata().await {
+        Ok(m) => m.len(),
+        Err(e) => return ApiError::from(anyhow::Error::from(e)).into_response(),
+    };
+    let range = match crate::blobs::read_range(&headers, size) {
+        Ok(r) => r,
+        Err(e) => return e.into_response(),
+    };
+    let (start, end) = range.unwrap_or((0, size.saturating_sub(1)));
+    let whole_tail = end + 1 == size; // this response runs to the end of the file
+    let mut file = file;
+    if start > 0 {
+        use tokio::io::AsyncSeekExt;
+        if let Err(e) = file.seek(std::io::SeekFrom::Start(start)).await {
+            return ApiError::from(anyhow::Error::from(e)).into_response();
+        }
+    }
+    let length = if size == 0 { 0 } else { end - start + 1 };
+    let st = s.clone();
+    let job = id.clone();
+    // read in 256 KiB chunks; reaching the end of the file counts as a complete download
+    let body = futures_util::stream::unfold((file, length), move |(mut file, left)| {
+        let st = st.clone();
+        let job = job.clone();
+        async move {
+            use tokio::io::AsyncReadExt;
+            if left == 0 {
+                return None;
+            }
+            let mut buf = vec![0u8; left.min(256 * 1024) as usize];
+            match file.read_exact(&mut buf).await {
+                Ok(_) => {
+                    let left = left - buf.len() as u64;
+                    if left == 0 && whole_tail {
+                        let _ = crate::export_job::downloaded(&st.db(), &job, now_ms());
+                    }
+                    Some((Ok::<_, std::io::Error>(axum::body::Bytes::from(buf)), (file, left)))
+                }
+                Err(e) => Some((Err(e), (file, 0))),
+            }
+        }
+    });
+    let mut response = axum::body::Body::from_stream(body).into_response();
+    *response.status_mut() = if range.is_some() { StatusCode::PARTIAL_CONTENT } else { StatusCode::OK };
+    let h = response.headers_mut();
+    h.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/zip"));
+    h.insert(header::CONTENT_LENGTH, HeaderValue::from(length));
+    h.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
+    if let Ok(v) = HeaderValue::from_str(&format!("attachment; filename=\"{}\"", name.replace('"', ""))) {
+        h.insert(header::CONTENT_DISPOSITION, v);
+    }
+    if range.is_some()
+        && let Ok(v) = HeaderValue::from_str(&format!("bytes {start}-{end}/{size}"))
+    {
+        h.insert(header::CONTENT_RANGE, v);
+    }
+    response
 }
 
 async fn export_sqlite(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<Response, ApiError> {
@@ -1449,6 +1650,10 @@ fn run_notifier(state: AppState) {
             let Some(state) = weak.upgrade() else { break };
             let pushes = {
                 let conn = state.db();
+                // finished exports past their time (export_job.rs)
+                if let Err(e) = crate::export_job::expire(&conn, &state.cfg, now_ms()) {
+                    tracing::error!(error = %e, "export expiry failed");
+                }
                 match crate::notifier::process_due(&conn, now_ms()) {
                     Ok(p) => p.pushes,
                     Err(e) => {

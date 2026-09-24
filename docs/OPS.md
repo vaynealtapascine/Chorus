@@ -18,6 +18,7 @@ Two supported ways to run the server (D-062):
     app/chorus-server.exe       deployed binary (+ web/ static build)
     data/chorus.db              SQLite (WAL: chorus.db-wal, chorus.db-shm)
     data/blobs/ab/cd/<sha256>   content-addressed attachments
+    data/exports/<job>.zip      export bundles (API.md §4): deleted after 24 h, or 1 h after a download
     backups/                    nightly snapshots
     chorus.toml                 config
     logs/

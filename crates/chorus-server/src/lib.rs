@@ -11,6 +11,7 @@ pub mod backup;
 pub mod blobs;
 pub mod config;
 pub mod db;
+pub mod export_job;
 pub mod exports;
 pub mod feeds;
 pub mod follows;
@@ -35,6 +36,7 @@ pub mod spaces;
 pub mod tls;
 pub mod visibility;
 pub mod webhooks;
+pub mod zip;
 
 use rusqlite::Connection;
 
