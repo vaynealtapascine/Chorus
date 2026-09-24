@@ -207,6 +207,17 @@ test('sync everything now', async () => {
   await expect(stars.page.getByText(/This app uses .* on this device/)).toBeVisible();
 });
 
+test('a full export with files', async () => {
+  await go(stars.page, 'data');
+  await stars.page.getByRole('button', { name: /Prepare a (full export|new one)/ }).click();
+  const link = stars.page.getByRole('link', { name: /Download chorus-.*\.zip/ });
+  await expect(link).toBeVisible({ timeout: 30_000 });
+  const zip = await stars.page.request.get((await link.getAttribute('href'))!);
+  expect(zip.status()).toBe(200);
+  expect(zip.headers()['content-type']).toBe('application/zip');
+  expect((await zip.body()).subarray(0, 2).toString()).toBe('PK');
+});
+
 test('a feed shared with followers', async () => {
   const name = `Garden ${run}`;
   await go(stars.page, 'journal');

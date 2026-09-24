@@ -319,3 +319,27 @@ blobs are verified by hash. The importer is separate work and not part of this p
   index (incl. 5k posts + 10k switches < 16 ms), browser tests for the Switches tab and Sync
   everything now. **Sol:** `recheck`/`repairing` are in `chorus-ffi` too; the Android open path
   can use `begin/add_ops/index_step/adopt` the same way (not exposed in FFI yet — say if wanted).
+- R15 — the export bundle (D-068), built to the appendix with its defaults. Migration
+  **0008_export_job** (no one had claimed 0008; Sol: the next free number is 0009).
+  `export_job.rs`: `POST /exports {kind:"full"}` → 202 `{id}` (409 while one runs; one per
+  account, two server-wide via a semaphore in `Shared`), `GET /jobs/{id}`, `GET /exports/latest`,
+  `DELETE /jobs/{id}` (cancel, or delete the file now), `GET /exports/{id}/download?key=…`
+  (streamed from disk with Range; the random key is the credential, so a browser downloads it
+  natively; it dies with the file). The zip (`zip.rs`, hand-written: stored entries, data
+  descriptors, CRC-32, ZIP64 when needed — no dependency) streams into
+  `data/exports/<id>.zip.part`: README, `ops.jsonl` (same as the direct export, now streamed),
+  seven CSVs, `blobs/<sha256>` for every blob key in the account's **own** applied ops
+  (`blob_hash`, `thumb_blob_hash`, `avatar_blob`, `banner_blob`; never another account's), and
+  `manifest.json` (ops count + sha256, blobs with every filename, `missing`, `damaged`). A free
+  disk check refuses a job that would leave less than twice its estimate free — Unix via
+  `rustix::fs::statvfs` (already in the lockfile; the workspace forbids `unsafe`), none on Windows
+  (a full disk fails the job, the part file is removed). Kept 24 h or 1 h after a complete
+  download; expiry runs in the notifier loop; a restart fails running jobs; purge deletes an
+  account's bundles; a finished one is an in-app `export_ready` notification. Web: "Full export
+  with files" in *Your data → Export your data*, polling every 2 s. Tests: `zip.rs` (CRC check
+  value, DOS dates, Python `zipfile` reads classic and ZIP64 archives back), `tests/export_bundle.rs`
+  (HTTP end to end with Python checking contents, other account's file absent, missing/damaged
+  listed, Range, key, expiry after download, delete; the job table's one-at-a-time, cancel,
+  restart and expiry), a browser test downloading the zip. API.md §4, DATA_MODEL (§7 + table),
+  OPS layout, DECISIONS §Versions updated. The importer (`import-account --from <zip>`) is
+  separate later work, as the design said.

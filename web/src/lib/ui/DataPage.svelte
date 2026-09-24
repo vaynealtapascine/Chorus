@@ -5,6 +5,7 @@
   import { apiFetch } from '../http';
   import { sync } from '../sync/client';
   import ThisDevice from './ThisDevice.svelte';
+  import ExportBundle from './ExportBundle.svelte';
 
   interface Token { id: string; name: string; scopes: string[]; created_at: number; last_used_at: number | null }
 
@@ -223,6 +224,7 @@
         <button class="ghost" onclick={() => download(`/exports/csv/${table}`, `${table}.csv`)}>{table.replaceAll('_', ' ')} CSV</button>
       {/each}
     </div>
+    <ExportBundle />
   </section>
   <p class="hint">
     Tokens let your own scripts, spreadsheets, Grafana or a stream overlay read <em>your</em> front history,
