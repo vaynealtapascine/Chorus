@@ -43,6 +43,19 @@ data class SwitchRow(
 /** One subject that can front: a member or a subsystem acting as one. */
 data class Subject(val type: String, val id: String, val name: String, val color: String, val glyph: String, val avatarBlob: String? = null)
 
+data class ChatSpace(val id: String, val kind: String, val name: String)
+data class ChatChannel(val id: String, val spaceId: String, val kind: String, val name: String, val parentMessageId: String?)
+data class ChatAttachment(
+    val id: String, val blobHash: String, val thumbHash: String?, val filename: String,
+    val mime: String, val size: Long, val altText: String, val spoiler: Boolean,
+)
+data class ChatMessage(
+    val id: String, val channelId: String, val authors: List<String>, val text: String,
+    val occurredAt: Long, val cw: String?, val visibilityMode: String,
+    val visibleMemberIds: Set<String>, val accountId: String?, val replyTo: String?,
+    val attachments: List<ChatAttachment>,
+)
+
 class Model(
     val members: List<Member>,
     val groups: List<Group>,
@@ -51,6 +64,10 @@ class Model(
     val current: List<Entry>,
     val since: Long?,
     val switches: List<SwitchRow>,
+    val spaces: List<ChatSpace> = emptyList(),
+    val channels: List<ChatChannel> = emptyList(),
+    /** Newest 100 non-deleted messages per channel, oldest first for display. */
+    val chatMessages: Map<String, List<ChatMessage>> = emptyMap(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -116,6 +133,8 @@ class Model(
         }
 
         private fun strings(a: JSONArray?): List<String> = if (a == null) emptyList() else List(a.length()) { a.getString(it) }
+
+        private fun stringSet(a: JSONArray?): Set<String> = strings(a).toSet()
 
         private fun entries(a: JSONArray?): List<Entry> = if (a == null) emptyList() else List(a.length()) {
             val e = a.getJSONObject(it)
@@ -195,7 +214,36 @@ class Model(
                     )
                 }
             } ?: emptyList()
-            return Model(members, groups, membership, current, since, switches)
+            val spaces = rows(p, "space").filter { (_, f) -> !f.present("deleted_at") }
+                .map { (id, f) -> ChatSpace(id, f.str("kind") ?: "shared", f.str("name") ?: "Space") }
+                .sortedWith(compareBy<ChatSpace> { if (it.kind == "internal") 0 else if (it.kind == "shared") 1 else 2 }.thenBy { it.name })
+            val channels = rows(p, "channel").filter { (_, f) -> !f.present("deleted_at") && !f.present("archived_at") }
+                .map { (id, f) -> ChatChannel(id, f.str("space_id") ?: "", f.str("kind") ?: "text",
+                    f.str("name") ?: "Channel", f.str("parent_message_id")) }
+                .filter { channel -> spaces.any { it.id == channel.spaceId } }
+                .sortedBy { it.name }
+            val channelIds = channels.map { it.id }.toSet()
+            val attachments = rows(p, "attachment").associate { it.first to it.second }
+            val selected = rows(p, "message")
+                .filter { (_, f) -> !f.present("deleted_at") && f.str("channel_id") in channelIds }
+                .groupBy { (_, f) -> f.str("channel_id").orEmpty() }
+                .mapValues { (_, values) -> values.sortedWith(compareBy<Pair<String, JSONObject>> { it.second.optLong("occurred_at") }.thenBy { it.first }).takeLast(100) }
+            val chatMessages = selected.mapValues { (_, values) -> values.map { (id, f) ->
+                val links = f.optJSONArray("attachments")
+                val files = if (links == null) emptyList() else (0 until links.length()).mapNotNull { i ->
+                    val attachmentId = links.optString(i)
+                    val a = attachments[attachmentId] ?: return@mapNotNull null
+                    val hash = a.str("blob_hash") ?: return@mapNotNull null
+                    ChatAttachment(attachmentId, hash, a.str("thumb_blob_hash"), a.str("filename") ?: "file",
+                        a.str("mime") ?: "application/octet-stream", a.optLong("size"), a.str("alt_text").orEmpty(),
+                        a.optBoolean("is_spoiler"))
+                }
+                val visibility = f.optJSONObject("visibility")
+                ChatMessage(id, f.str("channel_id").orEmpty(), strings(f.optJSONArray("authors")), f.str("text").orEmpty(),
+                    f.optLong("occurred_at"), f.str("cw"), visibility?.optString("mode")?.ifEmpty { "all" } ?: "all",
+                    stringSet(visibility?.optJSONArray("member_ids")), f.str("account_id"), f.str("reply_to"), files)
+            } }
+            return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages)
         }
     }
 }
