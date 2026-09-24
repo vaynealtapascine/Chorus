@@ -323,8 +323,9 @@ mod tests {
 
     #[test]
     fn rotation_keeps_configured_daily_count_and_never_touches_blob_pool() {
-        let target = std::env::var_os("CARGO_TARGET_DIR").expect("test requires CARGO_TARGET_DIR on F:");
-        let root = PathBuf::from(target).join(format!("backup-rotation-test-{:016x}", rand::random::<u64>()));
+        // unit tests get no CARGO_TARGET_TMPDIR; the owner's C: is nearly full, so prefer the target dir
+        let target = std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+        let root = target.join(format!("backup-rotation-test-{:016x}", rand::random::<u64>()));
         fs::create_dir_all(root.join("blobs")).unwrap();
         fs::write(root.join("blobs/keep"), b"immutable").unwrap();
         for day in 1..=4 {
