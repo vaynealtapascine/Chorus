@@ -1,3 +1,10 @@
+<script lang="ts">
+  // Chorus Home: *This computer* only shows in the browser on the PC Chorus runs on (home.ts)
+  import { homeStatus } from '../home';
+  let home = $state(false);
+  homeStatus().then((s) => (home = !!s));
+</script>
+
 <section class="more">
   <h1 class="display">More</h1>
   <nav aria-label="More pages">
@@ -8,6 +15,7 @@
     <a href="#/search">Search <span>›</span></a>
     <a href="#/data">Your data <span>›</span></a>
     <a href="#/trash">Trash <span>›</span></a>
+    {#if home}<a href="#/computer">This computer <span>›</span></a>{/if}
   </nav>
 </section>
 

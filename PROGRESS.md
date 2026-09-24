@@ -155,7 +155,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M13.1 LAN TLS listener with a self-signed certificate; fingerprint in `/server` and LAN invites
 - [x] M13.2 Loopback-only setup + *This computer* settings API (first account, port, wifi on/off, backups, restart)
 - [ ] M13.3 Windows service mode + self-install / update / uninstall (ChorusHome service, firewall, shortcut)
-- [ ] M13.4 Web setup page and settings
+- [x] M13.4 Web setup page and settings
 - [ ] M13.5 Android: pinned self-signed certificate from `#pin=` invites; mDNS rediscovery
 - [ ] M13.6 Release build (`ChorusHome-<version>.exe`) in CI, linked from the landing page
 ### Later (not v1)
@@ -259,3 +259,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-24 claude-opus-5.5 — Web Push verified for real: a test system account `claudetest` (created with the owner's OK via `chorus-server invite` on the production server; its only device is the owner's Chrome profile) subscribed from the People page, and "Send a test" arrived through Chrome's push service and was shown by the service worker. Use this account for future production checks; never the owner's own.
 - 2026-09-24 claude-opus-5.5 — M13.1 Chorus Home LAN TLS: [server] lan_listen serves the same app over TLS with a self-signed certificate made once in <data>/tls (rcgen, aws-lc provider named explicitly); handshakes on their own tasks with a 10 s deadline; tls_pin in GET /server; device invites get lan_url https://<lan ip>:<port>/i/<code>#pin=sha256/… and the QR encodes it; CLI invite prints it. tests/home_tls.rs.
 - 2026-09-24 claude-opus-5.5 — M13.2 Chorus Home setup/settings API (home.rs): [server] home = true adds GET /home, POST /home/setup (first-run system invite, once), PUT /home/settings (admin; port, home wifi, backups; rewrites chorus.toml after checking it loads, then restarts in place with a fresh runtime; the TLS listener frees its port). Local-only = loopback peer and nothing forwarded; a technical install (behind Caddy) has no such routes. tests/home_setup.rs.
+- 2026-09-24 claude-opus-5.5 — M13.4 Chorus Home web: first run needs no invite on the PC itself (Onboarding asks GET /home, redeems POST /home/setup's code), then This computer (#/computer, linked from More only on that PC): add a phone (QR of the chorus:// invite with the pin), settings (wifi on/off, daily backups, port under Advanced) that save, restart and reload. Browser-checked on a scratch Home server: setup, QR, save with wifi off (file rewritten, TLS port freed, page back).

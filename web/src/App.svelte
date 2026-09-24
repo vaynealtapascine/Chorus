@@ -19,6 +19,7 @@
   import More from './lib/ui/More.svelte';
   import Switcher from './lib/ui/Switcher.svelte';
   import Trash from './lib/ui/Trash.svelte';
+  import ThisComputer from './lib/ui/ThisComputer.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
   import { selfMember } from './lib/data';
 
@@ -62,7 +63,7 @@
   const tabs = $derived(person ? allTabs.filter((t) => t.name !== 'members') : allTabs);
   const active = $derived(router.route.name === 'member' || router.route.name === 'profile' ? 'members' :
     router.route.name === 'stage' ? 'chat' : router.route.name === 'post-stage' ? 'journal' :
-    ['history', 'insights', 'people', 'data', 'search', 'trash', 'settings'].includes(router.route.name) ? 'more' : router.route.name);
+    ['history', 'insights', 'people', 'data', 'search', 'trash', 'settings', 'computer'].includes(router.route.name) ? 'more' : router.route.name);
 </script>
 
 {#if status === 'no-device'}
@@ -105,6 +106,8 @@
         <Stage {projection} {dark} channelId={router.route.id} />
       {:else if router.route.name === 'data'}
         <DataPage />
+      {:else if router.route.name === 'computer'}
+        <ThisComputer />
       {:else if router.route.name === 'settings'}
         <Settings {projection} />
       {:else if router.route.name === 'people'}
