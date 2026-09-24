@@ -45,6 +45,24 @@ fn channel_public(conn: &Connection, channel: &str) -> anyhow::Result<bool> {
 /// A participant cannot mutate a private aside owned by another account, even with a guessed
 /// message id. Normal public-message authorization remains in the existing scope rules.
 pub fn related_write_allowed(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<bool> {
+    if matches!(o.kind.as_str(), "post.react" | "post.unreact") {
+        let Some(target) = o.payload.get("target_id").and_then(Value::as_str) else { return Ok(false) };
+        let Some(member) = o.payload.get("member_id").and_then(Value::as_str) else { return Ok(false) };
+        let owned: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM member WHERE id=?1 AND account_id=?2 AND deleted_at IS NULL)",
+            params![member, author],
+            |r| r.get(0),
+        )?;
+        if !owned {
+            return Ok(false);
+        }
+        let readable = crate::posts::readable_sql("?2");
+        let sql = format!("SELECT p.deleted_at IS NULL AND {readable} FROM post p WHERE p.id=?1");
+        // A reaction may sync before its post. The row, once present, is always checked through
+        // the same audience predicate as GET /posts; an absent target reveals no post data.
+        let visible: Option<bool> = conn.query_row(&sql, params![target, author], |r| r.get(0)).optional()?;
+        return Ok(visible.unwrap_or(true));
+    }
     let message_id = if matches!(o.kind.as_str(), "message.send" | "message.forward") {
         o.payload.get("reply_to").and_then(Value::as_str)
     } else if o.kind.starts_with("message.") || o.kind.starts_with("reaction.") || o.kind.starts_with("read.") {

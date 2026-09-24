@@ -3,7 +3,8 @@
   // Follows live in the followed account's scope, so accepting and the privacy preset are ordinary
   // ops; asking to follow, unfollowing and your own prefs go through /api/v1/follows.
   import { notifyPreset } from '../core/pkg/chorus_wasm.js';
-  import { bucketAssignments, buckets, selfMember, type AttachmentRow } from '../data';
+  import { bucketAssignments, buckets, members, selfMember, type AttachmentRow } from '../data';
+  import { postReaction } from '../posts';
   import { apiBase } from '../sync/device';
   import { sync, type Projection } from '../sync/client';
   import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
@@ -271,6 +272,15 @@
   const name = (p: Person) => p.display_name ?? (p.handle ? `@${p.handle}` : 'Someone');
   const postAuthors = (p: SharedPost, fallback: Person) =>
     p.author_cards.map((a) => a.display_name ?? a.name ?? 'Someone').join(' & ') || name(fallback);
+  const reactMember = $derived(selfMember(projection)?.id ?? projection.fronts[sync.accountId]?.current.find((e) => e.subject_type === 'member' && e.level === 'front')?.subject_id);
+  function reactPost(post: SharedPost) {
+    if (!reactMember) return;
+    const selected = post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember);
+    sync.create(selected ? 'post.unreact' : 'post.react', sync.accountScope, post.id, postReaction(post.id, '💜', reactMember));
+    post.reactions = selected
+      ? post.reactions.filter((r) => !(r.emoji === '💜' && r.member_id === reactMember))
+      : [...(post.reactions ?? []), { emoji: '💜', member_id: reactMember, member_name: members(projection).find((m) => m.id === reactMember)?.display_name ?? 'You' }];
+  }
   let choice = $state<Record<string, string>>({});
 </script>
 
@@ -416,6 +426,7 @@
                       <AttachmentView {attachment} />
                     {/each}
                     {#if post.reactions?.length}<p class="post-reactions">{post.reactions.map((r) => `${r.emoji} ${r.member_name}`).join(' · ')}</p>{/if}
+                    {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button>{/if}
                   </details>
                 {:else}
                   {#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
@@ -423,6 +434,7 @@
                     <AttachmentView {attachment} />
                   {/each}
                   {#if post.reactions?.length}<p class="post-reactions">{post.reactions.map((r) => `${r.emoji} ${r.member_name}`).join(' · ')}</p>{/if}
+                  {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button>{/if}
                 {/if}
               </article>
             {/each}

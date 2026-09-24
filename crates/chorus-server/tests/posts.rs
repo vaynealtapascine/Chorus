@@ -1,8 +1,15 @@
 //! Public journal reads must enforce the stored audience at request time.
 
-use chorus_server::{api_data, app, auth, config::Config, db};
+use chorus_core::{
+    hlc::Hlc,
+    id::new_id,
+    op::Op,
+    time::{ClockSample, TimeSource},
+};
+use chorus_server::{api_data, app, auth, config::Config, db, ingest, posts};
 use rusqlite::{Connection, params};
 use serde_json::Value;
+use serde_json::json;
 
 const ALICE: &str = "0192f8c2-0000-7000-8000-0000000000a1";
 const BOB: &str = "0192f8c2-0000-7000-8000-0000000000b2";
@@ -196,4 +203,46 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
     let after = chorus_server::posts::list(&ended, BOB, &Default::default()).unwrap();
     assert_eq!(ids(&after), ["own-bob", "server"]);
     assert!(chorus_server::posts::one(&ended, BOB, "bucket").unwrap().is_none());
+}
+
+#[test]
+fn post_reactions_require_an_owned_member_and_a_readable_existing_post() {
+    let conn = seed();
+    let scope = format!("account:{BOB}");
+    ingest::grant(&conn, BOB, &scope).unwrap();
+    let now = chorus_server::now_ms();
+    let session = ingest::Session {
+        account_id: BOB.into(),
+        device_id: BOB.into(),
+        sample: ClockSample { server_time: now, mono: None, boot_id: None, offset_ms: 0 },
+    };
+    let make = |serial: u8, target: &str, member: &str| Op {
+        id: new_id(now as u64, [serial; 10]),
+        kind: "post.react".into(),
+        v: 1,
+        scope: scope.clone(),
+        entity_id: Some(new_id(now as u64, [serial + 20; 10])),
+        hlc: Hlc::new(now as u64, 0, 1),
+        device_at: now,
+        tz_offset_min: 0,
+        mono: None,
+        boot_id: None,
+        time_source: TimeSource::Auto,
+        seen_seq: 0,
+        member_id: None,
+        payload: json!({"target_type":"post","target_id":target,"emoji":"🎉","member_id":member}),
+        seq: None,
+        account_id: None,
+        device_id: None,
+        occurred_at: None,
+        received_at: None,
+    };
+    let (private, _) = ingest::accept(&conn, &session, make(1, "private", "bob"), now, false).unwrap();
+    assert_eq!(private.error.unwrap().code, "forbidden");
+    let (forged, _) = ingest::accept(&conn, &session, make(2, "server", "alice"), now, false).unwrap();
+    assert_eq!(forged.error.unwrap().code, "forbidden");
+    let (valid, _) = ingest::accept(&conn, &session, make(3, "server", "bob"), now, false).unwrap();
+    assert!(valid.error.is_none(), "{:?}", valid.error);
+    let owner = posts::one(&conn, ALICE, "server").unwrap().unwrap();
+    assert!(owner["reactions"].as_array().unwrap().iter().any(|r| r["emoji"] == "🎉" && r["member_id"] == "bob"));
 }
