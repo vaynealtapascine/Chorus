@@ -44,7 +44,19 @@ frames exist, Claude will write you a hand-off mapping frames to code, and you'l
 Until then: favour the data, sync and logic side of each task, keep new screens plain (tokens,
 simple layout), and don't spend time on visual polish that a design will replace.
 
-**Order now:** V2 → V4 (the biggest gap) → V5 → V3's file opening → V6 → V9 →
+**Update 2026-09-25:** the remote Claude's R9–R19 are merged into `main` (`git pull`). Three
+things for Android, from its report (`opus-remote-2.md` §5):
+
+- **V0 · `Changes.removed` (do this first, it's small).** Channel permissions (M5.10) can take a
+  channel away from an account; the core now reports ops a device may no longer see in
+  `changes.removed`. Android's `Store.save` must delete those ids (web does it in `persist.ts`);
+  without it an evicted op comes back after a restart until the next repair sweeps it again.
+- **V8 is unblocked.** CLIENTS.md §4.3 has the protocol and numbers. `recheck`/`repairing` are in
+  `chorus-ffi` already; opening from a projection snapshot (`begin/add_ops/index_step/adopt`)
+  isn't exposed through FFI yet: ask in your log if you want it, and Claude or the remote adds it.
+- Migrations 0007 (post search) and 0008 (export jobs) are taken: **your next free number is 0009**.
+
+**Order now:** V0 → V2 → V4 (the biggest gap) → V5 → V3's file opening → V6 → V9 →
 V7 → V8. V1 is done.
 
 - **V9 · Chorus Home on a phone (M13.5).** Once the owner agrees to a session with an app that
