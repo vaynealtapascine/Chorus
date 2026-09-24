@@ -86,6 +86,18 @@ fn seed() -> Connection {
         )
         .unwrap();
     }
+    for (id, emoji, member, added, removed) in [
+        ("server", "💜", "bob", Some("2:0:1"), None),
+        ("server", "👍", "carol", Some("2:0:1"), Some("3:0:1")),
+        ("private", "💜", "bob", Some("2:0:1"), None),
+    ] {
+        conn.execute(
+            "INSERT INTO reaction(target_type,target_id,emoji,member_id,added_hlc,removed_hlc)
+             VALUES ('post',?1,?2,?3,?4,?5)",
+            params![id, emoji, member, added, removed],
+        )
+        .unwrap();
+    }
     conn
 }
 
@@ -128,6 +140,9 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
     assert_eq!(shared["attachments"][0]["alt_text"], "A picture");
     assert_eq!(shared["attachments"][0]["is_spoiler"], true);
     assert_eq!(shared["attachments"].as_array().unwrap().len(), 1);
+    assert_eq!(shared["reactions"].as_array().unwrap().len(), 1);
+    assert_eq!(shared["reactions"][0]["emoji"], "💜");
+    assert_eq!(shared["reactions"][0]["member_name"], "bob");
     let carol = get("carol-session", "").send().await.unwrap().json::<Value>().await.unwrap();
     assert_eq!(ids(&carol), ["server"]);
     let alice = get("alice-session", "?account=0192f8c2-0000-7000-8000-0000000000a1")
@@ -138,6 +153,8 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
         .await
         .unwrap();
     assert_eq!(ids(&alice).len(), 8);
+    let owner_server = alice["items"].as_array().unwrap().iter().find(|p| p["id"] == "server").unwrap();
+    assert_eq!(owner_server["reactions"][0]["member_id"], "bob");
     assert_eq!(get("bob-session", "/private").send().await.unwrap().status(), 404);
     assert_eq!(get("carol-session", "/bucket").send().await.unwrap().status(), 404);
     assert_eq!(

@@ -36,7 +36,12 @@ const COLUMNS: &str = "p.id,p.account_id,p.kind,p.title,p.text,p.entities,p.mood
                     a.width,a.height,COALESCE(a.alt_text,'') AS alt_text,a.is_spoiler
              FROM item_attachment ia JOIN attachment a ON a.id=ia.attachment_id
              WHERE ia.owner_type='post' AND ia.owner_id=p.id AND a.blob_hash IS NOT NULL
-             ORDER BY ia.position,a.id)), '[]')";
+             ORDER BY ia.position,a.id)), '[]'),
+    COALESCE((SELECT json_group_array(json_object('emoji',emoji,'member_id',member_id,'member_name',member_name))
+       FROM (SELECT r.emoji,r.member_id,COALESCE(m.display_name,m.name) AS member_name
+             FROM reaction r JOIN member m ON m.id=r.member_id
+             WHERE r.target_type='post' AND r.target_id=p.id AND r.is_present
+             ORDER BY r.emoji,r.member_id)), '[]')";
 
 #[derive(Default, Deserialize)]
 pub struct PostQuery {
@@ -71,6 +76,7 @@ fn row(r: &Row<'_>) -> rusqlite::Result<Value> {
         "authors": parsed(r.get(15)?),
         "author_cards": parsed(r.get(16)?),
         "attachments": parsed(r.get(17)?),
+        "reactions": parsed(r.get(18)?),
     }))
 }
 

@@ -9,6 +9,8 @@
   import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
   import AvatarImage from './AvatarImage.svelte';
   import AttachmentView from './AttachmentView.svelte';
+  import RichText from './RichText.svelte';
+  import type { Entity } from '../core';
   import { disablePush, enablePush, pushActive, pushSupported } from '../push';
   import { createShared, openDm } from '../spaces';
 
@@ -31,7 +33,8 @@
   interface SharedPost {
     id: string; kind: 'note' | 'entry'; title: string | null; text: string; cw: string | null;
     occurred_at: number; author_cards: { id: string; name: string | null; display_name: string | null }[];
-    attachments: AttachmentRow[];
+    entities: Entity[]; attachments: AttachmentRow[];
+    reactions: { emoji: string; member_id: string; member_name: string }[];
   }
   interface Note {
     id: string;
@@ -489,16 +492,18 @@
                 <div class="post-meta"><span>{postAuthors(post, f.account)} · {post.kind}</span><time>{new Date(post.occurred_at).toLocaleString()}</time></div>
                 {#if post.cw}
                   <details><summary>Content warning: {post.cw}</summary>
-                    {#if post.title}<strong>{post.title}</strong>{/if}<p>{post.text}</p>
+                    {#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
                     {#each post.attachments ?? [] as attachment (attachment.id)}
                       <AttachmentView {attachment} />
                     {/each}
+                    {#if post.reactions?.length}<p class="post-reactions">{post.reactions.map((r) => `${r.emoji} ${r.member_name}`).join(' · ')}</p>{/if}
                   </details>
                 {:else}
-                  {#if post.title}<strong>{post.title}</strong>{/if}<p>{post.text}</p>
+                  {#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
                   {#each post.attachments ?? [] as attachment (attachment.id)}
                     <AttachmentView {attachment} />
                   {/each}
+                  {#if post.reactions?.length}<p class="post-reactions">{post.reactions.map((r) => `${r.emoji} ${r.member_name}`).join(' · ')}</p>{/if}
                 {/if}
               </article>
             {/each}
