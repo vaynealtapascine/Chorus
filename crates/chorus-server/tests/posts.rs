@@ -419,8 +419,8 @@ fn post_search_matches_only_readable_posts_and_survives_a_rebuild() {
 }
 
 /// Shared feeds (M7.4, feeds.rs): a follower evaluates the owner's feed over posts the follower
-/// can read, names resolve against the owner's members, a feed that filters by fronting stays the
-/// owner's, and an unshared feed is invisible.
+/// can read, names resolve against the owner's members, a feed that filters by fronting
+/// evaluates for the follower too (D-069), and an unshared feed is invisible.
 #[test]
 fn shared_feeds_evaluate_over_what_the_reader_can_read() {
     let mut c = db::open_memory().unwrap();
@@ -475,7 +475,9 @@ fn shared_feeds_evaluate_over_what_the_reader_can_read() {
     );
     assert!(items(CAROL, &garden).unwrap().is_none(), "no follow, no feed");
     assert!(items(BOB, &secret).unwrap().is_none(), "a private feed isn't shared");
-    assert!(matches!(items(BOB, &fronting), Err(api_data::DataError::Bad(_))), "fronting stays the owner's");
+    // nobody fronted and nothing was revealed to BOB: a fronting feed evaluates, matching nothing
+    // (notifier.rs tests the reveal: tests/notifier.rs `a_shared_fronting_feed_waits_for_the_reveal`)
+    assert_eq!(texts(items(BOB, &fronting).unwrap().unwrap()), Vec::<String>::new());
     assert!(items(ALICE, &fronting).unwrap().is_some());
 
     let listed = |who: &str| -> Vec<(String, bool)> {

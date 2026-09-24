@@ -149,6 +149,50 @@ fn two_devices_can_edit_different_account_prefs_without_clobbering() {
     assert_eq!(view["time"]["mode"], "exact");
 }
 
+/// D-069: a feed shared with followers that filters by fronting matches a post for a follower
+/// only once the switch behind it has been revealed to them — never earlier than the
+/// notification — while its owner sees the match at once.
+#[test]
+fn a_shared_fronting_feed_waits_for_the_reveal() {
+    let (mut w, kai, _, secret) = world();
+    w.switch(&[&kai, &secret], NOW);
+    let post = |w: &mut World, n: u8, author: &str, at: i64| {
+        let payload = json!({"kind": "note", "authors": [author], "text": format!("post {n}"), "entities": [],
+            "tags": [], "visibility": {"mode": "followers"}});
+        w.push("post.create", &new_id(at as u64, [n; 10]), payload, at);
+    };
+    post(&mut w, 1, &kai, NOW - 60_000); // before the switch: nobody was fronting
+    post(&mut w, 2, &kai, NOW + 1_000);
+    post(&mut w, 3, &secret, NOW + 2_000); // Secret is never announced to followers
+    let query = "fronting:true";
+    let ast: Value = serde_json::from_str(&chorus_core::api::feed_parse(query).unwrap()).unwrap();
+    let feed = new_id(NOW as u64, [99; 10]);
+    w.push(
+        "feed.set",
+        &feed,
+        json!({"name": "fronting", "query": query, "query_ast": ast, "visibility": {"mode": "followers"}}),
+        NOW + 3_000,
+    );
+    let items = |w: &World, who: &str| -> Vec<String> {
+        let v = chorus_server::feeds::items(
+            &w.c,
+            &chorus_server::api_data::Principal::owner(who),
+            &feed,
+            &Default::default(),
+        )
+        .unwrap()
+        .expect("shared with followers");
+        v["items"].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap().to_string()).collect()
+    };
+    assert_eq!(items(&w, &w.sys), ["post 3", "post 2"], "the owner knows at once");
+    let due = NOW + SETTLE + DELAY;
+    notifier::process_due(&w.c, due - 1).unwrap();
+    assert!(items(&w, &w.friend).is_empty(), "nothing before the reveal");
+    notifier::process_due(&w.c, due).unwrap();
+    assert_eq!(w.inbox(), ["Kai is fronting"]);
+    assert_eq!(items(&w, &w.friend), ["post 2"], "after it, only what the notification showed");
+}
+
 #[test]
 fn nothing_is_revealed_before_due_then_the_view_and_inbox_update_together() {
     let (mut w, kai, _, _) = world();

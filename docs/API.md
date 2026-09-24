@@ -237,9 +237,13 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   over the posts **the caller** can read (never the owner's view), newest first, 1–100 a page
   (default 50) with an opaque `next_cursor`; one request looks at up to 2 000 posts, so a sparse
   feed may return a short page with a cursor. Names (`from:@kai`, groups, `list:"…"`) resolve
-  against the owner's members, groups and lists; dates use the owner's latest UTC offset. A feed
-  that uses `fronting:` answers 400 to anyone but its owner (it would reveal when members
-  fronted; OPEN_QUESTIONS Q15). A feed you can't read is a 404. Tokens need `read:posts` and
+  against the owner's members, groups and lists; dates use the owner's latest UTC offset.
+  `fronting:` (D-069) evaluates per reader: posts by the reader's own members against their
+  front timeline, anyone else's only against the front states that reader's follow has revealed
+  to them (the states their notifications showed, at the delayed, fuzzed times shown; nothing if
+  the follow is gone or its ceiling hides the current front), so a feed never shows more or
+  sooner than the notifications did. Clients show a note on such feeds. A feed you can't read
+  is a 404. Tokens need `read:posts` and
   see only their own account's feeds and posts.
 - **Journal** (`api_journal.rs`, M7; the caller's own account):
   - `GET /profiles/{member_id}` (`read:members`): `{member}` as `/members/{id}` (groups,

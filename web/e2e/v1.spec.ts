@@ -210,6 +210,21 @@ test('a feed shared with followers', async () => {
   const shared = friend.page.locator('[aria-label="Feeds shared with you"]');
   await shared.getByRole('button', { name: new RegExp(name) }).click();
   await expect(shared.getByText(`tomatoes are in ${run}`)).toBeVisible();
+
+  // a feed that filters by fronting can be shared too, with a note on both sides (D-069)
+  const fronting = `Fronting ${run}`;
+  await stars.page.getByRole('button', { name: 'New feed' }).click();
+  await stars.page.getByLabel('Name', { exact: true }).fill(fronting);
+  await stars.page.getByLabel('Filter').fill('tag:garden fronting:true');
+  await stars.page.getByLabel('Who can open it').selectOption('followers');
+  await expect(stars.page.getByRole('note')).toContainText('who was fronting when these posts were written');
+  await stars.page.getByRole('button', { name: 'Save feed' }).click();
+  await expect(stars.page.locator('nav[aria-label="Saved feeds"]')).toContainText(fronting);
+  await friend.page.reload();
+  await live(friend.page);
+  await friend.page.getByRole('button', { name: 'Feeds' }).click();
+  await shared.getByRole('button', { name: new RegExp(fronting) }).click();
+  await expect(shared.getByRole('note')).toContainText('who was fronting when these posts were written');
 });
 
 test('no console errors, CSP included', async () => {

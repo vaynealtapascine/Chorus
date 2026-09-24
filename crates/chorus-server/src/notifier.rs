@@ -763,6 +763,64 @@ pub fn follower_view_at(conn: &Connection, follower: &str, target: &str, now: i6
     Ok(Some(v))
 }
 
+/// The front states revealed to `follower` about `target`, ordered by their shown start: (shown
+/// start, members shown fronting). This is what a shared feed's `fronting:` may use for a reader
+/// (D-069): exactly what their notifications showed, at the (delayed, fuzzed) times shown, and
+/// nothing while the follow isn't active or its ceiling hides the current front. A state whose
+/// time was hidden counts from when it was revealed. "Someone" entries name nobody.
+pub fn revealed_fronts(
+    conn: &Connection,
+    follower: &str,
+    target: &str,
+) -> anyhow::Result<Vec<(i64, BTreeSet<String>)>> {
+    let follow: Option<(String, String)> = conn
+        .query_row(
+            "SELECT id, ceiling FROM follow WHERE follower_account_id = ?1 AND target_account_id = ?2 AND status = 'active'",
+            params![follower, target],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((id, ceiling)) = follow else { return Ok(Vec::new()) };
+    let f = Follow {
+        id,
+        follower: follower.into(),
+        ceiling: serde_json::from_str(&ceiling).unwrap_or(json!({})),
+        prefs: Prefs::default(),
+    };
+    if !ceiling_for(conn, target, &f)?.0.share_current_front {
+        return Ok(Vec::new());
+    }
+    let mut st = conn.prepare_cached(
+        "SELECT revealed_at, displayed, entries FROM follower_front_log
+         WHERE follower_account_id = ?1 AND target_account_id = ?2 ORDER BY revealed_at, rowid",
+    )?;
+    let rows = st.query_map(params![follower, target], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        let (revealed_at, displayed, entries) = r?;
+        let (Ok(displayed), Ok(entries)) =
+            (serde_json::from_str::<notify::Displayed>(&displayed), serde_json::from_str::<Vec<Shown>>(&entries))
+        else {
+            continue;
+        };
+        let fronting = entries
+            .into_iter()
+            .filter_map(|e| match e.seen {
+                Seen::Subject { subject_type: SubjectType::Member, subject_id, level: Level::Front, .. } => {
+                    Some(subject_id)
+                }
+                _ => None,
+            })
+            .collect();
+        out.push((displayed.at.unwrap_or(revealed_at), fronting));
+    }
+    // stable: equal starts keep reveal order, so the later reveal wins
+    out.sort_by_key(|(at, _)| *at);
+    Ok(out)
+}
+
 /// One revealed state: its (fuzzed) start and who was shown.
 struct Logged {
     displayed: notify::Displayed,

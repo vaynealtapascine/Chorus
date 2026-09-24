@@ -283,3 +283,17 @@ blobs are verified by hash. The importer is separate work and not part of this p
   `push::tests::endpoints_follow_the_target_rules` (17 cases), and the loopback test in
   `sync_e2e.rs` now runs with `webhook_targets = any` after checking that a default server
   refuses loopback endpoints. API.md §2.1, NOTIFICATIONS §1, OPS §3 updated.
+- R17 — fronting feeds are shareable (D-069). `feeds::items` no longer answers 400: `fronting:`
+  is evaluated per post from the reader's knowledge — the reader's own members against
+  `front_interval`, another account's members only against `notifier::revealed_fronts` (the
+  reader's `follower_front_log` for that account: the states shown, at the shown, delayed and
+  fuzzed start, or at the reveal time when the time was hidden; members only, `front` level,
+  "someone" entries name nobody; nothing without an active follow whose ceiling shares the
+  current front). This also fixes a leak the owner-only rule had: the *owner's* own fronting feed
+  used other accounts' raw `front_interval` for their posts. Web: the share select is no longer
+  locked for such feeds; a note ("This feed shows who was fronting when these posts were
+  written") shows when sharing one and when a reader opens one. Tests: `tests/notifier.rs`
+  `a_shared_fronting_feed_waits_for_the_reveal` (owner matches at once; the follower matches
+  nothing before the reveal, then only the announced member's post, never the hidden member's),
+  `posts.rs` updated, and the browser feed test checks both notes. Q15 was already marked
+  answered in OPEN_QUESTIONS; API.md and SPEC §6.4 updated.
