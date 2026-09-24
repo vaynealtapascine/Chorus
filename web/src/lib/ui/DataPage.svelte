@@ -68,6 +68,15 @@
   }
   loadHealth();
 
+  // this device counts as back once its sync socket has said hello: look again when it goes live
+  $effect(() => {
+    let was = sync.status;
+    return sync.subscribe(() => {
+      if (sync.status === 'live' && was !== 'live') void loadHealth();
+      was = sync.status;
+    });
+  });
+
   // After a restore (SYNC.md §7.3): devices hand back what the backup missed until this closes.
   const restore = $derived(health?.restore_window?.open ? health.restore_window : null);
   const back = $derived(restore ? restore.devices.filter((d) => d.back_at !== null).length : 0);
