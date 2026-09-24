@@ -10,7 +10,8 @@ data class FollowInfo(val id: String, val account: SpaceAccount, val status: Str
 data class FollowList(val following: List<FollowInfo>, val followers: List<FollowInfo>)
 data class PostReaction(val emoji: String, val memberId: String, val memberName: String)
 data class SharedPost(val id: String, val kind: String, val title: String?, val text: String,
-    val cw: String?, val occurredAt: Long, val authorNames: List<String>, val reactions: List<PostReaction> = emptyList())
+    val cw: String?, val occurredAt: Long, val authorNames: List<String>, val reactions: List<PostReaction> = emptyList(),
+    val attachments: List<ChatAttachment> = emptyList())
 data class SharedFront(val names: List<String>, val time: String)
 data class SharedStats(val days: Int, val members: List<Pair<String, Int>>)
 data class FollowerView(val frontNames: List<String>, val history: List<SharedFront>?, val stats: SharedStats?)
@@ -27,8 +28,16 @@ object PeopleApi {
                 cards.getJSONObject(n).let { it.optionalText("display_name") ?: it.optionalText("name") }
             }
             val reactions = PostReactions.fromServer(post)
+            val files = post.optJSONArray("attachments")?.let { rows -> (0 until rows.length()).mapNotNull { n ->
+                val row = rows.optJSONObject(n) ?: return@mapNotNull null
+                val id = row.optionalText("id") ?: return@mapNotNull null
+                val hash = row.optionalText("blob_hash") ?: return@mapNotNull null
+                ChatAttachment(id, hash, row.optionalText("thumb_blob_hash"), row.optionalText("filename") ?: "file",
+                    row.optionalText("mime") ?: "application/octet-stream", row.optLong("size"),
+                    row.optionalText("alt_text").orEmpty(), row.optBoolean("is_spoiler"))
+            } } ?: emptyList()
             SharedPost(post.getString("id"), post.getString("kind"), post.optionalText("title"),
-                post.getString("text"), post.optionalText("cw"), post.getLong("occurred_at"), names, reactions)
+                post.getString("text"), post.optionalText("cw"), post.getLong("occurred_at"), names, reactions, files)
         }
     }
 

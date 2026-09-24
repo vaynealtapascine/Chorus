@@ -119,7 +119,7 @@ internal fun JournalFeeds(chorus: Chorus, model: Model, onTimeline: () -> Unit) 
             if (!loading && posts.isEmpty() && error == null) item {
                 Text(if (loadedId == selected.id) "No readable posts in this feed yet." else "Open this feed to load posts.", color = p.ink2)
             }
-            items(posts, key = { it.id }) { post -> SharedPostPreview(post, selected.ownerName) }
+            items(posts, key = { it.id }) { post -> SharedPostPreview(post, selected.ownerName, chorus) }
             if (cursor != null) item {
                 TextButton(enabled = !loading, onClick = {
                     val next = cursor ?: return@TextButton

@@ -39,11 +39,14 @@ class PeopleTest {
     }
 
     @Test fun sharedPostsKeepWarningAndNeverUseLiteralNullAuthor() {
-        val posts = PeopleApi.sharedPosts(JSONObject("""{"items":[{"id":"p1","kind":"entry","title":"Dear diary","text":"private detail","cw":"heavy topic","occurred_at":123,"author_cards":[{"name":"Kai","display_name":null}],"reactions":[{"emoji":"💜","member_id":"mine","member_name":"Rin"}]},{"id":"p2","kind":"note","title":null,"text":"Hello","cw":null,"occurred_at":124,"author_cards":[]}]}"""))
+        val posts = PeopleApi.sharedPosts(JSONObject("""{"items":[{"id":"p1","kind":"entry","title":"Dear diary","text":"private detail","cw":"heavy topic","occurred_at":123,"author_cards":[{"name":"Kai","display_name":null}],"reactions":[{"emoji":"💜","member_id":"mine","member_name":"Rin"}],"attachments":[{"id":"a","blob_hash":"hash","filename":"garden.png","mime":"image/png","size":100,"alt_text":"A flower","is_spoiler":true},{"id":"missing-hash"}]},{"id":"p2","kind":"note","title":null,"text":"Hello","cw":null,"occurred_at":124,"author_cards":[]}]}"""))
         assertEquals("heavy topic", posts[0].cw)
         assertEquals("Dear diary", posts[0].title)
         assertEquals(listOf("Kai"), posts[0].authorNames)
         assertEquals(listOf(PostReaction("💜", "mine", "Rin")), posts[0].reactions)
+        assertEquals(listOf("a"), posts[0].attachments.map { it.id })
+        assertEquals("A flower", posts[0].attachments.single().altText)
+        assertEquals(true, posts[0].attachments.single().spoiler)
         assertEquals(null, posts[1].title)
         assertEquals(null, posts[1].cw)
         assertEquals(emptyList<String>(), posts[1].authorNames)

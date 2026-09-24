@@ -207,7 +207,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         if (reactionError != null) item { Text(reactionError.orEmpty(), color = p.danger) }
         if (events.isEmpty()) item { Text("No posts or switches yet. Write the first note.", color = p.ink2) }
         for (event in events) item(key = "${if (event.post == null) "switch" else "post"}:${event.id}") {
-            if (event.post != null) JournalPostCard(event.post, model,
+            if (event.post != null) JournalPostCard(event.post, model, chorus,
                 onReply = { replyTo = event.post.id; editing = true },
                 onThread = { threadPostId = event.post.id },
                 reactMemberId = Reply.speaker(model)?.id,
@@ -246,7 +246,7 @@ internal fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit
 }
 
 @Composable
-internal fun JournalPostCard(post: JournalPost, model: Model, onReply: () -> Unit,
+internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, onReply: () -> Unit,
     onThread: (() -> Unit)? = null,
     reactMemberId: String? = null, reactionEnabled: Boolean = true,
     onReact: ((JournalPost) -> Unit)? = null,
@@ -270,6 +270,7 @@ internal fun JournalPostCard(post: JournalPost, model: Model, onReply: () -> Uni
             Text(post.text, color = p.ink)
             if (post.mood != null) Text(post.mood, color = p.ink2)
             if (post.tags.isNotEmpty()) Text(post.tags.joinToString(" ") { "#$it" }, color = p.ink2)
+            for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
             if (post.reactions.isNotEmpty()) ReactionNames(post.reactions)
             if (reactMemberId != null && onReact != null) {
                 val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == reactMemberId }
