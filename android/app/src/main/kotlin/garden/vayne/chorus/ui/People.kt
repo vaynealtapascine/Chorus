@@ -1,6 +1,7 @@
 package garden.vayne.chorus.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,13 +25,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.FollowList
 import garden.vayne.chorus.data.FollowPresets
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PeopleApi
 import garden.vayne.chorus.data.Spaces
+import garden.vayne.chorus.data.SharedPost
 import garden.vayne.chorus.designsystem.LocalChorusPalette
+import java.text.DateFormat
+import java.util.Date
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -41,6 +46,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
     val actions = rememberCoroutineScope()
     var follows by remember { mutableStateOf(FollowList(emptyList(), emptyList())) }
     var frontNames by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    var sharedPosts by remember { mutableStateOf<Map<String, List<SharedPost>>>(emptyMap()) }
     var target by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -53,16 +59,24 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
         if (loadedAccount != dev.accountId) {
             follows = FollowList(emptyList(), emptyList())
             frontNames = emptyMap()
+            sharedPosts = emptyMap()
             loadedAccount = dev.accountId
         }
+        sharedPosts = emptyMap()
         try {
             val next = PeopleApi.list(dev)
             follows = next
             frontNames = next.following.filter { it.status == "active" }.mapNotNull { f ->
                 runCatching { f.account.id to PeopleApi.frontNames(PeopleApi.view(dev, f.account.id)) }.getOrNull()
             }.toMap()
+            sharedPosts = next.following.filter { it.status == "active" }.mapNotNull { f ->
+                runCatching { f.account.id to PeopleApi.posts(dev, f.account.id) }.getOrNull()
+            }.toMap()
             error = null
-        } catch (e: Exception) { error = e.message ?: "Could not load people." }
+        } catch (e: Exception) {
+            sharedPosts = emptyMap()
+            error = e.message ?: "Could not load people."
+        }
     }
 
     fun action(block: suspend () -> Unit) {
@@ -159,10 +173,33 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
                         PeopleApi.unfollow(dev, f.id)
                     } }) { Text("Unfollow") }
                 }
+                sharedPosts[f.account.id]?.takeIf { it.isNotEmpty() }?.let { posts ->
+                    Text("Shared posts", color = p.ink2, fontWeight = FontWeight.SemiBold)
+                    for (post in posts) SharedPostPreview(post, f.account.shownName)
+                }
             }
         }
         item { Text("A follower sees your switches only within the sharing limit you choose for them.",
             color = p.ink2, modifier = Modifier.padding(bottom = 20.dp)) }
+    }
+}
+
+@Composable
+private fun SharedPostPreview(post: SharedPost, accountName: String) {
+    val p = LocalChorusPalette.current
+    var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().background(p.surface2).padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("${post.authorNames.joinToString(" & ").ifBlank { accountName }} · ${post.kind}",
+            color = p.ink, fontWeight = FontWeight.SemiBold)
+        Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(post.occurredAt)),
+            color = p.ink3, fontSize = 12.sp)
+        if (post.cw != null) Text("Content warning: ${post.cw} · ${if (revealed) "Hide" else "Show"}",
+            color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
+        if (post.cw == null || revealed) {
+            if (post.title != null) Text(post.title, color = p.ink, fontWeight = FontWeight.SemiBold)
+            Text(post.text, color = p.ink)
+        }
     }
 }
 
