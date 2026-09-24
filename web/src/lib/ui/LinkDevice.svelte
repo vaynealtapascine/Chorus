@@ -20,7 +20,8 @@
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      link = j.url;
+      // Chorus Home: phones join over the wifi with the pinned certificate (chorus:// link)
+      link = j.lan_url ?? j.url;
       qr = j.qr_svg ?? '';
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);

@@ -273,8 +273,10 @@ mod windows_impl {
             let _ = std::fs::remove_dir_all(&layout.data_root);
         }
         // the running program can't delete itself: a helper removes the folder once it's gone
-        let script = format!("ping -n 3 127.0.0.1 >nul & rmdir /s /q \"{}\"", layout.program_dir.display());
-        let _ = Command::new("cmd.exe").args(["/c", &script]).spawn();
+        // raw: cmd.exe doesn't understand the \" quoting Rust would give a path with spaces
+        use std::os::windows::process::CommandExt;
+        let script = format!("/c ping -n 3 127.0.0.1 >nul & rmdir /s /q \"{}\"", layout.program_dir.display());
+        let _ = Command::new("cmd.exe").raw_arg(script).spawn();
         Ok(())
     }
 

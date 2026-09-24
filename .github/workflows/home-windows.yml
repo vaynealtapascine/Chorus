@@ -77,7 +77,10 @@ jobs:
           if (Test-Path "$env:ProgramData\Chorus Home") { throw 'data left behind after --delete-data' }
           $left = netsh advfirewall firewall show rule name="Chorus Home" | Out-String
           if ($left -match 'Chorus Home') { throw 'firewall rule left behind' }
+          if (Test-Path "$env:ProgramFiles\Chorus Home") { throw 'program folder left behind' }
+          if (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Chorus.url") { throw 'shortcut left behind' }
           'install, update, stop, uninstall: ok'
+          exit 0  # netsh's "no such rule" above leaves a non-zero exit code
       - name: Service log
         if: failure()
         shell: pwsh

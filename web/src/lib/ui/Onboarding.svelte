@@ -1,6 +1,11 @@
 <script lang="ts">
   import { enrol } from '../sync/device';
   import { sync } from '../sync/client';
+  import { homeStatus, homeSetupCode } from '../home';
+
+  // Chorus Home's first run (FLOWS F2.2): on the PC itself, no invite is needed
+  let homeSetup = $state(false);
+  homeStatus().then((s) => (homeSetup = !!s?.needs_setup));
 
   let invite = $state(new URLSearchParams(location.search).get('invite') ?? location.pathname.match(/\/i\/(.+)$/)?.[1] ?? '');
   let name = $state('');
@@ -14,9 +19,12 @@
     busy = true;
     error = '';
     try {
-      const dev = await enrol(invite, { display_name: name || undefined, handle: handle || undefined }, device);
+      const code = homeSetup ? await homeSetupCode() : invite;
+      const dev = await enrol(code, { display_name: name || undefined, handle: handle || undefined }, device);
       history.replaceState(null, '', '/');
       await sync.adopt(dev);
+      // Home's first run continues on *This computer*: add a phone (the router follows hash changes)
+      if (homeSetup) location.hash = '#/computer?welcome';
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -27,12 +35,18 @@
 
 <main>
   <h1 class="display">Welcome to Chorus</h1>
-  <p class="lead">A cozy home for your system. Paste the invite you were given to set up this browser.</p>
+  {#if homeSetup}
+    <p class="lead">Chorus is installed on this computer. Give your system (or yourself) a name to start.</p>
+  {:else}
+    <p class="lead">A cozy home for your system. Paste the invite you were given to set up this browser.</p>
+  {/if}
   <form onsubmit={submit}>
-    <label>
-      <span>Invite link or code</span>
-      <input bind:value={invite} required autocomplete="off" placeholder="https://…/i/…" />
-    </label>
+    {#if !homeSetup}
+      <label>
+        <span>Invite link or code</span>
+        <input bind:value={invite} required autocomplete="off" placeholder="https://…/i/…" />
+      </label>
+    {/if}
     <label>
       <span>Name <em>(your system, or you)</em></span>
       <input bind:value={name} placeholder="The Stars" />
@@ -47,7 +61,7 @@
     </label>
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <button disabled={busy}>{busy ? 'Setting up…' : 'Continue'}</button>
-    <p class="hint">Invites for another device of an existing account only need the link.</p>
+    {#if !homeSetup}<p class="hint">Invites for another device of an existing account only need the link.</p>{/if}
   </form>
 </main>
 

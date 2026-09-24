@@ -274,6 +274,7 @@ class Chorus private constructor(private val ctx: Context) {
         scope.launch { expectedScopes.clear(); caughtScopes.clear() }
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                UploadWork.enqueue(ctx) // files queued while offline go up now
                 scope.launch {
                     if (ws !== webSocket) return@launch
                     val clock = JSONObject().put("wall", System.currentTimeMillis())
