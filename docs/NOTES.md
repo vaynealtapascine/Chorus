@@ -242,3 +242,10 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   replay it into the new file. 1M ops on the remote Linux box: 35.9 s in place (commit 5.8 s) →
   31.3 s swapped (commit 0.3 s, copy 4.1 s, check 4.0 s, replay 16.9 s instead of 20.1 s without
   the WAL). The owner's Windows commit was 20 s, so the gain there should be larger.
+- 2026-09-25 claude-opus-5.5 — server — R19 re-measured on the owner's Windows PC (release build,
+  1M ops, `tests/perf.rs` with `CHORUS_PERF_DB`): in place 63.2 s (commit 20.2 s); into a fresh
+  file and swap 58.5 s (commit 0.4 s, swap 0.1 s). The commit problem is gone, but the replay
+  itself takes ~58 s here (31 s on the remote's Linux box), so the 60 s budget holds by a small
+  margin on Windows. Set `CHORUS_PERF_DIR` to a roomy drive: the working copy (~2 GB plus WAL)
+  goes to the temp folder otherwise, and a failed run leaves it there (it filled C: once).
+
