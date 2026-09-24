@@ -3,6 +3,7 @@ package garden.vayne.chorus
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -52,6 +53,7 @@ import garden.vayne.chorus.ui.Members
 import garden.vayne.chorus.ui.Onboarding
 import garden.vayne.chorus.ui.People
 import garden.vayne.chorus.ui.SettingsScreen
+import garden.vayne.chorus.ui.ContentSearch
 import garden.vayne.chorus.ui.Journal
 
 class MainActivity : ComponentActivity() {
@@ -106,6 +108,10 @@ private fun App(chorus: Chorus, invite: String?) {
     var journalReplyPost by rememberSaveable { mutableStateOf<String?>(null) }
     var linking by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    BackHandler(settingsOpen || searchOpen) {
+        if (searchOpen) searchOpen = false else settingsOpen = false
+    }
     if (linking && status != Status.NoDevice && status != Status.Loading) DeviceLink(chorus) { linking = false }
 
     when (status) {
@@ -122,8 +128,12 @@ private fun App(chorus: Chorus, invite: String?) {
             ) {
                 Text("Chorus", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = p.ink)
                 Spacer(Modifier.weight(1f))
+                Text("⌕", fontSize = 24.sp, color = p.accent,
+                    modifier = Modifier.clickable { searchOpen = !searchOpen; settingsOpen = false }
+                        .padding(horizontal = 8.dp, vertical = 4.dp).semantics { contentDescription = "Search" })
                 Text(if (settingsOpen) "Close settings" else "Settings", fontSize = 12.sp, color = p.accent,
-                    modifier = Modifier.clickable { settingsOpen = !settingsOpen }.padding(horizontal = 10.dp, vertical = 6.dp))
+                    modifier = Modifier.clickable { settingsOpen = !settingsOpen; searchOpen = false }
+                        .padding(horizontal = 10.dp, vertical = 6.dp))
                 Text("Link device", fontSize = 12.sp, color = p.accent,
                     modifier = Modifier.clickable { linking = true }.padding(horizontal = 10.dp, vertical = 6.dp))
                 val (dot, label) = when (status) {
@@ -136,7 +146,8 @@ private fun App(chorus: Chorus, invite: String?) {
                 Text(label, fontSize = 12.sp, color = p.ink3)
             }
             Box(Modifier.weight(1f)) {
-                if (settingsOpen) SettingsScreen(chorus, model)
+                if (searchOpen) ContentSearch(model) { searchOpen = false }
+                else if (settingsOpen) SettingsScreen(chorus, model)
                 else when (if (person && (tab == Tab.Members || tab == Tab.History)) Tab.Home else tab) {
                     Tab.Home -> if (person) {
                         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -153,7 +164,7 @@ private fun App(chorus: Chorus, invite: String?) {
                 }
             }
             // the keyboard covers the tabs anyway; hiding them lets a screen's imePadding sit on it
-            if (!settingsOpen && !WindowInsets.isImeVisible) Row(
+            if (!settingsOpen && !searchOpen && !WindowInsets.isImeVisible) Row(
                 Modifier.fillMaxWidth().background(p.surface).navigationBarsPadding().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
