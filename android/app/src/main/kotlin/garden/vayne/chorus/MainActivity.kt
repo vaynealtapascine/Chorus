@@ -34,6 +34,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
@@ -48,6 +51,7 @@ import garden.vayne.chorus.ui.Chat
 import garden.vayne.chorus.ui.Members
 import garden.vayne.chorus.ui.Onboarding
 import garden.vayne.chorus.ui.People
+import garden.vayne.chorus.ui.Journal
 
 class MainActivity : ComponentActivity() {
     private var inviteLink = mutableStateOf<String?>(null)
@@ -88,7 +92,7 @@ class MainActivity : ComponentActivity() {
         i?.data?.toString()?.takeIf { "/i/" in it } ?: i?.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { "/i/" in it }
 }
 
-private enum class Tab(val label: String) { Home("Home"), Chat("Chat"), People("People"), Members("Members"), History("History") }
+private enum class Tab(val label: String) { Home("Home"), Chat("Chat"), Journal("Journal"), People("People"), Members("Members"), History("History") }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -134,6 +138,7 @@ private fun App(chorus: Chorus, invite: String?) {
                         }
                     } else Home(chorus, model)
                     Tab.Chat -> Chat(chorus, model, chatSpace)
+                    Tab.Journal -> Journal(chorus, model)
                     Tab.People -> People(chorus, model) { spaceId -> chatSpace = spaceId; tab = Tab.Chat }
                     Tab.Members -> Members(chorus, model)
                     Tab.History -> History(chorus, model)
@@ -149,8 +154,13 @@ private fun App(chorus: Chorus, invite: String?) {
                         t.label,
                         color = if (t == tab) p.accent else p.ink2,
                         fontWeight = if (t == tab) FontWeight.SemiBold else FontWeight.Normal,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f).clickable { tab = t }.padding(horizontal = 3.dp, vertical = 12.dp),
+                        modifier = Modifier.weight(1f).clickable { tab = t }.padding(horizontal = 1.dp, vertical = 12.dp)
+                            .semantics { contentDescription = t.label },
                     )
                 }
             }

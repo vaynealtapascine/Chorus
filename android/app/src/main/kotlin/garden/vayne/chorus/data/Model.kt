@@ -17,6 +17,7 @@ data class Member(
     val avatarBlob: String? = null,
     val isSelf: Boolean = false,
     val proxyTags: List<ProxyTag> = emptyList(),
+    val createdByAccountId: String? = null,
 ) {
     val shownName: String get() = displayName ?: name
     val glyph: String get() = sigils.firstOrNull() ?: name.take(1).uppercase()
@@ -59,6 +60,12 @@ data class ChatMessage(
     val attachments: List<ChatAttachment>,
 )
 
+data class JournalPost(
+    val id: String, val kind: String, val authors: List<String>, val title: String?, val text: String,
+    val occurredAt: Long, val cw: String?, val visibility: String, val replyTo: String?,
+    val mood: String?, val tags: List<String>,
+)
+
 class Model(
     val members: List<Member>,
     val groups: List<Group>,
@@ -73,6 +80,7 @@ class Model(
     val chatMessages: Map<String, List<ChatMessage>> = emptyMap(),
     /** Own account's per-follower ceiling overrides; absent means inherit the account default. */
     val followCeilings: Map<String, JSONObject> = emptyMap(),
+    val posts: List<JournalPost> = emptyList(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -184,6 +192,7 @@ class Model(
                         f.optJSONArray("proxy_tags")?.let { tags -> (0 until tags.length()).mapNotNull { i ->
                             tags.optJSONObject(i)?.let { ProxyTag(it.optString("prefix"), it.optString("suffix")) }
                         } } ?: emptyList(),
+                        f.str("created_by_account_id"),
                     )
                 }
                 .sortedBy { it.shownName.lowercase() }
@@ -252,7 +261,13 @@ class Model(
                     stringSet(visibility?.optJSONArray("member_ids")), f.str("account_id"), f.str("reply_to"), files)
             } }
             val followCeilings = rows(p, "follow").associate { (id, f) -> id to (f.optJSONObject("ceiling") ?: JSONObject()) }
-            return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages, followCeilings)
+            val posts = rows(p, "post").filter { (_, f) -> !f.present("deleted_at") }
+                .map { (id, f) -> JournalPost(id, f.str("kind") ?: "note", strings(f.optJSONArray("authors")),
+                    f.str("title"), f.str("text").orEmpty(), f.optLong("occurred_at"), f.str("cw"),
+                    f.optJSONObject("visibility")?.str("mode") ?: "private", f.str("reply_to"),
+                    f.str("mood"), strings(f.optJSONArray("tags"))) }
+                .sortedWith(compareByDescending<JournalPost> { it.occurredAt }.thenByDescending { it.id })
+            return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages, followCeilings, posts)
         }
     }
 }
