@@ -66,6 +66,8 @@ data class JournalPost(
     val mood: String?, val tags: List<String>, val reactions: List<PostReaction> = emptyList(),
 )
 
+data class MemberList(val id: String, val name: String, val description: String?, val memberIds: Set<String>)
+
 class Model(
     val members: List<Member>,
     val groups: List<Group>,
@@ -82,6 +84,7 @@ class Model(
     val followCeilings: Map<String, JSONObject> = emptyMap(),
     val posts: List<JournalPost> = emptyList(),
     val postReactions: Map<String, List<PostReaction>> = emptyMap(),
+    val memberLists: List<MemberList> = emptyList(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -269,7 +272,22 @@ class Model(
                     f.optJSONObject("visibility")?.str("mode") ?: "private", f.str("reply_to"),
                     f.str("mood"), strings(f.optJSONArray("tags")), postReactions[id].orEmpty()) }
                 .sortedWith(compareByDescending<JournalPost> { it.occurredAt }.thenByDescending { it.id })
-            return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages, followCeilings, posts, postReactions)
+            val listItems = HashMap<String, MutableSet<String>>()
+            p.optJSONObject("sets")?.optJSONObject("member_list_item")?.let { set ->
+                for (key in set.keys()) {
+                    if (!set.optBoolean(key)) continue
+                    val bar = key.indexOf('|')
+                    if (bar < 0) continue
+                    val memberId = runCatching { JSONObject(key.substring(bar + 1)).optString("member_id") }.getOrNull()
+                        ?.takeIf { it.isNotBlank() && it != "null" } ?: continue
+                    listItems.getOrPut(key.substring(0, bar)) { HashSet() }.add(memberId)
+                }
+            }
+            val memberLists = rows(p, "member_list").filter { (_, f) -> !f.present("deleted_at") }
+                .map { (id, f) -> MemberList(id, f.str("name") ?: "Untitled", f.str("description"), listItems[id].orEmpty()) }
+                .sortedWith(compareBy<MemberList> { it.name.lowercase() }.thenBy { it.id })
+            return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages,
+                followCeilings, posts, postReactions, memberLists)
         }
     }
 }

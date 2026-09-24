@@ -51,6 +51,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     var editing by rememberSaveable { mutableStateOf(false) }
     var profileId by rememberSaveable { mutableStateOf<String?>(null) }
     var threadPostId by rememberSaveable { mutableStateOf<String?>(null) }
+    var section by rememberSaveable { mutableStateOf("timeline") }
+    var selectedListId by rememberSaveable { mutableStateOf("") }
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
     var kind by rememberSaveable { mutableStateOf("note") }
     var authorId by rememberSaveable { mutableStateOf("") }
@@ -71,6 +73,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     LaunchedEffect(externalReplyPost) {
         if (externalReplyPost != null) {
             profileId = null; threadPostId = null
+            section = "timeline"
             replyTo = externalReplyPost
             kind = "note"; title = ""; body = ""; cw = ""; mood = ""; tags = ""
             audience = "server" // the foreign parent author must be able to read this reply
@@ -161,6 +164,14 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         return
     }
 
+    if (section == "lists") {
+        JournalLists(chorus, model, selectedListId, onSelect = { selectedListId = it },
+            onTimeline = { section = "timeline" },
+            onReply = { replyTo = it; editing = true },
+            onThread = { threadPostId = it })
+        return
+    }
+
     val events = (model.posts.map { JournalEvent(it.id, it.occurredAt, it, null) } +
         model.switches.map { JournalEvent(it.id, it.occurredAt, null,
             if (it.retracted) "Undone switch" else "Front: " +
@@ -173,7 +184,10 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Journal", color = p.ink, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(top = 14.dp))
-                TextButton(onClick = { editing = true }) { Text("Write") }
+                Row {
+                    TextButton(onClick = { section = "lists" }) { Text("Lists") }
+                    TextButton(onClick = { editing = true }) { Text("Write") }
+                }
             }
         }
         if (reactionError != null) item { Text(reactionError.orEmpty(), color = p.danger) }
@@ -210,7 +224,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
 private data class JournalEvent(val id: String, val at: Long, val post: JournalPost?, val switchLabel: String?)
 
 @Composable
-private fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit) {
     val p = LocalChorusPalette.current
     Text(label, color = if (selected) p.accent else p.ink2,
         modifier = Modifier.background(if (selected) p.surface2 else p.surface)
