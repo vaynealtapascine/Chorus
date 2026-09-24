@@ -320,7 +320,11 @@ pub async fn get_blob(
         header::CONTENT_TYPE,
         HeaderValue::from_str(&r.mime).unwrap_or(HeaderValue::from_static("application/octet-stream")),
     );
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
+    // private: blobs are access-checked, so no shared cache (a CDN in front) may keep them
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=31536000, immutable"));
+    // the type is the uploader's word: never sniffed, and never a page that runs script
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("default-src 'none'; sandbox"));
     headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
     if range.is_some() {
         headers.insert(

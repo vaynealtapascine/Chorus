@@ -177,7 +177,9 @@ updates). What differs from the PC:
   sign-in challenges. API requests are rate limited in the server (`ratelimit.rs`): 50 burst /
   10 per second per token or session (else per client address), sign-in 20 burst / 1 per second
   per address; over it, `429 rate_limited` with `Retry-After`. Blob reads and the sync socket's
-  frames aren't counted. The address comes from Caddy's `X-Forwarded-For`, trusted only on
+  frames aren't counted. The web app is served with a strict Content-Security-Policy (same origin
+  only, plus `wasm-unsafe-eval` for the core); blob downloads are `private`, `nosniff` and
+  sandboxed, so an uploaded file never runs as a page. The address comes from Caddy's `X-Forwarded-For`, trusted only on
   loopback connections. For floods below HTTP (SYN, many sockets), use the provider's firewall
   or fail2ban on `/var/log/caddy/chorus.log`.
 - **Coexisting with the selfhost VPS bundle** (memos, ntfy, Arbor, …): that bundle's Caddyfile

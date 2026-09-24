@@ -208,7 +208,12 @@ async fn shared_attachment_requires_public_structured_visibility() {
         )
         .unwrap();
     }
-    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 200);
+    let r = client.get(&url).bearer_auth("bob-token").send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    // access-checked files: no shared caches, no sniffing, never a page that runs script
+    assert!(r.headers()["cache-control"].to_str().unwrap().starts_with("private"));
+    assert_eq!(r.headers()["x-content-type-options"], "nosniff");
+    assert!(r.headers()["content-security-policy"].to_str().unwrap().contains("sandbox"));
     for (rule, expected) in
         [(r#"{"mode":"all"}"#, 200), (r#"{"mode":"system_only"}"#, 403), (r#"{"mode":"members","member_ids":[]}"#, 403)]
     {

@@ -1280,3 +1280,24 @@ async fn sync_budgets() {
     assert!(p95 <= Duration::from_secs(1), "SPEC §9: switch visible on other devices ≤ 1 s p95");
     assert!(both <= Duration::from_secs(10), "SPEC §9: reconnect with 5 000 queued ops ≤ 10 s");
 }
+
+/// The web app is served with a strict Content-Security-Policy; API responses aren't pages.
+#[tokio::test]
+async fn the_web_app_carries_a_content_security_policy() {
+    let dir = std::env::temp_dir().join(format!("chorus-web-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("index.html"), "<!doctype html><title>Chorus</title>").unwrap();
+    let mut cfg = Config::default();
+    cfg.server.web_dir = Some(dir.clone());
+    let s = start_with(cfg).await;
+    let http = reqwest::Client::new();
+    for path in ["/", "/some/app/route"] {
+        let r = http.get(format!("http://{}{path}", s.base)).send().await.unwrap();
+        assert_eq!(r.status(), 200);
+        let csp = r.headers()["content-security-policy"].to_str().unwrap().to_string();
+        assert!(csp.contains("default-src 'self'") && csp.contains("'wasm-unsafe-eval'"), "{csp}");
+    }
+    let api = http.get(format!("http://{}/api/v1/server", s.base)).send().await.unwrap();
+    assert!(api.headers().get("content-security-policy").is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -150,11 +150,30 @@ pub fn router(state: AppState) -> Router {
         .with_state(state.clone());
     if let Some(dir) = state.cfg.server.web_dir.clone() {
         let index = dir.join("index.html");
-        app = app.fallback_service(
-            tower_http::services::ServeDir::new(dir).fallback(tower_http::services::ServeFile::new(index)),
-        );
+        let spa = Router::new()
+            .fallback_service(
+                tower_http::services::ServeDir::new(dir).fallback(tower_http::services::ServeFile::new(index)),
+            )
+            .layer(axum::middleware::map_response(web_app_headers));
+        app = app.fallback_service(spa);
     }
     app
+}
+
+/// The web app loads nothing from elsewhere: a strict policy keeps an injected script (or a
+/// hostile page framing it) from reaching the session it keeps. `wasm-unsafe-eval` is the core.
+const WEB_CSP: &str = concat!(
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; ",
+    "img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; ",
+    "worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; ",
+    "frame-ancestors 'self'"
+);
+
+async fn web_app_headers(mut r: Response) -> Response {
+    let h = r.headers_mut();
+    h.insert(axum::http::header::CONTENT_SECURITY_POLICY, axum::http::HeaderValue::from_static(WEB_CSP));
+    h.insert(axum::http::header::X_CONTENT_TYPE_OPTIONS, axum::http::HeaderValue::from_static("nosniff"));
+    r
 }
 
 // ─── errors ──────────────────────────────────────────────────────────────────
