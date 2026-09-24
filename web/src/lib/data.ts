@@ -18,6 +18,8 @@ export interface MemberRow {
   description?: string;
   birthday?: string;
   avatar_blob?: string;
+  banner_blob?: string;
+  pinned_post_id?: string;
   archived: boolean;
   deleted: boolean;
   created_at?: number;
@@ -129,6 +131,8 @@ export function members(p: Projection): MemberRow[] {
         description: str(f.description),
         birthday: str(f.birthday),
         avatar_blob: str(f.avatar_blob),
+        banner_blob: str(f.banner_blob),
+        pinned_post_id: str(f.pinned_post_id),
         archived: f.archived_at != null,
         deleted: f.deleted_at != null,
         created_at: typeof f.created_at === 'number' ? f.created_at : undefined,
