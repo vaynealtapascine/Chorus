@@ -5,7 +5,9 @@ use serde_json::Value;
 #[tokio::test]
 async fn health_requires_admin_session_and_reports_live_counts() {
     let mut cfg = Config::default();
-    cfg.server.data_dir = std::path::PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap())
+    cfg.server.data_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
         .join(format!("health-http-test-{:016x}", rand::random::<u64>()));
     let mut conn = db::open(&cfg.db_path()).unwrap();
     db::migrate(&mut conn).unwrap();

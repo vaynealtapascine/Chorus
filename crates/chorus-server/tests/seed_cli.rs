@@ -4,7 +4,7 @@ use chorus_server::{db, project};
 
 #[test]
 fn seed_cli_ingests_into_new_directory_and_refuses_existing_data() {
-    let target = std::path::PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap());
+    let target = std::env::var_os("CARGO_TARGET_DIR").map(std::path::PathBuf::from).unwrap_or_else(std::env::temp_dir);
     let root = target.join(format!("seed-cli-test-{:016x}", rand::random::<u64>()));
     let dest = root.join("data");
     let missing_config = root.join("missing.toml");

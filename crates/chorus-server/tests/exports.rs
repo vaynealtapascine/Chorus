@@ -81,7 +81,9 @@ async fn exports_exclude_other_accounts_and_require_export_scope() {
         .unwrap()
         .to_string();
     let mut cfg = Config::default();
-    cfg.server.data_dir = std::path::PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap())
+    cfg.server.data_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
         .join(format!("export-http-test-{:016x}", rand::random::<u64>()));
     let sqlite_path = cfg.server.data_dir.join("download.sqlite");
     std::fs::create_dir_all(&cfg.server.data_dir).unwrap();
@@ -138,7 +140,9 @@ async fn exports_exclude_other_accounts_and_require_export_scope() {
 
 #[test]
 fn export_reader_keeps_one_snapshot_without_blocking_a_writer() {
-    let root = std::path::PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap())
+    let root = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
         .join(format!("export-snapshot-test-{:016x}", rand::random::<u64>()));
     std::fs::create_dir_all(&root).unwrap();
     let path = root.join("chorus.db");
@@ -162,7 +166,9 @@ fn export_reader_keeps_one_snapshot_without_blocking_a_writer() {
 
 #[test]
 fn cli_exports_each_format_for_only_the_requested_account() {
-    let root = std::path::PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap())
+    let root = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
         .join(format!("export-cli-test-{:016x}", rand::random::<u64>()));
     std::fs::create_dir_all(&root).unwrap();
     let source = seed();

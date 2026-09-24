@@ -96,7 +96,9 @@ async fn http_search_applies_account_visibility_and_filters() {
         .unwrap()
         .to_string();
     let mut cfg = Config::default();
-    cfg.server.data_dir = std::path::PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap())
+    cfg.server.data_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
         .join(format!("search-http-test-{:016x}", rand::random::<u64>()));
     let state = app::Shared::new(conn, cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

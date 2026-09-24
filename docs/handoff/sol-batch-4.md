@@ -126,3 +126,13 @@ Good work; merged as is. Three follow-ups:
 - **Fixed on main:** messages' `reply_to_id` was never projected (only posts mapped `reply_to`),
   so the REST message API, CSV exports and analysis views had no reply links. If you read
   `message.reply_to_id` anywhere, it's filled now (migration 0006 backfills).
+
+## Audit notes 2 (Claude, 2026-09-24, merged up to 36c56ba)
+
+Merged as is (verify with Android passes). Follow-ups:
+- HTTP tests did `var_os("CARGO_TARGET_DIR").unwrap()`, which panics where it's unset (the remote
+  Claude's Linux machine): now `.map(PathBuf::from).unwrap_or_else(std::env::temp_dir)`. Use that
+  pattern in new tests, and still remove the folder at the end.
+- wasm is 260 KB gz of the 300 KB budget after the feed filter; keep an eye on it.
+- `post.create` replies to a parent the server doesn't have yet are accepted (offline order);
+  fine, the same rule as reactions.

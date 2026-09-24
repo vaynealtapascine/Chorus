@@ -123,7 +123,9 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
         .unwrap()
         .to_string();
     let mut cfg = Config::default();
-    cfg.server.data_dir = std::path::PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap())
+    cfg.server.data_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
         .join(format!("posts-http-test-{:016x}", rand::random::<u64>()));
     let state = app::Shared::new(conn, cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -294,7 +296,9 @@ async fn cross_account_replies_require_a_readable_parent_and_reach_its_author() 
     assert!(follower_replies.iter().any(|p| p["id"] == reply_id));
 
     let mut cfg = Config::default();
-    cfg.server.data_dir = std::path::PathBuf::from(std::env::var_os("CARGO_TARGET_DIR").unwrap())
+    cfg.server.data_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
         .join(format!("post-reply-http-test-{:016x}", rand::random::<u64>()));
     let state = app::Shared::new(conn, cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
