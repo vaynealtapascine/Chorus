@@ -255,9 +255,10 @@ pub fn backfill_for_public_send(conn: &Connection, o: &Op) -> anyhow::Result<Vec
     for id in o.payload.get("attachments").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
         earlier.extend(oplog::for_entity(conn, id)?);
     }
-    let mut st = conn.prepare(
-        "SELECT id FROM op WHERE scope=?1 AND seq<?2 AND status='applied'
-         AND json_extract(payload, '$.message_id')=?3",
+    // (by the op_message_ref index: this runs for every public send)
+    let mut st = conn.prepare_cached(
+        "SELECT id FROM op WHERE json_extract(payload, '$.message_id')=?3
+         AND scope=?1 AND seq<?2 AND status='applied'",
     )?;
     let ids: Vec<String> =
         st.query_map(params![o.scope, before, message_id], |r| r.get(0))?.collect::<Result<_, _>>()?;

@@ -114,3 +114,5 @@ Good work; merged as is. Three follow-ups:
   Keep secrets, real hostnames and personal data out of commits, fixtures and test data.
 - **Rebuild** (`project.rs`) now decodes the log and prepares single-op entity rows on a reader
   thread (`prepare`/`write`); if you add a table with derived rows, put them in `write`.
+- **Migration 0005** (`0005_op_message_ref`, an index) is on main; if U3 needs a migration, it's
+  `0006_…`.

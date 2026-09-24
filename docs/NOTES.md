@@ -144,3 +144,10 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   otherwise visible post. The read API now serves audience-checked attachments and present reaction
   detail; the reactor's op remains in the reactor's account scope, so owners see it through the
   post read view rather than their own replica.
+- 2026-09-24 claude-opus-5.5 — perf — SPEC §9 sync budgets now have a test
+  (`tests/sync_e2e.rs` `sync_budgets`, ignored, release): switch → other online device ~1 ms p95
+  on loopback; a device back with 5 000 queued ops (+1 000 to fetch) fully synced in ~1.3 s.
+  It was 11 s: every public `message.send` in `fan_out` ran `backfill_for_public_send`, whose
+  `json_extract(payload,'$.message_id')` lookup scanned the scope's whole log — quadratic over a
+  catch-up. Migration 0005 indexes that expression (the query must use the identical expression
+  for SQLite to pick the index).

@@ -64,6 +64,9 @@ CREATE TABLE op (
 );
 CREATE INDEX op_scope_seq ON op(scope, seq);
 CREATE INDEX op_entity ON op(entity_id);
+-- ops pointing at a message (0005): late public sends release them, purge finds them
+CREATE INDEX op_message_ref ON op(json_extract(payload, '$.message_id'))
+  WHERE json_extract(payload, '$.message_id') IS NOT NULL;
 ```
 
 Rules:

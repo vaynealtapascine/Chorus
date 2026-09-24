@@ -1182,3 +1182,101 @@ async fn sign_in_is_limited_per_address() {
     assert!(codes[..20].iter().all(|c| *c != 429), "{codes:?}");
     assert_eq!(codes[24], 429, "{codes:?}");
 }
+
+impl Device {
+    /// Process frames until `done` holds (true) or `max` passes (false).
+    async fn until(&mut self, max: Duration, done: impl Fn(&MemStore) -> bool) -> bool {
+        let end = tokio::time::Instant::now() + max;
+        while !done(&self.store) {
+            let ws = self.ws.as_mut().unwrap();
+            let msg = match tokio::time::timeout_at(end, ws.next()).await {
+                Ok(Some(Ok(Message::Text(t)))) => t,
+                Ok(Some(Ok(_))) => continue,
+                _ => return false,
+            };
+            let f: Frame = serde_json::from_str(&msg).unwrap();
+            let out = self.engine.on_frame(&mut self.store, f);
+            self.send(out).await;
+        }
+        true
+    }
+}
+
+/// SPEC §9: a switch reaches the account's other online device within 1 s (p95), and a device
+/// back from a week offline with 5 000 queued ops is fully synced within 10 s. Release build:
+/// `cargo test --release -p chorus-server --test sync_e2e sync_budgets -- --ignored --nocapture`
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn sync_budgets() {
+    let s = start().await;
+    let a = enrol(&s, auth::InviteKind::System, None, 1, "stars").await;
+    let acct = a["account_id"].as_str().unwrap().to_string();
+    let desk_e = enrol(&s, auth::InviteKind::Device, Some(&acct), 2, "").await;
+    let mut phone = Device::new(&a, 1);
+    let mut desk = Device::new(&desk_e, 2);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    desk.connect(&s).await;
+    desk.drain(Q).await;
+    let acct_scope = format!("account:{acct}");
+    let space = phone.scope("space:");
+    let general =
+        phone.store.confirmed().find(|o| o.kind == "channel.create").and_then(|o| o.entity_id.clone()).unwrap();
+    let mut members = Vec::new();
+    for i in 0..20u8 {
+        let m = new_id(1, [i + 1; 10]);
+        phone.create("member.create", &acct_scope, &m, json!({"name": format!("M{i}")})).await;
+        members.push(m);
+    }
+    phone.drain(Q).await;
+    desk.drain(Q).await;
+
+    // switch → the other device
+    let mut lat = Vec::new();
+    for i in 0..40usize {
+        let t = std::time::Instant::now();
+        let sw = new_id(chorus_server::now_ms() as u64, rand::random());
+        let entries = json!([{"subject_type": "member", "subject_id": members[i % 20], "is_primary": true}]);
+        let op = phone.create("front.switch", &acct_scope, &sw, json!({"entries": entries})).await;
+        let seen = desk.until(Duration::from_secs(5), |st| st.confirmed().any(|o| o.id == op)).await;
+        assert!(seen, "switch {i} never arrived");
+        lat.push(t.elapsed());
+        phone.drain(Duration::from_millis(20)).await;
+    }
+    lat.sort();
+    let p95 = lat[lat.len() * 95 / 100 - 1];
+    println!("switch → other device: median {:?}, p95 {:?}", lat[lat.len() / 2], p95);
+
+    // a week offline: 5 000 queued on the desk while the phone writes 1 000
+    desk.disconnect();
+    let msg = |i: usize| json!({"channel_id": general, "authors": [members[i % 20]], "text": format!("offline note {i}"), "entities": []});
+    for i in 0..5000usize {
+        let id = new_id(chorus_server::now_ms() as u64, rand::random());
+        if i % 25 == 0 {
+            let entries = json!([{"subject_type": "member", "subject_id": members[i % 20], "is_primary": true}]);
+            desk.create("front.switch", &acct_scope, &id, json!({"entries": entries})).await;
+        } else {
+            desk.create("message.send", &space, &id, msg(i)).await;
+        }
+    }
+    for i in 0..1000usize {
+        let id = new_id(chorus_server::now_ms() as u64, rand::random());
+        phone.create("message.send", &space, &id, msg(i)).await;
+    }
+    phone.drain(Duration::from_millis(200)).await;
+    let total = phone.store.confirmed().count() + 5000;
+    let t = std::time::Instant::now();
+    desk.connect(&s).await;
+    let synced = desk
+        .until(Duration::from_secs(60), |st| {
+            st.pending(&Default::default(), 1, false).is_empty() && st.confirmed().count() >= total
+        })
+        .await;
+    let took = t.elapsed();
+    assert!(synced, "desk never caught up");
+    assert!(phone.until(Duration::from_secs(60), |st| st.confirmed().count() >= total).await, "phone never caught up");
+    let both = t.elapsed();
+    println!("reconnect with 5 000 queued (+1 000 to fetch): desk synced in {took:?}, phone has them in {both:?}");
+    assert!(p95 <= Duration::from_secs(1), "SPEC §9: switch visible on other devices ≤ 1 s p95");
+    assert!(both <= Duration::from_secs(10), "SPEC §9: reconnect with 5 000 queued ops ≤ 10 s");
+}
