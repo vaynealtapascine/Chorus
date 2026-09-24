@@ -67,6 +67,8 @@ On the public internet (unlike the PC, which only the tailnet could reach)
     there is no sign-up form.
   - Webhooks may only point to public addresses (webhook_targets = "public" in chorus.toml),
     so nobody can use them to reach this server's own services.
+  - API requests are rate limited per token, session or address (429 when over; see
+    rate_burst / rate_per_second in chorus.toml).
   - The service runs as its own user in a systemd sandbox that can only write its data and
     backups.
   - Keep the OS patched (unattended-upgrades) and SSH on keys only; the selfhost VPS bundle

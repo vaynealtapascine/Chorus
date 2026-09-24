@@ -40,6 +40,7 @@ pub struct Shared {
     /// Webhook deliveries (and their retries) for the delivery task (webhooks.rs).
     hooks: mpsc::UnboundedSender<crate::webhooks::Delivery>,
     hook_rx: Mutex<Option<mpsc::UnboundedReceiver<crate::webhooks::Delivery>>>,
+    pub(crate) limiter: crate::ratelimit::Limiter,
 }
 
 pub type AppState = Arc<Shared>;
@@ -53,7 +54,9 @@ impl Shared {
         db::set_meta(&conn, "push_subject", &sub)?;
         let (events, _) = tokio::sync::broadcast::channel(256);
         let (hooks, hook_rx) = mpsc::unbounded_channel();
+        let (burst, per_second) = cfg.security.rate();
         Ok(Arc::new(Shared {
+            limiter: crate::ratelimit::Limiter::new(burst, per_second),
             db: Mutex::new(conn),
             cfg,
             instance_id,
@@ -138,7 +141,8 @@ pub fn router(state: AppState) -> Router {
                 .put(blobs::put_blob)
                 .layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
         )
-        .route("/sync", get(sync_ws));
+        .route("/sync", get(sync_ws))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), crate::ratelimit::limit));
     let mut app = Router::new()
         .nest("/api/v1", api)
         .route("/download/android", get(android_download))
@@ -1596,7 +1600,8 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     run_notifier(state.clone());
     crate::backup::start_nightly(state.cfg.clone())?;
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
-    let server = axum::serve(listener, router(state)).with_graceful_shutdown(async {
+    let app = router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let server = axum::serve(listener, app).with_graceful_shutdown(async {
         stop_signal().await;
         tracing::info!("stopping");
         let _ = stop_tx.send(());

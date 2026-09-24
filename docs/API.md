@@ -15,7 +15,10 @@ is for reads, auth, blobs, exports and third-party scripts.
   `{"items":[…],"next":"<cursor>|null"}`.
 - Versioning: `/api/v1` is stable. Additive changes only; breaking ones get `/api/v2`. The sync
   protocol is versioned via `core` / `core_min` (SYNC.md §6.2).
-- Rate limits (per token, Advanced-configurable): 50 req/s burst, 10 req/s sustained.
+- Rate limits (per token or session, else per client address): 50 requests burst, 10/s
+  sustained (`security.rate_burst` / `rate_per_second`); sign-in (`/auth/*`) 20 burst, 1/s per
+  address. Over the limit: `429 rate_limited` with `Retry-After` (seconds). Blob reads are not
+  counted.
 - CORS: same-origin only, except `GET` on `/stream` and read endpoints for API tokens when
   `api.cors_origins` is set.
 

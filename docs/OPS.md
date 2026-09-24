@@ -73,6 +73,8 @@ snapshot_threshold = 20000
 [security]
 tailscale_whois = false                      # D-034 optional second factor
 webhook_targets = "internal"                 # internal (tailnet/LAN, never loopback) | public | any
+rate_burst = 50                              # API requests per token/session (else per address)
+rate_per_second = 10                         # sustained; 0 turns request limits off
 ```
 
 Every option also has a default in code; the file may be empty.
@@ -171,9 +173,12 @@ updates). What differs from the PC:
   Caddy's access log redacts `?token=` (the OBS overlay and EventSource streams carry API tokens
   in the URL).
   Sync sockets that don't sign in within 15 s are closed; each device keeps at most 5 open
-  sign-in challenges. **Not done: general request rate limiting** (stock Caddy has none; a
-  flood of requests would load the server). If that becomes a problem, add Caddy's
-  `rate_limit` plugin or fail2ban on `/var/log/caddy/chorus.log`.
+  sign-in challenges. API requests are rate limited in the server (`ratelimit.rs`): 50 burst /
+  10 per second per token or session (else per client address), sign-in 20 burst / 1 per second
+  per address; over it, `429 rate_limited` with `Retry-After`. Blob reads and the sync socket's
+  frames aren't counted. The address comes from Caddy's `X-Forwarded-For`, trusted only on
+  loopback connections. For floods below HTTP (SYN, many sockets), use the provider's firewall
+  or fail2ban on `/var/log/caddy/chorus.log`.
 - **Coexisting with the selfhost VPS bundle** (memos, ntfy, Arbor, …): that bundle's Caddyfile
   imports `/etc/caddy/sites/*.caddy`, so Chorus's site survives its reinstalls. Chorus can use
   that ntfy as its push distributor (`ntfy_url`).

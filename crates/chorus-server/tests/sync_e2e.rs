@@ -1141,3 +1141,44 @@ async fn a_silent_socket_is_closed() {
     assert!(end.is_ok(), "still open after 25 s");
     assert!(t.elapsed() >= Duration::from_secs(14), "closed too early: {:?}", t.elapsed());
 }
+
+/// API.md §1: each credential gets a burst, then 429 `rate_limited` with Retry-After.
+#[tokio::test]
+async fn requests_over_the_rate_limit_get_429() {
+    let mut cfg = Config::default();
+    cfg.security.rate_burst = Some(3);
+    cfg.security.rate_per_second = Some(0.01);
+    let s = start_with(cfg).await;
+    let http = reqwest::Client::new();
+    let me = |token: &str| http.get(format!("http://{}/api/v1/me", s.base)).bearer_auth(token.to_string()).send();
+    for _ in 0..3 {
+        assert_ne!(me("one").await.unwrap().status(), 429);
+    }
+    let r = me("one").await.unwrap();
+    assert_eq!(r.status(), 429);
+    assert!(r.headers()["retry-after"].to_str().unwrap().parse::<u64>().unwrap() >= 1);
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "rate_limited");
+    // another credential has its own bucket
+    assert_ne!(me("two").await.unwrap().status(), 429);
+}
+
+/// Sign-in is limited per client address (the served app knows the peer address).
+#[tokio::test]
+async fn sign_in_is_limited_per_address() {
+    let mut conn = db::open_memory().unwrap();
+    db::migrate(&mut conn).unwrap();
+    let state = app::Shared::new(conn, Config::default()).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let router = app::router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let http = reqwest::Client::new();
+    let mut codes = Vec::new();
+    for _ in 0..25 {
+        let r = http.post(format!("http://{addr}/api/v1/auth/challenge")).json(&json!({})).send().await.unwrap();
+        codes.push(r.status().as_u16());
+    }
+    assert!(codes[..20].iter().all(|c| *c != 429), "{codes:?}");
+    assert_eq!(codes[24], 429, "{codes:?}");
+}

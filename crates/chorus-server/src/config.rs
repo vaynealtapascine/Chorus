@@ -61,6 +61,10 @@ pub struct Security {
     /// Where webhooks may point (API.md §7). Default `internal` (a tailnet/LAN install); a public
     /// server (deploy/linux) uses `public`, so accounts can't reach the host's own services.
     pub webhook_targets: Option<WebhookTargets>,
+    /// API requests per credential (token or session, else client address): burst size and
+    /// sustained rate (API.md §1; default 50 and 10/s). `rate_per_second = 0` turns limits off.
+    pub rate_burst: Option<u32>,
+    pub rate_per_second: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -76,6 +80,10 @@ pub enum WebhookTargets {
 }
 
 impl Security {
+    pub fn rate(&self) -> (u32, f64) {
+        (self.rate_burst.unwrap_or(50), self.rate_per_second.unwrap_or(10.0))
+    }
+
     pub fn webhook_targets(&self) -> WebhookTargets {
         self.webhook_targets.unwrap_or(if self.webhooks_allow_external {
             WebhookTargets::Any
