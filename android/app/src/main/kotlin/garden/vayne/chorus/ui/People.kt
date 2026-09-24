@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.FollowList
 import garden.vayne.chorus.data.FollowPresets
+import garden.vayne.chorus.data.FollowerView
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PeopleApi
 import garden.vayne.chorus.data.Spaces
@@ -45,7 +46,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var follows by remember { mutableStateOf(FollowList(emptyList(), emptyList())) }
-    var frontNames by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    var views by remember { mutableStateOf<Map<String, FollowerView>>(emptyMap()) }
     var sharedPosts by remember { mutableStateOf<Map<String, List<SharedPost>>>(emptyMap()) }
     var target by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -58,16 +59,17 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
         val dev = chorus.device ?: return@LaunchedEffect
         if (loadedAccount != dev.accountId) {
             follows = FollowList(emptyList(), emptyList())
-            frontNames = emptyMap()
+            views = emptyMap()
             sharedPosts = emptyMap()
             loadedAccount = dev.accountId
         }
         sharedPosts = emptyMap()
+        views = emptyMap()
         try {
             val next = PeopleApi.list(dev)
             follows = next
-            frontNames = next.following.filter { it.status == "active" }.mapNotNull { f ->
-                runCatching { f.account.id to PeopleApi.frontNames(PeopleApi.view(dev, f.account.id)) }.getOrNull()
+            views = next.following.filter { it.status == "active" }.mapNotNull { f ->
+                runCatching { f.account.id to PeopleApi.followerView(PeopleApi.view(dev, f.account.id)) }.getOrNull()
             }.toMap()
             sharedPosts = next.following.filter { it.status == "active" }.mapNotNull { f ->
                 runCatching { f.account.id to PeopleApi.posts(dev, f.account.id) }.getOrNull()
@@ -75,6 +77,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
             error = null
         } catch (e: Exception) {
             sharedPosts = emptyMap()
+            views = emptyMap()
             error = e.message ?: "Could not load people."
         }
     }
@@ -167,8 +170,9 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
                 Text(f.account.shownName, color = p.ink)
                 Text(if (f.status == "requested") "Waiting for them to accept"
-                    else frontNames[f.account.id]?.takeIf { it.isNotEmpty() }?.joinToString(" & ") ?: "Nothing shared yet",
+                    else views[f.account.id]?.frontNames?.takeIf { it.isNotEmpty() }?.joinToString(" & ") ?: "Nothing shared yet",
                     color = p.ink2)
+                if (f.status == "active") views[f.account.id]?.let { FollowerViewDetails(it) }
                 Row {
                     if (f.status == "active") TextButton(enabled = !busy, onClick = { action {
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
@@ -187,6 +191,24 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
         }
         item { Text("A follower sees your switches only within the sharing limit you choose for them.",
             color = p.ink2, modifier = Modifier.padding(bottom = 20.dp)) }
+    }
+}
+
+@Composable
+private fun FollowerViewDetails(view: FollowerView) {
+    val p = LocalChorusPalette.current
+    view.stats?.let { stats ->
+        val shown = stats.members.filter { it.second > 0 }.joinToString(" · ") { "${it.first} ${it.second}%" }
+        Text(if (shown.isEmpty()) "No complete days of shared fronting yet"
+            else "Most often, last ${stats.days} days: $shown", color = p.ink2)
+    }
+    view.history?.takeIf { it.size > 1 }?.let { history ->
+        var open by rememberSaveable { mutableStateOf(false) }
+        TextButton(onClick = { open = !open }) { Text(if (open) "Hide earlier fronts" else "Earlier fronts") }
+        if (open) for (front in history.drop(1)) {
+            Text(front.names.joinToString(" & ").ifBlank { "Nobody shared" } +
+                front.time.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(), color = p.ink2)
+        }
     }
 }
 

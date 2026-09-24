@@ -1,5 +1,7 @@
 package garden.vayne.chorus.data
 
+import java.text.DateFormat
+import java.util.Date
 import org.json.JSONObject
 
 /** Follow rows and privacy-filtered views returned by the server for this signed-in device. */
@@ -7,6 +9,9 @@ data class FollowInfo(val id: String, val account: SpaceAccount, val status: Str
 data class FollowList(val following: List<FollowInfo>, val followers: List<FollowInfo>)
 data class SharedPost(val id: String, val kind: String, val title: String?, val text: String,
     val cw: String?, val occurredAt: Long, val authorNames: List<String>)
+data class SharedFront(val names: List<String>, val time: String)
+data class SharedStats(val days: Int, val members: List<Pair<String, Int>>)
+data class FollowerView(val frontNames: List<String>, val history: List<SharedFront>?, val stats: SharedStats?)
 
 object PeopleApi {
     fun sharedPosts(j: JSONObject): List<SharedPost> {
@@ -39,13 +44,41 @@ object PeopleApi {
         return FollowList(rows("following"), rows("followers"))
     }
 
-    /** Only names from the already-filtered follower view; no raw switch times escape it. */
-    fun frontNames(j: JSONObject): List<String> {
-        if (j.optBoolean("shared", true) == false) return emptyList()
-        val a = j.optJSONArray("entries") ?: return emptyList()
-        return (0 until a.length()).mapNotNull { i ->
-            a.optJSONObject(i)?.takeIf { it.optString("level") == "front" }
-                ?.optString("name")?.takeIf { it.isNotBlank() && it != "null" }
+    /** Consume only the server's reveal-time follower view; absent history/stats remain absent. */
+    fun followerView(j: JSONObject): FollowerView {
+        if (!j.optBoolean("shared", true)) return FollowerView(emptyList(), null, null)
+        fun names(entries: org.json.JSONArray?, frontOnly: Boolean): List<String> = if (entries == null) emptyList() else
+            (0 until entries.length()).mapNotNull { i ->
+                entries.optJSONObject(i)?.takeIf { !frontOnly || it.optString("level") == "front" }
+                    ?.optString("name")?.takeIf { it.isNotBlank() && it != "null" }
+            }
+        val history = j.optJSONArray("history")?.let { items -> (0 until items.length()).mapNotNull { i ->
+            items.optJSONObject(i)?.let { item -> SharedFront(names(item.optJSONArray("entries"), false),
+                shownTime(item.optJSONObject("time"))) }
+        } }
+        val stats = j.optJSONObject("stats")?.let { row ->
+            val members = row.optJSONArray("members")
+            SharedStats(row.optInt("days"), if (members == null) emptyList() else
+                (0 until members.length()).mapNotNull { i -> members.optJSONObject(i)?.let { member ->
+                    member.optString("name").takeIf { it.isNotBlank() && it != "null" }
+                        ?.let { it to member.optInt("share_pct") }
+                } })
+        }
+        return FollowerView(names(j.optJSONArray("entries"), true), history, stats)
+    }
+
+    /** Keep time at the precision already chosen by the server; never render hidden clock data. */
+    internal fun shownTime(time: JSONObject?): String {
+        val at = time?.optLong("at")?.takeIf { time.has("at") && !time.isNull("at") } ?: return ""
+        return when (time.optString("precision")) {
+            "exact" -> DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(at))
+            "approx" -> "Around " + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(at))
+            "part_of_day" -> {
+                val day = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(at))
+                val part = time.optString("part").takeIf { it in setOf("night", "morning", "afternoon", "evening") }
+                if (part == null) day else "$day · $part"
+            }
+            else -> ""
         }
     }
 
