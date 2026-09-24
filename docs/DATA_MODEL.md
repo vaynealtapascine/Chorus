@@ -112,7 +112,9 @@ more than field names: every payload field stored in a constrained column obeys
 `op::FIELD_RULES` (never `null` for a NOT NULL column, an object or list for a JSON column,
 `true`/`false` for a flag, one of the allowed values for an `IN (…)` check), plus per-kind rules
 (`channel.set_permission` needs a `target_type`/`target_id` and known permissions, reactions a
-`target_type`/`target_id`/`emoji`, message and post `text` is text and `entities`/`tags` lists,
+`target_type`/`target_id`/`emoji`, message and post `text` is text and `entities`/`tags` lists, entities and segments are
+`{offset, length}` ranges (UTF-16) inside the text with a `type`/`authors` (so another
+account's message can't make a renderer slice out of range),
 `space.set_roles` a list of `{id, name, perms}`). A test compares `FIELD_RULES` with the SQL
 schema, so a migration that adds a constraint must add its rule.
 

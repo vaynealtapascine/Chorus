@@ -531,6 +531,7 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
             typed("text", Value::is_string, "text")?;
             typed("entities", Value::is_array, "a list")?;
             typed("tags", strings, "a list of tags")?;
+            ranges(p)?;
         }
         "field.define" | "field.set_def" => one_of("type", FIELD_TYPES, false)?,
         "space.set_role" => {
@@ -672,6 +673,42 @@ pub const FIELD_TYPES: &[&str] = &[
     "rating",
 ];
 
+/// Entities and segments are `{offset, length}` ranges in UTF-16 units that stay inside the text
+/// (when the op carries it), so every renderer can slice with them. Entities are objects with a
+/// `type` (unknown types from newer clients pass); segments name their `authors`.
+fn ranges(p: &Value) -> Result<(), OpError> {
+    let len = p.get("text").and_then(Value::as_str).map(crate::text::utf16_len);
+    let range = |x: &Value, what: &str| -> Result<(), OpError> {
+        let n = |k: &str| x.get(k).and_then(Value::as_u64).filter(|v| *v <= u32::MAX as u64);
+        let (Some(offset), Some(length)) = (n("offset"), n("length")) else {
+            return Err(OpError::BadPayload(format!("each {what} needs a whole-number offset and length")));
+        };
+        if len.is_some_and(|len| offset + length > len as u64) {
+            return Err(OpError::BadPayload(format!("a {what} runs past the end of the text")));
+        }
+        Ok(())
+    };
+    for e in p.get("entities").and_then(Value::as_array).into_iter().flatten() {
+        if !e.get("type").is_some_and(Value::is_string) {
+            return Err(OpError::BadPayload("each entity needs a type".into()));
+        }
+        range(e, "entity")?;
+    }
+    match p.get("segments") {
+        None | Some(Value::Null) => {}
+        Some(Value::Array(segs)) => {
+            for g in segs {
+                if !g.get("authors").and_then(Value::as_array).is_some_and(|a| a.iter().all(Value::is_string)) {
+                    return Err(OpError::BadPayload("each segment needs a list of authors".into()));
+                }
+                range(g, "segment")?;
+            }
+        }
+        _ => return Err(OpError::BadPayload("segments must be a list".into())),
+    }
+    Ok(())
+}
+
 /// Channel permissions (SPEC §5.1, D-047).
 pub const PERMISSIONS: &[&str] = &["view", "send", "react", "thread", "pin", "manage"];
 
@@ -739,6 +776,30 @@ mod tests {
         assert!(matches!(validate(&o), Err(OpError::WrongScope { .. })));
         let o = op("emoji.create", "server", json!({"name": "kai_wave"}));
         assert!(matches!(validate(&o), Ok(Known::Yes(_))));
+    }
+
+    #[test]
+    fn text_ranges_stay_inside_the_text() {
+        let space = format!("space:{}", new_id(1, [4; 10]));
+        let send = |payload: Value| validate(&op("message.send", &space, payload));
+        let ok = send(json!({"text": "hé 🌌", "entities": [{"type": "bold", "offset": 3, "length": 2}],
+            "segments": [{"offset": 0, "length": 5, "authors": ["a"]}]}));
+        assert!(matches!(ok, Ok(Known::Yes(_))), "{ok:?}");
+        for bad in [
+            json!({"text": "hi", "entities": [{"type": "bold", "offset": 1, "length": 2}]}),
+            json!({"text": "hi", "entities": [null]}),
+            json!({"text": "hi", "entities": [{"offset": 0, "length": 1}]}),
+            json!({"text": "hi", "entities": [{"type": "bold", "offset": -1, "length": 1}]}),
+            json!({"text": "hi", "entities": [{"type": "bold", "offset": "0", "length": 1}]}),
+            json!({"text": "hi", "segments": [{"offset": 0, "length": 3, "authors": ["a"]}]}),
+            json!({"text": "hi", "segments": [{"offset": 0, "length": 2}]}),
+            json!({"text": "hi", "segments": {}}),
+        ] {
+            assert!(matches!(send(bad.clone()), Err(OpError::BadPayload(_))), "{bad}");
+        }
+        // an edit without its text can't be bounds-checked, only shape-checked
+        let edit = op("message.edit", &space, json!({"entities": [{"type": "x_new_kind", "offset": 9, "length": 1}]}));
+        assert!(matches!(validate(&edit), Ok(Known::Yes(_))));
     }
 
     #[test]
