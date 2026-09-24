@@ -6,6 +6,51 @@ Written by claude-opus-5.5 on 2026-09-24, after merging your batch 4 work up to 
 roots its folders under `env!("CARGO_TARGET_TMPDIR")` (Cargo sets it for every integration test on
 every platform), and the remote Claude's new admin-health test uses your helper too.
 
+## Update — 2026-09-24 evening (read this first)
+
+You ran out of usage mid-V1; local Claude picked up from your uncommitted work. Merge `main` into
+`sol/batch-2` before anything else (your branch has nothing unmerged).
+
+**Done since you stopped**
+- **V1 (Claude):** your "More" fold was committed on your behalf (`93610b0`), then the chat screen
+  was made compact and checked on the phone: one header row (space menu, channels, a whose-view
+  menu), a one-line composer (speaker avatar menu · text · ⋯ options · send), reply in each
+  card's header, and the tab bar hides while the keyboard is open so the composer sits on it.
+  Sent as a chosen member with a CW and replied as another; both reached the server correctly.
+- **V3 plumbing (Claude, `data/Blobs.kt`):** staging under SHA-256, a JPEG thumbnail, `UploadWork`
+  (WorkManager, HEAD-resume, 4 MB chunks), a separate chat cache, and Attach in the composer's
+  options (alt text, spoiler). Avatars now load through `Api.http` too. **Not yet sent from the
+  phone:** the document picker couldn't find a pushed test file (not media-indexed). That device
+  check is yours: index it first (`adb shell content call --uri content://media/external/file
+  --method scan_file --arg /sdcard/Download/<file>` or open it once in the Files app), or pick it
+  from the picker's Downloads root.
+- **Chorus Home (Claude, D-071, `docs/HOME.md`):** one-click install on a home PC; the Android
+  side is `data/Pins.kt` (a `chorus://<lan ip>:<port>/i/<code>#pin=sha256/…` invite pins the
+  server's self-signed certificate). Unit-tested, not run on a phone yet (below).
+
+**Correction about the phone.** The Chorus app installed on the owner's phone is enrolled on
+**Claude's dev server** (`http://127.0.0.1:5251` through `adb reverse tcp:5251 tcp:5251`, demo
+members Kai/Moss/Rin/…), not the owner's real server. Sending test messages there is fine. Start
+the dev server (`chorus-server --dev serve`, or your 5261 one with a reverse to 5251… simplest is
+to reuse 5251 when Claude isn't using it — ask) and reopen the app to reconnect. The owner's
+quick-switch widget is placed on their home screen: don't move it. Still ask before each session;
+never clear the app's data or uninstall it.
+
+**Designs are coming.** The owner is designing the app in Figma from `docs/FLOWS.md` (every flow,
+by ID; frames named `F3.2 · Android · dark`) with `docs/ENTITIES.md` as the data reference. When
+frames exist, Claude will write you a hand-off mapping frames to code, and you'll implement them.
+Until then: favour the data, sync and logic side of each task, keep new screens plain (tokens,
+simple layout), and don't spend time on visual polish that a design will replace.
+
+**Order now:** V2 → V4 (the biggest gap) → V5 → V3's device check and file opening → V6 → V9 →
+V7 → V8. V1 is done.
+
+- **V9 · Chorus Home on a phone (M13.5).** Once the owner agrees to a session with an app that
+  isn't enrolled (a second phone, or the owner re-enrolling theirs): run a Chorus Home test server
+  with `lan_listen` on the wifi, scan the QR from its *This computer* page, and check the phone
+  joins over TLS with the pinned certificate, syncs, and loads avatars and attachments. Then mDNS
+  rediscovery when the PC's address changes (HOME.md §2), which isn't built yet.
+
 ## The goal: v1
 
 The owner asked for one full, stable build that works end to end on the phone, the web and the
@@ -42,12 +87,14 @@ need one, say so in your log first and check `migrations/` after merging `main`.
   `project.rs`, `search.rs`, `blobs.rs` and their tests; if Android needs a server change, write
   it in your log), and `app.rs`, `api_reads.rs`, `posts.rs`, `webhooks.rs`, `exports.rs`, web
   `Journal*.svelte`, `Search.svelte`, `DataPage.svelte`, `.github/`, `web/e2e/`.
-- **Local Claude:** `web/src/lib/sync/blobs.ts` (the offline blob cache).
+- **Local Claude:** `web/src/lib/sync/blobs.ts` (the offline blob cache); Chorus Home (`tls.rs`,
+  `home.rs`, `home_install.rs`, `web/src/lib/home.ts`, `ThisComputer.svelte`). `data/Blobs.kt` and
+  `data/Pins.kt` are yours to extend (V3, V9); say what you changed in your log.
 - `deploy/`, `scripts/deploy.ps1`, `scripts/pack-linux.ps1`.
 
 ## Tasks (in this order)
 
-- **V1 · device-check batch 4 on the phone.** Send in an internal channel as a chosen member,
+- ~~**V1 · device-check batch 4 on the phone.**~~ Done (see the update above). Send in an internal channel as a chosen member,
   with a CW, with "Chosen members", and an aside in a shared space; reply to a message (also one
   whose parent has a collapsed CW); view an image and a spoiler image. Fix what you find. The
   composer stacks two text fields, chips and a button under the list: on a phone it should
