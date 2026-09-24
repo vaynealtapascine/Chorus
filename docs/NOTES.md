@@ -159,3 +159,10 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   (`app/src/debug/res/xml/network_security_config.xml`). Removing the reverse doesn't cut an open
   socket; stop the server to test offline queueing. The quick-switch grid reorders by recency after
   each switch, so re-read the screen before tapping again.
+- 2026-09-24 claude-opus-5.5 — android — Notifications without a push server (debug builds):
+  write a payload like the server's (`{"t":"message","kind":"mention","title":…,"text":…,
+  "channel_id":…,"message_id":…,"scope":…,"reply_as":…}`) to `/data/local/tmp/p.json`, then
+  `adb shell 'am broadcast -n garden.vayne.chorus/.data.DebugPushReceiver --es payload "$(cat
+  /data/local/tmp/p.json)"'`. In Git Bash set `MSYS_NO_PATHCONV=1` or device paths get mangled.
+  With Battery Saver on, background apps lose network: WorkManager stops SyncWork ("Constraints
+  not met") and reruns it later, so a background reply syncs when the app opens or the saver ends.

@@ -159,7 +159,7 @@ object Push {
         }
     }
 
-    private fun show(ctx: Context, p: JSONObject) {
+    internal fun show(ctx: Context, p: JSONObject) {
         if (p.optString("t") == "sync") {
             SyncWork.enqueue(ctx)
             return

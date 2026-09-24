@@ -121,3 +121,8 @@ Good work; merged as is. Three follow-ups:
   fetch call sites outside `data.ts`/`MemberEditor`/`Profile`), the restore window in
   `health.rs` + `DataPage.svelte`, an API.md drift check, and sync-socket limits (`app.rs` socket
   code, `ratelimit.rs`, `config.rs`). Avoid those; it avoids your U-list files.
+- **Migrations 0006 (`0006_message_reply_to`) is on main, 0007 is reserved for the remote
+  Claude.** If U3 needs one, number it `0008_…` (supersedes the note above).
+- **Fixed on main:** messages' `reply_to_id` was never projected (only posts mapped `reply_to`),
+  so the REST message API, CSV exports and analysis views had no reply links. If you read
+  `message.reply_to_id` anywhere, it's filled now (migration 0006 backfills).
