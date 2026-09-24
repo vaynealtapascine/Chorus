@@ -236,3 +236,28 @@ blobs are verified by hash. The importer is separate work and not part of this p
 - (My labels above follow the list as it was when I started: my R11 = REST reads (now R12),
   R12 = the browser suite (now R13), R13 = webhook shutdown (now R14). My "R14 skipped" was
   before D-068 approved the export bundle; it's R15 in the current list.)
+- R9 — channel permissions (M5.10, D-047). One rule, `chorus-server/src/perms.rs`
+  (`can_sql` for SQL, `can` for Rust, `write_denied` for writes), written up in DATA_MODEL §4.4;
+  every path goes through it: pushes (`ingest::accept` → `forbidden` with a reason), sync fan-out
+  and catch-up (`op_visible_to`, and the batched `visible_digest` — now two passes over one
+  `Lookups` trait, so it can't drift from the per-op check), REST message reads, search, blobs,
+  author cards and notification recipients. Webhooks only ever carry the author's own messages,
+  so nothing to do there. Guests: an account override allowing `view` to someone outside the
+  space gives them the space's scope (`perms::refresh_guest`) but only that channel's ops;
+  `GET /spaces` lists such spaces with `guest: true`. A permission change sends connected
+  devices the scope's digest (`app.rs` `fan_out`), and a device that lost a channel sweeps it
+  (a **core change**: repair used to loop forever when a device held ops it may no longer see;
+  SYNC §6.5, `Changes.removed`). **Sol:** Android `Store.save` should delete the ids in
+  `changes.removed` (web does in `persist.ts`); without it an evicted op comes back after a
+  restart until the next repair sweeps it again — no loop, just wasted work.
+  Tests: `tests/permissions.rs` (60 random spaces/roles/overrides/logs against an independent
+  model of the rule; checks `can`, `op_visible_to`, the batched digest, `messages::one` and
+  search — a mutation of the rule fails it), `sync_e2e.rs`
+  `channel_permissions_through_the_real_server` (private channel, live gain and loss, a guest
+  on one internal channel, send refused until allowed), core unit tests for the sweep, and a
+  browser test sharing one internal channel with the follower. Fixtures in `activity`, `blobs`,
+  `search`, `visibility_digest` needed real space/member rows (the rule rightly denied them).
+  Web: `ChannelPermissions.svelte` in the channel ⋯ menu (Advanced; owner/admin, or a DM
+  participant), per-target allow/deny/inherit, outsiders get a "shares just this channel" hint;
+  guest spaces show as "{owner} · shared with you"; the new-channel field shows only to those
+  who may add channels; the ⋯ menu scrolls now (it overflowed the screen).
