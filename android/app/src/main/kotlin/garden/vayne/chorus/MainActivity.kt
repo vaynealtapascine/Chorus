@@ -26,9 +26,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Status
 import garden.vayne.chorus.data.SyncWork
+import garden.vayne.chorus.data.SearchDocument
 import garden.vayne.chorus.designsystem.ChorusTheme
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.ui.History
@@ -105,10 +108,24 @@ private fun App(chorus: Chorus, invite: String?) {
     val model by chorus.model.collectAsState()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var chatSpace by rememberSaveable { mutableStateOf<String?>(null) }
+    var chatChannel by rememberSaveable { mutableStateOf<String?>(null) }
+    var chatSearchHit by remember { mutableStateOf<SearchDocument?>(null) }
     var journalReplyPost by rememberSaveable { mutableStateOf<String?>(null) }
+    var journalOpenPost by rememberSaveable { mutableStateOf<String?>(null) }
     var linking by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var lastAccount by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(chorus.device?.accountId) {
+        val account = chorus.device?.accountId
+        if (lastAccount != null && lastAccount != account) {
+            chatSearchHit = null
+            chatSpace = null; chatChannel = null
+            journalReplyPost = null; journalOpenPost = null
+            searchOpen = false; settingsOpen = false
+        }
+        lastAccount = account
+    }
     BackHandler(settingsOpen || searchOpen) {
         if (searchOpen) searchOpen = false else settingsOpen = false
     }
@@ -146,7 +163,18 @@ private fun App(chorus: Chorus, invite: String?) {
                 Text(label, fontSize = 12.sp, color = p.ink3)
             }
             Box(Modifier.weight(1f)) {
-                if (searchOpen) ContentSearch(chorus, model, status == Status.Live) { searchOpen = false }
+                if (searchOpen) ContentSearch(chorus, model, status == Status.Live,
+                    onClose = { searchOpen = false },
+                    onOpenMessage = { hit ->
+                        val channel = model.channels.find { it.id == hit.channelId }
+                        if (channel != null) {
+                            chatSpace = channel.spaceId; chatChannel = channel.id; chatSearchHit = hit
+                            tab = Tab.Chat; searchOpen = false
+                        }
+                    },
+                    onOpenPost = { id ->
+                        journalReplyPost = null; journalOpenPost = id; tab = Tab.Journal; searchOpen = false
+                    })
                 else if (settingsOpen) SettingsScreen(chorus, model)
                 else when (if (person && (tab == Tab.Members || tab == Tab.History)) Tab.Home else tab) {
                     Tab.Home -> if (person) {
@@ -154,10 +182,13 @@ private fun App(chorus: Chorus, invite: String?) {
                             Text("Chorus quick switching is for systems. Your personal profile and journal are available on the web.", color = p.ink2)
                         }
                     } else Home(chorus, model)
-                    Tab.Chat -> Chat(chorus, model, chatSpace)
-                    Tab.Journal -> Journal(chorus, model, journalReplyPost) { journalReplyPost = null }
+                    Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit) { chatSearchHit = null }
+                    Tab.Journal -> Journal(chorus, model, journalReplyPost,
+                        onExternalReplyConsumed = { journalReplyPost = null },
+                        externalOpenPost = journalOpenPost,
+                        onExternalOpenConsumed = { journalOpenPost = null })
                     Tab.People -> People(chorus, model,
-                        onOpenChat = { spaceId -> chatSpace = spaceId; tab = Tab.Chat },
+                        onOpenChat = { spaceId -> chatSpace = spaceId; chatChannel = null; chatSearchHit = null; tab = Tab.Chat },
                         onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal })
                     Tab.Members -> Members(chorus, model)
                     Tab.History -> History(chorus, model)

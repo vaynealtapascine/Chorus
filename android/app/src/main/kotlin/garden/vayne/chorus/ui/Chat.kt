@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.ChatMessage
 import garden.vayne.chorus.data.ChatAttachment
+import garden.vayne.chorus.data.SearchDocument
 import garden.vayne.chorus.data.ChatCompose
 import garden.vayne.chorus.data.ChatSpace
 import garden.vayne.chorus.data.Chorus
@@ -77,13 +78,18 @@ import kotlinx.coroutines.withContext
 
 /** Local chat view: internal channels, shared spaces and account DMs use the same projection. */
 @Composable
-fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null) {
+fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
+    requestedChannel: String? = null, searchHit: SearchDocument? = null,
+    onDismissSearchHit: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     var selectedSpace by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(requestedSpace) {
         if (requestedSpace != null) selectedSpace = requestedSpace
     }
     var selectedChannel by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(requestedChannel) {
+        if (requestedChannel != null) selectedChannel = requestedChannel
+    }
     var viewingAs by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedAuthor by rememberSaveable { mutableStateOf("") }
     var draft by rememberSaveable { mutableStateOf("") }
@@ -194,6 +200,20 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null) {
                         }
                     }
                 }
+            }
+        }
+        if (searchHit != null && searchHit.channelId == channel?.id) {
+            var revealed by rememberSaveable(searchHit.id) { mutableStateOf(false) }
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+                .background(p.surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Search match · ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(searchHit.occurredAt))}",
+                        color = p.ink2)
+                    TextButton(onClick = onDismissSearchHit) { Text("Dismiss") }
+                }
+                if (searchHit.cw != null) Text("Content warning: ${searchHit.cw} · ${if (revealed) "Hide" else "Show"}",
+                    color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
+                if (searchHit.cw == null || revealed) Text(searchHit.text, color = p.ink)
             }
         }
         if (channel == null) {

@@ -46,7 +46,8 @@ import kotlinx.coroutines.launch
 /** Own posts and switches remain readable from the local replica while offline. */
 @Composable
 fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
-    onExternalReplyConsumed: () -> Unit = {}) {
+    onExternalReplyConsumed: () -> Unit = {}, externalOpenPost: String? = null,
+    onExternalOpenConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     var editing by rememberSaveable { mutableStateOf(false) }
     var profileId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -80,6 +81,14 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             authorId = Reply.speaker(model)?.id.orEmpty()
             editing = true
             onExternalReplyConsumed()
+        }
+    }
+
+    LaunchedEffect(externalOpenPost) {
+        if (externalOpenPost != null) {
+            editing = false; profileId = null; threadPostId = externalOpenPost
+            section = "timeline"
+            onExternalOpenConsumed()
         }
     }
 

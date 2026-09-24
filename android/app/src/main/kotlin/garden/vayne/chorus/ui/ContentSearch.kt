@@ -42,7 +42,8 @@ import kotlinx.coroutines.withContext
 
 /** Search the permitted local replica even when the server is asleep. */
 @Composable
-internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClose: () -> Unit) {
+internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClose: () -> Unit,
+    onOpenMessage: (SearchDocument) -> Unit, onOpenPost: (String) -> Unit) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var query by rememberSaveable { mutableStateOf("") }
@@ -135,7 +136,9 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
         if (index == null) item { Text("Preparing local search…", color = p.ink2) }
         else if (query.isBlank()) item { Text("Type to search messages, posts and switches on this device.", color = p.ink2) }
         else if (shown.isEmpty() && !loading) item { Text("No $section matches on this device${if (online && section != "Switches") " or server" else ""}.", color = p.ink2) }
-        for (doc in shown) item(key = "${doc.kind}:${doc.id}") { SearchCard(doc, model) }
+        for (doc in shown) item(key = "${doc.kind}:${doc.id}") {
+            SearchCard(doc, model, onOpenMessage, onOpenPost)
+        }
         if (results.size == 100) item { Text("Showing the newest 100 local matches. Narrow the search for more.", color = p.ink2) }
         if (loading) item { Text("Searching server…", color = p.ink2) }
         if (remoteError != null && section != "Switches") item { Text("Server search unavailable: ${remoteError.orEmpty()}", color = p.ink2) }
@@ -147,7 +150,8 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
 }
 
 @Composable
-private fun SearchCard(doc: SearchDocument, model: Model) {
+private fun SearchCard(doc: SearchDocument, model: Model,
+    onOpenMessage: (SearchDocument) -> Unit, onOpenPost: (String) -> Unit) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(doc.id) { mutableStateOf(false) }
     val label = when (doc.kind) {
@@ -167,5 +171,8 @@ private fun SearchCard(doc: SearchDocument, model: Model) {
             Text(doc.text.ifBlank { "(no text)" }, color = p.ink)
             if (doc.tags.isNotEmpty()) Text(doc.tags.joinToString(" ") { "#$it" }, color = p.ink2)
         }
+        if (doc.kind == "Posts") TextButton(onClick = { onOpenPost(doc.id) }) { Text("Open thread") }
+        else if (doc.kind == "Messages" && model.channels.any { it.id == doc.channelId })
+            TextButton(onClick = { onOpenMessage(doc) }) { Text("Open channel") }
     }
 }
