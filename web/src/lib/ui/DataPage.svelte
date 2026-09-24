@@ -28,6 +28,10 @@
     pending_notifications: number; last_backup: { at: number; size_bytes: number } | null;
     last_error: { source: string; at: number; message: string } | null;
     ntfy_configured: boolean; ntfy_reachable: boolean | null;
+    restore_window?: {
+      open: boolean; closes_at: number | null;
+      devices: { account: string; name: string; platform: string; last_seen_at: number | null; back_at: number | null }[];
+    };
   }
   let health = $state<Health | null>(null);
   let healthError = $state('');
@@ -63,6 +67,20 @@
     }
   }
   loadHealth();
+
+  // After a restore (SYNC.md §7.3): devices hand back what the backup missed until this closes.
+  const restore = $derived(health?.restore_window?.open ? health.restore_window : null);
+  const back = $derived(restore ? restore.devices.filter((d) => d.back_at !== null).length : 0);
+  async function closeRestore() {
+    if (restore && back < restore.devices.length
+      && !confirm('Some devices are not back yet. Anything they still hold will count as sent by them now, not by its original author. Close anyway?')) return;
+    try {
+      await api('/admin/reconcile/close', { method: 'POST' });
+      await loadHealth();
+    } catch (e) {
+      healthError = e instanceof Error ? e.message : String(e);
+    }
+  }
 
   async function create(e: SubmitEvent) {
     e.preventDefault();
@@ -171,6 +189,15 @@
         <span>Last backup: {health.last_backup ? `${when(health.last_backup.at)} · ${size(health.last_backup.size_bytes)}` : 'none yet'}</span>
         {#if health.ntfy_configured}<span>ntfy: {health.ntfy_reachable ? 'reachable' : 'unreachable'}</span>{/if}
         {#if health.last_error}<span class="error">Last {health.last_error.source} error: {health.last_error.message}</span>{/if}
+        {#if restore}
+          <div class="row">
+            <strong>Restore in progress — {back} of {restore.devices.length} devices back</strong>
+            <button class="ghost" onclick={closeRestore}>Close</button>
+          </div>
+          <span class="hint">
+            Devices are handing back what the backup missed. Close this once they're all back; it closes by itself on {when(restore.closes_at)}.
+          </span>
+        {/if}
       {/if}
       {#if healthError}<span class="error">Health unavailable: {healthError}</span>{/if}
     </section>

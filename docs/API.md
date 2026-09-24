@@ -342,9 +342,19 @@ GET  /admin/accounts   /admin/devices   /admin/jobs
 POST /admin/backup                      run a backup now
 GET  /admin/health                      admin device session only; DB/WAL bytes, applied op count,
                                         connected devices, pending notifications, latest backup
-                                        {at,size_bytes}, last recorded error, ntfy reachability
+                                        {at,size_bytes}, last recorded error, ntfy reachability,
+                                        restore_window (below)
+POST /admin/reconcile/close             admin device session only; close the restore window → 204
 POST /admin/rebuild                     rebuild projections from the op log (maintenance mode)
 ```
+
+`restore_window` is `{open, closes_at, devices: [{account, name, platform, last_seen_at,
+back_at}]}` (SYNC.md §7.3, D-067): `open` while restored devices may still hand back ops with
+their original authors, `closes_at` when it closes by itself, and every signed-in device (API
+tokens aren't listed) with `back_at` set once it has said hello with the new epoch and an empty
+outbox. Closed, it is `{open: false, closes_at: null, devices: []}`. The web app's *Your data*
+page shows it to admins while open ("Restore in progress — N of M devices back", with Close).
+Non-admins get 403 from both endpoints; API tokens can't call them.
 
 Same operations exist on the CLI (`chorus-server --help`, OPS.md).
 
@@ -359,4 +369,3 @@ Everything else outside `/api/v1` is the web app (its files, and `index.html` fo
 
 `python scripts/api-check.py` (run by `verify.py`) fails when a route in `app.rs` isn't in this
 file; `--list` prints the router's routes.
-

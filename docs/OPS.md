@@ -97,6 +97,7 @@ chorus-server purge --message <id> | --op <id> | --account <id> [--yes]   # the 
 chorus-server seed --to <new dir>       # test data for the SPEC §9 budgets
 chorus-server reconcile-status          # after a restore: is the restore window open, which devices are back
 chorus-server reconcile-close           # close it once they all are (it closes by itself 7 days after)
+                                        # (both also in the web app: Your data → Server health, admins)
 chorus-server migrate                   # run pending schema migrations (also automatic on serve)
 ```
 
@@ -110,7 +111,10 @@ chorus-server migrate                   # run pending schema migrations (also au
 - Before every migration: automatic backup, refuse to migrate if it fails.
 - `GET /admin/health` and Settings → Data show "Last backup: 04:00 today · 212 MB".
 - Phone replica: the owner's Android holds the full account scope; after a restore, it
-  reconciles anything newer than the backup (SYNC.md §7.3).
+  reconciles anything newer than the backup (SYNC.md §7.3). While the restore window is open, an
+  admin's *Your data* page shows "Restore in progress — N of M devices back" with a Close button
+  (`GET /admin/health` → `restore_window`, `POST /admin/reconcile/close`); close it once every
+  device that matters is back.
 - Export on demand from any client (DATA_MODEL.md §7).
 
 ## 6. Deploy / update

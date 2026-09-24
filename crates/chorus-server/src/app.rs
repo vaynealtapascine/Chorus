@@ -105,6 +105,7 @@ pub fn router(state: AppState) -> Router {
         .route("/exports/csv/{name}", get(export_csv))
         .route("/exports/account.sqlite", get(export_sqlite))
         .route("/admin/health", get(admin_health))
+        .route("/admin/reconcile/close", post(admin_reconcile_close))
         .route("/webhooks", get(webhooks_list).post(webhooks_create))
         .route("/webhooks/{id}", put(webhooks_update).delete(webhooks_remove))
         .route("/webhooks/{id}/test", post(webhooks_test))
@@ -520,19 +521,25 @@ fn principal(
     Ok(crate::api_data::principal(conn, bearer(headers)?, now_ms(), s.session_ttl())?)
 }
 
+/// Admin endpoints take a signed-in device of an admin account (not API tokens).
+fn require_admin(s: &AppState, conn: &Connection, headers: &axum::http::HeaderMap) -> Result<(), ApiError> {
+    let who = auth::authenticate(conn, bearer(headers)?, now_ms(), s.session_ttl())?;
+    let is_admin: bool = conn
+        .query_row("SELECT is_admin FROM account WHERE id=?1", [&who.account_id], |r| r.get(0))
+        .map_err(anyhow::Error::from)?;
+    if !is_admin {
+        return Err(ApiError(StatusCode::FORBIDDEN, "forbidden", "admin account required".into()));
+    }
+    Ok(())
+}
+
 async fn admin_health(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let mut health = {
         let conn = s.db();
-        let who = auth::authenticate(&conn, bearer(&headers)?, now_ms(), s.session_ttl())?;
-        let is_admin: bool = conn
-            .query_row("SELECT is_admin FROM account WHERE id=?1", [&who.account_id], |r| r.get(0))
-            .map_err(anyhow::Error::from)?;
-        if !is_admin {
-            return Err(ApiError(StatusCode::FORBIDDEN, "forbidden", "admin account required".into()));
-        }
+        require_admin(&s, &conn, &headers)?;
         let connected = s.peers.lock().unwrap_or_else(|e| e.into_inner()).len();
         crate::health::snapshot(&conn, &s.cfg, connected)?
     };
@@ -548,6 +555,18 @@ async fn admin_health(
         health["ntfy_reachable"] = serde_json::Value::Null;
     }
     Ok(Json(health))
+}
+
+/// Close the restore window now (`chorus-server reconcile-close`; SYNC.md §7.3, D-067).
+async fn admin_reconcile_close(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    require_admin(&s, &conn, &headers)?;
+    crate::reconcile::close(&conn)?;
+    tracing::info!("restore window closed from the admin view");
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn export_ops(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<Response, ApiError> {

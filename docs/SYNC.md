@@ -348,8 +348,10 @@ user action
 4. Device pulls each scope from zero; ops it already holds are replaced by the server's copies.
 
 This is how "phone as full replica" (D-043) restores data written after the last backup. A CLI
-`chorus-server reconcile-status` shows which devices have reconciled since the restore: a device
-is back when it says `hello` with the new epoch and an empty outbox (`reconcile.rs`).
+`chorus-server reconcile-status` (and, for admins, `GET /admin/health` → `restore_window` and the
+web app's *Your data* page) shows which devices have reconciled since the restore: a device
+is back when it says `hello` with the new epoch and an empty outbox (`reconcile.rs`). An admin
+closes the window with `reconcile-close` or `POST /admin/reconcile/close`.
 
 ## 8. Attachments and blobs
 

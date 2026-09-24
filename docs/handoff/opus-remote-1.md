@@ -163,3 +163,10 @@ a new dependency (a zip crate) is acceptable. The owner decides.
   back off for `Retry-After`. Chat history and search now show `error.message`, not `Error: …`.
   CLIENTS.md §4.2 describes it. **For Sol:** `data.ts`, `MemberEditor.svelte` and
   `Profile.svelte` can switch `fetch` → `apiFetch` the same way.
+- R3 — restore window in the admin view: `GET /admin/health` → `restore_window {open, closes_at,
+  devices[{account, name, platform, last_seen_at, back_at}]}` (`health::restore_window`),
+  `POST /admin/reconcile/close` (admin device sessions, 204); *Your data* shows "Restore in
+  progress — N of M devices back" + Close (asks first while devices are missing) only while
+  open. Tests in `tests/admin_health.rs` (401/403/204, devices, closed shape); those tests now
+  use `CARGO_TARGET_TMPDIR`. API.md §8, OPS.md §4–5, SYNC.md §7.3 updated. Not yet looked at in
+  a real browser (svelte-check and the build pass).
