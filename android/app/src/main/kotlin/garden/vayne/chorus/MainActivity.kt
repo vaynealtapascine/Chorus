@@ -146,7 +146,7 @@ private fun App(chorus: Chorus, invite: String?) {
                 Text(label, fontSize = 12.sp, color = p.ink3)
             }
             Box(Modifier.weight(1f)) {
-                if (searchOpen) ContentSearch(model) { searchOpen = false }
+                if (searchOpen) ContentSearch(chorus, model, status == Status.Live) { searchOpen = false }
                 else if (settingsOpen) SettingsScreen(chorus, model)
                 else when (if (person && (tab == Tab.Members || tab == Tab.History)) Tab.Home else tab) {
                     Tab.Home -> if (person) {
