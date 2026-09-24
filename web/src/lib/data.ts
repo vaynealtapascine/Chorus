@@ -66,6 +66,50 @@ export interface BucketRow {
   ceiling: Record<string, unknown>;
 }
 
+export interface RelationshipTypeRow {
+  id: string;
+  name: string;
+  inverse_name?: string;
+  is_symmetric: boolean;
+  color?: string;
+}
+
+export interface RelationshipRow {
+  id: string;
+  from_member_id: string;
+  to_kind: 'member' | 'account' | 'external';
+  to_id?: string;
+  to_label?: string;
+  type_id: string;
+  note?: string;
+  visibility: { mode: string };
+}
+
+/** Live relationship definitions and links from the current account's replica. */
+export function relationshipTypes(p: Projection): RelationshipTypeRow[] {
+  return Object.entries((p.rows.relationship_type ?? {}) as Rows)
+    .filter(([, row]) => row.exists && row.fields.deleted_at == null && str(row.fields.name))
+    .map(([id, row]) => ({ id, name: str(row.fields.name)!, inverse_name: str(row.fields.inverse_name),
+      is_symmetric: row.fields.is_symmetric === true || row.fields.is_symmetric === 1,
+      color: str(row.fields.color) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function relationships(p: Projection): RelationshipRow[] {
+  return Object.entries((p.rows.relationship ?? {}) as Rows)
+    .filter(([, row]) => row.exists && row.fields.deleted_at == null)
+    .map(([id, row]): RelationshipRow => ({
+      id,
+      from_member_id: str(row.fields.from_member_id) ?? '',
+      to_kind: row.fields.to_kind === 'member' || row.fields.to_kind === 'account' ? row.fields.to_kind : 'external',
+      to_id: str(row.fields.to_id), to_label: str(row.fields.to_label),
+      type_id: str(row.fields.type_id) ?? '', note: str(row.fields.note),
+      visibility: row.fields.visibility && typeof row.fields.visibility === 'object' && !Array.isArray(row.fields.visibility)
+        ? row.fields.visibility as { mode: string } : { mode: 'private' },
+    }))
+    .filter((row) => row.from_member_id && row.type_id && (row.to_id || row.to_label));
+}
+
 export function buckets(p: Projection): BucketRow[] {
   return Object.entries((p.rows.bucket ?? {}) as Rows)
     .filter(([, row]) => row.exists && row.fields.deleted_at == null)

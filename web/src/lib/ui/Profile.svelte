@@ -6,6 +6,7 @@
   import PostCard from './PostCard.svelte';
   import PostComposer from './PostComposer.svelte';
   import PostReplies from './PostReplies.svelte';
+  import ProfileRelationships from './ProfileRelationships.svelte';
   import AvatarImage from './AvatarImage.svelte';
 
   let { projection, id, dark }: { projection: Projection; id: string; dark: boolean } = $props();
@@ -15,7 +16,7 @@
   const writeAs = $derived(own ? id : members(projection).find((m) => canWriteAs(projection, m.id, sync.accountId))?.id ?? null);
   const all = $derived(posts(projection));
   const reacts = $derived(reactions(projection));
-  let tab = $state<'posts' | 'replies' | 'highlights'>('posts');
+  let tab = $state<'posts' | 'replies' | 'highlights' | 'relationships'>('posts');
   let replying = $state<PostRow | null>(null);
   const highlighted = $derived(highlightedPostIds(projection, id));
   const shown = $derived(tab === 'highlights' ? all.filter((post) => highlighted.has(post.id) && !post.deleted) : memberPosts(all, id, tab === 'replies'));
@@ -63,8 +64,9 @@
       {#if replying}<p>Replying to a post <button onclick={() => (replying = null)}>Cancel</button></p>{/if}
       {#key replying?.id}<PostComposer {projection} initialAuthors={[writeAs]} replyTo={replying?.id} onsent={() => (replying = null)} />{/key}
     {/if}
-    <nav aria-label="Profile posts"><button class:on={tab === 'posts'} onclick={() => (tab = 'posts')}>Posts</button><button class:on={tab === 'replies'} onclick={() => (tab = 'replies')}>Replies</button><button class:on={tab === 'highlights'} onclick={() => (tab = 'highlights')}>Highlights</button></nav>
-    <div class="list">{#each shown as post (post.id)}<PostCard {post} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} speaker={writeAs} onreply={() => (replying = post)} onreact={(emoji, add) => react(post, emoji, add)} /><PostReplies postId={post.id} />{#if own}<div class="post-tools">{#if member.pinned_post_id !== post.id}<button onclick={() => pin(post.id)}>Pin to profile</button>{/if}<button onclick={() => highlight(post.id)}>{highlighted.has(post.id) ? 'Remove highlight' : 'Highlight post'}</button></div>{/if}{:else}<p class="empty">No {tab} yet.</p>{/each}</div>
+    <nav aria-label="Profile sections"><button class:on={tab === 'posts'} onclick={() => (tab = 'posts')}>Posts</button><button class:on={tab === 'replies'} onclick={() => (tab = 'replies')}>Replies</button><button class:on={tab === 'highlights'} onclick={() => (tab = 'highlights')}>Highlights</button><button class:on={tab === 'relationships'} onclick={() => (tab = 'relationships')}>Relationships</button></nav>
+    {#if tab === 'relationships'}<ProfileRelationships {projection} {id} {own} />
+    {:else}<div class="list">{#each shown as post (post.id)}<PostCard {post} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} speaker={writeAs} onreply={() => (replying = post)} onreact={(emoji, add) => react(post, emoji, add)} /><PostReplies postId={post.id} />{#if own}<div class="post-tools">{#if member.pinned_post_id !== post.id}<button onclick={() => pin(post.id)}>Pin to profile</button>{/if}<button onclick={() => highlight(post.id)}>{highlighted.has(post.id) ? 'Remove highlight' : 'Highlight post'}</button></div>{/if}{:else}<p class="empty">No {tab} yet.</p>{/each}</div>{/if}
   {:else}<p>This member is unavailable.</p>{/if}
 </section>
 
@@ -85,7 +87,7 @@
   .pinned > button { justify-self: start; }
   .post-tools { display: flex; gap: var(--s-2); }
   a, button { color: var(--accent); }
-  nav { display: flex; gap: var(--s-2); border-bottom: 1px solid var(--line); }
+  nav { display: flex; flex-wrap: wrap; gap: var(--s-2); border-bottom: 1px solid var(--line); }
   nav button { border: 0; background: none; padding: var(--s-2) var(--s-3); cursor: pointer; }
   nav button.on { border-bottom: 2px solid var(--accent); font-weight: 600; }
   .list { display: grid; gap: var(--s-3); }
