@@ -19,6 +19,7 @@ pub mod notifier;
 pub mod oplog;
 pub mod posts;
 pub mod project;
+pub mod purge;
 pub mod push;
 pub mod qr;
 pub mod search;

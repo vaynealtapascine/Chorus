@@ -64,6 +64,18 @@ enum Cmd {
         #[arg(long)]
         to: Option<PathBuf>,
     },
+    /// Erase a message or an op for good (D-053): the op ids stay, their contents don't.
+    /// Asks for confirmation unless --yes; logged to <data_dir>/purge.log.
+    Purge {
+        /// A message: all of its ops, ops that point at it, and reactions to it.
+        #[arg(long, conflicts_with = "op")]
+        message: Option<String>,
+        /// One op.
+        #[arg(long)]
+        op: Option<String>,
+        #[arg(long)]
+        yes: bool,
+    },
     /// Create an invite link for a new system, person or device.
     Invite {
         #[arg(long, value_enum, default_value = "system")]
@@ -200,6 +212,34 @@ fn main() -> anyhow::Result<()> {
                 result.account_id,
                 seed_cfg.server.data_dir.display()
             );
+        }
+        Cmd::Purge { message, op, yes } => {
+            use chorus_server::purge::{self, Target};
+            let (target, asked) = match (message, op) {
+                (Some(m), None) => (Target::Message(m.clone()), format!("message {m}")),
+                (None, Some(o)) => (Target::Op(o.clone()), format!("op {o}")),
+                _ => anyhow::bail!("say what to purge: --message <id> or --op <id>"),
+            };
+            let mut conn = chorus_server::open_and_migrate(&cfg)?;
+            let ids = purge::ops_for(&conn, &target)?;
+            if ids.is_empty() {
+                println!("nothing to purge for {asked}");
+                return Ok(());
+            }
+            println!("This erases {} op(s) for {asked} from the server for good.", ids.len());
+            println!("Devices that already synced them keep their copies. Projections are rebuilt.");
+            if !yes {
+                print!("Type purge to go on: ");
+                std::io::Write::flush(&mut std::io::stdout())?;
+                let mut answer = String::new();
+                std::io::stdin().read_line(&mut answer)?;
+                if answer.trim() != "purge" {
+                    println!("nothing changed");
+                    return Ok(());
+                }
+            }
+            let done = purge::run(&cfg, &mut conn, &target, &asked)?;
+            println!("purged {} op(s); logged to {}", done.len(), cfg.server.data_dir.join("purge.log").display());
         }
         Cmd::Invite { kind, account, days, uses } => {
             use chorus_server::auth::{self, InviteKind};

@@ -68,9 +68,11 @@ CREATE INDEX op_entity ON op(entity_id);
 
 Rules:
 
-- Ops are never updated except `status`. Never deleted except by an explicit `admin.purge`
-  from the server CLI only (logged; rewrites payloads of purged ops to `{"purged":true}`).
-  Apps cannot purge (D-053).
+- Ops are never updated except `status`. Never deleted except by an explicit purge from the
+  server CLI only (`chorus-server purge`, `purge.rs`; logged to `data/purge.log`): it rewrites
+  the payloads of purged ops to `{"purged":true}` and keeps their ids, so sync digests don't
+  change. Core treats such an op as opaque (`op::is_purged`): stored, never projected, on the
+  server and on every device that receives it. Apps cannot purge (D-053).
 - Unknown `kind` or newer `v` from a newer client: stored and forwarded, projection skips it
   (forward compatibility). Older `v` is upcast in `chorus-core` before projection.
 - `rejected` ops (permission/validation failure) stay in the log for debugging, are sent back to

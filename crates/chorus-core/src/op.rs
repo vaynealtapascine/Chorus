@@ -409,6 +409,11 @@ pub enum Known {
     Opaque,
 }
 
+/// A payload the server admin erased (`{"purged": true}` and nothing else; DATA_MODEL.md §2).
+pub fn is_purged(payload: &serde_json::Value) -> bool {
+    payload.as_object().is_some_and(|m| m.len() == 1 && m.get("purged") == Some(&serde_json::Value::Bool(true)))
+}
+
 /// Structural validation every op passes before permission checks.
 pub fn validate(op: &Op) -> Result<Known, OpError> {
     if !is_valid_id(&op.id) {
@@ -433,6 +438,10 @@ pub fn validate(op: &Op) -> Result<Known, OpError> {
     }
     if op.kind.starts_with("admin.") {
         return Err(OpError::AdminOnly);
+    }
+    // erased by the server admin (`chorus-server purge`, D-053): kept for its id, never projected
+    if is_purged(&op.payload) {
+        return Ok(Known::Opaque);
     }
     let Some(spec) = spec(&op.kind) else { return Ok(Known::Opaque) };
     if op.v > CURRENT_V {
