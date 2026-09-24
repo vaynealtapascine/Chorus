@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use chorus_server::{backup, config::Config, db, exports};
+use chorus_server::{backup, config::Config, db, exports, seed};
 
 #[derive(Parser)]
 #[command(name = "chorus-server", version, about = "Chorus server")]
@@ -49,6 +49,18 @@ enum Cmd {
         #[arg(long, value_enum)]
         kind: ExportKind,
         /// Output directory; defaults to a new directory under data/exports.
+        #[arg(long)]
+        to: Option<PathBuf>,
+    },
+    /// Create representative ops in a new data directory for manual performance checks.
+    Seed {
+        #[arg(long, default_value_t = 300)]
+        members: usize,
+        #[arg(long, default_value_t = 20_000)]
+        switches: usize,
+        #[arg(long, default_value_t = 100_000)]
+        messages: usize,
+        /// New data directory; defaults to the configured data_dir and refuses an existing one.
         #[arg(long)]
         to: Option<PathBuf>,
     },
@@ -171,6 +183,19 @@ fn main() -> anyhow::Result<()> {
                 }
             }
             println!("{}", out.display());
+        }
+        Cmd::Seed { members, switches, messages, to } => {
+            let mut seed_cfg = cfg;
+            if let Some(path) = to {
+                seed_cfg.server.data_dir = path;
+            }
+            let result = seed::run(&seed_cfg, seed::Counts { members, switches, messages })?;
+            println!(
+                "seeded {} ops for account {} in {}",
+                result.ops,
+                result.account_id,
+                seed_cfg.server.data_dir.display()
+            );
         }
         Cmd::Invite { kind, account, days, uses } => {
             use chorus_server::auth::{self, InviteKind};
