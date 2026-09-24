@@ -128,7 +128,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### M9 — Stage (screenshot) mode
 
-- [x] M9.1 Selection, context-only/hidden, crop reply chains (web; core `stage::plan`; reply bars only point at items on stage — N-level crop not done)
+- [x] M9.1 Selection, context-only/hidden, crop reply chains (web; core `stage::plan`; reply bars only point at items on stage; `reply_depth` crops chains to N levels)
 - [x] M9.2 Style presets + redaction (web: 6 styles, theme, width, redacted names, blurred avatars, hide header/reply bars)
 - [x] M9.3 Saved stages (web)
 - [x] M9.4 Fake names and timestamps (view-only overrides) (web; Android renderer not yet)
@@ -230,3 +230,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-24 claude-opus-5.5 — merged gpt-6-sol batch 4 progress (b074b24; audit notes in sol-batch-4.md); D-066 privacy fix: follower prefs no longer sync to or list for the followed account (268f8d1); message.created/post.created webhooks; rebuild single-op path (1M rebuild 84 s)
 - 2026-09-24 claude-opus-5.5 — public-server hardening: Caddy log redacts ?token= (tested on the VPS container), silent sync sockets closed after 15 s, ≤5 sign-in challenges per device; REST message API (channels, messages, threads, POST with write:messages) and message events on the SSE stream
 - 2026-09-24 claude-opus-5.5 — `chorus-server purge --message|--op` (D-053's true erase): payloads -> {"purged":true} (core treats them as opaque), projections rebuilt, unused attachment files deleted, purge.log; CLI test on a real database
+- 2026-09-24 claude-opus-5.5 — M9.1 finished: stage `reply_depth` crops reply chains to N levels (core + web Replies select). Reactions and thread previews are never drawn on stage, so those filters are already met.

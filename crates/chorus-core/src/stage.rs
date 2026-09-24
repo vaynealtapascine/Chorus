@@ -66,6 +66,10 @@ pub struct Definition {
     pub unselected: Unselected,
     /// "Only these members": items with any other author are dropped entirely.
     pub only_members: Option<Vec<String>>,
+    /// Crop reply chains to this many levels: an item that is a reply to a reply to … deeper
+    /// than this is dropped (0 = no replies at all). Depth follows `reply_to` through `items`; a
+    /// reply to something outside them counts as one level.
+    pub reply_depth: Option<u32>,
     /// Replace every author with "Member A", "Member B"… (fake names still win).
     pub redact_names: bool,
     pub fake_names: BTreeMap<String, FakeName>,
@@ -115,6 +119,22 @@ pub fn plan(items: &[Item], def: &Definition) -> Plan {
     let only: Option<BTreeSet<&str>> = def.only_members.as_ref().map(|v| v.iter().map(String::as_str).collect());
     let passes = |it: &Item| only.as_ref().is_none_or(|o| it.authors.iter().all(|a| o.contains(a.as_str())));
 
+    // reply depth of each item (hop-limited, so a malformed cycle can't loop)
+    let index: BTreeMap<&str, &Item> = items.iter().map(|it| (it.id.as_str(), it)).collect();
+    let depth = |it: &Item| -> u32 {
+        let mut d = 0;
+        let mut cur = it;
+        while let Some(parent) = cur.reply_to.as_deref() {
+            d += 1;
+            match index.get(parent) {
+                Some(p) if (d as usize) <= items.len() => cur = p,
+                _ => break,
+            }
+        }
+        d
+    };
+    let cropped = |it: &Item| def.reply_depth.is_some_and(|n| depth(it) > n);
+
     // 1. decide each item: shown (selected?), context, or dropped
     enum Fate {
         Shown(bool),
@@ -124,7 +144,7 @@ pub fn plan(items: &[Item], def: &Definition) -> Plan {
     let fates: Vec<Fate> = items
         .iter()
         .map(|it| {
-            if !passes(it) {
+            if !passes(it) || cropped(it) {
                 return Fate::Drop;
             }
             if chosen.is_empty() || chosen.contains(it.id.as_str()) {
@@ -286,6 +306,22 @@ mod tests {
         assert_eq!(p.names["rin"].label, "Member B");
         assert_eq!(p.names["moss"].label, "Member C");
         assert_eq!(placeholder(26), "Member AA");
+    }
+
+    #[test]
+    fn reply_chains_crop_to_n_levels() {
+        let mut v = items();
+        v[1].reply_to = Some("1".into()); // depth 1
+        v[2].reply_to = Some("2".into()); // depth 2
+        v[3].reply_to = Some("3".into()); // depth 3
+        v[4].reply_to = Some("gone".into()); // parent not on this view: depth 1
+        let d = |n| Definition { reply_depth: n, ..Default::default() };
+        assert_eq!(ids(&plan(&v, &d(None))), ["1", "2", "3", "4", "5"]);
+        assert_eq!(ids(&plan(&v, &d(Some(2)))), ["1", "2", "3", "5"]);
+        assert_eq!(ids(&plan(&v, &d(Some(0)))), ["1"]);
+        // a cycle terminates
+        v[0].reply_to = Some("4".into());
+        assert_eq!(ids(&plan(&v, &d(Some(0)))), Vec::<String>::new());
     }
 
     #[test]

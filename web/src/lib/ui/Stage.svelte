@@ -30,6 +30,7 @@
     selected: string[];
     unselected: 'hidden' | 'context' | 'visible';
     only_members: string[] | null;
+    reply_depth?: number | null;
     redact_names: boolean;
     fake_names: Record<string, { label: string; color?: string | null }>;
     time: { mode: 'real' } | { mode: 'hide' } | { mode: 'shift'; offset_ms: number } | { mode: 'start'; start: number };
@@ -202,6 +203,20 @@
         <label class="check"><input type="checkbox" bind:checked={def.render.blur_attachments} /> attachments</label>
         <label class="check"><input type="checkbox" bind:checked={def.render.hide_header} /> channel name</label>
         <label class="check"><input type="checkbox" bind:checked={def.render.hide_reply_bars} /> reply bars</label>
+      </div>
+      <div class="group">
+        <span class="label">Replies</span>
+        <select
+          value={def.reply_depth == null ? '' : String(def.reply_depth)}
+          onchange={(e) => (def.reply_depth = e.currentTarget.value === '' ? null : Number(e.currentTarget.value))}
+          aria-label="Reply chains"
+        >
+          <option value="">All</option>
+          <option value="3">3 levels deep</option>
+          <option value="2">2 levels deep</option>
+          <option value="1">Direct replies only</option>
+          <option value="0">No replies</option>
+        </select>
       </div>
       {#if space?.kind === 'internal'}
         <div class="group wide">
