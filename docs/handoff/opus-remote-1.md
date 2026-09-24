@@ -170,3 +170,13 @@ a new dependency (a zip crate) is acceptable. The owner decides.
   open. Tests in `tests/admin_health.rs` (401/403/204, devices, closed shape); those tests now
   use `CARGO_TARGET_TMPDIR`. API.md §8, OPS.md §4–5, SYNC.md §7.3 updated. Not yet looked at in
   a real browser (svelte-check and the build pass).
+- R1 — rebuild at 1M on this box (4-core Xeon 2.1 GHz container, not the owner's PC): full test
+  run **63.8 s → 43.3 s**; rebuild-only runs of a checkpointed copy (`CHORUS_PERF_DB`) **63–66 s
+  → ~31 s**. Ingest 7 386–7 585 → 7 400 ops/s (not worse; switches 0.25 → 0.18 ms). Causes and
+  fixes in NOTES.md: cross-thread frees (spent batches go back to the reader), FTS table
+  recreated instead of DELETE, daily totals once per account, two uncached per-switch queries,
+  message indexes dropped and rebuilt around the replay. `tests/projection.rs` gained a
+  file-backed rebuild test (reader thread, schema identical after, search works) and a rebuild
+  check in `in_order_switches_match_refolding`. **To check on the owner's PC**: the 1M test
+  (`CHORUS_PERF_OPS=1000000 cargo test --release -p chorus-server --test perf -- --ignored
+  --nocapture`); glibc's arena behaviour is Linux-specific, Windows' allocator may gain less.
