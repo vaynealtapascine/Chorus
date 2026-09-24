@@ -18,6 +18,12 @@
 			roll_size 10MiB
 			roll_keep 5
 		}
+		# the OBS overlay and EventSource streams carry API tokens in ?token=; keep them out of logs
+		format filter {
+			request>uri query {
+				replace token REDACTED
+			}
+		}
 	}
 	reverse_proxy 127.0.0.1:5250
 }
