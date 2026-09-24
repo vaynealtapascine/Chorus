@@ -91,7 +91,8 @@ async fn exports_exclude_other_accounts_and_require_export_scope() {
     let state = app::Shared::new(db::open(&cfg.db_path()).unwrap(), cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/api/v1/exports", listener.local_addr().unwrap());
-    let server = tokio::spawn(async move { axum::serve(listener, app::router(state)).await.unwrap() });
+    let serving = state.clone();
+    let server = tokio::spawn(async move { axum::serve(listener, app::router(serving)).await.unwrap() });
     let client = reqwest::Client::new();
 
     let denied = client.get(format!("{base}/ops.jsonl")).bearer_auth(&read_token).send().await.unwrap();
@@ -137,7 +138,8 @@ async fn exports_exclude_other_accounts_and_require_export_scope() {
     std::fs::remove_file(sqlite_path).unwrap();
     server.abort();
     let _ = server.await;
-    let _ = std::fs::remove_dir_all(test_dir);
+    drop(client);
+    common::release(state, &test_dir).await;
 }
 
 #[test]

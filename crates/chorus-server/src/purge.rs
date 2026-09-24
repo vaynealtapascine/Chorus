@@ -153,6 +153,8 @@ pub fn run(cfg: &Config, conn: &mut Connection, target: &Target, asked: &str) ->
         if let Target::Account(account) = target {
             // (the space ids are needed for scope_access, so before the rebuild drops them)
             drop_account_rows(&tx, account)?;
+            // and its export bundles: they hold everything the purge removes
+            crate::export_job::forget_account(&tx, cfg, account)?;
         }
         tx.commit()?;
     }

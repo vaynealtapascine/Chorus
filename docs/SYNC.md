@@ -99,10 +99,16 @@ so nobody can sign someone else up for their switches.
 Notable filters inside `space:` scopes: `system_only` messages go only to the author's account;
 reactions/edits to such messages likewise; channel permissions (`view`, SPEC §5.1) decide which
 channels of a space an account receives — this is how a single internal channel is shared with an
-outside account. Permission resolution lives in `chorus-core::perms`. When an account gains
-`view` on a channel, the server sends that channel's ops as a mini-snapshot; when it loses it,
-the server sends an evict for the channel. Because different accounts see different subsets, the
-digest (§6.4) is computed per *(scope, account)*.
+outside account (a *guest*: it gets the space's scope but only that channel's ops). Permission
+resolution is one SQL rule on the server (`chorus-server/src/perms.rs`, DATA_MODEL §4.4): clients
+never decide delivery, so it isn't in `chorus-core`. Because different accounts see different
+subsets, the digest (§6.4) is computed per *(scope, account)*. When an op that changes the rule's
+inputs is accepted (`channel.set_permission`, `space.set_role`, `space.set_roles`, `space.join`,
+`space.leave`), every connected device of that scope (except the pusher) gets a `caught` frame
+with its fresh digest; a device that gained or lost a channel sees a mismatch and re-pulls the
+scope (§6.5), which fetches what it may now see and evicts what it may not. Devices that were
+offline repair the same way at their next catch-up. (The pusher is a manager and keeps `view`
+unless it denied itself; it repairs at its next catch-up.)
 
 ### 4.3 Views (read-only, for other accounts)
 
@@ -312,6 +318,13 @@ user action
   rebuilds that entity from its remaining ops. This is the generic undo; there is no hand-written
   inverse per op.
 - **Duplicates**: incoming op whose id is already local → set its `seq`, no re-apply.
+- **Repair** (`caught` digest ≠ local): the engine re-pulls the scope from 0, remembering which
+  ids the re-pull delivers; at the next `caught` for that scope it **sweeps** — confirmed ops of
+  the scope that weren't delivered are dropped (`ClientStore::evict`; pending and restoring ops
+  stay) and reported in `Changes.removed` so storage deletes them too. The repair ends there even
+  if the digests still differ; the next catch-up tries again, so a divergence can never become a
+  pull loop. A scope that goes away (`scope.remove`, or missing from `welcome`) is evicted the
+  same way. This is how a device forgets a channel it lost `view` on (§4.2).
 - **Backoff**: reconnect immediately on network change (Android `ConnectivityManager` callback,
   web `online` event) and on a push tickle; otherwise exponential 1 s → 5 min with ±30 % jitter.
 - **Android background**: WorkManager unique work `sync` with `NetworkType.CONNECTED`, expedited

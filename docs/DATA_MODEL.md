@@ -647,6 +647,14 @@ CREATE TABLE stage (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT
 CREATE TABLE pref (account_id TEXT NOT NULL, device_id TEXT NOT NULL DEFAULT '', key TEXT NOT NULL, value TEXT NOT NULL CHECK (json_valid(value)), hlc TEXT NOT NULL, PRIMARY KEY (account_id, device_id, key));
 CREATE TABLE api_token (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, scopes TEXT NOT NULL, created_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER);
 CREATE TABLE webhook (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, url TEXT NOT NULL, secret TEXT NOT NULL, events TEXT NOT NULL, is_enabled INTEGER NOT NULL DEFAULT 1, last_status INTEGER, last_error TEXT, created_at INTEGER NOT NULL);
+CREATE TABLE export_job (                           -- the export bundle (0008, D-068): server state,
+  id TEXT PRIMARY KEY, account_id TEXT NOT NULL,     -- not a projection; rebuilds leave it alone
+  kind TEXT NOT NULL CHECK (kind IN ('full')),
+  status TEXT NOT NULL CHECK (status IN ('queued','running','done','failed','cancelled','expired')),
+  phase TEXT, done INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0, bytes INTEGER NOT NULL DEFAULT 0,
+  error TEXT, file_name TEXT, download_key TEXT,     -- the key is the download URL's credential
+  created_at INTEGER NOT NULL, finished_at INTEGER, expires_at INTEGER, downloaded_at INTEGER
+);
 CREATE TABLE server_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);  -- schema_version, instance_id, …
 ```
 
@@ -676,6 +684,32 @@ Message-only extra modes: `{"mode":"members","member_ids":[…]}` (soft in-syste
 {"member": ["member","members"], "front": ["front","fronting"], "switch": ["switch","switches"],
  "subsystem": ["subsystem","subsystems"], "cocon": "co-con", "present": "present"}
 ```
+
+### 4.4 Channel permissions: the rule (D-047, M5.10)
+
+One rule, `chorus-server/src/perms.rs::can_sql`, is spliced into every server path that decides
+what an account may see or do in a space: writes (`perms::write_denied`, from `ingest::accept`),
+sync fan-out and catch-up (`visibility::op_visible_to` and the batched `visible_digest`), the REST
+message reads, search, blobs, author cards and notification recipients. `can(account, channel,
+perm)` holds when both `perm` and `view` resolve to allow:
+
+1. A thread uses its parent message's channel.
+2. The space's owner, an `admin`, and any participant of a `dm` space: everything.
+3. Otherwise the most specific override that mentions `perm` decides — the account's own
+   override, then its role's, then the role `everyone` — and at one level `deny` beats `allow`.
+4. With no override: the role's base set. `member`: view, send, react, thread, pin. `read_only`:
+   view, react. A custom role (`space.roles[].perms`): its list. `manage` is never in a base set.
+5. An account that isn't a present member of the space gets only what an account override
+   allows — a **guest**. Allowing a guest `view` gives them the space's scope (`scope_access`,
+   `perms::refresh_guest`), but only that channel's ops sync to them (plus `space.create` and
+   `space.set`, so they can name it). Removing the last `view` removes the scope.
+
+Writes: `space.*` needs an admin (never in a DM; leaving is your own); `channel.create` needs a
+manager (admin, or a DM participant), or `thread` on the parent's channel for a thread; other
+`channel.*` need `manage`; `message.send`/`forward` need `send`; `message.pin`/`unpin` need `pin`;
+other `message.*` need `view` on your own message and `manage` on someone else's; `reaction.*`
+needs `react`; `read.*` needs `view`. A refused op is acked `forbidden` with the reason.
+Property-tested against an independent model of these rules in `tests/permissions.rs`.
 
 ## 5. What each device stores
 
@@ -759,5 +793,7 @@ and applied authored ops, then rebuilds projections. It includes `v_member`, `v_
 `v_switch`, `v_front_interval`, `v_front_daily`, `v_message`, and `v_post` views with the CSV
 columns above. No full-server pages are copied into the file. The CLI uses
 `chorus-server export --account ID --kind full|csv|sqlite [--to DIR]`; `full` currently writes
-`ops.jsonl`, `csv` writes seven files, and `sqlite` writes `account.sqlite`. The archive with
-blobs and the job-progress protocol in §7 remain later work.
+`ops.jsonl`, `csv` writes seven files, and `sqlite` writes `account.sqlite`. The full backup
+with files is the export bundle job (`POST /exports {kind:"full"}`, API.md §4, D-068):
+`README.txt`, `ops.jsonl`, `csv/`, `blobs/<sha256>` (files the account's own ops point at) and
+`manifest.json`, as a stored ZIP built in the background (`export_job`).

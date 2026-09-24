@@ -72,6 +72,13 @@ when it has no registration, `502 push_gone` / `push_failed` when the push servi
 Payloads are RFC 8291 `aes128gcm`, one record, ≤ 3 KB plaintext (else `{"t":"sync"}`). A 404/410
 from the endpoint clears the registration.
 
+Where an endpoint may point follows `security.webhook_targets` (§7), checked at `PUT` (`400
+bad_request` with the reason) and again before every send, with the same resolve-pin-no-redirect
+handling: **https only** unless `any`; under `public` only globally routable addresses; under
+`internal` the tailnet/LAN or public addresses (browser push services are on the internet), never
+loopback or link-local; and always the operator's own `push.ntfy_url` host and port, whatever it
+resolves to. A device can't make the server POST to the host's own services.
+
 ### 2.2 Sessions
 
 - Session token: opaque random 256-bit, stored hashed, 30-day sliding expiry, bound to a device.
@@ -166,8 +173,8 @@ GET  /posts/{id}                           with replies ?depth=
   parent/repost links. Authors include ordered member ids and small author cards. Each post also
   includes ordered attachment metadata and blob hashes, plus present post reactions with emoji and
   reactor member id/name; blob downloads enforce the same current
-  audience. API tokens do
-  not use these cross-account routes.
+  audience. API tokens (`read:posts`) get only their own account's posts here, and only their
+  own account's replies under one.
 GET  /timeline?before=&limit=              combined system timeline
 GET  /profiles/{member_id}                 profile bundle (fields, stats, highlights, relationships)
 GET  /lists  /lists/{id}/timeline
@@ -208,7 +215,8 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   `share_stats` (NOTIFICATIONS §3).
 - `/front/intervals` also takes `subject` (an id) and `level`.
 - **Shared spaces and DMs** (M6.2, `spaces.rs`, signed-in devices only):
-  - `GET /spaces` returns your spaces with the accounts in each.
+  - `GET /spaces` returns your spaces with the accounts in each, plus spaces where a channel is
+    shared with you (`guest: true`; DATA_MODEL §4.4).
   - `POST /spaces {kind: "shared"|"dm", name?, accounts: [account ids]}` answers
     `201 {id}`, or `200 {id}` when that DM already exists. It works only with accounts connected
     to you by an active follow, in either direction.
@@ -222,8 +230,11 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
 - **Messages** (`messages.rs`, 2026-09-24): `GET /spaces/{id}/channels`,
   `GET /channels/{id}/messages?before=&after=&around=&limit=` (epoch ms, exclusive; `around` is a
   message id; oldest first, 1–100, default 50) and `GET /messages/{id}/thread`. Same rule as
-  search: spaces you're in, public or own messages, threads under messages you can't see are
-  hidden (404). API tokens with `read:messages` get only their own account's messages (§2.3).
+  search: public or own messages in channels you may `view` (channel permissions, DATA_MODEL
+  §4.4; a guest sees only the channels shared with them), threads under messages you can't see
+  are hidden (404). A pushed op the permissions refuse is acked `forbidden` with the reason
+  (e.g. "you don't have the send permission in this channel"). API tokens with `read:messages`
+  get only their own account's messages (§2.3).
 - **Feeds** (`feeds.rs`, M7.4): `GET /feeds` lists your feeds and the ones other accounts share
   with you (`shared: true`, with `owner {handle, display_name}`). A feed is shared like a post:
   its `visibility` (`private`, `followers`, `buckets`, `server`) is checked with the same rule.
@@ -231,11 +242,24 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   over the posts **the caller** can read (never the owner's view), newest first, 1–100 a page
   (default 50) with an opaque `next_cursor`; one request looks at up to 2 000 posts, so a sparse
   feed may return a short page with a cursor. Names (`from:@kai`, groups, `list:"…"`) resolve
-  against the owner's members, groups and lists; dates use the owner's latest UTC offset. A feed
-  that uses `fronting:` answers 400 to anyone but its owner (it would reveal when members
-  fronted; OPEN_QUESTIONS Q15). A feed you can't read is a 404. Tokens need `read:posts` and
+  against the owner's members, groups and lists; dates use the owner's latest UTC offset.
+  `fronting:` (D-069) evaluates per reader: posts by the reader's own members against their
+  front timeline, anyone else's only against the front states that reader's follow has revealed
+  to them (the states their notifications showed, at the delayed, fuzzed times shown; nothing if
+  the follow is gone or its ceiling hides the current front), so a feed never shows more or
+  sooner than the notifications did. Clients show a note on such feeds. A feed you can't read
+  is a 404. Tokens need `read:posts` and
   see only their own account's feeds and posts.
-- **Not yet:** profiles (M7).
+- **Journal** (`api_journal.rs`, M7; the caller's own account):
+  - `GET /profiles/{member_id}` (`read:members`): `{member}` as `/members/{id}` (groups,
+    fields), `relationships` from that member (`to_kind`, `to_id`, `to_label`, `to_name`, `note`,
+    `type {id, name, inverse_name, symmetric}`), `stats {posts, entries, notes, first_post_at,
+    last_post_at}`, and with `read:posts` too `highlights` (readable posts, `sort_key` order;
+    `null` without the scope). Another account's member is a 404.
+  - `GET /lists` (`read:posts`): `[{id, name, description, visibility, member_ids}]`.
+  - `GET /lists/{id}/timeline?before=&limit=` (`read:posts`): posts by the list's members that
+    the caller can read, newest first, 1–100 (default 50); `before` is an exclusive occurred-at.
+- **Not yet:** `/timeline` and `POST /feeds/preview`.
 
 ## 4. Writes (non-sync)
 
@@ -243,16 +267,36 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
 POST /front/switch     (API tokens with write:front)  {entries, occurred_at?, note?, notify?}
 POST /channels/{id}/messages (write:messages)          {authors?, text, format:"markup"|"plain"|"entities", entities?}
 POST /import/pluralkit  multipart file | {token}       → job id
-POST /exports           {kind:"full"|"csv"|"sqlite"|"pluralkit", from?, to?} → job id
-GET  /jobs/{id}         progress, result URL
+POST /exports           {kind:"full"}                  → 202 {id}   (409 conflict while one runs)
+GET  /exports/latest    the account's latest export job (204 if none)
+GET  /jobs/{id}         {id, kind, status, phase, done, total, bytes, error, file_name,
+                         result_url, created_at, finished_at, expires_at}
+DELETE /jobs/{id}       cancel it, or delete its finished file now          → 204
+GET  /exports/{id}/download?key=…   the zip (no Authorization: the key is the credential; Range)
 POST /invites           (admin) {kind, expires_in_s, max_uses}  → {url, qr_svg}
 ```
+
+**The export bundle (D-068, `export_job.rs`)** — the DATA_MODEL §7 full backup as a background
+job, for a device session or a token with `export`. `chorus-<handle>-<YYYYMMDD>.zip`, stored (no
+compression, ZIP64 when needed): `README.txt`, `ops.jsonl` (exactly the direct export below),
+`csv/<name>.csv` (the seven tables), `blobs/<sha256>` (every file the account's **own** ops point
+at — attachments and their thumbnails, avatars, banners, custom emoji; never another account's,
+even one visible in a shared space), and `manifest.json` (format 1: account, times, server
+version, instance, `ops {count, sha256}`, `blobs [{hash, size, mime, filenames, file}]`,
+`missing` and `damaged` hashes — a file that's gone or fails its hash is listed, not fatal).
+`status`: `queued` → `running` (`phase` `ops`, `csv`, `blobs`, `zip`; `done`/`total` count ops,
+then tables, then files; `bytes` written) → `done` | `failed` (`error` says why, e.g. not enough
+free disk: a job refuses to leave less free space than twice its estimated size) | `cancelled`
+| `expired`. One job per account at a time, two server-wide (others wait `queued`); a restart
+fails running ones ("the server restarted; start it again"). `result_url` (while `done`) carries
+a random key; the file is kept 24 h, or an hour after its first complete download. A finished
+export is also an in-app notification (`kind: "export_ready"`), not a push. PluralKit, CSV-only
+and SQLite jobs aren't served: those are the direct exports.
 
 **Direct exports (M10.3):** `GET /exports/ops.jsonl`, `GET /exports/csv/{name}` (seven names
 in DATA_MODEL.md §7.1), and `GET /exports/account.sqlite` accept a device session or an API
 token with the `export` scope. Each contains only the principal account's authored data. They
-return attachment filenames. The `POST /exports` job protocol above is planned for larger
-archives and is not yet served.
+return attachment filenames. Files come only in the bundle above.
 
 `format: "markup"` parses Chorus markup with the same core parser the apps use.
 

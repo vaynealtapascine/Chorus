@@ -1,8 +1,9 @@
 //! Channel and message reads, and message writes, over the API (API.md §3–§4, M2.7).
 //!
 //! Reads use the same rule as search (`search.rs`): the channel's space must be one the account
-//! is in (`scope_access`), and a message must be the account's own or public
-//! (`visibility::PUBLIC_MESSAGE_SQL`, which also hides threads under private asides). An API
+//! is in (`scope_access`), the channel one it may view (`perms.rs`), and a message must be the
+//! account's own or visible (`visibility::visible_message_sql`: public, in a channel the account
+//! may view; it also hides threads under private asides). An API
 //! token only ever reaches its own account's messages (API.md §2.3); device sessions see
 //! everything their account can read. Writes become ordinary `message.send` ops made on the
 //! server for the account, attributed to the token's pseudo-device (like `POST /front/switch`).
@@ -14,7 +15,8 @@ use serde_json::{Value, json};
 
 use crate::api_data::{DataError, Principal};
 use crate::ingest;
-use crate::visibility::PUBLIC_MESSAGE_SQL;
+use crate::perms::can_sql;
+use crate::visibility::visible_message_sql;
 
 const COLS: &str = "m.id, m.channel_id, c.space_id, m.account_id, m.occurred_at, m.text, m.cw, m.visibility,
     COALESCE((SELECT json_group_array(member_id) FROM (SELECT member_id FROM message_author WHERE message_id=m.id
@@ -26,7 +28,8 @@ fn readable() -> String {
     format!(
         "m.deleted_at IS NULL AND c.deleted_at IS NULL
          AND EXISTS (SELECT 1 FROM scope_access sa WHERE sa.account_id=?2 AND sa.scope='space:'||c.space_id)
-         AND (m.account_id=?2 OR ({PUBLIC_MESSAGE_SQL} AND ?3 = 0))"
+         AND (m.account_id=?2 OR ({} AND ?3 = 0))",
+        visible_message_sql("?2")
     )
 }
 
@@ -65,8 +68,11 @@ fn channel_space(conn: &Connection, p: &Principal, channel: &str) -> Result<Opti
     let sql = format!(
         "SELECT c.space_id FROM channel c WHERE c.id=?1 AND c.deleted_at IS NULL
            AND EXISTS (SELECT 1 FROM scope_access sa WHERE sa.account_id=?2 AND sa.scope='space:'||c.space_id)
+           AND {view}
            AND (c.kind IS NOT 'thread' OR c.parent_message_id IS NULL OR EXISTS (
-                SELECT 1 FROM message m WHERE m.id=c.parent_message_id AND (m.account_id=?2 OR ({PUBLIC_MESSAGE_SQL} AND ?3 = 0))))"
+                SELECT 1 FROM message m WHERE m.id=c.parent_message_id AND (m.account_id=?2 OR ({visible} AND ?3 = 0))))",
+        view = can_sql("?2", "c.id", "view"),
+        visible = visible_message_sql("?2"),
     );
     Ok(conn.query_row(&sql, params![channel, p.account_id, !p.is_device()], |r| r.get(0)).optional()?)
 }
@@ -79,10 +85,12 @@ pub fn channels(conn: &Connection, p: &Principal, space: &str) -> Result<Option<
     }
     let sql = format!(
         "SELECT c.id, c.kind, c.category, c.name, c.topic, c.parent_message_id, c.archived_at FROM channel c
-         WHERE c.space_id=?1 AND c.deleted_at IS NULL
+         WHERE c.space_id=?1 AND c.deleted_at IS NULL AND {view}
            AND (c.kind IS NOT 'thread' OR c.parent_message_id IS NULL OR EXISTS (
-                SELECT 1 FROM message m WHERE m.id=c.parent_message_id AND (m.account_id=?2 OR ({PUBLIC_MESSAGE_SQL} AND ?3 = 0))))
-         ORDER BY c.kind = 'thread', c.sort_key, c.name, c.id"
+                SELECT 1 FROM message m WHERE m.id=c.parent_message_id AND (m.account_id=?2 OR ({visible} AND ?3 = 0))))
+         ORDER BY c.kind = 'thread', c.sort_key, c.name, c.id",
+        view = can_sql("?2", "c.id", "view"),
+        visible = visible_message_sql("?2"),
     );
     let mut st = conn.prepare(&sql)?;
     let items = st

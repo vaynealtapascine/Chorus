@@ -207,16 +207,27 @@ pub fn leave(conn: &Connection, me: &str, space: &str, now: i64) -> Result<Vec<O
 
 /// The spaces an account is in, with the other accounts in each (for names and DM titles).
 pub fn list(conn: &Connection, me: &str) -> Result<Value, SpaceError> {
+    // yours, and (`guest: true`) spaces where only some channels are shared with you (perms.rs)
     let mut st = conn.prepare(
-        "SELECT s.id, s.kind, s.name, s.owner_account_id FROM space s
-         JOIN space_member m ON m.space_id = s.id AND m.account_id = ?1 AND m.is_present
-         WHERE s.deleted_at IS NULL ORDER BY s.kind = 'internal' DESC, s.kind, s.created_at",
+        "SELECT s.id, s.kind, s.name, s.owner_account_id,
+                NOT EXISTS (SELECT 1 FROM space_member m WHERE m.space_id = s.id AND m.account_id = ?1 AND m.is_present)
+         FROM space s JOIN scope_access sa ON sa.account_id = ?1 AND sa.scope = 'space:' || s.id
+         WHERE s.deleted_at IS NULL AND (s.owner_account_id = ?1 OR EXISTS (
+             SELECT 1 FROM space_member m WHERE m.space_id = s.id AND m.account_id = ?1)
+           OR EXISTS (SELECT 1 FROM channel_permission cp JOIN channel c ON c.id = cp.channel_id
+                      WHERE c.space_id = s.id AND cp.target_type = 'account' AND cp.target_id = ?1))
+         ORDER BY s.kind = 'internal' AND s.owner_account_id = ?1 DESC, s.kind, s.created_at",
     )?;
-    let rows: Vec<(String, Option<String>, Option<String>, String)> =
-        st.query_map([me], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<Result<_, _>>()?;
+    // (id, kind, name, owner, not a member)
+    type Row = (String, Option<String>, Option<String>, String, bool);
+    let rows: Vec<Row> = st
+        .query_map([me], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+        .collect::<Result<_, _>>()?;
     let mut items = Vec::new();
-    for (id, kind, name, owner) in rows {
-        items.push(json!({"id": id, "kind": kind, "name": name, "owner_account_id": owner, "accounts": accounts_in(conn, &id)?}));
+    for (id, kind, name, owner, not_member) in rows {
+        let guest = not_member && owner != me;
+        items.push(json!({"id": id, "kind": kind, "name": name, "owner_account_id": owner, "guest": guest,
+            "accounts": accounts_in(conn, &id)?}));
     }
     Ok(json!({"items": items}))
 }
@@ -237,8 +248,8 @@ fn accounts_in(conn: &Connection, space: &str) -> rusqlite::Result<Vec<Value>> {
     .collect()
 }
 
-/// Author cards for a space the reader is in: its accounts, and the members of *other* accounts
-/// who wrote a message everyone in the space can read.
+/// Author cards for a space the reader (`?2`) is in: its accounts, and the members of *other*
+/// accounts who wrote a message the reader can see (public, in a channel it may view).
 fn public_author_source() -> String {
     format!(
         "FROM channel c
@@ -247,7 +258,7 @@ fn public_author_source() -> String {
        UNION SELECT message_id, member_id FROM message_segment_author) au ON au.message_id = m.id
  JOIN member mb ON mb.id = au.member_id AND mb.deleted_at IS NULL
  WHERE c.deleted_at IS NULL",
-        crate::visibility::PUBLIC_MESSAGE_SQL
+        crate::visibility::visible_message_sql("?2")
     )
 }
 

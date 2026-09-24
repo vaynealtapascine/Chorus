@@ -78,3 +78,36 @@ jobs:
         working-directory: web
       - name: Bundle budgets (SPEC §9)
         run: python3 -c "import sys; sys.path.insert(0, 'scripts'); import verify; verify.bundle_budgets('web/dist/assets')"
+
+  # the browser suite (web/e2e, scripts/e2e-web.sh): a real server, three browsers, the v1 flows
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: e2e
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ env.WASM_BINDGEN_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - run: bash scripts/e2e-web.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-results
+          path: web/e2e/results
+          retention-days: 7

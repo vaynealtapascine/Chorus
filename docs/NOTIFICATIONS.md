@@ -12,7 +12,8 @@ Two families:
 ## 1. Delivery
 
 - **UnifiedPush via ntfy** on the tailnet (D-035). Each device registers a UnifiedPush endpoint
-  (`device.push_endpoint`). The server POSTs to it.
+  (`device.push_endpoint`). The server POSTs to it — only where `security.webhook_targets`
+  allows (https, never the host's own machine; API.md §2.1), checked at registration and send.
 - Payloads are encrypted with **RFC 8291 (Web Push encryption)** using keys the app registered, so
   ntfy only relays ciphertext. Payload ≤ 3 KB: the rendered, already-filtered notification. If it
   would be larger, the server sends a **tickle** (`{"t":"sync"}`) and the app syncs, then renders.

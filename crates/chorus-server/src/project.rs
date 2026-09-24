@@ -295,6 +295,9 @@ const THREAD_LINK: &str = "UPDATE message SET thread_channel_id = (
 type SqlShapes = HashMap<(String, Vec<String>), std::rc::Rc<str>>;
 
 thread_local! {
+    /// A connection the next rebuild on this thread reads the op log through (rebuild_swap lends
+    /// the locked source file); it is put back afterwards.
+    static LOG_READER: std::cell::RefCell<Option<Connection>> = const { std::cell::RefCell::new(None) };
     /// Upsert SQL by table and column list: rows of a table come in a few shapes, and building
     /// the statement text for every row showed up in rebuild profiles (SPEC §9).
     static UPSERT_SQL: std::cell::RefCell<SqlShapes> = Default::default();
@@ -620,6 +623,8 @@ fn space_access(conn: &Connection, o: &Op, account: &str, present: bool) -> anyh
         ingest::grant(conn, account, &o.scope)?;
     } else if !present && ((manages && account != author) || self_leave) {
         exec(conn, "DELETE FROM scope_access WHERE account_id = ?1 AND scope = ?2", params![account, o.scope])?;
+        // still a guest of one of its channels?
+        crate::perms::refresh_guest(conn, account, space)?;
     }
     Ok(())
 }
@@ -976,6 +981,17 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
                 names.extend(["allow".into(), "deny".into(), "hlc".into()]);
                 vals.extend([Sql::Text(allow.to_string()), Sql::Text(deny.to_string()), Sql::Text(o.hlc.to_string())]);
                 upsert(conn, "channel_permission", &["channel_id", "target_type", "target_id"], &names, &vals)?;
+                // an account override can make an outside account a guest of the space (perms.rs)
+                if p("target_type") == "account"
+                    && let Some(space) = conn
+                        .query_row("SELECT space_id FROM channel WHERE id = ?1", [o.entity().unwrap_or("")], |r| {
+                            r.get::<_, Option<String>>(0)
+                        })
+                        .optional()?
+                        .flatten()
+                {
+                    crate::perms::refresh_guest(conn, &p("target_id"), &space)?;
+                }
             }
             Ok(())
         }
@@ -1210,6 +1226,169 @@ pub fn rebuild(conn: &mut Connection) -> anyhow::Result<u64> {
     rebuild_timed(conn, &mut |_, _| {})
 }
 
+/// Where an interrupted [`rebuild_swap`] left the database it was replacing.
+pub fn set_aside_path(path: &std::path::Path) -> std::path::PathBuf {
+    path.with_extension("db.before-rebuild")
+}
+
+/// Rebuild the database file at `path` with the server stopped (`chorus-server rebuild`,
+/// R19): the projections are built in a fresh file with no journal and no syncing, checked,
+/// then swapped in — so no WAL of every projected row is written and committed (that commit
+/// alone took 20 s at 1M ops on Windows). The result is the same as [`rebuild`]; `path` is
+/// only replaced once the fresh file is complete. Refuses if anything else has the database
+/// open (a running server). Returns the ops re-projected.
+pub fn rebuild_swap(path: &std::path::Path) -> anyhow::Result<u64> {
+    rebuild_swap_timed(path, &mut |_, _| {})
+}
+
+pub fn rebuild_swap_timed(
+    path: &std::path::Path,
+    time: &mut dyn FnMut(&str, std::time::Duration),
+) -> anyhow::Result<u64> {
+    use anyhow::{Context, ensure};
+    let fresh = path.with_extension("db.rebuild");
+    let aside = set_aside_path(path);
+    ensure!(
+        !aside.exists(),
+        "{} exists: an earlier rebuild was interrupted; start the server once (it puts it back) or move it",
+        aside.display()
+    );
+    for stale in [fresh.clone(), fresh.with_extension("rebuild-journal")] {
+        let _ = std::fs::remove_file(stale);
+    }
+    // the source, locked for the whole run: an idle connection elsewhere (a running server)
+    // makes this fail instead of racing the swap
+    let mut src = Connection::open(path).with_context(|| format!("opening {}", path.display()))?;
+    src.execute_batch("PRAGMA busy_timeout = 0; PRAGMA main.locking_mode = EXCLUSIVE")?;
+    src.execute_batch("BEGIN EXCLUSIVE; COMMIT")
+        .map_err(|_| anyhow::anyhow!("the database is in use (is the server running?); stop it first"))?;
+    // the fresh file gets this build's schema, so the source must have it too
+    ensure!(crate::db::pending_migrations(&src)? == 0, "the database needs migrating first (start the server once)");
+    // fold the WAL into the file, so the old file is complete on its own while it waits aside
+    src.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+    let t = std::time::Instant::now();
+    let result = (|src: &mut Connection| -> anyhow::Result<u64> {
+        {
+            let mut out = Connection::open(&fresh)?;
+            out.set_prepared_statement_cache_capacity(256);
+            out.execute_batch(
+                "PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF; PRAGMA foreign_keys = OFF;
+                 PRAGMA temp_store = MEMORY; PRAGMA locking_mode = EXCLUSIVE",
+            )?;
+            crate::db::migrate(&mut out)?;
+        }
+        // everything no projection derives, copied as it is (in one pass, through the source's
+        // connection, which holds the lock)
+        src.execute("ATTACH DATABASE ?1 AS fresh", [fresh.to_string_lossy().as_ref()])?;
+        src.execute_batch("PRAGMA fresh.journal_mode = OFF; PRAGMA fresh.synchronous = OFF")?;
+        let copied = (|| -> anyhow::Result<Vec<(String, i64)>> {
+            let tables: Vec<(String, String)> = src
+                .prepare("SELECT name, coalesce(sql, '') FROM fresh.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")?
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<Result<_, _>>()?;
+            let virtuals: Vec<&str> = tables
+                .iter()
+                .filter(|(_, sql)| sql.to_ascii_uppercase().starts_with("CREATE VIRTUAL TABLE"))
+                .map(|(n, _)| n.as_str())
+                .collect();
+            let mut counts = Vec::new();
+            src.execute_batch("BEGIN")?;
+            for (name, sql) in &tables {
+                let shadow = virtuals.iter().any(|v| name.starts_with(&format!("{v}_")));
+                if DERIVED.contains(&name.as_str())
+                    || shadow
+                    || sql.to_ascii_uppercase().starts_with("CREATE VIRTUAL TABLE")
+                {
+                    continue;
+                }
+                let cols: Vec<String> = src
+                    .prepare(&format!("PRAGMA fresh.table_info(\"{name}\")"))?
+                    .query_map([], |r| r.get::<_, String>(1))?
+                    .collect::<Result<_, _>>()?;
+                let cols = cols.iter().map(|c| format!("\"{c}\"")).collect::<Vec<_>>().join(", ");
+                src.execute(
+                    &format!("INSERT OR REPLACE INTO fresh.\"{name}\" ({cols}) SELECT {cols} FROM main.\"{name}\""),
+                    [],
+                )?;
+                let n: i64 = src.query_row(&format!("SELECT count(*) FROM main.\"{name}\""), [], |r| r.get(0))?;
+                counts.push((name.clone(), n));
+            }
+            src.execute_batch("COMMIT")?;
+            Ok(counts)
+        })();
+        if copied.is_err() && !src.is_autocommit() {
+            let _ = src.execute_batch("ROLLBACK");
+        }
+        src.execute_batch("DETACH DATABASE fresh")?;
+        let copied = copied?;
+        time("(copy the log and server tables)", t.elapsed());
+        let n = {
+            let mut out = Connection::open(&fresh)?;
+            out.set_prepared_statement_cache_capacity(256);
+            out.execute_batch(
+                "PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF; PRAGMA foreign_keys = ON;
+                 PRAGMA temp_store = MEMORY; PRAGMA locking_mode = EXCLUSIVE",
+            )?;
+            // the op log is read from the source (the same log, and held locked) while the
+            // fresh file is written: a second connection to a journal-less file would block
+            let lent = std::mem::replace(src, Connection::open_in_memory()?);
+            LOG_READER.with(|r| *r.borrow_mut() = Some(lent));
+            let rebuilt = rebuild_timed(&mut out, time);
+            *src = LOG_READER.with(|r| r.borrow_mut().take()).context("the rebuild kept the source connection")?;
+            let n = rebuilt?;
+            let t = std::time::Instant::now();
+            let check: String = out.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
+            ensure!(check == "ok", "the rebuilt database fails its check: {check}");
+            for (name, want) in &copied {
+                let got: i64 = out.query_row(&format!("SELECT count(*) FROM \"{name}\""), [], |r| r.get(0))?;
+                ensure!(got == *want, "{name} lost rows in the rebuild ({got} of {want})");
+            }
+            time("(check)", t.elapsed());
+            // the server runs it in WAL mode; switching is instant on a file nobody else has open
+            out.execute_batch("PRAGMA locking_mode = NORMAL")?;
+            let mode: String = out.query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))?;
+            ensure!(mode.eq_ignore_ascii_case("wal"), "couldn't switch the rebuilt database to WAL ({mode})");
+            n
+        };
+        Ok(n)
+    })(&mut src);
+    drop(src);
+    let n = match result {
+        Ok(n) => n,
+        Err(e) => {
+            let _ = std::fs::remove_file(&fresh);
+            return Err(e);
+        }
+    };
+    // swap: the old file aside, the new one in, then the old one gone (renaming over an existing
+    // file fails on Windows; an interruption here is undone at the next start, see lib.rs)
+    let t = std::time::Instant::now();
+    // the old file's WAL must not outlive it: under the same name, SQLite would replay it into
+    // the new file. It was checkpointed and truncated above; anything in it now is a writer
+    // that got in after the lock was let go, so stop rather than lose that
+    for ext in ["-wal", "-shm"] {
+        let side = std::path::PathBuf::from(format!("{}{ext}", path.display()));
+        if let Ok(meta) = std::fs::metadata(&side) {
+            if ext == "-wal" && meta.len() > 0 {
+                let _ = std::fs::remove_file(&fresh);
+                anyhow::bail!(
+                    "{} was written to during the rebuild; nothing was changed, run it again with the server stopped",
+                    path.display()
+                );
+            }
+            std::fs::remove_file(&side)?;
+        }
+    }
+    std::fs::rename(path, &aside).with_context(|| format!("moving {} aside", path.display()))?;
+    if let Err(e) = std::fs::rename(&fresh, path) {
+        std::fs::rename(&aside, path)?;
+        return Err(e).context("putting the rebuilt database in place");
+    }
+    std::fs::remove_file(&aside)?;
+    time("(swap)", t.elapsed());
+    Ok(n)
+}
+
 /// [`rebuild`], reporting how long each op's projection took (by kind; `tests/perf.rs`).
 pub fn rebuild_timed(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Duration)) -> anyhow::Result<u64> {
     // one transaction rewrites every projection: with the default 2 MB page cache it spills
@@ -1283,21 +1462,30 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
             }
             Ok(())
         };
-        match tx.path().filter(|p| !p.is_empty()).map(std::path::PathBuf::from) {
-            // decode the log on a second (read-only) connection while this one writes; the op
-            // table doesn't change during a rebuild, so its committed snapshot is the same log
-            Some(path) => std::thread::scope(|s| {
+        // decode the log on a second (read-only) connection while this one writes; the op table
+        // doesn't change during a rebuild, so its committed snapshot is the same log. A caller
+        // may lend one (rebuild_swap: the source file, which it holds locked)
+        let lent = LOG_READER.with(|r| r.borrow_mut().take());
+        let is_lent = lent.is_some();
+        let reader = match lent {
+            Some(c) => Some(c),
+            None => match tx.path().filter(|p| !p.is_empty()) {
+                Some(path) => Some(Connection::open_with_flags(
+                    path,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                )?),
+                None => None,
+            },
+        };
+        match reader {
+            Some(conn) => std::thread::scope(|s| {
                 let (send, recv) = std::sync::mpsc::sync_channel::<anyhow::Result<Batch>>(4);
                 // Applied batches go back to be freed on the thread that allocated them: freeing
                 // another thread's allocations contends for its allocator lock (5 s at 1M ops).
                 let (spent, spent_back) = std::sync::mpsc::channel::<Batch>();
                 let multi = multi.clone();
-                s.spawn(move || {
+                let handle = s.spawn(move || {
                     let read = || -> anyhow::Result<()> {
-                        let conn = Connection::open_with_flags(
-                            &path,
-                            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-                        )?;
                         let mut seq = 0;
                         loop {
                             spent_back.try_iter().for_each(drop);
@@ -1319,15 +1507,26 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
                     }
                     drop(send);
                     spent_back.into_iter().for_each(drop); // until the writer is done
+                    conn
                 });
-                loop {
-                    let t = std::time::Instant::now();
-                    let Ok(batch) = recv.recv() else { return Ok(()) };
-                    waited += t.elapsed();
-                    let batch = batch?;
-                    apply(&batch)?;
-                    let _ = spent.send(batch);
+                let applied = (|| -> anyhow::Result<()> {
+                    loop {
+                        let t = std::time::Instant::now();
+                        let Ok(batch) = recv.recv() else { return Ok(()) };
+                        waited += t.elapsed();
+                        let batch = batch?;
+                        apply(&batch)?;
+                        let _ = spent.send(batch);
+                    }
+                })();
+                // let the reader finish (it stops once nobody listens), then take its connection back
+                drop(recv);
+                drop(spent);
+                let conn = handle.join().unwrap_or_else(|e| std::panic::resume_unwind(e));
+                if is_lent {
+                    LOG_READER.with(|r| *r.borrow_mut() = Some(conn));
                 }
+                applied
             }),
             None => loop {
                 let batch = oplog::applied_after(&tx, seq, 1000)?;

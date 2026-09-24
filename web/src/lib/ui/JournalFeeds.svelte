@@ -29,7 +29,10 @@
   let replyTo = $state<PostRow | null>(null);
   // who can open this feed (SPEC §6.4): the filter is shared, each reader sees only posts they can read
   let sharing = $state<'private' | 'followers'>('private');
-  const usesFronting = $derived(/(^|[\s(-])fronting:/i.test(query));
+  const filtersByFronting = (q: string | null) => /(^|[\s(-])fronting:/i.test(q ?? '');
+  const usesFronting = $derived(filtersByFronting(query));
+  // D-069: said wherever such a feed is shared or read
+  const FRONTING_NOTE = 'This feed shows who was fronting when these posts were written';
 
   // feeds other accounts share with this one, evaluated by the server over what we may read
   interface SharedFeed { id: string; name: string | null; description: string | null; query: string | null;
@@ -96,7 +99,7 @@
       const ast = core.feedParse(query);
       const id = selected || sync.newId();
       sync.create('feed.set', sync.accountScope, id, { name: name.trim(), description: description.trim() || null,
-        query: query.trim(), query_ast: ast, visibility: { mode: sharing === 'followers' && !usesFronting ? 'followers' : 'private' } });
+        query: query.trim(), query_ast: ast, visibility: { mode: sharing } });
       selected = id;
     } catch (cause) { saveError = cause instanceof Error ? cause.message : String(cause); }
   }
@@ -118,13 +121,15 @@
     <label>Filter <textarea bind:value={query} required rows="3" spellcheck="false" placeholder="from:@kai kind:entry -tag:vent"></textarea></label>
     <p class="hint">Use <code>from:</code>, <code>kind:</code>, <code>tag:</code>, <code>mood:</code>, <code>has:</code>, <code>reply:</code>, <code>in:</code>, <code>since:</code>, <code>until:</code>, <code>fronting:</code>, <code>or</code>, parentheses and <code>-</code> to exclude. Names resolve from this account's members, groups and lists.</p>
     <label>Who can open it
-      <select bind:value={sharing} disabled={usesFronting}>
+      <select bind:value={sharing}>
         <option value="private">Only us</option>
         <option value="followers">Our followers</option>
       </select>
     </label>
-    {#if usesFronting}<p class="hint">Feeds that filter by <code>fronting:</code> stay private: they'd show when members fronted.</p>
-    {:else if sharing === 'followers'}<p class="hint">Followers get the filter, not the posts: each of them only sees posts they can already read.</p>{/if}
+    {#if sharing === 'followers'}
+      {#if usesFronting}<p class="banner" role="note">{FRONTING_NOTE}. Each follower only sees what their notifications have already shown them, no sooner.</p>{/if}
+      <p class="hint">Followers get the filter, not the posts: each of them only sees posts they can already read.</p>
+    {/if}
     {#if preview.error}<p class="error" role="alert">{preview.error}</p>{/if}
     {#if saveError}<p class="error" role="alert">{saveError}</p>{/if}
     <div class="actions"><button class="primary" disabled={!name.trim() || !query.trim() || !!preview.error}>Save feed</button>
@@ -138,6 +143,7 @@
       {#if sharedError}<p class="error" role="alert">{sharedError}</p>{/if}
       {#if openShared}
         {#if openShared.description}<p class="muted">{openShared.description}</p>{/if}
+        {#if filtersByFronting(openShared.query)}<p class="banner" role="note">{FRONTING_NOTE}, as far as your notifications from {owner(openShared)} have shown you.</p>{/if}
         {#each sharedItems as post (post.id)}
           <article class="message"><p class="muted">{byline(post)} · {new Date(post.occurred_at).toLocaleString()}</p>
             {#if post.cw}<details><summary>Content warning: {post.cw}</summary>{#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>{#each post.attachments ?? [] as attachment (attachment.id)}<AttachmentView {attachment} />{/each}</details>
@@ -173,6 +179,7 @@
   p, h2 { margin: 0; }
   h2 { font-size: var(--fs-md); }
   .muted, .hint { color: var(--ink-3); font-size: var(--fs-sm); }
+  .banner { margin: 0; padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); font-size: var(--fs-sm); }
   nav, .actions, .head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); }
   .head { justify-content: space-between; }
   nav button { border: 1px solid var(--line); border-radius: var(--r-full); background: var(--surface); padding: var(--s-1) var(--s-3); }

@@ -267,6 +267,34 @@ impl JsonReplica {
         Ok(JsonReplica(crate::replica::Replica::restore(device_id, node, meta, ops, hlc)))
     }
 
+    /// Open from a snapshot (see `Replica::begin`): metadata now, ops in slices later.
+    pub fn begin(device_id: &str, node: u32, meta_json: &str, hlc_last: &str) -> Result<JsonReplica, String> {
+        let meta = if meta_json.trim().is_empty() { None } else { Some(parse("meta", meta_json)?) };
+        let hlc = if hlc_last.is_empty() { None } else { Some(hlc_last.parse().map_err(|e| format!("{e}"))?) };
+        Ok(JsonReplica(crate::replica::Replica::begin(device_id, node, meta, hlc)))
+    }
+
+    /// A slice of persisted ops (JSON array).
+    pub fn add_ops(&mut self, ops_json: &str) -> Result<(), String> {
+        let ops: Vec<Op> = parse("ops", ops_json)?;
+        self.0.add_ops(ops);
+        Ok(())
+    }
+
+    pub fn index_step(&mut self, n: u32) -> bool {
+        self.0.index_step(n as usize)
+    }
+
+    /// `digest_json`: the saved snapshot's `projection_digest`, or empty for none.
+    pub fn adopt(&mut self, digest_json: &str) -> Result<bool, String> {
+        let d = if digest_json.trim().is_empty() { None } else { Some(parse("digest", digest_json)?) };
+        Ok(self.0.adopt(d))
+    }
+
+    pub fn projection_digest(&mut self) -> String {
+        js(&self.0.projection_digest())
+    }
+
     /// → `{"op": …, "frames": […]}`
     pub fn create(&mut self, new_op_json: &str, device_now_json: &str, random: &[u8]) -> Result<String, String> {
         let n: crate::replica::NewOp = parse("new op", new_op_json)?;
@@ -290,12 +318,23 @@ impl JsonReplica {
         self.0.disconnect();
     }
 
+    /// Frames to send to check every scope again (JSON array; empty unless live).
+    pub fn recheck(&self) -> String {
+        js(&self.0.recheck())
+    }
+
+    /// Scopes still being repaired (JSON array).
+    pub fn repairing(&self) -> String {
+        js(&self.0.engine.repairing())
+    }
+
     pub fn take_changes(&mut self) -> String {
         js(&self.0.take_changes())
     }
 
     pub fn projection(&mut self) -> String {
-        js(&self.0.projection().canonical())
+        // straight to text: going through `canonical()` (a `Value` tree) doubled the cost
+        js(self.0.projection())
     }
 
     /// Only what changed since the last call (`{"full": true}` the first time: read

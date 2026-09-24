@@ -5,11 +5,13 @@
 //! checked with [`crate::posts::readable_sql`] on the feed row), and its results are only ever
 //! posts the *reader* may read, so sharing a feed shares a filter, never a post. Names in the
 //! filter (`from:@kai`, `from:list:"close"`) resolve against the feed owner's members, groups and
-//! lists, so a feed reads the way it was written. `fronting:` would tell others when the owner's
-//! members fronted, which follow ceilings govern (NOTIFICATIONS §3), so such a feed only
-//! evaluates for its owner.
+//! lists, so a feed reads the way it was written. `fronting:` (D-069) evaluates per reader: a
+//! post by the reader's own members against their front timeline, anyone else's only against
+//! what that follow has revealed to the reader (`notifier::revealed_fronts` — the states their
+//! notifications showed, at the times shown), so a feed never tells a reader more, or sooner,
+//! than their notifications did. Clients warn when sharing or opening such a feed.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chorus_core::feed::{self, Expr, FromRef, TimeRef};
@@ -96,9 +98,7 @@ pub fn items(conn: &Connection, principal: &Principal, id: &str, q: &ItemsQuery)
     let Some((owner, ast)) = found else { return Ok(None) };
     let ast: Expr =
         serde_json::from_str(&ast).map_err(|_| DataError::Bad("this feed's filter can't be read".into()))?;
-    if owner != viewer && uses_fronting(&ast) {
-        return Err(DataError::Bad("this feed filters by who was fronting, which only its owner can see".into()));
-    }
+    let mut fronts = Fronts { viewer, revealed: HashMap::new() };
     let ctx = OwnerContext::load(conn, &owner, &ast, crate::now_ms())?;
     let limit = q.limit.unwrap_or(50).clamp(1, 100);
     let mut cursor = match &q.cursor {
@@ -143,7 +143,7 @@ pub fn items(conn: &Connection, principal: &Principal, id: &str, q: &ItemsQuery)
                 id: post["id"].as_str().unwrap_or_default().to_string(),
             });
             posts::hide_unreadable_links(conn, viewer, &mut post)?;
-            let item = item_of(conn, &post, owner == viewer)?;
+            let item = item_of(conn, &post, uses_fronting(&ast).then_some(&mut fronts))?;
             if feed::eval(&ast, &item, &ctx) {
                 matched.push(post);
                 if matched.len() == limit {
@@ -177,8 +177,41 @@ fn uses_fronting(e: &Expr) -> bool {
     }
 }
 
+/// Who a reader may know was fronting, and when (D-069; see the module docs).
+struct Fronts<'a> {
+    viewer: &'a str,
+    /// Other accounts' states as revealed to the viewer, by account (loaded on first use).
+    revealed: HashMap<String, Vec<(i64, BTreeSet<String>)>>,
+}
+
+impl Fronts<'_> {
+    /// Was one of `authors` (members of `account`) fronting at `at`, as far as the viewer knows?
+    fn any(&mut self, conn: &Connection, account: &str, authors: &[String], at: i64) -> Result<bool, DataError> {
+        if authors.is_empty() {
+            return Ok(false);
+        }
+        if account == self.viewer {
+            let mut st = conn.prepare_cached(
+                "SELECT EXISTS (SELECT 1 FROM front_interval, json_each(?1) a
+                   WHERE subject_type = 'member' AND subject_id = a.value AND level = 'front'
+                     AND start_at <= ?2 AND (end_at IS NULL OR end_at > ?2))",
+            )?;
+            return Ok(st.query_row(params![Value::from(authors.to_vec()).to_string(), at], |r| r.get(0))?);
+        }
+        if !self.revealed.contains_key(account) {
+            let states = crate::notifier::revealed_fronts(conn, self.viewer, account)?;
+            self.revealed.insert(account.to_string(), states);
+        }
+        let states = &self.revealed[account];
+        // the state shown as current at `at`: the last one shown as starting by then
+        let i = states.partition_point(|(start, _)| *start <= at);
+        Ok(i > 0 && authors.iter().any(|a| states[i - 1].1.contains(a)))
+    }
+}
+
 /// A post as the feed evaluator sees it (the same fields the web app builds, feeds.ts).
-fn item_of(conn: &Connection, post: &Value, fronting_visible: bool) -> rusqlite::Result<feed::Item> {
+/// `fronts` only when the filter asks who was fronting.
+fn item_of(conn: &Connection, post: &Value, fronts: Option<&mut Fronts<'_>>) -> Result<feed::Item, DataError> {
     let strings = |v: &Value| -> Vec<String> {
         v.as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect()
     };
@@ -199,13 +232,9 @@ fn item_of(conn: &Connection, post: &Value, fronting_visible: bool) -> rusqlite:
         has.insert("link");
     }
     let occurred_at = post["occurred_at"].as_i64().unwrap_or_default();
-    let author_fronting = fronting_visible && !authors.is_empty() && {
-        let mut st = conn.prepare_cached(
-            "SELECT EXISTS (SELECT 1 FROM front_interval, json_each(?1) a
-               WHERE subject_type = 'member' AND subject_id = a.value AND level = 'front'
-                 AND start_at <= ?2 AND (end_at IS NULL OR end_at > ?2))",
-        )?;
-        st.query_row(params![Value::from(authors.clone()).to_string(), occurred_at], |r| r.get(0))?
+    let author_fronting = match fronts {
+        Some(f) => f.any(conn, post["account_id"].as_str().unwrap_or(""), &authors, occurred_at)?,
+        None => false,
     };
     Ok(feed::Item {
         kind: post["kind"].as_str().unwrap_or("").to_string(),

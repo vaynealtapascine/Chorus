@@ -136,7 +136,7 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
                 AND EXISTS (SELECT 1 FROM json_each(fv.entries) je
                     WHERE json_extract(je.value, '$.subject_type') = 'member'
                       AND json_extract(je.value, '$.subject_id') = m.id)
-         )", crate::visibility::PUBLIC_MESSAGE_SQL, crate::posts::readable_sql("?2")),
+         )", crate::visibility::visible_message_sql("?2"), crate::posts::readable_sql("?2")),
         params![hash, account],
         |r| r.get(0),
     )
@@ -265,7 +265,7 @@ pub async fn put_blob(
     Ok(StatusCode::CREATED.into_response())
 }
 
-fn read_range(h: &HeaderMap, size: u64) -> Result<Option<(u64, u64)>, BlobError> {
+pub(crate) fn read_range(h: &HeaderMap, size: u64) -> Result<Option<(u64, u64)>, BlobError> {
     let Some(raw) = h.get(header::RANGE) else { return Ok(None) };
     let text = raw.to_str().map_err(|_| bad("invalid_range"))?;
     let span = text.strip_prefix("bytes=").ok_or(bad("invalid_range"))?;

@@ -72,8 +72,8 @@ async fn health_requires_admin_session_and_reports_live_counts() {
     assert_eq!(health["restore_window"], serde_json::json!({"open": false, "closes_at": null, "devices": []}));
     server.abort();
     let _ = server.await;
-    drop(state);
-    let _ = std::fs::remove_dir_all(test_dir);
+    drop(client);
+    common::release(state, &test_dir).await;
 }
 
 #[tokio::test]
@@ -139,6 +139,6 @@ async fn restore_window_shows_in_health_and_closes_for_admins_only() {
     assert_eq!(health["restore_window"]["devices"], serde_json::json!([]));
     server.abort();
     let _ = server.await;
-    drop(state);
-    let _ = std::fs::remove_dir_all(test_dir);
+    drop(client);
+    common::release(state, &test_dir).await;
 }

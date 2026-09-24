@@ -32,8 +32,13 @@ enum Cmd {
     ReconcileStatus,
     /// Close the restore window: from now on, restore pushes count as the pusher's own ops.
     ReconcileClose,
-    /// Rebuild every projection from the op log.
-    Rebuild,
+    /// Rebuild every projection from the op log (with the server stopped: into a fresh file,
+    /// then swapped in).
+    Rebuild {
+        /// Rewrite the live file in one big transaction instead (the old way; slower).
+        #[arg(long)]
+        in_place: bool,
+    },
     /// Take an online SQLite and blob snapshot.
     Backup {
         /// Snapshot parent directory (defaults to backup.dir).
@@ -223,10 +228,15 @@ fn main() -> anyhow::Result<()> {
             chorus_server::reconcile::close(&conn)?;
             println!("restore window closed");
         }
-        Cmd::Rebuild => {
+        Cmd::Rebuild { in_place } => {
             let mut conn = chorus_server::open_and_migrate(&cfg)?;
             let t = std::time::Instant::now();
-            let n = chorus_server::project::rebuild(&mut conn)?;
+            let n = if in_place {
+                chorus_server::project::rebuild(&mut conn)?
+            } else {
+                drop(conn);
+                chorus_server::project::rebuild_swap(&cfg.db_path())?
+            };
             println!("re-projected {n} ops in {:.1?}", t.elapsed());
         }
         Cmd::Backup { to } => {

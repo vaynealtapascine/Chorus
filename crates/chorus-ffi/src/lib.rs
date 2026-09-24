@@ -150,6 +150,16 @@ impl CoreReplica {
         self.lock().disconnect();
     }
 
+    /// "Sync everything now": frames asking for every scope again (JSON array; empty unless live).
+    pub fn recheck(&self) -> String {
+        self.lock().recheck()
+    }
+
+    /// Scopes still being repaired after a digest mismatch (JSON array).
+    pub fn repairing(&self) -> String {
+        self.lock().repairing()
+    }
+
     pub fn take_changes(&self) -> String {
         self.lock().take_changes()
     }

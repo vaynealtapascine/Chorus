@@ -197,7 +197,30 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
         0
     );
     assert_eq!(client.get(&base).send().await.unwrap().status(), 401);
-    assert_eq!(get(&token, "").send().await.unwrap().status(), 401);
+    // API tokens: read:posts, and only their own account's posts
+    assert_eq!(get(&token, "").send().await.unwrap().status(), 403, "read:members isn't read:posts");
+    let posts_token = {
+        let conn = state.db.lock().unwrap();
+        api_data::create_token(
+            &conn,
+            &api_data::Principal::owner(BOB),
+            "journal",
+            &["read:posts".into()],
+            chorus_server::now_ms(),
+        )
+        .unwrap()["token"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let own = get(&posts_token, "").send().await.unwrap().json::<Value>().await.unwrap();
+    assert_eq!(ids(&own), ["own-bob"], "a token sees its own account's posts, not what the account may read");
+    assert_eq!(
+        ids(&get(&posts_token, &format!("?account={ALICE}")).send().await.unwrap().json::<Value>().await.unwrap()),
+        Vec::<String>::new()
+    );
+    assert_eq!(get(&posts_token, "/server").send().await.unwrap().status(), 404);
+    assert_eq!(get(&posts_token, "/own-bob").send().await.unwrap().status(), 200);
 
     let ended = seed();
     ended.execute("UPDATE follow SET status='ended' WHERE id='follow'", []).unwrap();
@@ -206,8 +229,8 @@ async fn http_posts_enforce_audience_and_hide_front_snapshot() {
     assert!(chorus_server::posts::one(&ended, BOB, "bucket").unwrap().is_none());
     server.abort();
     let _ = server.await;
-    drop(state);
-    let _ = std::fs::remove_dir_all(test_dir);
+    drop(client);
+    common::release(state, &test_dir).await;
 }
 
 #[test]
@@ -304,7 +327,8 @@ async fn cross_account_replies_require_a_readable_parent_and_reach_its_author() 
     let state = app::Shared::new(conn, cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/api/v1/posts/server?depth=1", listener.local_addr().unwrap());
-    let server = tokio::spawn(async move { axum::serve(listener, app::router(state)).await.unwrap() });
+    let serving = state.clone();
+    let server = tokio::spawn(async move { axum::serve(listener, app::router(serving)).await.unwrap() });
     let client = reqwest::Client::new();
     for session in ["alice-session", "bob-session"] {
         let body: Value = client.get(&base).bearer_auth(session).send().await.unwrap().json().await.unwrap();
@@ -312,7 +336,8 @@ async fn cross_account_replies_require_a_readable_parent_and_reach_its_author() 
     }
     server.abort();
     let _ = server.await;
-    let _ = std::fs::remove_dir_all(test_dir);
+    drop(client);
+    common::release(state, &test_dir).await;
 }
 
 /// `GET /search/posts`: projected posts are indexed (title, text, tags), a reader never matches a
@@ -394,8 +419,8 @@ fn post_search_matches_only_readable_posts_and_survives_a_rebuild() {
 }
 
 /// Shared feeds (M7.4, feeds.rs): a follower evaluates the owner's feed over posts the follower
-/// can read, names resolve against the owner's members, a feed that filters by fronting stays the
-/// owner's, and an unshared feed is invisible.
+/// can read, names resolve against the owner's members, a feed that filters by fronting
+/// evaluates for the follower too (D-069), and an unshared feed is invisible.
 #[test]
 fn shared_feeds_evaluate_over_what_the_reader_can_read() {
     let mut c = db::open_memory().unwrap();
@@ -450,7 +475,9 @@ fn shared_feeds_evaluate_over_what_the_reader_can_read() {
     );
     assert!(items(CAROL, &garden).unwrap().is_none(), "no follow, no feed");
     assert!(items(BOB, &secret).unwrap().is_none(), "a private feed isn't shared");
-    assert!(matches!(items(BOB, &fronting), Err(api_data::DataError::Bad(_))), "fronting stays the owner's");
+    // nobody fronted and nothing was revealed to BOB: a fronting feed evaluates, matching nothing
+    // (notifier.rs tests the reveal: tests/notifier.rs `a_shared_fronting_feed_waits_for_the_reveal`)
+    assert_eq!(texts(items(BOB, &fronting).unwrap().unwrap()), Vec::<String>::new());
     assert!(items(ALICE, &fronting).unwrap().is_some());
 
     let listed = |who: &str| -> Vec<(String, bool)> {
@@ -482,4 +509,71 @@ fn shared_feeds_evaluate_over_what_the_reader_can_read() {
         }
     }
     assert_eq!(seen, ["post 3", "post 2", "post 1"]);
+}
+
+/// Journal reads for the REST API (api_journal.rs): a profile bundle, lists and a list timeline,
+/// own account only, with the scopes API.md names.
+#[test]
+fn profiles_and_lists_read_through_the_api() {
+    let mut c = db::open_memory().unwrap();
+    db::migrate(&mut c).unwrap();
+    for id in [ALICE, BOB] {
+        c.execute("INSERT INTO account(id,kind,created_at) VALUES (?1,'person',0)", [id]).unwrap();
+        ingest::grant(&c, id, &format!("account:{id}")).unwrap();
+    }
+    let scope = format!("account:{ALICE}");
+    let t0 = 1_790_000_000_000;
+    let (kai, rin, list, friends) =
+        (new_id(1, [50; 10]), new_id(1, [51; 10]), new_id(1, [52; 10]), new_id(1, [53; 10]));
+    let op = |kind: &str, entity: &str, payload: Value, n: i64| {
+        ingest::server_op(&c, ALICE, kind, &scope, Some(entity), payload, t0 + n).unwrap();
+    };
+    op("member.create", &kai, json!({"name": "Kai"}), 1);
+    op("member.create", &rin, json!({"name": "Rin"}), 2);
+    op("reltype.set", &friends, json!({"name": "friend", "is_symmetric": true}), 3);
+    op(
+        "relationship.set",
+        &new_id(1, [54; 10]),
+        json!({"from_member_id": kai, "to_kind": "member", "to_id": rin, "type_id": friends}),
+        4,
+    );
+    for (n, author, kind) in [(10, &kai, "entry"), (11, &kai, "note"), (12, &rin, "note")] {
+        let payload = json!({"kind": kind, "authors": [author], "text": format!("post {n}"), "entities": [], "visibility": {"mode": "private"}});
+        op("post.create", &new_id(2, [n as u8; 10]), payload, n);
+    }
+    op("highlight.add", &kai, json!({"profile_member_id": kai, "post_id": new_id(2, [10; 10])}), 20);
+    op("list.set", &list, json!({"name": "Kai only"}), 21);
+    op("list.add", &list, json!({"member_id": kai}), 22);
+
+    let owner = api_data::Principal::owner(ALICE);
+    let p = chorus_server::api_journal::profile(&c, &owner, &kai).unwrap().unwrap();
+    assert_eq!(p["member"]["name"], "Kai");
+    assert_eq!(p["stats"]["posts"], 2);
+    assert_eq!(p["stats"]["entries"], 1);
+    assert_eq!(p["relationships"][0]["to_name"], "Rin");
+    assert_eq!(p["relationships"][0]["type"]["name"], "friend");
+    assert_eq!(p["highlights"].as_array().unwrap().len(), 1);
+    assert!(
+        chorus_server::api_journal::profile(&c, &api_data::Principal::owner(BOB), &kai).unwrap().is_none(),
+        "another account's member"
+    );
+
+    let lists = chorus_server::api_journal::lists(&c, &owner).unwrap();
+    assert_eq!(lists["items"][0]["name"], "Kai only");
+    assert_eq!(lists["items"][0]["member_ids"], json!([kai]));
+    let timeline = chorus_server::api_journal::list_timeline(&c, &owner, &list, &Default::default()).unwrap().unwrap();
+    let texts: Vec<&str> = timeline["items"].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap()).collect();
+    assert_eq!(texts, ["post 11", "post 10"]);
+    assert!(
+        chorus_server::api_journal::list_timeline(&c, &api_data::Principal::owner(BOB), &list, &Default::default())
+            .unwrap()
+            .is_none()
+    );
+
+    // tokens: read:members gets the profile without highlights; lists need read:posts
+    let members_only = api_data::create_token(&c, &owner, "m", &["read:members".to_string()], t0).unwrap();
+    let mp = api_data::principal(&c, members_only["token"].as_str().unwrap(), t0, 86_400_000).unwrap();
+    let p = chorus_server::api_journal::profile(&c, &mp, &kai).unwrap().unwrap();
+    assert!(p["highlights"].is_null());
+    assert!(chorus_server::api_journal::lists(&c, &mp).is_err());
 }

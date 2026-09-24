@@ -155,6 +155,33 @@ impl WebReplica {
             .map_err(|m| JsError::new(&m))
     }
 
+    /// Open from a snapshot: metadata now, then `addOps`, `indexStep`, `adopt` (CLIENTS.md §4.3).
+    pub fn begin(device_id: &str, node: u32, meta_json: &str, hlc_last: &str) -> Result<WebReplica, JsError> {
+        api::JsonReplica::begin(device_id, node, meta_json, hlc_last).map(WebReplica).map_err(|m| JsError::new(&m))
+    }
+
+    #[wasm_bindgen(js_name = addOps)]
+    pub fn add_ops(&mut self, ops_json: &str) -> Result<(), JsError> {
+        self.0.add_ops(ops_json).map_err(|m| JsError::new(&m))
+    }
+
+    /// Index up to `n` more ops; true when done.
+    #[wasm_bindgen(js_name = indexStep)]
+    pub fn index_step(&mut self, n: u32) -> bool {
+        self.0.index_step(n)
+    }
+
+    /// True if the snapshot (its `projectionDigest`, or "" for none) was taken as is; false means
+    /// read `projection()` again.
+    pub fn adopt(&mut self, digest_json: &str) -> Result<bool, JsError> {
+        self.0.adopt(digest_json).map_err(|m| JsError::new(&m))
+    }
+
+    #[wasm_bindgen(js_name = projectionDigest)]
+    pub fn projection_digest(&mut self) -> String {
+        self.0.projection_digest()
+    }
+
     pub fn create(&mut self, new_op_json: &str, device_now_json: &str, random: &[u8]) -> Result<String, JsError> {
         wrap(self.0.create(new_op_json, device_now_json, random))
     }
@@ -170,6 +197,16 @@ impl WebReplica {
 
     pub fn disconnect(&mut self) {
         self.0.disconnect();
+    }
+
+    /// "Sync everything now": frames asking for every scope again (empty unless live).
+    pub fn recheck(&self) -> String {
+        self.0.recheck()
+    }
+
+    /// Scopes still being repaired after a digest mismatch (JSON array).
+    pub fn repairing(&self) -> String {
+        self.0.repairing()
     }
 
     #[wasm_bindgen(js_name = takeChanges)]

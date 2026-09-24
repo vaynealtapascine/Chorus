@@ -266,7 +266,9 @@ protector of / protected by, caretaker, source, friend.
   `@group`, list via `list:`), `kind:` (note/entry/message), `tag:`, `mood:`, `has:` (image/
   attachment/link/poll), `reply:` (true/false), `in:` (channel), `since:`/`until:` (date or
   relative), `fronting:` (author was fronting when posted), free text. A feed has a visibility and
-  can be shared with followers or copied by others. Editor has a live preview and chips for
+  can be shared with followers or copied by others. A shared feed using `fronting:` answers it
+  for each reader from only what their follow has revealed (D-069), and says so on both sides
+  ("This feed shows who was fronting when these posts were written"). Editor has a live preview and chips for
   non-typists.
 
 ### 6.5 System timeline

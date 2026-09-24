@@ -4,6 +4,8 @@
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
   import { sync } from '../sync/client';
+  import ThisDevice from './ThisDevice.svelte';
+  import ExportBundle from './ExportBundle.svelte';
 
   interface Token { id: string; name: string; scopes: string[]; created_at: number; last_used_at: number | null }
 
@@ -11,7 +13,7 @@
     { id: 'read:front', label: 'Who is fronting, switches and front history' },
     { id: 'read:members', label: 'Member list' },
     { id: 'read:messages', label: 'Read and search your messages' },
-    { id: 'read:posts', label: 'Read and search your journal posts' },
+    { id: 'read:posts', label: 'Journal posts, lists and feeds' },
     { id: 'stream', label: 'Live stream (overlays)' },
     { id: 'write:front', label: 'Log switches (NFC tags, Tasker, Home Assistant)' },
     { id: 'write:messages', label: 'Send messages (bots, bridges)' },
@@ -212,6 +214,7 @@
       {#if healthError}<span class="error">Health unavailable: {healthError}</span>{/if}
     </section>
   {/if}
+  <ThisDevice />
   <section class="card">
     <h2>Export your data</h2>
     <button class="ghost" onclick={() => download('/exports/ops.jsonl', 'ops.jsonl')}>Download op log (JSONL)</button>
@@ -221,6 +224,7 @@
         <button class="ghost" onclick={() => download(`/exports/csv/${table}`, `${table}.csv`)}>{table.replaceAll('_', ' ')} CSV</button>
       {/each}
     </div>
+    <ExportBundle />
   </section>
   <p class="hint">
     Tokens let your own scripts, spreadsheets, Grafana or a stream overlay read <em>your</em> front history,

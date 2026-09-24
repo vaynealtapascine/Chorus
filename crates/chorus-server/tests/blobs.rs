@@ -195,6 +195,7 @@ async fn shared_attachment_requires_public_structured_visibility() {
             .unwrap();
         c.execute("INSERT INTO channel(id,space_id,kind,created_at) VALUES ('ch','s','text',0)", []).unwrap();
         c.execute("INSERT INTO scope_access(account_id,scope) VALUES ('bob','space:s')", []).unwrap();
+        c.execute("INSERT INTO space_member(space_id,account_id,joined_hlc) VALUES ('s','bob','1:0:1')", []).unwrap();
         c.execute(
             "INSERT INTO message(id,channel_id,account_id,occurred_at,text) VALUES ('m','ch','alice',0,'hello')",
             [],

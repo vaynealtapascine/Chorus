@@ -192,6 +192,72 @@ silently to installed apps and engaged sites, so an uninstalled tab may still be
 Checked 2026-09-24: enrol, add a member, stop the server, reload — Home, Chat, Journal and two
 image attachments render, a member added and switched in offline reached the server on restart.
 
+**Keep everything on this device** (D-070, R18). Every op the account may see is already kept
+on every device (the window above is not built; when it is, it applies only with this setting
+off). The setting is per device — kept in IndexedDB (`kv["setting:keep_everything"]`), never
+synced — and defaults to on in the installed app (`display-mode: standalone`), off in a tab. On,
+it also keeps the *files*: once per session, 5 s after the socket is live, every attachment
+(thumbnail, and the file itself up to 20 MB), avatar and custom emoji the projection refers to is
+fetched into the offline blob cache (`sync/keep.ts` `fillFiles`, three at a time, through
+`loadBlob`, so files already kept cost a cache lookup).
+
+*Your data → This device* has the toggle and **Sync everything now**:
+
+1. *Re-check every scope.* The core's `recheck()` gives one `pull {scope, after: cursor}` per
+   scope. Each answer ends with `caught` and the server's digest for this account; a mismatch
+   starts the usual repair (re-pull from 0, then sweep, SYNC §6.5), and `repairing()` lists the
+   scopes still in it. Progress is "checked N of M" = scopes answered minus scopes repairing; done
+   when all answered and none repairing (2 min timeout).
+2. *Files*, when the setting is on: `fillFiles` with "Files: N of M (k not available)".
+3. *Space used*: `navigator.storage.estimate()` — what the whole site stores (replica, snapshot,
+   blob cache) and what the browser allows.
+
+**Offline search** (`search.ts`): messages as before (`SearchIndex`); `JournalIndex` adds this
+account's posts (title, text, tags, CW; `from:`, `before:`, `after:`) and switches (names of who
+was in them at search time, and the note; `before:`/`after:`), both from the replica. The Posts
+tab merges these with the server's `/search/posts` (other accounts' readable posts) when online;
+the Switches tab is local only. 5 000 posts + 10 000 switches search in < 16 ms (unit test).
+
+Android (Sol): same protocol — a per-device setting (default on), the file fill after connect,
+"Sync everything now" as the same `pull` per scope with progress from `caught` frames and the
+engine's repairing list (`JsonReplica::recheck`/`repairing` are in the FFI facade too), offline
+search over posts and switches from the replica.
+
+**Opening a big replica** (R18, D-070: a 100k-op device opens in ≤ 2 s). Projecting 100k ops
+takes seconds in wasm, so the app opens from the last projection it showed:
+
+1. *Snapshot.* The client saves `kv.snapshot = {projection (JSON text), digest, at}` 10 s after
+   the last change and whenever the page is hidden, chained after the op writes. `digest` is the
+   core's `projectionDigest()`: a `Digest` over each projected op's id and server stamp, kept
+   incrementally by the projector, so it names exactly the op copies the projection came from.
+2. *Open.* `start()` reads only the head (device, meta, hlc, snapshot), parses the snapshot and
+   mounts the app on it. The core replica starts empty (`WebReplica.begin`).
+3. *Background, in slices.* Ops are read 5 000 at a time in id order (`loadOps`) into the core
+   (`addOps`), then indexed 2 000 at a time (`indexStep`: each op's keys, as the projector needs
+   for later updates; nothing is projected), yielding to the page between slices.
+4. *Adopt.* `adopt(digest)`: if the indexed ops — minus any created while opening — are exactly
+   the snapshot's, the projector goes on from the snapshot, holding only keys recomputed from
+   then on (a *partial* projection; `projection()` materialises it if anyone asks), and the
+   ops created while opening arrive as the next delta. Otherwise (ops saved after the snapshot,
+   e.g. the page was killed before its next snapshot) it projects everything and the UI re-reads
+   it whole: the old, slow path, once. Only then does the socket connect.
+
+Local writes work while opening (they queue and show once adopted); nothing syncs until then.
+With no snapshot yet (first start) the app waits for the ops, as before. Exactness is
+property-tested in `chorus-core/tests/projector_props.rs` (`opening_from_a_snapshot_continues_exactly`).
+
+Measured with `web/perf/open.spec.ts` (headless Chromium on the remote box; `cd web && npm run
+build && npx playwright test -c perf/playwright.config.ts`), 2026-09-24:
+
+| Ops | No snapshot (before R18) | From the snapshot: app mounted | Ready to sync (background) | Longest task after mounting |
+| --- | --- | --- | --- | --- |
+| 10 000 | 0.6 s | 0.09 s | 0.4 s | 74 ms |
+| 100 000 | 6.7 s | 0.35 s | 4.4 s | 93 ms |
+
+At 100k the snapshot is ~32 MB of JSON; reading and parsing it is ~0.3 s of the open. The ops
+themselves still load into memory (the core needs them for updates and repair); lazy loading of
+old ops is a later step if memory becomes the limit.
+
 ## 5. Stage mode implementation notes
 
 - Stage is a *view state* over the normal list (no data copies): `{selected: Set<id>,

@@ -15,6 +15,14 @@
 //! Because every op affects state only through its own keys, the result equals
 //! `model::project` over the same ops; `tests/projector_props.rs` checks that on random histories.
 //! [`Projector::take_delta`] reports what changed, so the UI doesn't re-read everything either.
+//!
+//! **Opening from a snapshot** (CLIENTS.md §4.3, D-070): a big replica takes seconds to project,
+//! so the app keeps the last projection it showed (with [`Projector::digest`], which identifies
+//! the exact op copies it came from) and opens from that. The ops are then indexed a slice at a
+//! time ([`Projector::index_op`]) and [`Projector::adopt`] checks the digest: if it matches, the
+//! projector goes on from the snapshot without projecting anything — its own projection stays
+//! *partial*, holding only keys recomputed since, which is all [`Projector::take_delta`] reads.
+//! A mismatch (ops saved after the snapshot was) projects everything, as before.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -25,6 +33,7 @@ use crate::front::{self, FrontOp};
 use crate::hlc::Hlc;
 use crate::model::{self, Projection, Reads, Row};
 use crate::op::Op;
+use crate::sync::Digest;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Key {
@@ -41,6 +50,19 @@ fn same_stamp(a: &Op, b: &Op) -> bool {
         && a.received_at == b.received_at
         && a.account_id == b.account_id
         && a.device_id == b.device_id
+}
+
+/// What identifies one copy of an op in [`Projector::digest`]: its id and the server's stamp.
+fn stamp_key(o: &Op) -> String {
+    format!(
+        "{}|{:?}|{:?}|{:?}|{}|{}",
+        o.id,
+        o.seq,
+        o.occurred_at,
+        o.received_at,
+        o.account_id.as_deref().unwrap_or(""),
+        o.device_id.as_deref().unwrap_or("")
+    )
 }
 
 /// The keys an op touches, and whether it counts as opaque.
@@ -87,6 +109,10 @@ pub struct Projector {
     opaque: BTreeSet<String>,
     changed: BTreeSet<Key>,
     delivered_once: bool,
+    /// Of the op copies projected (see [`stamp_key`]).
+    digest: Digest,
+    /// `proj` holds only keys recomputed since adopting a snapshot (module docs).
+    partial: bool,
 }
 
 impl Projector {
@@ -104,6 +130,69 @@ impl Projector {
 
     pub fn is_empty(&self) -> bool {
         self.ops.is_empty()
+    }
+
+    /// Identifies the exact op copies the projection reflects (saved with a snapshot of it).
+    pub fn digest(&self) -> Digest {
+        self.digest
+    }
+
+    /// Index one op for later updates without projecting it (opening from a snapshot). Call once
+    /// per visible op, then [`Projector::adopt`].
+    pub fn index_op(&mut self, o: &Op) {
+        if self.ops.contains_key(&o.id) {
+            return;
+        }
+        let (keys, opaque) = keys_of(o);
+        if opaque {
+            self.opaque.insert(o.id.clone());
+        }
+        for k in &keys {
+            self.by_key.entry(k.clone()).or_default().insert((o.hlc, o.id.clone()));
+        }
+        self.op_keys.insert(o.id.clone(), keys);
+        self.digest.add(&stamp_key(o));
+        self.ops.insert(o.id.clone(), o.clone());
+    }
+
+    /// Everything is indexed; the reader holds a snapshot made at `snapshot` (a [`Projector::digest`]),
+    /// or nothing. `fresh`: ops created since the snapshot's ops were loaded, which the reader
+    /// hasn't seen. If what was indexed, minus `fresh`, is exactly the snapshot's ops, continue
+    /// from it (fresh ops' keys come as the next delta) and return true; otherwise project
+    /// everything, and the next delta says `full`.
+    pub fn adopt(&mut self, snapshot: Option<Digest>, fresh: &BTreeSet<String>) -> bool {
+        let mut d = self.digest;
+        for id in fresh {
+            if let Some(o) = self.ops.get(id) {
+                d.remove(&stamp_key(o));
+            }
+        }
+        self.proj.opaque = self.opaque.len();
+        if snapshot == Some(d) {
+            self.partial = true;
+            self.delivered_once = true;
+            let dirty: BTreeSet<Key> = fresh.iter().filter_map(|id| self.op_keys.get(id)).flatten().cloned().collect();
+            self.changed.clear();
+            self.recompute(&dirty);
+            self.changed.extend(dirty);
+            return true;
+        }
+        self.partial = true; // nothing projected yet
+        self.materialize();
+        self.delivered_once = false;
+        self.changed.clear();
+        false
+    }
+
+    /// Make a partial projection whole (only needed if someone reads all of it).
+    pub fn materialize(&mut self) {
+        if self.partial {
+            let ops = model::dedupe(self.ops.values());
+            let opaque = self.opaque.len();
+            self.proj = model::project(ops.iter().copied());
+            self.proj.opaque = opaque;
+            self.partial = false;
+        }
     }
 
     /// Bring the projection to exactly `visible` (the replica's confirmed + pending ops, minus
@@ -174,17 +263,9 @@ impl Projector {
         let ops = model::dedupe(visible);
         self.proj = model::project(ops.iter().copied());
         for o in ops {
-            let (keys, opaque) = keys_of(o);
-            if opaque {
-                self.opaque.insert(o.id.clone());
-            }
-            for k in &keys {
-                self.by_key.entry(k.clone()).or_default().insert((o.hlc, o.id.clone()));
-                // a reader that already saw an (empty) projection needs these as a delta
-                self.changed.insert(k.clone());
-            }
-            self.op_keys.insert(o.id.clone(), keys);
-            self.ops.insert(o.id.clone(), o.clone());
+            self.index_op(o);
+            // a reader that already saw an (empty) projection needs these as a delta
+            self.changed.extend(self.op_keys[&o.id].iter().cloned());
         }
         self.proj.opaque = self.opaque.len();
     }
@@ -200,11 +281,13 @@ impl Projector {
             dirty.insert(k.clone());
         }
         self.op_keys.insert(o.id.clone(), keys);
+        self.digest.add(&stamp_key(&o));
         self.ops.insert(o.id.clone(), o);
     }
 
     fn remove_op(&mut self, id: &str, dirty: &mut BTreeSet<Key>) {
         let Some(o) = self.ops.remove(id) else { return };
+        self.digest.remove(&stamp_key(&o));
         self.opaque.remove(id);
         for k in self.op_keys.remove(id).unwrap_or_default() {
             if let Some(set) = self.by_key.get_mut(&k) {

@@ -6,7 +6,8 @@ import { sync } from './sync/client';
 import type { MemberRow } from './data';
 
 export interface SpaceAccount { id: string; handle: string | null; display_name: string | null; kind: string }
-export interface SpaceInfo { id: string; kind: 'internal' | 'shared' | 'dm'; name: string | null; owner_account_id: string; accounts: SpaceAccount[] }
+/** `guest`: you're not in it; some of its channels are shared with you (channel permissions). */
+export interface SpaceInfo { id: string; kind: 'internal' | 'shared' | 'dm'; name: string | null; owner_account_id: string; guest?: boolean; accounts: SpaceAccount[] }
 interface Card { id: string; account_id: string; name: string | null; display_name: string | null; pronouns: string | null; color: string | null; sigils: string[]; avatar_blob: string | null }
 
 async function call(method: string, path: string, body?: unknown) {
@@ -64,6 +65,11 @@ export async function authorCards(spaceId: string): Promise<{ accounts: SpaceAcc
 
 /** What to call a space in the rail: its name, or for a DM the other account. */
 export function spaceTitle(s: { id: string; kind: string; name: string }, info: SpaceInfo | undefined, me: string): string {
+  if (info?.guest) {
+    const owner = info.accounts.find((a) => a.id === info.owner_account_id);
+    const who = owner ? (owner.display_name ?? `@${owner.handle}`) : 'Shared';
+    return s.kind === 'internal' ? `${who} · shared with you` : `${s.name || who} · shared with you`;
+  }
   if (s.kind === 'internal') return s.name || 'Home';
   if (s.kind === 'dm') {
     const other = info?.accounts.find((a) => a.id !== me);

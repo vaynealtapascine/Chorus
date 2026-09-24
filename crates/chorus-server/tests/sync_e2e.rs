@@ -1500,13 +1500,33 @@ async fn a_device_can_send_itself_a_test_notification() {
     let endpoint = format!("http://{}/push/", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, service).await.unwrap() });
 
-    let s = start().await;
+    // a default server refuses a push endpoint on its own machine (R16, push.rs `check_endpoint`)
+    let http = reqwest::Client::new();
+    let session = |d: &Value| d["session"].as_str().unwrap().to_string();
+    let keys: Vec<p256::SecretKey> = [7u8, 9].iter().map(|b| p256::SecretKey::from_slice(&[*b; 32]).unwrap()).collect();
+    let reg = |endpoint: String, key: &p256::SecretKey| {
+        json!({
+            "endpoint": endpoint,
+            "p256dh": push::b64url(key.public_key().to_sec1_point(false).as_bytes()),
+            "auth": push::b64url(&[3; 16]),
+        })
+    };
+    let strict = start().await;
+    let someone = enrol(&strict, auth::InviteKind::System, None, 63, "moon").await;
+    for bad in [format!("{endpoint}x"), "https://127.0.0.1:9/push/x".to_string()] {
+        let put = http.put(format!("http://{}/api/v1/devices/push", strict.base)).bearer_auth(session(&someone));
+        let r = put.json(&reg(bad.clone(), &keys[0])).send().await.unwrap();
+        assert_eq!(r.status(), 400, "{bad} refused");
+    }
+
+    // the rest runs with `webhook_targets = any` (tests, or an owner who knows what's listening)
+    let mut cfg = Config::default();
+    cfg.security.webhook_targets = Some(chorus_server::config::WebhookTargets::Any);
+    let s = start_with(cfg).await;
     let phone = enrol(&s, auth::InviteKind::System, None, 61, "stars").await;
     let account = phone["account_id"].as_str().unwrap();
     let laptop = enrol(&s, auth::InviteKind::Device, Some(account), 62, "stars").await;
-    let http = reqwest::Client::new();
     let url = format!("http://{}/api/v1/devices/push/test", s.base);
-    let session = |d: &Value| d["session"].as_str().unwrap().to_string();
 
     // no registration yet
     let r = http.post(&url).bearer_auth(session(&phone)).send().await.unwrap();
@@ -1515,14 +1535,11 @@ async fn a_device_can_send_itself_a_test_notification() {
     assert_eq!(body["error"]["code"], "no_push");
 
     // both devices register; only the caller gets the test
-    let keys: Vec<p256::SecretKey> = [7u8, 9].iter().map(|b| p256::SecretKey::from_slice(&[*b; 32]).unwrap()).collect();
     for (dev, (key, who)) in [&phone, &laptop].into_iter().zip(keys.iter().zip(["phone", "laptop"])) {
-        let reg = json!({
-            "endpoint": format!("{endpoint}{who}"),
-            "p256dh": push::b64url(key.public_key().to_sec1_point(false).as_bytes()),
-            "auth": push::b64url(&[3; 16]),
-        });
-        let put = http.put(format!("http://{}/api/v1/devices/push", s.base)).bearer_auth(session(dev)).json(&reg);
+        let put = http
+            .put(format!("http://{}/api/v1/devices/push", s.base))
+            .bearer_auth(session(dev))
+            .json(&reg(format!("{endpoint}{who}"), key));
         assert_eq!(put.send().await.unwrap().status(), 204);
     }
     assert_eq!(http.post(&url).bearer_auth(session(&phone)).send().await.unwrap().status(), 204);
@@ -1532,4 +1549,202 @@ async fn a_device_can_send_itself_a_test_notification() {
     assert_eq!(v["t"], "test");
     assert!(push::decrypt(&keys[1], &[3; 16], &got).is_none(), "not to the laptop's");
     assert!(rx.try_recv().is_err(), "one push, to the caller only");
+}
+
+/// Channel permissions (M5.10, perms.rs) end to end: a private channel in a shared space stays
+/// out of a member's sync, REST and search; a member without `manage` can't make channels; and
+/// one channel of the owner's internal space is shared with an outside account, which then gets
+/// that channel and nothing else of the space, and can talk there once allowed to.
+#[tokio::test(flavor = "multi_thread")]
+async fn channel_permissions_through_the_real_server() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 91, "stars").await;
+    let friend = enrol(&s, auth::InviteKind::Person, None, 92, "alex").await;
+    let mut phone = Device::new(&sys, 91);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let mut laptop = Device::new(&friend, 92);
+    laptop.connect(&s).await;
+    laptop.drain(Q).await;
+    let acct = phone.scope("account:");
+    let home = phone.scope("space:");
+    let kai = new_id(1, [93; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    let alex_member = model::project(laptop.store.confirmed())
+        .rows
+        .get("member")
+        .and_then(|m| m.keys().next().cloned())
+        .expect("a person account has its own member");
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+    let alex = friend["account_id"].as_str().unwrap().to_string();
+    let r =
+        http.post(url("/follows")).bearer_auth(tok(&friend)).json(&json!({"target": "stars"})).send().await.unwrap();
+    let f: Value = r.json().await.unwrap();
+    phone.drain(Q).await;
+    phone.create("follow.accept", &acct, f["id"].as_str().unwrap(), json!({})).await;
+    phone.drain(Q).await;
+    let texts = |d: &Device| -> Vec<String> {
+        model::project(d.store.confirmed())
+            .rows
+            .get("message")
+            .map(|m| {
+                m.values().filter_map(|r| r.fields.get("text").and_then(Value::as_str).map(str::to_string)).collect()
+            })
+            .unwrap_or_default()
+    };
+    let say = |id: u8, channel: &str, text: &str, author: &str| {
+        (new_id(3, [id; 10]), json!({"channel_id": channel, "authors": [author], "text": text, "entities": []}))
+    };
+
+    // a shared space with a private channel only the owner (and admins) can see
+    let r = http
+        .post(url("/spaces"))
+        .bearer_auth(tok(&sys))
+        .json(&json!({"kind": "shared", "name": "Club", "accounts": [alex]}))
+        .send()
+        .await
+        .unwrap();
+    let club = r.json::<Value>().await.unwrap()["id"].as_str().unwrap().to_string();
+    let club_scope = format!("space:{club}");
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    let secret = new_id(3, [1; 10]);
+    phone
+        .create("channel.create", &club_scope, &secret, json!({"space_id": club, "kind": "text", "name": "mods"}))
+        .await;
+    phone
+        .create(
+            "channel.set_permission",
+            &club_scope,
+            &secret,
+            json!({"target_type": "role", "target_id": "everyone", "allow": [], "deny": ["view"]}),
+        )
+        .await;
+    let (m, p) = say(2, &secret, "mods only", &kai);
+    phone.create("message.send", &club_scope, &m, p).await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    assert!(!texts(&laptop).contains(&"mods only".to_string()), "not synced live");
+    let r = http.get(url(&format!("/channels/{secret}/messages"))).bearer_auth(tok(&friend)).send().await.unwrap();
+    assert_eq!(r.status(), 404, "nor over REST");
+    let hits: Value =
+        http.get(url("/search/messages?q=mods")).bearer_auth(tok(&friend)).send().await.unwrap().json().await.unwrap();
+    assert_eq!(hits["items"], json!([]), "nor in search");
+    // alex can't post there, nor make channels (members don't have `manage`)
+    let (m, p) = say(3, &secret, "let me in", &alex_member);
+    let refused = laptop.create("message.send", &club_scope, &m, p).await;
+    let made = new_id(3, [4; 10]);
+    let refused_channel = laptop
+        .create("channel.create", &club_scope, &made, json!({"space_id": club, "kind": "text", "name": "mine"}))
+        .await;
+    laptop.drain(Q).await;
+    assert_eq!(laptop.store.rejected.get(&refused).map(|e| e.code.as_str()), Some("forbidden"));
+    assert_eq!(laptop.store.rejected.get(&refused_channel).map(|e| e.code.as_str()), Some("forbidden"));
+    // once allowed, a connected device repairs onto it live, and a fresh device catches up on it
+    phone
+        .create(
+            "channel.set_permission",
+            &club_scope,
+            &secret,
+            json!({"target_type": "account", "target_id": alex, "allow": ["view"], "deny": []}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    assert!(texts(&laptop).contains(&"mods only".to_string()), "gaining view repairs a connected device");
+    let fresh = enrol(&s, auth::InviteKind::Device, Some(&alex), 94, "").await;
+    let mut tablet = Device::new(&fresh, 94);
+    tablet.connect(&s).await;
+    tablet.drain(Q).await;
+    assert!(texts(&tablet).contains(&"mods only".to_string()), "an allowed account gets it in catch-up");
+    // and losing it again evicts the channel from every connected device
+    phone
+        .create(
+            "channel.set_permission",
+            &club_scope,
+            &secret,
+            json!({"target_type": "account", "target_id": alex, "allow": [], "deny": ["view"]}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    tablet.drain(Q).await;
+    assert!(!texts(&laptop).contains(&"mods only".to_string()), "losing view evicts it");
+    assert!(!texts(&tablet).contains(&"mods only".to_string()), "on every device");
+
+    // one channel of the internal space, shared with alex (a guest: not in the space)
+    let news = new_id(3, [5; 10]);
+    phone
+        .create(
+            "channel.create",
+            &home,
+            &news,
+            json!({"space_id": home.strip_prefix("space:").unwrap(), "kind": "text", "name": "news"}),
+        )
+        .await;
+    let general = model::project(phone.store.confirmed()).rows["channel"]
+        .iter()
+        .find(|(_, r)| {
+            r.fields.get("name").and_then(Value::as_str) == Some("general")
+                && r.fields.get("space_id").and_then(Value::as_str) == home.strip_prefix("space:")
+        })
+        .map(|(id, _)| id.clone())
+        .unwrap();
+    for (i, (channel, text)) in [(&general, "inside only"), (&news, "we moved!")].into_iter().enumerate() {
+        let (m, p) = say(10 + i as u8, channel, text, &kai);
+        phone.create("message.send", &home, &m, p).await;
+    }
+    phone
+        .create(
+            "channel.set_permission",
+            &home,
+            &news,
+            json!({"target_type": "account", "target_id": alex, "allow": ["view", "react"], "deny": []}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    assert!(laptop.store.scopes.contains(&home), "the guest gets the space's scope");
+    let spaces: Value = http.get(url("/spaces")).bearer_auth(tok(&friend)).send().await.unwrap().json().await.unwrap();
+    let listed =
+        spaces["items"].as_array().unwrap().iter().find(|i| format!("space:{}", i["id"].as_str().unwrap()) == home);
+    assert_eq!(listed.map(|i| i["guest"].clone()), Some(json!(true)), "listed as a space alex is a guest in");
+    let seen = texts(&laptop);
+    assert!(seen.contains(&"we moved!".to_string()), "and the shared channel");
+    assert!(!seen.contains(&"inside only".to_string()), "but nothing else of the space");
+    let r = http.get(url(&format!("/channels/{general}/messages"))).bearer_auth(tok(&friend)).send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    // a guest may react but not talk until allowed
+    let (m, p) = say(20, &news, "congrats", &alex_member);
+    let refused = laptop.create("message.send", &home, &m, p).await;
+    laptop.drain(Q).await;
+    assert_eq!(laptop.store.rejected.get(&refused).map(|e| e.code.as_str()), Some("forbidden"));
+    phone
+        .create(
+            "channel.set_permission",
+            &home,
+            &news,
+            json!({"target_type": "account", "target_id": alex, "allow": ["view", "react", "send"], "deny": []}),
+        )
+        .await;
+    phone.drain(Q).await;
+    let (m, p) = say(21, &news, "congrats!", &alex_member);
+    laptop.create("message.send", &home, &m, p).await;
+    laptop.drain(Q).await;
+    phone.drain(Q).await;
+    assert!(texts(&phone).contains(&"congrats!".to_string()), "the owner hears the guest");
+    // taking view away ends the guest's scope
+    phone
+        .create(
+            "channel.set_permission",
+            &home,
+            &news,
+            json!({"target_type": "account", "target_id": alex, "allow": [], "deny": []}),
+        )
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    assert!(!laptop.store.scopes.contains(&home), "no view left: no scope");
 }

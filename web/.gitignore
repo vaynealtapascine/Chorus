@@ -1,1 +1,3 @@
 src/lib/core/pkg/
+e2e/results/
+perf/results/

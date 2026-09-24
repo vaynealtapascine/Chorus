@@ -48,7 +48,7 @@ pub struct Delivery {
 
 // ─── configuration ───────────────────────────────────────────────────────────
 
-fn internal_ip(ip: IpAddr) -> bool {
+pub(crate) fn internal_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v) => {
             let [a, b, ..] = v.octets();
@@ -65,7 +65,7 @@ fn internal_ip(ip: IpAddr) -> bool {
 }
 
 /// Neither internal nor special-purpose: somewhere out on the internet.
-fn public_ip(ip: IpAddr) -> bool {
+pub(crate) fn public_ip(ip: IpAddr) -> bool {
     if internal_ip(ip) || ip.is_unspecified() || ip.is_multicast() {
         return false;
     }
@@ -118,20 +118,32 @@ pub async fn check_url(url: &str, targets: WebhookTargets) -> Result<Target, Str
     if targets == WebhookTargets::Any {
         return Ok(Target { url: u, pin: None });
     }
-    let refused = || match targets {
-        WebhookTargets::Public => "webhooks on this server may only point to public internet addresses".to_string(),
-        _ => "that address is outside the tailnet (an admin can allow external webhooks)".to_string(),
+    let refused = match targets {
+        WebhookTargets::Public => "webhooks on this server may only point to public internet addresses",
+        _ => "that address is outside the tailnet (an admin can allow external webhooks)",
     };
+    resolve_checked(u, move |ip| allowed(ip, targets), targets == WebhookTargets::Internal, false, refused).await
+}
+
+/// Resolve `u`'s host and require `ok` of every address (and of an IP literal); pin the first.
+/// `names_ok`: tailnet/LAN names that don't resolve from here (MagicDNS, mDNS) pass unpinned.
+/// `local_ok`: `localhost` may be named (only for a host the operator configured).
+pub(crate) async fn resolve_checked(
+    u: reqwest::Url,
+    ok: impl Fn(IpAddr) -> bool + Send,
+    names_ok: bool,
+    local_ok: bool,
+    refused: &str,
+) -> Result<Target, String> {
+    let refused = || refused.to_string();
     let host = u.host_str().unwrap_or_default().trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase();
     if let Ok(ip) = host.parse::<IpAddr>() {
-        return if allowed(ip, targets) { Ok(Target { url: u, pin: None }) } else { Err(refused()) };
+        return if ok(ip) { Ok(Target { url: u, pin: None }) } else { Err(refused()) };
     }
-    if host.is_empty() || host == "localhost" || host.ends_with(".localhost") {
+    if host.is_empty() || (!local_ok && (host == "localhost" || host.ends_with(".localhost"))) {
         return Err(refused());
     }
-    // tailnet/LAN names that don't resolve from here (MagicDNS, mDNS) are still fine for `internal`
-    let plausible = targets == WebhookTargets::Internal
-        && (!host.contains('.') || INTERNAL_SUFFIXES.iter().any(|s| host.ends_with(s)));
+    let plausible = names_ok && (!host.contains('.') || INTERNAL_SUFFIXES.iter().any(|s| host.ends_with(s)));
     let port = u.port_or_known_default().unwrap_or(443);
     let addrs: Vec<SocketAddr> = match tokio::net::lookup_host((host.as_str(), port)).await {
         Ok(a) => a.collect(),
@@ -142,9 +154,20 @@ pub async fn check_url(url: &str, targets: WebhookTargets) -> Result<Target, Str
         return Ok(Target { url: u, pin: None });
     }
     match addrs.first() {
-        Some(first) if addrs.iter().all(|a| allowed(a.ip(), targets)) => Ok(Target { url: u, pin: Some(*first) }),
+        Some(first) if addrs.iter().all(|a| ok(a.ip())) => Ok(Target { url: u, pin: Some(*first) }),
         _ => Err(refused()),
     }
+}
+
+/// An HTTP client that connects only to the checked address and never follows a redirect.
+pub(crate) fn pinned_client(target: &Target) -> Result<reqwest::Client, String> {
+    let mut http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none());
+    if let (Some(pin), Some(host)) = (target.pin, target.url.host_str()) {
+        http = http.resolve(host, pin);
+    }
+    http.build().map_err(|e| format!("can't build the request: {e}"))
 }
 
 fn check_events(events: &[String]) -> Result<(), DataError> {
@@ -371,13 +394,7 @@ pub fn signature(secret: &str, t_secs: i64, body: &str) -> String {
 pub async fn send(d: &Delivery, targets: WebhookTargets, now: i64) -> Result<u16, (Option<u16>, String)> {
     let target = check_url(&d.url, targets).await.map_err(|e| (None, e))?;
     // connect to exactly the address that passed the check, and never follow a redirect
-    let mut http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none());
-    if let (Some(pin), Some(host)) = (target.pin, target.url.host_str()) {
-        http = http.resolve(host, pin);
-    }
-    let http = http.build().map_err(|e| (None, format!("can't build the request: {e}")))?;
+    let http = pinned_client(&target).map_err(|e| (None, e))?;
     let r = http
         .post(target.url)
         .header("content-type", "application/json")

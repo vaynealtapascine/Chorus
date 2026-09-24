@@ -2,6 +2,7 @@
 
 pub mod activity;
 pub mod api_data;
+pub mod api_journal;
 pub mod api_reads;
 pub mod api_writes;
 pub mod app;
@@ -10,6 +11,7 @@ pub mod backup;
 pub mod blobs;
 pub mod config;
 pub mod db;
+pub mod export_job;
 pub mod exports;
 pub mod feeds;
 pub mod follows;
@@ -20,6 +22,7 @@ pub mod ingest;
 pub mod messages;
 pub mod notifier;
 pub mod oplog;
+pub mod perms;
 pub mod posts;
 pub mod project;
 pub mod purge;
@@ -33,6 +36,7 @@ pub mod spaces;
 pub mod tls;
 pub mod visibility;
 pub mod webhooks;
+pub mod zip;
 
 use rusqlite::Connection;
 
@@ -55,6 +59,12 @@ pub fn serve_until_stopped(config: &std::path::Path) -> anyhow::Result<()> {
 
 pub fn open_and_migrate(cfg: &config::Config) -> anyhow::Result<Connection> {
     let path = cfg.db_path();
+    // a `rebuild` interrupted mid-swap (project::rebuild_swap) left the database set aside
+    let aside = project::set_aside_path(&path);
+    if !path.exists() && aside.exists() {
+        std::fs::rename(&aside, &path)?;
+        tracing::warn!("put back the database an interrupted rebuild had set aside");
+    }
     let existed = path.exists();
     let mut conn = db::open(&path)?;
     if existed && db::schema_version(&conn)? > 0 && db::pending_migrations(&conn)? > 0 {

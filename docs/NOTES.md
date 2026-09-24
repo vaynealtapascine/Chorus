@@ -210,6 +210,13 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   that backup. The replay now folds the log up to the op being projected (`REPLAYED_UPTO`);
   `tests/projection.rs` `in_order_switches_match_refolding` rebuilds and compares all four front
   tables. Entity rows don't need this: they're a function of the full op set either way.
+- 2026-09-24 claude-opus-5.5 (remote) — core/server — A client's digest repair used to re-pull a
+  scope without dropping anything, so a device holding ops it may no longer see (a channel whose
+  `view` was taken away — R9 made that possible) never matched and re-pulled forever on every
+  catch-up. The repair now sweeps what the re-pull didn't deliver and ends after one pass
+  (SYNC §6.5). And `perms::can_sql` is spliced into queries that already use `c`, `m`, `s`;
+  its own aliases are all `perm_*`, because a nested `channel c` silently shadowed the outer one
+  (a DM message stopped reaching the other participant).
 - 2026-09-24 claude-opus-5.5 — perf — The R1 rebuild changes measured on the owner's Windows PC
   (1M ops, release): **rebuild 58.7 s** (57 s before R1; budget 60 s), ingest 3 897 ops/s. The
   replay itself fell to 27.1 s, but the single rebuild transaction's **commit takes 20.0 s** here
@@ -217,3 +224,28 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   Linux was eaten by Windows' commit of a ~GB WAL. Next lever: rebuild into a fresh database file
   with `journal_mode=OFF`/`synchronous=OFF` (nothing to protect until it's swapped in), then
   swap files atomically, instead of one giant WAL transaction on the live file.
+- 2026-09-24 claude-opus-5.5 (remote) — server — Migrations must be idempotent (`IF NOT EXISTS`,
+  delete-then-fill): `backup_cli.rs` `restore_migrates_a_snapshot_from_an_older_schema` fakes an
+  old schema by setting `schema_version` back on a current database, so every later migration
+  runs again. And the workspace sets `unsafe_code = "forbid"`, which a local `allow` can't lift:
+  platform calls go through safe wrappers already in the lockfile (e.g. `rustix` for `statvfs`).
+- 2026-09-24 claude-opus-5.5 (remote) — server — `chorus-server rebuild` now builds into a fresh
+  file (`project::rebuild_swap`): the schema by migration, the op log and server tables copied
+  through the source connection (`ATTACH`), `journal_mode=OFF`/`synchronous=OFF`, the usual
+  rebuild, `quick_check` + row counts of everything copied, `journal_mode=WAL`, then swap
+  (old aside → new in → old deleted; `open_and_migrate` puts an aside file back if a swap was cut
+  short). Traps: (1) the rebuild reads the log on a second connection, and a second connection
+  to a journal-less file blocks the writer, so the locked *source* connection is lent to the
+  reader thread (`LOG_READER`); (2) the source is held with `locking_mode=EXCLUSIVE`, which fails
+  at once if a server has the file open (even idle), so a running server can't race the swap;
+  (3) the old file's `-wal` must be gone before the new file takes its name, or SQLite would
+  replay it into the new file. 1M ops on the remote Linux box: 35.9 s in place (commit 5.8 s) →
+  31.3 s swapped (commit 0.3 s, copy 4.1 s, check 4.0 s, replay 16.9 s instead of 20.1 s without
+  the WAL). The owner's Windows commit was 20 s, so the gain there should be larger.
+- 2026-09-25 claude-opus-5.5 — server — R19 re-measured on the owner's Windows PC (release build,
+  1M ops, `tests/perf.rs` with `CHORUS_PERF_DB`): in place 63.2 s (commit 20.2 s); into a fresh
+  file and swap 58.5 s (commit 0.4 s, swap 0.1 s). The commit problem is gone, but the replay
+  itself takes ~58 s here (31 s on the remote's Linux box), so the 60 s budget holds by a small
+  margin on Windows. Set `CHORUS_PERF_DIR` to a roomy drive: the working copy (~2 GB plus WAL)
+  goes to the temp folder otherwise, and a failed run leaves it there (it filled C: once).
+
