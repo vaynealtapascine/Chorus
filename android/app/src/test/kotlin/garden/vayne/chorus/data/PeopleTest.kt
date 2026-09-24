@@ -12,6 +12,12 @@ class PeopleTest {
         assertEquals("Bob", list.followers.single().account.shownName)
     }
 
+    @Test fun followingRowsKeepOwnQuietHourPreferences() {
+        val list = PeopleApi.parse(JSONObject("""{"following":[{"id":"out","account":{"id":"a","handle":"alice"},"status":"active","prefs":{"quiet_hours":{"from":"22:00","to":"07:00"},"digest":true}}],"followers":[]}"""))
+        assertEquals(QuietWindow("22:00", "07:00"), QuietHours.read(list.following.single().prefs))
+        assertEquals(true, list.following.single().prefs.getBoolean("digest"))
+    }
+
     @Test fun followerViewShowsOnlyAlreadyReleasedFrontNames() {
         val hidden = JSONObject("""{"shared":false,"entries":[{"level":"front","name":"Secret"}]}""")
         assertEquals(emptyList<String>(), PeopleApi.followerView(hidden).frontNames)

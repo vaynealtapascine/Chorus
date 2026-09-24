@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,8 +28,14 @@ import garden.vayne.chorus.data.AccountPrefs
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.FollowPresets
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.FollowList
+import garden.vayne.chorus.data.PeopleApi
+import garden.vayne.chorus.data.QuietHours
+import garden.vayne.chorus.data.QuietWindow
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
 
 /** Account pref rows mirror web Settings; each change queues one pref.set (D-063). */
 @Composable
@@ -38,6 +46,27 @@ internal fun SettingsScreen(chorus: Chorus, model: Model) {
     var advanced by rememberSaveable { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var follows by remember { mutableStateOf(FollowList(emptyList(), emptyList())) }
+    var followError by remember { mutableStateOf<String?>(null) }
+    var followBusy by remember { mutableStateOf(false) }
+    var followRefresh by remember { mutableStateOf(0) }
+    var quietFrom by rememberSaveable { mutableStateOf("23:00") }
+    var quietTo by rememberSaveable { mutableStateOf("08:00") }
+
+    LaunchedEffect(chorus.device?.session, followRefresh) {
+        follows = FollowList(emptyList(), emptyList())
+        val dev = chorus.device ?: return@LaunchedEffect
+        try {
+            follows = PeopleApi.list(dev)
+            follows.following.firstNotNullOfOrNull { QuietHours.read(it.prefs) }?.let {
+                quietFrom = it.from; quietTo = it.to
+            }
+            followError = null
+        } catch (e: Exception) {
+            follows = FollowList(emptyList(), emptyList())
+            followError = "Quiet hours need a connection."
+        }
+    }
 
     fun save(key: String, value: Any) {
         if (busy) return
@@ -46,6 +75,22 @@ internal fun SettingsScreen(chorus: Chorus, model: Model) {
             try { chorus.create("pref.set", null, AccountPrefs.payload(key, value)) }
             catch (e: Exception) { error = e.message ?: "Could not save this setting." }
             finally { busy = false }
+        }
+    }
+
+    val active = follows.following.filter { it.status == "active" }
+    val quietOn = active.any { QuietHours.read(it.prefs) != null }
+    fun saveQuiet(window: QuietWindow?) {
+        if (followBusy || active.isEmpty()) return
+        followBusy = true; followError = null
+        actions.launch {
+            try {
+                val offset = ZoneId.systemDefault().rules.getOffset(Instant.now()).totalSeconds / 60
+                val dev = checkNotNull(chorus.device) { "Not signed in." }
+                for (follow in active) PeopleApi.setPrefs(dev, follow.id, QuietHours.updated(follow.prefs, window, offset))
+                followRefresh++
+            } catch (e: Exception) { followError = e.message ?: "Could not update quiet hours." }
+            finally { followBusy = false }
         }
     }
 
@@ -71,6 +116,24 @@ internal fun SettingsScreen(chorus: Chorus, model: Model) {
                 SettingToggle("Replies", prefs.chatEnabled("reply"), !busy) {
                     save("notify_chat", prefs.withChatKind("reply", it))
                 }
+                if (active.isNotEmpty()) {
+                    Text("Quiet hours for people you follow", color = p.ink2)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(quietFrom, { quietFrom = it.take(5) }, label = { Text("From") },
+                            singleLine = true, modifier = Modifier.weight(1f))
+                        OutlinedTextField(quietTo, { quietTo = it.take(5) }, label = { Text("Until") },
+                            singleLine = true, modifier = Modifier.weight(1f))
+                    }
+                    Text("Use 24-hour time, in your local time zone.", color = p.ink2)
+                    Row {
+                        TextButton(enabled = !followBusy && QuietHours.valid(quietFrom, quietTo),
+                            onClick = { saveQuiet(QuietWindow(quietFrom, quietTo)) }) {
+                            Text(if (quietOn) "Update quiet hours" else "Turn on quiet hours")
+                        }
+                        if (quietOn) TextButton(enabled = !followBusy, onClick = { saveQuiet(null) }) { Text("Turn off") }
+                    }
+                }
+                if (followError != null) Text(followError.orEmpty(), color = p.ink2)
             }
         }
         if (!model.isPerson) item {

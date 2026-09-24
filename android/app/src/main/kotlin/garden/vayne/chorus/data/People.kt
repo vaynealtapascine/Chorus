@@ -5,7 +5,8 @@ import java.util.Date
 import org.json.JSONObject
 
 /** Follow rows and privacy-filtered views returned by the server for this signed-in device. */
-data class FollowInfo(val id: String, val account: SpaceAccount, val status: String)
+data class FollowInfo(val id: String, val account: SpaceAccount, val status: String,
+    val prefs: JSONObject = JSONObject())
 data class FollowList(val following: List<FollowInfo>, val followers: List<FollowInfo>)
 data class PostReaction(val emoji: String, val memberId: String, val memberName: String)
 data class SharedPost(val id: String, val kind: String, val title: String?, val text: String,
@@ -40,7 +41,7 @@ object PeopleApi {
                 FollowInfo(f.getString("id"), SpaceAccount(p.getString("id"),
                     p.optString("handle").takeIf { p.has("handle") && !p.isNull("handle") && it.isNotBlank() },
                     p.optString("display_name").takeIf { p.has("display_name") && !p.isNull("display_name") && it.isNotBlank() }),
-                    f.getString("status"))
+                    f.getString("status"), f.optJSONObject("prefs") ?: JSONObject())
             }
         }
         return FollowList(rows("following"), rows("followers"))
@@ -90,6 +91,9 @@ object PeopleApi {
     }
     suspend fun unfollow(dev: DeviceRecord, id: String) {
         Api.call("DELETE", dev.base, "/follows/$id", null, dev.session)
+    }
+    suspend fun setPrefs(dev: DeviceRecord, id: String, prefs: JSONObject) {
+        Api.call("PUT", dev.base, "/follows/$id/prefs", prefs, dev.session)
     }
     suspend fun view(dev: DeviceRecord, accountId: String): JSONObject =
         Api.call("GET", dev.base, "/accounts/$accountId/view", null, dev.session)
