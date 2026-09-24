@@ -6,6 +6,7 @@ import { load, save, type Changes, type DeviceRecord } from './persist';
 import { renew } from './device';
 import { applyDelta, type Delta } from './delta';
 import { flushUploads } from './uploads';
+import { keepStorage } from './blobs';
 
 export type Status = 'offline' | 'connecting' | 'live' | 'no-device';
 
@@ -62,6 +63,8 @@ export class SyncClient {
       this.emit();
       return;
     }
+    // the replica and outbox are the only copy of offline work: ask not to be evicted
+    void keepStorage();
     // Older saved devices predate the admin capability in the enrolment response.
     if (this.device.is_admin === undefined && navigator.onLine) {
       try { this.device = await renew(this.device); } catch { /* reconnect will retry auth later */ }

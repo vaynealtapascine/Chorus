@@ -69,3 +69,13 @@ export async function disablePush(): Promise<void> {
   await (await reg?.pushManager.getSubscription())?.unsubscribe();
   await call('DELETE', '/devices/push');
 }
+
+/** Ask the server to push a test notification to this browser. Resolves to an error to show, or null. */
+export async function testPush(): Promise<string | null> {
+  try {
+    await call('POST', '/devices/push/test');
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}

@@ -233,6 +233,20 @@ pub fn prepare_except(
     Ok(out)
 }
 
+/// "Send a test notification" (`POST /devices/push/test`): a push to this one device, so the
+/// owner can check the whole path (distributor or browser push service, decryption, display)
+/// without making a switch or a mention. `None` when the device has no push registration.
+pub fn prepare_test(conn: &Connection, account: &str, device_id: &str) -> anyhow::Result<Option<Outbound>> {
+    let payload = serde_json::json!({
+        "t": "test",
+        "id": format!("test-{}", crate::now_ms()),
+        "account_id": "test",
+        "title": "Chorus",
+        "text": "Notifications work on this device.",
+    });
+    Ok(prepare_except(conn, account, &payload, None)?.into_iter().find(|o| o.device_id == device_id))
+}
+
 /// What to do with a device after a send attempt.
 pub enum Sent {
     Ok,

@@ -123,6 +123,7 @@ pub fn router(state: AppState) -> Router {
         .route("/follows/{id}/prefs", put(follow_prefs))
         .route("/follows/{id}", delete(follow_end))
         .route("/devices/push", put(push_register).delete(push_unregister))
+        .route("/devices/push/test", post(push_test))
         .route("/push/vapid", get(push_vapid))
         .route("/android/latest", get(android_latest))
         .route("/notifications", get(notifications))
@@ -495,6 +496,33 @@ async fn push_unregister(State(s): State<AppState>, headers: axum::http::HeaderM
     let me = who(&s, &conn, &headers)?;
     crate::push::unregister(&conn, &me.device_id)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Send a test notification to this device only (push.rs `prepare_test`).
+async fn push_test(State(s): State<AppState>, headers: axum::http::HeaderMap) -> Result<StatusCode, ApiError> {
+    let outbound = {
+        let conn = s.db();
+        let me = who(&s, &conn, &headers)?;
+        crate::push::prepare_test(&conn, &me.account_id, &me.device_id)?
+    };
+    let Some(o) = outbound else {
+        let message = "this device hasn't turned notifications on".to_string();
+        return Err(ApiError(StatusCode::CONFLICT, "no_push", message));
+    };
+    let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap_or_default();
+    let sent = crate::push::send(&http, &o).await;
+    crate::push::record(&s.db(), &o.device_id, &sent)?;
+    match sent {
+        crate::push::Sent::Ok => Ok(StatusCode::NO_CONTENT),
+        crate::push::Sent::Gone => {
+            let message = "the push service no longer knows this device; turn notifications off and on".to_string();
+            Err(ApiError(StatusCode::BAD_GATEWAY, "push_gone", message))
+        }
+        crate::push::Sent::Failed => {
+            let message = "the push service refused or couldn't be reached; the server log has details".to_string();
+            Err(ApiError(StatusCode::BAD_GATEWAY, "push_failed", message))
+        }
+    }
 }
 
 /// The released Android build, if the owner deployed one (`chorus.json` beside `chorus.apk`).

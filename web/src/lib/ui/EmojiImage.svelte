@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { sync } from '../sync/client';
-  import { apiBase } from '../sync/device';
-  import { pendingBlob } from '../sync/persist';
+  import { loadBlob } from '../sync/blobs';
 
   let { hash, name }: { hash: string; name: string } = $props();
   let src = $state('');
@@ -20,13 +19,7 @@
     let objectUrl = '';
     src = '';
     if (wanted) void (async () => {
-      let blob = await pendingBlob(wanted);
-      if (!blob && sync.device) {
-        const response = await fetch(`${apiBase()}/blobs/${wanted}`, {
-          headers: { authorization: `Bearer ${sync.device.session}` },
-        }).catch(() => null);
-        if (response?.ok) blob = await response.blob();
-      }
+      const blob = await loadBlob(wanted, sync.device);
       if (blob && !cancelled) {
         objectUrl = URL.createObjectURL(blob);
         src = objectUrl;

@@ -2,8 +2,7 @@
   import { onMount } from 'svelte';
   import type { AttachmentRow } from '../data';
   import { sync } from '../sync/client';
-  import { apiBase } from '../sync/device';
-  import { pendingBlob } from '../sync/persist';
+  import { loadBlob } from '../sync/blobs';
 
   let { attachment, blur = false, revealable = true }: { attachment: AttachmentRow; blur?: boolean; revealable?: boolean } = $props();
   let revealed = $state(false);
@@ -23,14 +22,7 @@
     let objectUrl = '';
     src = '';
     void (async () => {
-      const local = await pendingBlob(wanted);
-      let blob = local;
-      if (!blob && sync.device) {
-        const response = await fetch(`${apiBase()}/blobs/${wanted}`, {
-          headers: { authorization: `Bearer ${sync.device.session}` },
-        }).catch(() => null);
-        if (response?.ok) blob = await response.blob();
-      }
+      const blob = await loadBlob(wanted, sync.device);
       if (!blob || cancelled) return;
       objectUrl = URL.createObjectURL(blob);
       src = objectUrl;
