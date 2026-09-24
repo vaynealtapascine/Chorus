@@ -17,8 +17,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -30,7 +32,9 @@ import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.JournalPost
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PostCompose
+import garden.vayne.chorus.data.PostThreads
 import garden.vayne.chorus.data.Reply
+import garden.vayne.chorus.data.ThreadReply
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import java.text.DateFormat
 import java.util.Date
@@ -42,6 +46,7 @@ fun Journal(chorus: Chorus, model: Model) {
     val p = LocalChorusPalette.current
     var editing by rememberSaveable { mutableStateOf(false) }
     var profileId by rememberSaveable { mutableStateOf<String?>(null) }
+    var threadPostId by rememberSaveable { mutableStateOf<String?>(null) }
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
     var kind by rememberSaveable { mutableStateOf("note") }
     var authorId by rememberSaveable { mutableStateOf("") }
@@ -63,6 +68,14 @@ fun Journal(chorus: Chorus, model: Model) {
         MemberProfile(chorus, model, id, onClose = { profileId = null },
             onWrite = { authorId = id; replyTo = null; editing = true },
             onReply = { postId -> authorId = id; replyTo = postId; editing = true })
+        return
+    }
+
+    if (!editing && threadPostId != null) {
+        val id = threadPostId!!
+        BackHandler { threadPostId = null }
+        JournalThread(chorus, model, id, onClose = { threadPostId = null },
+            onReply = { replyTo = id; editing = true })
         return
     }
 
@@ -147,6 +160,7 @@ fun Journal(chorus: Chorus, model: Model) {
         for (event in events) item(key = "${if (event.post == null) "switch" else "post"}:${event.id}") {
             if (event.post != null) JournalPostCard(event.post, model,
                 onReply = { replyTo = event.post.id; editing = true },
+                onThread = { threadPostId = event.post.id },
                 onProfile = { profileId = it })
             else Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
                 Text(event.switchLabel.orEmpty(), color = p.ink2)
@@ -169,6 +183,7 @@ private fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit)
 
 @Composable
 internal fun JournalPostCard(post: JournalPost, model: Model, onReply: () -> Unit,
+    onThread: (() -> Unit)? = null,
     onProfile: (String) -> Unit = {}) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
@@ -190,6 +205,64 @@ internal fun JournalPostCard(post: JournalPost, model: Model, onReply: () -> Uni
             if (post.mood != null) Text(post.mood, color = p.ink2)
             if (post.tags.isNotEmpty()) Text(post.tags.joinToString(" ") { "#$it" }, color = p.ink2)
         }
-        TextButton(onClick = onReply) { Text("Reply") }
+        Row {
+            TextButton(onClick = onReply) { Text("Reply") }
+            if (onThread != null) TextButton(onClick = onThread) { Text("Thread") }
+        }
+    }
+}
+
+/** Server replies can come from other accounts, while own replies remain available offline. */
+@Composable
+private fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose: () -> Unit, onReply: () -> Unit) {
+    val p = LocalChorusPalette.current
+    var remote by remember(postId) { mutableStateOf<List<ThreadReply>?>(null) }
+    var error by remember(postId) { mutableStateOf<String?>(null) }
+    var refresh by remember(postId) { mutableStateOf(0) }
+    val local = PostThreads.ownReplies(model, postId)
+    LaunchedEffect(postId, chorus.device?.session, refresh) {
+        val dev = chorus.device ?: return@LaunchedEffect
+        try {
+            remote = PostThreads.load(dev, postId)
+            error = null
+        } catch (e: Exception) {
+            remote = null
+            error = e.message ?: "Could not load replies."
+        }
+    }
+    val replies = PostThreads.merge(local, remote.orEmpty())
+    LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = onClose) { Text("Back") }
+                Text("Replies", color = p.ink, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 14.dp))
+                TextButton(onClick = { refresh++ }) { Text("Refresh") }
+            }
+        }
+        if (error != null) item { Text("Showing replies on this device. ${error.orEmpty()}", color = p.ink2) }
+        if (replies.isEmpty()) item { Text("No replies yet.", color = p.ink2) }
+        items(replies, key = { it.id }) { reply -> ThreadReplyCard(reply) }
+        item { TextButton(onClick = onReply) { Text("Write a reply") } }
+    }
+}
+
+@Composable
+private fun ThreadReplyCard(reply: ThreadReply) {
+    val p = LocalChorusPalette.current
+    var revealed by rememberSaveable(reply.id) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(reply.authorNames.joinToString(" & ").ifBlank { "Someone" }, color = p.ink,
+            fontWeight = FontWeight.SemiBold)
+        Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(reply.occurredAt)),
+            color = p.ink3, fontSize = 12.sp)
+        if (reply.cw != null) Text("Content warning: ${reply.cw} · ${if (revealed) "Hide" else "Show"}",
+            color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
+        if (reply.cw == null || revealed) {
+            if (reply.title != null) Text(reply.title, color = p.ink, fontWeight = FontWeight.SemiBold)
+            Text(reply.text, color = p.ink)
+        }
     }
 }
