@@ -237,33 +237,63 @@ fn thread_parent(conn: &Connection, channel_id: &str) -> anyhow::Result<Option<S
 
 /// A thread is a channel, and its parent message keeps a reverse pointer for read APIs. Refresh
 /// on both channel and message projection so offline ops converge in either arrival order.
+/// A rebuild links every thread once at the end instead ([`THREAD_LINK`] over all parents).
 fn refresh_thread_link(conn: &Connection, parent_id: &str) -> anyhow::Result<()> {
-    exec(
-        conn,
-        "UPDATE message SET thread_channel_id = (
-           SELECT t.id FROM channel t JOIN channel source ON source.id = message.channel_id
-           WHERE t.kind = 'thread' AND t.parent_message_id = message.id AND t.space_id = source.space_id
-             AND t.deleted_at IS NULL AND t.archived_at IS NULL
-           ORDER BY t.created_at, t.id LIMIT 1
-         ) WHERE id = ?1",
-        [parent_id],
-    )?;
+    if REBUILDING.with(std::cell::Cell::get) {
+        return Ok(());
+    }
+    exec(conn, &format!("{THREAD_LINK} WHERE id = ?1"), [parent_id])?;
     Ok(())
 }
 
+const THREAD_LINK: &str = "UPDATE message SET thread_channel_id = (
+       SELECT t.id FROM channel t JOIN channel source ON source.id = message.channel_id
+       WHERE t.kind = 'thread' AND t.parent_message_id = message.id AND t.space_id = source.space_id
+         AND t.deleted_at IS NULL AND t.archived_at IS NULL
+       ORDER BY t.created_at, t.id LIMIT 1
+     )";
+
+/// (table, columns) → statement text.
+type SqlShapes = HashMap<(String, Vec<String>), std::rc::Rc<str>>;
+
+thread_local! {
+    /// Upsert SQL by table and column list: rows of a table come in a few shapes, and building
+    /// the statement text for every row showed up in rebuild profiles (SPEC §9).
+    static UPSERT_SQL: std::cell::RefCell<SqlShapes> = Default::default();
+}
+
 fn upsert(conn: &Connection, table: &str, key: &[&str], names: &[String], values: Vec<Sql>) -> anyhow::Result<()> {
+    let hit =
+        UPSERT_SQL.with(|c| c.borrow().iter().find(|((t, n), _)| t == table && n == names).map(|(_, sql)| sql.clone()));
+    let sql = match hit {
+        Some(sql) => sql,
+        None => {
+            let sql: std::rc::Rc<str> = upsert_sql(table, key, names).into();
+            UPSERT_SQL.with(|c| {
+                let mut c = c.borrow_mut();
+                if c.len() >= 128 {
+                    c.clear(); // an odd mix of optional fields; don't let the cache grow forever
+                }
+                c.insert((table.to_string(), names.to_vec()), sql.clone());
+            });
+            sql
+        }
+    };
+    exec(conn, &sql, params_from_iter(values))?;
+    Ok(())
+}
+
+fn upsert_sql(table: &str, key: &[&str], names: &[String]) -> String {
     let placeholders: Vec<String> = (1..=names.len()).map(|i| format!("?{i}")).collect();
     let updates: Vec<String> =
         names.iter().filter(|n| !key.contains(&n.as_str())).map(|n| format!("{n} = excluded.{n}")).collect();
-    let sql = format!(
+    format!(
         "INSERT INTO {table} ({}) VALUES ({}) ON CONFLICT({}) DO {}",
         names.join(", "),
         placeholders.join(", "),
         key.join(", "),
         if updates.is_empty() { "NOTHING".into() } else { format!("UPDATE SET {}", updates.join(", ")) }
-    );
-    exec(conn, &sql, params_from_iter(values))?;
-    Ok(())
+    )
 }
 
 /// `fresh`: the entity's only op is its create, so it has no derived rows to clear yet.
@@ -1091,24 +1121,62 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
     };
     SINGLE_OP.with(|m| *m.borrow_mut() = Some(multi));
     let replayed = (|| -> anyhow::Result<()> {
-        loop {
-            let batch = oplog::applied_after(&tx, seq, 1000)?;
-            if batch.is_empty() {
-                break;
-            }
-            for o in &batch {
-                seq = o.seq.unwrap_or(seq);
+        let mut apply = |batch: &[Op]| -> anyhow::Result<()> {
+            for o in batch {
                 let t = std::time::Instant::now();
                 after_insert(&tx, o)?;
                 time(&o.kind, t.elapsed());
                 n += 1;
             }
+            Ok(())
+        };
+        match tx.path().filter(|p| !p.is_empty()).map(std::path::PathBuf::from) {
+            // decode the log on a second (read-only) connection while this one writes; the op
+            // table doesn't change during a rebuild, so its committed snapshot is the same log
+            Some(path) => std::thread::scope(|s| {
+                let (send, recv) = std::sync::mpsc::sync_channel::<anyhow::Result<Vec<Op>>>(4);
+                s.spawn(move || {
+                    let read = || -> anyhow::Result<()> {
+                        let conn = Connection::open_with_flags(
+                            &path,
+                            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                        )?;
+                        let mut seq = 0;
+                        loop {
+                            let batch = oplog::applied_after(&conn, seq, 1000)?;
+                            let Some(last) = batch.last() else { return Ok(()) };
+                            seq = last.seq.unwrap_or(seq);
+                            if send.send(Ok(batch)).is_err() {
+                                return Ok(()); // the writer stopped early
+                            }
+                        }
+                    };
+                    if let Err(e) = read() {
+                        let _ = send.send(Err(e));
+                    }
+                });
+                for batch in recv {
+                    apply(&batch?)?;
+                }
+                Ok(())
+            }),
+            None => loop {
+                let batch = oplog::applied_after(&tx, seq, 1000)?;
+                let Some(last) = batch.last() else { return Ok(()) };
+                seq = last.seq.unwrap_or(seq);
+                apply(&batch)?;
+            },
         }
-        Ok(())
     })();
     REBUILDING.with(|r| r.set(false));
     SINGLE_OP.with(|m| *m.borrow_mut() = None);
     replayed?;
+    let t = std::time::Instant::now();
+    tx.execute(
+        &format!("{THREAD_LINK} WHERE id IN (SELECT parent_message_id FROM channel WHERE kind = 'thread')"),
+        [],
+    )?;
+    time("(thread links)", t.elapsed());
     let t = std::time::Instant::now();
     tx.execute(
         "INSERT INTO message_fts(rowid, text, cw) SELECT rowid, text, coalesce(cw, '') FROM message WHERE deleted_at IS NULL",

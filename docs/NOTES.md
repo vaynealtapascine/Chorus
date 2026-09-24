@@ -118,7 +118,13 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   alone would drop ones that later retracts made moot, and restore compares `front_review`.
   **Still over budget: rebuild** (~26 s per 100k, so ~4–5× the 60 s for 1M), because it replays
   `after_insert` op by op, each one re-running the model over its entity. A batch rebuild
-  (project whole scopes in memory, bulk insert) is the fix. Clients' core projector still
+  (project whole scopes in memory, bulk insert) is the fix.
+  2026-09-24 (Claude): **67 s at 1M** after linking threads once at the end of a rebuild,
+  decoding the log on a second read-only connection while the writer projects, and caching
+  upsert SQL per column shape. Profile at 1M: message upsert 13 s, segments 6.6 s, authors 4 s,
+  model + field building 6 s, commit 11 s (about half of it the WAL checkpoint, which has to
+  happen anyway), search index 4.4 s, switches 6 s. Segment rows can't be skipped for plain
+  messages: DATA_MODEL promises ≥ 1 segment per message and `v_message_segment` reads them. Clients' core projector still
   refolds the front per front op (fine at their sizes; `front::append` is there when needed).
 - 2026-09-23 gpt-6-sol — insights — `front::daily` expects a caller-supplied UTC offset. The web
   dashboard derives the account system's IANA zone with `Intl`, splits intervals at offset
