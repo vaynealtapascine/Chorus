@@ -151,6 +151,9 @@ chorus-server migrate                   # run pending schema migrations (also au
   for performance testing against the SPEC §9 budgets. The destination must be a new directory;
   the command refuses to overwrite even an empty existing directory. Omit `--to` only when the
   configured data directory does not exist yet.
+- Browser end-to-end suite (the v1 flows in three browsers): `bash scripts/e2e-web.sh` starts
+  its own server on a temporary data directory; `web/e2e/README.md` also shows how to run it
+  against a live server. CI runs it as the `e2e` job.
 
 ## 9. Linux server (public VPS)
 
