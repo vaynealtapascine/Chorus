@@ -718,7 +718,8 @@ write must stay in its own space (`perms::foreign_space`, for everyone including
 channel, message or thread parent an op names, and a `channel.create`'s `space_id`, belong to the
 op's `space:` scope; and the members a message, reaction or post speaks as (`authors`, segment
 `authors`, `member_id`, the envelope's `member_id`) are the author account's own or not yet known
-(`ingest::foreign_speaker`). `can(account, channel,
+(`ingest::foreign_speaker`); and a message or attachment stays its creator's: no other account
+sets an attachment's fields or re-creates an existing id (`ingest::foreign_item`). `can(account, channel,
 perm)` holds when both `perm` and `view` resolve to allow:
 
 1. A thread uses its parent message's channel.
