@@ -17,9 +17,19 @@ data class SharedDraft(val id: Long, val text: String, val uris: List<Uri>) {
             intent.clipData?.let { clips ->
                 for (index in 0 until clips.itemCount) clips.getItemAt(index).uri?.let(uris::add)
             }
-            val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
+            val textItems = ArrayList<String>()
+            runCatching { intent.getCharSequenceExtra(Intent.EXTRA_TEXT) }.getOrNull()?.toString()?.let(textItems::add)
+            runCatching { intent.getCharSequenceArrayListExtra(Intent.EXTRA_TEXT) }.getOrNull()
+                ?.forEach { textItems.add(it.toString()) }
+            intent.clipData?.let { clips ->
+                for (index in 0 until clips.itemCount) clips.getItemAt(index).text?.toString()?.let(textItems::add)
+            }
+            val text = combineSharedText(textItems)
             if (text.isBlank() && uris.isEmpty()) return null
             return SharedDraft(id, text, uris.toList())
         }
     }
 }
+
+/** Sharesheets often repeat EXTRA_TEXT in ClipData; keep distinct pieces in sender order. */
+internal fun combineSharedText(parts: List<String>): String = parts.filter { it.isNotBlank() }.distinct().joinToString("\n")
