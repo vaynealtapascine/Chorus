@@ -267,6 +267,29 @@ At 100k the snapshot is ~32 MB of JSON; reading and parsing it is ~0.3 s of the 
 themselves still load into memory (the core needs them for updates and repair); lazy loading of
 old ops is a later step if memory becomes the limit.
 
+**A big channel (R24, SPEC §9).** `web/perf` "open a channel of 50000 messages" seeds one channel
+with 50k messages, opens the app from its snapshot, then measures switching to that channel (to
+its first screen) and sending into it (to the new row in the DOM). The rules that hold these:
+
+- The chat builds only the page it shows (`data.ts messagePage`: the newest 100 of the channel's
+  ordered ids), not a row per message; pins, thread previews and unread badges read the
+  per-channel order (`orderOf`) rather than scanning the message table.
+- The message table is patched **in place** by `applyDelta` (`sync/delta.ts IN_PLACE`), with a
+  version and a short log of what each key was, and `orderOf` catches up from that log. Copying
+  a 50k-key object costs ~25 ms plus its garbage on every delta; every other table stays
+  copy-on-write. Never `for…in` or `Object.keys` a big table on the send path: listing 50k keys
+  is ~15 ms by itself.
+- Lists derived from the order (pins, unread counts, built rows) are cached per list array: a
+  channel's array is new exactly when one of its rows changed.
+- Per-message work is shared: one `Intl.DateTimeFormat`, and each adapted colour computed once.
+
+Measured 2026-09-25 (headless Chromium, remote box, minified build, three runs):
+
+| | Before R24 | After |
+| --- | --- | --- |
+| Open a channel of 50k messages → first screen (≤ 150 ms) | 187–224 ms | 51–74 ms |
+| Send into it → on the page (≤ 50 ms) | 68–97 ms | 28–38 ms (painted by 35–46 ms) |
+
 ## 5. Stage mode implementation notes
 
 - Stage is a *view state* over the normal list (no data copies): `{selected: Set<id>,

@@ -2,7 +2,7 @@
   import { onDestroy, tick } from 'svelte';
   import { core, type Composed, type Entity } from '../core';
   import RichText from './RichText.svelte';
-  import { channels, contentWarningsAutoExpand, customEmojis, lastRead, memberMarks, members, messageById, messages, reactions, readPerMember, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
+  import { channels, contentWarningsAutoExpand, customEmojis, lastRead, memberMarks, members, messageById, messagePage, pinnedMessages, reactions, readPerMember, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
   import { router } from '../router.svelte';
   import { snapshot } from '../selection';
@@ -35,7 +35,12 @@
   );
   const space = $derived(ss.find((s) => s.id === current?.space_id) ?? ss[0]);
   const spaceChannels = $derived(allChannels.filter((c) => c.space_id === space?.id && !c.archived && c.kind !== 'thread'));
-  const msgs = $derived(current ? messages(projection, current.id) : []);
+  // only the newest pages are built and in the DOM; scrolling up adds older ones (SPEC §9: pages
+  // of 100, and a 50k-message channel's first screen within 150 ms)
+  const PAGE = 100;
+  let shown = $state(PAGE);
+  const page = $derived(current ? messagePage(projection, current.id, shown) : { rows: [], ids: [], total: 0 });
+  const msgs = $derived(page.rows);
   const threads = $derived(threadSummaries(projection));
   const threadParent = $derived.by(() => {
     if (current?.kind !== 'thread' || !current.parent_message_id) return undefined;
@@ -537,9 +542,6 @@
     router.go(`/chat/${id}`);
   }
 
-  // only the newest pages are in the DOM; scrolling up adds older ones (SPEC §9: pages of 100)
-  const PAGE = 100;
-  let shown = $state(PAGE);
   let shownFor = '';
   $effect.pre(() => {
     if (current?.id !== shownFor) {
@@ -547,10 +549,15 @@
       shown = PAGE;
     }
   });
-  const first = $derived(Math.max(0, visibleMsgs.length - shown));
+  // older messages this device has that aren't built yet
+  const first = $derived(Math.max(0, page.total - msgs.length));
+  // a channel's first screen is on the page (web/perf measures opening a big channel, R24)
+  $effect(() => {
+    if (current && grouped.length) performance.mark(`chorus:channel-shown:${current.id}`);
+  });
   const grouped = $derived(
-    visibleMsgs.slice(first).map((m, j) => {
-      const prev = visibleMsgs[first + j - 1];
+    visibleMsgs.map((m, j) => {
+      const prev = visibleMsgs[j - 1];
       const cont =
         !!prev && !prev.deleted && prev.authors.join() === m.authors.join() && m.occurred_at - prev.occurred_at < 300_000 && m.segments.length === 1;
       return { m, cont };
@@ -566,10 +573,12 @@
   // a search result deep in history: widen the window so the message is rendered
   $effect.pre(() => {
     if (!focusId) return;
-    const at = visibleMsgs.findIndex((m) => m.id === focusId);
-    if (at >= 0 && at < first) shown = visibleMsgs.length - at + PAGE / 2;
+    const at = page.ids.indexOf(focusId);
+    if (at >= 0 && at < first) shown = page.total - at + PAGE / 2;
   });
-  const pinned = $derived(visibleMsgs.filter((m) => m.pinned && !m.deleted));
+  const pinned = $derived(
+    current ? pinnedMessages(projection, current.id).filter((m) => memberVisible(m, space?.kind, activeMembers, viewingAs)) : [],
+  );
   const reacts = $derived(reactions(projection));
 
   function react(m: MessageRow, emoji: string, on: boolean) {
@@ -784,7 +793,7 @@
           </article>
         {:else if historyError}<p class="hint" role="status">{historyError}</p>{/if}
       {/if}
-      {#if sync.windowed && current && !olderDone}
+      {#if sync.windowed && current && !olderDone && !first}
         <button class="older-load" disabled={olderBusy || sync.status !== 'live'} onclick={() => void loadOlder()}>
           {olderBusy ? 'Loading…' : 'Older messages (from the server)'}
         </button>

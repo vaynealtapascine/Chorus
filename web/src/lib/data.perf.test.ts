@@ -1,7 +1,7 @@
 // SPEC §9 on the data path of the chat view: open a channel with 50k messages, then send one.
 // Timing only means something on a quiet machine: `PERF=1 npx vitest run src/lib/data.perf.test.ts`.
 import { describe, expect, it } from 'vitest';
-import { messageById, messages, unread } from './data';
+import { messageById, messagePage, messages, unread } from './data';
 import { applyDelta } from './sync/delta';
 import type { Projection } from './sync/client';
 
@@ -27,15 +27,23 @@ const ms = (t: number) => performance.now() - t;
 describe.skipIf(!process.env.PERF)('chat data budgets', () => {
   it('opens a 50k channel and sends into it within budget', () => {
     let p = projection();
+    // the per-channel index is built once, when the app starts (the channel list's unread counts)
     let t = performance.now();
-    const all = messages(p, 'big');
-    const open = ms(t);
-    expect(all).toHaveLength(N);
-    // the view renders the newest page; each reply looks up its parent
+    unread(p, 'small', 'b');
+    const index = ms(t);
+    // the view builds only the newest page (messagePage); each reply looks up its parent
     t = performance.now();
-    for (const m of all.slice(-100)) if (m.reply_to) messageById(p, m.reply_to);
-    unread(p, 'big', 'b');
+    const shown = messagePage(p, 'big', 100);
+    const open = ms(t);
+    expect(shown.total).toBe(N);
+    expect(shown.rows).toHaveLength(100);
+    t = performance.now();
+    for (const m of shown.rows) if (m.reply_to) messageById(p, m.reply_to);
     const page = ms(t);
+    // (the open channel has no badge; another one with all 50k unread walks them all)
+    t = performance.now();
+    unread(p, 'big', 'b');
+    const badge = ms(t);
 
     // send: a delta with one new row, then what the view reads again
     t = performance.now();
@@ -43,10 +51,13 @@ describe.skipIf(!process.env.PERF)('chat data budgets', () => {
       rows: { message: { mnew: { exists: true, fields: { channel_id: 'big', authors: ['kai'], text: 'hi', entities: [], occurred_at: 1_800_000_000_000 } } } },
       sets: {}, fronts: {}, reviews: {}, opaque: 1, full: false,
     });
-    const after = messages(p, 'big');
+    const after = messagePage(p, 'big', 100);
     const send = ms(t);
-    expect(after.at(-1)?.id).toBe('mnew');
-    console.log(`open ${open.toFixed(1)} ms · page lookups ${page.toFixed(1)} ms · send ${send.toFixed(1)} ms`);
+    expect(after.rows.at(-1)?.id).toBe('mnew');
+    t = performance.now();
+    expect(messages(p, 'big').length).toBe(N + 1);
+    const whole = ms(t);
+    console.log(`index at start ${index.toFixed(1)} ms · open ${open.toFixed(1)} ms · page lookups ${page.toFixed(1)} ms · 50k-unread badge ${badge.toFixed(1)} ms · send ${send.toFixed(1)} ms · every row ${whole.toFixed(1)} ms`);
     expect(open + page).toBeLessThan(150);
     expect(send).toBeLessThan(50);
   });
