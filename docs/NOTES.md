@@ -362,3 +362,10 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   - A test's message text must not contain the warning it waits for.
   - The failure suite keeps its own console-problem list, or v1's "no console errors" would see
     the killed server's refused requests.
+- 2026-09-26 claude-opus-5.5 — server — R26 re-measured on the owner's Windows PC (release, 1M
+  ops, `tests/perf.rs`, `CHORUS_PERF_DIR` on F:): **rebuild into a fresh file and swap 58.5 →
+  27.4 s** (commit 0.2 s, swap 0.1 s), half the 60 s budget. The in-place path went the other way,
+  63.2 → 78.9 s, 52 s of it the single commit (the batched message writes make one bigger
+  transaction for SQLite to write back into the WAL). Only purge and restore still rebuild in
+  place, on copies; if that ever matters, give them the swap path too.
+
