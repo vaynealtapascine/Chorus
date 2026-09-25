@@ -714,7 +714,9 @@ sync fan-out and catch-up (`visibility::op_visible_to` and the batched `visible_
 message reads, search, blobs, author cards and notification recipients. Before any of it, a
 write must stay in its own space (`perms::foreign_space`, for everyone including the owner): the
 channel, message or thread parent an op names, and a `channel.create`'s `space_id`, belong to the
-op's `space:` scope. `can(account, channel,
+op's `space:` scope; and the members a message, reaction or post speaks as (`authors`, segment
+`authors`, `member_id`, the envelope's `member_id`) are the author account's own or not yet known
+(`ingest::foreign_speaker`). `can(account, channel,
 perm)` holds when both `perm` and `view` resolve to allow:
 
 1. A thread uses its parent message's channel.

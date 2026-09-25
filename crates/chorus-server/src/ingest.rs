@@ -82,6 +82,10 @@ pub fn accept(
     if !preserved && !crate::visibility::related_write_allowed(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", "message is private to another account".into(), false), None));
     }
+    // speaking as someone else's member (impersonation in a shared space)
+    if !preserved && let Some(why) = foreign_speaker(conn, &author, &o)? {
+        return Ok((AckResult::err(o.id, "forbidden", why, false), None));
+    }
     // channel permissions (perms.rs, D-047)
     if !preserved && let Some(why) = crate::perms::write_denied(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
@@ -189,6 +193,40 @@ fn store_and_project(conn: &Connection, o: &mut Op, suspect: bool, preserved: bo
         crate::activity::on_op(conn, o, now)?;
     }
     Ok(())
+}
+
+/// Messages, reactions and posts speak as members (`authors`, each segment's `authors`, a
+/// reaction's `member_id`, the envelope's `member_id`): those must be the author account's own.
+/// An id the server doesn't know yet passes (a member created offline, still on its way); one
+/// that belongs to another account is refused, or anyone in a shared space could post as someone
+/// else's member.
+fn foreign_speaker(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
+    let k = o.kind.as_str();
+    if !(k.starts_with("message.") || k.starts_with("reaction.") || k.starts_with("post.")) {
+        return Ok(None);
+    }
+    let p = &o.payload;
+    let ids = |v: Option<&serde_json::Value>| -> Vec<String> {
+        v.and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|x| x.as_str().map(str::to_string))
+            .collect()
+    };
+    let mut named: Vec<String> = ids(p.get("authors"));
+    for seg in p.get("segments").and_then(serde_json::Value::as_array).into_iter().flatten() {
+        named.extend(ids(seg.get("authors")));
+    }
+    named.extend(p.get("member_id").and_then(serde_json::Value::as_str).map(str::to_string));
+    named.extend(o.member_id.clone());
+    let mut st = conn.prepare_cached("SELECT account_id FROM member WHERE id = ?1")?;
+    for id in named {
+        let owner: Option<Option<String>> = st.query_row([&id], |r| r.get(0)).optional()?;
+        if owner.flatten().is_some_and(|a| a != author) {
+            return Ok(Some("that member belongs to another account".into()));
+        }
+    }
+    Ok(None)
 }
 
 /// A database failure that says nothing about the op (a full disk, I/O, a lock): the batch fails

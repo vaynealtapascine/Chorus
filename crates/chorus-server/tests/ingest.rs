@@ -283,3 +283,76 @@ fn ops_stay_in_their_own_space() {
         None
     );
 }
+
+/// Nobody speaks as another account's member: message authors, segment authors, reactions and
+/// the envelope's acting member must be the sender's own (or not known yet: created offline).
+#[test]
+fn nobody_speaks_as_another_accounts_member() {
+    let (c, a, b) = setup();
+    let y = new_id(2, [40; 10]);
+    let sy = format!("space:{y}");
+    let (cy, my) = (new_id(2, [41; 10]), new_id(2, [42; 10]));
+    let (ka, kb) = (new_id(2, [43; 10]), new_id(2, [44; 10]));
+    ingest::grant(&c, &b, &sy).unwrap();
+    ingest::grant(&c, &a, &sy).unwrap();
+    ingest::server_op(&c, &a, "member.create", &format!("account:{a}"), Some(&ka), json!({"name": "Kai"}), NOW)
+        .unwrap();
+    ingest::server_op(&c, &b, "member.create", &format!("account:{b}"), Some(&kb), json!({"name": "Bee"}), NOW)
+        .unwrap();
+    ingest::server_op(&c, &b, "space.create", &sy, Some(&y), json!({"kind": "shared", "name": "Y"}), NOW).unwrap();
+    ingest::server_op(&c, &b, "space.join", &sy, Some(&y), json!({"account_id": b}), NOW).unwrap();
+    ingest::server_op(&c, &b, "space.join", &sy, Some(&y), json!({"account_id": a}), NOW).unwrap();
+    ingest::server_op(&c, &b, "channel.create", &sy, Some(&cy), json!({"space_id": y, "name": "y"}), NOW).unwrap();
+    ingest::server_op(
+        &c,
+        &b,
+        "message.send",
+        &sy,
+        Some(&my),
+        json!({"channel_id": cy, "text": "hi", "authors": [kb]}),
+        NOW,
+    )
+    .unwrap();
+
+    let s = session(&a, 0);
+    let mut n = 80u8;
+    let mut push = |kind: &str, entity: Option<String>, member: Option<&str>, payload: Value| {
+        n += 1;
+        let mut o = op(n, kind, &sy, payload, NOW);
+        o.entity_id = entity.or(o.entity_id);
+        o.member_id = member.map(str::to_string);
+        let (r, _) = ingest::accept(&c, &s, o, NOW, false).unwrap();
+        r.error.map(|e| e.message)
+    };
+    let refused = |r: Option<String>| r.is_some_and(|m| m.contains("another account"));
+    assert!(refused(push("message.send", None, None, json!({"channel_id": cy, "text": "as Bee", "authors": [kb]}))));
+    assert!(refused(push(
+        "message.send",
+        None,
+        None,
+        json!({"channel_id": cy, "text": "ab", "authors": [ka], "segments": [{"offset": 0, "length": 1, "authors": [ka]}, {"offset": 1, "length": 1, "authors": [kb]}]})
+    )));
+    assert!(refused(push(
+        "reaction.add",
+        Some(my.clone()),
+        None,
+        json!({"target_type": "message", "target_id": my, "emoji": "👍", "member_id": kb})
+    )));
+    assert!(refused(push("message.send", None, Some(&kb), json!({"channel_id": cy, "text": "x", "authors": [ka]}))));
+    // own members, and members the server hasn't seen yet, are fine
+    assert_eq!(
+        push("message.send", None, Some(&ka), json!({"channel_id": cy, "text": "as Kai", "authors": [ka]})),
+        None
+    );
+    let offline = new_id(2, [45; 10]);
+    assert_eq!(push("message.send", None, None, json!({"channel_id": cy, "text": "new", "authors": [offline]})), None);
+    assert_eq!(
+        push(
+            "reaction.add",
+            Some(my.clone()),
+            None,
+            json!({"target_type": "message", "target_id": my, "emoji": "👍", "member_id": ka})
+        ),
+        None
+    );
+}
