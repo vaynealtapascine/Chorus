@@ -662,3 +662,8 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 - **Status: code complete, device audit pending.** Advanced now offers Real, Hide, Shift and Start at for displayed times. Start at uses the phone's date and time pickers; core shifts the first shown row to that instant and preserves gaps. The choice round-trips with web Stage definitions; malformed Start definitions stay unavailable instead of silently showing 1970. No message timestamps are edited.
 - **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM tests check saved start values and reject missing ones; Rust core already tests Start planning.
 - **Compiled/unit-tested only:** No phone picker or capture was inspected. Later choose a local date near a daylight-saving transition and check the staged times on web and Android.
+
+#### V6 · Light and Dark Stage themes (2026-09-25)
+- **Status: code complete for preset colors, device audit pending.** Advanced offers Auto, Light and Dark colors. Android applies the selected Chorus palette throughout Stage capture and saves the matching web theme value. Custom palettes and square/wide capture widths remain unavailable on a phone.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM definitions check Light/Dark values.
+- **Compiled/unit-tested only:** No phone capture was inspected. Later compare Light and Dark captures while the phone system theme is opposite each choice, including avatar and attachment cards.

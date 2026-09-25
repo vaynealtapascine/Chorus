@@ -28,6 +28,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +54,7 @@ import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.StagePlan
 import garden.vayne.chorus.designsystem.LocalChorusPalette
+import garden.vayne.chorus.designsystem.Tokens
 import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
@@ -68,7 +70,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     foreignAuthors: Map<String, ForeignAuthor>, capturing: Boolean,
     hasOlder: Boolean, loadingOlder: Boolean, onLoadOlder: () -> Unit, onCapture: (Boolean) -> Unit,
     onClose: () -> Unit) {
-    val p = LocalChorusPalette.current
+    val hostPalette = LocalChorusPalette.current
     var selected by rememberSaveable(channel.id) { mutableStateOf<List<String>>(emptyList()) }
     var unselected by rememberSaveable(channel.id) { mutableStateOf("context") }
     var advanced by rememberSaveable(channel.id) { mutableStateOf(false) }
@@ -83,12 +85,14 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     var hideHeader by rememberSaveable(channel.id) { mutableStateOf(false) }
     var hideReplyBars by rememberSaveable(channel.id) { mutableStateOf(false) }
     var style by rememberSaveable(channel.id) { mutableStateOf("chorus") }
+    var theme by rememberSaveable(channel.id) { mutableStateOf("auto") }
     var blurAvatars by rememberSaveable(channel.id) { mutableStateOf(false) }
     var saveName by rememberSaveable(channel.id) { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val actions = rememberCoroutineScope()
     var pillVisible by remember { mutableStateOf(true) }
+    val p = when (theme) { "light" -> Tokens.Light; "dark" -> Tokens.Dark; else -> hostPalette }
     LaunchedEffect(capturing) {
         if (capturing) {
             pillVisible = true
@@ -99,12 +103,13 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     val settings = StagePlan.Settings(selected.toSet(), if (capturing) unselected else "visible",
         redactNames, fakeNames, timeMode,
         shiftText.toIntOrNull() ?: 0, onlyMembers.toSet(), replyDepth, blurAttachments, hideHeader, hideReplyBars,
-        style, blurAvatars, startAt)
+        style, blurAvatars, startAt, theme)
     val plan = remember(messages, settings) { StagePlan.forMessages(messages, settings) }
     val byId = remember(messages) { messages.associateBy { it.id } }
     val authorIds = remember(messages) { messages.flatMap { it.authors }.distinct() }
     val saved = model.savedStages.filter { it.channelId == channel.id }
 
+    CompositionLocalProvider(LocalChorusPalette provides p) {
     Column(Modifier.fillMaxSize().background(p.bg).then(if (capturing) Modifier.statusBarsPadding() else Modifier)) {
         if (!capturing) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween,
@@ -129,6 +134,11 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                     items(listOf("chorus" to "Chorus", "discord" to "Discord-ish", "bubbles" to "Bubbles", "card" to "Card",
                         "transcript" to "Transcript", "minimal" to "Minimal")) { (value, label) ->
                         JournalChoice(label, style == value) { style = value }
+                    }
+                }
+                LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(listOf("auto" to "Auto colors", "light" to "Light", "dark" to "Dark")) { (value, label) ->
+                        JournalChoice(label, theme == value) { theme = value }
                     }
                 }
                 JournalChoice("Hide real names", redactNames) { redactNames = !redactNames }
@@ -201,6 +211,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                         blurAttachments = loaded.blurAttachments
                         hideHeader = loaded.hideHeader; hideReplyBars = loaded.hideReplyBars
                         style = loaded.style
+                        theme = loaded.theme
                         blurAvatars = loaded.blurAvatars
                         error = null
                     }) { Text(if (supported == null) "${stage.name} · web view" else stage.name) }
@@ -315,6 +326,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                 modifier = Modifier.align(Alignment.TopEnd).padding(16.dp).background(p.surface)
                     .clickable { onCapture(false) }.padding(horizontal = 16.dp, vertical = 8.dp))
         }
+    }
     }
 }
 

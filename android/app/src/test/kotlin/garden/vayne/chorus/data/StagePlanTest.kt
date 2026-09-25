@@ -68,6 +68,10 @@ class StagePlanTest {
         assertEquals(123_456L, StagePlan.supported(start)?.startAt)
         start.getJSONObject("time").remove("start")
         assertEquals(null, StagePlan.supported(start))
+        saved.getJSONObject("render").put("theme", "dark")
+        assertEquals("dark", StagePlan.supported(saved)?.theme)
+        assertEquals("light", StagePlan.definition("channel", StagePlan.Settings(theme = "light"))
+            .getJSONObject("render").getString("theme"))
         saved.put("render", JSONObject().put("style", "unknown"))
         assertEquals(null, StagePlan.supported(saved))
     }
