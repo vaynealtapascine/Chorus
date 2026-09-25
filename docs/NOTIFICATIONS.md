@@ -212,8 +212,15 @@ Implemented (M8.4, `activity.rs`), for other accounts in shared spaces and DMs:
   kind for plain messages.
 - `notify_chat` = `{mention, dm, reply, message}` holds the per-kind switches, all on by default.
 - The web sets the level in each channel's ⋯ menu, and the kinds under People.
-- In your own internal space, a mention of one of your members (or `@front`, which reaches the
-  current fronters and co-cons) and a member DM ping your account under each member's rule: `pref`
+- Who a mention reaches is core's rule (`chorus_core::mentions`, R22.3): `@member`; `@group`,
+  every member of the group and its subgroups; `@account`, that account; `@front`, whoever was
+  fronting or co-conscious in the named account (else the author's) when the message was
+  *written* (its `occurred_at`: a message written offline at 10:00 pings who was here at 10:00).
+  In a shared space or DM an account hears about any mention that reaches it; a mention never
+  notifies an account that can't view the channel, and a guest of a channel shared out of an
+  internal space hears about mentions there like any other account.
+- In your own internal space, a mention of one of your members (by name, through a group, or
+  `@front`) and a member DM ping your account under each member's rule: `pref`
   key `notify_member:<member id>` = `{"mentions": rule, "dms": rule}`, where rule is `always`,
   `fronting` (fronting or co-con) or `never`. Mentions default to `always`, member DMs to
   `fronting`. The authors of the message never ping themselves. Channel levels apply here too

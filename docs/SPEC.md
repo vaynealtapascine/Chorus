@@ -186,7 +186,7 @@ custom order.
 | Delete | Tombstone ("message deleted" placeholder, configurable to vanish). Always **restorable** from Trash (D-053). |
 | Pin | Per channel, pinned list panel. |
 | Reactions | Emoji or custom emoji, **reacted as a member** (defaults to current speaker). Hover shows who. |
-| Mentions | `@member`, `@group` (all members in group), `@account` in shared spaces, `@front` (current fronters). Mention inbox per member. |
+| Mentions | `@member`, `@group` (all members in group and its subgroups), `@account` in shared spaces, `@front` (who was fronting when the message was written). Resolved by core (`chorus_core::mentions`). Mention inbox per member. |
 | Read states | Per account; optionally **per member** (Advanced: "track reading per member") → "Kai hasn't seen this" dot. |
 | Attachments | Images (thumbnails, gallery, alt text), files; queued offline, upload resumable. |
 | Search | Full-text (FTS5), filters: `from:`, `in:`, `has:` (image, file, attachment, link), `before:`/`after:`, `is:pinned`, parsed by core so local and server search agree (`chorus_core::search`). |
