@@ -243,7 +243,9 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   message id; oldest first, 1–100, default 50) and `GET /messages/{id}/thread`. Same rule as
   search: public or own messages in channels you may `view` (channel permissions, DATA_MODEL
   §4.4; a guest sees only the channels shared with them), threads under messages you can't see
-  are hidden (404). A pushed op the permissions refuse is acked `forbidden` with the reason
+  are hidden (404). A reply (`reply_to`) keeps its link, plus the original's channel
+  (`reply_to_channel_id`, for a "reply elsewhere" reference card), only for a reader who can read
+  the original; anyone else gets `reply_to: null` (SPEC §5.3). A pushed op the permissions refuse is acked `forbidden` with the reason
   (e.g. "you don't have the send permission in this channel"). API tokens with `read:messages`
   get only their own account's messages (§2.3).
 - **Feeds** (`feeds.rs`, M7.4): `GET /feeds` lists your feeds and the ones other accounts share

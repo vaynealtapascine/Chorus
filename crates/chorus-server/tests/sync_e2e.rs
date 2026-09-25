@@ -1859,3 +1859,121 @@ async fn edit_history_follows_the_message_read_rule() {
     assert_eq!(titles, vec!["Day", "Day one"]);
     assert_eq!(get(url(&format!("/posts/{post}/revisions")), tok(&friend)).await.0, 404, "a private entry");
 }
+
+/// SPEC §5.3 reply elsewhere / reply privately: a reply in another channel (or another space's
+/// DM) links back to its original only for readers who can read the original; nobody else learns
+/// it exists, over REST or sync.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reply_elsewhere_links_back_only_for_those_who_can_read_the_original() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 111, "stars").await;
+    let friend = enrol(&s, auth::InviteKind::Person, None, 112, "alex").await;
+    let mut phone = Device::new(&sys, 111);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let mut laptop = Device::new(&friend, 112);
+    laptop.connect(&s).await;
+    laptop.drain(Q).await;
+    let acct = phone.scope("account:");
+    let kai = new_id(1, [113; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+    let alex = friend["account_id"].as_str().unwrap().to_string();
+    let f: Value = http
+        .post(url("/follows"))
+        .bearer_auth(tok(&friend))
+        .json(&json!({"target": "stars"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    phone.drain(Q).await;
+    phone.create("follow.accept", &acct, f["id"].as_str().unwrap(), json!({})).await;
+    phone.drain(Q).await;
+    let post = |path: String, body: Value| {
+        let http = http.clone();
+        let t = tok(&sys);
+        async move { http.post(path).bearer_auth(t).json(&body).send().await.unwrap().json::<Value>().await.unwrap() }
+    };
+    let club = post(url("/spaces"), json!({"kind": "shared", "name": "Club", "accounts": [alex]})).await;
+    let club_id = club["id"].as_str().unwrap().to_string();
+    let dm = post(url("/spaces"), json!({"kind": "dm", "accounts": [alex]})).await;
+    let dm_id = dm["id"].as_str().unwrap().to_string();
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    let club_scope = format!("space:{club_id}");
+    let channel_in = |d: &Device, space: &str, name: Option<&str>| {
+        model::project(d.store.confirmed()).rows["channel"]
+            .iter()
+            .find(|(_, r)| {
+                r.fields["space_id"] == space
+                    && name.is_none_or(|n| r.fields.get("name").and_then(Value::as_str) == Some(n))
+            })
+            .map(|(id, _)| id.clone())
+            .unwrap()
+    };
+    let general = channel_in(&phone, &club_id, Some("general"));
+    let dm_chan = channel_in(&phone, &dm_id, None);
+    // #mods: nobody but the owner may view it
+    let mods = new_id(4, [1; 10]);
+    phone
+        .create("channel.create", &club_scope, &mods, json!({"space_id": club_id, "kind": "text", "name": "mods"}))
+        .await;
+    phone
+        .create(
+            "channel.set_permission",
+            &club_scope,
+            &mods,
+            json!({"target_type": "role", "target_id": "everyone", "allow": [], "deny": ["view"]}),
+        )
+        .await;
+    let say = |channel: &str, text: &str, reply_to: Option<&str>| {
+        let mut p = json!({"channel_id": channel, "authors": [kai], "text": text, "entities": []});
+        if let Some(r) = reply_to {
+            p["reply_to"] = json!(r);
+        }
+        p
+    };
+    let secret = new_id(4, [2; 10]);
+    let open = new_id(4, [3; 10]);
+    phone.create("message.send", &club_scope, &secret, say(&mods, "the secret plan", None)).await;
+    phone.create("message.send", &club_scope, &open, say(&general, "an open question", None)).await;
+    // replies in #general to #mods (elsewhere), and privately in the DM to #general
+    let reply_mods = new_id(4, [4; 10]);
+    phone.create("message.send", &club_scope, &reply_mods, say(&general, "about that plan", Some(&secret))).await;
+    let private = new_id(4, [5; 10]);
+    phone
+        .create("message.send", &format!("space:{dm_id}"), &private, say(&dm_chan, "just between us", Some(&open)))
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+
+    let get = |path: String, e: Value| {
+        let http = http.clone();
+        async move { http.get(path).bearer_auth(tok(&e)).send().await.unwrap().json::<Value>().await.unwrap() }
+    };
+    let find = |v: &Value, id: &str| v["items"].as_array().unwrap().iter().find(|m| m["id"] == id).cloned().unwrap();
+    let theirs = get(url(&format!("/channels/{general}/messages")), friend.clone()).await;
+    let r = find(&theirs, &reply_mods);
+    assert_eq!((r["reply_to"].clone(), r.get("reply_to_channel_id").cloned()), (Value::Null, None), "{r}");
+    let mine = get(url(&format!("/channels/{general}/messages")), sys.clone()).await;
+    let r = find(&mine, &reply_mods);
+    assert_eq!(
+        (r["reply_to"].as_str(), r["reply_to_channel_id"].as_str()),
+        (Some(secret.as_str()), Some(mods.as_str()))
+    );
+    // the private reply links back to #general for the friend, who can read it
+    let dm_msgs = get(url(&format!("/channels/{dm_chan}/messages")), friend.clone()).await;
+    let r = find(&dm_msgs, &private);
+    assert_eq!(
+        (r["reply_to"].as_str(), r["reply_to_channel_id"].as_str()),
+        (Some(open.as_str()), Some(general.as_str()))
+    );
+    // and over sync: the friend has the reply, never the original it can't see
+    let held = |id: &str| laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(id));
+    assert!(held(&reply_mods) && held(&open) && !held(&secret));
+}

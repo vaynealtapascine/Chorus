@@ -12,7 +12,8 @@
   import AvatarImage from './AvatarImage.svelte';
   import EmojiImage from './EmojiImage.svelte';
   import SpaceRail from './SpaceRail.svelte';
-  import { authorCards, listSpaces, spaceTitle, type SpaceInfo } from '../spaces';
+  import { authorCards, listSpaces, openDm, spaceTitle, type SpaceInfo } from '../spaces';
+  import { carryReply, takeReply } from '../replyElsewhere';
   import ChannelPermissions from './ChannelPermissions.svelte';
   import { selfMember, type MemberRow } from '../data';
   import { apiBase } from '../sync/device';
@@ -217,7 +218,49 @@
     cw = '';
     visibilityMode = 'all';
     visibleTo = [];
+    replyIn = null;
+    // a reply started elsewhere ("Reply in…", "Reply privately") lands here
+    if (current) replyTo = takeReply(current.id, current.space_id);
   });
+
+  // Reply elsewhere (SPEC §5.3): the reply goes to another channel, thread or DM and links back
+  // (a reference card, for readers who can see the original)
+  let replyIn = $state<MessageRow | null>(null);
+  const replyTargets = $derived(
+    allChannels
+      .filter((c) => c.id !== current?.id && !c.archived)
+      .map((c) => ({ id: c.id, label: `${ss.find((x) => x.id === c.space_id)?.name ?? 'DM'} › ${c.kind === 'thread' ? 'thread' : '#'}${c.name}` }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+  );
+  function replyElsewhere(target: string) {
+    if (!replyIn || !target) return;
+    carryReply(replyIn, target);
+    replyIn = null;
+    location.hash = `#/chat/${target}`;
+  }
+  // Reply privately: the member DM with the author (internal space), else the DM with the
+  // author's account; made if there isn't one yet
+  async function replyPrivately(m: MessageRow) {
+    if (!current || !space) return;
+    if (space.kind === 'internal') {
+      const author = m.authors[0];
+      if (!speaker || !author || author === speaker) return;
+      const pair = [speaker, author];
+      let dm = allChannels.find((c) => c.space_id === space.id && c.kind === 'member_dm' && !c.archived
+        && c.member_ids?.length === 2 && pair.every((id) => c.member_ids?.includes(id)));
+      const target = dm?.id ?? sync.newId();
+      if (!dm) {
+        const name = pair.map((id) => people.get(id)?.name ?? '?').join(' & ');
+        sync.create('channel.create', scope, target, { space_id: space.id, kind: 'member_dm', name, member_ids: pair });
+      }
+      carryReply(m, target);
+      location.hash = `#/chat/${target}`;
+    } else if (m.account_id && m.account_id !== sync.accountId) {
+      const dm = await openDm(m.account_id);
+      carryReply(m, `space:${dm}`);
+      location.hash = `#/chat/space:${dm}`;
+    }
+  }
 
   const preview: Composed | null = $derived(draft.trim() && !editing ? core.compose(draft, speakers, { segments: parseSegments }, chosen ? [chosen] : defaults, names) : null);
   const previewNames = $derived(
@@ -684,6 +727,8 @@
           lookup={(id) => { const found = messageById(projection, id); return found && memberVisible(found, space?.kind, activeMembers, viewingAs) ? found : undefined; }}
           mine={m.account_id === sync.accountId}
           onreply={() => { replyTo = m; quoting = null; editing = null; editingParts = null; box?.focus(); }}
+          onreplyin={() => (replyIn = m)}
+          onreplyprivately={(space?.kind === 'internal' ? m.authors[0] !== speaker : m.account_id !== sync.accountId) ? () => void replyPrivately(m) : undefined}
           onquote={(q) => { quoting = q; forwarding = null; quoteSourceSpaceId = current?.space_id ?? ''; quoteSensitive = !!m.visibility && m.visibility.mode !== 'all'; replyTo = m; editing = null; editingParts = null; box?.focus(); }}
           onedit={() => startEdit(m)}
           ondelete={() => sync.create('message.delete', scope, m.id, {})}
@@ -723,6 +768,16 @@
         </select>
         {#if !speaker}<span>Pick a speaker first.</span>{/if}
         <button class="x" onclick={() => (forwarding = null)} aria-label="Cancel forward">✕</button>
+      </div>
+    {/if}
+    {#if replyIn}
+      <div class="reply-in" role="group" aria-label="Reply in another channel">
+        Reply to {replyIn.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')} in
+        <select aria-label="Channel to reply in" onchange={(e) => replyElsewhere(e.currentTarget.value)}>
+          <option value="">choose…</option>
+          {#each replyTargets as t (t.id)}<option value={t.id}>{t.label}</option>{/each}
+        </select>
+        <button onclick={() => (replyIn = null)}>Cancel</button>
       </div>
     {/if}
     {#if replyTo || quoting || editing}
@@ -1080,6 +1135,8 @@
     padding: var(--s-3);
     border-top: 1px solid var(--line);
   }
+  .reply-in { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); padding: var(--s-2); color: var(--ink-2); }
+  .reply-in select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-1); max-width: 100%; }
   .chat-advanced {
     padding: var(--s-1) var(--s-3);
     border-top: 1px solid var(--line);

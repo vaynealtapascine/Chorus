@@ -137,6 +137,27 @@ test('a shared space between two accounts', async () => {
   await expect(friend.page.getByText(welcome)).toBeVisible();
 });
 
+test('reply privately: from the shared space into the DM, linking back (SPEC §5.3)', async () => {
+  const welcome = `welcome to the club ${run}`;
+  const msg = friend.page.locator('.msg', { hasText: welcome });
+  await msg.hover();
+  await msg.getByTitle('Reply privately').click();
+  // the DM opens with the reply ready
+  await expect(friend.page.locator('nav[aria-label="Spaces"] a.dm.on, nav[aria-label="Spaces"] a.on', { hasText: 'Stars' })).toBeVisible();
+  await expect(friend.page.getByText(/Replying to/)).toBeVisible();
+  const answer = `glad to be here ${run}`;
+  const box = friend.page.getByLabel('Message', { exact: true });
+  await box.fill(answer);
+  await box.press('Enter');
+  // the system sees it in the DM, with a card pointing back to the club's channel
+  await go(stars.page, 'chat');
+  await stars.page.locator('nav[aria-label="Spaces"] a.dm', { hasText: 'Robin' }).click();
+  const reply = stars.page.locator('.msg', { hasText: answer });
+  await expect(reply).toBeVisible();
+  await expect(reply.locator('.replybar')).toContainText(welcome.slice(0, 20));
+  await expect(reply.locator('.replybar .elsewhere')).toContainText('#general');
+});
+
 test('one internal channel shared with a follower (channel permissions)', async () => {
   const note = `news for Robin ${run}`;
   const inside = `inside only ${run}`;

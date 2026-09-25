@@ -332,6 +332,8 @@ export interface ChannelRow {
   topic?: string;
   category?: string;
   parent_message_id?: string;
+  /** A member DM's members. */
+  member_ids?: string[];
   archived: boolean;
 }
 
@@ -465,6 +467,7 @@ export function channels(p: Projection, spaceId?: string): ChannelRow[] {
       topic: str(r.fields.topic),
       category: str(r.fields.category),
       parent_message_id: str(r.fields.parent_message_id),
+      member_ids: Array.isArray(r.fields.member_ids) ? r.fields.member_ids.filter((m): m is string => typeof m === 'string') : undefined,
       archived: r.fields.archived_at != null,
     }))
     .filter((c) => !spaceId || c.space_id === spaceId)

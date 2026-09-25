@@ -166,7 +166,30 @@ pub fn list(conn: &Connection, p: &Principal, channel: &str, q: &Page) -> Result
     } else {
         page(conn, p, channel, q.before.map(|b| (b, "")), None, limit)?
     };
+    let mut items = items;
+    link_replies(conn, p, &mut items)?;
     Ok(Some(json!({"items": items})))
+}
+
+/// Replies elsewhere (SPEC §5.3): a reply names its original (`reply_to`) and, for the reference
+/// card linking back, the original's channel (`reply_to_channel_id`) — only for a reader who can
+/// read the original. Anyone else sees a plain message: not even that the original exists.
+fn link_replies(conn: &Connection, p: &Principal, items: &mut [Value]) -> Result<(), DataError> {
+    let sql = format!(
+        "SELECT m.channel_id FROM message m JOIN channel c ON c.id=m.channel_id WHERE m.id=?1 AND {}",
+        readable()
+    );
+    let mut st = conn.prepare_cached(&sql)?;
+    for item in items {
+        let Some(original) = item["reply_to"].as_str().map(str::to_string) else { continue };
+        let channel: Option<String> =
+            st.query_row(params![original, p.account_id, !p.is_device()], |r| r.get(0)).optional()?;
+        match channel {
+            Some(c) => item["reply_to_channel_id"] = json!(c),
+            None => item["reply_to"] = Value::Null,
+        }
+    }
+    Ok(())
 }
 
 /// One message the caller can read.
@@ -174,7 +197,13 @@ pub fn one(conn: &Connection, p: &Principal, id: &str) -> Result<Option<Value>, 
     need_read(p)?;
     let sql =
         format!("SELECT {COLS} FROM message m JOIN channel c ON c.id=m.channel_id WHERE m.id=?1 AND {}", readable());
-    Ok(conn.query_row(&sql, params![id, p.account_id, !p.is_device()], row).optional()?)
+    let Some(item) = conn.query_row(&sql, params![id, p.account_id, !p.is_device()], row).optional()? else {
+        return Ok(None);
+    };
+    let mut items = [item];
+    link_replies(conn, p, &mut items)?;
+    let [item] = items;
+    Ok(Some(item))
 }
 
 /// Versions of an item, oldest first, from its `<table>_revision` rows; an unedited item's only

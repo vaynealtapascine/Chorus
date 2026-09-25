@@ -19,6 +19,8 @@
     lookup,
     mine,
     onreply,
+    onreplyin,
+    onreplyprivately,
     onquote,
     onedit,
     ondelete,
@@ -43,6 +45,10 @@
     lookup: (id: string) => (MessageRow & { channel_name?: string }) | undefined;
     mine: boolean;
     onreply: () => void;
+    /** "Reply in…": pick another channel, thread or DM (SPEC §5.3). */
+    onreplyin: () => void;
+    /** "Reply privately", where there's someone else to reply to. */
+    onreplyprivately?: () => void;
     onquote: (q: Quote) => void;
     onedit: () => void;
     ondelete: () => void;
@@ -225,6 +231,8 @@
     <div class="actions" role="toolbar" aria-label="Message actions">
       <button onclick={() => (palette = !palette)} title="React" disabled={!speaker}>☺</button>
       <button onclick={onreply} title="Reply">↩</button>
+      <button onclick={onreplyin} title="Reply in another channel">↪</button>
+      {#if onreplyprivately}<button onclick={onreplyprivately} title="Reply privately">✉</button>{/if}
       <button onclick={quote} title="Quote (select text first to quote part)">❝</button>
       <button onclick={() => onforward(selectedRange() ?? undefined)} title="Forward selection or message">↗</button>
       <button onclick={onselect} title={selected ? 'Deselect message' : 'Select for bundle'} aria-label={selected ? 'Deselect message' : 'Select for bundle'}>{selected ? '☑' : '□'}</button>
