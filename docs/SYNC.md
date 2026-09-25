@@ -323,8 +323,13 @@ user action
   the scope that weren't delivered are dropped (`ClientStore::evict`; pending and restoring ops
   stay) and reported in `Changes.removed` so storage deletes them too. The repair ends there even
   if the digests still differ; the next catch-up tries again, so a divergence can never become a
-  pull loop. A scope that goes away (`scope.remove`, or missing from `welcome`) is evicted the
-  same way. This is how a device forgets a channel it lost `view` on (§4.2).
+  pull loop. This is how a device forgets a channel it lost `view` on (§4.2). A scope that goes
+  away (`scope.remove`, or missing from `welcome`) is forgotten (`ClientStore::forget`): its
+  confirmed ops *and* the copies it was restoring to a restored server go; only the device's own
+  unsent ops stay, to be refused with a reason. An ack for a batch whose scope went away while
+  it was in flight forgets that scope again: the server acks an op it already has by id before
+  asking about access, which would otherwise confirm it on a device that no longer reads the
+  scope (found by the simulator, §9.2).
 - **Backoff**: reconnect immediately on network change (Android `ConnectivityManager` callback,
   web `online` event) and on a push tickle; otherwise exponential 1 s → 5 min with ±30 % jitter.
 - **Android background**: WorkManager unique work `sync` with `NetworkType.CONNECTED`, expedited
@@ -414,15 +419,24 @@ reimplementation must run them too.
 A deterministic, seeded simulator in `chorus-core` tests (proptest):
 
 - N devices (2–6) across 1–3 accounts, one server model.
-- Random ops (all kinds), random wall-clock skew (±3 h) and drift, random reboots.
+- Random ops (all kinds), random wall-clock skew (±3 h) and drift, random reboots. Chat
+  structure too: channels and threads (`channel.*`, `parent_message_id`), messages into them
+  (replies, attachments), `message.forward` with its snapshot, `attachment.create`/`.set`.
+- Scope grants and revocations while devices are connected (`MemServer::set_access` sends the
+  `scope` frame): the second account joins and leaves the shared space and gains and loses the
+  first account's internal space (like a guest). `MemServer` has no channel permissions; the
+  end-to-end chaos test (§9.3) covers those against the real rule.
 - Random network: partitions, drops mid-batch, duplicated and reordered delivery, server restarts,
   one "restore from backup" event.
 - At quiescence assert: every device's projection for each scope it holds == server projection
   == projection built from the server log sorted by seq **and** by a random shuffle; digests equal;
-  no op lost; each rejected op has a reason.
+  no op lost; each rejected op has a reason; each device holds exactly the scopes its account
+  has now and nothing of the ones it lost. "Lost" allows one case: an op in a scope its author's
+  account lost, which a restore then dropped (its devices had forgotten it, and nobody may
+  restore an op for an author without access).
 
 Implemented in `crates/chorus-core/tests/converge.rs` against `sync::ClientEngine` and the
-reference `sync::MemServer`. Default run: 300 seeds (~2 s release). Long run:
+reference `sync::MemServer`. Default run: 300 seeds (~25 s release, a few minutes debug). Long run:
 `CHORUS_SIM_SEEDS=10000 cargo test -p chorus-core --release --test converge`. Rerun one seed with
 `CHORUS_SIM_SEED=<n>`; `CHORUS_SIM_STATS=1` prints per-run counts. Snapshots are op pages
 (the device is an op replica, which `reproject` needs); table-row snapshots are a later

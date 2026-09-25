@@ -267,9 +267,13 @@ pub trait ClientStore {
     fn digest(&self, scope: &str) -> Digest;
     /// Forget confirmed-state bookkeeping so the scope can be re-pulled (ops are kept).
     fn reset_scope(&mut self, scope: &str);
-    /// Drop the scope's confirmed ops whose ids aren't in `keep` (the sweep that ends a repair,
-    /// or a scope the device no longer reads). Pending and restoring ops stay.
+    /// Drop the scope's confirmed ops whose ids aren't in `keep` (the sweep that ends a repair).
+    /// Pending and restoring ops stay.
     fn evict(&mut self, scope: &str, keep: &BTreeSet<String>);
+    /// A scope the account no longer reads: drop its confirmed ops and the copies being restored
+    /// to a restored server (the server would refuse them now, or ack ones it has, which would
+    /// confirm them here again). The device's own unsent ops stay, to be refused with a reason.
+    fn forget(&mut self, scope: &str);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -284,7 +288,8 @@ pub enum ClientState {
 pub struct ClientEngine {
     pub device_id: String,
     pub state: ClientState,
-    in_flight: HashMap<String, Vec<String>>,
+    /// batch → (op id, scope) of the ops it carries
+    in_flight: HashMap<String, Vec<(String, String)>>,
     next_batch: u64,
     pub last_offset_ms: i64,
     /// Scopes whose digest check failed and are being re-pulled.
@@ -342,14 +347,14 @@ impl ClientEngine {
         // Ops being restored after a server restore go first, in their own batches.
         for restore in [true, false] {
             while self.in_flight.len() < MAX_IN_FLIGHT {
-                let skip: BTreeSet<String> = self.in_flight.values().flatten().cloned().collect();
+                let skip: BTreeSet<String> = self.in_flight.values().flatten().map(|(id, _)| id.clone()).collect();
                 let ops = store.pending(&skip, BATCH_OPS, restore);
                 if ops.is_empty() {
                     break;
                 }
                 self.next_batch += 1;
                 let batch = format!("b{}", self.next_batch);
-                self.in_flight.insert(batch.clone(), ops.iter().map(|o| o.id.clone()).collect());
+                self.in_flight.insert(batch.clone(), ops.iter().map(|o| (o.id.clone(), o.scope.clone())).collect());
                 out.push(Frame::Push { batch, ops, restore });
             }
         }
@@ -381,7 +386,7 @@ impl ClientEngine {
                 store.set_epoch(&epoch);
                 // scopes the account lost while this device was away
                 for gone in store.scopes().into_iter().filter(|s| !scopes.contains(s)) {
-                    store.evict(&gone, &BTreeSet::new());
+                    store.forget(&gone);
                 }
                 self.repairing.clear();
                 store.set_scopes(&scopes);
@@ -405,6 +410,7 @@ impl ClientEngine {
                 out.extend(self.pump(store));
             }
             Frame::Ack { batch, results } => {
+                let flown = self.in_flight.remove(&batch).unwrap_or_default();
                 for r in results {
                     match (r.seq, r.occurred_at, r.error) {
                         (Some(seq), Some(at), None) => {
@@ -421,7 +427,13 @@ impl ClientEngine {
                         _ => {} // retryable: stays pending
                     }
                 }
-                self.in_flight.remove(&batch);
+                // a scope that went away while the batch was in flight: the server acks ops it
+                // already has by id (a restore push of a copy), but the device no longer reads it
+                let held: BTreeSet<String> = store.scopes().into_iter().collect();
+                let gone: BTreeSet<&String> = flown.iter().map(|(_, s)| s).filter(|s| !held.contains(*s)).collect();
+                for scope in gone {
+                    store.forget(scope);
+                }
                 out.extend(self.pump(store));
             }
             Frame::Ops { scope, ops, to } => {
@@ -457,7 +469,7 @@ impl ClientEngine {
                 for r in &remove {
                     s.remove(r);
                     self.repairing.remove(r);
-                    store.evict(r, &BTreeSet::new());
+                    store.forget(r);
                 }
                 for a in &add {
                     s.insert(a.clone());
@@ -630,6 +642,22 @@ impl ClientStore for MemStore {
         self.cursors.insert(scope.into(), 0);
         self.meta_dirty = true;
     }
+    fn forget(&mut self, scope: &str) {
+        self.evict(scope, &BTreeSet::new());
+        let restoring: Vec<String> =
+            self.restoring.iter().filter(|id| self.ops.get(*id).is_some_and(|o| o.scope == scope)).cloned().collect();
+        if restoring.is_empty() {
+            return;
+        }
+        self.restoring.retain(|id| !restoring.contains(id));
+        self.meta_dirty = true;
+        for id in restoring {
+            self.ops.remove(&id);
+            self.dirty.remove(&id);
+            self.touched.insert(id.clone());
+            self.removed.insert(id);
+        }
+    }
     fn evict(&mut self, scope: &str, keep: &BTreeSet<String>) {
         let gone: Vec<String> = self
             .ops
@@ -696,6 +724,29 @@ impl MemServer {
 
     pub fn grant(&mut self, account: &str, scope: &str) {
         self.access.entry(account.into()).or_default().insert(scope.into());
+    }
+
+    /// Give or take away an account's scope while it may be connected (joining or leaving a
+    /// space, a guest gaining or losing a channel): its connected devices get a `scope` frame,
+    /// like the server's fan-out sends one (SYNC.md §4.2, §6.5).
+    pub fn set_access(&mut self, account: &str, scope: &str, on: bool) -> Vec<(String, Frame)> {
+        let set = self.access.entry(account.into()).or_default();
+        let changed = if on { set.insert(scope.into()) } else { set.remove(scope) };
+        let mut out = Vec::new();
+        if !changed {
+            return out;
+        }
+        for (device, c) in self.conns.iter_mut().filter(|(_, c)| c.account == account) {
+            let (add, remove) = if on {
+                c.scopes.insert(scope.into());
+                (vec![scope.to_string()], vec![])
+            } else {
+                c.scopes.remove(scope);
+                (vec![], vec![scope.to_string()])
+            };
+            out.push((device.clone(), Frame::Scope { add, remove }));
+        }
+        out
     }
 
     fn scope_ops(&self, scope: &str, after: i64) -> impl Iterator<Item = &Op> {
@@ -963,6 +1014,59 @@ mod tests {
             store.ops.keys().cloned().collect::<BTreeSet<_>>(),
             BTreeSet::from([confirmed(2, "").id, pending.id])
         );
+    }
+
+    /// After a restore, copies of other accounts' ops are pushed back (restoring). If the
+    /// scope goes away meanwhile, they go with it, and an ack still in flight for one (the
+    /// server acks an op it already has by id) doesn't bring it back as confirmed.
+    #[test]
+    fn a_lost_scope_takes_its_restoring_copies_along() {
+        let mut store = MemStore::default();
+        let mut engine = ClientEngine::new("d");
+        let scopes = vec!["space:s".to_string(), "space:t".to_string()];
+        store.set_scopes(&scopes);
+        for n in 1..=3 {
+            store.put_remote(confirmed(n, if n == 3 { "space:t" } else { "space:s" }));
+        }
+        // and one of its own, sent before but never acked (the server has it)
+        let mut own = confirmed(4, "space:s");
+        own.seq = None;
+        store.add_local(own.clone());
+        let welcome = |reconcile| Frame::Welcome {
+            server_time: 0,
+            epoch: "e2".into(),
+            account_id: "a".into(),
+            offset_ms: 0,
+            scopes: scopes.clone(),
+            max_seq: BTreeMap::new(),
+            reconcile,
+            core_min: String::new(),
+        };
+        let out = engine.on_frame(&mut store, welcome(true));
+        let pushed: Vec<(String, Vec<Op>)> = out
+            .into_iter()
+            .filter_map(|f| match f {
+                Frame::Push { batch, ops, .. } => Some((batch, ops)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(pushed.iter().map(|(_, ops)| ops.len()).sum::<usize>(), 4, "all go back, and the unsent one");
+        engine.on_frame(&mut store, Frame::Scope { add: vec![], remove: vec!["space:s".into()] });
+        assert_eq!(store.restoring, vec![confirmed(3, "").id], "space:s's copies are gone");
+        assert!(store.ops.contains_key(&own.id), "its own unsent op stays, to be refused with a reason");
+        // the server had them and acks them all
+        for (batch, ops) in pushed {
+            let results = ops
+                .iter()
+                .map(|o| AckResult { seq: Some(o.seq.unwrap_or(0) + 10), ..AckResult::ok(&confirmed(1, "")) })
+                .zip(&ops)
+                .map(|(r, o)| AckResult { id: o.id.clone(), ..r })
+                .collect();
+            engine.on_frame(&mut store, Frame::Ack { batch, results });
+        }
+        let held: Vec<&str> = store.confirmed().map(|o| o.scope.as_str()).collect();
+        assert_eq!(held, vec!["space:t"], "nothing of space:s is confirmed again");
+        assert!(store.pending(&BTreeSet::new(), usize::MAX, false).is_empty());
     }
 
     #[test]
