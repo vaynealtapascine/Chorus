@@ -287,3 +287,41 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
     - `serde_json::Value` serialization (26 KB raw).
     - Visitors and field identifiers generated per type (~150 KB raw): the real cost of
       derive.
+- 2026-09-25 claude-opus-5.5 — server rebuild (R26) — A 1M-op `rebuild` into a fresh file went
+  from 58.0 s to ~40–41.6 s on the remote Linux box (4 cores; the box changed mid-task, so the
+  baseline is HEAD re-measured on the same box). The replay went from 32.0 s to 16.3 s. What's
+  left is mostly disk-bound and varies ±2 s per run here: copy 4.5–8 s, check ~5 s, indexes ~5 s,
+  search index ~4 s. Profiled with `perf` (linux-tools, frame pointers, `line-tables-only`).
+  - **Writer, the critical path:**
+    - Reactions counted as ops of their message's entity, so 60k reacted-to messages took the
+      slow re-read path. Element-set kinds no longer count toward "multi".
+    - `entity()` reads the whole log, so an edited message was fully projected at each of its
+      ops. A rebuild now projects each entity row once (`PROJECTED`).
+    - New messages are written in runs (`write_new_messages`, multi-row INSERTs of up to 64 rows,
+      power-of-two chunks). Their derived rows are computed with the row (`MessageRows`).
+    - Migration 0009 makes the six per-item key tables `WITHOUT ROWID`: one B-tree per row
+      instead of two.
+    - Read-state and a few other per-op queries went through the statement cache
+      (`query_cached`). Before, SQLite re-prepared them on every op.
+    - Reactions read only their set ops (`for_entity_of_kinds`).
+  - **Reader:**
+    - Row preparation and JSON payload parsing run on `cores − 2` worker threads.
+    - The next log slice is read while the last one is prepared, so the writer no longer waits.
+  - **Everywhere:**
+    - mimalloc as the global allocator. Malloc and free were ~45 % of the reader and ~20 % of
+      the writer.
+    - SQLite built without memory statistics and memory management (`.cargo/config.toml`):
+      −12 %.
+    - The fresh file uses 8 KB pages. 16 KB was a hair faster but writes bigger WAL frames for
+      every live commit after the swap.
+    - The copy skips CHECK constraints the source already enforced (`ignore_check_constraints`).
+  - **What didn't help:**
+    - Copying the log without its indexes and building them afterwards: the copy got 3 s faster,
+      but building the indexes (the `json_extract` one especially) took 4.5 s.
+    - `PRAGMA threads` for index builds: no change.
+  - A third of this box's time is `pwrite` from the page cache spilling mid-transaction. Those
+    bytes would be written at commit anyway, so a bigger cache only moves them. The owner's SSD
+    should show more of the CPU gains.
+  - `tests/projection.rs` now also compares segments, segment authors, mentions, attachments and
+    replies. Its generator makes one-op messages, so the batched path is covered: skipping the
+    mention inserts fails it.

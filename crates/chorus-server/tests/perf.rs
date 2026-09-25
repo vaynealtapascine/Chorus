@@ -11,6 +11,10 @@
 
 use std::time::Instant;
 
+// the server binary's allocator (main.rs), so the budgets measure what runs
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use chorus_core::hlc::Hlc;
 use chorus_core::id::new_id;
 use chorus_core::op::Op;

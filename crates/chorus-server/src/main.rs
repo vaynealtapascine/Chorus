@@ -6,6 +6,11 @@ use clap::{Parser, Subcommand};
 
 use chorus_server::{backup, config::Config, db, exports, seed};
 
+/// mimalloc instead of the system allocator: the projections allocate a great deal per op, and a
+/// 1M-op rebuild spent ~⅓ of its time in glibc's malloc and free (R26, NOTES.md).
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[derive(Parser)]
 #[command(name = "chorus-server", version, about = "Chorus server")]
 struct Cli {

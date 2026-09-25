@@ -76,12 +76,35 @@ fn gen_ops(seed: u64, n: usize, acct_scope: &str, space_scope: &str) -> Vec<Op> 
                 };
                 (k, acct_scope, Some(id.clone()), p)
             }
-            9 | 10 => (
+            9 => (
                 "message.send",
                 space_scope,
                 Some(msgs[r.below(4)].clone()),
                 json!({"channel_id": "c", "authors": [m], "text": format!("hello {i}"), "entities": []}),
             ),
+            // a message of its own (a rebuild writes runs of these together), with the rows beside
+            // it: a mention, two speakers' segments, an attachment, a reply
+            10 => {
+                let other = members[r.below(4)].clone();
+                let mut p = json!({"channel_id": "c", "authors": [m], "text": format!("hello {i}"), "entities": []});
+                match r.below(5) {
+                    0 => {
+                        p["entities"] = json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": other}]);
+                    }
+                    1 if other != m => {
+                        p["authors"] = json!([m, other]);
+                        p["text"] = json!("A\nB");
+                        p["segments"] = json!([
+                            {"offset": 0, "length": 1, "authors": [m]},
+                            {"offset": 2, "length": 1, "authors": [other]}
+                        ]);
+                    }
+                    2 => p["attachments"] = json!([new_id(1, [i as u8; 10])]),
+                    3 => p["reply_to"] = json!(msgs[r.below(4)]),
+                    _ => {}
+                }
+                ("message.send", space_scope, Some(id.clone()), p)
+            }
             11 => {
                 let mid = msgs[r.below(4)].clone();
                 (
@@ -193,6 +216,11 @@ const TABLES: &[&str] = &[
     "SELECT id, subject_id, level, is_primary, start_at, end_at FROM front_interval",
     "SELECT id, text, deleted_at, pinned_at, revision_count FROM message",
     "SELECT message_id, member_id, position FROM message_author",
+    "SELECT message_id, idx, offset_u16, length_u16, text FROM message_segment",
+    "SELECT message_id, idx, member_id, position FROM message_segment_author",
+    "SELECT source_type, source_id, target_type, target_id FROM mention",
+    "SELECT owner_type, owner_id, attachment_id, position FROM item_attachment",
+    "SELECT id, reply_to_id FROM message",
     "SELECT target_id, member_id, is_present FROM reaction",
     "SELECT channel_id, last_read_message_id, last_read_message_at FROM read_state",
     "SELECT member_id, field_id, value FROM field_value",
@@ -386,7 +414,10 @@ fn a_file_rebuild_is_identical_and_keeps_its_indexes() {
     let schema = |c: &Connection| dump(c, "SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'");
     let before: Vec<Vec<String>> = TABLES.iter().map(|q| dump(&c, q)).collect();
     let before_schema = schema(&c);
-    assert!(!before[5].is_empty() && !before[10].is_empty(), "messages and their search index");
+    assert!(!before[5].is_empty() && !before[TABLES.len() - 1].is_empty(), "messages and their search index");
+    for (i, what) in [(7, "segments"), (8, "segment authors"), (9, "mentions"), (10, "attachments")] {
+        assert!(!before[i].is_empty(), "the rebuild has {what} to write");
+    }
     project::rebuild(&mut c).unwrap();
     for (i, q) in TABLES.iter().enumerate() {
         assert_eq!(before[i], dump(&c, q), "rebuild differs for {q}");

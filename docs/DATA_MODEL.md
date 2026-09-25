@@ -198,7 +198,11 @@ generated into `fixtures/schema/` so Kotlin/TS can validate.
 > written by re-projecting an entity's ops through `chorus_core::model`, and validation happens
 > on ops); `op.restored` marks ops re-pushed in a restore window; server-only tables `session`,
 > `auth_nonce` and `scope_access` exist; `member_group.effective_parent_id` holds the cycle-guarded
-> parent; `space.roles` holds custom roles; `device.platform` allows `token` (API-token writes).
+> parent; `space.roles` holds custom roles; `device.platform` allows `token` (API-token writes);
+> since migration 0009 (R26) the per-item key tables (`message_author`, `message_segment`,
+> `message_segment_author`, `mention`, `post_author`, `item_attachment`) are `WITHOUT ROWID`:
+> the same columns and keys, stored in their primary key's B-tree alone. A rebuilt database
+> (`chorus-server rebuild`) has 8 KB pages.
 
 Android's Room schema mirrors these tables for the scopes the device holds. The web client keeps
 the same shapes as IndexedDB object stores. Column names are identical everywhere.
