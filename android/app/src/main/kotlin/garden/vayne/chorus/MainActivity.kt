@@ -143,6 +143,8 @@ private fun App(chorus: Chorus, invite: String?) {
         }
         else -> Column(Modifier.fillMaxSize().background(p.bg)) {
             val person = model.isPerson
+            val activeTab = if (person && (tab == Tab.Home || tab == Tab.Members || tab == Tab.History))
+                Tab.Journal else tab
             if (!chatStageCapture) Row(
                 Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -181,12 +183,8 @@ private fun App(chorus: Chorus, invite: String?) {
                     })
                 else if (insightsOpen) InsightsScreen(model) { insightsOpen = false }
                 else if (settingsOpen) SettingsScreen(chorus, model) { insightsOpen = true; settingsOpen = false }
-                else when (if (person && (tab == Tab.Members || tab == Tab.History)) Tab.Home else tab) {
-                    Tab.Home -> if (person) {
-                        Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                            Text("Chorus quick switching is for systems. Your personal profile and journal are available on the web.", color = p.ink2)
-                        }
-                    } else Home(chorus, model)
+                else when (activeTab) {
+                    Tab.Home -> Home(chorus, model)
                     Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
                         onStageCapture = { chatStageCapture = it }, onDismissSearchHit = { chatSearchHit = null })
                     Tab.Journal -> Journal(chorus, model, journalReplyPost,
@@ -205,11 +203,11 @@ private fun App(chorus: Chorus, invite: String?) {
                 Modifier.fillMaxWidth().background(p.surface).navigationBarsPadding().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                Tab.entries.filter { !person || (it != Tab.Members && it != Tab.History) }.forEach { t ->
+                Tab.entries.filter { !person || (it != Tab.Home && it != Tab.Members && it != Tab.History) }.forEach { t ->
                     Text(
                         t.label,
-                        color = if (t == tab) p.accent else p.ink2,
-                        fontWeight = if (t == tab) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (t == activeTab) p.accent else p.ink2,
+                        fontWeight = if (t == activeTab) FontWeight.SemiBold else FontWeight.Normal,
                         fontSize = 12.sp,
                         maxLines = 1,
                         softWrap = false,

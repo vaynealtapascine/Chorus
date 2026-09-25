@@ -236,6 +236,9 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 Text("Journal", color = p.ink, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(top = 14.dp))
                 Row {
+                    if (model.isPerson) model.members.firstOrNull { it.isSelf }?.let { self ->
+                        TextButton(onClick = { profileId = self.id }) { Text("Profile") }
+                    }
                     TextButton(onClick = { section = "lists" }) { Text("Lists") }
                     TextButton(onClick = { section = "feeds" }) { Text("Feeds") }
                     TextButton(onClick = { editing = true }) { Text("Write") }
