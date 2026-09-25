@@ -115,7 +115,8 @@ checks more than `op::validate`'s field names: every payload field stored in a c
 `target_type`/`target_id`/`emoji`, message and post `text` is text and `entities`/`tags` lists, entities and segments are
 `{offset, length}` ranges (UTF-16) inside the text with a `type`/`authors` (so another
 account's message can't make a renderer slice out of range),
-`space.set_roles` a list of `{id, name, perms}`). A test compares `FIELD_RULES` with the SQL
+`space.set_roles` a list of `{id, name, perms}`, a channel's `settings.slow_mode_s` whole seconds
+up to 21 600). A test compares `FIELD_RULES` with the SQL
 schema, so a migration that adds a constraint must add its rule. The rules apply to **new** ops
 only: projection (`model::apply_op`, the server's rebuild) and restore pushes use the structural
 `op::validate`, so an op stored before a rule existed keeps projecting exactly as before.
