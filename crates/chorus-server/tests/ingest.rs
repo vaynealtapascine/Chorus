@@ -486,14 +486,18 @@ fn slow_mode_counts_on_arrival_and_spares_managers() {
         n += 1;
         let o = op(n, "message.send", &sx, json!({"channel_id": ch, "text": "hi", "authors": []}), written);
         let (r, _) = ingest::accept(&c, &session(who, 0), o, arrives, false).unwrap();
-        r.error.map(|e| (e.code, e.message))
+        r.error.map(|e| (e.code, e.message, e.retry, e.retry_after_ms))
     };
     assert_eq!(send(&b, NOW, NOW), None);
     let refused = send(&b, NOW + 10_000, NOW + 10_000).unwrap();
     assert_eq!(refused.0, "slow_mode");
-    assert!(refused.1.contains("wait 20 s"), "{}", refused.1);
+    assert!(refused.1.contains("sending in 20 s"), "{}", refused.1);
     // written offline long ago, it still counts when it arrives
-    assert_eq!(send(&b, NOW - 3_600_000, NOW + 15_000).map(|e| e.0).as_deref(), Some("slow_mode"));
+    let held = send(&b, NOW - 3_600_000, NOW + 15_000).unwrap();
+    assert_eq!(held.0, "slow_mode");
+    // held for later (D-076), not refused: the device re-sends it once the wait is over
+    assert!(held.2, "retryable");
+    assert!(held.3.is_some_and(|ms| ms > 0 && ms <= 15_000), "{:?}", held.3);
     assert_eq!(send(&b, NOW + 31_000, NOW + 31_000), None);
     // the owner may manage the channel: no limit
     assert_eq!(send(&a, NOW, NOW), None);

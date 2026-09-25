@@ -96,8 +96,9 @@ pub fn accept(
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
     }
     // slow mode (perms.rs, R22.7 default): on when the server receives it, not when it was written
-    if !preserved && let Some(why) = crate::perms::slow_mode(conn, &author, &o, now)? {
-        return Ok((AckResult::err(o.id, "slow_mode", why, false), None));
+    // slow mode (D-076): not refused, held: the device sends it again when the wait is over
+    if !preserved && let Some((why, wait_ms)) = crate::perms::slow_mode(conn, &author, &o, now)? {
+        return Ok((AckResult::later(o.id, "slow_mode", why, wait_ms), None));
     }
     // Follow requests and a follower's prefs are written by the server on the follower's behalf
     // (follows.rs); a client forging one could make someone else receive its switches.

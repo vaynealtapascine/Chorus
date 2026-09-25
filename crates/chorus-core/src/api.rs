@@ -427,6 +427,22 @@ impl JsonReplica {
         self.0.dismiss_issue(id)
     }
 
+    /// Time passing (slow mode, D-076): frames sending the held ops whose wait is over (JSON
+    /// array, like `on_frame`'s).
+    pub fn tick(&mut self, now: i64) -> String {
+        js(&self.0.tick(now))
+    }
+
+    /// Ops waiting to be sent again, soonest first (JSON array of `{id, until}`).
+    pub fn held(&self) -> String {
+        js(&self.0.held())
+    }
+
+    /// Cancel a held op; it comes out in the changes' `removed`. `false` if it wasn't held.
+    pub fn cancel_held(&mut self, id: &str) -> bool {
+        self.0.cancel_held(id)
+    }
+
     /// Plan only (for the preview): `{"members", "groups", "switches", "warnings"}`.
     pub fn plan_pluralkit(export_json: &str, scope: &str) -> Result<String, String> {
         let export: Value = parse("PluralKit export", export_json)?;

@@ -9,6 +9,8 @@ is for reads, auth, blobs, exports and third-party scripts.
 ## 1. Conventions
 
 - Errors: `{"error":{"code":"forbidden","message":"…","retry":false}}` with a matching HTTP status.
+  In a sync `ack`, a per-op error may add `retry_after_ms` (with `retry: true`): the device holds
+  the op and sends it again no sooner (slow mode, D-076).
   Codes: `bad_request`, `unauthenticated`, `forbidden`, `not_found`, `conflict`, `too_large`,
   `rate_limited`, `too_many_connections`, `unsupported_version`, `internal`; per op in a sync
   `ack`, also `unprocessable` (valid-looking, but the server couldn't store it; never retried,

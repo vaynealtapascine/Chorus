@@ -93,6 +93,10 @@ export class SyncClient {
   /** ops are still being read and indexed (opening from a snapshot); no sync until done */
   private opening = false;
   private snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Wakes the replica when the soonest held op may go out (slow mode, D-076). */
+  private heldTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Held ops by the message (entity) they send: when each goes out (ms). */
+  heldUntil: Record<string, { op: string; until: number }> = {};
   private snapshotDirty = false;
   /** told about each `caught` frame while "Sync everything now" runs */
   private caughtWatch: ((scope: string) => void) | null = null;
@@ -236,6 +240,12 @@ export class SyncClient {
     return this.replica ? (JSON.parse(this.replica.syncIssues()) as SyncIssue[]) : [];
   }
 
+  /** Don't send a held message after all (slow mode, D-076); it's deleted from this device. */
+  cancelHeld(messageId: string): void {
+    const h = this.heldUntil[messageId];
+    if (h && this.replica?.cancelHeld(h.op)) this.changed();
+  }
+
   /** Let go of a refused op once seen (deleted from this device too). */
   dismissIssue(id: string): void {
     if (this.replica?.dismissIssue(id)) this.changed();
@@ -358,6 +368,7 @@ export class SyncClient {
 
   private changed(): void {
     this.refresh();
+    this.watchHeld();
     const ch = JSON.parse(this.replica!.takeChanges()) as Changes;
     this.saving = this.saving.then(() => save(ch)).catch((e) => console.error('persist failed', e));
     if (!this.opening) {
@@ -365,6 +376,24 @@ export class SyncClient {
       this.scheduleSnapshot();
     }
     this.emit();
+  }
+
+  /** Keep `heldUntil` current and wake at the soonest one to send it (D-076). */
+  private watchHeld(): void {
+    if (!this.replica) return;
+    const held = JSON.parse(this.replica.held()) as { id: string; entity_id: string | null; until: number }[];
+    const next: typeof this.heldUntil = {};
+    for (const h of held) if (h.entity_id) next[h.entity_id] = { op: h.id, until: h.until };
+    this.heldUntil = next;
+    if (this.heldTimer) clearTimeout(this.heldTimer);
+    this.heldTimer = null;
+    if (!held.length) return;
+    this.heldTimer = setTimeout(() => {
+      this.heldTimer = null;
+      if (!this.replica) return;
+      this.sendAll(JSON.parse(this.replica.tick(Date.now())) as unknown[]);
+      this.changed();
+    }, Math.max(0, held[0].until - Date.now()) + 50);
   }
 
   private sendAll(frames: unknown[]): void {
