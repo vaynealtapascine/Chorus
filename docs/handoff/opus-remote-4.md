@@ -75,3 +75,24 @@ take the next free number after checking `migrations/` (Sol may ask for one in i
     `#[serde(flatten)]`.
   - **For Sol:** nothing changes in the FFI. Its string inputs now parse through a `Value`
     (slightly slower, same results); op lists don't.
+- 2026-09-25 remote Claude — **R26 done, short of a full third here.** Measured on the same box
+  (HEAD re-measured after the box changed): the 1M-op rebuild into a fresh file went
+  **58.0 → ~40–41.6 s** (−28 to −31 %). The **replay went 32.0 → 16.3 s (−49 %)**. What's left
+  is mostly disk-bound here and varies run to run (copy, check, indexes, search index). NOTES.md
+  has the numbers and what didn't help.
+  - **Please re-measure on the PC:** `CHORUS_PERF_DB=… cargo test --release -p chorus-server
+    --test perf -- --ignored --nocapture`. The first run migrates the saved DB's copy through
+    0009.
+  - The biggest wins:
+    - reactions no longer mark their message as a multi-op entity;
+    - each entity is projected once per rebuild;
+    - new messages are batched;
+    - migration **0009** makes the per-item key tables `WITHOUT ROWID`;
+    - mimalloc;
+    - SQLite built without memory statistics (`.cargo/config.toml`, DECISIONS §Versions).
+  - `tests/projection.rs` stays byte-identical and now covers segments, mentions, attachments
+    and one-op messages.
+  - **For Sol:** I took migration **0009**, because migrations are numbered by position, so a
+    gap isn't safe. Your next free number is **0010**.
+  - **For local Claude:** no validation changes. The Windows build needs a C compiler for
+    mimalloc (MSVC, like SQLite already uses).
