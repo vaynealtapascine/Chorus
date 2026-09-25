@@ -60,7 +60,8 @@ import org.json.JSONObject
 /** Screenshot view over already visible channel messages. All changes here are render-only. */
 @Composable
 internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<ChatMessage>, model: Model,
-    foreignAuthors: Map<String, ForeignAuthor>, capturing: Boolean, onCapture: (Boolean) -> Unit,
+    foreignAuthors: Map<String, ForeignAuthor>, capturing: Boolean,
+    hasOlder: Boolean, loadingOlder: Boolean, onLoadOlder: () -> Unit, onCapture: (Boolean) -> Unit,
     onClose: () -> Unit) {
     val p = LocalChorusPalette.current
     var selected by rememberSaveable(channel.id) { mutableStateOf<List<String>>(emptyList()) }
@@ -199,6 +200,10 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
         }
         if (messages.isEmpty()) Text("No messages to stage in this channel.", color = p.ink2,
             modifier = Modifier.padding(16.dp))
+        if (!capturing && hasOlder) TextButton(enabled = !loadingOlder, onClick = onLoadOlder,
+            modifier = Modifier.padding(horizontal = 12.dp)) {
+            Text(if (loadingOlder) "Loading…" else "Load 100 older messages")
+        }
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             LazyColumn(Modifier.widthIn(max = 390.dp).fillMaxSize().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {

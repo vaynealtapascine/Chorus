@@ -62,12 +62,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.ChatMessage
+import garden.vayne.chorus.data.ChannelWindow
 import garden.vayne.chorus.data.ChatAttachment
 import garden.vayne.chorus.data.SearchDocument
 import garden.vayne.chorus.data.ChatCompose
 import garden.vayne.chorus.data.ChatSpace
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.Entry
 import garden.vayne.chorus.data.Reply
 import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.SpaceAccount
@@ -81,6 +83,9 @@ import java.util.Date
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+private data class StageRows(val channelId: String, val accountId: String, val spaceKind: String,
+    val viewingAs: String?, val front: List<Entry>, val window: ChannelWindow)
 
 /** Local chat view: internal channels, shared spaces and account DMs use the same projection. */
 @Composable
@@ -117,6 +122,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var invitedAccounts by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var staging by rememberSaveable { mutableStateOf(false) }
     var capturing by rememberSaveable { mutableStateOf(false) }
+    var stageLimit by rememberSaveable { mutableStateOf(100) }
+    var stageWindow by remember { mutableStateOf<StageRows?>(null) }
+    var stageLoading by remember { mutableStateOf(false) }
     val actions = rememberCoroutineScope()
     val ctx = LocalContext.current
     // picked files waiting to be sent: staged (copied, hashed) only on send
@@ -152,6 +160,15 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     LaunchedEffect(channel?.id, chorus.device?.accountId) {
         staging = false
         capturing = false
+        stageLimit = 100
+        stageWindow = null
+    }
+    LaunchedEffect(staging, channel?.id, space?.kind, viewingAs, model, stageLimit, chorus.device?.accountId) {
+        if (!staging || channel == null || space == null) { stageWindow = null; return@LaunchedEffect }
+        stageLoading = true
+        try { stageWindow = StageRows(channel.id, chorus.device?.accountId.orEmpty(), space.kind,
+            viewingAs, model.current, chorus.stageWindow(channel.id, stageLimit, space.kind, model.current, viewingAs)) }
+        finally { stageLoading = false }
     }
     LaunchedEffect(capturing) { onStageCapture(capturing) }
     DisposableEffect(Unit) { onDispose { onStageCapture(false) } }
@@ -159,7 +176,15 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (capturing) capturing = false else staging = false
     }
     if (staging && channel != null) {
-        ChatStage(chorus, channel, messages, model, foreignAuthors, capturing,
+        val window = stageWindow?.takeIf { it.channelId == channel.id && it.accountId == chorus.device?.accountId &&
+            it.spaceKind == space?.kind && it.viewingAs == viewingAs && it.front == model.current }?.window
+        val stageMessages = window?.messages?.filter {
+            space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
+                accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
+        } ?: messages
+        ChatStage(chorus, channel, stageMessages, model, foreignAuthors, capturing,
+            hasOlder = window?.hasOlder == true, loadingOlder = stageLoading,
+            onLoadOlder = { stageLimit += 100 },
             onCapture = { capturing = it }, onClose = { capturing = false; staging = false })
         return
     }

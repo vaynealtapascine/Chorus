@@ -61,6 +61,7 @@ data class ChatMessage(
     val visibleMemberIds: Set<String>, val accountId: String?, val replyTo: String?,
     val attachments: List<ChatAttachment>,
 )
+data class ChannelWindow(val messages: List<ChatMessage>, val hasOlder: Boolean)
 
 data class JournalPost(
     val id: String, val kind: String, val authors: List<String>, val title: String?, val text: String,
@@ -181,6 +182,26 @@ class Model(
                     row.str("alt_text").orEmpty(), row.optBoolean("is_spoiler"))
             }
 
+        private fun chatMessage(id: String, f: JSONObject, attachments: Map<String, JSONObject>): ChatMessage {
+            val visibility = f.optJSONObject("visibility")
+            return ChatMessage(id, f.str("channel_id").orEmpty(), strings(f.optJSONArray("authors")), f.str("text").orEmpty(),
+                f.optLong("occurred_at"), f.str("cw"), visibility?.optString("mode")?.ifEmpty { "all" } ?: "all",
+                stringSet(visibility?.optJSONArray("member_ids")), f.str("account_id"), f.str("reply_to"),
+                files(f.optJSONArray("attachments"), attachments))
+        }
+
+        /** Page backward through locally replicated messages without enlarging the chat model. */
+        fun channelWindow(p: JSONObject, channelId: String, limit: Int,
+            visible: (ChatMessage) -> Boolean = { true }): ChannelWindow {
+            val attachments = rows(p, "attachment").associate { it.first to it.second }
+            val messages = rows(p, "message").filter { (_, f) ->
+                !f.present("deleted_at") && f.str("channel_id") == channelId
+            }.sortedWith(compareBy<Pair<String, JSONObject>> { it.second.optLong("occurred_at") }.thenBy { it.first })
+            val view = messages.map { (id, f) -> chatMessage(id, f, attachments) }.filter(visible)
+            val count = limit.coerceAtLeast(1)
+            return ChannelWindow(view.takeLast(count), view.size > count)
+        }
+
         private fun entries(a: JSONArray?): List<Entry> = if (a == null) emptyList() else List(a.length()) {
             val e = a.getJSONObject(it)
             Entry(e.getString("subject_type"), e.getString("subject_id"), e.optString("level", "front"), e.optBoolean("is_primary"))
@@ -295,13 +316,7 @@ class Model(
             val selected = messageRows
                 .groupBy { (_, f) -> f.str("channel_id").orEmpty() }
                 .mapValues { (_, values) -> values.sortedWith(compareBy<Pair<String, JSONObject>> { it.second.optLong("occurred_at") }.thenBy { it.first }).takeLast(100) }
-            val chatMessages = selected.mapValues { (_, values) -> values.map { (id, f) ->
-                val files = files(f.optJSONArray("attachments"), attachments)
-                val visibility = f.optJSONObject("visibility")
-                ChatMessage(id, f.str("channel_id").orEmpty(), strings(f.optJSONArray("authors")), f.str("text").orEmpty(),
-                    f.optLong("occurred_at"), f.str("cw"), visibility?.optString("mode")?.ifEmpty { "all" } ?: "all",
-                    stringSet(visibility?.optJSONArray("member_ids")), f.str("account_id"), f.str("reply_to"), files)
-            } }
+            val chatMessages = selected.mapValues { (_, values) -> values.map { (id, f) -> chatMessage(id, f, attachments) } }
             val followCeilings = rows(p, "follow").associate { (id, f) -> id to (f.optJSONObject("ceiling") ?: JSONObject()) }
             val postReactions = PostReactions.fromProjection(p.optJSONObject("sets"), members.associate { it.id to it.shownName })
             val posts = rows(p, "post").filter { (_, f) -> !f.present("deleted_at") }
