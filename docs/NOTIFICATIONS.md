@@ -172,6 +172,8 @@ Rules:
 6. Shared-space chat is a known side channel: a message authored as Kai reveals Kai is around at
    that time. The sharing screen says so plainly; systems can post with a "delay send" option
    (Advanced, per space) that holds outgoing messages for a random 0–N minutes.
+7. Read marks never leave the account (SYNC §4.2): with "track reading per member" on, a mark
+   names the member who read, and another account would learn who was fronting and when.
 
 Tests (M8): for random switch sequences and ceilings, assert that the sequence of follower-visible
 states over time (from every surface) equals the sequence of revealed states, and that no surface

@@ -108,7 +108,8 @@ trait Lookups {
 }
 
 /// The effective per-account sync rule for a shared-space op. The sender always retains their
-/// own ops. Everything tied to a channel needs that channel's `view` permission (perms.rs) and,
+/// own ops; read marks go nowhere else. Everything tied to a channel needs that channel's `view`
+/// permission (perms.rs) and,
 /// for messages, public visibility; attachment metadata waits for a visible message link. A guest
 /// of a channel (not in the space) gets that channel's ops and the space's name, nothing else.
 fn visible_with(account: &str, o: &Op, look: &mut dyn Lookups) -> anyhow::Result<bool> {
@@ -139,11 +140,10 @@ fn visible_with(account: &str, o: &Op, look: &mut dyn Lookups) -> anyhow::Result
         return id.map_or(Ok(false), |m| look.message(m));
     }
     if k.starts_with("read.") {
-        return match (str_of("message_id"), str_of("channel_id")) {
-            (Some(m), _) => look.message(m),
-            (None, Some(c)) => look.channel(c),
-            (None, None) => look.member(),
-        };
+        // read marks are the account's own (unread counts, "track reading per member"): nobody
+        // else gets them, or another account would see when it read and, per member, who of it
+        // was fronting (NOTIFICATIONS §5)
+        return Ok(false);
     }
     if k.starts_with("attachment.") {
         return o.entity().map_or(Ok(false), |a| look.attachment(a));

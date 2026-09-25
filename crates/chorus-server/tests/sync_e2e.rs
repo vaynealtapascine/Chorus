@@ -1977,3 +1977,82 @@ async fn a_reply_elsewhere_links_back_only_for_those_who_can_read_the_original()
     let held = |id: &str| laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(id));
     assert!(held(&reply_mods) && held(&open) && !held(&secret));
 }
+
+/// Read marks are the account's own: another account in the space never gets them (they'd show
+/// when it read and, per member, who of it was fronting), its other devices do.
+#[tokio::test(flavor = "multi_thread")]
+async fn read_marks_stay_with_their_account() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 121, "stars").await;
+    let friend = enrol(&s, auth::InviteKind::Person, None, 122, "alex").await;
+    let sys_id = sys["account_id"].as_str().unwrap().to_string();
+    let desk_e = enrol(&s, auth::InviteKind::Device, Some(&sys_id), 123, "").await;
+    let (mut phone, mut desk, mut laptop) =
+        (Device::new(&sys, 121), Device::new(&desk_e, 123), Device::new(&friend, 122));
+    for d in [&mut phone, &mut desk, &mut laptop] {
+        d.connect(&s).await;
+        d.drain(Q).await;
+    }
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+    let acct = phone.scope("account:");
+    let f: Value = http
+        .post(url("/follows"))
+        .bearer_auth(tok(&friend))
+        .json(&json!({"target": "stars"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    phone.drain(Q).await;
+    phone.create("follow.accept", &acct, f["id"].as_str().unwrap(), json!({})).await;
+    phone.drain(Q).await;
+    let club: Value = http
+        .post(url("/spaces"))
+        .bearer_auth(tok(&sys))
+        .json(&json!({"kind": "shared", "name": "Club", "accounts": [friend["account_id"]]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    for d in [&mut phone, &mut desk, &mut laptop] {
+        d.drain(Q).await;
+    }
+    let scope = format!("space:{}", club["id"].as_str().unwrap());
+    let general = model::project(phone.store.confirmed()).rows["channel"]
+        .iter()
+        .find(|(_, r)| r.fields["space_id"] == club["id"])
+        .map(|(id, _)| id.clone())
+        .unwrap();
+    let kai = new_id(1, [124; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    let hello = new_id(5, [1; 10]);
+    phone
+        .create(
+            "message.send",
+            &scope,
+            &hello,
+            json!({"channel_id": general, "authors": [kai], "text": "hi", "entities": []}),
+        )
+        .await;
+    let mark = phone
+        .create(
+            "read.mark",
+            &scope,
+            &hello,
+            json!({"channel_id": general, "message_id": hello, "reader_member_id": kai}),
+        )
+        .await;
+    for d in [&mut phone, &mut desk, &mut laptop] {
+        d.drain(Q).await;
+    }
+    assert!(desk.store.confirmed().any(|o| o.id == mark), "the account's other device has it");
+    assert!(!laptop.store.confirmed().any(|o| o.id == mark), "another account never does");
+    assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(hello.as_str())));
+    assert_eq!(laptop.engine.repairs, 0, "and its digest agrees without it");
+}

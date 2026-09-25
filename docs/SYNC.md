@@ -97,7 +97,8 @@ so nobody can sign someone else up for their switches.
 
 `chorus-core::visibility::can_read(account, op, state)` is the one function deciding delivery.
 Notable filters inside `space:` scopes: `system_only` messages go only to the author's account;
-reactions/edits to such messages likewise; channel permissions (`view`, SPEC §5.1) decide which
+reactions/edits to such messages likewise; read marks (`read.*`) go only to the account that
+wrote them (no read receipts: per member, they'd show another account who was fronting); channel permissions (`view`, SPEC §5.1) decide which
 channels of a space an account receives — this is how a single internal channel is shared with an
 outside account (a *guest*: it gets the space's scope but only that channel's ops). Permission
 resolution is one SQL rule on the server (`chorus-server/src/perms.rs`, DATA_MODEL §4.4): clients
