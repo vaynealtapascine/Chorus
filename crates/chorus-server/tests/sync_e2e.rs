@@ -2124,3 +2124,139 @@ async fn a_windowed_tab_keeps_recent_messages_and_its_digest_agrees() {
     full.drain(Q).await;
     assert!(held(&full, &old) && held(&full, &old_mark));
 }
+
+/// SPEC §9 on the chat path (R24): a device back after a week away from a busy shared space —
+/// another account sent 20 000 messages meanwhile, with edits, reactions and permission changes
+/// (some hiding a channel from it, so its digest has to filter) — is caught up within 10 s.
+/// `cargo test --release -p chorus-server --test sync_e2e shared_space_catch_up -- --ignored --nocapture`
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn shared_space_catch_up_budget() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 141, "stars").await;
+    let friend = enrol(&s, auth::InviteKind::Person, None, 142, "alex").await;
+    let mut phone = Device::new(&sys, 141);
+    let mut laptop = Device::new(&friend, 142);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    laptop.connect(&s).await;
+    laptop.drain(Q).await;
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+    let acct = phone.scope("account:");
+    let f: Value = http
+        .post(url("/follows"))
+        .bearer_auth(tok(&friend))
+        .json(&json!({"target": "stars"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    phone.drain(Q).await;
+    phone.create("follow.accept", &acct, f["id"].as_str().unwrap(), json!({})).await;
+    phone.drain(Q).await;
+    let club: Value = http
+        .post(url("/spaces"))
+        .bearer_auth(tok(&sys))
+        .json(&json!({"kind": "shared", "name": "Club", "accounts": [friend["account_id"]]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let club_id = club["id"].as_str().unwrap().to_string();
+    let scope = format!("space:{club_id}");
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    let kai = new_id(1, [143; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    let channels: Vec<String> = (0..8u8).map(|i| new_id(7, [i + 1; 10])).collect();
+    for (i, c) in channels.iter().enumerate() {
+        phone
+            .create("channel.create", &scope, c, json!({"space_id": club_id, "kind": "text", "name": format!("c{i}")}))
+            .await;
+    }
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+
+    // a week away
+    laptop.disconnect();
+    let t = std::time::Instant::now();
+    let mut sent = Vec::new();
+    for i in 0..20_000usize {
+        let id = new_id(chorus_server::now_ms() as u64, rand::random());
+        let c = &channels[i % channels.len()];
+        phone
+            .create(
+                "message.send",
+                &scope,
+                &id,
+                json!({"channel_id": c, "authors": [kai], "text": format!("busy {i}"), "entities": []}),
+            )
+            .await;
+        sent.push(id.clone());
+        if i % 10 == 3 {
+            let m = &sent[i / 2];
+            phone
+                .create(
+                    "message.edit",
+                    &scope,
+                    m,
+                    json!({"message_id": m, "text": format!("edited {i}"), "entities": []}),
+                )
+                .await;
+        }
+        if i % 7 == 1 {
+            let m = &sent[i / 3];
+            phone
+                .create(
+                    "reaction.add",
+                    &scope,
+                    m,
+                    json!({"target_type": "message", "target_id": m, "emoji": "💜", "member_id": kai}),
+                )
+                .await;
+        }
+        if i % 500 == 250 {
+            // one channel hidden from everyone but the owner, and shown again, back and forth
+            let deny: Vec<&str> = if (i / 500) % 2 == 0 { vec!["view"] } else { vec![] };
+            phone
+                .create(
+                    "channel.set_permission",
+                    &scope,
+                    &channels[0],
+                    json!({"target_type": "role", "target_id": "everyone", "allow": [], "deny": deny}),
+                )
+                .await;
+        }
+        if i % 200 == 0 {
+            phone.drain(Duration::from_millis(1)).await;
+        }
+    }
+    let last = sent.last().unwrap().clone();
+    assert!(
+        phone.until(Duration::from_secs(300), |st| st.pending(&Default::default(), 1, false).is_empty()).await,
+        "the phone never finished sending"
+    );
+    println!("the busy week: {} ops in {:?}", phone.store.confirmed().count(), t.elapsed());
+
+    let t = std::time::Instant::now();
+    laptop.connect(&s).await;
+    let caught = laptop
+        .until(Duration::from_secs(60), |st| st.confirmed().any(|o| o.entity_id.as_deref() == Some(last.as_str())))
+        .await;
+    laptop.drain(Duration::from_millis(300)).await;
+    let took = t.elapsed();
+    assert!(caught, "never caught up");
+    assert!(laptop.engine.repairing().is_empty());
+    println!(
+        "back after a week: {} ops caught up in {took:?} ({} repairs)",
+        laptop.store.confirmed().count(),
+        laptop.engine.repairs
+    );
+    assert!(took <= Duration::from_secs(10), "SPEC §9: reconnect ≤ 10 s");
+}
