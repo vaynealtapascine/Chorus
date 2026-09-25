@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
   import { core, type Composed } from '../core';
-  import { channels, contentWarningsAutoExpand, customEmojis, lastRead, members, messageById, messages, reactions, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
+  import { channels, contentWarningsAutoExpand, customEmojis, lastRead, memberMarks, members, messageById, messages, reactions, readPerMember, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
   import { router } from '../router.svelte';
   import { snapshot } from '../selection';
@@ -58,6 +58,8 @@
 
   // who speaks by default: the primary fronter, else the first one fronting (SPEC §5.2)
   const fronting = $derived(projection.fronts[sync.accountId]?.current ?? []);
+  const frontingMembers = $derived(fronting.filter((e) => e.subject_type === 'member')
+    .map((e) => ({ member_id: e.subject_id, is_primary: !!e.is_primary, level: e.level })));
   // a person account always speaks as its self member (D-003)
   const self = $derived(selfMember(projection));
   let viewingAs = $state<string | null>(null);
@@ -78,8 +80,7 @@
   // the speaker chip before anyone picks: one rule in core (SPEC §5.2)
   const defaults = $derived(core.defaultSpeaker({
     mode: autoproxy.mode, member: autoproxy.member ?? null, self_member: self?.id ?? null,
-    fronting: fronting.filter((e) => e.subject_type === 'member')
-      .map((e) => ({ member_id: e.subject_id, is_primary: !!e.is_primary, level: e.level })),
+    fronting: frontingMembers,
     last_authors: msgs.findLast((m) => m.account_id === sync.accountId && !m.deleted)?.authors ?? [],
     members: members(projection).filter((m) => !m.deleted).map((m) => m.id),
   }));
@@ -547,14 +548,23 @@
   $effect(() => {
     if (!current || !visible) return;
     const latest = visibleMsgs.findLast((m) => !m.deleted);
-    if (!latest || latest.occurred_at <= lastRead(projection, current.id, sync.accountId)) return;
-    sync.create('read.mark', scope, null, {
-      channel_id: current.id,
-      message_id: latest.id,
-      message_at: latest.occurred_at,
-      reader_member_id: '',
-    });
+    if (!latest) return;
+    // the account, and with "track reading per member" whoever is fronting (core decides)
+    const marks = new Map(marksHere.map((m) => [m.member, m.at]));
+    for (const reader of core.readReaders(perMember, frontingMembers)) {
+      const at = reader === '' ? lastRead(projection, current.id, sync.accountId) : marks.get(reader) ?? 0;
+      if (latest.occurred_at <= at) continue;
+      sync.create('read.mark', scope, null, {
+        channel_id: current.id,
+        message_id: latest.id,
+        message_at: latest.occurred_at,
+        reader_member_id: reader,
+      });
+    }
   });
+  const perMember = $derived(readPerMember(projection, sync.accountId));
+  const marksHere = $derived(current ? memberMarks(projection, current.id, sync.accountId) : []);
+  const unseenBy = (m: MessageRow): string[] => perMember && marksHere.length ? core.readUnseenBy(m.occurred_at, m.id, marksHere) : [];
   const color = (id: string) => core.adaptColor(people.get(id)?.color ?? '#A09184', dark);
 
   // notifications for this channel (NOTIFICATIONS §7): all · mentions · none, kept as an account
@@ -728,6 +738,7 @@
           mine={m.account_id === sync.accountId}
           onreply={() => { replyTo = m; quoting = null; editing = null; editingParts = null; box?.focus(); }}
           onreplyin={() => (replyIn = m)}
+          unseen={unseenBy(m).map((id) => people.get(id)?.name ?? '?')}
           onreplyprivately={(space?.kind === 'internal' ? m.authors[0] !== speaker : m.account_id !== sync.accountId) ? () => void replyPrivately(m) : undefined}
           onquote={(q) => { quoting = q; forwarding = null; quoteSourceSpaceId = current?.space_id ?? ''; quoteSensitive = !!m.visibility && m.visibility.mode !== 'all'; replyTo = m; editing = null; editingParts = null; box?.focus(); }}
           onedit={() => startEdit(m)}

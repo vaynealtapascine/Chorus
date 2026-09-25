@@ -122,6 +122,16 @@ pub fn default_speaker(context_json: &str) -> Result<String, JsError> {
     wrap(api::default_speaker(context_json))
 }
 
+#[wasm_bindgen(js_name = readReaders)]
+pub fn read_readers(per_member: bool, fronting_json: &str) -> Result<String, JsError> {
+    wrap(api::read_readers(per_member, fronting_json))
+}
+
+#[wasm_bindgen(js_name = readUnseenBy)]
+pub fn read_unseen_by(at: f64, id: &str, marks_json: &str) -> Result<String, JsError> {
+    wrap(api::read_unseen_by(at as i64, id, marks_json))
+}
+
 #[wasm_bindgen(js_name = searchParse)]
 pub fn search_parse(query: &str) -> Result<String, JsError> {
     wrap(api::search_parse(query))

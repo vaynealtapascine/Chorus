@@ -17,6 +17,7 @@ pub mod model;
 pub mod notify;
 pub mod op;
 pub mod projector;
+pub mod reading;
 pub mod replica;
 pub mod restore;
 pub mod revisions;

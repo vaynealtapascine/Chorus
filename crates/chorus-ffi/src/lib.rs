@@ -71,6 +71,20 @@ pub fn default_speaker(context_json: String) -> Result<String, CoreError> {
     wrap(api::default_speaker(&context_json))
 }
 
+/// Who a read marks (SPEC §5.3 "track reading per member"): fronting JSON
+/// (`[{member_id, is_primary, level}]`) → reader ids (`""` = the account, then the members
+/// fronting or co-con when `per_member`); send one `read.mark` per reader.
+#[uniffi::export]
+pub fn read_readers(per_member: bool, fronting_json: String) -> Result<String, CoreError> {
+    wrap(api::read_readers(per_member, &fronting_json))
+}
+
+/// Members whose read mark (`[{member, at, id}]`) is before the message `(at, id)`.
+#[uniffi::export]
+pub fn read_unseen_by(at: i64, id: String, marks_json: String) -> Result<String, CoreError> {
+    wrap(api::read_unseen_by(at, &id, &marks_json))
+}
+
 /// A message search box → query JSON (SPEC §5.3: words, from:, in:, has:, before:/after:,
 /// is:pinned), or an error with `{"pos", "message"}`.
 #[uniffi::export]

@@ -77,6 +77,12 @@ export const core = {
     mode: 'off' | 'front' | 'latch' | 'member'; member?: string | null; self_member?: string | null;
     fronting: { member_id: string; is_primary: boolean; level: string }[]; last_authors: string[]; members: string[];
   }): string[] => JSON.parse(wasm.defaultSpeaker(JSON.stringify(context))),
+  /** Who a read marks: `''` (the account), then the members reading with it (SPEC §5.3). */
+  readReaders: (perMember: boolean, fronting: { member_id: string; is_primary: boolean; level: string }[]): string[] =>
+    JSON.parse(wasm.readReaders(perMember, JSON.stringify(fronting))),
+  /** Members whose read mark is before the message `(at, id)`. */
+  readUnseenBy: (at: number, id: string, marks: { member: string; at: number; id: string }[]): string[] =>
+    JSON.parse(wasm.readUnseenBy(at, id, JSON.stringify(marks))),
   /** A message search box → query (SPEC §5.3); throws `{"pos","message"}` JSON on a bad one. */
   searchParse: (q: string): SearchQuery => JSON.parse(wasm.searchParse(q)),
   /** Indexes of the candidates the query matches (the server's search agrees). */

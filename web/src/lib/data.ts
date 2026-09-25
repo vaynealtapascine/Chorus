@@ -702,6 +702,26 @@ export function lastRead(p: Projection, channelId: string, accountId: string): n
   return Math.max(0, ...vals);
 }
 
+/** Advanced "track reading per member" (SPEC §5.3), an account pref. */
+export function readPerMember(p: Projection, accountId: string): boolean {
+  const prefs = (p.rows.pref ?? {}) as Rows;
+  const row = prefs['||chat.read_per_member'] ?? prefs[`${accountId}||chat.read_per_member`];
+  return row?.fields.value === true;
+}
+
+/** Each member's read mark in a channel (the account's own is `lastRead`). */
+export function memberMarks(p: Projection, channelId: string, accountId: string): { member: string; at: number; id: string }[] {
+  const best = new Map<string, { member: string; at: number; id: string }>();
+  for (const [key, r] of Object.entries((p.rows.read_state ?? {}) as Rows)) {
+    const [channel, account, member] = key.split('|');
+    if (channel !== channelId || !member || (account !== accountId && account !== '')) continue;
+    const mark = { member, at: (r.fields.last_read_message_at as number | undefined) ?? 0, id: str(r.fields.last_read_message_id) ?? '' };
+    const cur = best.get(member);
+    if (!cur || mark.at > cur.at || (mark.at === cur.at && mark.id > cur.id)) best.set(member, mark);
+  }
+  return [...best.values()];
+}
+
 export function unread(p: Projection, channelId: string, accountId: string): number {
   const since = lastRead(p, channelId, accountId);
   const rows = (p.rows.message ?? {}) as Record<string, MessageRecord>;

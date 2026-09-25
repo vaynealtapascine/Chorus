@@ -193,6 +193,19 @@ pub fn default_speaker(context_json: &str) -> Result<String, String> {
     Ok(js(&crate::speaker::default_speaker(&c)))
 }
 
+/// Who a read marks (SPEC §5.3): `[{member_id, is_primary, level}]` fronting → reader ids (JSON
+/// array; `""` = the account, then members fronting or co-con when `per_member`).
+pub fn read_readers(per_member: bool, fronting_json: &str) -> Result<String, String> {
+    let f: Vec<crate::speaker::Fronter> = parse("fronting", fronting_json)?;
+    Ok(js(&crate::reading::readers(per_member, &f)))
+}
+
+/// Members whose mark (`[{member, at, id}]`) is before message `(at, id)` (JSON array).
+pub fn read_unseen_by(at: i64, id: &str, marks_json: &str) -> Result<String, String> {
+    let m: Vec<crate::reading::Mark> = parse("marks", marks_json)?;
+    Ok(js(&crate::reading::unseen_by(at, id, &m)))
+}
+
 /// A message search box → query JSON (`chorus_core::search`), or `Err` with `{"pos", "message"}`.
 pub fn search_parse(src: &str) -> Result<String, String> {
     crate::search::parse(src).map(|q| js(&q)).map_err(|e| js(&serde_json::json!({"pos": e.pos, "message": e.message})))

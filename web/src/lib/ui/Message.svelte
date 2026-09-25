@@ -21,6 +21,7 @@
     onreply,
     onreplyin,
     onreplyprivately,
+    unseen = [],
     onquote,
     onedit,
     ondelete,
@@ -49,6 +50,8 @@
     onreplyin: () => void;
     /** "Reply privately", where there's someone else to reply to. */
     onreplyprivately?: () => void;
+    /** Members who haven't read this yet ("track reading per member"). */
+    unseen?: string[];
     onquote: (q: Quote) => void;
     onedit: () => void;
     ondelete: () => void;
@@ -135,6 +138,7 @@
         <time>{time(m.occurred_at)}</time>
         {#if m.sent_offline}<span class="tag" title="Composed offline, synced later">sent offline</span>{/if}
         {#if m.pinned}<span class="tag">pinned</span>{/if}
+        {#if unseen.length}<span class="unseen" title="Not seen by {unseen.join(', ')}" aria-label="Not seen by {unseen.join(', ')}">●</span>{/if}
       </div>
     {/if}
     {#if m.cw}
@@ -311,6 +315,10 @@
   .edited {
     font-size: var(--fs-xs);
     color: var(--ink-3);
+  }
+  .unseen {
+    color: var(--accent, var(--ink-3));
+    font-size: var(--fs-xs);
   }
   button.edited {
     background: none;
