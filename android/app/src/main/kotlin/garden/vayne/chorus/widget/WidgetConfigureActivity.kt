@@ -39,18 +39,28 @@ class WidgetConfigureActivity : ComponentActivity() {
                 "group" -> "Group · ${model.group(scope.id)?.name.orEmpty()}"
                 else -> "All members"
             } }.toTypedArray()
-            var selected = options.indexOf(WidgetState(this@WidgetConfigureActivity).scope(widgetId, accountId)).coerceAtLeast(0)
-            AlertDialog.Builder(this@WidgetConfigureActivity).setTitle("Widget contents")
-                .setSingleChoiceItems(labels, selected) { _, index -> selected = index }
+            fun save(scope: WidgetScope) {
+                if (chorus.device?.accountId != accountId) { finish(); return }
+                WidgetState(this@WidgetConfigureActivity).setScope(widgetId, accountId, scope)
+                manager.updateAppWidget(widgetId, QuickSwitchWidget.views(this@WidgetConfigureActivity, widgetId, model))
+                manager.notifyAppWidgetViewDataChanged(widgetId, R.id.w_grid)
+                setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
+                finish()
+            }
+            fun advanced() {
+                var selected = options.indexOf(WidgetState(this@WidgetConfigureActivity).scope(widgetId, accountId)).coerceAtLeast(0)
+                AlertDialog.Builder(this@WidgetConfigureActivity).setTitle("Widget contents · Advanced")
+                    .setSingleChoiceItems(labels, selected) { _, index -> selected = index }
+                    .setNegativeButton("Cancel") { _, _ -> finish() }
+                    .setPositiveButton("Save") { _, _ -> save(options[selected]) }
+                    .setOnCancelListener { finish() }.show()
+            }
+            AlertDialog.Builder(this@WidgetConfigureActivity).setTitle("Quick switch widget")
+                .setMessage("Show all your members, or choose a group for this widget.")
                 .setNegativeButton("Cancel") { _, _ -> finish() }
-                .setPositiveButton("Save") { _, _ ->
-                    if (chorus.device?.accountId != accountId) { finish(); return@setPositiveButton }
-                    WidgetState(this@WidgetConfigureActivity).setScope(widgetId, accountId, options[selected])
-                    manager.updateAppWidget(widgetId, QuickSwitchWidget.views(this@WidgetConfigureActivity, widgetId, model))
-                    manager.notifyAppWidgetViewDataChanged(widgetId, R.id.w_grid)
-                    setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
-                    finish()
-                }.setOnCancelListener { finish() }.show()
+                .setNeutralButton("Advanced…") { _, _ -> advanced() }
+                .setPositiveButton("All members") { _, _ -> save(WidgetScope()) }
+                .setOnCancelListener { finish() }.show()
         }
     }
 }
