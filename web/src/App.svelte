@@ -36,11 +36,13 @@
   media.addEventListener('change', (e) => (dark = e.matches));
 
   let status: Status = $state(sync.status);
+  let storageFull = $state(sync.storageFull);
   // raw: the client hands us a new object per change (deltas, copy-on-write); no deep proxies
   let projection: Projection | null = $state.raw(sync.projection());
   $effect(() =>
     sync.subscribe(() => {
       status = sync.status;
+      storageFull = sync.storageFull;
       projection = sync.projection();
     }),
   );
@@ -79,6 +81,12 @@
       </nav>
       <span class="status" data-status={status}>{statusLabel[status]}</span>
     </header>
+    {#if storageFull}
+      <p class="storage-full" role="alert">
+        This browser's storage is full, so changes made here aren't saved on this device yet. They
+        still sync while you're online: free some space, or keep this tab open until they have.
+      </p>
+    {/if}
     <main>
       {#if person && (router.route.name === 'members' || router.route.name === 'history')}
         <Home {projection} {dark} onswitch={() => {}} />
@@ -164,6 +172,13 @@
   }
   .status[data-status='live'] {
     color: var(--ok);
+  }
+  .storage-full {
+    margin: 0;
+    padding: var(--sp-2, 8px) var(--sp-3, 12px);
+    font-size: var(--fs-sm);
+    background: var(--surface-2);
+    color: var(--ink);
   }
   /* phones: bottom navigation */
   @media (max-width: 640px) {

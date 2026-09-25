@@ -340,3 +340,25 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
     tokens silently tests as anonymous, so the test first checks its oracle sees the markers.
   - The chaos test's oracle is per op for sync. For REST, unique marker texts in private rows
     and private ids (skipped when the request named them) are the direct check.
+- 2026-09-25 claude-opus-5.5 — web under failure (R29, `web/e2e/failure.spec.ts`) — A real
+  browser, with the server `kill -9`ed, found three bugs:
+  1. **Two tabs of one browser lost messages.** Every tab ran its own replica and socket on the
+     same IndexedDB, and each saved the whole metadata. The tab that saved last didn't list
+     another tab's unsent op in the outbox order, so that op was never sent, even after a
+     reload. The fix is the Web Locks leader CLIENTS §4.1 describes (other tabs hand ops over a
+     `BroadcastChannel`), plus a core safety net: opening relists any unconfirmed op the
+     metadata forgot.
+  2. **A failed save (storage full) dropped its changes.** `takeChanges` had already cleared
+     them. Ops written then and not yet sent were gone after a reload. They're now kept and
+     retried with the next save, and the app says the storage is full.
+  3. **A history request that died** (server gone mid-request) was an unhandled rejection with
+     nothing shown. Also, the chat read `sync.windowed` / `sync.status` straight from the client,
+     which isn't reactive state, so the older-messages button didn't update. They're copied into
+     `$state` on each change now.
+
+  Test traps:
+  - `page.goto('/#/chat')` can report ERR_ABORTED, because the app rewrites the hash at once;
+    click through instead.
+  - A test's message text must not contain the warning it waits for.
+  - The failure suite keeps its own console-problem list, or v1's "no console errors" would see
+    the killed server's refused requests.

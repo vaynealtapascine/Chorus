@@ -211,6 +211,23 @@ impl WebReplica {
         wrap(self.0.create(new_op_json, device_now_json, random))
     }
 
+    /// Ops another tab of this browser made (JSON array) → frames to send (SYNC §6.1).
+    #[wasm_bindgen(js_name = adoptLocal)]
+    pub fn adopt_local(&mut self, ops_json: &str, now: f64) -> Result<String, JsError> {
+        wrap(self.0.adopt_local(ops_json, now as i64))
+    }
+
+    /// The syncing tab's saved op copies and evicted ids (JSON arrays): this tab catches up.
+    pub fn absorb(&mut self, ops_json: &str, removed_json: &str) -> Result<(), JsError> {
+        self.0.absorb(ops_json, removed_json).map_err(|m| JsError::new(&m))
+    }
+
+    /// This tab takes over syncing from what the last syncing tab saved.
+    #[wasm_bindgen(js_name = reloadMeta)]
+    pub fn reload_meta(&mut self, meta_json: &str, hlc_last: &str, now: f64) -> Result<(), JsError> {
+        self.0.reload_meta(meta_json, hlc_last, now as i64).map_err(|m| JsError::new(&m))
+    }
+
     /// A windowed replica (SYNC §6.5): keep message-family ops written since `window` (epoch
     /// ms), or everything (`undefined`). Takes effect at the next connect.
     #[wasm_bindgen(js_name = setWindow)]

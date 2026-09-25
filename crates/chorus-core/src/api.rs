@@ -357,6 +357,29 @@ impl JsonReplica {
         Ok(js(&serde_json::json!({"op": o, "frames": frames})))
     }
 
+    /// Ops another tab of this browser made (JSON array) → frames to send (SYNC §6.1).
+    pub fn adopt_local(&mut self, ops_json: &str, now: i64) -> Result<String, String> {
+        let ops = parse_ops(ops_json)?;
+        Ok(js(&self.0.adopt_local(ops, now)))
+    }
+
+    /// The syncing tab's saved op copies (JSON array) and evicted ids (JSON array).
+    pub fn absorb(&mut self, ops_json: &str, removed_json: &str) -> Result<(), String> {
+        let ops = parse_ops(ops_json)?;
+        let removed: Vec<String> = parse("removed ids", removed_json)?;
+        self.0.absorb(ops, removed);
+        Ok(())
+    }
+
+    /// Take over syncing from what the last syncing tab saved (`meta_json`, `hlc_last`: empty
+    /// strings when nothing was).
+    pub fn reload_meta(&mut self, meta_json: &str, hlc_last: &str, now: i64) -> Result<(), String> {
+        let meta = if meta_json.trim().is_empty() { None } else { Some(parse("meta", meta_json)?) };
+        let hlc = if hlc_last.is_empty() { None } else { Some(hlc_last.parse().map_err(|e| format!("{e}"))?) };
+        self.0.reload_meta(meta, hlc, now);
+        Ok(())
+    }
+
     /// Keep only message-family ops written since `window` ms (SYNC §6.5); `None` = everything.
     pub fn set_window(&mut self, window: Option<i64>) {
         self.0.set_window(window);

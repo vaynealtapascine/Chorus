@@ -5,6 +5,8 @@
 //! start, [`Replica::restore`] rebuilds it from what was persisted. All logic stays here, where
 //! the convergence simulator exercises it.
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -114,7 +116,93 @@ impl Replica {
             Some(h) => HlcClock::resume(node, h),
             None => HlcClock::new(node),
         };
-        Replica { engine: ClientEngine::new(device_id), store, clock, projector: Projector::new(), indexing: None }
+        let mut r =
+            Replica { engine: ClientEngine::new(device_id), store, clock, projector: Projector::new(), indexing: None };
+        r.relist_unsent();
+        r
+    }
+
+    /// Unconfirmed ops of this device that the metadata doesn't list go back in the outbox, in
+    /// the order they were made (HLC). A browser's tabs share one store, and a tab that saved the
+    /// metadata last didn't know another tab's new ops (SYNC §6.1): without this a message
+    /// written there and never sent was lost (R29).
+    fn relist_unsent(&mut self) {
+        let listed: BTreeSet<&String> = self.store.local_order.iter().chain(&self.store.restoring).collect();
+        let mut unsent: Vec<(crate::hlc::Hlc, String)> = self
+            .store
+            .ops
+            .values()
+            .filter(|o| o.seq.is_none() && !listed.contains(&o.id) && !self.store.rejected.contains_key(&o.id))
+            .map(|o| (o.hlc, o.id.clone()))
+            .collect();
+        if unsent.is_empty() {
+            return;
+        }
+        crate::sort::ord(&mut unsent);
+        self.store.local_order.extend(unsent.into_iter().map(|(_, id)| id));
+        self.store.meta_dirty = true;
+    }
+
+    /// Ops another tab of this browser made (sent over, SYNC §6.1): into this replica's outbox
+    /// as if made here, and out to the server when it's connected. Ones it has already are skipped.
+    pub fn adopt_local(&mut self, ops: Vec<Op>, now: i64) -> Vec<Frame> {
+        for o in ops {
+            if o.seq.is_some() || self.store.ops.contains_key(&o.id) {
+                continue;
+            }
+            self.clock.observe(o.hlc, now.max(0) as u64);
+            self.store.add_local(o);
+        }
+        self.engine.now = now;
+        self.engine.pump(&self.store)
+    }
+
+    /// The copies of ops the syncing tab wrote (it saved them already): what this tab shows
+    /// catches up, and ops it evicted leave (SYNC §6.1). Nothing here is saved again.
+    pub fn absorb(&mut self, ops: Vec<Op>, removed: Vec<String>) {
+        for o in ops {
+            if let Some(mine) = self.store.ops.get(&o.id)
+                && (*mine == o || (mine.seq.is_some() && o.seq.is_none()))
+            {
+                continue; // the same copy, or a confirmed one going back to pending
+            }
+            self.store.touched.insert(o.id.clone());
+            self.store.ops.insert(o.id.clone(), o);
+        }
+        for id in removed {
+            if self.store.ops.remove(&id).is_some() {
+                self.store.touched.insert(id);
+            }
+        }
+        let ops = &self.store.ops;
+        self.store.local_order.retain(|id| ops.get(id).is_some_and(|o| o.seq.is_none()));
+    }
+
+    /// This tab takes over syncing: the metadata as the last syncing tab saved it (cursors,
+    /// scopes, outbox), plus anything of this tab's own that isn't listed there; the clock goes
+    /// past the saved one.
+    pub fn reload_meta(&mut self, meta: Option<MemStore>, hlc_last: Option<crate::hlc::Hlc>, now: i64) {
+        if let Some(m) = meta {
+            let mine = std::mem::take(&mut self.store.local_order);
+            self.store.epoch = m.epoch;
+            self.store.cursors = m.cursors;
+            self.store.scopes = m.scopes;
+            self.store.local_order = m.local_order;
+            self.store.rejected = m.rejected;
+            self.store.restoring = m.restoring;
+            for id in mine {
+                if !self.store.local_order.contains(&id) {
+                    self.store.local_order.push(id);
+                }
+            }
+            let ops = &self.store.ops;
+            self.store.local_order.retain(|id| ops.get(id).is_some_and(|o| o.seq.is_none()));
+        }
+        if let Some(h) = hlc_last {
+            self.clock.observe(h, now.max(0) as u64);
+        }
+        self.relist_unsent();
+        self.store.meta_dirty = true;
     }
 
     /// Open from a snapshot (CLIENTS.md §4.3): start with the persisted metadata only, feed the
@@ -155,6 +243,7 @@ impl Replica {
         while !self.index_step(usize::MAX) {}
         self.indexing = None;
         // ops created or changed while opening: the snapshot can't include them
+        self.relist_unsent();
         let fresh = self.store.take_touched();
         let ok = self.projector.adopt(snapshot, &fresh);
         let store = &self.store;
@@ -670,5 +759,97 @@ mod tests {
         let ch = r.take_changes();
         assert!(ch.ops[0].seq.is_some(), "persisted copy carries the server stamp");
         assert!(r.store.local_order.is_empty(), "compacted");
+    }
+
+    fn member(scope: &str, n: u8, name: &str) -> NewOp {
+        NewOp {
+            kind: "member.create".into(),
+            scope: scope.into(),
+            entity_id: Some(crate::id::new_id(1, [n; 10])),
+            payload: json!({"name": name}),
+            member_id: None,
+            user_time: None,
+        }
+    }
+
+    /// Run frames between a replica and the reference server until both are quiet.
+    fn exchange(r: &mut Replica, server: &mut MemServer, mut outbox: Vec<Frame>) {
+        let mut inbox: Vec<Frame> = Vec::new();
+        for _ in 0..10 {
+            for f in std::mem::take(&mut inbox) {
+                outbox.extend(r.on_frame(f, 5000));
+            }
+            for f in std::mem::take(&mut outbox) {
+                inbox.extend(server.on_frame("dev", f, 5000).into_iter().map(|(_, f)| f));
+            }
+        }
+    }
+
+    /// Two tabs of one browser share its store (SYNC §6.1, R29): whichever saves its metadata
+    /// last doesn't list the other's new op, yet on the next open that op is sent all the same.
+    #[test]
+    fn an_op_the_saved_metadata_forgot_is_still_sent() {
+        let acct = crate::id::new_id(1, [9; 10]);
+        let scope = format!("account:{acct}");
+        let mut one = Replica::new("dev", 1);
+        let mut two = Replica::new("dev", 1);
+        let (a, _) = one.create(member(&scope, 1, "from tab one"), &now(1000), [1; 10]).unwrap();
+        let (b, _) = two.create(member(&scope, 2, "from tab two"), &now(1001), [2; 10]).unwrap();
+        let (c1, c2) = (one.take_changes(), two.take_changes());
+        // the store: both ops, and tab two's metadata (saved last), which knows only its own
+        let ops: Vec<Op> = c1.ops.into_iter().chain(c2.ops).collect();
+        let mut r = Replica::restore("dev", 1, c2.meta, ops, Some(c2.hlc_last));
+        // what the metadata lists keeps its place; the forgotten one comes after it
+        assert_eq!(r.store.local_order, vec![b.id.clone(), a.id.clone()], "listed again");
+        let mut server = MemServer::new("t");
+        server.grant(&acct, &scope);
+        server.devices.insert("dev".into(), acct.clone());
+        let hello = r.connect(ClockReading { wall: 5000, mono: None, boot_id: None }, "tok");
+        exchange(&mut r, &mut server, vec![hello]);
+        assert_eq!(r.pending_count(), 0);
+        assert_eq!(r.store.confirmed().count(), 2, "both reached the server");
+    }
+
+    /// The syncing tab takes another tab's ops, the other tab takes back the confirmed copies, and
+    /// when the syncing tab goes away the other one carries on from what it saved.
+    #[test]
+    fn a_second_tab_hands_its_ops_over_and_takes_over_later() {
+        let acct = crate::id::new_id(1, [9; 10]);
+        let scope = format!("account:{acct}");
+        let mut server = MemServer::new("t");
+        server.grant(&acct, &scope);
+        server.devices.insert("dev".into(), acct.clone());
+        let (mut leader, mut follower) = (Replica::new("dev", 1), Replica::new("dev", 1));
+        let hello = leader.connect(ClockReading { wall: 5000, mono: None, boot_id: None }, "tok");
+        exchange(&mut leader, &mut server, vec![hello]);
+        // the follower writes; the leader sends it
+        let (o, _) = follower.create(member(&scope, 3, "Rin"), &now(5000), [3; 10]).unwrap();
+        let handed = follower.take_changes();
+        let out = leader.adopt_local(handed.ops.clone(), 5000);
+        assert!(!out.is_empty(), "sent at once");
+        assert!(leader.adopt_local(handed.ops.clone(), 5000).is_empty(), "twice is once");
+        exchange(&mut leader, &mut server, out);
+        assert_eq!(leader.store.confirmed().count(), 1);
+        // the follower takes the leader's saved copies: confirmed, shown
+        let saved = leader.take_changes();
+        follower.absorb(saved.ops.clone(), saved.removed.clone());
+        assert!(follower.store.ops[&o.id].seq.is_some());
+        assert_eq!(follower.pending_count(), 0);
+        assert_eq!(follower.projection().row("member", o.entity().unwrap()).unwrap().fields["name"], "Rin");
+        // the leader writes something of its own, then its tab closes before the follower hears
+        let (p, _) = leader.create(member(&scope, 4, "Mo"), &now(5001), [4; 10]).unwrap();
+        let last = leader.take_changes();
+        let mut store_ops = saved.ops;
+        store_ops.extend(last.ops);
+        // the follower takes over: the saved metadata, the saved ops, its own clock past the saved one
+        follower.add_ops(store_ops);
+        follower.reload_meta(last.meta, Some(last.hlc_last), 5002);
+        assert!(follower.clock.last >= last.hlc_last);
+        let hello = follower.connect(ClockReading { wall: 5002, mono: None, boot_id: None }, "tok");
+        exchange(&mut follower, &mut server, vec![hello]);
+        assert_eq!(follower.pending_count(), 0);
+        let on_server: Vec<&String> = server.log.iter().map(|o| &o.id).collect();
+        assert_eq!(on_server.iter().filter(|id| **id == &o.id).count(), 1, "once");
+        assert_eq!(on_server.iter().filter(|id| **id == &p.id).count(), 1, "the closed tab's op too");
     }
 }

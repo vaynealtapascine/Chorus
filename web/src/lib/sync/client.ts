@@ -57,6 +57,24 @@ export interface Interval {
   end_at: number | null;
 }
 
+/** Between the tabs of one browser (SYNC §6.1): `ops` a tab made, for the syncing tab to send;
+ * `changed` what the syncing tab saved; its `status`, asked for with `hello`. */
+type BusMessage =
+  | { t: 'hello' }
+  | { t: 'status'; status: Status }
+  | { t: 'ops'; ops: { id: string }[] }
+  | { t: 'changed'; ops: { id: string }[]; removed: string[] };
+
+/** Two sets of changes as one save: the later copy of an op wins, and the latest metadata. */
+function mergeChanges(a: Changes | null, b: Changes): Changes {
+  if (!a) return b;
+  const ops = new Map<string, { id: string }>();
+  for (const o of [...a.ops, ...b.ops]) ops.set(o.id, o);
+  const removed = new Set([...(a.removed ?? []), ...(b.removed ?? [])]);
+  for (const id of ops.keys()) if ((b.removed ?? []).includes(id)) ops.delete(id);
+  return { ops: [...ops.values()], removed: [...removed], meta: b.meta ?? a.meta, hlc_last: b.hlc_last };
+}
+
 type Listener = () => void;
 type ProjectionListener = (projection: Projection, delta: Delta) => void;
 
@@ -103,6 +121,15 @@ export class SyncClient {
   private keptFiles = false;
   /** "Keep everything on this device" (keep.ts): off, a browser tab keeps a window (SYNC §6.5). */
   private keepAll = true;
+  /** One tab per browser syncs (SYNC §6.1): the one holding the `chorus-sync` Web Lock. The
+   * others send it the ops they make and take in what it saves, over `bus`. */
+  private leader = false;
+  private bus: BroadcastChannel | null = null;
+  /** Changes a save couldn't write (the browser's storage is full): tried again with the next
+   * save, so nothing made here is lost while the tab is open (R29). */
+  private unsaved: Changes | null = null;
+  /** Saving on this device is failing: the app says so. */
+  storageFull = false;
 
   async start(): Promise<void> {
     // open-time marks (CLIENTS.md §4.3: a 100k-op device opens in ≤ 2 s); web/perf measures them
@@ -136,6 +163,8 @@ export class SyncClient {
       if (!document.hidden) this.reconnectNow();
       else if (this.snapshotDirty) this.writeSnapshot();
     });
+    this.bus = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('chorus-sync');
+    if (this.bus) this.bus.onmessage = (e) => this.onBus(e.data as BusMessage);
     const opened = this.openOps(p.snapshot).catch((e) => console.error('opening the replica failed', e));
     if (!p.snapshot) await opened;
     this.emit();
@@ -166,7 +195,80 @@ export class SyncClient {
     performance.mark('chorus:restored');
     this.keepAll = await keepEverything();
     this.emit();
+    this.claim();
+  }
+
+  /** Sync here if no other tab of this browser does; else follow it, and take over when it goes. */
+  private claim(): void {
+    const locks = (navigator as Navigator & { locks?: LockManager }).locks;
+    if (!locks) {
+      // no Web Locks (a plain-http address): every tab syncs, as before
+      void this.lead(false);
+      return;
+    }
+    // the lock is held until the tab goes (the callback's promise never settles)
+    void locks.request('chorus-sync', { ifAvailable: true }, (lock) => {
+      if (lock) {
+        void this.lead(false);
+        return new Promise<void>(() => {});
+      }
+      this.bus?.postMessage({ t: 'hello' } satisfies BusMessage);
+      void locks.request('chorus-sync', () => {
+        void this.lead(true);
+        return new Promise<void>(() => {});
+      });
+      return undefined;
+    });
+  }
+
+  /** This tab syncs. Taking over from a tab that went: what it saved is the truth, including
+   * ops it made and never got to send, so read the metadata and the ops again first. */
+  private async lead(takingOver: boolean): Promise<void> {
+    this.leader = true;
+    if (takingOver && this.replica) {
+      const p = await loadHead();
+      let after: string | undefined;
+      for (;;) {
+        const ops = await loadOps(after, OPS_PER_READ);
+        if (!ops.length) break;
+        this.replica.absorb(JSON.stringify(ops), '[]');
+        after = ops[ops.length - 1].id;
+        if (ops.length < OPS_PER_READ) break;
+        await yieldToUi();
+      }
+      this.replica.reloadMeta(p.meta ? JSON.stringify(p.meta) : '', p.hlc ?? '', Date.now());
+      this.changed();
+    }
     this.connect();
+  }
+
+  private onBus(m: BusMessage): void {
+    if (!this.replica) return;
+    if (this.leader) {
+      if (m.t === 'hello') this.bus?.postMessage({ t: 'status', status: this.status } satisfies BusMessage);
+      if (m.t === 'ops' && m.ops.length) {
+        this.sendAll(JSON.parse(this.replica.adoptLocal(JSON.stringify(m.ops), Date.now())) as unknown[]);
+        this.changed();
+        if (this.device) void flushUploads(this.device); // files staged with them
+      }
+      return;
+    }
+    if (m.t === 'status' && m.status !== this.status) {
+      this.status = m.status;
+      this.emit();
+    }
+    if (m.t === 'changed' && !this.opening) {
+      this.replica.absorb(JSON.stringify(m.ops), JSON.stringify(m.removed));
+      this.refresh();
+      this.watchHeld();
+      this.emit();
+    }
+  }
+
+  private setStatus(status: Status): void {
+    this.status = status;
+    if (this.leader) this.bus?.postMessage({ t: 'status', status } satisfies BusMessage);
+    this.emit();
   }
 
   /** Only messages from the last WINDOW_DAYS on this device; older ones page in over REST. */
@@ -211,7 +313,7 @@ export class SyncClient {
 
   /** Save what the UI shows, with the digest of the ops it came from (after those ops are saved). */
   private writeSnapshot(): void {
-    if (!this.replica || this.opening || !this.projection()) return;
+    if (!this.replica || this.opening || !this.leader || !this.projection()) return;
     this.refresh();
     const snapshot: Snapshot = { projection: JSON.stringify(this.cached), digest: this.replica.projectionDigest(), at: Date.now() };
     this.snapshotDirty = false;
@@ -334,6 +436,7 @@ export class SyncClient {
    */
   recheckAll(onProgress: (checked: number, total: number) => void): Promise<void> {
     if (!this.replica || this.status !== 'live') return Promise.reject(new Error("Not connected to the server right now."));
+    if (!this.leader) return Promise.reject(new Error('Chorus syncs in another tab of this browser: use that one.'));
     const replica = this.replica;
     const frames = JSON.parse(replica.recheck()) as { scope: string }[];
     const waiting = new Set(frames.map((f) => f.scope));
@@ -369,8 +472,37 @@ export class SyncClient {
   private changed(): void {
     this.refresh();
     this.watchHeld();
-    const ch = JSON.parse(this.replica!.takeChanges()) as Changes;
-    this.saving = this.saving.then(() => save(ch)).catch((e) => console.error('persist failed', e));
+    const fresh = JSON.parse(this.replica!.takeChanges()) as Changes;
+    const leader = this.leader;
+    this.saving = this.saving
+      .then(async () => {
+        const ch = mergeChanges(this.unsaved, fresh);
+        try {
+          await save(ch, !leader);
+        } catch (e) {
+          this.unsaved = ch;
+          console.warn('saving on this device failed; trying again', e);
+          if (!this.storageFull) {
+            this.storageFull = true;
+            this.emit();
+            setTimeout(() => this.changed(), 15_000);
+          }
+          return;
+        }
+        this.unsaved = null;
+        if (this.storageFull) {
+          this.storageFull = false;
+          this.emit();
+        }
+        // the other tabs: the syncing one sends what this one made; the others show what it saved
+        if (!this.bus) return;
+        if (leader && (ch.ops.length || ch.removed?.length)) {
+          this.bus.postMessage({ t: 'changed', ops: ch.ops, removed: ch.removed ?? [] } satisfies BusMessage);
+        } else if (!leader && ch.ops.length) {
+          this.bus.postMessage({ t: 'ops', ops: ch.ops } satisfies BusMessage);
+        }
+      })
+      .catch((e) => console.error('persist failed', e));
     if (!this.opening) {
       this.snapshotDirty = true;
       this.scheduleSnapshot();
@@ -407,9 +539,8 @@ export class SyncClient {
   }
 
   private connect(): void {
-    if (!this.replica || !this.device || this.opening) return;
-    this.status = 'connecting';
-    this.emit();
+    if (!this.replica || !this.device || this.opening || !this.leader) return;
+    this.setStatus('connecting');
     const ws = new WebSocket(this.url());
     this.ws = ws;
     ws.onopen = () => {
@@ -430,7 +561,7 @@ export class SyncClient {
         return;
       }
       if (frame.t === 'welcome') {
-        this.status = 'live';
+        this.setStatus('live');
         this.backoff = 1000;
         void flushUploads(this.device);
         void this.keepFiles();
@@ -444,8 +575,7 @@ export class SyncClient {
     ws.onclose = () => {
       if (this.ws !== ws) return;
       this.replica?.disconnect();
-      this.status = 'offline';
-      this.emit();
+      this.setStatus('offline');
       this.schedule();
     };
   }
@@ -458,7 +588,7 @@ export class SyncClient {
   }
 
   private reconnectNow(): void {
-    if (this.status === 'live' || this.status === 'connecting') return;
+    if (!this.leader || this.status === 'live' || this.status === 'connecting') return;
     this.backoff = 1000;
     if (this.timer) clearTimeout(this.timer);
     this.connect();
