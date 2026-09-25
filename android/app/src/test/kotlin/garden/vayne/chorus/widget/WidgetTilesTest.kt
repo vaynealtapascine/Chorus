@@ -36,6 +36,12 @@ class WidgetTilesTest {
     }
 
     @Test
+    fun manualPinsComeFirstWithoutDuplicatingRecentsOrArchivedMembers() {
+        assertEquals(listOf("june", "rin", "kai", "[stars]", "ash"),
+            names(widgetTiles(model, null, pinned = listOf("june", "old", "rin", "june"))))
+    }
+
+    @Test
     fun folderShowsWholeSubsystemThenSubfoldersThenMembersByRecency() {
         assertEquals(listOf("stars", "[inner]", "kai", "june"), names(widgetTiles(model, "stars")))
     }
