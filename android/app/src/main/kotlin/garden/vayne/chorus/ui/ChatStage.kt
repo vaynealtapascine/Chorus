@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -74,6 +75,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     var blurAttachments by rememberSaveable(channel.id) { mutableStateOf(false) }
     var hideHeader by rememberSaveable(channel.id) { mutableStateOf(false) }
     var hideReplyBars by rememberSaveable(channel.id) { mutableStateOf(false) }
+    var style by rememberSaveable(channel.id) { mutableStateOf("chorus") }
     var saveName by rememberSaveable(channel.id) { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -88,7 +90,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     }
     val settings = StagePlan.Settings(selected.toSet(), if (capturing) unselected else "visible",
         redactNames, fakeNames, if (hideTimes) "hide" else if (shiftText.toIntOrNull() != null) "shift" else "real",
-        shiftText.toIntOrNull() ?: 0, onlyMembers.toSet(), replyDepth, blurAttachments, hideHeader, hideReplyBars)
+        shiftText.toIntOrNull() ?: 0, onlyMembers.toSet(), replyDepth, blurAttachments, hideHeader, hideReplyBars, style)
     val plan = remember(messages, settings) { StagePlan.forMessages(messages, settings) }
     val byId = remember(messages) { messages.associateBy { it.id } }
     val authorIds = remember(messages) { messages.flatMap { it.authors }.distinct() }
@@ -114,6 +116,11 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
             }
             if (advanced) Column(Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(listOf("chorus" to "Chorus", "transcript" to "Transcript", "minimal" to "Minimal")) { (value, label) ->
+                        JournalChoice(label, style == value) { style = value }
+                    }
+                }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     JournalChoice("Hide real names", redactNames) { redactNames = !redactNames }
                     JournalChoice("Hide times", hideTimes) { hideTimes = !hideTimes }
@@ -159,6 +166,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                         onlyMembers = loaded.onlyMembers.toList(); replyDepth = loaded.replyDepth
                         blurAttachments = loaded.blurAttachments
                         hideHeader = loaded.hideHeader; hideReplyBars = loaded.hideReplyBars
+                        style = loaded.style
                         error = null
                     }) { Text(if (supported == null) "${stage.name} · web view" else stage.name) }
                     if (advanced) TextButton(enabled = !busy, onClick = {
@@ -198,29 +206,37 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                     Text("#${channel.name}", color = p.ink2, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
                 }
-                items(plan.rows, key = { it.id ?: "context:${it.hashCode()}" }) { row ->
+                itemsIndexed(plan.rows, key = { index, row -> row.id ?: "context:$index" }) { _, row ->
                     if (row.id == null) {
                         Text("${row.contextCount} messages", color = p.ink3, fontSize = 13.sp,
                             modifier = Modifier.fillMaxWidth().background(p.surface).padding(12.dp))
                     } else {
-                        val message = byId[row.id] ?: return@items
+                        val message = byId[row.id] ?: return@itemsIndexed
                         var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
                         val names = message.authors.map { id -> plan.names[id] ?: model.member(id)?.shownName
                             ?: foreignAuthors[id]?.name ?: "Someone" }.joinToString(" & ")
-                        Column(Modifier.fillMaxWidth().background(p.surface).clickable(enabled = !capturing) {
+                        val pickMark = if (!capturing && message.id in selected) "✓ " else ""
+                        Column(Modifier.fillMaxWidth().background(if (style == "transcript") p.bg else p.surface).clickable(enabled = !capturing) {
                             selected = if (message.id in selected) selected - message.id else selected + message.id
-                        }.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("${if (!capturing && message.id in selected) "✓ " else ""}$names", color = p.ink,
+                        }.padding(if (style == "transcript") 4.dp else if (style == "minimal") 8.dp else 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(if (style == "transcript") 1.dp else 4.dp)) {
+                            if (style == "chorus") Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("$pickMark$names", color = p.ink,
                                     fontWeight = FontWeight.SemiBold)
                                 if (row.at != null) Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(row.at)),
                                     color = p.ink3, fontSize = 11.sp)
                             }
+                            if (style == "transcript" && message.cw != null)
+                                Text("$pickMark$names:", color = p.ink, fontWeight = FontWeight.SemiBold)
                             if (row.replyShown && !hideReplyBars) Text("↪ reply", color = p.ink3, fontSize = 11.sp)
                             if (message.cw != null) Text("Content warning: ${message.cw} · ${if (revealed) "Hide" else "Show"}",
                                 color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
                             if (message.cw == null || revealed) {
-                                Text(message.text, color = p.ink)
+                                Text(when (style) {
+                                    "transcript" -> "${if (message.cw == null) "$pickMark$names: " else ""}${message.text}"
+                                    "minimal" -> "$pickMark${message.text}"
+                                    else -> message.text
+                                }, color = p.ink)
                                 for (attachment in message.attachments) StageAttachment(chorus, attachment, blurAttachments)
                             }
                         }

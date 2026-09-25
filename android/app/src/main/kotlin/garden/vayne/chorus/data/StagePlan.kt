@@ -18,6 +18,7 @@ object StagePlan {
         val blurAttachments: Boolean = false,
         val hideHeader: Boolean = false,
         val hideReplyBars: Boolean = false,
+        val style: String = "chorus",
     )
 
     data class Row(val id: String?, val selected: Boolean, val at: Long?, val replyShown: Boolean, val contextCount: Int)
@@ -40,7 +41,7 @@ object StagePlan {
             .put("reply_depth", settings.replyDepth ?: JSONObject.NULL)
             .put("redact_names", settings.redactNames)
             .put("fake_names", fakeNames).put("time", time)
-            .put("render", JSONObject().put("blur_attachments", settings.blurAttachments)
+            .put("render", JSONObject().put("style", settings.style).put("blur_attachments", settings.blurAttachments)
                 .put("hide_header", settings.hideHeader).put("hide_reply_bars", settings.hideReplyBars))
     }
 
@@ -52,7 +53,7 @@ object StagePlan {
             (0 until a.length()).mapNotNull { n -> a.optString(n).takeIf { it.isNotBlank() } }.toSet()
         }.orEmpty()
         val render = definition.optJSONObject("render")
-        if (render != null && (render.optString("style", "chorus") != "chorus" ||
+        if (render != null && (render.optString("style", "chorus") !in setOf("chorus", "transcript", "minimal") ||
                 render.optString("theme", "auto") != "auto" || render.optString("width", "phone") != "phone" ||
                 render.optBoolean("blur_avatars"))) return null
         val mode = definition.optString("unselected", "context")
@@ -75,7 +76,8 @@ object StagePlan {
         return Settings(selected, mode, definition.optBoolean("redact_names"), labels,
             timeMode, (offset / 60_000).toInt(), onlyMembers, replyDepth,
             render?.optBoolean("blur_attachments") == true,
-            render?.optBoolean("hide_header") == true, render?.optBoolean("hide_reply_bars") == true)
+            render?.optBoolean("hide_header") == true, render?.optBoolean("hide_reply_bars") == true,
+            render?.optString("style", "chorus") ?: "chorus")
     }
 
     fun forMessages(messages: List<ChatMessage>, settings: Settings,

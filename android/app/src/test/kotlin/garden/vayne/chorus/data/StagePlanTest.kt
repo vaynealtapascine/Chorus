@@ -49,6 +49,12 @@ class StagePlanTest {
         assertEquals(true, saved.getJSONObject("render").getBoolean("blur_attachments"))
         assertEquals(true, saved.getJSONObject("render").getBoolean("hide_header"))
         assertEquals(true, saved.getJSONObject("render").getBoolean("hide_reply_bars"))
+        saved.getJSONObject("render").put("style", "transcript")
+        assertEquals("transcript", StagePlan.supported(saved)?.style)
+        saved.getJSONObject("render").put("style", "minimal")
+        assertEquals("minimal", StagePlan.supported(saved)?.style)
+        assertEquals("minimal", StagePlan.definition("channel", StagePlan.Settings(style = "minimal"))
+            .getJSONObject("render").getString("style"))
         saved.put("render", JSONObject().put("style", "discord"))
         assertEquals(null, StagePlan.supported(saved))
     }
