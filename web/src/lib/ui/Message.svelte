@@ -6,6 +6,7 @@
   import AttachmentView from './AttachmentView.svelte';
   import AvatarImage from './AvatarImage.svelte';
   import EmojiImage from './EmojiImage.svelte';
+  import { sync, type Revision } from '../sync/client';
 
   export type Quote = TextRange;
   export type Forwarded = SnapshotItem;
@@ -68,6 +69,9 @@
   const color = (id: string) => core.adaptColor(people.get(id)?.color ?? '#A09184', dark);
   const nameOf = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
   const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // "edited" opens what it said before (SPEC §5.3)
+  let history = $state<Revision[] | null>(null);
+  const toggleHistory = () => (history = history ? null : sync.revisions(m.id));
   const replied = $derived(m.reply_to ? lookup(m.reply_to) : undefined);
   let body: HTMLElement | undefined = $state();
 
@@ -172,7 +176,18 @@
       {#if m.attachments.length && !m.forward_snapshot?.some((f) => f.attachments?.length)}
         <div class="attachments">{#each m.attachments as a (a.id)}<AttachmentView attachment={a} />{/each}</div>
       {/if}
-      {#if m.edited}<span class="edited"> (edited)</span>{/if}
+      {#if m.edited}<button class="edited" onclick={toggleHistory} aria-expanded={!!history}>(edited)</button>{/if}
+      {#if history}
+        <ol class="history" aria-label="Edit history">
+          {#each history as r (r.rev)}
+            <li>
+              <time>{new Date(r.at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</time>
+              {#if r.original}<span class="tag">original</span>{/if}
+              <RichText text={r.fields.text ?? ''} entities={r.fields.entities ?? []} emoji={emojiById} />
+            </li>
+          {/each}
+        </ol>
+      {/if}
       {#if reacts?.size}
         <div class="reacts">
           {#each [...reacts] as [emoji, who] (emoji)}
@@ -288,6 +303,22 @@
   .edited {
     font-size: var(--fs-xs);
     color: var(--ink-3);
+  }
+  button.edited {
+    background: none;
+    border: 0;
+    padding: 0 var(--s-1);
+    cursor: pointer;
+    text-decoration: underline dotted;
+  }
+  .history {
+    margin: var(--s-1) 0;
+    padding: var(--s-2) var(--s-3);
+    list-style: none;
+    border-left: 2px solid var(--line);
+    display: grid;
+    gap: var(--s-1);
+    color: var(--ink-2);
   }
   .tag {
     border: 1px solid var(--line);

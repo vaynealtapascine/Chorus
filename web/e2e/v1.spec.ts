@@ -97,6 +97,27 @@ test('a DM between two accounts', async () => {
   await expect(friend.page.getByText(back)).toBeVisible();
 });
 
+test('an edited message keeps its history (SPEC §5.3)', async () => {
+  const hello = `helo agian ${run}`;
+  const fixed = `hello again, edited ${run}`;
+  const box = friend.page.getByLabel('Message', { exact: true });
+  await box.fill(hello);
+  await box.press('Enter');
+  const msg = friend.page.locator('.msg', { hasText: hello });
+  await msg.hover();
+  await msg.getByTitle('Edit').click();
+  await box.fill(fixed);
+  await box.press('Enter');
+  // the other account sees the new text, and "(edited)" opens what it said before
+  const theirs = stars.page.locator('.msg', { hasText: fixed });
+  await expect(theirs).toBeVisible();
+  await theirs.getByRole('button', { name: '(edited)' }).click();
+  const history = theirs.getByRole('list', { name: 'Edit history' });
+  await expect(history.getByRole('listitem')).toHaveCount(2);
+  await expect(history.getByRole('listitem').first()).toContainText(hello);
+  await expect(history.getByRole('listitem').first()).toContainText('original');
+});
+
 test('a shared space between two accounts', async () => {
   const name = `Book club ${run}`;
   await go(stars.page, 'people');

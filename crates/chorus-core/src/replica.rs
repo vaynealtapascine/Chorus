@@ -228,6 +228,12 @@ impl Replica {
         self.engine.on_disconnect();
     }
 
+    /// Every version of an edited message or post, oldest first ([`crate::revisions`]), from the
+    /// ops this device has (so it works offline).
+    pub fn revisions(&self, entity: &str) -> Vec<crate::revisions::Revision> {
+        crate::revisions::revisions(self.store.visible().filter(|o| o.entity() == Some(entity)))
+    }
+
     /// After a reconcile: blobs named by ops the restored server doesn't have yet, being
     /// restored or still waiting to be sent. The device re-uploads the ones it has (SYNC.md
     /// §7.3): the server's files are as old as its backup, and a file uploaded to it since (for

@@ -209,6 +209,12 @@ impl WebReplica {
         self.0.repairing()
     }
 
+    /// Every version of an edited message or post, oldest first (JSON array of
+    /// `{rev, op_id, original, fields: {text, entities, cw?, title?, segments?}, at, hlc, device_id}`).
+    pub fn revisions(&self, entity: &str) -> String {
+        self.0.revisions(entity)
+    }
+
     /// After a `welcome` with `reconcile: true`: blobs (JSON array of hashes) named by the ops
     /// being restored; upload the ones this browser has (SYNC.md §7.3).
     #[wasm_bindgen(js_name = restoringBlobs)]

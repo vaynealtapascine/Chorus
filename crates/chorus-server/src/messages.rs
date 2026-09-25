@@ -177,6 +177,52 @@ pub fn one(conn: &Connection, p: &Principal, id: &str) -> Result<Option<Value>, 
     Ok(conn.query_row(&sql, params![id, p.account_id, !p.is_device()], row).optional()?)
 }
 
+/// Versions of an item, oldest first, from its `<table>_revision` rows; an unedited item's only
+/// version is its row (`current`).
+fn versions(conn: &Connection, table: &str, id: &str, current: Value) -> Result<Value, DataError> {
+    let title = if table == "post" { "title" } else { "NULL" };
+    let cw = if table == "message" { "cw" } else { "NULL" };
+    let sql = format!(
+        "SELECT rev, {title}, text, entities, {cw}, edited_at FROM {table}_revision WHERE {table}_id = ?1 ORDER BY rev"
+    );
+    let mut st = conn.prepare(&sql)?;
+    let mut items = st
+        .query_map([id], |r| {
+            let entities: String = r.get(3)?;
+            Ok(json!({
+                "rev": r.get::<_, i64>(0)?, "title": r.get::<_, Option<String>>(1)?, "text": r.get::<_, String>(2)?,
+                "entities": serde_json::from_str::<Value>(&entities).unwrap_or(json!([])),
+                "cw": r.get::<_, Option<String>>(4)?, "at": r.get::<_, i64>(5)?,
+            }))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    if items.is_empty() {
+        items.push(current);
+    }
+    if table == "message" {
+        items.iter_mut().filter_map(Value::as_object_mut).for_each(|m| {
+            m.remove("title");
+        });
+    }
+    Ok(json!({"items": items}))
+}
+
+/// `GET /messages/{id}/revisions`: what a readable message said before each edit (SPEC §5.3),
+/// oldest first; the last is what it says now. Same read rule as the message.
+pub fn revisions(conn: &Connection, p: &Principal, id: &str) -> Result<Option<Value>, DataError> {
+    let Some(m) = one(conn, p, id)? else { return Ok(None) };
+    let current =
+        json!({"rev": 0, "text": m["text"], "entities": m["entities"], "cw": m["cw"], "at": m["occurred_at"]});
+    Ok(Some(versions(conn, "message", id, current)?))
+}
+
+/// `GET /posts/{id}/revisions` (the caller checked the post is readable): its versions.
+pub fn post_revisions(conn: &Connection, post: &Value) -> Result<Value, DataError> {
+    let id = post["id"].as_str().unwrap_or_default();
+    let current = json!({"rev": 0, "title": post["title"], "text": post["text"], "entities": post["entities"], "at": post["occurred_at"]});
+    versions(conn, "post", id, current)
+}
+
 /// `GET /messages/{id}/thread`: the thread started under a readable message.
 pub fn thread(conn: &Connection, p: &Principal, id: &str, q: &Page) -> Result<Option<Value>, DataError> {
     let Some(m) = one(conn, p, id)? else { return Ok(None) };

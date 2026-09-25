@@ -8,6 +8,15 @@ import { applyDelta, type Delta } from './delta';
 import { flushUploads, stageBlob } from './uploads';
 import { keepStorage, loadBlob } from './blobs';
 import { fillFiles, keepEverything } from './keep';
+import type { Entity } from '../core';
+
+/** One version of a message's or post's text (SPEC §5.3 edit history). */
+export interface Revision {
+  rev: number;
+  original: boolean;
+  fields: { text?: string; entities?: Entity[]; cw?: string | null; title?: string | null };
+  at: number;
+}
 
 export type Status = 'offline' | 'connecting' | 'live' | 'no-device';
 
@@ -189,6 +198,12 @@ export class SyncClient {
   subscribeProjection(fn: ProjectionListener): () => void {
     this.projectionListeners.add(fn);
     return () => this.projectionListeners.delete(fn);
+  }
+
+  /** Every version of an edited message or post, oldest first, from this device's ops (core
+   * `revisions`, the same rule as `GET /messages/{id}/revisions`). */
+  revisions(id: string): Revision[] {
+    return this.replica ? (JSON.parse(this.replica.revisions(id)) as Revision[]) : [];
   }
 
   projection(): Projection | null {

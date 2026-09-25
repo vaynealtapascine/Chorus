@@ -18,6 +18,7 @@ pub mod op;
 pub mod projector;
 pub mod replica;
 pub mod restore;
+pub mod revisions;
 pub mod speaker;
 pub mod stage;
 pub mod sync;

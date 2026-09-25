@@ -1748,3 +1748,114 @@ async fn channel_permissions_through_the_real_server() {
     laptop.drain(Q).await;
     assert!(!laptop.store.scopes.contains(&home), "no view left: no scope");
 }
+
+/// SPEC §5.3: an edited message's history, over REST with the message's own read rule (API.md
+/// §3): the friend sees every version of a public message, nothing of an aside's; a stranger
+/// nothing. Posts keep theirs too.
+#[tokio::test(flavor = "multi_thread")]
+async fn edit_history_follows_the_message_read_rule() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 101, "stars").await;
+    let friend = enrol(&s, auth::InviteKind::Person, None, 102, "alex").await;
+    let stranger = enrol(&s, auth::InviteKind::Person, None, 103, "sam").await;
+    let mut phone = Device::new(&sys, 101);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct = phone.scope("account:");
+    let kai = new_id(1, [104; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+    let f: Value = http
+        .post(url("/follows"))
+        .bearer_auth(tok(&friend))
+        .json(&json!({"target": "stars"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    phone.drain(Q).await;
+    phone.create("follow.accept", &acct, f["id"].as_str().unwrap(), json!({})).await;
+    phone.drain(Q).await;
+    let dm: Value = http
+        .post(url("/spaces"))
+        .bearer_auth(tok(&sys))
+        .json(&json!({"kind": "dm", "accounts": [friend["account_id"]]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    phone.drain(Q).await;
+    let scope = format!("space:{}", dm["id"].as_str().unwrap());
+    let chan = model::project(phone.store.confirmed()).rows["channel"]
+        .iter()
+        .find(|(_, r)| r.fields["space_id"] == dm["id"])
+        .map(|(id, _)| id.clone())
+        .unwrap();
+    let say = |text: &str, aside: bool| {
+        let mut p = json!({"channel_id": chan, "authors": [kai], "text": text, "entities": []});
+        if aside {
+            p["visibility"] = json!({"mode": "system_only"});
+        }
+        p
+    };
+    let public = new_id(2, [105; 10]);
+    let aside = new_id(2, [106; 10]);
+    phone.create("message.send", &scope, &public, say("helo", false)).await;
+    phone.create("message.send", &scope, &aside, say("secret", true)).await;
+    for (m, text) in [(&public, "hello"), (&public, "hello!"), (&aside, "still secret")] {
+        phone.create("message.edit", &scope, m, json!({"message_id": m, "text": text, "entities": []})).await;
+    }
+    phone.drain(Q).await;
+    let get = |path: String, auth: String| {
+        let http = http.clone();
+        async move {
+            let r = http.get(path).bearer_auth(auth).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap_or(Value::Null))
+        }
+    };
+    let texts = |v: &Value| -> Vec<String> {
+        v["items"].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap().to_string()).collect()
+    };
+    let (st, h) = get(url(&format!("/messages/{public}/revisions")), tok(&friend)).await;
+    assert_eq!(st, 200, "{h}");
+    assert_eq!(texts(&h), vec!["helo", "hello", "hello!"]);
+    assert_eq!(h["items"][2]["rev"], 2);
+    assert_eq!(get(url(&format!("/messages/{aside}/revisions")), tok(&friend)).await.0, 404, "not an aside's");
+    assert_eq!(get(url(&format!("/messages/{public}/revisions")), tok(&stranger)).await.0, 404);
+    let (_, mine) = get(url(&format!("/messages/{aside}/revisions")), tok(&sys)).await;
+    assert_eq!(texts(&mine), vec!["secret", "still secret"], "its own account sees it");
+    // an unedited message has one version: itself
+    let plain = new_id(2, [107; 10]);
+    phone.create("message.send", &scope, &plain, say("just once", false)).await;
+    phone.drain(Q).await;
+    let (_, once) = get(url(&format!("/messages/{plain}/revisions")), tok(&friend)).await;
+    assert_eq!(texts(&once), vec!["just once"]);
+
+    // posts: the author's own device reads a post's versions (titles included)
+    let post = new_id(3, [108; 10]);
+    let entry = |title: &str, text: &str| {
+        json!({"kind": "entry", "authors": [kai], "title": title, "text": text, "entities": [],
+               "visibility": {"mode": "private"}})
+    };
+    phone.create("post.create", &acct, &post, entry("Day", "a good day")).await;
+    phone
+        .create(
+            "post.edit",
+            &acct,
+            &post,
+            json!({"post_id": post, "title": "Day one", "text": "a good day", "entities": []}),
+        )
+        .await;
+    phone.drain(Q).await;
+    let (st, h) = get(url(&format!("/posts/{post}/revisions")), tok(&sys)).await;
+    assert_eq!(st, 200, "{h}");
+    let titles: Vec<&str> = h["items"].as_array().unwrap().iter().map(|i| i["title"].as_str().unwrap()).collect();
+    assert_eq!(titles, vec!["Day", "Day one"]);
+    assert_eq!(get(url(&format!("/posts/{post}/revisions")), tok(&friend)).await.0, 404, "a private entry");
+}

@@ -328,6 +328,11 @@ impl JsonReplica {
         js(&self.0.engine.repairing())
     }
 
+    /// Versions of an edited message or post, oldest first (JSON array; SPEC §5.3).
+    pub fn revisions(&self, entity: &str) -> String {
+        js(&self.0.revisions(entity))
+    }
+
     /// Blobs to upload again after a reconcile (JSON array of hashes; SYNC.md §7.3).
     pub fn restoring_blobs(&self) -> String {
         js(&self.0.restoring_blobs())

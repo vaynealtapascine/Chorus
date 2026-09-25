@@ -144,9 +144,10 @@ GET  /front/reviews?open=1
 GET  /spaces
 GET  /spaces/{id}/channels
 GET  /channels/{id}/messages?before=&after=&around=&limit=
-GET  /messages/{id}                        incl. revisions if ?revisions=1
-  The current read-only history view returns the same scoped message fields as search;
-  revisions are reserved for a later API pass.
+GET  /messages/{id}                        the message (same scoped fields as search)
+GET  /messages/{id}/revisions              edit history, oldest first; the last is what it says now
+  → {items:[{rev,text,entities,cw,at}]}; an unedited message has one item (itself). Same read
+    rule as the message (a stranger or another account's aside: 404); tokens need read:messages.
 GET  /messages/{id}/thread
 GET  /search/messages?q=&in=&from=&before=&after=&has=&limit=&cursor=
   → {items:[{id,channel_id,space_id,account_id,occurred_at,text,cw,visibility,authors}],next_cursor}
@@ -167,6 +168,7 @@ GET  /search/posts?q=&account=&kind=&before=&after=&limit=&cursor=
 
 GET  /posts?author=&kind=&before=&limit=
 GET  /posts/{id}                           with replies ?depth=
+GET  /posts/{id}/revisions                 {items:[{rev,title,text,entities,at}]}, same read rule as the post
   Device-session reads now return posts visible to the caller: own posts, server-visible posts,
   posts shared with active followers, and posts for an assigned, live bucket. `account=` narrows
   the list to one account. `before` is an exclusive occurred-at millisecond value; `limit` is

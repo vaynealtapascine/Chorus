@@ -486,6 +486,9 @@ CREATE TABLE message_author (
 );
 CREATE INDEX message_author_member ON message_author(member_id);
 
+-- every version of an *edited* message (unedited ones have no rows: their row is their only
+-- version), from chorus_core::revisions: the fold of its send and edits after each op in HLC
+-- order, so the last equals the message. post_revision likewise. Read by GET …/revisions.
 CREATE TABLE message_revision (
   message_id TEXT NOT NULL, rev INTEGER NOT NULL,
   text TEXT NOT NULL, entities TEXT NOT NULL, cw TEXT,

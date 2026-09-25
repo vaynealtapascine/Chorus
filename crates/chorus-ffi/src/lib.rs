@@ -160,6 +160,13 @@ impl CoreReplica {
         self.lock().repairing()
     }
 
+    /// Every version of an edited message or post, oldest first (JSON array of
+    /// `{rev, op_id, original, fields: {text, entities, cw?, title?, segments?}, at, hlc, device_id}`;
+    /// SPEC §5.3 edit history, the same rule as `GET /messages/{id}/revisions`).
+    pub fn revisions(&self, entity: String) -> String {
+        self.lock().revisions(&entity)
+    }
+
     /// After a `welcome` with `reconcile: true`: the blobs (hashes, JSON array) this device's
     /// restoring ops name. Upload the ones it has a copy of; the restored server lost newer files.
     pub fn restoring_blobs(&self) -> String {

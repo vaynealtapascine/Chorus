@@ -145,6 +145,8 @@ struct Prepared {
     values: Vec<Sql>,
     fresh: bool,
     first_scope: Option<String>,
+    /// An edited message's or post's versions (`chorus_core::revisions`); empty otherwise.
+    revisions: Vec<chorus_core::revisions::Revision>,
 }
 
 /// The row `ops` project to; `None` if the entity isn't created yet (fields wait in the log
@@ -215,6 +217,12 @@ fn prepare(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Re
     let cols = writable(conn, table)?;
     let (names, values): (Vec<String>, Vec<Sql>) =
         vals.iter().filter(|(k, _)| cols.contains(k)).map(|(k, v)| (k.clone(), to_sql(v))).unzip();
+    // only edited items keep versions (a row per message would double a rebuild's writes)
+    let revisions = if matches!(table, "message" | "post") && row.edits > 0 {
+        chorus_core::revisions::revisions(ops.iter())
+    } else {
+        Vec::new()
+    };
     Ok(Some(Prepared {
         table: table.to_string(),
         id: id.to_string(),
@@ -223,11 +231,12 @@ fn prepare(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Re
         values,
         fresh,
         first_scope: first.map(|f| f.scope.clone()),
+        revisions,
     }))
 }
 
 fn write(conn: &Connection, p: &Prepared) -> anyhow::Result<()> {
-    let Prepared { table, id, fields, names, values, fresh, first_scope } = p;
+    let Prepared { table, id, fields, names, values, fresh, first_scope, revisions } = p;
     let (table, id, fresh) = (table.as_str(), id.as_str(), *fresh);
     let old_thread_parent = if table == "channel" { thread_parent(conn, id)? } else { None };
     match table {
@@ -254,6 +263,7 @@ fn write(conn: &Connection, p: &Prepared) -> anyhow::Result<()> {
     }
     match table {
         "message" => {
+            write_revisions(conn, "message", id, revisions)?;
             message_extras(conn, id, fields.get("authors"), fields, fresh)?;
             item_attachments(conn, "message", id, fields.get("attachments"), fresh)?;
             refresh_thread_link(conn, id)?;
@@ -267,12 +277,57 @@ fn write(conn: &Connection, p: &Prepared) -> anyhow::Result<()> {
             }
         }
         "post" => {
+            write_revisions(conn, "post", id, revisions)?;
             authors(conn, "post_author", "post_id", id, fields.get("authors"), fresh)?;
             item_attachments(conn, "post", id, fields.get("attachments"), fresh)?;
             post_search(conn, id, fresh)?;
         }
         "member_group" => group_parents(conn, account_of(first_scope.as_deref().unwrap_or_default()).unwrap_or(""))?,
         _ => {}
+    }
+    Ok(())
+}
+
+/// `message_revision` / `post_revision`: every version of an edited item (DATA_MODEL §3,
+/// `GET /messages/{id}/revisions`). Unedited items have none; their row is their one version.
+fn write_revisions(
+    conn: &Connection,
+    table: &str,
+    id: &str,
+    revisions: &[chorus_core::revisions::Revision],
+) -> anyhow::Result<()> {
+    if revisions.is_empty() {
+        return Ok(());
+    }
+    exec(conn, &format!("DELETE FROM {table}_revision WHERE {table}_id = ?1"), [id])?;
+    let text = |r: &chorus_core::revisions::Revision, k: &str| -> Option<String> {
+        r.fields.get(k).filter(|v| !v.is_null()).map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string))
+    };
+    for r in revisions {
+        let entities = r.fields.get("entities").map_or_else(|| "[]".to_string(), Value::to_string);
+        let body = text(r, "text").unwrap_or_default();
+        if table == "message" {
+            conn.prepare_cached(
+                "INSERT INTO message_revision (message_id, rev, text, entities, cw, edited_at, hlc, device_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            )?
+            .execute(params![
+                id,
+                r.rev,
+                body,
+                entities,
+                text(r, "cw"),
+                r.at,
+                r.hlc.to_string(),
+                r.device_id.clone().unwrap_or_default()
+            ])?;
+        } else {
+            conn.prepare_cached(
+                "INSERT INTO post_revision (post_id, rev, title, text, entities, edited_at, hlc)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )?
+            .execute(params![id, r.rev, text(r, "title"), body, entities, r.at, r.hlc.to_string()])?;
+        }
     }
     Ok(())
 }

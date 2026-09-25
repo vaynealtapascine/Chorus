@@ -166,10 +166,12 @@ pub fn router(state: AppState) -> Router {
         .route("/feeds/{id}/items", get(feed_items))
         .route("/messages/{id}", get(search_message))
         .route("/messages/{id}/thread", get(message_thread))
+        .route("/messages/{id}/revisions", get(message_revisions))
         .route("/spaces/{id}/channels", get(space_channels))
         .route("/channels/{id}/messages", get(channel_messages).post(channel_send))
         .route("/posts", get(posts_list))
         .route("/posts/{id}", get(post_one))
+        .route("/posts/{id}/revisions", get(post_revisions))
         .route("/me", get(me))
         .route("/stream", get(stream))
         .route("/spaces", get(spaces_list).post(spaces_create))
@@ -1112,6 +1114,16 @@ async fn message_thread(
     Ok(Json(crate::messages::thread(&conn, &p, &id, &q)?.ok_or_else(|| not_found("message"))?))
 }
 
+async fn message_revisions(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = principal(&s, &conn, &headers)?;
+    Ok(Json(crate::messages::revisions(&conn, &p, &id)?.ok_or_else(|| not_found("message"))?))
+}
+
 async fn channel_send(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -1181,6 +1193,21 @@ async fn post_one(
     }
     item["replies"] = json!(replies);
     Ok(Json(item))
+}
+
+/// `GET /posts/{id}/revisions`: an edited post's earlier versions, same read rule as the post.
+async fn post_revisions(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = posts_principal(&s, &conn, &headers)?;
+    let own_only = !p.is_device();
+    let item = crate::posts::one(&conn, &p.account_id, &id)?
+        .filter(|item| !own_only || item["account_id"].as_str() == Some(p.account_id.as_str()))
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "post unavailable".into()))?;
+    Ok(Json(crate::messages::post_revisions(&conn, &item)?))
 }
 
 /// API tokens read only their own account's posts: drop other accounts' replies (and theirs).
