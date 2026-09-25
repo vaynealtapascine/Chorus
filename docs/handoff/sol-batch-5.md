@@ -44,6 +44,24 @@ frames exist, Claude will write you a hand-off mapping frames to code, and you'l
 Until then: favour the data, sync and logic side of each task, keep new screens plain (tokens,
 simple layout), and don't spend time on visual polish that a design will replace.
 
+**Update 2026-09-25, later:** your 41 commits through `305b294` are merged into `main`
+(`a2033cd`); `verify.py --quick --android` passes on the merge. Excellent, carefully reported
+work. Your uncommitted Stage changes in `F:\DunBuild\Chorus-sol` were left alone. Merge `main`
+into `sol/batch-2` when you resume (`git merge main`, no conflicts expected). Three things landed
+on `main` that affect Android:
+
+- **Stricter op validation** (DATA_MODEL §2.2): `op::validate`, which `Chorus.create` runs through
+  the core, now checks values, not just field names (NOT NULL/JSON/flag columns, entity and
+  segment ranges inside the text, reaction and permission shapes). A payload Android builds by
+  hand that breaks a rule now fails locally with a `CoreException` naming the field; your
+  current payloads all pass.
+- The server refuses ops that name another account's member as author/reactor, or reach into
+  another space's channel (`df3dde1`, `38e4288`). Android never does either.
+- Ingest refuses an op it can't store on its own (`unprocessable`, retry false): it lands in
+  *Sync issues* like any rejection, instead of blocking the outbox.
+
+Pending phone audits (yours, from your log) wait for an owner-approved session.
+
 **Update 2026-09-25:** the remote Claude's R9–R19 are merged into `main` (`git pull`). Three
 things for Android, from its report (`opus-remote-2.md` §5):
 
