@@ -72,6 +72,8 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     var onlyMembers by rememberSaveable(channel.id) { mutableStateOf<List<String>>(emptyList()) }
     var replyDepth by rememberSaveable(channel.id) { mutableStateOf<Int?>(null) }
     var blurAttachments by rememberSaveable(channel.id) { mutableStateOf(false) }
+    var hideHeader by rememberSaveable(channel.id) { mutableStateOf(false) }
+    var hideReplyBars by rememberSaveable(channel.id) { mutableStateOf(false) }
     var saveName by rememberSaveable(channel.id) { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -86,7 +88,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     }
     val settings = StagePlan.Settings(selected.toSet(), if (capturing) unselected else "visible",
         redactNames, fakeNames, if (hideTimes) "hide" else if (shiftText.toIntOrNull() != null) "shift" else "real",
-        shiftText.toIntOrNull() ?: 0, onlyMembers.toSet(), replyDepth, blurAttachments)
+        shiftText.toIntOrNull() ?: 0, onlyMembers.toSet(), replyDepth, blurAttachments, hideHeader, hideReplyBars)
     val plan = remember(messages, settings) { StagePlan.forMessages(messages, settings) }
     val byId = remember(messages) { messages.associateBy { it.id } }
     val authorIds = remember(messages) { messages.flatMap { it.authors }.distinct() }
@@ -117,6 +119,10 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                     JournalChoice("Hide times", hideTimes) { hideTimes = !hideTimes }
                 }
                 JournalChoice("Conceal attachments", blurAttachments) { blurAttachments = !blurAttachments }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    JournalChoice("Hide channel name", hideHeader) { hideHeader = !hideHeader }
+                    JournalChoice("Hide reply bars", hideReplyBars) { hideReplyBars = !hideReplyBars }
+                }
                 OutlinedTextField(shiftText, { shiftText = it.filter { c -> c.isDigit() || c == '-' }.take(7) },
                     label = { Text("Shift times by minutes (optional)") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
@@ -152,6 +158,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                         shiftText = if (loaded.timeMode == "shift") loaded.shiftMinutes.toString() else ""
                         onlyMembers = loaded.onlyMembers.toList(); replyDepth = loaded.replyDepth
                         blurAttachments = loaded.blurAttachments
+                        hideHeader = loaded.hideHeader; hideReplyBars = loaded.hideReplyBars
                         error = null
                     }) { Text(if (supported == null) "${stage.name} · web view" else stage.name) }
                     if (advanced) TextButton(enabled = !busy, onClick = {
@@ -187,6 +194,10 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             LazyColumn(Modifier.widthIn(max = 390.dp).fillMaxSize().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!hideHeader) item(key = "channel-header") {
+                    Text("#${channel.name}", color = p.ink2, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
+                }
                 items(plan.rows, key = { it.id ?: "context:${it.hashCode()}" }) { row ->
                     if (row.id == null) {
                         Text("${row.contextCount} messages", color = p.ink3, fontSize = 13.sp,
@@ -205,7 +216,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                                 if (row.at != null) Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(row.at)),
                                     color = p.ink3, fontSize = 11.sp)
                             }
-                            if (row.replyShown) Text("↪ reply", color = p.ink3, fontSize = 11.sp)
+                            if (row.replyShown && !hideReplyBars) Text("↪ reply", color = p.ink3, fontSize = 11.sp)
                             if (message.cw != null) Text("Content warning: ${message.cw} · ${if (revealed) "Hide" else "Show"}",
                                 color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
                             if (message.cw == null || revealed) {
