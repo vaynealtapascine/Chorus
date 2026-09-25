@@ -97,6 +97,27 @@ test('a DM between two accounts', async () => {
   await expect(friend.page.getByText(back)).toBeVisible();
 });
 
+test('an edited message keeps its history (SPEC §5.3)', async () => {
+  const hello = `helo agian ${run}`;
+  const fixed = `hello again, edited ${run}`;
+  const box = friend.page.getByLabel('Message', { exact: true });
+  await box.fill(hello);
+  await box.press('Enter');
+  const msg = friend.page.locator('.msg', { hasText: hello });
+  await msg.hover();
+  await msg.getByTitle('Edit').click();
+  await box.fill(fixed);
+  await box.press('Enter');
+  // the other account sees the new text, and "(edited)" opens what it said before
+  const theirs = stars.page.locator('.msg', { hasText: fixed });
+  await expect(theirs).toBeVisible();
+  await theirs.getByRole('button', { name: '(edited)' }).click();
+  const history = theirs.getByRole('list', { name: 'Edit history' });
+  await expect(history.getByRole('listitem')).toHaveCount(2);
+  await expect(history.getByRole('listitem').first()).toContainText(hello);
+  await expect(history.getByRole('listitem').first()).toContainText('original');
+});
+
 test('a shared space between two accounts', async () => {
   const name = `Book club ${run}`;
   await go(stars.page, 'people');
@@ -114,6 +135,54 @@ test('a shared space between two accounts', async () => {
   await go(friend.page, 'chat');
   await friend.page.locator('nav[aria-label="Spaces"] a', { hasText: name }).click();
   await expect(friend.page.getByText(welcome)).toBeVisible();
+});
+
+test('reply privately: from the shared space into the DM, linking back (SPEC §5.3)', async () => {
+  const welcome = `welcome to the club ${run}`;
+  const msg = friend.page.locator('.msg', { hasText: welcome });
+  await msg.hover();
+  await msg.getByTitle('Reply privately').click();
+  // the DM opens with the reply ready
+  await expect(friend.page.locator('nav[aria-label="Spaces"] a.dm.on, nav[aria-label="Spaces"] a.on', { hasText: 'Stars' })).toBeVisible();
+  await expect(friend.page.getByText(/Replying to/)).toBeVisible();
+  const answer = `glad to be here ${run}`;
+  const box = friend.page.getByLabel('Message', { exact: true });
+  await box.fill(answer);
+  await box.press('Enter');
+  // the system sees it in the DM, with a card pointing back to the club's channel
+  await go(stars.page, 'chat');
+  await stars.page.locator('nav[aria-label="Spaces"] a.dm', { hasText: 'Robin' }).click();
+  const reply = stars.page.locator('.msg', { hasText: answer });
+  await expect(reply).toBeVisible();
+  await expect(reply.locator('.replybar')).toContainText(welcome.slice(0, 20));
+  await expect(reply.locator('.replybar .elsewhere')).toContainText('#general');
+});
+
+test('space roles: the owner makes someone read-only, and their send is refused with why', async () => {
+  const club = `Book club ${run}`;
+  await go(stars.page, 'chat');
+  await stars.page.locator('nav[aria-label="Spaces"] a', { hasText: club }).click();
+  await stars.page.getByLabel('Channel menu').click();
+  await stars.page.getByText('Space roles…').click();
+  const role = stars.page.getByLabel(/^Role of /).first();
+  await role.selectOption('read_only');
+  await expect(role).toHaveValue('read_only');
+
+  await go(friend.page, 'chat');
+  await friend.page.locator('nav[aria-label="Spaces"] a', { hasText: club }).click();
+  const quiet = `can I still talk ${run}`;
+  const box = friend.page.getByLabel('Message', { exact: true });
+  await box.fill(quiet);
+  await box.press('Enter');
+  const refused = friend.page.getByRole('list', { name: 'Messages not sent' });
+  await expect(refused).toContainText("you don't have the send permission");
+  await expect(refused).toContainText(quiet);
+  await refused.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(refused).toHaveCount(0);
+  await expect(stars.page.getByText(quiet)).toHaveCount(0);
+  // and back to a member, so the rest of the run can talk; the menu closed again
+  await role.selectOption('member');
+  await stars.page.getByLabel('Channel menu').click();
 });
 
 test('one internal channel shared with a follower (channel permissions)', async () => {

@@ -561,7 +561,16 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
                 return bad("roles must be a list of {id, name, perms}");
             }
         }
-        "channel.create" | "channel.set" => one_of("kind", &["text", "thread", "member_dm"], false)?,
+        "channel.create" | "channel.set" => {
+            one_of("kind", &["text", "thread", "member_dm"], false)?;
+            // slow mode (Q17): whole seconds, at most 6 h; 0 or absent = off
+            if let Some(v) = p.get("settings").and_then(|s| s.get("slow_mode_s"))
+                && !v.is_null()
+                && !v.as_u64().is_some_and(|n| n <= 21_600)
+            {
+                return bad("settings.slow_mode_s must be 0–21600 seconds");
+            }
+        }
         "channel.set_permission" => {
             if op.entity_id.is_none() {
                 return Err(OpError::MissingEntity);
@@ -811,6 +820,18 @@ mod tests {
         // an edit without its text can't be bounds-checked, only shape-checked
         let edit = op("message.edit", &space, json!({"entities": [{"type": "x_new_kind", "offset": 9, "length": 1}]}));
         assert!(matches!(validate_new(&edit), Ok(Known::Yes(_))));
+    }
+
+    #[test]
+    fn slow_mode_is_whole_seconds_up_to_six_hours() {
+        let space = format!("space:{}", new_id(1, [6; 10]));
+        let set = |v: Value| validate_new(&op("channel.set", &space, json!({"settings": {"slow_mode_s": v}})));
+        for ok in [json!(0), json!(30), json!(21_600), Value::Null] {
+            assert!(matches!(set(ok.clone()), Ok(Known::Yes(_))), "{ok}");
+        }
+        for bad in [json!(21_601), json!(-1), json!(1.5), json!("30")] {
+            assert!(matches!(set(bad.clone()), Err(OpError::BadPayload(_))), "{bad}");
+        }
     }
 
     /// A stored op from before a value rule existed still projects: the rules are for new ops.

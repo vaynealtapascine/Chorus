@@ -710,3 +710,7 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 #### V8 · Opening retained files and concurrent downloads (2026-09-25)
 - Android's attachment `FileProvider` now exposes the account-scoped kept directory, so an original retained by Keep everything can open through the existing chooser while offline. Each network blob read gets its own temporary file; simultaneous foreground opening and background retention no longer write the same `.part` path. The provider still only grants the one requested read URI to the chosen app.
 - **Status:** code complete; `python scripts/verify.py --quick --android --offline` passed. A phone opening test is deferred to the owner's next batched device session.
+
+#### Merge · remote R3 and new Sol V10 handoff (2026-09-25)
+- Merged `main` through `94b84f2` into `sol/batch-2`, preserving both agents' `PROGRESS.md` log entries. This brings core/FFI restore-blob discovery and sync issues, chat semantics, windowed web replicas and the newer op validation. The updated `docs/handoff/sol-batch-5.md` makes V10a (re-upload local file copies after a server restore) the next Android data-safety task, followed by V10b Sync issues.
+- Android FFI and web wasm rebuilt; `python scripts/verify.py --quick --android --offline` passed on the merged tree. No phone run.

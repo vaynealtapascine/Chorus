@@ -1,6 +1,6 @@
 // Typed views over the core projection (the reference model's output, DATA_MODEL.md §4).
 import type { Projection } from './sync/client';
-import { patchedFrom } from './sync/delta';
+import { changesSince, versionOf } from './sync/delta';
 
 export interface ProxyTag {
   prefix: string;
@@ -332,6 +332,8 @@ export interface ChannelRow {
   topic?: string;
   category?: string;
   parent_message_id?: string;
+  /** A member DM's members. */
+  member_ids?: string[];
   archived: boolean;
 }
 
@@ -465,6 +467,7 @@ export function channels(p: Projection, spaceId?: string): ChannelRow[] {
       topic: str(r.fields.topic),
       category: str(r.fields.category),
       parent_message_id: str(r.fields.parent_message_id),
+      member_ids: Array.isArray(r.fields.member_ids) ? r.fields.member_ids.filter((m): m is string => typeof m === 'string') : undefined,
       archived: r.fields.archived_at != null,
     }))
     .filter((c) => !spaceId || c.space_id === spaceId)
@@ -486,10 +489,11 @@ export function threadSummaries(p: Projection): Map<string, ThreadSummary> {
     summaries.set(channel.parent_message_id, summary);
     byChannel.set(channel.id, { summary, latestByAuthor: new Map() });
   }
-  for (const [id, row] of Object.entries(messageRows)) {
-    if (!row.exists || row.fields.deleted_at != null) continue;
-    const entry = byChannel.get(str(row.fields.channel_id) ?? '');
-    if (!entry) continue;
+  // only the thread channels' own messages, from the per-channel order (not every message: R24)
+  const order = orderOf(messageRows as Record<string, MessageRecord>);
+  for (const [channelId, entry] of byChannel) for (const id of order.get(channelId) ?? []) {
+    const row = messageRows[id];
+    if (row.fields.deleted_at != null) continue;
     entry.summary.replyCount++;
     const at = typeof row.fields.occurred_at === 'number' ? row.fields.occurred_at : 0;
     const authors = Array.isArray(row.fields.authors) ? row.fields.authors : [];
@@ -511,53 +515,48 @@ export function threadSummaries(p: Projection): Map<string, ThreadSummary> {
 
 type MessageRecord = { exists: boolean; fields: Record<string, unknown>; edits?: number };
 
-// Tables are copy-on-write (sync/delta.ts): a table object changes only when one of its rows does,
-// and untouched row objects are shared. So the per-channel order is cached per message table, and
-// each built row per (attachment table, row object): opening a 50k-message channel or sending one
-// message doesn't rebuild every row (SPEC §9).
-const channelOrder = new WeakMap<object, Map<string, string[]>>();
+// The message table is patched in place (sync/delta.ts), so the per-channel order is cached per
+// table and version and patched from what changed; every other table is copy-on-write, so each
+// built row is cached per (attachment table, row object). Opening a 50k-message channel or
+// sending one message doesn't rebuild every row (SPEC §9).
+const channelOrder = new WeakMap<object, { version: number; order: Map<string, string[]> }>();
 const builtRows = new WeakMap<object, WeakMap<object, MessageRow>>();
 const NO_ATTACHMENTS = {};
 
 function orderOf(rows: Record<string, MessageRecord>): Map<string, string[]> {
-  let order = channelOrder.get(rows);
-  if (order) return order;
-  // a table from a delta: patch the order of the table it came from, if that one was indexed
-  const from = patchedFrom.get(rows);
-  const prevOrder = from && channelOrder.get(from.prev);
-  order = from && prevOrder
-    ? patchOrder(from.prev as Record<string, MessageRecord>, prevOrder, rows, from.keys)
-    : buildOrder(rows);
-  channelOrder.set(rows, order);
+  const version = versionOf(rows);
+  const hit = channelOrder.get(rows);
+  if (hit?.version === version) return hit.order;
+  const before = hit && changesSince(rows, hit.version);
+  const order = hit && before ? patchOrder(before as Map<string, MessageRecord | undefined>, hit.order, rows) : buildOrder(rows);
+  channelOrder.set(rows, { version, order });
   return order;
 }
 
 const atOf = (r: MessageRecord) => (typeof r.fields.occurred_at === 'number' ? r.fields.occurred_at : 0);
 
-/** The previous order with the changed rows moved (a send, an edit, a delete). */
+/** The previous order with the changed rows moved (a send, an edit, a delete); `before` holds
+ *  each changed row as it was. */
 function patchOrder(
-  prev: Record<string, MessageRecord>,
+  before: Map<string, MessageRecord | undefined>,
   prevOrder: Map<string, string[]>,
   rows: Record<string, MessageRecord>,
-  changed: string[],
 ): Map<string, string[]> {
-  if (changed.length > 512) return buildOrder(rows);
+  if (before.size > 512) return buildOrder(rows);
+  const changed = [...before.keys()];
   const order = new Map(prevOrder);
   const touched = new Set(changed);
   // first take every changed row out of the lists it was in (so the rest stays sorted)…
   const copied = new Set<string>();
-  for (const id of changed) {
-    const old = prev[id];
+  for (const [id, old] of before) {
     if (old?.exists) copied.add(String(old.fields.channel_id ?? ''));
-  }
-  for (const id of changed) {
     const r = rows[id];
     if (r?.exists) copied.add(String(r.fields.channel_id ?? ''));
   }
   for (const ch of copied) {
-    const before = order.get(ch) ?? [];
-    const ids = before.filter((id) => !touched.has(id));
-    derivedList.set(ids, { prev: before, changed: touched });
+    const was = order.get(ch) ?? [];
+    const ids = was.filter((id) => !touched.has(id));
+    derivedList.set(ids, { prev: was, changed: touched });
     order.set(ch, ids);
   }
   // …then put the ones that still exist back where they now sort
@@ -677,6 +676,45 @@ export function messages(p: Projection, channelId: string): MessageRow[] {
   return out;
 }
 
+/** The newest `n` messages of a channel, oldest first, building only those rows: what the chat
+ *  view shows (SPEC §9: a 50k-message channel's first screen in ≤ 150 ms). `ids` is the whole
+ *  channel in order (cheap: the shared order index), for "is it here" and "how far back". */
+export function messagePage(p: Projection, channelId: string, n: number): { rows: MessageRow[]; ids: string[]; total: number } {
+  const rows = (p.rows.message ?? {}) as Record<string, MessageRecord>;
+  const ids = orderOf(rows).get(channelId) ?? [];
+  if (n >= ids.length) return { rows: messages(p, channelId), ids, total: ids.length };
+  // (messageRow keeps built rows per record, so unchanged ones stay the same objects)
+  const tail = ids.slice(ids.length - n).map((id) => messageRow(p, id)).filter((m): m is MessageRow => !!m);
+  return { rows: tail, ids, total: ids.length };
+}
+
+/** A channel's pinned messages (not deleted), oldest first, without building the rest. */
+export function pinnedMessages(p: Projection, channelId: string): MessageRow[] {
+  const rows = (p.rows.message ?? {}) as Record<string, MessageRecord>;
+  const ids = orderOf(rows).get(channelId) ?? [];
+  const isPinned = (id: string) => rows[id]?.exists && rows[id].fields.channel_id === channelId
+    && rows[id].fields.pinned_at != null && rows[id].fields.deleted_at == null;
+  let pinned = pinnedIds.get(ids);
+  if (!pinned) {
+    // a list patched from one already done: only its changed rows are looked at again (R24)
+    const from = derivedList.get(ids);
+    const prev = from && pinnedIds.get(from.prev);
+    if (from && prev) {
+      pinned = prev.filter((id) => !from.changed.has(id));
+      for (const id of from.changed) {
+        if (!isPinned(id)) continue;
+        const at = atOf(rows[id]);
+        let i = pinned.length;
+        while (i > 0 && (atOf(rows[pinned[i - 1]]) > at || (atOf(rows[pinned[i - 1]]) === at && pinned[i - 1] > id))) i--;
+        pinned.splice(i, 0, id);
+      }
+    } else pinned = ids.filter(isPinned);
+    pinnedIds.set(ids, pinned);
+  }
+  return pinned.map((id) => messageRow(p, id)!);
+}
+const pinnedIds = new WeakMap<string[], string[]>();
+
 /** message id → emoji → member ids (LWW element set, DATA_MODEL `reaction`). */
 export function reactions(p: Projection): Map<string, Map<string, string[]>> {
   const out = new Map<string, Map<string, string[]>>();
@@ -699,10 +737,34 @@ export function lastRead(p: Projection, channelId: string, accountId: string): n
   return Math.max(0, ...vals);
 }
 
+/** Advanced "track reading per member" (SPEC §5.3), an account pref. */
+export function readPerMember(p: Projection, accountId: string): boolean {
+  const prefs = (p.rows.pref ?? {}) as Rows;
+  const row = prefs['||chat.read_per_member'] ?? prefs[`${accountId}||chat.read_per_member`];
+  return row?.fields.value === true;
+}
+
+/** Each member's read mark in a channel (the account's own is `lastRead`). */
+export function memberMarks(p: Projection, channelId: string, accountId: string): { member: string; at: number; id: string }[] {
+  const best = new Map<string, { member: string; at: number; id: string }>();
+  for (const [key, r] of Object.entries((p.rows.read_state ?? {}) as Rows)) {
+    const [channel, account, member] = key.split('|');
+    if (channel !== channelId || !member || (account !== accountId && account !== '')) continue;
+    const mark = { member, at: (r.fields.last_read_message_at as number | undefined) ?? 0, id: str(r.fields.last_read_message_id) ?? '' };
+    const cur = best.get(member);
+    if (!cur || mark.at > cur.at || (mark.at === cur.at && mark.id > cur.id)) best.set(member, mark);
+  }
+  return [...best.values()];
+}
+
 export function unread(p: Projection, channelId: string, accountId: string): number {
   const since = lastRead(p, channelId, accountId);
   const rows = (p.rows.message ?? {}) as Record<string, MessageRecord>;
   const ids = orderOf(rows).get(channelId) ?? [];
+  // a channel's list is a new array whenever one of its rows changes (patchOrder), so a count
+  // stands until then or until the mark moves: a sent message elsewhere doesn't walk 50k unread
+  const hit = unreadCounts.get(ids);
+  if (hit && hit.since === since && hit.accountId === accountId) return hit.n;
   let n = 0;
   // newest first, stopping at the read mark
   for (let i = ids.length - 1; i >= 0; i--) {
@@ -712,8 +774,10 @@ export function unread(p: Projection, channelId: string, accountId: string): num
     // a message without an account id is still pending on this device, so it's ours
     if (f.deleted_at == null && f.account_id && f.account_id !== accountId) n++;
   }
+  unreadCounts.set(ids, { since, accountId, n });
   return n;
 }
+const unreadCounts = new WeakMap<string[], { since: number; accountId: string; n: number }>();
 
 /** Any message by id, across channels (for replies elsewhere and forwards). */
 export function messageById(p: Projection, id: string): (MessageRow & { channel_name?: string }) | undefined {

@@ -167,7 +167,8 @@ custom order.
 - Parsing lives in `chorus-core` (M1.6) so all clients agree. A preview above the composer shows
   who it will be sent as before sending.
 - Autoproxy modes per channel (Advanced): `off` · `front` (primary fronter) · `latch` (last
-  explicit speaker) · `member` (locked to one member).
+  explicit speaker) · `member` (locked to one member). Each account sets its own (D-074); the
+  rule is `chorus_core::speaker::default_speaker`.
 - Formatting parity with Telegram: **bold**, *italic*, underline, ~~strike~~, spoiler, `code`,
   pre blocks with language, links with custom text, blockquote, expandable blockquote, mentions,
   custom emoji (the server-wide set, §5.5). Input via markdown-like shortcuts *and* a selection toolbar;
@@ -186,10 +187,10 @@ custom order.
 | Delete | Tombstone ("message deleted" placeholder, configurable to vanish). Always **restorable** from Trash (D-053). |
 | Pin | Per channel, pinned list panel. |
 | Reactions | Emoji or custom emoji, **reacted as a member** (defaults to current speaker). Hover shows who. |
-| Mentions | `@member`, `@group` (all members in group), `@account` in shared spaces, `@front` (current fronters). Mention inbox per member. |
-| Read states | Per account; optionally **per member** (Advanced: "track reading per member") → "Kai hasn't seen this" dot. |
+| Mentions | `@member`, `@group` (all members in group and its subgroups), `@account` in shared spaces, `@front` (who was fronting when the message was written). Resolved by core (`chorus_core::mentions`). Mention inbox per member. |
+| Read states | Per account; optionally **per member** (Advanced: "track reading per member") → "Kai hasn't seen this" dot: reading marks it for the account and each member fronting or co-con (`chorus_core::reading`); marks never leave the account. |
 | Attachments | Images (thumbnails, gallery, alt text), files; queued offline, upload resumable. |
-| Search | Full-text (FTS5), filters: `from:`, `in:`, `has:image`, `before:`/`after:`, `is:pinned`. |
+| Search | Full-text (FTS5), filters: `from:`, `in:`, `has:` (image, file, attachment, link), `before:`/`after:`, `is:pinned`, parsed by core so local and server search agree (`chorus_core::search`). |
 | Offline marker | Messages composed offline sort at original time, marked "sent offline · synced 14:32" (D-039). |
 
 ### 5.4 Hidden messages (D-010)

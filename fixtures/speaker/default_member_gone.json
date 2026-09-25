@@ -1,0 +1,24 @@
+{
+  "args": [
+    {
+      "fronting": [
+        {
+          "is_primary": true,
+          "level": "front",
+          "member_id": "kai"
+        }
+      ],
+      "last_authors": [],
+      "member": "gone",
+      "members": [
+        "kai"
+      ],
+      "mode": "member"
+    }
+  ],
+  "description": "a sticky member that no longer exists falls back to the front",
+  "expect": [
+    "kai"
+  ],
+  "fn": "default_speaker"
+}

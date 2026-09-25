@@ -1,0 +1,30 @@
+{
+  "args": [
+    "lunch from:@Élise in:#general has:image before:2026-09-01 after:30d is:pinned"
+  ],
+  "description": "every filter; names folded, words folded",
+  "expect": {
+    "after": {
+      "ms": 2592000000,
+      "type": "ago"
+    },
+    "before": {
+      "date": "2026-09-01",
+      "type": "date"
+    },
+    "from": [
+      "elise"
+    ],
+    "has": [
+      "image"
+    ],
+    "in": [
+      "general"
+    ],
+    "pinned": true,
+    "words": [
+      "lunch"
+    ]
+  },
+  "fn": "search_parse"
+}

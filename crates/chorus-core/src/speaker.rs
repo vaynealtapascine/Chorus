@@ -256,6 +256,85 @@ pub fn compose(
     Composed { rich, segments, authors, explicit }
 }
 
+// ─── default speaker (SPEC §5.2, D-074) ───────────────────────────────────────
+
+/// A channel's autoproxy mode, set per account (`pref` key `autoproxy:<channel id>`, D-074).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Autoproxy {
+    /// Nobody by default: pick in the chip, or use sigils or proxy tags.
+    Off,
+    /// The primary fronter (else the first member fronting): the default.
+    #[default]
+    Front,
+    /// Whoever the account last spoke as in this channel.
+    Latch,
+    /// Always one member (the channel's sticky speaker).
+    Member,
+}
+
+/// Who's fronting, as the composer sees it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Fronter {
+    pub member_id: String,
+    #[serde(default)]
+    pub is_primary: bool,
+    /// `front`, `cocon` or `present`.
+    #[serde(default)]
+    pub level: String,
+}
+
+/// What [`default_speaker`] looks at.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpeakerContext {
+    #[serde(default)]
+    pub mode: Autoproxy,
+    /// The `member` mode's member.
+    #[serde(default)]
+    pub member: Option<String>,
+    /// The account's current front, in fronting order.
+    #[serde(default)]
+    pub fronting: Vec<Fronter>,
+    /// A person account's own member (D-003): always the speaker.
+    #[serde(default)]
+    pub self_member: Option<String>,
+    /// The authors of the account's latest message in the channel (for `latch`).
+    #[serde(default)]
+    pub last_authors: Vec<String>,
+    /// Members that can speak (not deleted); anyone else is skipped.
+    pub members: Vec<String>,
+}
+
+/// Who the speaker chip shows before anyone picks (SPEC §5.2), as authors in order; empty =
+/// nobody (the composer asks). A person speaks as itself; else `member` → that member,
+/// `latch` → who spoke last here, `off` → nobody; and everything that finds nobody falls back to
+/// the primary fronter, else the first member fronting (`off` excepted).
+pub fn default_speaker(c: &SpeakerContext) -> Vec<String> {
+    let alive = |m: &String| c.members.contains(m);
+    if let Some(me) = c.self_member.as_ref().filter(|m| alive(m)) {
+        return vec![me.clone()];
+    }
+    match c.mode {
+        Autoproxy::Off => return Vec::new(),
+        Autoproxy::Member => {
+            if let Some(m) = c.member.as_ref().filter(|m| alive(m)) {
+                return vec![m.clone()];
+            }
+        }
+        Autoproxy::Latch => {
+            let last: Vec<String> = c.last_authors.iter().filter(|m| alive(m)).cloned().collect();
+            if !last.is_empty() {
+                return last;
+            }
+        }
+        Autoproxy::Front => {}
+    }
+    let fronting = c.fronting.iter().filter(|f| alive(&f.member_id));
+    let primary = fronting.clone().find(|f| f.is_primary);
+    let first = fronting.clone().find(|f| f.level == "front").or_else(|| fronting.clone().next());
+    primary.or(first).map(|f| vec![f.member_id.clone()]).unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,5 +459,36 @@ mod tests {
         let d = vec![sp("a", &["❤️"], &[]), sp("b", &["❤️‍🔥"], &[])];
         let r = compose("❤️‍🔥 hot", &d, Options::default(), &[], &NoNames);
         assert_eq!(ids(&r.authors), ["b"]);
+    }
+
+    #[test]
+    fn default_speaker_follows_the_channels_autoproxy() {
+        let f = |m: &str, primary: bool, level: &str| Fronter {
+            member_id: m.into(),
+            is_primary: primary,
+            level: level.into(),
+        };
+        let members: Vec<String> = ["kai", "rin", "june", "self"].iter().map(|s| s.to_string()).collect();
+        let base = SpeakerContext {
+            fronting: vec![f("rin", false, "cocon"), f("kai", false, "front"), f("june", true, "front")],
+            members: members.clone(),
+            ..Default::default()
+        };
+        let who = |c: &SpeakerContext| super::default_speaker(c);
+        assert_eq!(who(&base), vec!["june"], "front (the default): the primary fronter");
+        let no_primary =
+            SpeakerContext { fronting: vec![f("rin", false, "cocon"), f("kai", false, "front")], ..base.clone() };
+        assert_eq!(who(&no_primary), vec!["kai"], "else the first one fronting, not a co-con");
+        assert_eq!(who(&SpeakerContext { mode: Autoproxy::Off, ..base.clone() }), Vec::<String>::new());
+        let member = SpeakerContext { mode: Autoproxy::Member, member: Some("rin".into()), ..base.clone() };
+        assert_eq!(who(&member), vec!["rin"]);
+        let gone = SpeakerContext { member: Some("deleted".into()), ..member };
+        assert_eq!(who(&gone), vec!["june"], "a sticky member that's gone falls back to the front");
+        let latch =
+            SpeakerContext { mode: Autoproxy::Latch, last_authors: vec!["kai".into(), "rin".into()], ..base.clone() };
+        assert_eq!(who(&latch), vec!["kai", "rin"], "the last message's authors, together");
+        assert_eq!(who(&SpeakerContext { last_authors: vec![], ..latch }), vec!["june"]);
+        let person = SpeakerContext { self_member: Some("self".into()), mode: Autoproxy::Off, ..base };
+        assert_eq!(who(&person), vec!["self"], "a person always speaks as itself");
     }
 }

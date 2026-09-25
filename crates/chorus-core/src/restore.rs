@@ -1,4 +1,5 @@
-//! Restore authorization shared by the reference server and SQLite server (D-053).
+//! Restore authorization shared by the reference server and SQLite server (D-053), and what a
+//! device re-uploads after the server was restored from a backup (SYNC.md §7.3).
 
 use crate::op::{self, Action, Op};
 
@@ -43,6 +44,23 @@ pub fn allowed<'a>(
     }
     creator.is_some_and(|o| o.account_id.as_deref() == Some(account_id))
         || deleter.is_some_and(|o| o.account_id.as_deref() == Some(account_id))
+}
+
+/// Payload keys that name a blob (by its sha256).
+const BLOB_KEYS: &[&str] = &["blob_hash", "thumb_blob_hash", "avatar_blob", "banner_blob"];
+
+/// The blobs an op names. A server restored from a backup has its files as of the backup, so
+/// after a reconcile a device re-uploads the ones its restoring ops name that it has a copy of
+/// (SYNC.md §7.3): the ops come back through the outbox, their files through this.
+pub fn blob_hashes(o: &Op) -> Vec<String> {
+    let mut v: Vec<String> = BLOB_KEYS
+        .iter()
+        .filter_map(|k| o.payload.get(*k).and_then(serde_json::Value::as_str))
+        .filter(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()))
+        .map(str::to_string)
+        .collect();
+    v.dedup();
+    v
 }
 
 #[cfg(test)]

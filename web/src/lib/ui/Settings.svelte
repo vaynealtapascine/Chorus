@@ -1,6 +1,6 @@
 <script lang="ts">
   import { notifyPreset } from '../core/pkg/chorus_wasm.js';
-  import { contentWarningsAutoExpand, segmentParsing, selfMember } from '../data';
+  import { contentWarningsAutoExpand, readPerMember, segmentParsing, selfMember } from '../data';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
   import { sync, type Projection } from '../sync/client';
@@ -123,6 +123,7 @@
       {/if}
       <label><input type="checkbox" checked={contentWarningsAutoExpand(projection, sync.accountId)} onchange={(e) => savePref('chat.cw_auto_expand', e.currentTarget.checked)} /> Expand content warnings automatically</label>
       <label><input type="checkbox" checked={segmentParsing(projection, sync.accountId)} onchange={(e) => savePref('chat.segment_parsing', e.currentTarget.checked)} /> Parse speaker annotations in chat</label>
+      {#if isSystem}<label><input type="checkbox" checked={readPerMember(projection, sync.accountId)} onchange={(e) => savePref('chat.read_per_member', e.currentTarget.checked)} /> Track reading per member (a dot shows who hasn't seen a message)</label>{/if}
     </div>
   </details>
 </section>

@@ -115,7 +115,8 @@ checks more than `op::validate`'s field names: every payload field stored in a c
 `target_type`/`target_id`/`emoji`, message and post `text` is text and `entities`/`tags` lists, entities and segments are
 `{offset, length}` ranges (UTF-16) inside the text with a `type`/`authors` (so another
 account's message can't make a renderer slice out of range),
-`space.set_roles` a list of `{id, name, perms}`). A test compares `FIELD_RULES` with the SQL
+`space.set_roles` a list of `{id, name, perms}`, a channel's `settings.slow_mode_s` whole seconds
+up to 21 600). A test compares `FIELD_RULES` with the SQL
 schema, so a migration that adds a constraint must add its rule. The rules apply to **new** ops
 only: projection (`model::apply_op`, the server's rebuild) and restore pushes use the structural
 `op::validate`, so an op stored before a rule existed keeps projecting exactly as before.
@@ -418,7 +419,7 @@ CREATE TABLE channel (
   name TEXT NOT NULL, topic TEXT, icon TEXT, color TEXT,
   parent_message_id TEXT,                       -- threads
   member_ids TEXT CHECK (member_ids IS NULL OR json_valid(member_ids)),  -- member_dm participants
-  settings TEXT NOT NULL DEFAULT '{}',          -- autoproxy, sticky speaker, slow mode, lock
+  settings TEXT NOT NULL DEFAULT '{}',          -- slow_mode_s (Q17), lock (autoproxy is the account's pref, D-074)
   sort_key TEXT,
   created_at INTEGER NOT NULL, archived_at INTEGER, deleted_at INTEGER,
   clocks TEXT NOT NULL DEFAULT '{}'
@@ -486,6 +487,9 @@ CREATE TABLE message_author (
 );
 CREATE INDEX message_author_member ON message_author(member_id);
 
+-- every version of an *edited* message (unedited ones have no rows: their row is their only
+-- version), from chorus_core::revisions: the fold of its send and edits after each op in HLC
+-- order, so the last equals the message. post_revision likewise. Read by GET …/revisions.
 CREATE TABLE message_revision (
   message_id TEXT NOT NULL, rev INTEGER NOT NULL,
   text TEXT NOT NULL, entities TEXT NOT NULL, cw TEXT,
@@ -747,7 +751,7 @@ Property-tested against an independent model of these rules in `tests/permission
 | --- | --- |
 | Server | Everything. |
 | Owner's Android | Full replica of its own `account:` scope (D-043) + joined `space:` scopes + follower views + blobs on demand (thumbnails always). |
-| Web PWA | Same scopes as Android but message history is windowed (Advanced: "keep last N days offline", default 90) to keep IndexedDB small. |
+| Web PWA | Same scopes as Android; in a browser tab without "keep everything" (CLIENTS §4.3), message history is windowed to what arrived in the last 90 days (SYNC §6.5, D-075) to keep IndexedDB small; older history reads over REST. |
 
 ## 6. Analysis views (stable, documented; exported as CSV)
 

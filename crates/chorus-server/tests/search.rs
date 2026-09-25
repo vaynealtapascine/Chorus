@@ -226,3 +226,157 @@ async fn http_search_applies_account_visibility_and_filters() {
     let _ = server.await;
     let _ = std::fs::remove_dir_all(test_dir);
 }
+
+/// SPEC §5.3: the server's SQL search finds exactly what `chorus_core::search::matches` finds
+/// (what the apps' local search uses), over random messages and random search boxes.
+#[test]
+fn sql_search_agrees_with_core() {
+    use chorus_core::search::{self, Candidate, Context};
+    const DAY: i64 = 86_400_000;
+    let words = ["lunch", "Café", "garden", "straße", "plans", "Ærø", "notes", "cafeteria"];
+    let members = [("rose", "Rose"), ("kai", "Kai"), ("elise", "Élise")];
+    let channels = [(CHANNEL, "garden"), ("0192f8c2-0000-7000-8000-0000000000e6", "general")];
+    let mut rng = 0x5eed_u64;
+    let mut next = |n: u64| {
+        rng ^= rng << 13;
+        rng ^= rng >> 7;
+        rng ^= rng << 17;
+        rng % n
+    };
+    let (mut found, mut asked) = (0, 0);
+    for round in 0..12 {
+        let conn = seed();
+        conn.execute("DELETE FROM message", []).unwrap();
+        conn.execute("DELETE FROM message_fts", []).unwrap();
+        conn.execute("DELETE FROM message_author", []).unwrap();
+        conn.execute("DELETE FROM message_segment_author", []).unwrap();
+        conn.execute("DELETE FROM item_attachment", []).unwrap();
+        conn.execute("DELETE FROM member", []).unwrap();
+        for (id, name) in members {
+            conn.execute(
+                "INSERT INTO member(id,account_id,name,created_at) VALUES (?1,?2,?3,0)",
+                params![id, ALICE, name],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT OR IGNORE INTO channel(id,space_id,kind,name,created_at) VALUES (?1,?2,'text','general',0)",
+            params![channels[1].0, SPACE],
+        )
+        .unwrap();
+        for (i, mime) in ["image/png", "text/plain"].into_iter().enumerate() {
+            conn.execute(
+                "INSERT OR IGNORE INTO attachment(id,mime,created_at) VALUES (?1,?2,0)",
+                params![format!("a{i}"), mime],
+            )
+            .unwrap();
+        }
+        let now = chorus_server::now_ms();
+        let today = now.div_euclid(DAY);
+        let mut candidates = Vec::new();
+        for m in 0..40 {
+            let text: Vec<&str> = (0..1 + next(4)).map(|_| words[next(words.len() as u64) as usize]).collect();
+            let text = text.join(" ");
+            let cw = (next(4) == 0).then(|| words[next(words.len() as u64) as usize].to_string());
+            let author = members[next(3) as usize];
+            let channel = channels[next(2) as usize];
+            // noon of a day in the last three weeks: far from any date or age boundary
+            let at = (today - 1 - next(20) as i64) * DAY + DAY / 2;
+            let link = next(3) == 0;
+            let entities = if link { r#"[{"type":"url","offset":0,"length":3}]"# } else { "[]" };
+            let pinned = next(4) == 0;
+            let id = format!("m{m:02}");
+            conn.execute(
+                "INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text,cw,entities,pinned_at)
+                 VALUES (?1,?2,?3,?3,?4,?5,?6,?7,?8)",
+                params![id, channel.0, ALICE, at, text, cw, entities, pinned.then_some(at)],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO message_fts(rowid,text,cw) SELECT rowid,text,COALESCE(cw,'') FROM message WHERE id=?1",
+                [&id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO message_author(message_id,member_id,position) VALUES (?1,?2,0)",
+                params![id, author.0],
+            )
+            .unwrap();
+            let mut mimes = Vec::new();
+            match next(4) {
+                0 => mimes.push("image/png"),
+                1 => mimes.push("text/plain"),
+                _ => {}
+            }
+            for (pos, mime) in mimes.iter().enumerate() {
+                let a = if *mime == "image/png" { "a0" } else { "a1" };
+                conn.execute(
+                    "INSERT INTO item_attachment(owner_type,owner_id,attachment_id,position) VALUES ('message',?1,?2,?3)",
+                    params![id, a, pos as i64],
+                )
+                .unwrap();
+            }
+            candidates.push((
+                id,
+                Candidate {
+                    text,
+                    cw,
+                    authors: vec![(author.0.into(), author.1.into())],
+                    channel: (channel.0.into(), channel.1.into()),
+                    at,
+                    mimes: mimes.iter().map(|m| m.to_string()).collect(),
+                    link,
+                    pinned,
+                },
+            ));
+        }
+        for _ in 0..40 {
+            let mut parts: Vec<String> = Vec::new();
+            for _ in 0..next(3) {
+                let w = search::fold(words[next(words.len() as u64) as usize]);
+                let cut = 1 + next(w.chars().count() as u64) as usize;
+                parts.push(w.chars().take(cut).collect());
+            }
+            if next(3) == 0 {
+                parts.push(format!("from:{}", ["rose", "Kai", "@élise", "kai"][next(4) as usize]));
+            }
+            if next(3) == 0 {
+                parts.push(format!("in:#{}", channels[next(2) as usize].1));
+            }
+            if next(3) == 0 {
+                parts.push(format!("has:{}", search::HAS[next(4) as usize]));
+            }
+            if next(3) == 0 {
+                let date = chorus_core::front::civil_date(today - 1 - next(20) as i64);
+                parts.push(format!("{}:{date}", ["before", "after"][next(2) as usize]));
+            }
+            if next(4) == 0 {
+                parts.push(format!("{}:{}d", ["before", "after"][next(2) as usize], 1 + next(20)));
+            }
+            if next(5) == 0 {
+                parts.push("is:pinned".into());
+            }
+            let q = parts.join(" ");
+            let parsed = search::parse(&q).unwrap();
+            if parsed.is_empty() {
+                continue;
+            }
+            let ctx = Context::at(now, 0, &parsed);
+            let mut want: Vec<&str> = candidates
+                .iter()
+                .filter(|(_, c)| search::matches(&parsed, c, &ctx))
+                .map(|(id, _)| id.as_str())
+                .collect();
+            want.sort();
+            let query = chorus_server::search::MessageQuery { q: q.clone(), ..Default::default() };
+            let got = chorus_server::search::messages(&conn, &api_data::Principal::owner(ALICE), &query).unwrap();
+            let mut got: Vec<&str> =
+                got["items"].as_array().unwrap().iter().map(|i| i["id"].as_str().unwrap()).collect();
+            got.sort();
+            assert_eq!(got, want, "round {round}: {q}");
+            found += usize::from(!want.is_empty());
+            asked += 1;
+        }
+    }
+    assert!(found > asked / 4 && found < asked, "the queries should sometimes match: {found} of {asked}");
+}

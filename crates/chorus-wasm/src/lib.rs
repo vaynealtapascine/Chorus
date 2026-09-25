@@ -117,6 +117,31 @@ pub fn feed_filter(ast_json: &str, items_json: &str, context_json: &str) -> Resu
     wrap(api::feed_filter(ast_json, items_json, context_json))
 }
 
+#[wasm_bindgen(js_name = defaultSpeaker)]
+pub fn default_speaker(context_json: &str) -> Result<String, JsError> {
+    wrap(api::default_speaker(context_json))
+}
+
+#[wasm_bindgen(js_name = readReaders)]
+pub fn read_readers(per_member: bool, fronting_json: &str) -> Result<String, JsError> {
+    wrap(api::read_readers(per_member, fronting_json))
+}
+
+#[wasm_bindgen(js_name = readUnseenBy)]
+pub fn read_unseen_by(at: f64, id: &str, marks_json: &str) -> Result<String, JsError> {
+    wrap(api::read_unseen_by(at as i64, id, marks_json))
+}
+
+#[wasm_bindgen(js_name = searchParse)]
+pub fn search_parse(query: &str) -> Result<String, JsError> {
+    wrap(api::search_parse(query))
+}
+
+#[wasm_bindgen(js_name = searchFilter)]
+pub fn search_filter(query_json: &str, candidates_json: &str, context_json: &str) -> Result<String, JsError> {
+    wrap(api::search_filter(query_json, candidates_json, context_json))
+}
+
 #[wasm_bindgen(js_name = adaptColor)]
 pub fn adapt_color(color: &str, dark: bool, intensity: &str) -> String {
     api::adapt_color(color, dark, intensity)
@@ -186,6 +211,13 @@ impl WebReplica {
         wrap(self.0.create(new_op_json, device_now_json, random))
     }
 
+    /// A windowed replica (SYNC §6.5): keep message-family ops written since `window` (epoch
+    /// ms), or everything (`undefined`). Takes effect at the next connect.
+    #[wasm_bindgen(js_name = setWindow)]
+    pub fn set_window(&mut self, window: Option<f64>) {
+        self.0.set_window(window.map(|w| w as i64));
+    }
+
     pub fn connect(&mut self, clock_json: &str, token: &str) -> Result<String, JsError> {
         wrap(self.0.connect(clock_json, token))
     }
@@ -209,6 +241,19 @@ impl WebReplica {
         self.0.repairing()
     }
 
+    /// Every version of an edited message or post, oldest first (JSON array of
+    /// `{rev, op_id, original, fields: {text, entities, cw?, title?, segments?}, at, hlc, device_id}`).
+    pub fn revisions(&self, entity: &str) -> String {
+        self.0.revisions(entity)
+    }
+
+    /// After a `welcome` with `reconcile: true`: blobs (JSON array of hashes) named by the ops
+    /// being restored; upload the ones this browser has (SYNC.md §7.3).
+    #[wasm_bindgen(js_name = restoringBlobs)]
+    pub fn restoring_blobs(&self) -> String {
+        self.0.restoring_blobs()
+    }
+
     #[wasm_bindgen(js_name = takeChanges)]
     pub fn take_changes(&mut self) -> String {
         self.0.take_changes()
@@ -230,6 +275,18 @@ impl WebReplica {
 
     pub fn rejected(&self) -> String {
         self.0.rejected()
+    }
+
+    /// Refused ops with why, oldest first (JSON array; SYNC §7 "Sync issues").
+    #[wasm_bindgen(js_name = syncIssues)]
+    pub fn sync_issues(&self) -> String {
+        self.0.sync_issues()
+    }
+
+    /// Forget a refused op once seen (persist with takeChanges, like any change).
+    #[wasm_bindgen(js_name = dismissIssue)]
+    pub fn dismiss_issue(&mut self, id: &str) -> bool {
+        self.0.dismiss_issue(id)
     }
 }
 

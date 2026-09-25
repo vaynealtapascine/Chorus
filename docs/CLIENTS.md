@@ -178,8 +178,17 @@ server doesn't count them.
 
 ### 4.3 Offline window
 
-Account scope is fully replicated; `space:` scopes keep the last N days (default 90) of messages
-plus everything pinned or starred. Scrolling beyond fetches from REST and caches read-only.
+Account scope is fully replicated. A browser tab without "keep everything" (below) keeps the
+messages, reactions, attachments and read marks of `space:` scopes that arrived in the last 90
+days (SYNC §6.5, D-075: the device says its window in `hello`, the server leaves the same ops
+out, so digests agree); channels, spaces and permissions are always kept. Older history:
+*Older messages (from the server)* at the top of a channel pages `GET /channels/{id}/messages
+?before=` in, read-only and not stored. Pinned messages older than the window aren't kept (the
+window rule must be decidable from the op alone, on both sides); `GET /pins` has them.
+Measured (2026-09-25, `web/perf` "a year of 100000 ops", headless Chromium in the cloud box): a
+year of history held whole is 100 000 ops, ~31 MB of IndexedDB, 9.3 s to open cold (no
+snapshot); the same account in a windowed tab is 36 227 ops, ~11 MB, 3.4 s cold. From the
+snapshot (R18) both mount in well under a second.
 
 With the server down (or no network) the installed PWA keeps working (owner, 2026-09-24: this is
 what "desktop" means for v1): the service worker serves the app shell and wasm core, the replica
@@ -192,9 +201,9 @@ silently to installed apps and engaged sites, so an uninstalled tab may still be
 Checked 2026-09-24: enrol, add a member, stop the server, reload — Home, Chat, Journal and two
 image attachments render, a member added and switched in offline reached the server on restart.
 
-**Keep everything on this device** (D-070, R18). Every op the account may see is already kept
-on every device (the window above is not built; when it is, it applies only with this setting
-off). The setting is per device — kept in IndexedDB (`kv["setting:keep_everything"]`), never
+**Keep everything on this device** (D-070, R18). On, every op the account may see is kept (no
+window); off, the window above applies (turning it on reconnects and the digest mismatch pulls
+everything again). The setting is per device — kept in IndexedDB (`kv["setting:keep_everything"]`), never
 synced — and defaults to on in the installed app (`display-mode: standalone`), off in a tab. On,
 it also keeps the *files*: once per session, 5 s after the socket is live, every attachment
 (thumbnail, and the file itself up to 20 MB), avatar and custom emoji the projection refers to is
@@ -257,6 +266,29 @@ build && npx playwright test -c perf/playwright.config.ts`), 2026-09-24:
 At 100k the snapshot is ~32 MB of JSON; reading and parsing it is ~0.3 s of the open. The ops
 themselves still load into memory (the core needs them for updates and repair); lazy loading of
 old ops is a later step if memory becomes the limit.
+
+**A big channel (R24, SPEC §9).** `web/perf` "open a channel of 50000 messages" seeds one channel
+with 50k messages, opens the app from its snapshot, then measures switching to that channel (to
+its first screen) and sending into it (to the new row in the DOM). The rules that hold these:
+
+- The chat builds only the page it shows (`data.ts messagePage`: the newest 100 of the channel's
+  ordered ids), not a row per message; pins, thread previews and unread badges read the
+  per-channel order (`orderOf`) rather than scanning the message table.
+- The message table is patched **in place** by `applyDelta` (`sync/delta.ts IN_PLACE`), with a
+  version and a short log of what each key was, and `orderOf` catches up from that log. Copying
+  a 50k-key object costs ~25 ms plus its garbage on every delta; every other table stays
+  copy-on-write. Never `for…in` or `Object.keys` a big table on the send path: listing 50k keys
+  is ~15 ms by itself.
+- Lists derived from the order (pins, unread counts, built rows) are cached per list array: a
+  channel's array is new exactly when one of its rows changed.
+- Per-message work is shared: one `Intl.DateTimeFormat`, and each adapted colour computed once.
+
+Measured 2026-09-25 (headless Chromium, remote box, minified build, three runs):
+
+| | Before R24 | After |
+| --- | --- | --- |
+| Open a channel of 50k messages → first screen (≤ 150 ms) | 187–224 ms | 51–74 ms |
+| Send into it → on the page (≤ 50 ms) | 68–97 ms | 28–38 ms (painted by 35–46 ms) |
 
 ## 5. Stage mode implementation notes
 

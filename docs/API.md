@@ -144,14 +144,22 @@ GET  /front/reviews?open=1
 GET  /spaces
 GET  /spaces/{id}/channels
 GET  /channels/{id}/messages?before=&after=&around=&limit=
-GET  /messages/{id}                        incl. revisions if ?revisions=1
-  The current read-only history view returns the same scoped message fields as search;
-  revisions are reserved for a later API pass.
+GET  /messages/{id}                        the message (same scoped fields as search)
+GET  /messages/{id}/revisions              edit history, oldest first; the last is what it says now
+  → {items:[{rev,text,entities,cw,at}]}; an unedited message has one item (itself). Same read
+    rule as the message (a stranger or another account's aside: 404); tokens need read:messages.
 GET  /messages/{id}/thread
-GET  /search/messages?q=&in=&from=&before=&after=&has=&limit=&cursor=
+GET  /search/messages?q=&tz=&in=&from=&before=&after=&has=&limit=&cursor=
   → {items:[{id,channel_id,space_id,account_id,occurred_at,text,cw,visibility,authors}],next_cursor}
-  Uses FTS5; `in` accepts a channel id/name, `from` a member id/name, before/after are
-  exclusive epoch milliseconds, and `has` is attachment/image/file. Pages contain 1–100
+  `q` is a search box, read by core (`chorus_core::search`, SPEC §5.3) exactly as the apps'
+  local search reads it: words (each a prefix of a word of the text or content warning, case
+  and accents ignored; through FTS5) and `from:` (member name or id; several = any),
+  `in:` (channel name or id, `#` optional; several = any), `has:image|file|attachment|link`
+  (all must hold), `before:`/`after:` (a date `2026-09-01` in the `tz` time zone, minutes east
+  of UTC, default 0: before its start / after its end; or an age `30d`, `12h`, `2w`),
+  `is:pinned`. Filters alone (no words) list the newest matches. A bad box is a 400 with where
+  and why. The older `in`, `from`, `has` (same values) and `before`/`after` (exclusive epoch
+  ms) parameters still narrow the search. Pages contain 1–100
   results (default 100). Pass `next_cursor` back with the same search and filters to continue;
   a null cursor means the results are exhausted. Results are ordered by FTS rank, occurred time,
   then id and limited to accessible spaces plus public or own messages. API tokens need
@@ -167,6 +175,7 @@ GET  /search/posts?q=&account=&kind=&before=&after=&limit=&cursor=
 
 GET  /posts?author=&kind=&before=&limit=
 GET  /posts/{id}                           with replies ?depth=
+GET  /posts/{id}/revisions                 {items:[{rev,title,text,entities,at}]}, same read rule as the post
   Device-session reads now return posts visible to the caller: own posts, server-visible posts,
   posts shared with active followers, and posts for an assigned, live bucket. `account=` narrows
   the list to one account. `before` is an exclusive occurred-at millisecond value; `limit` is
@@ -234,7 +243,12 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   message id; oldest first, 1–100, default 50) and `GET /messages/{id}/thread`. Same rule as
   search: public or own messages in channels you may `view` (channel permissions, DATA_MODEL
   §4.4; a guest sees only the channels shared with them), threads under messages you can't see
-  are hidden (404). A pushed op the permissions refuse is acked `forbidden` with the reason
+  are hidden (404). A reply (`reply_to`) keeps its link, plus the original's channel
+  (`reply_to_channel_id`, for a "reply elsewhere" reference card), only for a reader who can read
+  the original; anyone else gets `reply_to: null` (SPEC §5.3). A send into a channel in slow
+  mode (`settings.slow_mode_s`) too soon after the account's last one there, counted on arrival,
+  is acked `slow_mode` with the wait (OPEN_QUESTIONS Q17; those who may `manage` it are exempt).
+  A pushed op the permissions refuse is acked `forbidden` with the reason
   (e.g. "you don't have the send permission in this channel"). API tokens with `read:messages`
   get only their own account's messages (§2.3).
 - **Feeds** (`feeds.rs`, M7.4): `GET /feeds` lists your feeds and the ones other accounts share
@@ -325,8 +339,10 @@ the apps' parser, mentioning your own members and the server's emoji), `plain` o
 ## 5. Blobs
 
 ```
-HEAD /blobs/{sha256}                  200 complete | 206 + Upload-Offset partial | 404
-PUT  /blobs/{sha256}                  Content-Range chunks (≤ 4 MB each); verifies hash on completion
+HEAD /blobs/{sha256}                  200 complete | 206 + Upload-Offset partial | 404 | 403 another account's
+PUT  /blobs/{sha256}                  Content-Range chunks (≤ 4 MB each); verifies hash on completion;
+                                      200 if already complete (from anyone); 403 into another account's
+                                      unfinished upload
 GET  /blobs/{sha256}                  supports Range; Cache-Control immutable
 GET  /blobs/{sha256}?thumb=480        server-side fallback thumbnail if client didn't upload one
 ```
