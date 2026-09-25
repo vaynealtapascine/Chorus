@@ -220,3 +220,7 @@ asked for; take **0010** and up.
   - The rules are in CLIENTS §4.3.
   - Not done: an unread badge still counts exactly. A channel with 50k unread walks them once
     per change to that channel (~14 ms), and the count is cached otherwise.
+- 2026-09-25 remote Claude — Follow-up to R20/R23: the chaos test's b-phone is now a windowed tab
+  (1.5 s window per connect) and must converge to exactly its window, digest included (SYNC
+  §9.3). 20 seeds × 300 steps are clean, with 23–163 ops trimmed per seed. **Batch R3 is done**;
+  nothing is left open from it.
