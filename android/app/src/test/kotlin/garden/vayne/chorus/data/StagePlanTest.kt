@@ -55,9 +55,24 @@ class StagePlanTest {
         assertEquals("transcript", StagePlan.supported(saved)?.style)
         saved.getJSONObject("render").put("style", "minimal")
         assertEquals("minimal", StagePlan.supported(saved)?.style)
+        saved.getJSONObject("render").put("style", "card")
+        assertEquals("card", StagePlan.supported(saved)?.style)
+        saved.getJSONObject("render").put("style", "discord")
+        assertEquals("discord", StagePlan.supported(saved)?.style)
+        saved.getJSONObject("render").put("style", "bubbles")
+        assertEquals("bubbles", StagePlan.supported(saved)?.style)
         assertEquals("minimal", StagePlan.definition("channel", StagePlan.Settings(style = "minimal"))
             .getJSONObject("render").getString("style"))
-        saved.put("render", JSONObject().put("style", "discord"))
+        val start = StagePlan.definition("channel", StagePlan.Settings(timeMode = "start", startAt = 123_456L))
+        assertEquals(123_456L, start.getJSONObject("time").getLong("start"))
+        assertEquals(123_456L, StagePlan.supported(start)?.startAt)
+        start.getJSONObject("time").remove("start")
+        assertEquals(null, StagePlan.supported(start))
+        saved.getJSONObject("render").put("theme", "dark")
+        assertEquals("dark", StagePlan.supported(saved)?.theme)
+        assertEquals("light", StagePlan.definition("channel", StagePlan.Settings(theme = "light"))
+            .getJSONObject("render").getString("theme"))
+        saved.put("render", JSONObject().put("style", "unknown"))
         assertEquals(null, StagePlan.supported(saved))
     }
 
@@ -69,5 +84,20 @@ class StagePlanTest {
         }}}""", "mine")
         assertEquals(listOf("Quiet"), model.savedStages.map { it.name })
         assertEquals("c", model.savedStages.single().channelId)
+    }
+
+    @Test fun replyPreviewUsesStagedNamesAndRespectsContentWarning() {
+        val parent = message("first", "a", 1000).copy(text = "Hidden private text", cw = "Sensitive")
+        assertEquals("↪ Alias: Content warning: Sensitive",
+            StagePlan.replyPreview(parent, mapOf("a" to "Alias")) { "Real name" })
+        assertEquals("↪ Real name: Public text",
+            StagePlan.replyPreview(parent.copy(text = "Public\ntext", cw = null), emptyMap()) { "Real name" })
+    }
+
+    @Test fun incompleteSavedSelectionIsNotReadyForCapture() {
+        val current = listOf(message("new", "a", 2000))
+        assertEquals(setOf("old"), StagePlan.missingSelected(setOf("old", "new"), current))
+        assertEquals(emptySet<String>(), StagePlan.missingSelected(setOf("old", "new"),
+            listOf(message("old", "a", 1000)) + current))
     }
 }

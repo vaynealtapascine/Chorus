@@ -642,3 +642,58 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 - **Status: code complete for the Chorus layout, device audit pending.** Stage now draws the lead member's cached avatar or glyph beside a message. If avatars are concealed, or the core has replaced that author's name, Android draws a neutral placeholder and never requests the original avatar for that card. Advanced saves `render.blur_avatars`; web-authored views with that option can load. Transcript and Minimal continue to omit avatars. No core or server semantics changed.
 - **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. A JVM definition test checks the saved avatar option.
 - **Compiled/unit-tested only:** No phone capture was inspected. Later capture a disposable message with an uploaded avatar under real, fake and concealed names, both online and offline. Other Stage layouts remain.
+
+#### V6 · Stage reply previews (2026-09-25)
+- **Status: code complete, device audit pending.** A Stage reply bar now names the parent and previews up to 60 characters when core says that parent is on stage. It uses staged name replacements and shows only the content-warning label for a warned parent. The existing hide-reply-bars control still removes it. No core or server semantics changed.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. A JVM test checks staged names, warning concealment and multiline preview text.
+- **Compiled/unit-tested only:** No phone capture was inspected. Later stage a reply whose parent has a CW, with the parent both selected and hidden.
+
+#### V6 · Card and Discord-ish Stage layouts (2026-09-25)
+- **Status: code complete for these layouts, device audit pending.** Card uses separate bordered messages with larger avatars. Discord-ish uses compact spacing, a plain background and small avatars without rings. Both values survive Save/Load and matching web-authored views can open on Android. The existing Chorus, Transcript and Minimal layouts remain. Bubbles is the remaining unsupported preset. No core or server semantics changed.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM definitions accept Card and Discord-ish and still reject Bubbles.
+- **Compiled/unit-tested only:** No phone capture was inspected. Later compare the two layouts on a short and a long message, with uploaded and concealed avatars.
+
+#### V6 · Bubbles Stage layout (2026-09-25)
+- **Status: code complete, device audit pending.** Bubbles draws messages from this account on the right with a soft accent background, and other messages on the left with a neutral background. The saved style value matches the web definition, so all six Stage presets can now reopen on Android. No core or server semantics changed.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM definitions accept Bubbles and reject unknown styles.
+- **Compiled/unit-tested only:** No phone capture was inspected. Later compare both sides of a disposable shared-space exchange at phone width, including longer text and a CW.
+
+#### V6 · Start-at Stage timestamps (2026-09-25)
+- **Status: code complete, device audit pending.** Advanced now offers Real, Hide, Shift and Start at for displayed times. Start at uses the phone's date and time pickers; core shifts the first shown row to that instant and preserves gaps. The choice round-trips with web Stage definitions; malformed Start definitions stay unavailable instead of silently showing 1970. No message timestamps are edited.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM tests check saved start values and reject missing ones; Rust core already tests Start planning.
+- **Compiled/unit-tested only:** No phone picker or capture was inspected. Later choose a local date near a daylight-saving transition and check the staged times on web and Android.
+
+#### V6 · Light and Dark Stage themes (2026-09-25)
+- **Status: code complete for preset colors, device audit pending.** Advanced offers Auto, Light and Dark colors. Android applies the selected Chorus palette throughout Stage capture and saves the matching web theme value. Custom palettes and square/wide capture widths remain unavailable on a phone.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM definitions check Light/Dark values.
+- **Compiled/unit-tested only:** No phone capture was inspected. Later compare Light and Dark captures while the phone system theme is opposite each choice, including avatar and attachment cards.
+
+#### V6 · Guard capture of incomplete saved selections (2026-09-25)
+- **Status: code complete, device audit pending.** A saved Stage may pick messages older than Android's currently loaded window. Capture is now disabled while any picked ID is missing, with a count, a path to load older messages and a Clear action for picks unavailable in the local replica. This prevents an incomplete screenshot from silently appearing to be the saved stage. No core or server semantics changed.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. A JVM test checks the missing-pick guard before and after loading the older row.
+- **Compiled/unit-tested only:** No phone capture was inspected. Later save a stage on web with an older picked message, load it on Android and check paging, capture and Clear.
+
+#### V6 · Per-widget member scope (2026-09-25)
+- **Status: code complete, device audit pending.** Adding a quick-switch widget now asks whether its tiles should cover all members, one subsystem or one plain group. The choice is local to that widget instance and account; old widgets default to All. The tile grid and action receiver both apply the scope, so a stale tile intent cannot switch someone outside it. A subsystem opens at its own folder and cannot navigate above it. Removing a widget removes its saved scope. No core or server semantics changed.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM tile tests cover group/subsystem filtering, stale folder state and missing scopes.
+- **Compiled/unit-tested only:** No launcher/widget configuration flow was run. Later add two widgets with different scopes, navigate a nested subsystem, switch accounts, and remove/re-add one widget without affecting the other.
+- **Follow-up:** The setup dialog now offers All members directly and places the per-subsystem/group list under Advanced, as DESIGN §6 requests. `python scripts/verify.py --quick --android --offline` passed for this follow-up; the native dialog still needs the phone audit above.
+- **Budget follow-up:** A warmed JVM test now times scope tile preparation with 1,000 members and 500 in the chosen group against the widget's 150 ms redraw budget. This measures the pure filter only; the full tap-to-redraw budget still needs the phone audit. `python scripts/verify.py --quick --android --offline` passed for this test.
+
+#### V6 · Stage heading date and folded-gap labels (2026-09-25)
+- **Status: code complete, device audit pending.** The capture heading now includes the first shown row's staged date when times are visible, matching the web Stage cue. Folded context uses “message” for one row and “messages” otherwise. No data or saved definition changes.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed.
+- **Compiled/unit-tested only:** No phone capture was inspected. Check a first row shifted across a date boundary and a one-message folded gap.
+
+#### V6 · First owner-approved phone audit and light capture fix (2026-09-25)
+- **Device-checked:** Installed debug build `0.1.380` over the existing enrolled app on the Galaxy A56 with `adb install -r`, preserving its data and home-screen widget. Used the existing demo account via the main checkout's dev server on port 5251 and `adb reverse`. Stage captured two picked messages with one folded context row; the channel heading/date, singular gap label, avatar, and temporary Done control rendered correctly. Light capture with hidden names/times and concealed avatars used neutral identities. Exiting capture restored the editor and system status bar. The existing widget rendered its front summary and member tiles after the app update; it was not moved or tapped to switch.
+- **Fix from the phone:** Light Stage capture left white system status icons over a pale background. Capture now hides the status bar, also keeping notification icons out of the image, and restores it on exit. The updated APK was installed and the light capture plus Back restoration were inspected on the phone. No message or account data was changed for this check.
+- **Search check:** Settings and Search opened at phone width; a local message query returned results and opened the selected channel with its search-match card. The card's Dismiss button wrapped to two lines, so its title now gives the button enough width. The updated APK was installed over the existing app and the button rendered on one line; the timestamp used the card's second line.
+- **File check:** A previously uploaded demo chat image's Open file action launched Android's chooser through the app's file URI. Back returned to Chat; no other app was selected and no new file was sent.
+- **Still to audit:** Saved Stage sync/reopen, all six layouts, image/spoiler concealment, older picked messages, multiple widget scopes, pinned shortcuts, and the wider V0–V5 phone flows. The existing widget is on the owner's home screen, so do not move it. These checks require disposable test data or a longer device session.
+
+#### Merge · stricter op checks from main (2026-09-25)
+- Merged `main` at `9bf6fa0` into `sol/batch-2` after the owner requested the new validation rules first. `PROGRESS.md` was the only conflict; its log now retains both Claude's validation/deploy entries and the Sol phone-audit entry. No Android source conflict or migration change was needed.
+- Rebuilt `chorus-ffi` for Android arm64-v8a and x86_64 with regenerated Kotlin bindings, rebuilt the web wasm package, and passed `python scripts/verify.py --quick --android --offline` on the merged tree. `git diff --check` passed.
+- The merge adds core value checks for newly created ops and stricter server ownership checks. The merged Android build has not been run on the phone; do not call its outgoing payloads device-verified yet. Continue Android V8 file retention or the remaining Stage gaps from the previous handoff after this merge.
+- While verifying, `main` advanced once to `d4a0a25` with an ignore-only change for the owner's local TypeScript schema copy. Merged that commit too without conflict and repeated `python scripts/verify.py --quick --android --offline`; it passed.

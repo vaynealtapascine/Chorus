@@ -248,4 +248,11 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   itself takes ~58 s here (31 s on the remote's Linux box), so the 60 s budget holds by a small
   margin on Windows. Set `CHORUS_PERF_DIR` to a roomy drive: the working copy (~2 GB plus WAL)
   goes to the temp folder otherwise, and a failed run leaves it there (it filled C: once).
-
+- 2026-09-25 gpt-6-sol — Android V8 offline retention — `data/Blobs.kt` currently puts fetched
+  `chat`, `avatar` and other blobs under `Context.cacheDir`. Android may evict that directory,
+  so merely walking the projection and calling `Blobs.file` cannot fulfill “Keep everything on
+  this device.” Add a durable kept-files location under `filesDir` for the opt-in fill, and make
+  blob reads check it before the evictable cache. Reuse the web `sync/keep.ts` hash catalogue:
+  live attachments (thumbnail plus original up to 20 MB), member/member-group avatars and custom
+  emoji. Deduplicate hashes, limit concurrent downloads to three, and report missing files.
+  Existing queued uploads must remain in their separate pending directory.
