@@ -56,6 +56,8 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     var hideTimes by rememberSaveable(channel.id) { mutableStateOf(false) }
     var shiftText by rememberSaveable(channel.id) { mutableStateOf("") }
     var fakeNames by rememberSaveable(channel.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var onlyMembers by rememberSaveable(channel.id) { mutableStateOf<List<String>>(emptyList()) }
+    var replyDepth by rememberSaveable(channel.id) { mutableStateOf<Int?>(null) }
     var saveName by rememberSaveable(channel.id) { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -70,7 +72,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     }
     val settings = StagePlan.Settings(selected.toSet(), if (capturing) unselected else "visible",
         redactNames, fakeNames, if (hideTimes) "hide" else if (shiftText.toIntOrNull() != null) "shift" else "real",
-        shiftText.toIntOrNull() ?: 0)
+        shiftText.toIntOrNull() ?: 0, onlyMembers.toSet(), replyDepth)
     val plan = remember(messages, settings) { StagePlan.forMessages(messages, settings) }
     val byId = remember(messages) { messages.associateBy { it.id } }
     val authorIds = remember(messages) { messages.flatMap { it.authors }.distinct() }
@@ -104,12 +106,22 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                 for (id in authorIds) {
                     val realName = model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone"
+                    JournalChoice("Only $realName", id in onlyMembers) {
+                        onlyMembers = if (id in onlyMembers) onlyMembers - id else onlyMembers + id
+                    }
                     OutlinedTextField(fakeNames[id].orEmpty(), { value ->
                         fakeNames = fakeNames.toMutableMap().apply {
                             if (value.isBlank()) remove(id) else put(id, value)
                         }
                     }, label = { Text("Show $realName as (optional)") }, singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+                }
+                Text(if (onlyMembers.isEmpty()) "All authors shown" else "Only selected authors shown",
+                    color = p.ink2, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp))
+                LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(listOf(null to "All replies", 0 to "No replies", 1 to "Direct", 2 to "2 deep")) { (depth, label) ->
+                        JournalChoice(label, replyDepth == depth) { replyDepth = depth }
+                    }
                 }
             }
             if (saved.isNotEmpty()) LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -122,6 +134,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                         redactNames = loaded.redactNames; fakeNames = loaded.fakeNames
                         hideTimes = loaded.timeMode == "hide"
                         shiftText = if (loaded.timeMode == "shift") loaded.shiftMinutes.toString() else ""
+                        onlyMembers = loaded.onlyMembers.toList(); replyDepth = loaded.replyDepth
                         error = null
                     }) { Text(if (supported == null) "${stage.name} · web view" else stage.name) }
                     if (advanced) TextButton(enabled = !busy, onClick = {

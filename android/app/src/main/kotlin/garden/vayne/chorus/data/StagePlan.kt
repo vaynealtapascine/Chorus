@@ -13,6 +13,8 @@ object StagePlan {
         val fakeNames: Map<String, String> = emptyMap(),
         val timeMode: String = "real",
         val shiftMinutes: Int = 0,
+        val onlyMembers: Set<String> = emptySet(),
+        val replyDepth: Int? = null,
     )
 
     data class Row(val id: String?, val selected: Boolean, val at: Long?, val replyShown: Boolean, val contextCount: Int)
@@ -31,13 +33,19 @@ object StagePlan {
         return JSONObject().put("channel_id", channelId)
             .put("selected", JSONArray(settings.selected.toList()))
             .put("unselected", settings.unselected)
+            .put("only_members", if (settings.onlyMembers.isEmpty()) JSONObject.NULL else JSONArray(settings.onlyMembers.toList()))
+            .put("reply_depth", settings.replyDepth ?: JSONObject.NULL)
             .put("redact_names", settings.redactNames)
             .put("fake_names", fakeNames).put("time", time)
     }
 
     /** Reject richer saved views until Android can render them faithfully. */
     fun supported(definition: JSONObject): Settings? {
-        if (!definition.isNull("only_members") || !definition.isNull("reply_depth")) return null
+        val replyDepth = definition.optInt("reply_depth").takeUnless { definition.isNull("reply_depth") }
+        if (replyDepth != null && replyDepth !in 0..20) return null
+        val onlyMembers = definition.optJSONArray("only_members")?.let { a ->
+            (0 until a.length()).mapNotNull { n -> a.optString(n).takeIf { it.isNotBlank() } }.toSet()
+        }.orEmpty()
         val render = definition.optJSONObject("render")
         if (render != null && (render.optString("style", "chorus") != "chorus" ||
                 render.optString("theme", "auto") != "auto" || render.optString("width", "phone") != "phone" ||
@@ -60,7 +68,7 @@ object StagePlan {
             (0 until a.length()).mapNotNull { n -> a.optString(n).takeIf { it.isNotBlank() } }.toSet()
         }.orEmpty()
         return Settings(selected, mode, definition.optBoolean("redact_names"), labels,
-            timeMode, (offset / 60_000).toInt())
+            timeMode, (offset / 60_000).toInt(), onlyMembers, replyDepth)
     }
 
     fun forMessages(messages: List<ChatMessage>, settings: Settings,
