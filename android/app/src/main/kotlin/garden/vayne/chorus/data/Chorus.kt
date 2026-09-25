@@ -43,6 +43,10 @@ enum class Status { Loading, NoDevice, Offline, Connecting, Live, StorageError }
 
 data class RecheckProgress(val checked: Int, val total: Int)
 
+/** A permanently refused local op; core keeps the payload until the owner dismisses it. */
+data class SyncIssue(val id: String, val kind: String, val at: Long, val code: String,
+    val message: String, val text: String)
+
 /**
  * The app's one sync client (CLIENTS.md §2.3): owns the core replica, the sync socket and the
  * on-disk store. All protocol logic is in chorus-core; this class only moves bytes and timers —
@@ -67,6 +71,8 @@ class Chorus private constructor(private val ctx: Context) {
     val keepEverything: StateFlow<Boolean> = _keepEverything
     private val _fileProgress = MutableStateFlow<OfflineFiles.Progress?>(null)
     val fileProgress: StateFlow<OfflineFiles.Progress?> = _fileProgress
+    private val _syncIssues = MutableStateFlow<List<SyncIssue>>(emptyList())
+    val syncIssues: StateFlow<List<SyncIssue>> = _syncIssues
     private val _recheckProgress = MutableStateFlow<RecheckProgress?>(null)
     val recheckProgress: StateFlow<RecheckProgress?> = _recheckProgress
     private val fillMutex = Mutex()
@@ -109,6 +115,7 @@ class Chorus private constructor(private val ctx: Context) {
             return
         }
         replica = CoreReplica.restore(dev.deviceId, dev.node, store.get("meta").orEmpty(), store.opsJson(), store.get("hlc").orEmpty())
+        refreshIssues(replica!!)
         rebuild()
         main.post { connect() }
     }
@@ -167,7 +174,26 @@ class Chorus private constructor(private val ctx: Context) {
 
     private fun changed(r: CoreReplica) {
         try { store.save(r.takeChanges()) } catch (e: Exception) { storageFailed(e); return }
+        refreshIssues(r)
         rebuild()
+    }
+
+    private fun refreshIssues(r: CoreReplica) {
+        val rows = JSONArray(r.syncIssues())
+        _syncIssues.value = (0 until rows.length()).map { n ->
+            val row = rows.getJSONObject(n)
+            SyncIssue(row.getString("id"), row.getString("kind"), row.getLong("at"),
+                row.getString("code"), row.getString("message"),
+                row.optJSONObject("payload")?.optString("text").orEmpty())
+        }
+    }
+
+    /** Dismiss only after core and the encrypted replica both forget the refused op. */
+    suspend fun dismissIssue(id: String) = withContext(dispatcher) {
+        val r = replica ?: return@withContext
+        if (!r.dismissIssue(id)) return@withContext
+        try { store.save(r.takeChanges()) } catch (e: Exception) { storageFailed(e); throw e }
+        refreshIssues(r)
     }
 
     /** Coalesced: at most one pending rebuild of the typed model. */

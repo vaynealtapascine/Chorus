@@ -1,5 +1,7 @@
 package garden.vayne.chorus.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -23,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.AccountPrefs
@@ -35,14 +39,17 @@ import garden.vayne.chorus.data.QuietHours
 import garden.vayne.chorus.data.QuietWindow
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import kotlinx.coroutines.launch
+import java.text.DateFormat
 import java.time.Instant
 import java.time.ZoneId
+import java.util.Date
 
 /** Account pref rows mirror web Settings; each change queues one pref.set (D-063). */
 @Composable
 internal fun SettingsScreen(chorus: Chorus, model: Model) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
+    val ctx = LocalContext.current
     val prefs = model.accountPrefs
     var advanced by rememberSaveable { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -56,6 +63,7 @@ internal fun SettingsScreen(chorus: Chorus, model: Model) {
     val keepEverything by chorus.keepEverything.collectAsState()
     val files by chorus.fileProgress.collectAsState()
     val recheck by chorus.recheckProgress.collectAsState()
+    val issues by chorus.syncIssues.collectAsState()
     var syncBusy by remember { mutableStateOf(false) }
     var syncError by remember { mutableStateOf<String?>(null) }
     var deviceError by remember { mutableStateOf<String?>(null) }
@@ -114,6 +122,30 @@ internal fun SettingsScreen(chorus: Chorus, model: Model) {
                 modifier = Modifier.padding(top = 12.dp))
             Text("Account settings sync across devices. This device settings stay here.", color = p.ink2)
             if (error != null) Text(error.orEmpty(), color = p.danger)
+        }
+        if (issues.isNotEmpty()) {
+            item { Text("Sync issues · ${issues.size}", color = p.ink, fontWeight = FontWeight.SemiBold) }
+            items(issues, key = { it.id }) { issue ->
+                Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Could not sync ${issue.kind}", color = p.ink, fontWeight = FontWeight.SemiBold)
+                    Text(issue.message, color = p.danger)
+                    if (issue.at > 0) Text(DateFormat.getDateTimeInstance().format(Date(issue.at)), color = p.ink2)
+                    if (issue.text.isNotEmpty()) {
+                        Text(issue.text, color = p.ink2)
+                        TextButton(onClick = {
+                            ctx.getSystemService(ClipboardManager::class.java)
+                                ?.setPrimaryClip(ClipData.newPlainText("Chorus text", issue.text))
+                        }) { Text("Copy text") }
+                    }
+                    TextButton(onClick = {
+                        actions.launch {
+                            try { chorus.dismissIssue(issue.id); error = null }
+                            catch (e: Exception) { error = e.message ?: "Could not dismiss this issue." }
+                        }
+                    }) { Text("Dismiss") }
+                }
+            }
         }
         item {
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
