@@ -19,6 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,6 +77,9 @@ class Chorus private constructor(private val ctx: Context) {
     val fileProgress: StateFlow<OfflineFiles.Progress?> = _fileProgress
     private val _syncIssues = MutableStateFlow<List<SyncIssue>>(emptyList())
     val syncIssues: StateFlow<List<SyncIssue>> = _syncIssues
+    private val _heldMessages = MutableStateFlow<Map<String, HeldMessage>>(emptyMap())
+    val heldMessages: StateFlow<Map<String, HeldMessage>> = _heldMessages
+    private var heldTimer: Job? = null // store thread only
     private val _recheckProgress = MutableStateFlow<RecheckProgress?>(null)
     val recheckProgress: StateFlow<RecheckProgress?> = _recheckProgress
     private val fillMutex = Mutex()
@@ -109,6 +113,9 @@ class Chorus private constructor(private val ctx: Context) {
     }
 
     private fun start() {
+        heldTimer?.cancel()
+        heldTimer = null
+        _heldMessages.value = emptyMap()
         _keepEverything.value = store.get("setting:keep_everything") != "false"
         val dev = store.get("device")?.let { runCatching { DeviceRecord.fromJson(it) }.getOrNull() }
         device = dev
@@ -119,6 +126,7 @@ class Chorus private constructor(private val ctx: Context) {
         }
         replica = CoreReplica.restore(dev.deviceId, dev.node, store.get("meta").orEmpty(), store.opsJson(), store.get("hlc").orEmpty())
         refreshIssues(replica!!)
+        refreshHeld(replica!!)
         rebuild()
         main.post { connect() }
     }
@@ -167,6 +175,7 @@ class Chorus private constructor(private val ctx: Context) {
                 throw e
             }
             rebuild()
+            refreshHeld(r)
             sendAll(out.getJSONArray("frames"))
             syncReady.value = false
             SyncWork.enqueue(ctx)
@@ -178,6 +187,7 @@ class Chorus private constructor(private val ctx: Context) {
     private fun changed(r: CoreReplica) {
         try { store.save(r.takeChanges()) } catch (e: Exception) { storageFailed(e); return }
         refreshIssues(r)
+        refreshHeld(r)
         rebuild()
     }
 
@@ -189,6 +199,38 @@ class Chorus private constructor(private val ctx: Context) {
                 row.getString("code"), row.getString("message"),
                 row.optJSONObject("payload")?.optString("text").orEmpty())
         }
+    }
+
+    private fun refreshHeld(r: CoreReplica) {
+        val held = HeldMessages.parse(r.held())
+        _heldMessages.value = held.associateBy { it.messageId }
+        heldTimer?.cancel()
+        heldTimer = null
+        val next = held.firstOrNull() ?: return
+        heldTimer = scope.launch {
+            delay((next.until - System.currentTimeMillis()).coerceAtLeast(0L) + 50L)
+            heldTimer = null
+            if (_status.value == Status.Live) {
+                val frames = JSONArray(r.tick(System.currentTimeMillis()))
+                changed(r) // keep the new queue state on disk before sending
+                if (_status.value != Status.StorageError) sendAll(frames)
+                syncReady.value = false
+            } else {
+                // A background socket lease may have ended; WorkManager reconnects when due.
+                SyncWork.enqueue(ctx)
+            }
+        }
+    }
+
+    /** Cancel a locally held send while the server has not accepted it. */
+    suspend fun cancelHeld(messageId: String): Boolean = withContext(dispatcher) {
+        val held = _heldMessages.value[messageId] ?: return@withContext false
+        val r = replica ?: return@withContext false
+        if (!r.cancelHeld(held.opId)) return@withContext false
+        changed(r)
+        syncReady.value = _status.value == Status.Live && caughtScopes.containsAll(expectedScopes) &&
+            HeldMessages.caughtUp(r.pendingCount(), _heldMessages.value.size)
+        true
     }
 
     /** Dismiss only after core and the encrypted replica both forget the refused op. */
@@ -350,6 +392,8 @@ class Chorus private constructor(private val ctx: Context) {
     private fun storageFailed(e: Exception) {
         Log.e(TAG, "local replica unavailable", e)
         syncReady.value = false
+        heldTimer?.cancel()
+        heldTimer = null
         _status.value = Status.StorageError
         main.post { ws?.close(1000, "storage unavailable"); ws = null; main.removeCallbacks(retry) }
     }
@@ -486,7 +530,8 @@ class Chorus private constructor(private val ctx: Context) {
                         recheckWatch?.invoke(scopeName)
                     }
                     syncReady.value = _status.value == Status.Live &&
-                        caughtScopes.containsAll(expectedScopes) && r.pendingCount() == 0UL
+                        caughtScopes.containsAll(expectedScopes) &&
+                        HeldMessages.caughtUp(r.pendingCount(), _heldMessages.value.size)
                 }
             }
 

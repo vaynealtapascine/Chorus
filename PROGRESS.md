@@ -87,7 +87,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [~] M4.3 Onboarding via invite link / QR — the web "Link another device" now shows a QR of the one-use link (server qr.rs, decoded with OpenCV); in-app camera scanning not needed while the phone camera opens the link
 - [~] M4.4 Members, groups, switcher, front history — Android switcher sheet, History undo/redo, device linking (batch 3 T11); person-account hiding and full parity in batch 4 U5
 - [~] M4.5 Quick-switch widget (RemoteViews, D-058): recent grid, folders, mode chip, undo — built + unit-tested; needs a device check; pins not done
-- [~] M4.6 Search launcher activity + app shortcuts — SearchActivity + static "Switch…" shortcut; dynamic pinned shortcuts not done; device-checked 2026-09-24 (opens over the home screen in ~110 ms, filters, Enter switches and closes)
+- [~] M4.6 Search launcher activity + app shortcuts — SearchActivity with Replace/Add/Remove/Multi, static Switch/Switch out/New entry, and dynamic pinned-member shortcuts; basic launcher device-checked 2026-09-24, newer actions await batched device audit
 
 ### M5 — Chat (internal space)
 
@@ -98,7 +98,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M5.5 Threads
 - [x] M5.6 Attachments + images (offline-queued upload) — web (batch 2 T2); Android display not yet
 - [x] M5.7 Hidden messages: spoilers, CW/collapsed, member-visible, system-only — batch 3 T8 (server filters + web); threads inherit their parent (B1 fix); Android controls in batch 4 U5
-- [~] M5.8 Search (FTS5 server, local search on Android) — server FTS + web local index (batch 3 T9); tokens own-account only (B2); Android local search and paging (batch 4 U1) not yet
+- [~] M5.8 Search (FTS5 server, local search on Android) — server FTS + web local index; tokens own-account only (B2); Android local search, server paging and shared core message filters implemented, device audit pending
 - [x] M5.9 Segmented messages (newline annotations) — parse, store `message_segment`, render
 - [x] M5.10 Channel permissions (roles + overrides) incl. sharing one internal channel outward — remote Claude R9: one rule `perms.rs` on every path, property-tested; web editor (merged 2026-09-25)
 - [x] M5.11 Forward/quote a selection (range or multi-message bundle)
@@ -292,3 +292,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-26 gpt-6-sol — Android's quick-switch launcher now offers Replace, Add, Remove, and ordered Multi switching with the existing undoable front action. Android build and full quick Android verifier pass; phone audit pending (details in `docs/handoff/sol-batch-2.md`).
 - 2026-09-26 claude-opus-5.5 — Q17 → D-076 (owner): slow mode holds a too-soon message and sends it after the wait, with Cancel (9107340): server acks retry_after_ms, core Replica::held/tick/cancel_held (wasm + FFI), web countdown + Cancel, browser test. Sol's list gained V10d (Android side). wasm now 292/300 KB gz; R25 (remote) shrinks it.
 - 2026-09-26 gpt-6-sol — Merged `main` through d3b9757 for D-076 slow-mode hold/retry/cancel and its new V10d Android handoff. Preserved both agents' progress logs; full quick Android verifier passed. Android's held-message UI/timer remains the next task (details in `docs/handoff/sol-batch-2.md`).
+- 2026-09-26 gpt-6-sol — V10d Android slow-mode handling: held messages show a countdown and Cancel, wake at the core's retry time, and queue background sync if the socket has closed. Android build, JVM tests and full quick Android verifier pass; phone audit pending (details in `docs/handoff/sol-batch-2.md`).

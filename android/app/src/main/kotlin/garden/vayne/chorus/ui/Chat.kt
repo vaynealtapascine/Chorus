@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -69,6 +70,7 @@ import garden.vayne.chorus.data.ChannelWindow
 import garden.vayne.chorus.data.ChatAttachment
 import garden.vayne.chorus.data.SearchDocument
 import garden.vayne.chorus.data.ReadTracking
+import garden.vayne.chorus.data.HeldMessage
 import garden.vayne.chorus.data.PrivateReplies
 import garden.vayne.chorus.data.ChatCompose
 import garden.vayne.chorus.data.ChatSpace
@@ -86,6 +88,7 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -102,6 +105,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     onDismissSearchHit: () -> Unit = {}, sharedDraft: SharedDraft? = null,
     sharedChannel: String? = null, onShareConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
+    val heldMessages by chorus.heldMessages.collectAsState()
     var selectedSpace by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(requestedSpace) {
         if (requestedSpace != null) selectedSpace = requestedSpace
@@ -401,6 +405,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     message.authors.firstOrNull()?.let { it != replySpeakerId && model.member(it) != null } == true
                 else message.accountId != null && message.accountId != chorus.device?.accountId
                 ChatMessageCard(message, model, foreignAuthors, chorus, unseenByMessage[message.id].orEmpty(),
+                    heldMessages[message.id],
                     onReply = { replyTo = message.id; carriedReply = null },
                     onReplyPrivately = if (canPrivate) ({ replyPrivately(message) }) else null)
             }
@@ -643,13 +648,20 @@ private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
 
 @Composable
 private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
-    chorus: Chorus, unseenBy: List<String>, onReply: () -> Unit, onReplyPrivately: (() -> Unit)?) {
+    chorus: Chorus, unseenBy: List<String>, held: HeldMessage?, onReply: () -> Unit,
+    onReplyPrivately: (() -> Unit)?) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
     var history by remember(message.id, message.text, message.cw) { mutableStateOf<List<MessageRevision>?>(null) }
     var historyError by remember(message.id) { mutableStateOf<String?>(null) }
     var showUnseen by rememberSaveable(message.id) { mutableStateOf(false) }
+    var cancelBusy by remember(message.id) { mutableStateOf(false) }
+    var cancelError by remember(message.id) { mutableStateOf<String?>(null) }
+    var now by remember(held?.until) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(held?.until) {
+        while (held != null) { delay(1_000); now = System.currentTimeMillis() }
+    }
     val authors = message.authors.map { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
         .joinToString(" & ").ifEmpty { "Someone" }
     Column(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(12.dp))
@@ -660,15 +672,33 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             Text(authors, color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
             Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(message.occurredAt)),
                 color = p.ink3, fontSize = 11.sp)
-            if (unseenBy.isNotEmpty()) {
+            if (held == null && unseenBy.isNotEmpty()) {
                 val names = unseenBy.map { model.member(it)?.shownName ?: "Someone" }.joinToString(", ")
                 Text("●", color = p.accent, fontSize = 12.sp,
                     modifier = Modifier.clickable { showUnseen = !showUnseen }
                         .semantics { contentDescription = "Not seen by $names" })
             }
-            Text("↩", color = p.accent, fontSize = 16.sp,
+            if (held == null) Text("↩", color = p.accent, fontSize = 16.sp,
                 modifier = Modifier.clickable(onClick = onReply).padding(horizontal = 4.dp)
                     .semantics { contentDescription = "Reply" })
+        }
+        if (held != null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("Slow mode: sending in ${((held.until - now).coerceAtLeast(0L) + 999L) / 1000L} s",
+                    color = p.ink2, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Text(if (cancelBusy) "Canceling…" else "Cancel", color = p.accent, fontSize = 12.sp,
+                    modifier = Modifier.clickable(enabled = !cancelBusy) {
+                        cancelBusy = true; cancelError = null
+                        actions.launch {
+                            try {
+                                if (!chorus.cancelHeld(message.id)) cancelError = "This message is already sending."
+                            } catch (e: Exception) { cancelError = e.message ?: "Could not cancel this message." }
+                            finally { cancelBusy = false }
+                        }
+                    }.padding(4.dp).semantics { contentDescription = "Cancel held message" })
+            }
+            if (cancelError != null) Text(cancelError.orEmpty(), color = p.danger, fontSize = 12.sp)
         }
         if (showUnseen && unseenBy.isNotEmpty()) Text("Not seen by " + unseenBy.map {
             model.member(it)?.shownName ?: "Someone"
@@ -679,7 +709,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             "Chosen members".takeIf { message.visibilityMode == "members" },
         )
         if (tags.isNotEmpty()) Text(tags.joinToString(" · "), color = p.ink3, fontSize = 12.sp)
-        if (onReplyPrivately != null) Text("Reply privately", color = p.accent, fontSize = 12.sp,
+        if (held == null && onReplyPrivately != null) Text("Reply privately", color = p.accent, fontSize = 12.sp,
             modifier = Modifier.clickable(onClick = onReplyPrivately).padding(vertical = 3.dp))
         if (message.cw != null) {
             Text("Content warning: ${message.cw} · ${if (revealed) "Hide" else "Show"}", color = p.accent,
@@ -690,7 +720,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus)
             }
-            if (message.edited) {
+            if (held == null && message.edited) {
                 TextButton(onClick = {
                     if (history != null) history = null else actions.launch {
                         try { history = chorus.revisions(message.id); historyError = null }
