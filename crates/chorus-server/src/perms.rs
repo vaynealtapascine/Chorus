@@ -131,6 +131,15 @@ pub fn write_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<O
     if let Some(elsewhere) = foreign_space(conn, o, space)? {
         return Ok(Some(format!("that {elsewhere} is in another space")));
     }
+    // Only a message's author edits it, whoever they are to the space: `manage` moderates
+    // (delete, restore, pin), it doesn't put words in someone else's mouth (D-073).
+    if o.kind == "message.edit"
+        && let Some(id) = str_of(&o.payload, "message_id").or_else(|| o.entity())
+        && let Some((_, Some(sender))) = message_channel(conn, id)?
+        && sender != author
+    {
+        return Ok(Some("only its author can edit a message".into()));
+    }
     if owner == author {
         return Ok(None);
     }

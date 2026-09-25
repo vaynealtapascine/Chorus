@@ -68,7 +68,9 @@ pub fn accept(
     if let Some(existing) = oplog::by_id(conn, &o.id)? {
         return Ok((AckResult::ok(&existing), None));
     }
-    if let Err(e) = op::validate(&o) {
+    // restore pushes re-send history, which only has to be what was valid when it was written
+    let checked = if restore { op::validate(&o) } else { op::validate_new(&o) };
+    if let Err(e) = checked {
         return Ok((AckResult::err(o.id, e.code(), e.to_string(), false), None));
     }
     let preserved = restore && restore_open(conn, now)? && o.account_id.is_some() && o.occurred_at.is_some();

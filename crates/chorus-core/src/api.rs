@@ -133,7 +133,7 @@ pub fn project(ops_json: &str) -> Result<String, String> {
 /// Structural validation: `"known"`, `"opaque"`, or an error message.
 pub fn validate_op(op_json: &str) -> Result<String, String> {
     let o: Op = parse("op", op_json)?;
-    match op::validate(&o) {
+    match op::validate_new(&o) {
         Ok(Known::Yes(_)) => Ok("known".into()),
         Ok(Known::Opaque) => Ok("opaque".into()),
         Err(e) => Err(e.to_string()),

@@ -479,11 +479,22 @@ pub fn validate(op: &Op) -> Result<Known, OpError> {
             return Err(OpError::BadPayload("emoji name must be 2–32 lowercase letters, digits or underscores".into()));
         }
     }
-    payload_shape(op)?;
     Ok(Known::Yes(spec))
 }
 
-/// Value rules for payload keys whose projection can only store certain values (DATA_MODEL.md
+/// [`validate`] plus the value rules (`FIELD_RULES`, [`payload_shape`]) for an op being created or
+/// received now: clients run it when creating an op, the server at ingest. Projection runs only
+/// [`validate`], so an op stored before a rule existed keeps projecting as it always did.
+pub fn validate_new(op: &Op) -> Result<Known, OpError> {
+    let known = validate(op)?;
+    if matches!(known, Known::Yes(_)) {
+        payload_shape(op)?;
+    }
+    Ok(known)
+}
+
+/// Value rules for payload keys whose projection can only store certain values (new ops only,
+/// [`validate_new`]) (DATA_MODEL.md
 /// §2, "Payload rules"). Found by `chorus-server/tests/ingest_fuzz.rs`: an op that passes here must
 /// project on every client and on the server.
 fn payload_shape(op: &Op) -> Result<(), OpError> {
@@ -781,7 +792,7 @@ mod tests {
     #[test]
     fn text_ranges_stay_inside_the_text() {
         let space = format!("space:{}", new_id(1, [4; 10]));
-        let send = |payload: Value| validate(&op("message.send", &space, payload));
+        let send = |payload: Value| validate_new(&op("message.send", &space, payload));
         let ok = send(json!({"text": "hé 🌌", "entities": [{"type": "bold", "offset": 3, "length": 2}],
             "segments": [{"offset": 0, "length": 5, "authors": ["a"]}]}));
         assert!(matches!(ok, Ok(Known::Yes(_))), "{ok:?}");
@@ -799,7 +810,19 @@ mod tests {
         }
         // an edit without its text can't be bounds-checked, only shape-checked
         let edit = op("message.edit", &space, json!({"entities": [{"type": "x_new_kind", "offset": 9, "length": 1}]}));
-        assert!(matches!(validate(&edit), Ok(Known::Yes(_))));
+        assert!(matches!(validate_new(&edit), Ok(Known::Yes(_))));
+    }
+
+    /// A stored op from before a value rule existed still projects: the rules are for new ops.
+    #[test]
+    fn value_rules_never_hide_stored_ops() {
+        let space = format!("space:{}", new_id(1, [5; 10]));
+        let old =
+            op("message.send", &space, json!({"text": "hi", "entities": [{"type": "bold", "offset": 0, "length": 9}]}));
+        assert!(matches!(validate_new(&old), Err(OpError::BadPayload(_))), "refused as a new op");
+        assert!(matches!(validate(&old), Ok(Known::Yes(_))));
+        let p = crate::model::project([&old]);
+        assert!(p.row("message", old.entity().unwrap()).is_some_and(|r| r.exists), "still shown");
     }
 
     #[test]
