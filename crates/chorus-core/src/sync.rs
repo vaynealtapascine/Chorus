@@ -755,7 +755,7 @@ impl MemServer {
         if let Some(&i) = self.by_id.get(&o.id) {
             return (AckResult::ok(&self.log[i]), None);
         }
-        if let Err(e) = op::validate(&o) {
+        if let Err(e) = op::validate_new(&o) {
             self.rejected.push((o.id.clone(), e.clone()));
             return (AckResult::err(o.id, e.code(), e.to_string(), false), None);
         }

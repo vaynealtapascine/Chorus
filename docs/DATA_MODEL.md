@@ -107,8 +107,8 @@ from the payload), `occurred_at`, `received_at`.
 
 ### 2.2 Payload rules
 
-`op::validate` (core, run by every client when creating an op and by the server at ingest) checks
-more than field names: every payload field stored in a constrained column obeys
+`op::validate_new` (core, run by every client when creating an op and by the server at ingest)
+checks more than `op::validate`'s field names: every payload field stored in a constrained column obeys
 `op::FIELD_RULES` (never `null` for a NOT NULL column, an object or list for a JSON column,
 `true`/`false` for a flag, one of the allowed values for an `IN (…)` check), plus per-kind rules
 (`channel.set_permission` needs a `target_type`/`target_id` and known permissions, reactions a
@@ -116,7 +116,9 @@ more than field names: every payload field stored in a constrained column obeys
 `{offset, length}` ranges (UTF-16) inside the text with a `type`/`authors` (so another
 account's message can't make a renderer slice out of range),
 `space.set_roles` a list of `{id, name, perms}`). A test compares `FIELD_RULES` with the SQL
-schema, so a migration that adds a constraint must add its rule.
+schema, so a migration that adds a constraint must add its rule. The rules apply to **new** ops
+only: projection (`model::apply_op`, the server's rebuild) and restore pushes use the structural
+`op::validate`, so an op stored before a rule existed keeps projecting exactly as before.
 
 Why it matters: the server stores and projects each pushed op in its own savepoint. An op the
 projection can't apply is refused on its own (`unprocessable`, logged) instead of failing the

@@ -201,7 +201,7 @@ impl Replica {
             occurred_at: None,
             received_at: None,
         };
-        op::validate(&o)?;
+        op::validate_new(&o)?;
         self.store.add_local(o.clone());
         Ok(o)
     }
