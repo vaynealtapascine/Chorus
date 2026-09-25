@@ -77,6 +77,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     var hideHeader by rememberSaveable(channel.id) { mutableStateOf(false) }
     var hideReplyBars by rememberSaveable(channel.id) { mutableStateOf(false) }
     var style by rememberSaveable(channel.id) { mutableStateOf("chorus") }
+    var blurAvatars by rememberSaveable(channel.id) { mutableStateOf(false) }
     var saveName by rememberSaveable(channel.id) { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -91,7 +92,8 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     }
     val settings = StagePlan.Settings(selected.toSet(), if (capturing) unselected else "visible",
         redactNames, fakeNames, if (hideTimes) "hide" else if (shiftText.toIntOrNull() != null) "shift" else "real",
-        shiftText.toIntOrNull() ?: 0, onlyMembers.toSet(), replyDepth, blurAttachments, hideHeader, hideReplyBars, style)
+        shiftText.toIntOrNull() ?: 0, onlyMembers.toSet(), replyDepth, blurAttachments, hideHeader, hideReplyBars,
+        style, blurAvatars)
     val plan = remember(messages, settings) { StagePlan.forMessages(messages, settings) }
     val byId = remember(messages) { messages.associateBy { it.id } }
     val authorIds = remember(messages) { messages.flatMap { it.authors }.distinct() }
@@ -126,7 +128,10 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                     JournalChoice("Hide real names", redactNames) { redactNames = !redactNames }
                     JournalChoice("Hide times", hideTimes) { hideTimes = !hideTimes }
                 }
-                JournalChoice("Conceal attachments", blurAttachments) { blurAttachments = !blurAttachments }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    JournalChoice("Conceal avatars", blurAvatars) { blurAvatars = !blurAvatars }
+                    JournalChoice("Conceal attachments", blurAttachments) { blurAttachments = !blurAttachments }
+                }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     JournalChoice("Hide channel name", hideHeader) { hideHeader = !hideHeader }
                     JournalChoice("Hide reply bars", hideReplyBars) { hideReplyBars = !hideReplyBars }
@@ -168,6 +173,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                         blurAttachments = loaded.blurAttachments
                         hideHeader = loaded.hideHeader; hideReplyBars = loaded.hideReplyBars
                         style = loaded.style
+                        blurAvatars = loaded.blurAvatars
                         error = null
                     }) { Text(if (supported == null) "${stage.name} · web view" else stage.name) }
                     if (advanced) TextButton(enabled = !busy, onClick = {
@@ -226,8 +232,14 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                         }.padding(if (style == "transcript") 4.dp else if (style == "minimal") 8.dp else 12.dp),
                             verticalArrangement = Arrangement.spacedBy(if (style == "transcript") 1.dp else 4.dp)) {
                             if (style == "chorus") Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("$pickMark$names", color = p.ink,
-                                    fontWeight = FontWeight.SemiBold)
+                                val lead = message.authors.firstOrNull()
+                                val member = lead?.let(model::member)
+                                val concealed = blurAvatars || (lead != null && lead in plan.names)
+                                Avatar(if (concealed) "•" else member?.glyph ?: "?",
+                                    if (concealed) "#A09184" else member?.color ?: "#A09184", 32.dp,
+                                    avatarBlob = if (concealed) null else member?.avatarBlob)
+                                Text("$pickMark$names", color = p.ink, fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f).padding(start = 8.dp))
                                 if (row.at != null) Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(row.at)),
                                     color = p.ink3, fontSize = 11.sp)
                             }

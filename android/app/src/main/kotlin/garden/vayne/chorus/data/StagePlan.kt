@@ -19,6 +19,7 @@ object StagePlan {
         val hideHeader: Boolean = false,
         val hideReplyBars: Boolean = false,
         val style: String = "chorus",
+        val blurAvatars: Boolean = false,
     )
 
     data class Row(val id: String?, val selected: Boolean, val at: Long?, val replyShown: Boolean, val contextCount: Int)
@@ -41,7 +42,8 @@ object StagePlan {
             .put("reply_depth", settings.replyDepth ?: JSONObject.NULL)
             .put("redact_names", settings.redactNames)
             .put("fake_names", fakeNames).put("time", time)
-            .put("render", JSONObject().put("style", settings.style).put("blur_attachments", settings.blurAttachments)
+            .put("render", JSONObject().put("style", settings.style).put("blur_avatars", settings.blurAvatars)
+                .put("blur_attachments", settings.blurAttachments)
                 .put("hide_header", settings.hideHeader).put("hide_reply_bars", settings.hideReplyBars))
     }
 
@@ -54,8 +56,7 @@ object StagePlan {
         }.orEmpty()
         val render = definition.optJSONObject("render")
         if (render != null && (render.optString("style", "chorus") !in setOf("chorus", "transcript", "minimal") ||
-                render.optString("theme", "auto") != "auto" || render.optString("width", "phone") != "phone" ||
-                render.optBoolean("blur_avatars"))) return null
+                render.optString("theme", "auto") != "auto" || render.optString("width", "phone") != "phone")) return null
         val mode = definition.optString("unselected", "context")
         if (mode !in setOf("context", "hidden", "visible")) return null
         val time = definition.optJSONObject("time")
@@ -77,7 +78,7 @@ object StagePlan {
             timeMode, (offset / 60_000).toInt(), onlyMembers, replyDepth,
             render?.optBoolean("blur_attachments") == true,
             render?.optBoolean("hide_header") == true, render?.optBoolean("hide_reply_bars") == true,
-            render?.optString("style", "chorus") ?: "chorus")
+            render?.optString("style", "chorus") ?: "chorus", render?.optBoolean("blur_avatars") == true)
     }
 
     fun forMessages(messages: List<ChatMessage>, settings: Settings,

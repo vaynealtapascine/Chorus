@@ -36,7 +36,7 @@ class StagePlanTest {
         val saved = StagePlan.definition("channel", StagePlan.Settings(selected = setOf("first"),
             unselected = "hidden", redactNames = true, fakeNames = mapOf("a" to "Blue"),
             timeMode = "shift", shiftMinutes = -15, onlyMembers = setOf("a"), replyDepth = 1,
-            blurAttachments = true, hideHeader = true, hideReplyBars = true))
+            blurAttachments = true, hideHeader = true, hideReplyBars = true, blurAvatars = true))
         assertEquals("channel", saved.getString("channel_id"))
         assertEquals(-900000L, saved.getJSONObject("time").getLong("offset_ms"))
         assertEquals(-15, StagePlan.supported(saved)?.shiftMinutes)
@@ -46,9 +46,11 @@ class StagePlanTest {
         assertEquals(true, StagePlan.supported(saved)?.blurAttachments)
         assertEquals(true, StagePlan.supported(saved)?.hideHeader)
         assertEquals(true, StagePlan.supported(saved)?.hideReplyBars)
+        assertEquals(true, StagePlan.supported(saved)?.blurAvatars)
         assertEquals(true, saved.getJSONObject("render").getBoolean("blur_attachments"))
         assertEquals(true, saved.getJSONObject("render").getBoolean("hide_header"))
         assertEquals(true, saved.getJSONObject("render").getBoolean("hide_reply_bars"))
+        assertEquals(true, saved.getJSONObject("render").getBoolean("blur_avatars"))
         saved.getJSONObject("render").put("style", "transcript")
         assertEquals("transcript", StagePlan.supported(saved)?.style)
         saved.getJSONObject("render").put("style", "minimal")
