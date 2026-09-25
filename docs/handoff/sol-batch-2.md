@@ -647,3 +647,8 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 - **Status: code complete, device audit pending.** A Stage reply bar now names the parent and previews up to 60 characters when core says that parent is on stage. It uses staged name replacements and shows only the content-warning label for a warned parent. The existing hide-reply-bars control still removes it. No core or server semantics changed.
 - **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. A JVM test checks staged names, warning concealment and multiline preview text.
 - **Compiled/unit-tested only:** No phone capture was inspected. Later stage a reply whose parent has a CW, with the parent both selected and hidden.
+
+#### V6 · Card and Discord-ish Stage layouts (2026-09-25)
+- **Status: code complete for these layouts, device audit pending.** Card uses separate bordered messages with larger avatars. Discord-ish uses compact spacing, a plain background and small avatars without rings. Both values survive Save/Load and matching web-authored views can open on Android. The existing Chorus, Transcript and Minimal layouts remain. Bubbles is the remaining unsupported preset. No core or server semantics changed.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM definitions accept Card and Discord-ish and still reject Bubbles.
+- **Compiled/unit-tested only:** No phone capture was inspected. Later compare the two layouts on a short and a long message, with uploaded and concealed avatars.

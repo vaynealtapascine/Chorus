@@ -49,7 +49,8 @@ fun tonesOf(color: String): Tones = tones(color, isSystemInDarkTheme())
 
 /** Circular avatar: sigil or initial on a soft disc, ringed in the member's colour. */
 @Composable
-fun Avatar(glyph: String, color: String, size: Dp = 48.dp, modifier: Modifier = Modifier, avatarBlob: String? = null) {
+fun Avatar(glyph: String, color: String, size: Dp = 48.dp, modifier: Modifier = Modifier,
+    avatarBlob: String? = null, ring: Boolean = true) {
     val p = LocalChorusPalette.current
     val t = tonesOf(color)
     val ctx = LocalContext.current
@@ -60,7 +61,8 @@ fun Avatar(glyph: String, color: String, size: Dp = 48.dp, modifier: Modifier = 
         } else null
     }
     Box(
-        modifier.size(size).border(2.dp, t.ring, CircleShape).background(p.surface2, CircleShape).clip(CircleShape),
+        modifier.size(size).then(if (ring) Modifier.border(2.dp, t.ring, CircleShape) else Modifier)
+            .background(p.surface2, CircleShape).clip(CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         val image = bitmap.value

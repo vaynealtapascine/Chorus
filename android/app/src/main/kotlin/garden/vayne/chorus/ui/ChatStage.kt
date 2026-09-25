@@ -1,6 +1,7 @@
 package garden.vayne.chorus.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -120,7 +122,8 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
             if (advanced) Column(Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(listOf("chorus" to "Chorus", "transcript" to "Transcript", "minimal" to "Minimal")) { (value, label) ->
+                    items(listOf("chorus" to "Chorus", "discord" to "Discord-ish", "card" to "Card",
+                        "transcript" to "Transcript", "minimal" to "Minimal")) { (value, label) ->
                         JournalChoice(label, style == value) { style = value }
                     }
                 }
@@ -212,7 +215,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
         }
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             LazyColumn(Modifier.widthIn(max = 390.dp).fillMaxSize().padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                verticalArrangement = Arrangement.spacedBy(if (style == "discord") 0.dp else if (style == "card") 12.dp else 8.dp)) {
                 if (!hideHeader) item(key = "channel-header") {
                     Text("#${channel.name}", color = p.ink2, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
@@ -227,17 +230,29 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                         val names = message.authors.map { id -> plan.names[id] ?: model.member(id)?.shownName
                             ?: foreignAuthors[id]?.name ?: "Someone" }.joinToString(" & ")
                         val pickMark = if (!capturing && message.id in selected) "✓ " else ""
-                        Column(Modifier.fillMaxWidth().background(if (style == "transcript") p.bg else p.surface).clickable(enabled = !capturing) {
+                        val pad = when (style) {
+                            "transcript" -> 4.dp
+                            "discord" -> 6.dp
+                            "minimal" -> 8.dp
+                            "card" -> 16.dp
+                            else -> 12.dp
+                        }
+                        Column(Modifier.fillMaxWidth()
+                            .then(if (style == "card") Modifier.border(1.dp, p.line, RoundedCornerShape(14.dp)) else Modifier)
+                            .then(if (style == "card") Modifier.background(p.surface, RoundedCornerShape(14.dp))
+                                else Modifier.background(if (style == "transcript" || style == "discord") p.bg else p.surface))
+                            .clickable(enabled = !capturing) {
                             selected = if (message.id in selected) selected - message.id else selected + message.id
-                        }.padding(if (style == "transcript") 4.dp else if (style == "minimal") 8.dp else 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(if (style == "transcript") 1.dp else 4.dp)) {
-                            if (style == "chorus") Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        }.padding(pad),
+                            verticalArrangement = Arrangement.spacedBy(if (style == "transcript" || style == "discord") 1.dp else 4.dp)) {
+                            if (style in setOf("chorus", "discord", "card")) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 val lead = message.authors.firstOrNull()
                                 val member = lead?.let(model::member)
                                 val concealed = blurAvatars || (lead != null && lead in plan.names)
                                 Avatar(if (concealed) "•" else member?.glyph ?: "?",
-                                    if (concealed) "#A09184" else member?.color ?: "#A09184", 32.dp,
-                                    avatarBlob = if (concealed) null else member?.avatarBlob)
+                                    if (concealed) "#A09184" else member?.color ?: "#A09184",
+                                    if (style == "card") 44.dp else 32.dp,
+                                    avatarBlob = if (concealed) null else member?.avatarBlob, ring = style != "discord")
                                 Text("$pickMark$names", color = p.ink, fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.weight(1f).padding(start = 8.dp))
                                 if (row.at != null) Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(row.at)),

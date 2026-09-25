@@ -55,9 +55,13 @@ class StagePlanTest {
         assertEquals("transcript", StagePlan.supported(saved)?.style)
         saved.getJSONObject("render").put("style", "minimal")
         assertEquals("minimal", StagePlan.supported(saved)?.style)
+        saved.getJSONObject("render").put("style", "card")
+        assertEquals("card", StagePlan.supported(saved)?.style)
+        saved.getJSONObject("render").put("style", "discord")
+        assertEquals("discord", StagePlan.supported(saved)?.style)
         assertEquals("minimal", StagePlan.definition("channel", StagePlan.Settings(style = "minimal"))
             .getJSONObject("render").getString("style"))
-        saved.put("render", JSONObject().put("style", "discord"))
+        saved.put("render", JSONObject().put("style", "bubbles"))
         assertEquals(null, StagePlan.supported(saved))
     }
 
