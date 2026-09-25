@@ -160,6 +160,12 @@ impl CoreReplica {
         self.lock().repairing()
     }
 
+    /// After a `welcome` with `reconcile: true`: the blobs (hashes, JSON array) this device's
+    /// restoring ops name. Upload the ones it has a copy of; the restored server lost newer files.
+    pub fn restoring_blobs(&self) -> String {
+        self.lock().restoring_blobs()
+    }
+
     pub fn take_changes(&self) -> String {
         self.lock().take_changes()
     }

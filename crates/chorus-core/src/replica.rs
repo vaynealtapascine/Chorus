@@ -228,6 +228,22 @@ impl Replica {
         self.engine.on_disconnect();
     }
 
+    /// After a reconcile: blobs named by ops the restored server doesn't have yet, being
+    /// restored or still waiting to be sent. The device re-uploads the ones it has (SYNC.md
+    /// §7.3): the server's files are as old as its backup, and a file uploaded to it since (for
+    /// an op sent since, or one still queued) is gone.
+    pub fn restoring_blobs(&self) -> Vec<String> {
+        let none = std::collections::BTreeSet::new();
+        let mut v: Vec<String> = [true, false]
+            .into_iter()
+            .flat_map(|restore| self.store.pending(&none, usize::MAX, restore))
+            .flat_map(|o| crate::restore::blob_hashes(&o))
+            .collect();
+        v.sort();
+        v.dedup();
+        v
+    }
+
     pub fn take_changes(&mut self) -> Changes {
         self.store.compact();
         let (ops, meta) = self.store.take_dirty();
@@ -364,6 +380,57 @@ mod tests {
             assert_ne!(whole, snapshot);
             assert_eq!(o.projection().canonical(), whole);
         }
+    }
+
+    /// SYNC.md §7.3: after a reconcile, the files named by the restoring ops are listed so the
+    /// device can upload them again.
+    #[test]
+    fn restoring_ops_list_their_blobs() {
+        let space = format!("space:{}", crate::id::new_id(1, [1; 10]));
+        let hash = "ab".repeat(32);
+        let thumb = "cd".repeat(32);
+        let mut r = Replica::new("dev", 7);
+        let payloads = [
+            json!({"blob_hash": hash, "thumb_blob_hash": thumb, "filename": "a.png", "mime": "image/png", "size": 3}),
+            json!({"blob_hash": hash, "filename": "again.png", "mime": "image/png", "size": 3}),
+            json!({"blob_hash": "not a hash", "filename": "b", "mime": "text/plain", "size": 1}),
+        ];
+        for (n, payload) in payloads.into_iter().enumerate() {
+            let n = n as u8;
+            let mut o = r
+                .create(
+                    NewOp {
+                        kind: "attachment.create".into(),
+                        scope: space.clone(),
+                        entity_id: Some(crate::id::new_id(1, [n + 20; 10])),
+                        payload,
+                        member_id: None,
+                        user_time: None,
+                    },
+                    &now(1000),
+                    [n; 10],
+                )
+                .unwrap()
+                .0;
+            o.seq = Some(i64::from(n) + 1);
+            r.store.put_remote(o);
+        }
+        assert!(r.restoring_blobs().is_empty(), "nothing is being restored");
+        r.store.demote_for_restore(&space);
+        assert_eq!(r.restoring_blobs(), vec![hash.clone(), thumb.clone()]);
+        // an op still queued names its file too
+        let queued = "ef".repeat(32);
+        let payload = json!({"blob_hash": queued, "filename": "q.png", "mime": "image/png", "size": 3});
+        let new = NewOp {
+            kind: "attachment.create".into(),
+            scope: space.clone(),
+            entity_id: Some(crate::id::new_id(1, [30; 10])),
+            payload,
+            member_id: None,
+            user_time: None,
+        };
+        r.create(new, &now(2000), [30; 10]).unwrap();
+        assert_eq!(r.restoring_blobs(), vec![hash, thumb, queued]);
     }
 
     #[test]

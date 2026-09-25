@@ -367,6 +367,12 @@ user action
    author, device and times and only assigns a new `seq`; known ids are no-ops that return the
    stored stamp. Outside the window, restore pushes are treated as fresh ops from the pusher.
 4. Device pulls each scope from zero; ops it already holds are replaced by the server's copies.
+5. Files: the restored server's blobs are as old as its backup, so a file uploaded since (for an
+   op the device restores, or one still in its outbox) is gone. After a `welcome` with
+   `reconcile: true` the device asks core which blobs those ops name (`restoring_blobs()`:
+   `blob_hash`, `thumb_blob_hash`, `avatar_blob`, `banner_blob`) and queues an upload of each
+   one it has a copy of (the web app: a blob still queued or kept in its cache; `HEAD` first, so
+   one the server has is skipped). Found by the chaos test (§9.3).
 
 This is how "phone as full replica" (D-043) restores data written after the last backup. A CLI
 `chorus-server reconcile-status` (and, for admins, `GET /admin/health` → `restore_window` and the

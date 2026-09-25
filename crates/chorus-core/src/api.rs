@@ -328,6 +328,11 @@ impl JsonReplica {
         js(&self.0.engine.repairing())
     }
 
+    /// Blobs to upload again after a reconcile (JSON array of hashes; SYNC.md §7.3).
+    pub fn restoring_blobs(&self) -> String {
+        js(&self.0.restoring_blobs())
+    }
+
     pub fn take_changes(&mut self) -> String {
         js(&self.0.take_changes())
     }

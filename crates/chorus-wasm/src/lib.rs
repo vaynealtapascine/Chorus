@@ -209,6 +209,13 @@ impl WebReplica {
         self.0.repairing()
     }
 
+    /// After a `welcome` with `reconcile: true`: blobs (JSON array of hashes) named by the ops
+    /// being restored; upload the ones this browser has (SYNC.md §7.3).
+    #[wasm_bindgen(js_name = restoringBlobs)]
+    pub fn restoring_blobs(&self) -> String {
+        self.0.restoring_blobs()
+    }
+
     #[wasm_bindgen(js_name = takeChanges)]
     pub fn take_changes(&mut self) -> String {
         self.0.take_changes()

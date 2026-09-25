@@ -5,8 +5,8 @@ import type { SwitchRow } from '../front.svelte';
 import { loadHead, loadOps, save, saveSnapshot, type Changes, type DeviceRecord, type Snapshot } from './persist';
 import { renew } from './device';
 import { applyDelta, type Delta } from './delta';
-import { flushUploads } from './uploads';
-import { keepStorage } from './blobs';
+import { flushUploads, stageBlob } from './uploads';
+import { keepStorage, loadBlob } from './blobs';
 import { fillFiles, keepEverything } from './keep';
 
 export type Status = 'offline' | 'connecting' | 'live' | 'no-device';
@@ -139,6 +139,18 @@ export class SyncClient {
   }
 
   /** With "keep everything" on, fetch files into the offline cache once a session (keep.ts). */
+  /** The server was restored from a backup (SYNC.md §7.3): its files are as old as the backup.
+   * Upload again the files named by ops it doesn't have yet that this browser has a copy of. */
+  private async reuploadAfterRestore(): Promise<void> {
+    const dev = this.device;
+    if (!this.replica || !dev) return;
+    for (const hash of JSON.parse(this.replica.restoringBlobs()) as string[]) {
+      const blob = await loadBlob(hash, null); // this browser's copy only
+      if (blob) await stageBlob(blob, blob.type, dev.account_id);
+    }
+    await flushUploads(dev);
+  }
+
   private async keepFiles(): Promise<void> {
     if (this.keptFiles || !(await keepEverything())) return;
     this.keptFiles = true;
@@ -338,6 +350,7 @@ export class SyncClient {
       }
       const out = JSON.parse(this.replica!.onFrame(ev.data as string, Date.now())) as unknown[];
       this.sendAll(out);
+      if (frame.t === 'welcome' && frame.reconcile) void this.reuploadAfterRestore();
       this.changed();
       if (frame.t === 'caught') this.caughtWatch?.(frame.scope);
     };
