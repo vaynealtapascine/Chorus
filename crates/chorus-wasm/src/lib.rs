@@ -269,6 +269,18 @@ impl WebReplica {
     pub fn rejected(&self) -> String {
         self.0.rejected()
     }
+
+    /// Refused ops with why, oldest first (JSON array; SYNC §7 "Sync issues").
+    #[wasm_bindgen(js_name = syncIssues)]
+    pub fn sync_issues(&self) -> String {
+        self.0.sync_issues()
+    }
+
+    /// Forget a refused op once seen (persist with takeChanges, like any change).
+    #[wasm_bindgen(js_name = dismissIssue)]
+    pub fn dismiss_issue(&mut self, id: &str) -> bool {
+        self.0.dismiss_issue(id)
+    }
 }
 
 /// A new UUIDv7 (`random`: at least 10 bytes from `crypto.getRandomValues`).

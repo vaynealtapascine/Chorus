@@ -15,6 +15,7 @@
   import { authorCards, listSpaces, openDm, spaceTitle, type SpaceInfo } from '../spaces';
   import { carryReply, takeReply } from '../replyElsewhere';
   import ChannelPermissions from './ChannelPermissions.svelte';
+  import SpaceRoles from './SpaceRoles.svelte';
   import { selfMember, type MemberRow } from '../data';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
@@ -469,6 +470,11 @@
     const old = (projection.rows.channel?.[current.id]?.fields.settings ?? {}) as Record<string, unknown>;
     sync.create('channel.set', scope, current.id, { settings: { ...old, slow_mode_s: seconds } });
   }
+  // messages the server refused here (SYNC §7 "Sync issues"): the reason, the text to copy
+  const notSent = $derived.by(() => {
+    void projection;
+    return sync.syncIssues().filter((i) => ['message.send', 'message.forward'].includes(i.kind) && i.payload.channel_id === current?.id);
+  });
   const slowLabel = (s: number) => (s < 60 ? `${s} s` : s < 3600 ? `${s / 60} min` : `${s / 3600} h`);
   const canManage = $derived.by(() => {
     if (!space) return false;
@@ -686,6 +692,9 @@
           <div class="menu-items">
             <a href="#/stage/{current.id}">Stage… (screenshot)</a>
             <a href="#/trash/{current.id}">Show deleted</a>
+            {#if space?.kind === 'shared' && canManage}
+              <SpaceRoles {projection} spaceId={space.id} info={directory.get(space.id)} />
+            {/if}
             {#if space && canManage && space.kind !== 'dm'}
               <label class="notify">Slow mode
                 <select value={String(slowMode)} onchange={(e) => setSlowMode(Number(e.currentTarget.value))} aria-label="Slow mode for this channel">
@@ -799,6 +808,18 @@
         {#if !speaker}<span>Pick a speaker first.</span>{/if}
         <button class="x" onclick={() => (forwarding = null)} aria-label="Cancel forward">✕</button>
       </div>
+    {/if}
+    {#if notSent.length}
+      <ul class="not-sent" aria-label="Messages not sent">
+        {#each notSent as issue (issue.id)}
+          <li>
+            <span class="why">Not sent: {issue.message}</span>
+            <span class="text">{typeof issue.payload.text === 'string' ? issue.payload.text : ''}</span>
+            <button onclick={() => void navigator.clipboard?.writeText(String(issue.payload.text ?? ''))}>Copy text</button>
+            <button onclick={() => sync.dismissIssue(issue.id)}>Dismiss</button>
+          </li>
+        {/each}
+      </ul>
     {/if}
     {#if slowMode && !canManage}<p class="hint slow">Slow mode: one message every {slowLabel(slowMode)} here.</p>{/if}
     {#if replyIn}
@@ -1166,6 +1187,10 @@
     padding: var(--s-3);
     border-top: 1px solid var(--line);
   }
+  .not-sent { list-style: none; margin: 0; padding: var(--s-2); display: grid; gap: var(--s-1); border-left: 2px solid var(--line); }
+  .not-sent li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+  .not-sent .why { color: var(--ink-2); font-size: var(--fs-sm); }
+  .not-sent .text { color: var(--ink-3); overflow-wrap: anywhere; }
   .reply-in { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); padding: var(--s-2); color: var(--ink-2); }
   .reply-in select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-1); max-width: 100%; }
   .chat-advanced {

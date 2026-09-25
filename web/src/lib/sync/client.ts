@@ -10,6 +10,18 @@ import { keepStorage, loadBlob } from './blobs';
 import { fillFiles, keepEverything } from './keep';
 import type { Entity } from '../core';
 
+/** An op the server refused (SYNC §7 "Sync issues"). */
+export interface SyncIssue {
+  id: string;
+  kind: string;
+  scope: string;
+  entity_id: string | null;
+  payload: Record<string, unknown>;
+  at: number;
+  code: string;
+  message: string;
+}
+
 /** One version of a message's or post's text (SPEC §5.3 edit history). */
 export interface Revision {
   rev: number;
@@ -198,6 +210,16 @@ export class SyncClient {
   subscribeProjection(fn: ProjectionListener): () => void {
     this.projectionListeners.add(fn);
     return () => this.projectionListeners.delete(fn);
+  }
+
+  /** Ops the server refused, with why, oldest first (SYNC §7 "Sync issues"). */
+  syncIssues(): SyncIssue[] {
+    return this.replica ? (JSON.parse(this.replica.syncIssues()) as SyncIssue[]) : [];
+  }
+
+  /** Let go of a refused op once seen (deleted from this device too). */
+  dismissIssue(id: string): void {
+    if (this.replica?.dismissIssue(id)) this.changed();
   }
 
   /** Every version of an edited message or post, oldest first, from this device's ops (core

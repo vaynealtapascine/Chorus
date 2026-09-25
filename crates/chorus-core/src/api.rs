@@ -411,6 +411,17 @@ impl JsonReplica {
         js(&self.0.store.rejected)
     }
 
+    /// Refused ops with why (JSON array of `{id, kind, scope, entity_id, payload, at, code,
+    /// message}`), for *Sync issues*.
+    pub fn sync_issues(&self) -> String {
+        js(&self.0.sync_issues())
+    }
+
+    /// Forget a refused op the person has seen; `false` if it wasn't one.
+    pub fn dismiss_issue(&mut self, id: &str) -> bool {
+        self.0.dismiss_issue(id)
+    }
+
     /// Plan only (for the preview): `{"members", "groups", "switches", "warnings"}`.
     pub fn plan_pluralkit(export_json: &str, scope: &str) -> Result<String, String> {
         let export: Value = parse("PluralKit export", export_json)?;

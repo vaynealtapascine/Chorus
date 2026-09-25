@@ -15,6 +15,20 @@ use crate::projector::{Delta, Projector};
 use crate::sync::{ClientEngine, ClientState, ClientStore, ClockReading, Frame, MemStore};
 use crate::time::TimeSource;
 
+/// An op the server refused (SYNC §7 "Sync issues").
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct SyncIssue {
+    pub id: String,
+    pub kind: String,
+    pub scope: String,
+    pub entity_id: Option<String>,
+    pub payload: serde_json::Value,
+    /// When it was written (device time).
+    pub at: i64,
+    pub code: String,
+    pub message: String,
+}
+
 pub struct Replica {
     pub engine: ClientEngine,
     pub store: MemStore,
@@ -228,6 +242,44 @@ impl Replica {
         self.engine.on_disconnect();
     }
 
+    /// Ops the server refused, with why (SYNC §7 "Sync issues": shown with the reason, the text of
+    /// a refused message can be copied), oldest first.
+    pub fn sync_issues(&self) -> Vec<SyncIssue> {
+        let mut v: Vec<SyncIssue> = self
+            .store
+            .rejected
+            .iter()
+            .filter_map(|(id, e)| {
+                self.store.ops.get(id).map(|o| SyncIssue {
+                    id: id.clone(),
+                    kind: o.kind.clone(),
+                    scope: o.scope.clone(),
+                    entity_id: o.entity_id.clone(),
+                    payload: o.payload.clone(),
+                    at: o.device_at,
+                    code: e.code.clone(),
+                    message: e.message.clone(),
+                })
+            })
+            .collect();
+        v.sort_by_key(|i| (i.at, i.id.clone()));
+        v
+    }
+
+    /// Let go of a refused op once the person has seen it (it's deleted from storage too).
+    pub fn dismiss_issue(&mut self, id: &str) -> bool {
+        if self.store.rejected.remove(id).is_none() {
+            return false;
+        }
+        self.store.ops.remove(id);
+        self.store.local_order.retain(|x| x != id);
+        self.store.dirty.remove(id);
+        self.store.touched.insert(id.into());
+        self.store.removed.insert(id.into());
+        self.store.meta_dirty = true;
+        true
+    }
+
     /// Every version of an edited message or post, oldest first ([`crate::revisions`]), from the
     /// ops this device has (so it works offline).
     pub fn revisions(&self, entity: &str) -> Vec<crate::revisions::Revision> {
@@ -386,6 +438,35 @@ mod tests {
             assert_ne!(whole, snapshot);
             assert_eq!(o.projection().canonical(), whole);
         }
+    }
+
+    /// SYNC §7: a refused op is listed with its reason until dismissed, then gone for good.
+    #[test]
+    fn refused_ops_are_listed_until_dismissed() {
+        let scope = format!("account:{}", crate::id::new_id(1, [1; 10]));
+        let mut r = Replica::new("dev", 7);
+        let new = NewOp {
+            kind: "member.create".into(),
+            scope,
+            entity_id: Some(crate::id::new_id(1, [2; 10])),
+            payload: json!({"name": "Kai"}),
+            member_id: None,
+            user_time: None,
+        };
+        let (o, _) = r.create(new, &now(1000), [3; 10]).unwrap();
+        r.take_changes();
+        assert!(r.sync_issues().is_empty());
+        r.store.reject(&o.id, crate::sync::AckError { code: "forbidden".into(), message: "no".into(), retry: false });
+        let issues = r.sync_issues();
+        assert_eq!(
+            (issues.len(), issues[0].code.as_str(), issues[0].payload["name"].as_str()),
+            (1, "forbidden", Some("Kai"))
+        );
+        assert!(r.dismiss_issue(&o.id));
+        assert!(!r.dismiss_issue(&o.id));
+        assert!(r.sync_issues().is_empty() && !r.store.ops.contains_key(&o.id));
+        let ch = r.take_changes();
+        assert!(ch.removed.contains(&o.id), "storage deletes it too");
     }
 
     /// SYNC.md §7.3: after a reconcile, the files named by the restoring ops are listed so the

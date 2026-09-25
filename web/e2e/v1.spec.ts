@@ -158,6 +158,33 @@ test('reply privately: from the shared space into the DM, linking back (SPEC §5
   await expect(reply.locator('.replybar .elsewhere')).toContainText('#general');
 });
 
+test('space roles: the owner makes someone read-only, and their send is refused with why', async () => {
+  const club = `Book club ${run}`;
+  await go(stars.page, 'chat');
+  await stars.page.locator('nav[aria-label="Spaces"] a', { hasText: club }).click();
+  await stars.page.getByLabel('Channel menu').click();
+  await stars.page.getByText('Space roles…').click();
+  const role = stars.page.getByLabel(/^Role of /).first();
+  await role.selectOption('read_only');
+  await expect(role).toHaveValue('read_only');
+
+  await go(friend.page, 'chat');
+  await friend.page.locator('nav[aria-label="Spaces"] a', { hasText: club }).click();
+  const quiet = `can I still talk ${run}`;
+  const box = friend.page.getByLabel('Message', { exact: true });
+  await box.fill(quiet);
+  await box.press('Enter');
+  const refused = friend.page.getByRole('list', { name: 'Messages not sent' });
+  await expect(refused).toContainText("you don't have the send permission");
+  await expect(refused).toContainText(quiet);
+  await refused.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(refused).toHaveCount(0);
+  await expect(stars.page.getByText(quiet)).toHaveCount(0);
+  // and back to a member, so the rest of the run can talk; the menu closed again
+  await role.selectOption('member');
+  await stars.page.getByLabel('Channel menu').click();
+});
+
 test('one internal channel shared with a follower (channel permissions)', async () => {
   const note = `news for Robin ${run}`;
   const inside = `inside only ${run}`;

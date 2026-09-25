@@ -236,6 +236,17 @@ impl CoreReplica {
         self.lock().rejected()
     }
 
+    /// Refused ops with why, oldest first (JSON array of `{id, kind, scope, entity_id, payload,
+    /// at, code, message}`): SYNC §7 *Sync issues* (show the reason, let the text be copied).
+    pub fn sync_issues(&self) -> String {
+        self.lock().sync_issues()
+    }
+
+    /// Forget a refused op once seen; it comes out in `take_changes().removed`.
+    pub fn dismiss_issue(&self, id: String) -> bool {
+        self.lock().dismiss_issue(&id)
+    }
+
     /// → `{"added": n, "frames": […]}`. Safe to repeat.
     pub fn import_pluralkit(
         &self,
