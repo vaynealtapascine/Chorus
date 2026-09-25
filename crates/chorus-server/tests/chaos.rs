@@ -17,6 +17,9 @@
 //! server's own projection and the rule (`ingest::can_access` + `visibility::op_visible_to`) is
 //! asked at each state the frame may have been sent from (see [`leaks`]).
 //!
+//! b-phone is a windowed browser tab (D-075): it keeps only the message-family ops received in
+//! the last [`WINDOW_MS`] as of each connect, and is held to exactly those.
+//!
 //! `CHORUS_CHAOS_SEEDS=<n>` for a longer run (default 2 seeds), `CHORUS_CHAOS_SEED=<n>` to rerun
 //! one, `CHORUS_CHAOS_STEPS=<n>` for longer seeds (default 160).
 
@@ -33,7 +36,7 @@ use chorus_core::id::new_id;
 use chorus_core::model;
 use chorus_core::op::Op;
 use chorus_core::projector::Projector;
-use chorus_core::sync::{ClientEngine, ClientStore, ClockReading, Frame, MemStore};
+use chorus_core::sync::{ClientEngine, ClientStore, ClockReading, Frame, MemStore, outside_window};
 use chorus_core::time::TimeSource;
 use chorus_server::{db, ingest, oplog, project, visibility};
 use futures_util::{SinkExt, StreamExt};
@@ -219,7 +222,13 @@ struct Dev {
     fetch_due: BTreeMap<String, u8>,
     /// Files it had at a reconcile, named by ops it held then: those must come back.
     held_at_reconcile: BTreeSet<String>,
+    /// A windowed replica (a browser tab without "keep everything"): its window at each connect
+    /// starts this long before.
+    window_ms: Option<i64>,
 }
+
+/// b-phone's window: short, so a run trims at most reconnects.
+const WINDOW_MS: i64 = 1500;
 
 impl Dev {
     fn drop_conn(&mut self) {
@@ -290,6 +299,8 @@ struct Stats {
     repairs: u64,
     /// Messages compared with the server's REST reads.
     compared: usize,
+    /// Ops the windowed device let go at a connect.
+    trimmed: usize,
 }
 
 struct World {
@@ -357,7 +368,10 @@ impl World {
         dev.conn = Some(Conn { sink, rx, reader, generation });
         dev.connects += 1;
         let clock = ClockReading { wall: chorus_server::now_ms(), mono: None, boot_id: None };
+        dev.engine.window = dev.window_ms.map(|ms| clock.wall - ms);
+        let held = dev.store.ops.len();
         let hello = dev.engine.on_connect(&mut dev.store, clock, &dev.token);
+        self.stats.trimmed += held - dev.store.ops.len();
         dev.send(vec![hello]).await;
     }
 
@@ -584,6 +598,7 @@ impl World {
                 keep_all: i >= 3,
                 fetch_due: BTreeMap::new(),
                 held_at_reconcile: BTreeSet::new(),
+                window_ms: (i == 1).then_some(WINDOW_MS),
             })
             .collect();
         let mut w = World {
@@ -1204,10 +1219,20 @@ impl World {
                 if items.len() == 100 {
                     continue; // more than a page: not compared
                 }
+                let dev = &self.devs[d];
                 let theirs: BTreeMap<String, String> = items
                     .iter()
                     .map(|m| {
                         (m["id"].as_str().unwrap().to_string(), m["text"].as_str().unwrap_or_default().to_string())
+                    })
+                    // a windowed device shows what it holds (that it holds exactly the window is
+                    // checked in `converged`)
+                    .filter(|(id, _)| {
+                        dev.window_ms.is_none()
+                            || dev.store.ops.values().any(|o| {
+                                o.entity() == Some(id.as_str())
+                                    && matches!(o.kind.as_str(), "message.send" | "message.forward")
+                            })
                     })
                     .collect();
                 self.stats.compared += theirs.len();
@@ -1366,6 +1391,7 @@ fn converged(w: &World) -> Vec<String> {
     for dev in &w.devs {
         let account = &w.accounts[dev.account].id;
         let name = &dev.name;
+        let window = dev.engine.window;
         let scopes = ingest::scopes_of(&conn, account).unwrap();
         let mine: BTreeSet<&String> = dev.store.scopes.iter().collect();
         let theirs: BTreeSet<&String> = scopes.iter().collect();
@@ -1385,7 +1411,7 @@ fn converged(w: &World) -> Vec<String> {
                 let Some(last) = page.last().and_then(|o| o.seq) else { break };
                 after = last;
                 for o in page {
-                    if visibility::op_visible_to(&conn, account, &o).unwrap() {
+                    if visibility::op_visible_to(&conn, account, &o).unwrap() && !outside_window(&o, window) {
                         want.insert(o.id.clone(), o);
                     }
                 }
@@ -1405,11 +1431,13 @@ fn converged(w: &World) -> Vec<String> {
                 }
             }
             for (id, o) in &have {
-                if !want.contains_key(*id) {
+                if outside_window(o, window) {
+                    problems.push(format!("{name}: holds {} {id} in {scope}, outside its window", o.kind));
+                } else if !want.contains_key(*id) {
                     problems.push(format!("{name}: holds {} {id} in {scope}, which it may not see", o.kind));
                 }
             }
-            let digest = visibility::visible_digest(&conn, account, scope).unwrap();
+            let digest = visibility::visible_digest_in(&conn, account, scope, window).unwrap();
             if dev.store.digest(scope) != digest {
                 problems.push(format!("{name}: digest of {scope} differs from the server's"));
             }
@@ -1546,7 +1574,7 @@ async fn one_seed(seed: u64, steps: usize) -> Stats {
     let _ = std::fs::remove_dir_all(&root);
     println!(
         "seed {seed}: {} ops, {} frames ({} ops delivered), {} kills, {} drops, {} duplicate pushes, {} offline, \
-         {} uploads, {} REST calls, {} repairs, rejected {:?}, {} messages compared over REST in {took:.1?}",
+         {} uploads, {} REST calls, {} repairs, rejected {:?}, {} messages compared over REST, {} ops out of the tab's window in {took:.1?}",
         stats.ops,
         stats.frames,
         stats.delivered,
@@ -1558,7 +1586,8 @@ async fn one_seed(seed: u64, steps: usize) -> Stats {
         stats.rest,
         stats.repairs,
         stats.rejected,
-        stats.compared
+        stats.compared,
+        stats.trimmed
     );
     stats
 }
