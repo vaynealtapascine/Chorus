@@ -63,6 +63,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.ChatMessage
 import garden.vayne.chorus.data.MessageRevision
+import garden.vayne.chorus.data.ChatSpeaker
+import garden.vayne.chorus.data.SpeakerDefault
 import garden.vayne.chorus.data.ChannelWindow
 import garden.vayne.chorus.data.ChatAttachment
 import garden.vayne.chorus.data.SearchDocument
@@ -71,7 +73,6 @@ import garden.vayne.chorus.data.ChatSpace
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.Entry
-import garden.vayne.chorus.data.Reply
 import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.SpaceAccount
 import garden.vayne.chorus.data.SpaceInfo
@@ -108,6 +109,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var draft by rememberSaveable { mutableStateOf("") }
     var cw by rememberSaveable { mutableStateOf("") }
     var moreOpen by rememberSaveable { mutableStateOf(false) }
+    var speakerSettingsOpen by rememberSaveable { mutableStateOf(false) }
     var followNext by remember { mutableStateOf(false) }
     var audience by rememberSaveable { mutableStateOf("all") }
     var visibleTo by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
@@ -154,11 +156,26 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
     val channels = model.channels.filter { it.spaceId == space?.id }
     val channel = channels.find { it.id == selectedChannel } ?: channels.firstOrNull()
+    fun setSpeakerDefault(mode: String, memberId: String? = null) {
+        val id = channel?.id ?: return
+        if (busy) return
+        busy = true; error = null
+        actions.launch {
+            try {
+                chorus.create("pref.set", null, ChatSpeaker.payload(id, mode, memberId))
+                selectedAuthor = ""
+            }
+            catch (e: Exception) { error = e.message ?: "Could not save the speaker default." }
+            finally { busy = false }
+        }
+    }
     val messages = model.chatMessages[channel?.id].orEmpty().filter {
         space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
             accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
     }
     LaunchedEffect(channel?.id, chorus.device?.accountId) {
+        selectedAuthor = ""
+        speakerSettingsOpen = false
         staging = false
         capturing = false
         stageLimit = 100
@@ -289,7 +306,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         // Composer: one line (who's speaking, the text, options, send); options open above it
         Column(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 12.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            val author = model.active.find { it.id == selectedAuthor } ?: Reply.speaker(model)
+            val defaultAuthorId = remember(model, channel.id) { ChatSpeaker.pick(model, channel.id) }
+            val author = model.active.find { it.id == selectedAuthor }
+                ?: defaultAuthorId?.let(model::member)
             val target = messages.find { it.id == replyTo }
             if (target != null) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -344,6 +363,34 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 }
                 if (space.kind != "internal" && audience == "all") {
                     Text("Everyone in this space can see who is speaking.", color = p.ink3, fontSize = 12.sp)
+                }
+                if (!model.isPerson) {
+                    Text(if (speakerSettingsOpen) "Advanced · Hide speaker default" else "Advanced · Speaker default ›",
+                        color = p.accent, fontSize = 13.sp,
+                        modifier = Modifier.clickable { speakerSettingsOpen = !speakerSettingsOpen }.padding(vertical = 4.dp))
+                    if (speakerSettingsOpen) {
+                        val setting = model.speakerDefaults[channel.id] ?: SpeakerDefault()
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            item { ChatChip("Front", setting.mode == "front") { setSpeakerDefault("front") } }
+                            item { ChatChip("Last speaker", setting.mode == "latch") { setSpeakerDefault("latch") } }
+                            item { ChatChip("Ask me", setting.mode == "off") { setSpeakerDefault("off") } }
+                            item { ChatChip("One member", setting.mode == "member") {
+                                (setting.memberId ?: author?.id ?: model.active.firstOrNull()?.id)?.let {
+                                    setSpeakerDefault("member", it)
+                                }
+                            } }
+                        }
+                        if (setting.mode == "member") {
+                            Text("Always speak as", color = p.ink2, fontSize = 12.sp)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(model.active, key = { it.id }) { member ->
+                                    ChatChip(member.shownName, member.id == setting.memberId) {
+                                        setSpeakerDefault("member", member.id)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             } else if (audience != "all" || cw.isNotBlank()) {
                 Text(listOfNotNull(audienceLabel.takeIf { audience != "all" }, "CW: ${cw.trim()}".takeIf { cw.isNotBlank() })

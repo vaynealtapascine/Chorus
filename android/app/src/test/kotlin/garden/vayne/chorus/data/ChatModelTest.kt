@@ -47,7 +47,8 @@ class ChatModelTest {
     fun largeChannelKeepsNewestHundredForFirstScreen() {
         val messages = JSONObject()
         for (n in 0 until 120) messages.put("m$n", row(JSONObject().put("channel_id", "c")
-            .put("text", "$n").put("occurred_at", n)))
+            .put("text", "$n").put("occurred_at", n)
+            .apply { if (n == 0) put("account_id", "acct").put("authors", JSONArray().put("kai")) }))
         val rows = JSONObject()
             .put("space", JSONObject().put("s", row(JSONObject().put("kind", "shared").put("name", "Shared"))))
             .put("channel", JSONObject().put("c", row(JSONObject().put("space_id", "s").put("name", "general"))))
@@ -57,6 +58,7 @@ class ChatModelTest {
         assertEquals(100, model.chatMessages["c"]!!.size)
         assertEquals("20", model.chatMessages["c"]!!.first().text)
         assertEquals("119", model.chatMessages["c"]!!.last().text)
+        assertEquals(listOf("kai"), model.lastAuthorsByChannel["c"])
         val firstWindow = Model.channelWindow(projection, "c", 100)
         assertTrue(firstWindow.hasOlder)
         assertEquals(model.chatMessages["c"], firstWindow.messages)

@@ -104,6 +104,8 @@ class Model(
     /** All locally visible messages for search, including older chat rows outside the display window. */
     val searchMessages: List<SearchDocument> = emptyList(),
     val savedStages: List<SavedStage> = emptyList(),
+    val speakerDefaults: Map<String, SpeakerDefault> = emptyMap(),
+    val lastAuthorsByChannel: Map<String, List<String>> = emptyMap(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -316,6 +318,17 @@ class Model(
                     hasImage = mimes.any { it.startsWith("image/") },
                     hasFile = mimes.any { !it.startsWith("image/") }, hasAttachment = linked.isNotEmpty())
             }
+            val latestOwn = HashMap<String, Triple<Long, String, List<String>>>()
+            for ((id, fields) in messageRows) {
+                if (fields.str("account_id") != accountId) continue
+                val channelId = fields.str("channel_id") ?: continue
+                val at = fields.optLong("occurred_at")
+                val prior = latestOwn[channelId]
+                if (prior == null || at > prior.first || at == prior.first && id > prior.second) {
+                    latestOwn[channelId] = Triple(at, id, strings(fields.optJSONArray("authors")))
+                }
+            }
+            val lastAuthorsByChannel = latestOwn.mapValues { it.value.third }
             val selected = messageRows
                 .groupBy { (_, f) -> f.str("channel_id").orEmpty() }
                 .mapValues { (_, values) -> values.sortedWith(compareBy<Pair<String, JSONObject>> { it.second.optLong("occurred_at") }.thenBy { it.first }).takeLast(100) }
@@ -359,7 +372,8 @@ class Model(
             return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages,
                 followCeilings, posts, postReactions, memberLists, savedFeeds, highlights, frontSpans, systemZone,
                 messageCounts, LocalProfileFields.fromProjection(p), LocalRelationships.types(p),
-                LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages)
+                LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages,
+                ChatSpeaker.preferences(p, accountId, channels), lastAuthorsByChannel)
         }
     }
 }
