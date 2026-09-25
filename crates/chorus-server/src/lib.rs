@@ -18,6 +18,7 @@ pub mod follows;
 pub mod health;
 pub mod home;
 pub mod home_install;
+pub mod import;
 pub mod ingest;
 pub mod messages;
 pub mod notifier;

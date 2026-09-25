@@ -128,7 +128,7 @@ pub fn parse_key(spki_b64: &str) -> Result<VerifyingKey, AuthError> {
     VerifyingKey::from_public_key_der(&der).map_err(|_| AuthError::BadKey)
 }
 
-fn valid_handle(h: &str) -> bool {
+pub(crate) fn valid_handle(h: &str) -> bool {
     (2..=32).contains(&h.len()) && h.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
 }
 

@@ -67,6 +67,19 @@ enum Cmd {
         #[arg(long)]
         to: Option<PathBuf>,
     },
+    /// Import an account from an export bundle made on another server (the server stopped):
+    /// its history keeps its ids, authors and times; a clash or a damaged file refuses it all.
+    ImportAccount {
+        /// The bundle (`chorus-<handle>-<date>.zip` from Settings → Export).
+        #[arg(long)]
+        from: PathBuf,
+        /// Use this handle here instead of the bundle's.
+        #[arg(long)]
+        handle: Option<String>,
+        /// Check the bundle and this server and report; import nothing.
+        #[arg(long)]
+        check: bool,
+    },
     /// Create representative ops in a new data directory for manual performance checks.
     Seed {
         #[arg(long, default_value_t = 300)]
@@ -291,6 +304,21 @@ fn main() -> anyhow::Result<()> {
                 }
             }
             println!("{}", out.display());
+        }
+        Cmd::ImportAccount { from, handle, check } => {
+            let mut conn = chorus_server::open_and_migrate(&cfg)?;
+            // the server must be stopped: it would otherwise miss what arrives under it
+            conn.execute_batch("PRAGMA busy_timeout = 0; PRAGMA main.locking_mode = EXCLUSIVE")?;
+            conn.execute_batch("BEGIN EXCLUSIVE; COMMIT")
+                .map_err(|_| anyhow::anyhow!("the database is in use (is the server running?); stop it first"))?;
+            let opts = chorus_server::import::Options { handle, check_only: check };
+            let report = chorus_server::import::import_account(&cfg, &mut conn, &from, &opts, chorus_server::now_ms())?;
+            if check {
+                println!("the bundle is sound and nothing clashes; it would import:");
+            } else {
+                println!("imported:");
+            }
+            print!("{report}");
         }
         Cmd::Seed { members, switches, messages, to } => {
             let mut seed_cfg = cfg;

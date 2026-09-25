@@ -95,6 +95,10 @@ chorus-server restore --from <snapshot> --into <new dir>   # verifies, bumps epo
 chorus-server rebuild [--in-place]      # rebuild all projections from the op log, server stopped: built in a
                                         # fresh file (no journal), checked, swapped in (R19); --in-place: the old way
 chorus-server export --account <id> --kind full|csv|sqlite
+chorus-server import-account --from <bundle.zip> [--handle NEW] [--check]   # one account from another
+                                        # server's export bundle, server stopped (R27): ids, authors,
+                                        # times and files kept; any clash or damage refuses it all;
+                                        # prints a one-time device invite. --check: report only
 chorus-server check                     # integrity_check, digests, orphan blobs, config
 chorus-server purge --message <id> | --op <id> | --account <id> [--yes]   # the only true erase (D-053): asks to
                                         # confirm, rebuilds projections, deletes files nothing uses,
@@ -182,6 +186,15 @@ updates). What differs from the PC:
 - **Moving data**: `install.sh --import [--replace-data]` goes through `chorus-server restore`
   (checksums, integrity, projection rebuild, epoch bump), so devices re-send anything newer.
   Keep the same domain and move its DNS record; devices remember the address.
+- **Moving one account** (a home PC ↔ a VPS, or between friends' servers): export it in the
+  app (Your data → Export, the full bundle), stop the target server, run
+  `chorus-server import-account --from chorus-<handle>-<date>.zip` there (`--check` first to see
+  what it will do), start it, and add a device with the invite it prints. The account keeps its
+  id, so its history, follows and shared spaces line up as other accounts arrive: messages it
+  wrote in someone else's space stay unreadable until that space's owner is imported too, and
+  follows wait for the accounts they name. Custom emoji (server-wide) stay behind. The old
+  server's copy isn't touched; delete the account there (`purge --account`) once the move is
+  done if you mean to move rather than copy.
 - **Exposure**: public, not tailnet-only. Invites stay the only way in; `webhook_targets =
   "public"` keeps webhooks and push endpoints off the host's own services (Caddy admin API,
   other apps; the configured `ntfy_url` is the one exception, reached at its checked address);

@@ -289,6 +289,171 @@ impl<W: Write> ZipWriter<W> {
     }
 }
 
+/// One entry of an archive read by [`ZipReader`].
+#[derive(Clone, Debug)]
+pub struct ReadEntry {
+    pub name: String,
+    pub crc: u32,
+    pub size: u64,
+    /// where its local header starts
+    offset: u64,
+}
+
+/// Reads archives of *stored* entries, as [`ZipWriter`] makes them (account import, R27): the
+/// central directory (ZIP64 included), then each entry's bytes, their CRC checked as they pass.
+/// Compressed entries are refused rather than guessed at.
+pub struct ZipReader<R> {
+    file: R,
+    entries: Vec<ReadEntry>,
+}
+
+fn u16_at(b: &[u8], at: usize) -> u16 {
+    u16::from_le_bytes([b[at], b[at + 1]])
+}
+fn u32_at(b: &[u8], at: usize) -> u32 {
+    u32::from_le_bytes(b[at..at + 4].try_into().unwrap_or_default())
+}
+fn u64_at(b: &[u8], at: usize) -> u64 {
+    u64::from_le_bytes(b[at..at + 8].try_into().unwrap_or_default())
+}
+
+fn bad(why: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, why.into())
+}
+
+impl<R: Read + io::Seek> ZipReader<R> {
+    pub fn new(mut file: R) -> io::Result<ZipReader<R>> {
+        use io::SeekFrom;
+        let len = file.seek(SeekFrom::End(0))?;
+        // the end record is in the last 22 bytes plus a comment of up to 64 KiB
+        let tail_len = len.min(22 + 65_535);
+        file.seek(SeekFrom::Start(len - tail_len))?;
+        let mut tail = vec![0u8; tail_len as usize];
+        file.read_exact(&mut tail)?;
+        let end = (0..tail.len().saturating_sub(21))
+            .rev()
+            .find(|&i| u32_at(&tail, i) == END)
+            .ok_or_else(|| bad("not a zip file (no end record)"))?;
+        let mut count = u64::from(u16_at(&tail, end + 10));
+        let mut cd_size = u64::from(u32_at(&tail, end + 12));
+        let mut cd_start = u64::from(u32_at(&tail, end + 16));
+        if count == 0xFFFF || cd_size == MAX32 || cd_start == MAX32 {
+            // ZIP64: the locator sits just before the end record and points at the ZIP64 end record
+            let at = end.checked_sub(20).ok_or_else(|| bad("ZIP64 locator missing"))?;
+            if u32_at(&tail, at) != LOCATOR64 {
+                return Err(bad("ZIP64 locator missing"));
+            }
+            let end64 = u64_at(&tail, at + 8);
+            file.seek(SeekFrom::Start(end64))?;
+            let mut rec = [0u8; 56];
+            file.read_exact(&mut rec)?;
+            if u32_at(&rec, 0) != END64 {
+                return Err(bad("ZIP64 end record missing"));
+            }
+            count = u64_at(&rec, 32);
+            cd_size = u64_at(&rec, 40);
+            cd_start = u64_at(&rec, 48);
+        }
+        if cd_start.checked_add(cd_size).is_none_or(|e| e > len) || cd_size > 1 << 30 {
+            return Err(bad("the central directory is out of the file"));
+        }
+        file.seek(SeekFrom::Start(cd_start))?;
+        let mut cd = vec![0u8; cd_size as usize];
+        file.read_exact(&mut cd)?;
+        let mut entries = Vec::new();
+        let mut at = 0usize;
+        for _ in 0..count {
+            if at + 46 > cd.len() || u32_at(&cd, at) != CENTRAL {
+                return Err(bad("a damaged central directory"));
+            }
+            let method = u16_at(&cd, at + 10);
+            let crc = u32_at(&cd, at + 16);
+            let mut csize = u64::from(u32_at(&cd, at + 20));
+            let mut size = u64::from(u32_at(&cd, at + 24));
+            let name_len = usize::from(u16_at(&cd, at + 28));
+            let extra_len = usize::from(u16_at(&cd, at + 30));
+            let comment_len = usize::from(u16_at(&cd, at + 32));
+            let mut offset = u64::from(u32_at(&cd, at + 42));
+            let name_at = at + 46;
+            let extra_at = name_at + name_len;
+            let next = extra_at + extra_len + comment_len;
+            if next > cd.len() {
+                return Err(bad("a damaged central directory"));
+            }
+            let name =
+                String::from_utf8(cd[name_at..extra_at].to_vec()).map_err(|_| bad("an entry name isn't UTF-8"))?;
+            // ZIP64 extra field: the 0xFFFFFFFF fields follow in order (size, compressed, offset)
+            let mut x = extra_at;
+            while x + 4 <= extra_at + extra_len {
+                let (id, n) = (u16_at(&cd, x), usize::from(u16_at(&cd, x + 2)));
+                if id == 1 {
+                    let mut f = x + 4;
+                    for field in [&mut size, &mut csize, &mut offset] {
+                        if *field == MAX32 && f + 8 <= x + 4 + n {
+                            *field = u64_at(&cd, f);
+                            f += 8;
+                        }
+                    }
+                }
+                x += 4 + n;
+            }
+            if method != 0 || csize != size {
+                return Err(bad(format!(
+                    "{name} is compressed; only stored entries are read (use the file as exported)"
+                )));
+            }
+            entries.push(ReadEntry { name, crc, size, offset });
+            at = next;
+        }
+        Ok(ZipReader { file, entries })
+    }
+
+    pub fn entries(&self) -> &[ReadEntry] {
+        &self.entries
+    }
+
+    pub fn entry(&self, name: &str) -> Option<&ReadEntry> {
+        self.entries.iter().find(|e| e.name == name)
+    }
+
+    /// Stream an entry's bytes to `each` in chunks; fails if its CRC doesn't match.
+    pub fn read(&mut self, entry: &ReadEntry, mut each: impl FnMut(&[u8]) -> io::Result<()>) -> io::Result<()> {
+        use io::SeekFrom;
+        self.file.seek(SeekFrom::Start(entry.offset))?;
+        let mut head = [0u8; 30];
+        self.file.read_exact(&mut head)?;
+        if u32_at(&head, 0) != LOCAL {
+            return Err(bad(format!("{}: no local header where the directory says", entry.name)));
+        }
+        let skip = i64::from(u16_at(&head, 26)) + i64::from(u16_at(&head, 28));
+        self.file.seek(SeekFrom::Current(skip))?;
+        let mut crc = Crc32::default();
+        let mut left = entry.size;
+        let mut buf = vec![0u8; 256 * 1024];
+        while left > 0 {
+            let n = left.min(buf.len() as u64) as usize;
+            self.file.read_exact(&mut buf[..n])?;
+            crc.update(&buf[..n]);
+            each(&buf[..n])?;
+            left -= n as u64;
+        }
+        if crc.finish() != entry.crc {
+            return Err(bad(format!("{}: its CRC doesn't match (a damaged file)", entry.name)));
+        }
+        Ok(())
+    }
+
+    /// A whole entry in memory (small ones: the manifest).
+    pub fn read_all(&mut self, entry: &ReadEntry) -> io::Result<Vec<u8>> {
+        let mut out = Vec::with_capacity(entry.size as usize);
+        self.read(entry, |c| {
+            out.extend_from_slice(c);
+            Ok(())
+        })?;
+        Ok(out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,5 +526,35 @@ mod tests {
             assert!(text.contains("'blobs/ü-name', 'csv/members.csv'"), "{text}");
         }
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reads_back_what_it_writes_and_notices_damage() {
+        for force in [false, true] {
+            let mut z = ZipWriter::new(Vec::new(), 0);
+            if force {
+                z = z.forcing_zip64();
+            }
+            let big = vec![7u8; 700_000];
+            z.add("a.txt", &b"hello"[..], 5, |_| {}).unwrap();
+            z.add("blobs/ü", &big[..], big.len() as u64, |_| {}).unwrap();
+            z.add("empty", &b""[..], 0, |_| {}).unwrap();
+            let bytes = z.finish().unwrap();
+            let mut r = ZipReader::new(io::Cursor::new(bytes.clone())).unwrap();
+            let names: Vec<&str> = r.entries().iter().map(|e| e.name.as_str()).collect();
+            assert_eq!(names, ["a.txt", "blobs/ü", "empty"]);
+            let e = r.entry("blobs/ü").unwrap().clone();
+            assert_eq!(r.read_all(&e).unwrap(), big);
+            let e = r.entry("a.txt").unwrap().clone();
+            assert_eq!(r.read_all(&e).unwrap(), b"hello");
+            // one byte of "hello" changed: the CRC says so
+            let mut damaged = bytes;
+            let at = damaged.windows(5).position(|w| w == b"hello").unwrap();
+            damaged[at] = b'j';
+            let mut r = ZipReader::new(io::Cursor::new(damaged)).unwrap();
+            let e = r.entry("a.txt").unwrap().clone();
+            assert!(r.read_all(&e).is_err());
+        }
+        assert!(ZipReader::new(io::Cursor::new(b"not a zip at all".to_vec())).is_err());
     }
 }
