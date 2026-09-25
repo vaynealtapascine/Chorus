@@ -325,3 +325,18 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   - `tests/projection.rs` now also compares segments, segment authors, mentions, attachments and
     replies. Its generator makes one-op messages, so the batched path is covered: skipping the
     mention inserts fails it.
+- 2026-09-25 claude-opus-5.5 — REST fuzzing (R28, `tests/rest_fuzz.rs`) — Every route in
+  app.rs (76, read the way api-check.py reads them) gets random and malformed path ids, queries,
+  bodies (raw junk, a 3 MB text, wrong content types, and "plausible" bodies with real keys and
+  both accounts' ids). Callers: anonymous, a device session, an admin, another account, and an
+  API token of each scope. Seven seeds × 13 500 requests (~15 % succeed) gave no 5xx, no panics,
+  no leaks and no change to the other account's rows. The traps were all in the harness:
+  - A request body the server doesn't read, because it refused first (413, 401): the client
+    then gets "broken pipe" writing it. That's expected for oversized bodies.
+  - A GET with a body plus a large response: the server closes over unread bytes, TCP sends a
+    reset, and the client sees "connection reset" mid-response. The fuzzer sends no GET bodies.
+  - Pooled connections compound both, so the fuzzer doesn't pool.
+  - API tokens only authenticate as `chorus_…` (api_data.rs). A fuzzer that makes up its own
+    tokens silently tests as anonymous, so the test first checks its oracle sees the markers.
+  - The chaos test's oracle is per op for sync. For REST, unique marker texts in private rows
+    and private ids (skipped when the request named them) are the direct check.
