@@ -186,6 +186,52 @@ pub fn feed_filter(ast_json: &str, items_json: &str, context_json: &str) -> Resu
         .collect::<Vec<_>>()))
 }
 
+/// Who the composer's speaker chip shows before anyone picks (SPEC §5.2, D-074): a
+/// `speaker::SpeakerContext` → member ids (JSON array; empty = nobody).
+pub fn default_speaker(context_json: &str) -> Result<String, String> {
+    let c: crate::speaker::SpeakerContext = parse("speaker context", context_json)?;
+    Ok(js(&crate::speaker::default_speaker(&c)))
+}
+
+/// Who a read marks (SPEC §5.3): `[{member_id, is_primary, level}]` fronting → reader ids (JSON
+/// array; `""` = the account, then members fronting or co-con when `per_member`).
+pub fn read_readers(per_member: bool, fronting_json: &str) -> Result<String, String> {
+    let f: Vec<crate::speaker::Fronter> = parse("fronting", fronting_json)?;
+    Ok(js(&crate::reading::readers(per_member, &f)))
+}
+
+/// Members whose mark (`[{member, at, id}]`) is before message `(at, id)` (JSON array).
+pub fn read_unseen_by(at: i64, id: &str, marks_json: &str) -> Result<String, String> {
+    let m: Vec<crate::reading::Mark> = parse("marks", marks_json)?;
+    Ok(js(&crate::reading::unseen_by(at, id, &m)))
+}
+
+/// A message search box → query JSON (`chorus_core::search`), or `Err` with `{"pos", "message"}`.
+pub fn search_parse(src: &str) -> Result<String, String> {
+    crate::search::parse(src).map(|q| js(&q)).map_err(|e| js(&serde_json::json!({"pos": e.pos, "message": e.message})))
+}
+
+#[derive(Deserialize)]
+struct SearchContextIn {
+    now: i64,
+    #[serde(default)]
+    tz_offset_min: i32,
+}
+
+/// Query, candidate messages and `{now, tz_offset_min}` → indexes of the matching candidates.
+/// Every client filters its local messages through this, so they find what the server finds.
+pub fn search_filter(query_json: &str, candidates_json: &str, context_json: &str) -> Result<String, String> {
+    let q: crate::search::Query = parse("search query", query_json)?;
+    let items: Vec<crate::search::Candidate> = parse("search candidates", candidates_json)?;
+    let c: SearchContextIn = parse("search context", context_json)?;
+    let ctx = crate::search::Context::at(c.now, c.tz_offset_min, &q);
+    Ok(js(&items
+        .iter()
+        .enumerate()
+        .filter_map(|(i, item)| crate::search::matches(&q, item, &ctx).then_some(i))
+        .collect::<Vec<_>>()))
+}
+
 /// Member colour variants: `{"name", "ring", "tint"}`. `intensity`: off | subtle | vivid.
 pub fn adapt_color(color: &str, dark: bool, intensity: &str) -> String {
     let i = match intensity {
@@ -303,6 +349,11 @@ impl JsonReplica {
         Ok(js(&serde_json::json!({"op": o, "frames": frames})))
     }
 
+    /// Keep only message-family ops written since `window` ms (SYNC §6.5); `None` = everything.
+    pub fn set_window(&mut self, window: Option<i64>) {
+        self.0.set_window(window);
+    }
+
     pub fn connect(&mut self, clock_json: &str, token: &str) -> Result<String, String> {
         let c: crate::sync::ClockReading = parse("clock", clock_json)?;
         Ok(js(&self.0.connect(c, token)))
@@ -326,6 +377,16 @@ impl JsonReplica {
     /// Scopes still being repaired (JSON array).
     pub fn repairing(&self) -> String {
         js(&self.0.engine.repairing())
+    }
+
+    /// Versions of an edited message or post, oldest first (JSON array; SPEC §5.3).
+    pub fn revisions(&self, entity: &str) -> String {
+        js(&self.0.revisions(entity))
+    }
+
+    /// Blobs to upload again after a reconcile (JSON array of hashes; SYNC.md §7.3).
+    pub fn restoring_blobs(&self) -> String {
+        js(&self.0.restoring_blobs())
     }
 
     pub fn take_changes(&mut self) -> String {
@@ -353,6 +414,17 @@ impl JsonReplica {
 
     pub fn rejected(&self) -> String {
         js(&self.0.store.rejected)
+    }
+
+    /// Refused ops with why (JSON array of `{id, kind, scope, entity_id, payload, at, code,
+    /// message}`), for *Sync issues*.
+    pub fn sync_issues(&self) -> String {
+        js(&self.0.sync_issues())
+    }
+
+    /// Forget a refused op the person has seen; `false` if it wasn't one.
+    pub fn dismiss_issue(&mut self, id: &str) -> bool {
+        self.0.dismiss_issue(id)
     }
 
     /// Plan only (for the preview): `{"members", "groups", "switches", "warnings"}`.

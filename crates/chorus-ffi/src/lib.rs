@@ -62,6 +62,44 @@ pub fn feed_parse(query: String) -> Result<String, CoreError> {
     wrap(api::feed_parse(&query))
 }
 
+/// Who the speaker chip shows before anyone picks (SPEC §5.2, D-074): `{mode: off|front|latch|
+/// member, member?, fronting: [{member_id, is_primary, level}], self_member?, last_authors,
+/// members}` → member ids (JSON array; empty = nobody). The mode is the account's pref
+/// `autoproxy:<channel id>` = `{"mode", "member"?}`; `last_authors` its latest message there.
+#[uniffi::export]
+pub fn default_speaker(context_json: String) -> Result<String, CoreError> {
+    wrap(api::default_speaker(&context_json))
+}
+
+/// Who a read marks (SPEC §5.3 "track reading per member"): fronting JSON
+/// (`[{member_id, is_primary, level}]`) → reader ids (`""` = the account, then the members
+/// fronting or co-con when `per_member`); send one `read.mark` per reader.
+#[uniffi::export]
+pub fn read_readers(per_member: bool, fronting_json: String) -> Result<String, CoreError> {
+    wrap(api::read_readers(per_member, &fronting_json))
+}
+
+/// Members whose read mark (`[{member, at, id}]`) is before the message `(at, id)`.
+#[uniffi::export]
+pub fn read_unseen_by(at: i64, id: String, marks_json: String) -> Result<String, CoreError> {
+    wrap(api::read_unseen_by(at, &id, &marks_json))
+}
+
+/// A message search box → query JSON (SPEC §5.3: words, from:, in:, has:, before:/after:,
+/// is:pinned), or an error with `{"pos", "message"}`.
+#[uniffi::export]
+pub fn search_parse(query: String) -> Result<String, CoreError> {
+    wrap(api::search_parse(&query))
+}
+
+/// Query JSON, candidate messages (JSON array of `{text, cw?, authors: [[id, name]], channel:
+/// [id, name], at, mimes, link, pinned}`) and `{now, tz_offset_min}` → indexes that match. Local
+/// search filters through this so it finds what `GET /search/messages` finds.
+#[uniffi::export]
+pub fn search_filter(query_json: String, candidates_json: String, context_json: String) -> Result<String, CoreError> {
+    wrap(api::search_filter(&query_json, &candidates_json, &context_json))
+}
+
 #[uniffi::export]
 pub fn notify_preset(name: String) -> Result<String, CoreError> {
     wrap(api::notify_preset(&name))
@@ -138,6 +176,12 @@ impl CoreReplica {
         wrap(self.lock().create(&new_op_json, &device_now_json, &random))
     }
 
+    /// A windowed replica (SYNC §6.5): keep message-family ops written since `window` (epoch
+    /// ms), or everything (`null`); takes effect at the next connect. Android keeps everything.
+    pub fn set_window(&self, window: Option<i64>) {
+        self.lock().set_window(window);
+    }
+
     pub fn connect(&self, clock_json: String, token: String) -> Result<String, CoreError> {
         wrap(self.lock().connect(&clock_json, &token))
     }
@@ -158,6 +202,19 @@ impl CoreReplica {
     /// Scopes still being repaired after a digest mismatch (JSON array).
     pub fn repairing(&self) -> String {
         self.lock().repairing()
+    }
+
+    /// Every version of an edited message or post, oldest first (JSON array of
+    /// `{rev, op_id, original, fields: {text, entities, cw?, title?, segments?}, at, hlc, device_id}`;
+    /// SPEC §5.3 edit history, the same rule as `GET /messages/{id}/revisions`).
+    pub fn revisions(&self, entity: String) -> String {
+        self.lock().revisions(&entity)
+    }
+
+    /// After a `welcome` with `reconcile: true`: the blobs (hashes, JSON array) this device's
+    /// restoring ops name. Upload the ones it has a copy of; the restored server lost newer files.
+    pub fn restoring_blobs(&self) -> String {
+        self.lock().restoring_blobs()
     }
 
     pub fn take_changes(&self) -> String {
@@ -183,6 +240,17 @@ impl CoreReplica {
 
     pub fn rejected(&self) -> String {
         self.lock().rejected()
+    }
+
+    /// Refused ops with why, oldest first (JSON array of `{id, kind, scope, entity_id, payload,
+    /// at, code, message}`): SYNC §7 *Sync issues* (show the reason, let the text be copied).
+    pub fn sync_issues(&self) -> String {
+        self.lock().sync_issues()
+    }
+
+    /// Forget a refused op once seen; it comes out in `take_changes().removed`.
+    pub fn dismiss_issue(&self, id: String) -> bool {
+        self.lock().dismiss_issue(&id)
     }
 
     /// → `{"added": n, "frames": […]}`. Safe to repeat.

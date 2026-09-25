@@ -93,7 +93,7 @@ impl Device {
         let (ws, _) = tokio_tungstenite::connect_async(format!("ws://{}/api/v1/sync", s.base)).await.unwrap();
         self.ws = Some(ws);
         let clock = ClockReading { wall: chorus_server::now_ms(), mono: None, boot_id: None };
-        let hello = self.engine.on_connect(&self.store, clock, &self.token);
+        let hello = self.engine.on_connect(&mut self.store, clock, &self.token);
         self.send(vec![hello]).await;
     }
 
@@ -249,6 +249,7 @@ async fn bad_token_is_refused() {
         core: String::new(),
         app: String::new(),
         outbox: 0,
+        window: None,
     };
     ws.send(Message::Text(serde_json::to_string(&hello).unwrap().into())).await.unwrap();
     let Some(Ok(Message::Text(t))) = ws.next().await else { panic!("no reply") };
@@ -1331,7 +1332,7 @@ async fn start_with_addresses(cfg: Config) -> Server {
 async fn signed_socket(s: &Server, token: &str, device: &str) -> Ws {
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{}/api/v1/sync", s.base)).await.unwrap();
     let clock = ClockReading { wall: chorus_server::now_ms(), mono: None, boot_id: None };
-    let hello = ClientEngine::new(device).on_connect(&MemStore::default(), clock, token);
+    let hello = ClientEngine::new(device).on_connect(&mut MemStore::default(), clock, token);
     ws.send(Message::Text(serde_json::to_string(&hello).unwrap().into())).await.unwrap();
     loop {
         match next_frame(&mut ws).await {
@@ -1429,7 +1430,7 @@ async fn unsigned_sync_sockets_are_limited_per_address() {
     // signing in frees a slot
     let clock = ClockReading { wall: chorus_server::now_ms(), mono: None, boot_id: None };
     let hello = ClientEngine::new(a["device_id"].as_str().unwrap()).on_connect(
-        &MemStore::default(),
+        &mut MemStore::default(),
         clock,
         a["session"].as_str().unwrap(),
     );
@@ -1747,4 +1748,515 @@ async fn channel_permissions_through_the_real_server() {
     phone.drain(Q).await;
     laptop.drain(Q).await;
     assert!(!laptop.store.scopes.contains(&home), "no view left: no scope");
+}
+
+/// SPEC §5.3: an edited message's history, over REST with the message's own read rule (API.md
+/// §3): the friend sees every version of a public message, nothing of an aside's; a stranger
+/// nothing. Posts keep theirs too.
+#[tokio::test(flavor = "multi_thread")]
+async fn edit_history_follows_the_message_read_rule() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 101, "stars").await;
+    let friend = enrol(&s, auth::InviteKind::Person, None, 102, "alex").await;
+    let stranger = enrol(&s, auth::InviteKind::Person, None, 103, "sam").await;
+    let mut phone = Device::new(&sys, 101);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct = phone.scope("account:");
+    let kai = new_id(1, [104; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+    let f: Value = http
+        .post(url("/follows"))
+        .bearer_auth(tok(&friend))
+        .json(&json!({"target": "stars"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    phone.drain(Q).await;
+    phone.create("follow.accept", &acct, f["id"].as_str().unwrap(), json!({})).await;
+    phone.drain(Q).await;
+    let dm: Value = http
+        .post(url("/spaces"))
+        .bearer_auth(tok(&sys))
+        .json(&json!({"kind": "dm", "accounts": [friend["account_id"]]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    phone.drain(Q).await;
+    let scope = format!("space:{}", dm["id"].as_str().unwrap());
+    let chan = model::project(phone.store.confirmed()).rows["channel"]
+        .iter()
+        .find(|(_, r)| r.fields["space_id"] == dm["id"])
+        .map(|(id, _)| id.clone())
+        .unwrap();
+    let say = |text: &str, aside: bool| {
+        let mut p = json!({"channel_id": chan, "authors": [kai], "text": text, "entities": []});
+        if aside {
+            p["visibility"] = json!({"mode": "system_only"});
+        }
+        p
+    };
+    let public = new_id(2, [105; 10]);
+    let aside = new_id(2, [106; 10]);
+    phone.create("message.send", &scope, &public, say("helo", false)).await;
+    phone.create("message.send", &scope, &aside, say("secret", true)).await;
+    for (m, text) in [(&public, "hello"), (&public, "hello!"), (&aside, "still secret")] {
+        phone.create("message.edit", &scope, m, json!({"message_id": m, "text": text, "entities": []})).await;
+    }
+    phone.drain(Q).await;
+    let get = |path: String, auth: String| {
+        let http = http.clone();
+        async move {
+            let r = http.get(path).bearer_auth(auth).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap_or(Value::Null))
+        }
+    };
+    let texts = |v: &Value| -> Vec<String> {
+        v["items"].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap().to_string()).collect()
+    };
+    let (st, h) = get(url(&format!("/messages/{public}/revisions")), tok(&friend)).await;
+    assert_eq!(st, 200, "{h}");
+    assert_eq!(texts(&h), vec!["helo", "hello", "hello!"]);
+    assert_eq!(h["items"][2]["rev"], 2);
+    assert_eq!(get(url(&format!("/messages/{aside}/revisions")), tok(&friend)).await.0, 404, "not an aside's");
+    assert_eq!(get(url(&format!("/messages/{public}/revisions")), tok(&stranger)).await.0, 404);
+    let (_, mine) = get(url(&format!("/messages/{aside}/revisions")), tok(&sys)).await;
+    assert_eq!(texts(&mine), vec!["secret", "still secret"], "its own account sees it");
+    // an unedited message has one version: itself
+    let plain = new_id(2, [107; 10]);
+    phone.create("message.send", &scope, &plain, say("just once", false)).await;
+    phone.drain(Q).await;
+    let (_, once) = get(url(&format!("/messages/{plain}/revisions")), tok(&friend)).await;
+    assert_eq!(texts(&once), vec!["just once"]);
+
+    // posts: the author's own device reads a post's versions (titles included)
+    let post = new_id(3, [108; 10]);
+    let entry = |title: &str, text: &str| {
+        json!({"kind": "entry", "authors": [kai], "title": title, "text": text, "entities": [],
+               "visibility": {"mode": "private"}})
+    };
+    phone.create("post.create", &acct, &post, entry("Day", "a good day")).await;
+    phone
+        .create(
+            "post.edit",
+            &acct,
+            &post,
+            json!({"post_id": post, "title": "Day one", "text": "a good day", "entities": []}),
+        )
+        .await;
+    phone.drain(Q).await;
+    let (st, h) = get(url(&format!("/posts/{post}/revisions")), tok(&sys)).await;
+    assert_eq!(st, 200, "{h}");
+    let titles: Vec<&str> = h["items"].as_array().unwrap().iter().map(|i| i["title"].as_str().unwrap()).collect();
+    assert_eq!(titles, vec!["Day", "Day one"]);
+    assert_eq!(get(url(&format!("/posts/{post}/revisions")), tok(&friend)).await.0, 404, "a private entry");
+}
+
+/// SPEC §5.3 reply elsewhere / reply privately: a reply in another channel (or another space's
+/// DM) links back to its original only for readers who can read the original; nobody else learns
+/// it exists, over REST or sync.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reply_elsewhere_links_back_only_for_those_who_can_read_the_original() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 111, "stars").await;
+    let friend = enrol(&s, auth::InviteKind::Person, None, 112, "alex").await;
+    let mut phone = Device::new(&sys, 111);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let mut laptop = Device::new(&friend, 112);
+    laptop.connect(&s).await;
+    laptop.drain(Q).await;
+    let acct = phone.scope("account:");
+    let kai = new_id(1, [113; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+    let alex = friend["account_id"].as_str().unwrap().to_string();
+    let f: Value = http
+        .post(url("/follows"))
+        .bearer_auth(tok(&friend))
+        .json(&json!({"target": "stars"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    phone.drain(Q).await;
+    phone.create("follow.accept", &acct, f["id"].as_str().unwrap(), json!({})).await;
+    phone.drain(Q).await;
+    let post = |path: String, body: Value| {
+        let http = http.clone();
+        let t = tok(&sys);
+        async move { http.post(path).bearer_auth(t).json(&body).send().await.unwrap().json::<Value>().await.unwrap() }
+    };
+    let club = post(url("/spaces"), json!({"kind": "shared", "name": "Club", "accounts": [alex]})).await;
+    let club_id = club["id"].as_str().unwrap().to_string();
+    let dm = post(url("/spaces"), json!({"kind": "dm", "accounts": [alex]})).await;
+    let dm_id = dm["id"].as_str().unwrap().to_string();
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    let club_scope = format!("space:{club_id}");
+    let channel_in = |d: &Device, space: &str, name: Option<&str>| {
+        model::project(d.store.confirmed()).rows["channel"]
+            .iter()
+            .find(|(_, r)| {
+                r.fields["space_id"] == space
+                    && name.is_none_or(|n| r.fields.get("name").and_then(Value::as_str) == Some(n))
+            })
+            .map(|(id, _)| id.clone())
+            .unwrap()
+    };
+    let general = channel_in(&phone, &club_id, Some("general"));
+    let dm_chan = channel_in(&phone, &dm_id, None);
+    // #mods: nobody but the owner may view it
+    let mods = new_id(4, [1; 10]);
+    phone
+        .create("channel.create", &club_scope, &mods, json!({"space_id": club_id, "kind": "text", "name": "mods"}))
+        .await;
+    phone
+        .create(
+            "channel.set_permission",
+            &club_scope,
+            &mods,
+            json!({"target_type": "role", "target_id": "everyone", "allow": [], "deny": ["view"]}),
+        )
+        .await;
+    let say = |channel: &str, text: &str, reply_to: Option<&str>| {
+        let mut p = json!({"channel_id": channel, "authors": [kai], "text": text, "entities": []});
+        if let Some(r) = reply_to {
+            p["reply_to"] = json!(r);
+        }
+        p
+    };
+    let secret = new_id(4, [2; 10]);
+    let open = new_id(4, [3; 10]);
+    phone.create("message.send", &club_scope, &secret, say(&mods, "the secret plan", None)).await;
+    phone.create("message.send", &club_scope, &open, say(&general, "an open question", None)).await;
+    // replies in #general to #mods (elsewhere), and privately in the DM to #general
+    let reply_mods = new_id(4, [4; 10]);
+    phone.create("message.send", &club_scope, &reply_mods, say(&general, "about that plan", Some(&secret))).await;
+    let private = new_id(4, [5; 10]);
+    phone
+        .create("message.send", &format!("space:{dm_id}"), &private, say(&dm_chan, "just between us", Some(&open)))
+        .await;
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+
+    let get = |path: String, e: Value| {
+        let http = http.clone();
+        async move { http.get(path).bearer_auth(tok(&e)).send().await.unwrap().json::<Value>().await.unwrap() }
+    };
+    let find = |v: &Value, id: &str| v["items"].as_array().unwrap().iter().find(|m| m["id"] == id).cloned().unwrap();
+    let theirs = get(url(&format!("/channels/{general}/messages")), friend.clone()).await;
+    let r = find(&theirs, &reply_mods);
+    assert_eq!((r["reply_to"].clone(), r.get("reply_to_channel_id").cloned()), (Value::Null, None), "{r}");
+    let mine = get(url(&format!("/channels/{general}/messages")), sys.clone()).await;
+    let r = find(&mine, &reply_mods);
+    assert_eq!(
+        (r["reply_to"].as_str(), r["reply_to_channel_id"].as_str()),
+        (Some(secret.as_str()), Some(mods.as_str()))
+    );
+    // the private reply links back to #general for the friend, who can read it
+    let dm_msgs = get(url(&format!("/channels/{dm_chan}/messages")), friend.clone()).await;
+    let r = find(&dm_msgs, &private);
+    assert_eq!(
+        (r["reply_to"].as_str(), r["reply_to_channel_id"].as_str()),
+        (Some(open.as_str()), Some(general.as_str()))
+    );
+    // and over sync: the friend has the reply, never the original it can't see
+    let held = |id: &str| laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(id));
+    assert!(held(&reply_mods) && held(&open) && !held(&secret));
+}
+
+/// Read marks are the account's own: another account in the space never gets them (they'd show
+/// when it read and, per member, who of it was fronting), its other devices do.
+#[tokio::test(flavor = "multi_thread")]
+async fn read_marks_stay_with_their_account() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 121, "stars").await;
+    let friend = enrol(&s, auth::InviteKind::Person, None, 122, "alex").await;
+    let sys_id = sys["account_id"].as_str().unwrap().to_string();
+    let desk_e = enrol(&s, auth::InviteKind::Device, Some(&sys_id), 123, "").await;
+    let (mut phone, mut desk, mut laptop) =
+        (Device::new(&sys, 121), Device::new(&desk_e, 123), Device::new(&friend, 122));
+    for d in [&mut phone, &mut desk, &mut laptop] {
+        d.connect(&s).await;
+        d.drain(Q).await;
+    }
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+    let acct = phone.scope("account:");
+    let f: Value = http
+        .post(url("/follows"))
+        .bearer_auth(tok(&friend))
+        .json(&json!({"target": "stars"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    phone.drain(Q).await;
+    phone.create("follow.accept", &acct, f["id"].as_str().unwrap(), json!({})).await;
+    phone.drain(Q).await;
+    let club: Value = http
+        .post(url("/spaces"))
+        .bearer_auth(tok(&sys))
+        .json(&json!({"kind": "shared", "name": "Club", "accounts": [friend["account_id"]]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    for d in [&mut phone, &mut desk, &mut laptop] {
+        d.drain(Q).await;
+    }
+    let scope = format!("space:{}", club["id"].as_str().unwrap());
+    let general = model::project(phone.store.confirmed()).rows["channel"]
+        .iter()
+        .find(|(_, r)| r.fields["space_id"] == club["id"])
+        .map(|(id, _)| id.clone())
+        .unwrap();
+    let kai = new_id(1, [124; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    let hello = new_id(5, [1; 10]);
+    phone
+        .create(
+            "message.send",
+            &scope,
+            &hello,
+            json!({"channel_id": general, "authors": [kai], "text": "hi", "entities": []}),
+        )
+        .await;
+    let mark = phone
+        .create(
+            "read.mark",
+            &scope,
+            &hello,
+            json!({"channel_id": general, "message_id": hello, "reader_member_id": kai}),
+        )
+        .await;
+    for d in [&mut phone, &mut desk, &mut laptop] {
+        d.drain(Q).await;
+    }
+    assert!(desk.store.confirmed().any(|o| o.id == mark), "the account's other device has it");
+    assert!(!laptop.store.confirmed().any(|o| o.id == mark), "another account never does");
+    assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(hello.as_str())));
+    assert_eq!(laptop.engine.repairs, 0, "and its digest agrees without it");
+}
+
+/// SYNC §6.5 windowed replica: a tab keeping only what arrived since its window gets no older
+/// messages, its digests still agree (no repair), and older history is there over REST.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_windowed_tab_keeps_recent_messages_and_its_digest_agrees() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 131, "stars").await;
+    let sys_id = sys["account_id"].as_str().unwrap().to_string();
+    let tab_e = enrol(&s, auth::InviteKind::Device, Some(&sys_id), 132, "").await;
+    let mut phone = Device::new(&sys, 131);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct = phone.scope("account:");
+    let space = phone.scope("space:");
+    let general =
+        phone.store.confirmed().find(|o| o.kind == "channel.create").and_then(|o| o.entity_id.clone()).unwrap();
+    let kai = new_id(1, [133; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    let say = |text: &str| json!({"channel_id": general, "authors": [kai], "text": text, "entities": []});
+    let old = new_id(6, [1; 10]);
+    phone.create("message.send", &space, &old, say("before the window")).await;
+    let old_mark = phone
+        .create("read.mark", &space, &old, json!({"channel_id": general, "message_id": old, "reader_member_id": ""}))
+        .await;
+    phone.drain(Q).await;
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    let window = chorus_server::now_ms();
+    let fresh = new_id(6, [2; 10]);
+    phone.create("message.send", &space, &fresh, say("inside the window")).await;
+    phone.drain(Q).await;
+
+    let mut tab = Device::new(&tab_e, 132);
+    tab.engine.window = Some(window);
+    tab.connect(&s).await;
+    tab.drain(Q).await;
+    let held = |d: &Device, id: &str| d.store.confirmed().any(|o| o.id == id || o.entity_id.as_deref() == Some(id));
+    assert!(held(&tab, &fresh) && !held(&tab, &old) && !held(&tab, &old_mark));
+    assert!(held(&tab, &general), "channels are always kept");
+    assert!(tab.store.confirmed().any(|o| o.kind == "member.create"), "and the account scope");
+    // live: a new message arrives; a recheck of every scope repairs nothing
+    let live = new_id(6, [3; 10]);
+    phone.create("message.send", &space, &live, say("live")).await;
+    phone.drain(Q).await;
+    tab.drain(Q).await;
+    assert!(held(&tab, &live));
+    let frames = tab.engine.recheck(&tab.store);
+    tab.send(frames).await;
+    tab.drain(Q).await;
+    assert_eq!(tab.engine.repairs, 0, "the windowed digest agrees");
+    // what the window leaves out is still readable over REST
+    let page: Value = reqwest::Client::new()
+        .get(format!("http://{}/api/v1/channels/{general}/messages", s.base))
+        .bearer_auth(tab_e["session"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(page["items"].as_array().unwrap().iter().any(|m| m["id"] == old.as_str()));
+    // and a tab without a window, on the same account, has everything
+    let full_e = enrol(&s, auth::InviteKind::Device, Some(&sys_id), 134, "").await;
+    let mut full = Device::new(&full_e, 134);
+    full.connect(&s).await;
+    full.drain(Q).await;
+    assert!(held(&full, &old) && held(&full, &old_mark));
+}
+
+/// SPEC §9 on the chat path (R24): a device back after a week away from a busy shared space —
+/// another account sent 20 000 messages meanwhile, with edits, reactions and permission changes
+/// (some hiding a channel from it, so its digest has to filter) — is caught up within 10 s.
+/// `cargo test --release -p chorus-server --test sync_e2e shared_space_catch_up -- --ignored --nocapture`
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn shared_space_catch_up_budget() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 141, "stars").await;
+    let friend = enrol(&s, auth::InviteKind::Person, None, 142, "alex").await;
+    let mut phone = Device::new(&sys, 141);
+    let mut laptop = Device::new(&friend, 142);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    laptop.connect(&s).await;
+    laptop.drain(Q).await;
+    let http = reqwest::Client::new();
+    let url = |p: &str| format!("http://{}/api/v1{p}", s.base);
+    let tok = |e: &Value| e["session"].as_str().unwrap().to_string();
+    let acct = phone.scope("account:");
+    let f: Value = http
+        .post(url("/follows"))
+        .bearer_auth(tok(&friend))
+        .json(&json!({"target": "stars"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    phone.drain(Q).await;
+    phone.create("follow.accept", &acct, f["id"].as_str().unwrap(), json!({})).await;
+    phone.drain(Q).await;
+    let club: Value = http
+        .post(url("/spaces"))
+        .bearer_auth(tok(&sys))
+        .json(&json!({"kind": "shared", "name": "Club", "accounts": [friend["account_id"]]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let club_id = club["id"].as_str().unwrap().to_string();
+    let scope = format!("space:{club_id}");
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+    let kai = new_id(1, [143; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    let channels: Vec<String> = (0..8u8).map(|i| new_id(7, [i + 1; 10])).collect();
+    for (i, c) in channels.iter().enumerate() {
+        phone
+            .create("channel.create", &scope, c, json!({"space_id": club_id, "kind": "text", "name": format!("c{i}")}))
+            .await;
+    }
+    phone.drain(Q).await;
+    laptop.drain(Q).await;
+
+    // a week away
+    laptop.disconnect();
+    let t = std::time::Instant::now();
+    let mut sent = Vec::new();
+    for i in 0..20_000usize {
+        let id = new_id(chorus_server::now_ms() as u64, rand::random());
+        let c = &channels[i % channels.len()];
+        phone
+            .create(
+                "message.send",
+                &scope,
+                &id,
+                json!({"channel_id": c, "authors": [kai], "text": format!("busy {i}"), "entities": []}),
+            )
+            .await;
+        sent.push(id.clone());
+        if i % 10 == 3 {
+            let m = &sent[i / 2];
+            phone
+                .create(
+                    "message.edit",
+                    &scope,
+                    m,
+                    json!({"message_id": m, "text": format!("edited {i}"), "entities": []}),
+                )
+                .await;
+        }
+        if i % 7 == 1 {
+            let m = &sent[i / 3];
+            phone
+                .create(
+                    "reaction.add",
+                    &scope,
+                    m,
+                    json!({"target_type": "message", "target_id": m, "emoji": "💜", "member_id": kai}),
+                )
+                .await;
+        }
+        if i % 500 == 250 {
+            // one channel hidden from everyone but the owner, and shown again, back and forth
+            let deny: Vec<&str> = if (i / 500) % 2 == 0 { vec!["view"] } else { vec![] };
+            phone
+                .create(
+                    "channel.set_permission",
+                    &scope,
+                    &channels[0],
+                    json!({"target_type": "role", "target_id": "everyone", "allow": [], "deny": deny}),
+                )
+                .await;
+        }
+        if i % 200 == 0 {
+            phone.drain(Duration::from_millis(1)).await;
+        }
+    }
+    let last = sent.last().unwrap().clone();
+    assert!(
+        phone.until(Duration::from_secs(300), |st| st.pending(&Default::default(), 1, false).is_empty()).await,
+        "the phone never finished sending"
+    );
+    println!("the busy week: {} ops in {:?}", phone.store.confirmed().count(), t.elapsed());
+
+    let t = std::time::Instant::now();
+    laptop.connect(&s).await;
+    let caught = laptop
+        .until(Duration::from_secs(60), |st| st.confirmed().any(|o| o.entity_id.as_deref() == Some(last.as_str())))
+        .await;
+    laptop.drain(Duration::from_millis(300)).await;
+    let took = t.elapsed();
+    assert!(caught, "never caught up");
+    assert!(laptop.engine.repairing().is_empty());
+    println!(
+        "back after a week: {} ops caught up in {took:?} ({} repairs)",
+        laptop.store.confirmed().count(),
+        laptop.engine.repairs
+    );
+    assert!(took <= Duration::from_secs(10), "SPEC §9: reconnect ≤ 10 s");
 }

@@ -21,6 +21,8 @@ struct W {
     space: String,
     n: u8,
     last_op: String,
+    /// When the next op says it was written (default: now), for ops written offline earlier.
+    written: Option<i64>,
 }
 
 impl W {
@@ -39,7 +41,8 @@ impl W {
             ingest::grant(&c, id, &format!("account:{id}")).unwrap();
             ingest::grant(&c, id, &space).unwrap();
         }
-        let mut w = W { c, a: a.clone(), b: b.clone(), space: space.clone(), n: 0, last_op: String::new() };
+        let mut w =
+            W { c, a: a.clone(), b: b.clone(), space: space.clone(), n: 0, last_op: String::new(), written: None };
         // a real shared space with a #general, so channel permissions (perms.rs) have rows to read
         let id = space.strip_prefix("space:").unwrap().to_string();
         w.push(&a, "space.create", &space, &id, json!({"kind": "shared", "name": "Club"}));
@@ -60,7 +63,7 @@ impl W {
             scope: scope.into(),
             entity_id: Some(entity.into()),
             hlc: Hlc::new(at as u64, 0, u32::from(self.n)),
-            device_at: at,
+            device_at: self.written.take().unwrap_or(at),
             tz_offset_min: 0,
             mono: None,
             boot_id: None,
@@ -412,4 +415,112 @@ fn reposts_keep_their_source() {
     w.c.execute("UPDATE post SET repost_of_id = NULL", []).unwrap();
     w.c.execute_batch(include_str!("../migrations/0006_message_reply_to.sql")).unwrap();
     assert_eq!(link(&w).as_deref(), Some(first.as_str()));
+}
+
+/// SPEC §5.3 mentions: `@group` reaches every member in it, `@account` the account, `@front` who
+/// was fronting when the message was written; a guest of a channel hears about a mention there,
+/// and nobody hears about one in a channel they can't view.
+#[test]
+fn every_kind_of_mention_reaches_whom_it_names() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let (acct_a, acct_b) = (format!("account:{a}"), format!("account:{b}"));
+    let kai = new_id(NOW as u64, [40; 10]);
+    let rin = new_id(NOW as u64, [41; 10]);
+    let june = new_id(NOW as u64, [42; 10]);
+    let mo = new_id(NOW as u64, [44; 10]); // writes; authors never ping themselves
+    w.push(&a, "member.create", &acct_a, &mo, json!({"name": "Mo"}));
+    w.push(&a, "member.create", &acct_a, &kai, json!({"name": "Kai"}));
+    w.push(&a, "member.create", &acct_a, &rin, json!({"name": "Rin"}));
+    w.push(&b, "member.create", &acct_b, &june, json!({"name": "June"}));
+    let friends = new_id(NOW as u64, [43; 10]);
+    w.push(&b, "group.create", &acct_b, &friends, json!({"name": "Friends", "kind": "group"}));
+    w.push(&b, "group.add_member", &acct_b, &friends, json!({"member_id": june}));
+    let mut n = 90u8;
+    let mut send = |w: &mut W, scope: &str, channel: &str, text: &str, target: (&str, Option<&str>)| {
+        n += 1;
+        let id = new_id(NOW as u64, [n; 10]);
+        let mut e = json!({"type": "mention", "offset": 0, "length": 3, "target_type": target.0});
+        if let Some(t) = target.1 {
+            e["target_id"] = json!(t);
+        }
+        let mut m = msg(text, &[&mo], json!([e]));
+        m["channel_id"] = json!(channel);
+        w.push(&a, "message.send", scope, &id, m);
+    };
+    let latest = |w: &W, who: &str| w.inbox(who).first().cloned();
+    let mention = |t: &str| Some(("mention".to_string(), t.to_string()));
+
+    // in the shared space: Alex's group, the account itself, and Alex's front
+    send(&mut w, &space, GENERAL, "@Friends lunch?", ("group", Some(&friends)));
+    assert_eq!(latest(&w, &b), mention("@Friends lunch?"));
+    send(&mut w, &space, GENERAL, "@alex hello", ("account", Some(&b)));
+    assert_eq!(latest(&w, &b), mention("@alex hello"));
+    send(&mut w, &space, GENERAL, "@front anyone?", ("front", Some(&b)));
+    assert_eq!(latest(&w, &b), mention("@alex hello"), "nobody of Alex's was fronting");
+    let sw = new_id(NOW as u64, [60; 10]);
+    w.push(
+        &b,
+        "front.switch",
+        &acct_b,
+        &sw,
+        json!({"entries": [{"subject_type": "member", "subject_id": june, "level": "front"}]}),
+    );
+    send(&mut w, &space, GENERAL, "@front there?", ("front", Some(&b)));
+    assert_eq!(latest(&w, &b), mention("@front there?"));
+    assert!(w.inbox(&a).is_empty(), "the author's account never hears its own");
+
+    // A's internal space: `@front` is who was fronting when the message was written
+    let home_id = new_id(1, [4; 10]);
+    let home = format!("space:{home_id}");
+    ingest::grant(&w.c, &a, &home).unwrap();
+    w.push(&a, "space.create", &home, &home_id, json!({"kind": "internal", "name": "Home"}));
+    let (general, news) = (new_id(NOW as u64, [31; 10]), new_id(NOW as u64, [32; 10]));
+    for (c, name) in [(&general, "general"), (&news, "news")] {
+        w.push(&a, "channel.create", &home, c, json!({"space_id": home_id, "kind": "text", "name": name}));
+    }
+    let pref = new_id(NOW as u64, [61; 10]);
+    w.push(
+        &a,
+        "pref.set",
+        &acct_a,
+        &pref,
+        json!({"device": "", "key": format!("notify_member:{rin}"), "value": {"mentions": "never"}}),
+    );
+    let with_kai = NOW + i64::from(w.n + 1) * 1000; // Kai fronts from here …
+    let sw = new_id(NOW as u64, [62; 10]);
+    w.push(
+        &a,
+        "front.switch",
+        &acct_a,
+        &sw,
+        json!({"entries": [{"subject_type": "member", "subject_id": kai, "level": "front"}]}),
+    );
+    let sw = new_id(NOW as u64, [63; 10]);
+    w.push(
+        &a,
+        "front.switch",
+        &acct_a,
+        &sw,
+        json!({"entries": [{"subject_type": "member", "subject_id": rin, "level": "front"}]}),
+    );
+    send(&mut w, &home, &general, "@front now", ("front", None));
+    assert!(w.inbox(&a).is_empty(), "Rin is fronting now, and Rin's mentions are off");
+    w.written = Some(with_kai + 500); // … written offline while Kai fronted, arriving now
+    send(&mut w, &home, &general, "@front then", ("front", None));
+    assert_eq!(latest(&w, &a), mention("@front then"));
+
+    // a guest of #news hears about a mention there, not about one in #general
+    w.push(
+        &a,
+        "channel.set_permission",
+        &home,
+        &news,
+        json!({"target_type": "account", "target_id": b, "allow": ["view"], "deny": []}),
+    );
+    let before = w.inbox(&b).len();
+    send(&mut w, &home, &general, "@June inside", ("member", Some(&june)));
+    assert_eq!(w.inbox(&b).len(), before, "Alex can't view #general");
+    send(&mut w, &home, &news, "@June news!", ("member", Some(&june)));
+    assert_eq!(latest(&w, &b), mention("@June news!"));
 }

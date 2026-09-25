@@ -5,9 +5,33 @@ import type { SwitchRow } from '../front.svelte';
 import { loadHead, loadOps, save, saveSnapshot, type Changes, type DeviceRecord, type Snapshot } from './persist';
 import { renew } from './device';
 import { applyDelta, type Delta } from './delta';
-import { flushUploads } from './uploads';
-import { keepStorage } from './blobs';
+import { flushUploads, stageBlob } from './uploads';
+import { keepStorage, loadBlob } from './blobs';
 import { fillFiles, keepEverything } from './keep';
+import type { Entity } from '../core';
+
+/** An op the server refused (SYNC §7 "Sync issues"). */
+/** A browser tab's message window (DATA_MODEL §5: "keep last N days offline", default 90). */
+export const WINDOW_DAYS = 90;
+
+export interface SyncIssue {
+  id: string;
+  kind: string;
+  scope: string;
+  entity_id: string | null;
+  payload: Record<string, unknown>;
+  at: number;
+  code: string;
+  message: string;
+}
+
+/** One version of a message's or post's text (SPEC §5.3 edit history). */
+export interface Revision {
+  rev: number;
+  original: boolean;
+  fields: { text?: string; entities?: Entity[]; cw?: string | null; title?: string | null };
+  at: number;
+}
 
 export type Status = 'offline' | 'connecting' | 'live' | 'no-device';
 
@@ -73,6 +97,8 @@ export class SyncClient {
   /** told about each `caught` frame while "Sync everything now" runs */
   private caughtWatch: ((scope: string) => void) | null = null;
   private keptFiles = false;
+  /** "Keep everything on this device" (keep.ts): off, a browser tab keeps a window (SYNC §6.5). */
+  private keepAll = true;
 
   async start(): Promise<void> {
     // open-time marks (CLIENTS.md §4.3: a 100k-op device opens in ≤ 2 s); web/perf measures them
@@ -134,11 +160,37 @@ export class SyncClient {
       this.scheduleSnapshot();
     }
     performance.mark('chorus:restored');
+    this.keepAll = await keepEverything();
     this.emit();
     this.connect();
   }
 
+  /** Only messages from the last WINDOW_DAYS on this device; older ones page in over REST. */
+  get windowed(): boolean {
+    return !this.keepAll;
+  }
+
+  /** "Keep everything" changed: connect again, which trims to the window or (off → on) repairs
+   * back to everything (the digest no longer matches, so the scopes are pulled again). */
+  setKeepAll(on: boolean): void {
+    this.keepAll = on;
+    this.emit();
+    this.ws?.close();
+  }
+
   /** With "keep everything" on, fetch files into the offline cache once a session (keep.ts). */
+  /** The server was restored from a backup (SYNC.md §7.3): its files are as old as the backup.
+   * Upload again the files named by ops it doesn't have yet that this browser has a copy of. */
+  private async reuploadAfterRestore(): Promise<void> {
+    const dev = this.device;
+    if (!this.replica || !dev) return;
+    for (const hash of JSON.parse(this.replica.restoringBlobs()) as string[]) {
+      const blob = await loadBlob(hash, null); // this browser's copy only
+      if (blob) await stageBlob(blob, blob.type, dev.account_id);
+    }
+    await flushUploads(dev);
+  }
+
   private async keepFiles(): Promise<void> {
     if (this.keptFiles || !(await keepEverything())) return;
     this.keptFiles = true;
@@ -177,6 +229,22 @@ export class SyncClient {
   subscribeProjection(fn: ProjectionListener): () => void {
     this.projectionListeners.add(fn);
     return () => this.projectionListeners.delete(fn);
+  }
+
+  /** Ops the server refused, with why, oldest first (SYNC §7 "Sync issues"). */
+  syncIssues(): SyncIssue[] {
+    return this.replica ? (JSON.parse(this.replica.syncIssues()) as SyncIssue[]) : [];
+  }
+
+  /** Let go of a refused op once seen (deleted from this device too). */
+  dismissIssue(id: string): void {
+    if (this.replica?.dismissIssue(id)) this.changed();
+  }
+
+  /** Every version of an edited message or post, oldest first, from this device's ops (core
+   * `revisions`, the same rule as `GET /messages/{id}/revisions`). */
+  revisions(id: string): Revision[] {
+    return this.replica ? (JSON.parse(this.replica.revisions(id)) as Revision[]) : [];
   }
 
   projection(): Projection | null {
@@ -317,7 +385,9 @@ export class SyncClient {
     this.ws = ws;
     ws.onopen = () => {
       const clock = { wall: Date.now(), mono: null, boot_id: null };
+      this.replica!.setWindow(this.keepAll ? undefined : Date.now() - WINDOW_DAYS * 86_400_000);
       ws.send(this.replica!.connect(JSON.stringify(clock), this.device!.session));
+      this.changed(); // what the window dropped leaves storage too
     };
     ws.onmessage = async (ev) => {
       const frame = JSON.parse(ev.data as string);
@@ -338,6 +408,7 @@ export class SyncClient {
       }
       const out = JSON.parse(this.replica!.onFrame(ev.data as string, Date.now())) as unknown[];
       this.sendAll(out);
+      if (frame.t === 'welcome' && frame.reconcile) void this.reuploadAfterRestore();
       this.changed();
       if (frame.t === 'caught') this.caughtWatch?.(frame.scope);
     };

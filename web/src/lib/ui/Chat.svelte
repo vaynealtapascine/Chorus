@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
-  import { core, type Composed } from '../core';
-  import { channels, contentWarningsAutoExpand, customEmojis, lastRead, members, messageById, messages, reactions, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
+  import { core, type Composed, type Entity } from '../core';
+  import RichText from './RichText.svelte';
+  import { channels, contentWarningsAutoExpand, customEmojis, lastRead, memberMarks, members, messageById, messages, reactions, readPerMember, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
   import { router } from '../router.svelte';
   import { snapshot } from '../selection';
@@ -12,8 +13,10 @@
   import AvatarImage from './AvatarImage.svelte';
   import EmojiImage from './EmojiImage.svelte';
   import SpaceRail from './SpaceRail.svelte';
-  import { authorCards, listSpaces, spaceTitle, type SpaceInfo } from '../spaces';
+  import { authorCards, listSpaces, openDm, spaceTitle, type SpaceInfo } from '../spaces';
+  import { carryReply, takeReply } from '../replyElsewhere';
   import ChannelPermissions from './ChannelPermissions.svelte';
+  import SpaceRoles from './SpaceRoles.svelte';
   import { selfMember, type MemberRow } from '../data';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
@@ -57,18 +60,34 @@
 
   // who speaks by default: the primary fronter, else the first one fronting (SPEC §5.2)
   const fronting = $derived(projection.fronts[sync.accountId]?.current ?? []);
+  const frontingMembers = $derived(fronting.filter((e) => e.subject_type === 'member')
+    .map((e) => ({ member_id: e.subject_id, is_primary: !!e.is_primary, level: e.level })));
   // a person account always speaks as its self member (D-003)
   const self = $derived(selfMember(projection));
   let viewingAs = $state<string | null>(null);
   const activeMembers = $derived(activeViewers(fronting));
   const visibleMsgs = $derived(msgs.filter((m) => memberVisible(m, space?.kind, activeMembers, viewingAs)));
-  const defaultSpeaker = $derived(
-    self?.id ??
-      (fronting.find((e) => e.is_primary && e.subject_type === 'member') ??
-        fronting.find((e) => e.level === 'front' && e.subject_type === 'member'))?.subject_id,
-  );
+  // this account's autoproxy for the channel (D-074): pref `autoproxy:<channel id>`
+  type Autoproxy = 'off' | 'front' | 'latch' | 'member';
+  const autoproxyKey = $derived(current ? `autoproxy:${current.id}` : '');
+  const autoproxy = $derived.by((): { mode: Autoproxy; member?: string } => {
+    const rows = projection.rows.pref ?? {};
+    const v = (rows[`${sync.accountId}||${autoproxyKey}`] ?? rows[`||${autoproxyKey}`])?.fields.value as { mode?: string; member?: string } | undefined;
+    const mode = (['off', 'latch', 'member'].includes(v?.mode ?? '') ? v?.mode : 'front') as Autoproxy;
+    return { mode, member: typeof v?.member === 'string' ? v.member : undefined };
+  });
+  function setAutoproxy(mode: Autoproxy, member?: string) {
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: autoproxyKey, value: member ? { mode, member } : { mode } });
+  }
+  // the speaker chip before anyone picks: one rule in core (SPEC §5.2)
+  const defaults = $derived(core.defaultSpeaker({
+    mode: autoproxy.mode, member: autoproxy.member ?? null, self_member: self?.id ?? null,
+    fronting: frontingMembers,
+    last_authors: msgs.findLast((m) => m.account_id === sync.accountId && !m.deleted)?.authors ?? [],
+    members: members(projection).filter((m) => !m.deleted).map((m) => m.id),
+  }));
   let chosen = $state<string | null>(null);
-  const speaker = $derived(chosen ?? defaultSpeaker ?? null);
+  const speaker = $derived(chosen ?? defaults[0] ?? null);
   const speakers = $derived(
     [...people.values()].filter((m) => !m.deleted).map((m) => ({ member_id: m.id, sigils: m.sigils, proxy_tags: m.proxy_tags })),
   );
@@ -202,9 +221,78 @@
     cw = '';
     visibilityMode = 'all';
     visibleTo = [];
+    replyIn = null;
+    older = [];
+    olderDone = false;
+    // a reply started elsewhere ("Reply in…", "Reply privately") lands here
+    if (current) replyTo = takeReply(current.id, current.space_id);
   });
 
-  const preview: Composed | null = $derived(draft.trim() && !editing ? core.compose(draft, speakers, { segments: parseSegments }, speaker ? [speaker] : [], names) : null);
+  // a browser tab keeps a window of messages (SYNC §6.5): older history comes over REST, on
+  // request, shown read-only above what this device holds
+  interface OlderMessage { id: string; authors: string[]; text: string; entities: Entity[]; cw: string | null; occurred_at: number }
+  let older = $state<OlderMessage[]>([]);
+  let olderDone = $state(false);
+  let olderBusy = $state(false);
+  async function loadOlder() {
+    if (!current) return;
+    const channel = current.id;
+    const before = older[0]?.occurred_at ?? msgs[0]?.occurred_at ?? Date.now();
+    olderBusy = true;
+    try {
+      const r = await apiFetch(`${apiBase()}/channels/${encodeURIComponent(channel)}/messages?before=${before}&limit=50`, {
+        headers: { authorization: `Bearer ${sync.device?.session ?? ''}` },
+      });
+      if (!r.ok || current?.id !== channel) return;
+      const items = ((await r.json()) as { items: OlderMessage[] }).items;
+      const have = new Set(msgs.map((m) => m.id));
+      older = [...items.filter((m) => !have.has(m.id)), ...older];
+      olderDone = items.length < 50;
+    } finally {
+      olderBusy = false;
+    }
+  }
+
+  // Reply elsewhere (SPEC §5.3): the reply goes to another channel, thread or DM and links back
+  // (a reference card, for readers who can see the original)
+  let replyIn = $state<MessageRow | null>(null);
+  const replyTargets = $derived(
+    allChannels
+      .filter((c) => c.id !== current?.id && !c.archived)
+      .map((c) => ({ id: c.id, label: `${ss.find((x) => x.id === c.space_id)?.name ?? 'DM'} › ${c.kind === 'thread' ? 'thread' : '#'}${c.name}` }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+  );
+  function replyElsewhere(target: string) {
+    if (!replyIn || !target) return;
+    carryReply(replyIn, target);
+    replyIn = null;
+    location.hash = `#/chat/${target}`;
+  }
+  // Reply privately: the member DM with the author (internal space), else the DM with the
+  // author's account; made if there isn't one yet
+  async function replyPrivately(m: MessageRow) {
+    if (!current || !space) return;
+    if (space.kind === 'internal') {
+      const author = m.authors[0];
+      if (!speaker || !author || author === speaker) return;
+      const pair = [speaker, author];
+      let dm = allChannels.find((c) => c.space_id === space.id && c.kind === 'member_dm' && !c.archived
+        && c.member_ids?.length === 2 && pair.every((id) => c.member_ids?.includes(id)));
+      const target = dm?.id ?? sync.newId();
+      if (!dm) {
+        const name = pair.map((id) => people.get(id)?.name ?? '?').join(' & ');
+        sync.create('channel.create', scope, target, { space_id: space.id, kind: 'member_dm', name, member_ids: pair });
+      }
+      carryReply(m, target);
+      location.hash = `#/chat/${target}`;
+    } else if (m.account_id && m.account_id !== sync.accountId) {
+      const dm = await openDm(m.account_id);
+      carryReply(m, `space:${dm}`);
+      location.hash = `#/chat/space:${dm}`;
+    }
+  }
+
+  const preview: Composed | null = $derived(draft.trim() && !editing ? core.compose(draft, speakers, { segments: parseSegments }, chosen ? [chosen] : defaults, names) : null);
   const previewNames = $derived(
     preview ? preview.segments.map((s) => s.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')).join(' → ') : '',
   );
@@ -244,7 +332,7 @@
     }
     if (!preview && !pending.length) return;
     if (visibilityMode === 'members' && !visibleTo.length) return;
-    const authors = preview?.authors ?? (speaker ? [speaker] : []);
+    const authors = preview?.authors ?? (chosen ? [chosen] : defaults);
     if (!authors.length) return;
     const attachmentIds: string[] = [];
     try {
@@ -399,6 +487,23 @@
 
   let newChannel = $state('');
   // may this account add channels and change permissions here? (perms.rs: the owner, admins; in a DM, both)
+  // slow mode (OPEN_QUESTIONS Q17 default): the channel's settings.slow_mode_s, enforced by the
+  // server when a send arrives; managers are exempt
+  const slowMode = $derived.by(() => {
+    const v = (projection.rows.channel?.[current?.id ?? '']?.fields.settings as { slow_mode_s?: unknown } | undefined)?.slow_mode_s;
+    return typeof v === 'number' && v > 0 ? v : 0;
+  });
+  function setSlowMode(seconds: number) {
+    if (!current) return;
+    const old = (projection.rows.channel?.[current.id]?.fields.settings ?? {}) as Record<string, unknown>;
+    sync.create('channel.set', scope, current.id, { settings: { ...old, slow_mode_s: seconds } });
+  }
+  // messages the server refused here (SYNC §7 "Sync issues"): the reason, the text to copy
+  const notSent = $derived.by(() => {
+    void projection;
+    return sync.syncIssues().filter((i) => ['message.send', 'message.forward'].includes(i.kind) && i.payload.channel_id === current?.id);
+  });
+  const slowLabel = (s: number) => (s < 60 ? `${s} s` : s < 3600 ? `${s / 60} min` : `${s / 3600} h`);
   const canManage = $derived.by(() => {
     if (!space) return false;
     const info = directory.get(space.id);
@@ -489,14 +594,23 @@
   $effect(() => {
     if (!current || !visible) return;
     const latest = visibleMsgs.findLast((m) => !m.deleted);
-    if (!latest || latest.occurred_at <= lastRead(projection, current.id, sync.accountId)) return;
-    sync.create('read.mark', scope, null, {
-      channel_id: current.id,
-      message_id: latest.id,
-      message_at: latest.occurred_at,
-      reader_member_id: '',
-    });
+    if (!latest) return;
+    // the account, and with "track reading per member" whoever is fronting (core decides)
+    const marks = new Map(marksHere.map((m) => [m.member, m.at]));
+    for (const reader of core.readReaders(perMember, frontingMembers)) {
+      const at = reader === '' ? lastRead(projection, current.id, sync.accountId) : marks.get(reader) ?? 0;
+      if (latest.occurred_at <= at) continue;
+      sync.create('read.mark', scope, null, {
+        channel_id: current.id,
+        message_id: latest.id,
+        message_at: latest.occurred_at,
+        reader_member_id: reader,
+      });
+    }
   });
+  const perMember = $derived(readPerMember(projection, sync.accountId));
+  const marksHere = $derived(current ? memberMarks(projection, current.id, sync.accountId) : []);
+  const unseenBy = (m: MessageRow): string[] => perMember && marksHere.length ? core.readUnseenBy(m.occurred_at, m.id, marksHere) : [];
   const color = (id: string) => core.adaptColor(people.get(id)?.color ?? '#A09184', dark);
 
   // notifications for this channel (NOTIFICATIONS §7): all · mentions · none, kept as an account
@@ -606,6 +720,16 @@
           <div class="menu-items">
             <a href="#/stage/{current.id}">Stage… (screenshot)</a>
             <a href="#/trash/{current.id}">Show deleted</a>
+            {#if space?.kind === 'shared' && canManage}
+              <SpaceRoles {projection} spaceId={space.id} info={directory.get(space.id)} />
+            {/if}
+            {#if space && canManage && space.kind !== 'dm'}
+              <label class="notify">Slow mode
+                <select value={String(slowMode)} onchange={(e) => setSlowMode(Number(e.currentTarget.value))} aria-label="Slow mode for this channel">
+                  {#each [0, 5, 30, 60, 300, 900, 3600] as s (s)}<option value={String(s)}>{s ? `one message every ${slowLabel(s)}` : 'off'}</option>{/each}
+                </select>
+              </label>
+            {/if}
             {#if space && canManage && space.kind !== 'dm' && current.kind !== 'thread'}
               <ChannelPermissions {projection} channelId={current.id} spaceId={space.id} info={directory.get(space.id)} />
             {/if}
@@ -660,6 +784,18 @@
           </article>
         {:else if historyError}<p class="hint" role="status">{historyError}</p>{/if}
       {/if}
+      {#if sync.windowed && current && !olderDone}
+        <button class="older-load" disabled={olderBusy || sync.status !== 'live'} onclick={() => void loadOlder()}>
+          {olderBusy ? 'Loading…' : 'Older messages (from the server)'}
+        </button>
+      {/if}
+      {#each older as o (o.id)}
+        <article class="older">
+          <span class="who">{o.authors.map((id) => people.get(id)?.name ?? 'Someone').join(' & ')}</span>
+          <time>{new Date(o.occurred_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</time>
+          {#if o.cw}<div class="hint">Content warning: {o.cw}</div>{:else}<p><RichText text={o.text} entities={o.entities} emoji={emojiById} /></p>{/if}
+        </article>
+      {/each}
       {#each grouped as { m, cont } (m.id)}
         <Message
           {m}
@@ -669,6 +805,9 @@
           lookup={(id) => { const found = messageById(projection, id); return found && memberVisible(found, space?.kind, activeMembers, viewingAs) ? found : undefined; }}
           mine={m.account_id === sync.accountId}
           onreply={() => { replyTo = m; quoting = null; editing = null; editingParts = null; box?.focus(); }}
+          onreplyin={() => (replyIn = m)}
+          unseen={unseenBy(m).map((id) => people.get(id)?.name ?? '?')}
+          onreplyprivately={(space?.kind === 'internal' ? m.authors[0] !== speaker : m.account_id !== sync.accountId) ? () => void replyPrivately(m) : undefined}
           onquote={(q) => { quoting = q; forwarding = null; quoteSourceSpaceId = current?.space_id ?? ''; quoteSensitive = !!m.visibility && m.visibility.mode !== 'all'; replyTo = m; editing = null; editingParts = null; box?.focus(); }}
           onedit={() => startEdit(m)}
           ondelete={() => sync.create('message.delete', scope, m.id, {})}
@@ -710,6 +849,29 @@
         <button class="x" onclick={() => (forwarding = null)} aria-label="Cancel forward">✕</button>
       </div>
     {/if}
+    {#if notSent.length}
+      <ul class="not-sent" aria-label="Messages not sent">
+        {#each notSent as issue (issue.id)}
+          <li>
+            <span class="why">Not sent: {issue.message}</span>
+            <span class="text">{typeof issue.payload.text === 'string' ? issue.payload.text : ''}</span>
+            <button onclick={() => void navigator.clipboard?.writeText(String(issue.payload.text ?? ''))}>Copy text</button>
+            <button onclick={() => sync.dismissIssue(issue.id)}>Dismiss</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if slowMode && !canManage}<p class="hint slow">Slow mode: one message every {slowLabel(slowMode)} here.</p>{/if}
+    {#if replyIn}
+      <div class="reply-in" role="group" aria-label="Reply in another channel">
+        Reply to {replyIn.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')} in
+        <select aria-label="Channel to reply in" onchange={(e) => replyElsewhere(e.currentTarget.value)}>
+          <option value="">choose…</option>
+          {#each replyTargets as t (t.id)}<option value={t.id}>{t.label}</option>{/each}
+        </select>
+        <button onclick={() => (replyIn = null)}>Cancel</button>
+      </div>
+    {/if}
     {#if replyTo || quoting || editing}
       <div class="bar">
         {#if editing}Editing message{:else if quoting}Quoting {#if 'items' in quoting}{quoting.items.length} {quoting.items.length === 1 ? 'message' : 'messages'}{:else}“{quoting.text.slice(0, 60)}”{/if}{:else if replyTo}Replying to {replyTo.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')}{/if}
@@ -727,6 +889,26 @@
       <details class="chat-advanced">
         <summary>Advanced chat settings</summary>
         <p>Speaker parsing and content warning preferences are in <a href="#/settings">Settings</a>.</p>
+        {#if !self}
+          <label>Speaker in this channel
+            <select aria-label="Autoproxy for this channel" value={autoproxy.mode}
+              onchange={(e) => setAutoproxy(e.currentTarget.value as Autoproxy, e.currentTarget.value === 'member' ? (autoproxy.member ?? speaker ?? undefined) : undefined)}>
+              <option value="front">Whoever is fronting</option>
+              <option value="latch">Whoever spoke last here</option>
+              <option value="member">Always one member</option>
+              <option value="off">Nobody (pick each time)</option>
+            </select>
+          </label>
+          {#if autoproxy.mode === 'member'}
+            <label>Always
+              <select aria-label="Sticky speaker" value={autoproxy.member ?? ''} onchange={(e) => setAutoproxy('member', e.currentTarget.value)}>
+                {#each members(projection).filter((m) => !m.deleted && !m.archived) as person (person.id)}
+                  <option value={person.id}>{person.display_name ?? person.name}</option>
+                {/each}
+              </select>
+            </label>
+          {/if}
+        {/if}
         <label>Content warning <input aria-label="Content warning" bind:value={cw} placeholder="Optional label" /></label>
         <label>Visibility
           <select aria-label="Message visibility" bind:value={visibilityMode}>
@@ -1045,6 +1227,16 @@
     padding: var(--s-3);
     border-top: 1px solid var(--line);
   }
+  .older-load { justify-self: center; margin: var(--s-2) auto; }
+  .older { padding: var(--s-1) var(--s-3); color: var(--ink-2); }
+  .older .who { font-weight: 600; margin-right: var(--s-2); }
+  .older time { font-size: var(--fs-xs); color: var(--ink-3); }
+  .not-sent { list-style: none; margin: 0; padding: var(--s-2); display: grid; gap: var(--s-1); border-left: 2px solid var(--line); }
+  .not-sent li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+  .not-sent .why { color: var(--ink-2); font-size: var(--fs-sm); }
+  .not-sent .text { color: var(--ink-3); overflow-wrap: anywhere; }
+  .reply-in { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); padding: var(--s-2); color: var(--ink-2); }
+  .reply-in select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-1); max-width: 100%; }
   .chat-advanced {
     padding: var(--s-1) var(--s-3);
     border-top: 1px solid var(--line);

@@ -95,6 +95,10 @@ pub fn accept(
     if !preserved && let Some(why) = crate::perms::write_denied(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
     }
+    // slow mode (perms.rs, R22.7 default): on when the server receives it, not when it was written
+    if !preserved && let Some(why) = crate::perms::slow_mode(conn, &author, &o, now)? {
+        return Ok((AckResult::err(o.id, "slow_mode", why, false), None));
+    }
     // Follow requests and a follower's prefs are written by the server on the follower's behalf
     // (follows.rs); a client forging one could make someone else receive its switches.
     if !preserved && matches!(o.kind.as_str(), "follow.request" | "follow.set_prefs") && s.device_id != SERVER_DEVICE {

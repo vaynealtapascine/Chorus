@@ -4,6 +4,8 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 
+use chorus_core::search;
+
 use crate::api_data::{DataError, Principal};
 use crate::visibility::visible_message_sql;
 
@@ -17,6 +19,8 @@ pub struct MessageQuery {
     pub before: Option<i64>,
     pub after: Option<i64>,
     pub has: Option<String>,
+    /// Minutes east of UTC, for dates in `q` (default 0).
+    pub tz: Option<i32>,
     pub limit: Option<usize>,
     pub cursor: Option<String>,
 }
@@ -52,56 +56,118 @@ fn decode_cursor(query: &MessageQuery) -> Result<Option<Cursor>, DataError> {
     Ok(Some(cursor))
 }
 
+/// Ids of the rows of `table` (`member`, `channel`) a `from:`/`in:` value names: its id, or its
+/// name as core folds it (`chorus_core::search::names`).
+fn named(conn: &Connection, table: &str, filters: &[String]) -> Result<Vec<String>, DataError> {
+    if filters.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut st = conn.prepare_cached(&format!("SELECT id, COALESCE(name, '') FROM {table}"))?;
+    let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut ids = Vec::new();
+    for row in rows {
+        let (id, name) = row?;
+        if filters.iter().any(|f| search::names(f, &id, &name)) {
+            ids.push(id);
+        }
+    }
+    Ok(ids)
+}
+
+/// `GET /search/messages`: `q` is a search box (`chorus_core::search`: words, `from:` `in:`
+/// `has:` `before:` `after:` `is:pinned`), parsed by core so it finds what the apps' local
+/// search finds; `tz` (minutes east of UTC) places dates. The older `in`/`from`/`has`/`before`/
+/// `after` parameters still narrow it (`before`/`after` in epoch ms, exclusive).
 pub fn messages(conn: &Connection, principal: &Principal, query: &MessageQuery) -> Result<Value, DataError> {
     if !principal.allows("read:messages") {
         return Err(DataError::Scope("read:messages"));
     }
     let q = query.q.trim();
-    if q.is_empty() || q.len() > 200 {
-        return Err(DataError::Bad("q must be 1–200 characters".into()));
+    if q.len() > 200 {
+        return Err(DataError::Bad("q must be at most 200 characters".into()));
     }
-    if query.has.as_deref().is_some_and(|h| !matches!(h, "attachment" | "image" | "file")) {
-        return Err(DataError::Bad("has must be attachment, image, or file".into()));
+    let mut parsed = search::parse(q).map_err(|e| DataError::Bad(format!("search: {e}")))?;
+    parsed.channels.extend(query.channel.as_deref().map(search::fold));
+    parsed.from.extend(query.author.as_deref().map(search::fold));
+    if let Some(has) = query.has.as_deref() {
+        if !search::HAS.contains(&has) {
+            return Err(DataError::Bad(format!("has must be one of {}", search::HAS.join(", "))));
+        }
+        parsed.has.push(has.to_string());
     }
+    if parsed.is_empty() && query.before.is_none() && query.after.is_none() {
+        return Err(DataError::Bad("search for some words or a filter".into()));
+    }
+    let ctx = search::Context::at(crate::now_ms(), query.tz.unwrap_or(0), &parsed);
+    let before = [parsed.before.as_ref().and_then(|t| ctx.before(t)), query.before].into_iter().flatten().min();
+    // `after:` is inclusive, the older `after` parameter exclusive
+    let after =
+        [parsed.after.as_ref().and_then(|t| ctx.after(t)), query.after.map(|a| a + 1)].into_iter().flatten().max();
+    let unresolved = |t: &Option<search::TimeRef>| matches!(t, Some(search::TimeRef::Date { date }) if !ctx.dates.contains_key(date));
+    if unresolved(&parsed.before) || unresolved(&parsed.after) {
+        return Err(DataError::Bad("search: not a date".into()));
+    }
+    let authors = named(conn, "member", &parsed.from)?;
+    let channels = named(conn, "channel", &parsed.channels)?;
     let cursor = decode_cursor(query)?;
     let limit = query.limit.unwrap_or(100).clamp(1, 100);
     let visible = visible_message_sql("?2");
+    let fts = parsed.fts();
+    // words go through the FTS index; filters alone scan the readable messages, newest first
+    let (source, score, matching) = if fts.is_some() {
+        ("message_fts JOIN message m ON m.rowid=message_fts.rowid", "bm25(message_fts)", "message_fts MATCH ?1")
+    } else {
+        ("message m", "0.0", "?1 IS NULL")
+    };
+    let has_sql = |h: &str| match h {
+        "image" => {
+            "EXISTS (SELECT 1 FROM item_attachment ia JOIN attachment a ON a.id=ia.attachment_id
+                     WHERE ia.owner_type='message' AND ia.owner_id=m.id AND a.mime LIKE 'image/%')"
+        }
+        "file" => {
+            "EXISTS (SELECT 1 FROM item_attachment ia JOIN attachment a ON a.id=ia.attachment_id
+                     WHERE ia.owner_type='message' AND ia.owner_id=m.id AND COALESCE(a.mime, '') NOT LIKE 'image/%')"
+        }
+        "attachment" => "EXISTS (SELECT 1 FROM item_attachment ia WHERE ia.owner_type='message' AND ia.owner_id=m.id)",
+        _ => {
+            "EXISTS (SELECT 1 FROM json_each(m.entities) e
+                     WHERE json_extract(e.value, '$.type') IN ('url', 'text_link'))"
+        }
+    };
+    let has: String = parsed.has.iter().map(|h| format!(" AND {}", has_sql(h))).collect();
     let sql = format!(
         "WITH hits AS (SELECT m.id, m.channel_id, c.space_id, m.account_id, m.occurred_at, m.text, m.cw, m.visibility,
                 COALESCE((SELECT json_group_array(member_id) FROM (SELECT member_id FROM message_author WHERE message_id=m.id
                     UNION SELECT member_id FROM message_segment_author WHERE message_id=m.id)), '[]') AS authors,
-                bm25(message_fts) AS score
-         FROM message_fts JOIN message m ON m.rowid=message_fts.rowid
+                {score} AS score
+         FROM {source}
          JOIN channel c ON c.id=m.channel_id
-         WHERE message_fts MATCH ?1 AND m.deleted_at IS NULL AND c.deleted_at IS NULL
+         WHERE {matching} AND m.deleted_at IS NULL AND c.deleted_at IS NULL
            AND EXISTS (SELECT 1 FROM scope_access sa WHERE sa.account_id=?2 AND sa.scope='space:'||c.space_id)
            AND (m.account_id=?2 OR ({visible} AND ?8 = 0))
-           AND (?3 IS NULL OR c.id=?3 OR c.name=?3)
+           AND (?3 IS NULL OR c.id IN (SELECT value FROM json_each(?3)))
            AND (?4 IS NULL OR EXISTS (SELECT 1 FROM
                      (SELECT member_id FROM message_author WHERE message_id=m.id
                       UNION SELECT member_id FROM message_segment_author WHERE message_id=m.id) ma
-                     LEFT JOIN member author ON author.id=ma.member_id
-                     WHERE ma.member_id=?4 OR author.name=?4 COLLATE NOCASE))
+                     WHERE ma.member_id IN (SELECT value FROM json_each(?4))))
            AND (?5 IS NULL OR m.occurred_at<?5)
-           AND (?6 IS NULL OR m.occurred_at>?6)
-           AND (?7 IS NULL OR EXISTS (SELECT 1 FROM item_attachment ia JOIN attachment a ON a.id=ia.attachment_id
-                     WHERE ia.owner_type='message' AND ia.owner_id=m.id AND
-                       (?7='attachment' OR (?7='image' AND a.mime LIKE 'image/%') OR
-                        (?7='file' AND a.mime NOT LIKE 'image/%')))))
+           AND (?6 IS NULL OR m.occurred_at>=?6)
+           AND (?7 = 0 OR m.pinned_at IS NOT NULL){has})
          SELECT * FROM hits WHERE (?9 IS NULL OR score>?9 OR
            (score=?9 AND (occurred_at<?10 OR (occurred_at=?10 AND id<?11))))
          ORDER BY score,occurred_at DESC,id DESC LIMIT ?12"
     );
+    let list = |ids: &[String], asked: bool| asked.then(|| serde_json::to_string(ids).unwrap_or_default());
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(
         params![
-            q,
+            fts,
             principal.account_id,
-            query.channel,
-            query.author,
-            query.before,
-            query.after,
-            query.has,
+            list(&channels, !parsed.channels.is_empty()),
+            list(&authors, !parsed.from.is_empty()),
+            before,
+            after,
+            parsed.pinned,
             !principal.is_device(),
             cursor.as_ref().map(|c| c.score),
             cursor.as_ref().map(|c| c.occurred_at),

@@ -68,6 +68,49 @@ fn member_rule(conn: &Connection, account: &str, member: &str, which: &str) -> a
     })
 }
 
+/// `chorus_core::mentions` lookups over the projections.
+struct Directory<'a>(&'a Connection);
+
+impl chorus_core::mentions::Directory for Directory<'_> {
+    fn member_account(&self, member: &str) -> Option<String> {
+        account_of_member(self.0, member).ok().flatten()
+    }
+    fn group(&self, group: &str) -> Option<(String, Vec<String>, Vec<String>)> {
+        let c = self.0;
+        let account: String = c
+            .query_row("SELECT account_id FROM member_group WHERE id = ?1 AND deleted_at IS NULL", [group], |r| {
+                r.get(0)
+            })
+            .optional()
+            .ok()
+            .flatten()?;
+        let list = |sql: &str| -> Vec<String> {
+            c.prepare_cached(sql)
+                .and_then(|mut st| st.query_map([group], |r| r.get(0))?.collect::<Result<Vec<String>, _>>())
+                .unwrap_or_default()
+        };
+        let members = list("SELECT member_id FROM group_membership WHERE group_id = ?1 AND is_present");
+        let subgroups = list("SELECT id FROM member_group WHERE effective_parent_id = ?1 AND deleted_at IS NULL");
+        Some((account, members, subgroups))
+    }
+    fn fronting_at(&self, account: &str, t: i64) -> Vec<String> {
+        self.0
+            .prepare_cached(
+                "SELECT subject_id FROM front_interval WHERE account_id = ?1 AND subject_type = 'member'
+                 AND level IN ('front', 'cocon') AND start_at <= ?2 AND (end_at IS NULL OR end_at > ?2)
+                 ORDER BY position",
+            )
+            .and_then(|mut st| st.query_map(params![account, t], |r| r.get(0))?.collect::<Result<Vec<String>, _>>())
+            .unwrap_or_default()
+    }
+}
+
+/// Everyone a message's mentions reach (`chorus_core::mentions`): `@front` is who was here when
+/// it was written (`at`, its `occurred_at`).
+fn mentioned(conn: &Connection, p: &Value, author: &str, at: i64) -> Vec<chorus_core::mentions::Mentioned> {
+    chorus_core::mentions::resolve(p.get("entities").unwrap_or(&Value::Null), author, at, &Directory(conn))
+}
+
 /// Members fronting or co-conscious right now.
 fn fronting(conn: &Connection, account: &str) -> anyhow::Result<Vec<String>> {
     let mut st = conn.prepare_cached(
@@ -81,6 +124,7 @@ fn fronting(conn: &Connection, account: &str) -> anyhow::Result<Vec<String>> {
 fn own_kind(
     conn: &Connection,
     p: &Value,
+    at: i64,
     account: &str,
     channel_id: &str,
     member_dm: Option<Vec<String>>,
@@ -103,26 +147,15 @@ fn own_kind(
         })
     };
     let mut kind = None;
-    for e in p.get("entities").and_then(Value::as_array).into_iter().flatten() {
-        if kind.is_some() || e.get("type").and_then(Value::as_str) != Some("mention") {
-            continue;
-        }
-        let hit = match e.get("target_type").and_then(Value::as_str) {
-            Some("member") => match e.get("target_id").and_then(Value::as_str) {
-                Some(m) if account_of_member(conn, m)?.as_deref() == Some(account) => wants(m, "mentions")?,
-                _ => false,
-            },
-            Some("front") => {
-                let mut any = false;
-                for m in &front {
-                    any = any || wants(m, "mentions")?;
-                }
-                any
-            }
-            _ => false,
-        };
-        if hit {
+    // its own members the message mentions: by name, through a group, or as `@front` (who was
+    // fronting when it was written), each under that member's rule
+    for m in mentioned(conn, p, account, at) {
+        if m.account == account
+            && let Some(member) = &m.member
+            && wants(member, "mentions")?
+        {
             kind = Some("mention");
+            break;
         }
     }
     if kind.is_none()
@@ -175,10 +208,10 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     if space_kind.as_deref() == Some("internal") && space_owner.as_deref() == Some(author) {
         let member_dm = (channel_kind.as_deref() == Some("member_dm"))
             .then(|| member_ids.and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok()).unwrap_or_default());
-        if let Some(kind) = own_kind(conn, p, author, channel_id, member_dm)? {
+        if let Some(kind) = own_kind(conn, p, o.time(), author, channel_id, member_dm)? {
             why.insert(author.to_string(), kind);
         }
-        return queue(conn, o, why, channel_name, now);
+        // and below, the guests of a channel shared out of it (perms.rs): other accounts only
     }
     let mut st = conn.prepare_cached("SELECT account_id FROM scope_access WHERE scope = ?1 AND account_id <> ?2")?;
     let mut others: Vec<String> = st.query_map(params![o.scope, author], |r| r.get(0))?.collect::<Result<_, _>>()?;
@@ -191,7 +224,7 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     }
     let others = viewers;
     if others.is_empty() {
-        return Ok(());
+        return queue(conn, o, why, channel_name, now);
     }
     if let Some(reply_to) = p.get("reply_to").and_then(Value::as_str) {
         let owner: Option<String> = conn
@@ -202,15 +235,11 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
             why.insert(a, "reply");
         }
     }
-    for e in p.get("entities").and_then(Value::as_array).into_iter().flatten() {
-        if e.get("type").and_then(Value::as_str) != Some("mention") {
-            continue;
-        }
-        if e.get("target_type").and_then(Value::as_str) == Some("member")
-            && let Some(m) = e.get("target_id").and_then(Value::as_str)
-            && let Some(a) = account_of_member(conn, m)?.filter(|a| others.contains(a))
-        {
-            why.insert(a, "mention");
+    // a mention of one of their members, a group of theirs, their `@front` or the account
+    // itself; only accounts that may view the channel (`others`) are asked
+    for m in mentioned(conn, p, author, o.time()) {
+        if others.contains(&m.account) {
+            why.insert(m.account, "mention");
         }
     }
     if is_dm {

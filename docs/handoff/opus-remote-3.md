@@ -119,3 +119,66 @@ asked for; take **0010** and up.
   fuzz tests `tests/ingest_fuzz.rs` + `chorus-core/tests/payload_fuzz.rs` (DATA_MODEL §2.2).
   If a migration of yours adds a NOT NULL/JSON/IN constraint, add its rule, or
   `field_rules_match_the_schema` fails. R22 gained item 8 (space roles). Pull before starting.
+- 2026-09-25 remote Claude — **R20 done** (`3fa2e3f`, SYNC §9.3): `tests/chaos.rs` runs the real
+  `chorus-server` binary (kill -9 under bursts, restarts, a mid-run backup and a restore into a new
+  data dir) with 6 devices of 3 accounts on the real engine: every chat op kind, permission
+  churn with a guest, follows/membership churn over REST, real blob uploads, dropped sockets,
+  duplicated pushes, offline spells. At quiescence: replicas = what the server lets each account
+  see (ids, stamps, digests), empty outboxes, reasons on rejections, no repair left and bounded
+  repairs, REST message lists = each phone's projection, files back after the restore, and **no
+  leak**: every `ops` frame is checked against the rule's history by replaying the op log through
+  the server's projection (planted leaks are caught). Default 2 seeds (~15 s debug); soaks run
+  clean: 20×300 and 40×500 in release. It found, all fixed with regression tests:
+  - files uploaded after the last backup were lost by a restore → devices re-send the files their
+    restoring/queued ops name (`Replica::restoring_blobs`, SYNC §7.3 step 5; web done);
+  - a finished blob sent again by another account got 403 and stalled the web upload queue
+    forever → 200 (API §5), and the web counts HEAD 403 as "the server has it";
+  - (from R21) a device that lost a scope kept restoring copies, re-pushed them, and the server's
+    by-id ack confirmed them again → `ClientStore::forget` (SYNC §6.5).
+  Known limit (documented, not fixable by the protocol): a file whose only copy is on a device
+  that couldn't see the op at the restore (a guest who had lost the channel) doesn't come back.
+- 2026-09-25 remote Claude — **R21 done** (`ffe2df0`, SYNC §9.2): the simulator writes channels,
+  threads, forwards, attachments and real channel ids, and `MemServer::set_access` grants/revokes
+  scopes live (B joins/leaves the shared space and gains/loses A's internal space). Channel
+  permissions aren't modelled in `MemServer` (R20 covers them). 3000 seeds clean. The simulator
+  takes ~25 s release for 300 seeds (it did before too; SYNC said ~2 s, corrected).
+- 2026-09-25 remote Claude — **R22.1 edit history done** (`0271bf3`): rule in core
+  (`chorus_core::revisions`), `message_revision`/`post_revision` projected for edited items,
+  `GET /messages/{id}/revisions` and `GET /posts/{id}/revisions` (item's read rule), web
+  "(edited)" opens the history (browser test added).
+  **For Sol (Android):** (1) after a `welcome` with `reconcile: true`, call
+  `replica.restoringBlobs()` and queue an upload of each hash you have a local copy of (`HEAD`
+  first; 200 or 403 means done). (2) The history view: `replica.revisions(messageId)` (FFI),
+  same JSON as the web uses. (3) Nothing to do for `forget`: it reports through
+  `changes.removed` like evictions.
+- 2026-09-25 remote Claude — **R22 done** (all 8 items), each with core rules + server + API +
+  plain web + tests:
+  1. edit history (`0271bf3`, above);
+  2. search filters parsed once in core (`982b9da`): `chorus_core::search` (words as prefixes,
+     `from:`/`in:` any-of, `has:image|file|attachment|link`, `before:`/`after:` date or age,
+     `is:pinned`); `/search/messages` parses `q` with it (+`tz`) — property test SQL = core;
+     conformance fixtures `fixtures/search` also run by the web's index;
+  3. mentions (`0e26b12`): `chorus_core::mentions` (@member, @group incl. subgroups, @account,
+     @front = who fronted when *written*); `activity.rs` notifies from it. Fixed on the way: a
+     guest of a channel shared out of an internal space never heard about mentions there;
+  4. default speaker / autoproxy (`a0db6a6`, **D-074**: per account in prefs
+     `autoproxy:<channel>`, not `channel.settings`, which a shared space's accounts share):
+     `chorus_core::speaker::default_speaker`, fixtures in `fixtures/speaker`;
+  5. reply elsewhere / privately (`47362ed`): REST keeps `reply_to` (+`reply_to_channel_id`) only
+     for readers of the original; web "Reply in…" and "Reply privately";
+  6. per-member read state (`88e66f0`): no payload change needed (`reader_member_id` existed);
+     `chorus_core::reading`. **Privacy fix first** (`7ef5563`): read marks used to sync to every
+     account that could see the message (read receipts, and per member they'd reveal who was
+     fronting); now they stay with their account (NOTIFICATIONS §5 rule 7);
+  7. slow mode (`f8093ee`): **OPEN_QUESTIONS Q17** added with the proposed default, built behind
+     `channel.settings.slow_mode_s` (`perms::slow_mode`);
+  8. space roles in the web (`1b13740`), plus a **Sync issues** list the web never had (refused
+     messages vanished): `Replica::sync_issues` / `dismiss_issue`.
+  **For local Claude:** `ingest.rs` gained one call after the permission check
+  (`perms::slow_mode`, 3 lines); no validation changes. `channel.settings.slow_mode_s` could get a
+  value rule (0..21600) in `op::FIELD_RULES`/per-kind rules if you want it validated.
+  **For Sol (Android), FFI additions:** `search_parse`/`search_filter` (local message search; run
+  `fixtures/search`), `default_speaker` (composer chip; pref `autoproxy:<channel>`),
+  `read_readers`/`read_unseen_by` (pref `chat.read_per_member`), `revisions`, `restoring_blobs`,
+  `sync_issues`/`dismiss_issue`. Reply privately: DM via `POST /spaces {kind:dm}`, member DM via
+  `channel.create kind member_dm`.

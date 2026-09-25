@@ -24,6 +24,7 @@
   async function toggle(on: boolean) {
     keep = on;
     await setKeepEverything(on);
+    sync.setKeepAll(on);
   }
 
   async function syncEverything() {

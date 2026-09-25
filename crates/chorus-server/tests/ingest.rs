@@ -463,3 +463,39 @@ fn attachments_and_messages_stay_their_creators() {
     assert!(refused(push(&a, "message.send", &mb, json!({"channel_id": cy, "text": "overwritten", "authors": []}))));
     assert_eq!(push(&b, "attachment.set", &att, json!({"alt_text": "a cat"})), None);
 }
+
+/// Slow mode (OPEN_QUESTIONS Q17 default): one message per account per channel every N seconds,
+/// counted when the server receives it; the space's owner (who may `manage`) is exempt.
+#[test]
+fn slow_mode_counts_on_arrival_and_spares_managers() {
+    let (c, a, b) = setup();
+    let x = new_id(2, [40; 10]);
+    let sx = format!("space:{x}");
+    let ch = new_id(2, [41; 10]);
+    for who in [&a, &b] {
+        ingest::grant(&c, who, &sx).unwrap();
+    }
+    ingest::server_op(&c, &a, "space.create", &sx, Some(&x), json!({"kind": "shared", "name": "X"}), NOW).unwrap();
+    for who in [&a, &b] {
+        ingest::server_op(&c, &a, "space.join", &sx, Some(&x), json!({"account_id": who}), NOW).unwrap();
+    }
+    ingest::server_op(&c, &a, "channel.create", &sx, Some(&ch), json!({"space_id": x, "name": "slow"}), NOW).unwrap();
+    ingest::server_op(&c, &a, "channel.set", &sx, Some(&ch), json!({"settings": {"slow_mode_s": 30}}), NOW).unwrap();
+    let mut n = 80u8;
+    let mut send = |who: &str, written: i64, arrives: i64| {
+        n += 1;
+        let o = op(n, "message.send", &sx, json!({"channel_id": ch, "text": "hi", "authors": []}), written);
+        let (r, _) = ingest::accept(&c, &session(who, 0), o, arrives, false).unwrap();
+        r.error.map(|e| (e.code, e.message))
+    };
+    assert_eq!(send(&b, NOW, NOW), None);
+    let refused = send(&b, NOW + 10_000, NOW + 10_000).unwrap();
+    assert_eq!(refused.0, "slow_mode");
+    assert!(refused.1.contains("wait 20 s"), "{}", refused.1);
+    // written offline long ago, it still counts when it arrives
+    assert_eq!(send(&b, NOW - 3_600_000, NOW + 15_000).map(|e| e.0).as_deref(), Some("slow_mode"));
+    assert_eq!(send(&b, NOW + 31_000, NOW + 31_000), None);
+    // the owner may manage the channel: no limit
+    assert_eq!(send(&a, NOW, NOW), None);
+    assert_eq!(send(&a, NOW + 1, NOW + 1), None);
+}

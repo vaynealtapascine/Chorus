@@ -16,7 +16,7 @@ use chorus_core::id::new_id;
 use chorus_core::model;
 use chorus_core::op::Op;
 use chorus_core::projector::Projector;
-use chorus_core::sync::{ClientEngine, ClientStore, ClockReading, Frame, MemServer, MemStore};
+use chorus_core::sync::{ClientEngine, ClientStore, ClockReading, Frame, MemServer, MemStore, outside_window};
 use chorus_core::time::TimeSource;
 use serde_json::{Value, json};
 
@@ -55,7 +55,8 @@ struct Device {
     connected: bool,
     to_server: VecDeque<Frame>,
     to_device: VecDeque<Frame>,
-    created: Vec<String>,
+    /// ids and scopes of the ops it created
+    created: Vec<(String, String)>,
     /// Follows the store only through `touched` ids, like the apps (projector.rs).
     projector: Projector,
 }
@@ -107,7 +108,9 @@ struct Pools {
     members: Vec<Vec<String>>,
     groups: Vec<Vec<String>>,
     front_ops: Vec<Vec<String>>,
-    messages: BTreeMap<String, Vec<(String, i64)>>, // scope → (id, at)
+    messages: BTreeMap<String, Vec<(String, i64, String)>>, // scope → (id, at, channel)
+    channels: BTreeMap<String, Vec<String>>,                // scope → channels and threads
+    attachments: BTreeMap<String, Vec<String>>,
 }
 
 struct World {
@@ -119,6 +122,12 @@ struct World {
     scopes: Vec<Vec<String>>,
     pools: Pools,
     restored: bool,
+    /// account ids, by index
+    accounts: Vec<String>,
+    /// B's access to the shared space and to A's internal space (as a guest) comes and goes
+    scope_changes: usize,
+    /// (account index, scope) pairs taken away at some point
+    revoked: BTreeSet<(usize, String)>,
 }
 
 fn scope_for(o: &Op) -> String {
@@ -144,16 +153,26 @@ impl World {
         for s in [&sb, &ss] {
             server.grant(&acct_b, s);
         }
+        // one general channel per space, before anyone makes more
+        let mut channels = BTreeMap::new();
+        for s in [&si, &ss] {
+            channels.insert(s.clone(), vec![id(&mut rng)]);
+        }
         let mut devices = Vec::new();
         for (i, (name, account)) in [("a-phone", 0), ("a-desk", 0), ("b-phone", 1)].into_iter().enumerate() {
             let dev_id = id(&mut rng);
             server.devices.insert(dev_id.clone(), [&acct_a, &acct_b][account].clone());
             let skew = (rng.below(6 * 3_600_000) as i64) - 3 * 3_600_000; // ±3 h
+            let mut engine = ClientEngine::new(&dev_id);
+            // a-desk is a browser tab: it keeps only messages written after its window (SYNC §6.5)
+            if name == "a-desk" {
+                engine.window = Some(1_790_000_000_000 + 20 * 60_000);
+            }
             devices.push(Device {
                 name: name.into(),
                 account,
                 store: MemStore::default(),
-                engine: ClientEngine::new(&dev_id),
+                engine,
                 clock: HlcClock::new(0xa000_0000 + i as u32),
                 skew,
                 boot: 1,
@@ -169,15 +188,25 @@ impl World {
             now: 1_790_000_000_000,
             server,
             devices,
-            scopes: vec![vec![sa, si, ss.clone()], vec![sb, ss]],
+            scopes: vec![vec![sa, si.clone(), ss.clone()], vec![sb, ss.clone(), si]],
             pools: Pools {
                 members: vec![vec![], vec![]],
                 groups: vec![vec![], vec![]],
                 front_ops: vec![vec![], vec![]],
+                channels,
                 ..Pools::default()
             },
             restored: false,
+            accounts: vec![acct_a, acct_b],
+            scope_changes: 0,
+            revoked: BTreeSet::new(),
         }
+    }
+
+    /// A channel or thread of the space from the pool (the general channel at least).
+    fn channel_in(&mut self, scope: &str) -> String {
+        let chans = self.pools.channels.get(scope).cloned().unwrap_or_default();
+        self.rng.pick(&chans).cloned().unwrap_or_else(|| "00000000-0000-7000-8000-00000000c001".into())
     }
 
     fn new_id(&mut self) -> String {
@@ -187,7 +216,21 @@ impl World {
     fn make_op(&mut self, d: usize) -> Op {
         let acct = self.devices[d].account;
         let own_scope = self.scopes[acct][0].clone();
-        let spaces: Vec<String> = self.scopes[acct][1..].to_vec();
+        // the spaces this device knows it's in (like its UI); before its first welcome, the
+        // ones its account starts with
+        let known: Vec<String> =
+            self.devices[d].store.scopes.iter().filter(|s| s.starts_with("space:")).cloned().collect();
+        let spaces: Vec<String> = if known.is_empty() {
+            self.scopes[acct][1..]
+                .iter()
+                .filter(|s| self.server.access[&self.accounts[acct]].contains(*s))
+                .cloned()
+                .collect()
+        } else {
+            known
+        };
+        // (none: chat ops then name the account scope and are refused, which is checked too)
+        let spaces = if spaces.is_empty() { vec![own_scope.clone()] } else { spaces };
         let member = |w: &mut World| {
             w.rng.pick(&w.pools.members[acct]).cloned().unwrap_or_else(|| "00000000-0000-7000-8000-000000000000".into())
         };
@@ -267,24 +310,106 @@ impl World {
                 self.pools.front_ops[acct].push(id);
                 (k, own_scope, p)
             }
-            47..=62 => {
+            47..=56 => {
+                // a message into a channel or thread, sometimes a reply, sometimes with files
                 let scope = self.rng.pick(&spaces).cloned().unwrap_or_default();
+                let channel = self.channel_in(&scope);
                 let id = self.new_id();
                 entity = Some(id.clone());
                 let at = self.now;
-                self.pools.messages.entry(scope.clone()).or_default().push((id, at));
-                (
-                    "message.send",
-                    scope,
-                    json!({"channel_id": "c1", "authors": [member(self)], "text": format!("hi {}", self.rng.below(100)), "entities": []}),
-                )
+                let mut p = json!({"channel_id": channel, "authors": [member(self)], "text": format!("hi {}", self.rng.below(100)), "entities": []});
+                let msgs = self.pools.messages.get(&scope).cloned().unwrap_or_default();
+                if let Some((reply, _, _)) = self.rng.pick(&msgs)
+                    && self.rng.chance(20)
+                {
+                    p["reply_to"] = json!(reply);
+                }
+                let files = self.pools.attachments.get(&scope).cloned().unwrap_or_default();
+                if let Some(a) = self.rng.pick(&files)
+                    && self.rng.chance(25)
+                {
+                    p["attachments"] = json!([a]);
+                }
+                self.pools.messages.entry(scope.clone()).or_default().push((id, at, channel));
+                ("message.send", scope, p)
             }
-            63..=78 => {
+            57..=59 => {
+                // a channel, or a thread under a message
+                let scope = self.rng.pick(&spaces).cloned().unwrap_or_default();
+                let space_id = scope.strip_prefix("space:").unwrap_or_default().to_string();
+                let id = self.new_id();
+                entity = Some(id.clone());
+                let msgs = self.pools.messages.get(&scope).cloned().unwrap_or_default();
+                let p = match self.rng.pick(&msgs) {
+                    Some((parent, _, _)) if self.rng.chance(50) => {
+                        json!({"space_id": space_id, "kind": "thread", "name": "t", "parent_message_id": parent})
+                    }
+                    _ => json!({"space_id": space_id, "kind": "text", "name": format!("c{}", self.rng.below(50))}),
+                };
+                self.pools.channels.entry(scope.clone()).or_default().push(id);
+                ("channel.create", scope, p)
+            }
+            60..=61 => {
+                let scope = self.rng.pick(&spaces).cloned().unwrap_or_default();
+                entity = Some(self.channel_in(&scope));
+                let (k, p) = match self.rng.below(6) {
+                    0 | 1 => ("channel.set", json!({"name": format!("r{}", self.rng.below(50)), "topic": "t"})),
+                    2 => ("channel.archive", json!({})),
+                    3 => ("channel.unarchive", json!({})),
+                    4 => ("channel.delete", json!({})),
+                    _ => ("channel.restore", json!({})),
+                };
+                (k, scope, p)
+            }
+            62..=63 => {
+                // forward a message, with the snapshot the sending client captures (D-048)
                 let scope = self.rng.pick(&spaces).cloned().unwrap_or_default();
                 let msgs = self.pools.messages.get(&scope).cloned().unwrap_or_default();
-                let (mid, mat) = self.rng.pick(&msgs).cloned().unwrap_or_else(|| (self.new_id(), 0));
+                let (src, at, _) = self.rng.pick(&msgs).cloned().unwrap_or_else(|| (self.new_id(), 0, String::new()));
+                let channel = self.channel_in(&scope);
+                let id = self.new_id();
+                entity = Some(id.clone());
+                let author = member(self);
+                self.pools.messages.entry(scope.clone()).or_default().push((id, self.now, channel.clone()));
+                (
+                    "message.forward",
+                    scope,
+                    json!({"channel_id": channel, "authors": [author], "text": "", "entities": [], "forward_of_id": src,
+                           "forward_snapshot": [{"message_id": src, "authors": [author], "text": "fwd", "entities": [], "occurred_at": at}]}),
+                )
+            }
+            64..=65 => {
+                let scope = self.rng.pick(&spaces).cloned().unwrap_or_default();
+                let files = self.pools.attachments.get(&scope).cloned().unwrap_or_default();
+                match self.rng.pick(&files) {
+                    Some(a) if self.rng.chance(40) => {
+                        entity = Some(a.clone());
+                        (
+                            "attachment.set",
+                            scope,
+                            json!({"alt_text": format!("alt {}", self.rng.below(9)), "is_spoiler": self.rng.chance(30)}),
+                        )
+                    }
+                    _ => {
+                        let id = self.new_id();
+                        entity = Some(id.clone());
+                        self.pools.attachments.entry(scope.clone()).or_default().push(id);
+                        let hash = format!("{:064x}", self.rng.next());
+                        (
+                            "attachment.create",
+                            scope,
+                            json!({"blob_hash": hash, "filename": "f.png", "mime": "image/png", "size": 10}),
+                        )
+                    }
+                }
+            }
+            66..=78 => {
+                let scope = self.rng.pick(&spaces).cloned().unwrap_or_default();
+                let msgs = self.pools.messages.get(&scope).cloned().unwrap_or_default();
+                let (mid, mat, channel) =
+                    self.rng.pick(&msgs).cloned().unwrap_or_else(|| (self.new_id(), 0, self.channel_in(&scope)));
                 entity = Some(mid.clone());
-                match self.rng.below(7) {
+                match self.rng.below(8) {
                     0 => (
                         "message.edit",
                         scope,
@@ -293,12 +418,13 @@ impl World {
                     1 => ("message.delete", scope, json!({})),
                     2 => ("message.restore", scope, json!({})),
                     3 => ("message.pin", scope, json!({})),
-                    4 => (
+                    4 => ("message.unpin", scope, json!({})),
+                    5 => (
                         "reaction.add",
                         scope,
                         json!({"target_type": "message", "target_id": mid, "emoji": "💜", "member_id": member(self)}),
                     ),
-                    5 => (
+                    6 => (
                         "reaction.remove",
                         scope,
                         json!({"target_type": "message", "target_id": mid, "emoji": "💜", "member_id": member(self)}),
@@ -306,7 +432,7 @@ impl World {
                     _ => (
                         "read.mark",
                         scope,
-                        json!({"channel_id": "c1", "message_id": mid, "message_at": mat, "reader_member_id": ""}),
+                        json!({"channel_id": channel, "message_id": mid, "message_at": mat, "reader_member_id": ""}),
                     ),
                 }
             }
@@ -402,7 +528,7 @@ impl World {
         let clock = self.clock_reading(d);
         let dev = &mut self.devices[d];
         dev.connected = true;
-        let hello = dev.engine.on_connect(&dev.store, clock, "t");
+        let hello = dev.engine.on_connect(&mut dev.store, clock, "t");
         dev.to_server.push_back(hello);
     }
 
@@ -449,11 +575,12 @@ impl World {
         self.now += self.rng.below(5_000) as i64;
         let n = self.devices.len() as u64;
         let d = self.rng.below(n) as usize;
-        match self.rng.below(100) {
+        match self.rng.below(103) {
+            100..=102 => self.change_access(),
             0..=29 => {
                 let op = self.make_op(d);
                 let dev = &mut self.devices[d];
-                dev.created.push(op.id.clone());
+                dev.created.push((op.id.clone(), op.scope.clone()));
                 dev.store.add_local(op);
                 let out = dev.engine.pump(&dev.store);
                 if dev.connected {
@@ -494,6 +621,25 @@ impl World {
                     self.server.restore(keep);
                     self.restored = true;
                 }
+            }
+        }
+    }
+
+    /// B joins or leaves the shared space, or gains or loses A's internal space (a guest's
+    /// scope), while its devices may be connected.
+    fn change_access(&mut self) {
+        let b = self.accounts[1].clone();
+        let scope = if self.rng.chance(60) { self.scopes[1][1].clone() } else { self.scopes[1][2].clone() };
+        let on = !self.server.access[&b].contains(&scope);
+        self.scope_changes += 1;
+        if !on {
+            self.revoked.insert((1, scope.clone()));
+        }
+        for (dest, frame) in self.server.set_access(&b, &scope, on) {
+            if let Some(dd) = self.devices.iter_mut().find(|x| x.engine.device_id == dest)
+                && dd.connected
+            {
+                dd.to_device.push_back(frame);
             }
         }
     }
@@ -542,8 +688,20 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
     }
     for dev in &w.devices {
         // 1. nothing created is lost: each op is on the server or was rejected with a reason
-        for id in &dev.created {
-            if !server_ids.contains(id.as_str()) && !dev.store.rejected.contains_key(id) {
+        // (maybe on another device: after a restore, a device re-pushing an op whose author
+        // has lost the scope since gets the refusal)
+        // An op in a scope its account lost may be gone: after a restore that dropped it, its
+        // author's devices had forgotten the scope and others can't restore it for an author
+        // without access (SYNC.md §7.3).
+        for (id, scope) in &dev.created {
+            let lost_scope = w.revoked.contains(&(dev.account, scope.clone()))
+                // a windowed device isn't a backup of what it no longer keeps: here a restore can
+                // go back further than its window (real backups are hours old, windows months)
+                || (dev.engine.window.is_some() && scope.starts_with("space:"));
+            if !server_ids.contains(id.as_str())
+                && !w.devices.iter().any(|d| d.store.rejected.contains_key(id))
+                && !lost_scope
+            {
                 return Err(format!("{}: op {id} lost", dev.name));
             }
         }
@@ -553,18 +711,42 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
         if !pending.is_empty() {
             return Err(format!("{}: {} ops still pending", dev.name, pending.len()));
         }
-        // 3. per scope: same op set and digest as the server
-        let scopes = &w.scopes[dev.account];
+        // 3. the scopes its account has now, and per scope the same op set and digest as the
+        // server; nothing left of a scope it lost (swept, SYNC.md §6.5)
+        let scopes = &w.server.access[&w.accounts[dev.account]];
+        let held: BTreeSet<&String> = dev.store.scopes.iter().collect();
+        if held != scopes.iter().collect() {
+            return Err(format!("{}: scopes {held:?}, the server says {scopes:?}", dev.name));
+        }
+        if let Some(o) = dev.store.confirmed().find(|o| !scopes.contains(&o.scope)) {
+            return Err(format!(
+                "{}: still holds {} {} of {} (seq {:?}, by {:?}, on the server: {}), a scope it lost",
+                dev.name,
+                o.kind,
+                o.id,
+                o.scope,
+                o.seq,
+                o.account_id,
+                server_ids.contains(o.id.as_str())
+            ));
+        }
         for s in scopes {
             let mine: BTreeSet<&str> =
                 dev.store.confirmed().filter(|o| &scope_for(o) == s).map(|o| o.id.as_str()).collect();
-            let theirs: BTreeSet<&str> = w.server.log.iter().filter(|o| &o.scope == s).map(|o| o.id.as_str()).collect();
+            let window = dev.engine.window;
+            let theirs: BTreeSet<&str> = w
+                .server
+                .log
+                .iter()
+                .filter(|o| &o.scope == s && !outside_window(o, window))
+                .map(|o| o.id.as_str())
+                .collect();
             if mine != theirs {
                 let missing: Vec<_> = theirs.difference(&mine).take(3).collect();
                 let extra: Vec<_> = mine.difference(&theirs).take(3).collect();
                 return Err(format!("{}: scope {s} differs: missing {missing:?} extra {extra:?}", dev.name));
             }
-            if dev.store.digest(s) != w.server.digest(s) {
+            if dev.store.digest(s) != w.server.digest_in(s, window) {
                 return Err(format!("{}: digest differs for {s}", dev.name));
             }
             // stamps agree
@@ -577,7 +759,9 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
         }
         // 4. identical projections
         let mine = model::project(dev.store.confirmed().filter(|o| scopes.contains(&o.scope)));
-        let theirs = model::project(w.server.log.iter().filter(|o| scopes.contains(&o.scope)));
+        let theirs = model::project(
+            w.server.log.iter().filter(|o| scopes.contains(&o.scope) && !outside_window(o, dev.engine.window)),
+        );
         if mine.canonical() != theirs.canonical() {
             return Err(format!("{}: projection differs", dev.name));
         }
@@ -596,9 +780,10 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
         let rejected: usize = w.devices.iter().map(|d| d.store.rejected.len()).sum();
         let repairs: u64 = w.devices.iter().map(|d| d.engine.repairs).sum();
         eprintln!(
-            "seed {seed}: ops {} rejected {rejected} repairs {repairs} restored {}",
+            "seed {seed}: ops {} rejected {rejected} repairs {repairs} restored {} scope changes {}",
             w.server.log.len(),
-            w.restored
+            w.restored,
+            w.scope_changes
         );
     }
     // 6. the invalid and forbidden ops were rejected, not accepted

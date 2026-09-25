@@ -203,11 +203,14 @@ pub async fn put_blob(
         recover_complete(&conn, &hash, &dest, r)?
     }
     if let Some(r) = &current {
-        if r.uploader != me.account_id {
-            return Err(BlobError(StatusCode::FORBIDDEN, "forbidden"));
-        }
+        // content-addressed: a finished blob is the same bytes whoever sends them again (a
+        // device re-uploading its files after a restore, SYNC.md §7.3), so that's a success.
+        // Refusing it made the device retry forever. Existence isn't news: HEAD says 403.
         if r.complete {
             return Ok(StatusCode::OK.into_response());
+        }
+        if r.uploader != me.account_id {
+            return Err(BlobError(StatusCode::FORBIDDEN, "forbidden"));
         }
         if r.size != total || r.received != start {
             return Err(BlobError(StatusCode::CONFLICT, "upload_offset_conflict"));

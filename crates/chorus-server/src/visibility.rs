@@ -108,7 +108,8 @@ trait Lookups {
 }
 
 /// The effective per-account sync rule for a shared-space op. The sender always retains their
-/// own ops. Everything tied to a channel needs that channel's `view` permission (perms.rs) and,
+/// own ops; read marks go nowhere else. Everything tied to a channel needs that channel's `view`
+/// permission (perms.rs) and,
 /// for messages, public visibility; attachment metadata waits for a visible message link. A guest
 /// of a channel (not in the space) gets that channel's ops and the space's name, nothing else.
 fn visible_with(account: &str, o: &Op, look: &mut dyn Lookups) -> anyhow::Result<bool> {
@@ -139,11 +140,10 @@ fn visible_with(account: &str, o: &Op, look: &mut dyn Lookups) -> anyhow::Result
         return id.map_or(Ok(false), |m| look.message(m));
     }
     if k.starts_with("read.") {
-        return match (str_of("message_id"), str_of("channel_id")) {
-            (Some(m), _) => look.message(m),
-            (None, Some(c)) => look.channel(c),
-            (None, None) => look.member(),
-        };
+        // read marks are the account's own (unread counts, "track reading per member"): nobody
+        // else gets them, or another account would see when it read and, per member, who of it
+        // was fronting (NOTIFICATIONS §5)
+        return Ok(false);
     }
     if k.starts_with("attachment.") {
         return o.entity().map_or(Ok(false), |a| look.attachment(a));
@@ -249,8 +249,15 @@ fn matching_ids(
 }
 
 /// A page's digest for one account: the same rule as [`op_visible_to`], with one query per kind
-/// of thing the page points at instead of one per op.
-fn visible_page(conn: &Connection, account: &str, space: &str, page: &[Op]) -> anyhow::Result<Digest> {
+/// of thing the page points at instead of one per op. Ops a windowed replica leaves out don't
+/// count (`chorus_core::sync::outside_window`, SYNC §6.5).
+fn visible_page(
+    conn: &Connection,
+    account: &str,
+    space: &str,
+    page: &[Op],
+    window: Option<i64>,
+) -> anyhow::Result<Digest> {
     let mut asked = Record::default();
     for o in page {
         visible_with(account, o, &mut asked)?;
@@ -280,7 +287,7 @@ fn visible_page(conn: &Connection, account: &str, space: &str, page: &[Op]) -> a
         )?,
     };
     let mut digest = Digest::default();
-    for o in page {
+    for o in page.iter().filter(|o| !chorus_core::sync::outside_window(o, window)) {
         if visible_with(account, o, &mut known)? {
             digest.add(&o.id);
         }
@@ -290,12 +297,20 @@ fn visible_page(conn: &Connection, account: &str, space: &str, page: &[Op]) -> a
 
 /// The digest must contain exactly the op ids this account can receive in catch-up.
 pub fn visible_digest(conn: &Connection, account: &str, scope: &str) -> anyhow::Result<Digest> {
+    visible_digest_in(conn, account, scope, None)
+}
+
+/// [`visible_digest`] for a windowed replica (SYNC §6.5): without the message-family ops written
+/// before `window`, which it neither receives nor keeps.
+pub fn visible_digest_in(conn: &Connection, account: &str, scope: &str, window: Option<i64>) -> anyhow::Result<Digest> {
+    // outside space scopes nothing is filtered, nor windowed (no message-family ops there)
     if !scope.starts_with("space:")
-        || !conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM op WHERE scope=?1 AND status='applied' AND account_id<>?2)",
-            params![scope, account],
-            |r| r.get::<_, bool>(0),
-        )?
+        || (window.is_none()
+            && !conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM op WHERE scope=?1 AND status='applied' AND account_id<>?2)",
+                params![scope, account],
+                |r| r.get::<_, bool>(0),
+            )?)
     {
         return oplog::digest(conn, scope);
     }
@@ -306,7 +321,7 @@ pub fn visible_digest(conn: &Connection, account: &str, scope: &str) -> anyhow::
         let Some(last) = page.last().and_then(|o| o.seq) else { break };
         cursor = last;
         let short = page.len() < 1000;
-        let part = visible_page(conn, account, scope.strip_prefix("space:").unwrap_or_default(), &page)?;
+        let part = visible_page(conn, account, scope.strip_prefix("space:").unwrap_or_default(), &page, window)?;
         for (total, page_part) in digest.xor.iter_mut().zip(part.xor) {
             *total ^= page_part;
         }

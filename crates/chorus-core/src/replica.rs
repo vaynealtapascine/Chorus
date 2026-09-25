@@ -15,6 +15,20 @@ use crate::projector::{Delta, Projector};
 use crate::sync::{ClientEngine, ClientState, ClientStore, ClockReading, Frame, MemStore};
 use crate::time::TimeSource;
 
+/// An op the server refused (SYNC §7 "Sync issues").
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct SyncIssue {
+    pub id: String,
+    pub kind: String,
+    pub scope: String,
+    pub entity_id: Option<String>,
+    pub payload: serde_json::Value,
+    /// When it was written (device time).
+    pub at: i64,
+    pub code: String,
+    pub message: String,
+}
+
 pub struct Replica {
     pub engine: ClientEngine,
     pub store: MemStore,
@@ -207,7 +221,13 @@ impl Replica {
     }
 
     pub fn connect(&mut self, clock: ClockReading, token: &str) -> Frame {
-        self.engine.on_connect(&self.store, clock, token)
+        self.engine.on_connect(&mut self.store, clock, token)
+    }
+
+    /// A windowed replica (SYNC §6.5): keep message-family ops written since `window` (ms), or
+    /// everything (`None`). Takes effect at the next connect, which drops what fell out.
+    pub fn set_window(&mut self, window: Option<i64>) {
+        self.engine.window = window;
     }
 
     pub fn on_frame(&mut self, frame: Frame, now: i64) -> Vec<Frame> {
@@ -226,6 +246,66 @@ impl Replica {
 
     pub fn disconnect(&mut self) {
         self.engine.on_disconnect();
+    }
+
+    /// Ops the server refused, with why (SYNC §7 "Sync issues": shown with the reason, the text of
+    /// a refused message can be copied), oldest first.
+    pub fn sync_issues(&self) -> Vec<SyncIssue> {
+        let mut v: Vec<SyncIssue> = self
+            .store
+            .rejected
+            .iter()
+            .filter_map(|(id, e)| {
+                self.store.ops.get(id).map(|o| SyncIssue {
+                    id: id.clone(),
+                    kind: o.kind.clone(),
+                    scope: o.scope.clone(),
+                    entity_id: o.entity_id.clone(),
+                    payload: o.payload.clone(),
+                    at: o.device_at,
+                    code: e.code.clone(),
+                    message: e.message.clone(),
+                })
+            })
+            .collect();
+        v.sort_by_key(|i| (i.at, i.id.clone()));
+        v
+    }
+
+    /// Let go of a refused op once the person has seen it (it's deleted from storage too).
+    pub fn dismiss_issue(&mut self, id: &str) -> bool {
+        if self.store.rejected.remove(id).is_none() {
+            return false;
+        }
+        self.store.ops.remove(id);
+        self.store.local_order.retain(|x| x != id);
+        self.store.dirty.remove(id);
+        self.store.touched.insert(id.into());
+        self.store.removed.insert(id.into());
+        self.store.meta_dirty = true;
+        true
+    }
+
+    /// Every version of an edited message or post, oldest first ([`crate::revisions`]), from the
+    /// ops this device has (so it works offline).
+    pub fn revisions(&self, entity: &str) -> Vec<crate::revisions::Revision> {
+        crate::revisions::revisions(self.store.visible().filter(|o| o.entity() == Some(entity)))
+    }
+
+    /// After a reconcile: blobs named by ops the restored server doesn't have yet, being
+    /// restored or still waiting to be sent. The device re-uploads the ones it has (SYNC.md
+    /// §7.3): the server's files are as old as its backup, and a file uploaded to it since (for
+    /// an op sent since, or one still queued) is gone.
+    pub fn restoring_blobs(&self) -> Vec<String> {
+        let none = std::collections::BTreeSet::new();
+        let mut v: Vec<String> = [true, false]
+            .into_iter()
+            .flat_map(|restore| self.store.pending(&none, usize::MAX, restore))
+            .flat_map(|o| crate::restore::blob_hashes(&o))
+            .collect();
+        v.sort();
+        v.dedup();
+        v
     }
 
     pub fn take_changes(&mut self) -> Changes {
@@ -364,6 +444,86 @@ mod tests {
             assert_ne!(whole, snapshot);
             assert_eq!(o.projection().canonical(), whole);
         }
+    }
+
+    /// SYNC §7: a refused op is listed with its reason until dismissed, then gone for good.
+    #[test]
+    fn refused_ops_are_listed_until_dismissed() {
+        let scope = format!("account:{}", crate::id::new_id(1, [1; 10]));
+        let mut r = Replica::new("dev", 7);
+        let new = NewOp {
+            kind: "member.create".into(),
+            scope,
+            entity_id: Some(crate::id::new_id(1, [2; 10])),
+            payload: json!({"name": "Kai"}),
+            member_id: None,
+            user_time: None,
+        };
+        let (o, _) = r.create(new, &now(1000), [3; 10]).unwrap();
+        r.take_changes();
+        assert!(r.sync_issues().is_empty());
+        r.store.reject(&o.id, crate::sync::AckError { code: "forbidden".into(), message: "no".into(), retry: false });
+        let issues = r.sync_issues();
+        assert_eq!(
+            (issues.len(), issues[0].code.as_str(), issues[0].payload["name"].as_str()),
+            (1, "forbidden", Some("Kai"))
+        );
+        assert!(r.dismiss_issue(&o.id));
+        assert!(!r.dismiss_issue(&o.id));
+        assert!(r.sync_issues().is_empty() && !r.store.ops.contains_key(&o.id));
+        let ch = r.take_changes();
+        assert!(ch.removed.contains(&o.id), "storage deletes it too");
+    }
+
+    /// SYNC.md §7.3: after a reconcile, the files named by the restoring ops are listed so the
+    /// device can upload them again.
+    #[test]
+    fn restoring_ops_list_their_blobs() {
+        let space = format!("space:{}", crate::id::new_id(1, [1; 10]));
+        let hash = "ab".repeat(32);
+        let thumb = "cd".repeat(32);
+        let mut r = Replica::new("dev", 7);
+        let payloads = [
+            json!({"blob_hash": hash, "thumb_blob_hash": thumb, "filename": "a.png", "mime": "image/png", "size": 3}),
+            json!({"blob_hash": hash, "filename": "again.png", "mime": "image/png", "size": 3}),
+            json!({"blob_hash": "not a hash", "filename": "b", "mime": "text/plain", "size": 1}),
+        ];
+        for (n, payload) in payloads.into_iter().enumerate() {
+            let n = n as u8;
+            let mut o = r
+                .create(
+                    NewOp {
+                        kind: "attachment.create".into(),
+                        scope: space.clone(),
+                        entity_id: Some(crate::id::new_id(1, [n + 20; 10])),
+                        payload,
+                        member_id: None,
+                        user_time: None,
+                    },
+                    &now(1000),
+                    [n; 10],
+                )
+                .unwrap()
+                .0;
+            o.seq = Some(i64::from(n) + 1);
+            r.store.put_remote(o);
+        }
+        assert!(r.restoring_blobs().is_empty(), "nothing is being restored");
+        r.store.demote_for_restore(&space);
+        assert_eq!(r.restoring_blobs(), vec![hash.clone(), thumb.clone()]);
+        // an op still queued names its file too
+        let queued = "ef".repeat(32);
+        let payload = json!({"blob_hash": queued, "filename": "q.png", "mime": "image/png", "size": 3});
+        let new = NewOp {
+            kind: "attachment.create".into(),
+            scope: space.clone(),
+            entity_id: Some(crate::id::new_id(1, [30; 10])),
+            payload,
+            member_id: None,
+            user_time: None,
+        };
+        r.create(new, &now(2000), [30; 10]).unwrap();
+        assert_eq!(r.restoring_blobs(), vec![hash, thumb, queued]);
     }
 
     #[test]

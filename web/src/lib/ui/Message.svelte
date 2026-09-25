@@ -6,6 +6,7 @@
   import AttachmentView from './AttachmentView.svelte';
   import AvatarImage from './AvatarImage.svelte';
   import EmojiImage from './EmojiImage.svelte';
+  import { sync, type Revision } from '../sync/client';
 
   export type Quote = TextRange;
   export type Forwarded = SnapshotItem;
@@ -18,6 +19,9 @@
     lookup,
     mine,
     onreply,
+    onreplyin,
+    onreplyprivately,
+    unseen = [],
     onquote,
     onedit,
     ondelete,
@@ -42,6 +46,12 @@
     lookup: (id: string) => (MessageRow & { channel_name?: string }) | undefined;
     mine: boolean;
     onreply: () => void;
+    /** "Reply in…": pick another channel, thread or DM (SPEC §5.3). */
+    onreplyin: () => void;
+    /** "Reply privately", where there's someone else to reply to. */
+    onreplyprivately?: () => void;
+    /** Members who haven't read this yet ("track reading per member"). */
+    unseen?: string[];
     onquote: (q: Quote) => void;
     onedit: () => void;
     ondelete: () => void;
@@ -68,6 +78,9 @@
   const color = (id: string) => core.adaptColor(people.get(id)?.color ?? '#A09184', dark);
   const nameOf = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
   const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // "edited" opens what it said before (SPEC §5.3)
+  let history = $state<Revision[] | null>(null);
+  const toggleHistory = () => (history = history ? null : sync.revisions(m.id));
   const replied = $derived(m.reply_to ? lookup(m.reply_to) : undefined);
   let body: HTMLElement | undefined = $state();
 
@@ -125,6 +138,7 @@
         <time>{time(m.occurred_at)}</time>
         {#if m.sent_offline}<span class="tag" title="Composed offline, synced later">sent offline</span>{/if}
         {#if m.pinned}<span class="tag">pinned</span>{/if}
+        {#if unseen.length}<span class="unseen" title="Not seen by {unseen.join(', ')}" aria-label="Not seen by {unseen.join(', ')}">●</span>{/if}
       </div>
     {/if}
     {#if m.cw}
@@ -172,7 +186,18 @@
       {#if m.attachments.length && !m.forward_snapshot?.some((f) => f.attachments?.length)}
         <div class="attachments">{#each m.attachments as a (a.id)}<AttachmentView attachment={a} />{/each}</div>
       {/if}
-      {#if m.edited}<span class="edited"> (edited)</span>{/if}
+      {#if m.edited}<button class="edited" onclick={toggleHistory} aria-expanded={!!history}>(edited)</button>{/if}
+      {#if history}
+        <ol class="history" aria-label="Edit history">
+          {#each history as r (r.rev)}
+            <li>
+              <time>{new Date(r.at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</time>
+              {#if r.original}<span class="tag">original</span>{/if}
+              <RichText text={r.fields.text ?? ''} entities={r.fields.entities ?? []} emoji={emojiById} />
+            </li>
+          {/each}
+        </ol>
+      {/if}
       {#if reacts?.size}
         <div class="reacts">
           {#each [...reacts] as [emoji, who] (emoji)}
@@ -210,6 +235,8 @@
     <div class="actions" role="toolbar" aria-label="Message actions">
       <button onclick={() => (palette = !palette)} title="React" disabled={!speaker}>☺</button>
       <button onclick={onreply} title="Reply">↩</button>
+      <button onclick={onreplyin} title="Reply in another channel">↪</button>
+      {#if onreplyprivately}<button onclick={onreplyprivately} title="Reply privately">✉</button>{/if}
       <button onclick={quote} title="Quote (select text first to quote part)">❝</button>
       <button onclick={() => onforward(selectedRange() ?? undefined)} title="Forward selection or message">↗</button>
       <button onclick={onselect} title={selected ? 'Deselect message' : 'Select for bundle'} aria-label={selected ? 'Deselect message' : 'Select for bundle'}>{selected ? '☑' : '□'}</button>
@@ -288,6 +315,26 @@
   .edited {
     font-size: var(--fs-xs);
     color: var(--ink-3);
+  }
+  .unseen {
+    color: var(--accent, var(--ink-3));
+    font-size: var(--fs-xs);
+  }
+  button.edited {
+    background: none;
+    border: 0;
+    padding: 0 var(--s-1);
+    cursor: pointer;
+    text-decoration: underline dotted;
+  }
+  .history {
+    margin: var(--s-1) 0;
+    padding: var(--s-2) var(--s-3);
+    list-style: none;
+    border-left: 2px solid var(--line);
+    display: grid;
+    gap: var(--s-1);
+    color: var(--ink-2);
   }
   .tag {
     border: 1px solid var(--line);

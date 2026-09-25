@@ -1,0 +1,32 @@
+{
+  "args": [
+    {
+      "fronting": [
+        {
+          "is_primary": false,
+          "level": "cocon",
+          "member_id": "rin"
+        },
+        {
+          "is_primary": false,
+          "level": "front",
+          "member_id": "kai"
+        }
+      ],
+      "last_authors": [
+        "june"
+      ],
+      "members": [
+        "kai",
+        "rin",
+        "june"
+      ],
+      "mode": "front"
+    }
+  ],
+  "description": "front: the primary fronter, else the first member fronting (not a co-con)",
+  "expect": [
+    "kai"
+  ],
+  "fn": "default_speaker"
+}

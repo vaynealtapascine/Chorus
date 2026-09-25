@@ -97,7 +97,8 @@ so nobody can sign someone else up for their switches.
 
 `chorus-core::visibility::can_read(account, op, state)` is the one function deciding delivery.
 Notable filters inside `space:` scopes: `system_only` messages go only to the author's account;
-reactions/edits to such messages likewise; channel permissions (`view`, SPEC §5.1) decide which
+reactions/edits to such messages likewise; read marks (`read.*`) go only to the account that
+wrote them (no read receipts: per member, they'd show another account who was fronting); channel permissions (`view`, SPEC §5.1) decide which
 channels of a space an account receives — this is how a single internal channel is shared with an
 outside account (a *guest*: it gets the space's scope but only that channel's ops). Permission
 resolution is one SQL rule on the server (`chorus-server/src/perms.rs`, DATA_MODEL §4.4): clients
@@ -239,7 +240,8 @@ Reviews are computed by the server (it knows `seq`) and sync down as rows.
  "cursors":{"account:…":1234,"space:…":998},"view_seq":77,
  "digests":{"account:…":{"count":1234,"xor":"9f…"}},
  "clock":{"wall":1790000000000,"mono":81234567,"boot_id":"41"},
- "core":"1.2.0","app":"android 1.0.3","outbox":12}
+ "core":"1.2.0","app":"android 1.0.3","outbox":12,
+ "window":1782000000000}          // optional: a windowed replica (§6.5)
 
 // S→C
 {"t":"welcome","server_time":1790000000123,"epoch":"…","account_id":"…","offset_ms":-340,
@@ -323,14 +325,33 @@ user action
   the scope that weren't delivered are dropped (`ClientStore::evict`; pending and restoring ops
   stay) and reported in `Changes.removed` so storage deletes them too. The repair ends there even
   if the digests still differ; the next catch-up tries again, so a divergence can never become a
-  pull loop. A scope that goes away (`scope.remove`, or missing from `welcome`) is evicted the
-  same way. This is how a device forgets a channel it lost `view` on (§4.2).
+  pull loop. This is how a device forgets a channel it lost `view` on (§4.2). A scope that goes
+  away (`scope.remove`, or missing from `welcome`) is forgotten (`ClientStore::forget`): its
+  confirmed ops *and* the copies it was restoring to a restored server go; only the device's own
+  unsent ops stay, to be refused with a reason. An ack for a batch whose scope went away while
+  it was in flight forgets that scope again: the server acks an op it already has by id before
+  asking about access, which would otherwise confirm it on a device that no longer reads the
+  scope (found by the simulator, §9.2).
 - **Backoff**: reconnect immediately on network change (Android `ConnectivityManager` callback,
   web `online` event) and on a push tickle; otherwise exponential 1 s → 5 min with ±30 % jitter.
 - **Android background**: WorkManager unique work `sync` with `NetworkType.CONNECTED`, expedited
   when the outbox is non-empty; the widget's switch op enqueues it.
-- **Windowed web replica**: messages older than the window are evicted locally (not ops of the
-  account scope, which are small); scrolling up past the window fetches pages over REST.
+- **Windowed web replica** (R23, D-075): a browser tab not set to "keep everything" (CLIENTS
+  §4.3) keeps only the message-family ops (`message.*`, `reaction.*`, `attachment.*`, `read.*`)
+  the server received in the last 90 days; channels, spaces, permissions and the account scope
+  are always kept. The rule is `sync::outside_window(op, window)`, and the device says its window
+  in `hello.window` (epoch ms). The digest problem — an evicted op mustn't look missing — is
+  solved by both sides leaving the same ops out, so nothing evicted is remembered: for that
+  connection the server skips those ops in catch-up, live fan-out and repair pulls, and
+  computes `caught` digests without them (`visibility::visible_digest_in`); the device drops
+  them at connect (`ClientStore::trim`, before the hello's digests are taken) and when an ack
+  confirms one (`trim_ids`), reporting them in `Changes.removed`. It's by **received** time, not
+  written time: a message written offline months ago that arrived today is newer than any
+  backup, so the tab keeps it (it may be what brings it back after a restore, §7.3). A windowed
+  device isn't a backup of history older than its window; full replicas (the installed app,
+  Android) are. Older history reads over REST (`GET /channels/{id}/messages?before=`), shown
+  read-only above what the tab holds. Turning "keep everything" on reconnects without a window:
+  the digests no longer match, so the scopes are pulled again (the repair, above).
 
 ## 7. Failure scenarios
 
@@ -367,6 +388,12 @@ user action
    author, device and times and only assigns a new `seq`; known ids are no-ops that return the
    stored stamp. Outside the window, restore pushes are treated as fresh ops from the pusher.
 4. Device pulls each scope from zero; ops it already holds are replaced by the server's copies.
+5. Files: the restored server's blobs are as old as its backup, so a file uploaded since (for an
+   op the device restores, or one still in its outbox) is gone. After a `welcome` with
+   `reconcile: true` the device asks core which blobs those ops name (`restoring_blobs()`:
+   `blob_hash`, `thumb_blob_hash`, `avatar_blob`, `banner_blob`) and queues an upload of each
+   one it has a copy of (the web app: a blob still queued or kept in its cache; `HEAD` first, so
+   one the server has is skipped). Found by the chaos test (§9.3).
 
 This is how "phone as full replica" (D-043) restores data written after the last backup. A CLI
 `chorus-server reconcile-status` (and, for admins, `GET /admin/health` → `restore_window` and the
@@ -400,7 +427,8 @@ closes the window with `reconcile-close` or `POST /admin/reconcile/close`.
 ```
 
 Areas: `hlc`, `time`, `lww`, `set`, `groups_cycle`, `front`, `review`, `text_entities`,
-`speaker_parse`, `feed_query`, `visibility`, `digest`. Rust runs all of them in CI. Any non-Rust
+`speaker_parse`, `feed_query`, `visibility`, `digest`, `search` (message search: the web's word
+index runs these too, `web/src/lib/search.test.ts`). Rust runs all of them in CI. Any non-Rust
 reimplementation must run them too.
 
 ### 9.2 Convergence simulator
@@ -408,15 +436,24 @@ reimplementation must run them too.
 A deterministic, seeded simulator in `chorus-core` tests (proptest):
 
 - N devices (2–6) across 1–3 accounts, one server model.
-- Random ops (all kinds), random wall-clock skew (±3 h) and drift, random reboots.
+- Random ops (all kinds), random wall-clock skew (±3 h) and drift, random reboots. Chat
+  structure too: channels and threads (`channel.*`, `parent_message_id`), messages into them
+  (replies, attachments), `message.forward` with its snapshot, `attachment.create`/`.set`.
+- Scope grants and revocations while devices are connected (`MemServer::set_access` sends the
+  `scope` frame): the second account joins and leaves the shared space and gains and loses the
+  first account's internal space (like a guest). `MemServer` has no channel permissions; the
+  end-to-end chaos test (§9.3) covers those against the real rule.
 - Random network: partitions, drops mid-batch, duplicated and reordered delivery, server restarts,
   one "restore from backup" event.
 - At quiescence assert: every device's projection for each scope it holds == server projection
   == projection built from the server log sorted by seq **and** by a random shuffle; digests equal;
-  no op lost; each rejected op has a reason.
+  no op lost; each rejected op has a reason; each device holds exactly the scopes its account
+  has now and nothing of the ones it lost. "Lost" allows one case: an op in a scope its author's
+  account lost, which a restore then dropped (its devices had forgotten it, and nobody may
+  restore an op for an author without access).
 
 Implemented in `crates/chorus-core/tests/converge.rs` against `sync::ClientEngine` and the
-reference `sync::MemServer`. Default run: 300 seeds (~2 s release). Long run:
+reference `sync::MemServer`. Default run: 300 seeds (~25 s release, a few minutes debug). Long run:
 `CHORUS_SIM_SEEDS=10000 cargo test -p chorus-core --release --test converge`. Rerun one seed with
 `CHORUS_SIM_SEED=<n>`; `CHORUS_SIM_STATS=1` prints per-run counts. Snapshots are op pages
 (the device is an op replica, which `reproject` needs); table-row snapshots are a later
@@ -424,5 +461,56 @@ optimization.
 
 ### 9.3 End-to-end chaos test
 
-An integration test starts the real server binary, spins up headless clients (Rust test client
-using the same core), and kills/restarts the server and sockets at random points. Same assertions.
+`crates/chorus-server/tests/chaos.rs` (R20) runs the real server binary on a temporary data
+directory and six headless devices on the real `ClientEngine` over real WebSockets: three
+accounts (two systems and a person), two devices each. Setup: B and C follow A, A makes a shared
+space with both and a DM with C, and shares one channel of its internal space with C (a guest).
+Then a seeded run of steps; each picks a device and an action:
+
+- ops of every chat kind, chosen from what the device's own projection offers (like its UI):
+  sends (replies, `system_only` asides, attachments with a real blob upload), edits, deletes and
+  restores, forwards, reactions, pins, read marks, channels and threads created, renamed,
+  archived, deleted and restored, `channel.set_permission` churn on role and account targets
+  (including the guest's channel), `space.set_role`, members and front switches;
+- follows ended and asked again, C leaving the shared space and A adding people back (REST);
+- a socket dropped right after pushing a burst (acks never read), a push sent twice, a device
+  offline for a few steps;
+- twice per run, `kill -9` of the server right under a burst of pushes, restarted a few steps
+  later (devices keep writing offline meanwhile);
+- an online backup (`chorus-server backup`) at 30 % of the run and, at 70 %, a restore from it
+  into a new data directory (a new op log, a new epoch: every device reconciles, §7.3).
+
+The desks "keep everything" (they download the files of what they receive), and every device
+re-sends files after a reconcile like the apps do. What a run does depends only on its seed; the
+timing is real. At quiescence (every device online, outboxes and upload queues empty, no frames
+for 600 ms), per device against the final database:
+
+- its scopes are the account's (`ingest::scopes_of`); for each scope it holds exactly the ops
+  `visibility::op_visible_to` allows the account, with the server's stamps, and the same
+  digest as `visible_digest`; nothing in scopes it doesn't have;
+- its outbox is empty; every rejected op has a code and a message;
+- a final `recheck` of every scope repairs nothing, and repairs stayed bounded (a repair per
+  permission change, reconnect or restore is normal; a loop is not);
+- its incremental projection equals a fresh `model::project` of the same ops, and each phone's
+  projected messages (ids and text) per channel equal what `GET /channels/{id}/messages` lists
+  for its account (the server's SQL projection);
+- every attachment's file is on the server, unless no device holding the op has a copy (a file
+  whose only copy is on a device that lost the op can't come back);
+- **no leaks**: every `ops` frame is recorded with its arrival time. Per op log (one before the
+  restore, one after), the log is replayed through `project::after_insert` into a fresh
+  database, and each frame's ops must be visible to its account (`ingest::can_access` and
+  `op_visible_to`) at some state it could have been sent from: between the frame's `to` and the
+  last op the server had received when the frame arrived (`received_at` is stamped before the
+  op commits, on the same clock). Visibility inside a scope depends only on that scope's ops,
+  so only the states after the scope's own ops are asked. The test also plants two leaks (an op
+  of A's account scope and one of A's asides, "delivered" to C) and checks they are reported.
+
+Default: 2 seeds of 160 steps (~15 s debug) in `cargo test`. Longer:
+`CHORUS_CHAOS_SEEDS=20 CHORUS_CHAOS_STEPS=300 cargo test --release -p chorus-server --test
+chaos -- --nocapture`; one seed with `CHORUS_CHAOS_SEED=<n>`; `CHORUS_CHAOS_TRACE=<n>` prints
+more of the action trace on failure. A failing seed keeps its data directory (databases,
+server logs) under `target/tmp/chaos-<seed>-*`.
+
+Found so far: files uploaded after the last backup were lost by a restore (fixed: §7.3 step 5),
+and a finished blob sent again by another account was refused, which stalled the web upload
+queue for good (fixed: API.md §5).

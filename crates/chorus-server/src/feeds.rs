@@ -11,6 +11,7 @@
 //! notifications showed, at the times shown), so a feed never tells a reader more, or sooner,
 //! than their notifications did. Clients warn when sharing or opening such a feed.
 
+use chorus_core::search::days_from_civil;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -337,23 +338,6 @@ fn dates_in(e: &Expr, f: &mut dyn FnMut(&str)) {
         Expr::Since { at: TimeRef::Date { date } } | Expr::Until { at: TimeRef::Date { date } } => f(date),
         _ => {}
     }
-}
-
-/// Days since 1970-01-01 for `YYYY-MM-DD` (proleptic Gregorian).
-fn days_from_civil(date: &str) -> Option<i64> {
-    let mut parts = date.split('-');
-    let (y, m, d): (i64, i64, i64) =
-        (parts.next()?.parse().ok()?, parts.next()?.parse().ok()?, parts.next()?.parse().ok()?);
-    if parts.next().is_some() || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
-        return None;
-    }
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let mp = (m + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    Some(era * 146_097 + doe - 719_468)
 }
 
 #[cfg(test)]

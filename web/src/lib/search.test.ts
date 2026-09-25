@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { core, loadCore, type SearchCandidate, type SearchQuery } from './core';
 import { JournalIndex, SearchIndex, parseSearch } from './search';
 import { applyDelta, type Delta } from './sync/delta';
 import type { Projection } from './sync/client';
@@ -15,34 +18,41 @@ const base = (): Projection => ({
   },
   sets: {}, fronts: {}, opaque: 0,
 });
+beforeAll(async () => {
+  await loadCore(readFileSync(fileURLToPath(new URL('./core/pkg/chorus_wasm_bg.wasm', import.meta.url))));
+});
+
+const find = (index: SearchIndex, q: string, limit?: number) => index.find(core.searchParse(q), Date.now(), limit);
 const empty = (): Delta => ({ rows: {}, sets: {}, fronts: {}, reviews: {}, opaque: 0, full: false });
 
 describe('local message search', () => {
-  it('parses filters and quoted names without treating them as search words', () => {
-    expect(parseSearch('garden from:"Kai Rose" in:general has:image before:2026-01-02 after:100'))
-      .toEqual({ terms: ['garden'], from: 'Kai Rose', in: 'general', has: 'image', before: Date.parse('2026-01-02'), after: 100 });
+  it('parses filters and quoted names in core, without treating them as search words', () => {
+    expect(core.searchParse('garden from:"Kai Rose" in:#general has:image before:2026-01-02 is:pinned'))
+      .toEqual({ words: ['garden'], from: ['kai rose'], in: ['general'], has: ['image'],
+        before: { type: 'date', date: '2026-01-02' }, after: null, pinned: true });
+    expect(() => core.searchParse('has:gif')).toThrow(/has is one of/);
   });
 
   it('updates only delta keys, including edits, removals and late attachment metadata', () => {
     let p = base();
     const index = new SearchIndex(p);
-    expect(index.search(parseSearch('vio'), 10).map((h) => h.id)).toEqual(['one']);
-    expect(index.search(parseSearch('violet from:Kai in:general has:image')).map((h) => h.id)).toEqual(['one']);
+    expect(find(index, 'vio', 10).map((h) => h.id)).toEqual(['one']);
+    expect(find(index, 'violet from:Kai in:general has:image').map((h) => h.id)).toEqual(['one']);
     const changed = { ...p.rows.message.one, fields: { ...p.rows.message.one.fields, text: 'amber garden' } };
     let d: Delta = { ...empty(), rows: { message: { one: changed } } };
     p = applyDelta(p, d);
     index.apply(p, d);
-    expect(index.search(parseSearch('violet'))).toEqual([]);
-    expect(index.search(parseSearch('amb')).map((h) => h.id)).toEqual(['one']);
+    expect(find(index, 'violet')).toEqual([]);
+    expect(find(index, 'amb').map((h) => h.id)).toEqual(['one']);
     d = { ...empty(), rows: { attachment: { photo: { exists: true, fields: { mime: 'application/pdf' } } } } };
     p = applyDelta(p, d);
     index.apply(p, d);
-    expect(index.search(parseSearch('amber has:image'))).toEqual([]);
-    expect(index.search(parseSearch('amber has:file')).map((h) => h.id)).toEqual(['one']);
+    expect(find(index, 'amber has:image')).toEqual([]);
+    expect(find(index, 'amber has:file').map((h) => h.id)).toEqual(['one']);
     d = { ...empty(), rows: { message: { one: null } } };
     p = applyDelta(p, d);
     index.apply(p, d);
-    expect(index.search(parseSearch('amber'))).toEqual([]);
+    expect(find(index, 'amber')).toEqual([]);
   });
 
   it('searches a 500 member index within the input budget after indexing', () => {
@@ -52,12 +62,38 @@ describe('local message search', () => {
       p.rows.message[`msg${i}`] = { exists: true, fields: { channel_id: 'general', authors: [`m${i}`], text: `garden word${i}`, occurred_at: i } };
     }
     const index = new SearchIndex(p);
-    const query = parseSearch('garden from:"Member 499"');
-    for (let i = 0; i < 5; i++) index.search(query);
+    const query = core.searchParse('garden from:"Member 499"');
+    for (let i = 0; i < 5; i++) index.find(query);
     const start = performance.now();
-    for (let i = 0; i < 20; i++) expect(index.search(query).length).toBe(1);
+    for (let i = 0; i < 20; i++) expect(index.find(query).length).toBe(1);
     expect((performance.now() - start) / 20).toBeLessThan(16);
   });
+});
+
+// The conformance fixtures (fixtures/search, SYNC §9.1): the index narrows by words before core
+// decides, so it must never drop a message core would find.
+describe('local message search agrees with core (fixtures/search)', () => {
+  const dir = fileURLToPath(new URL('../../../fixtures/search/', import.meta.url));
+  for (const file of readdirSync(dir).filter((f) => f.startsWith('filter_'))) {
+    it(file, () => {
+      const fx = JSON.parse(readFileSync(dir + file, 'utf8')) as {
+        args: [SearchQuery, SearchCandidate[], { now: number; tz_offset_min: number }]; expect: number[];
+      };
+      const [query, candidates, ctx] = fx.args;
+      const row = (fields: Record<string, unknown>) => ({ exists: true, fields });
+      const p: Projection = { rows: { member: {}, channel: {}, message: {}, attachment: {} }, sets: {}, fronts: {}, opaque: 0 };
+      candidates.forEach((c, i) => {
+        for (const [id, name] of c.authors) p.rows.member[id] = row({ name });
+        p.rows.channel[c.channel[0]] = row({ name: c.channel[1] });
+        const attachments = c.mimes.map((mime, j) => { p.rows.attachment[`a${i}-${j}`] = row({ mime }); return `a${i}-${j}`; });
+        p.rows.message[`m${i}`] = row({ channel_id: c.channel[0], authors: c.authors.map(([id]) => id), text: c.text,
+          cw: c.cw, occurred_at: c.at, attachments, pinned_at: c.pinned ? c.at : null,
+          entities: c.link ? [{ type: 'url', offset: 0, length: 1 }] : [] });
+      });
+      const found = new SearchIndex(p).find(query, ctx.now, 100, ctx.tz_offset_min).map((h) => Number(h.id.slice(1)));
+      expect(found.sort()).toEqual(fx.expect);
+    });
+  }
 });
 
 describe('offline post and switch search', () => {

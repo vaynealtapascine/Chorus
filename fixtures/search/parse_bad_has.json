@@ -1,0 +1,11 @@
+{
+  "args": [
+    "has:gif"
+  ],
+  "description": "an unknown has: is an error with its position",
+  "expect": {
+    "error": true,
+    "message": "{\"message\":\"has is one of image, file, attachment, link\",\"pos\":0}"
+  },
+  "fn": "search_parse"
+}

@@ -41,7 +41,9 @@ async function send(upload: BlobUpload, dev: DeviceRecord): Promise<void> {
   const url = `${apiBase()}/blobs/${upload.hash}`;
   const auth = { authorization: `Bearer ${dev.session}` };
   const head = await apiFetch(url, { method: 'HEAD', headers: auth });
-  if (head.status === 200) return;
+  // 403: the server has it from another account (e.g. re-sent after a restore, SYNC.md §7.3);
+  // an error here would stall this upload and every one queued after it
+  if (head.status === 200 || head.status === 403) return;
   if (head.status !== 404 && head.status !== 206) throw new Error(`Blob HEAD: ${head.status}`);
   let offset = head.status === 206 ? Number(head.headers.get('upload-offset')) : 0;
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > upload.blob.size) throw new Error('Invalid upload offset');

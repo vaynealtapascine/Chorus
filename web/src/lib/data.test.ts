@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bucketAssignments, buckets, customEmojis, fuzzy, groupPath, memberListItems, memberLists, membership, messages, relationshipTypes, relationships, segmentParsing, threadSummaries, type GroupRow } from './data';
+import { bucketAssignments, buckets, customEmojis, fuzzy, groupPath, memberListItems, memberLists, memberMarks, membership, messages, relationshipTypes, readPerMember, relationships, segmentParsing, threadSummaries, type GroupRow } from './data';
 import type { Projection } from './sync/client';
 
 describe('data helpers', () => {
@@ -175,5 +175,28 @@ describe('incremental message lists', () => {
         expect(unread(p, ch, 'me')).toBe(unread(q, ch, 'me'));
       }
     }
+  });
+});
+
+describe('reading per member (SPEC §5.3)', () => {
+  it("finds each member's mark in a channel, pending ones included, and the account pref", () => {
+    const row = (fields: Record<string, unknown>) => ({ exists: true, fields });
+    const p = { rows: {
+      pref: { 'acct||chat.read_per_member': row({ value: true }) },
+      read_state: {
+        'c1|acct|': row({ last_read_message_at: 50, last_read_message_id: 'm5' }),
+        'c1|acct|kai': row({ last_read_message_at: 40, last_read_message_id: 'm4' }),
+        'c1||kai': row({ last_read_message_at: 45, last_read_message_id: 'm4b' }),
+        'c1|acct|rin': row({ last_read_message_at: 10, last_read_message_id: 'm1' }),
+        'c2|acct|june': row({ last_read_message_at: 99, last_read_message_id: 'm9' }),
+        'c1|other|sol': row({ last_read_message_at: 99, last_read_message_id: 'x' }),
+      },
+    }, sets: {}, fronts: {}, opaque: 0 } as unknown as Projection;
+    expect(readPerMember(p, 'acct')).toBe(true);
+    expect(readPerMember(p, 'other')).toBe(false);
+    expect(memberMarks(p, 'c1', 'acct').sort((a, b) => a.member.localeCompare(b.member))).toEqual([
+      { member: 'kai', at: 45, id: 'm4b' },
+      { member: 'rin', at: 10, id: 'm1' },
+    ]);
   });
 });

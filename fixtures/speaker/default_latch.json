@@ -1,0 +1,29 @@
+{
+  "args": [
+    {
+      "fronting": [
+        {
+          "is_primary": true,
+          "level": "front",
+          "member_id": "kai"
+        }
+      ],
+      "last_authors": [
+        "june",
+        "rin"
+      ],
+      "members": [
+        "kai",
+        "rin",
+        "june"
+      ],
+      "mode": "latch"
+    }
+  ],
+  "description": "latch: whoever the account last spoke as here",
+  "expect": [
+    "june",
+    "rin"
+  ],
+  "fn": "default_speaker"
+}

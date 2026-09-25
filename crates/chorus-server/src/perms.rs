@@ -90,6 +90,38 @@ pub fn can(conn: &Connection, account: &str, channel: &str, perm: &str) -> rusql
         .query_row(params![account, channel], |r| r.get(0))
 }
 
+/// Longest slow mode a channel can set: 6 hours.
+pub const SLOW_MODE_MAX_S: u64 = 6 * 3600;
+
+/// Slow mode (SPEC §5.1, OPEN_QUESTIONS Q17 default): a channel's `settings.slow_mode_s` lets each
+/// account send one message there every so many seconds, counted on the server's clock when the
+/// sends arrive (`received_at`) — a message written offline at 10:00 and synced at 12:00 counts
+/// at 12:00, and a device syncing several at once gets the later ones refused. Accounts that may
+/// `manage` the channel (its space's owner and admins) are exempt. `Some(reason)` = refused.
+pub fn slow_mode(conn: &Connection, author: &str, o: &Op, now: i64) -> anyhow::Result<Option<String>> {
+    if !matches!(o.kind.as_str(), "message.send" | "message.forward") {
+        return Ok(None);
+    }
+    let Some(channel) = str_of(&o.payload, "channel_id") else { return Ok(None) };
+    let settings: Option<String> = conn
+        .prepare_cached("SELECT settings FROM channel WHERE id = ?1")?
+        .query_row([channel], |r| r.get(0))
+        .optional()?;
+    let seconds = settings
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| v.get("slow_mode_s").and_then(Value::as_u64))
+        .unwrap_or(0)
+        .min(SLOW_MODE_MAX_S);
+    if seconds == 0 || can(conn, author, channel, "manage")? {
+        return Ok(None);
+    }
+    let last: Option<i64> = conn
+        .prepare_cached("SELECT max(received_at) FROM message WHERE channel_id = ?1 AND account_id = ?2")?
+        .query_row(params![channel, author], |r| r.get(0))?;
+    let wait = last.map_or(0, |at| at + seconds as i64 * 1000 - now);
+    Ok((wait > 0).then(|| format!("slow mode: one message every {seconds} s here; wait {} s", (wait + 999) / 1000)))
+}
+
 /// The space's owner, or an account present in it (not a guest of one of its channels).
 pub fn is_member(conn: &Connection, account: &str, space: &str) -> rusqlite::Result<bool> {
     conn.prepare_cached(
