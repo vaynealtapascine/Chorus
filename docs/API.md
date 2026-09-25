@@ -325,8 +325,10 @@ the apps' parser, mentioning your own members and the server's emoji), `plain` o
 ## 5. Blobs
 
 ```
-HEAD /blobs/{sha256}                  200 complete | 206 + Upload-Offset partial | 404
-PUT  /blobs/{sha256}                  Content-Range chunks (≤ 4 MB each); verifies hash on completion
+HEAD /blobs/{sha256}                  200 complete | 206 + Upload-Offset partial | 404 | 403 another account's
+PUT  /blobs/{sha256}                  Content-Range chunks (≤ 4 MB each); verifies hash on completion;
+                                      200 if already complete (from anyone); 403 into another account's
+                                      unfinished upload
 GET  /blobs/{sha256}                  supports Range; Cache-Control immutable
 GET  /blobs/{sha256}?thumb=480        server-side fallback thumbnail if client didn't upload one
 ```
