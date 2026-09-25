@@ -16,7 +16,8 @@ class WidgetTilesTest {
     private val model = Model(
         members = listOf(m("ash"), m("kai"), m("june"), m("rin"), m("old", archived = true)),
         groups = listOf(Group("stars", "Stars", "subsystem", null, null), Group("inner", "Inner", "subsystem", "stars", null), Group("friends", "Friends", "group", null, null)),
-        membership = mapOf("stars" to setOf("kai", "june"), "inner" to setOf("june")),
+        membership = mapOf("stars" to setOf("kai", "june"), "inner" to setOf("june"),
+            "friends" to setOf("ash", "rin")),
         current = emptyList(),
         since = null,
         switches = listOf(sw(1, "rin"), sw(2, "kai"), sw(3, "old"), sw(4, "ash", retracted = true)),
@@ -58,6 +59,18 @@ class WidgetTilesTest {
     @Test
     fun folderShowsWholeSubsystemThenSubfoldersThenMembersByRecency() {
         assertEquals(listOf("stars", "[inner]", "kai", "june"), names(widgetTiles(model, "stars")))
+    }
+
+    @Test
+    fun eachWidgetScopeStaysInsideItsOwnGroupOrSubsystem() {
+        assertEquals(listOf("rin", "ash"), names(widgetTiles(model, null,
+            pinned = listOf("kai", "rin"), scope = WidgetScope("group", "friends"))))
+        assertEquals(listOf("stars", "[inner]", "kai", "june"), names(widgetTiles(model, null,
+            scope = WidgetScope("subsystem", "stars"))))
+        assertEquals("stars", widgetFolder(model, WidgetScope("subsystem", "stars"), "friends"))
+        assertEquals(listOf("inner", "june"), names(widgetTiles(model, "inner",
+            scope = WidgetScope("subsystem", "stars"))))
+        assertEquals(emptyList<WidgetTile>(), widgetTiles(model, null, scope = WidgetScope("group", "gone")))
     }
 
     @Test

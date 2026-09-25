@@ -66,7 +66,10 @@ class QuickSwitchWidget : AppWidgetProvider() {
                     ACTION_MODE -> state.mode = state.mode.next()
                     ACTION_BACK -> {
                         val model = Chorus.get(ctx).awaitModel()
-                        state.setFolder(widgetId, state.folder(widgetId)?.let { model.group(it)?.parentId })
+                        val scope = state.scope(widgetId, Chorus.get(ctx).device?.accountId)
+                        val current = widgetFolder(model, scope, state.folder(widgetId))
+                        val parent = current?.let { model.group(it)?.parentId }
+                        state.setFolder(widgetId, if (scope.kind == "subsystem" && current == scope.id) null else parent)
                     }
                     ACTION_TILE -> onTile(ctx, state, widgetId, intent)
                     ACTION_UNDO -> undo(ctx, state)
@@ -82,15 +85,23 @@ class QuickSwitchWidget : AppWidgetProvider() {
     }
 
     private suspend fun onTile(ctx: Context, state: WidgetState, widgetId: Int, intent: Intent) {
-        if (Chorus.get(ctx).awaitModel().isPerson) return
         val type = intent.getStringExtra(EXTRA_TYPE) ?: return
         val id = intent.getStringExtra(EXTRA_ID) ?: return
+        val chorus = Chorus.get(ctx)
+        val model = chorus.awaitModel()
+        if (model.isPerson) return
+        val account = chorus.device?.accountId
+        val scope = state.scope(widgetId, account)
+        val visible = widgetTiles(model, state.folder(widgetId), pinned = WidgetPins.read(ctx, account),
+            accountId = account, scope = scope)
+        if (visible.none { tile -> when (tile) {
+                is WidgetTile.Subject -> tile.type == type && tile.id == id
+                is WidgetTile.Folder -> type == "folder" && tile.id == id
+            } }) return
         if (type == "folder") {
             state.setFolder(widgetId, id)
             return
         }
-        val chorus = Chorus.get(ctx)
-        val model = chorus.awaitModel()
         val subject = model.subject(type, id) ?: return
         val mode = state.mode
         val label = Front.tap(chorus, subject, mode)
@@ -205,11 +216,13 @@ class QuickSwitchWidget : AppWidgetProvider() {
                 v.setOnClickPendingIntent(R.id.w_undo, broadcast(ctx, ACTION_UNDO, widgetId))
             }
 
-            val folder = state.folder(widgetId)?.let { model.group(it) }
+            val scope = state.scope(widgetId, Chorus.get(ctx).device?.accountId)
+            val folder = widgetFolder(model, scope, state.folder(widgetId))?.let { model.group(it) }
             v.setViewVisibility(R.id.w_crumb, if (folder != null) View.VISIBLE else View.GONE)
             if (folder != null) {
                 v.setTextViewText(R.id.w_crumb, "‹  " + model.groupPath(folder))
-                v.setOnClickPendingIntent(R.id.w_crumb, broadcast(ctx, ACTION_BACK, widgetId))
+                if (scope.kind != "subsystem" || folder.id != scope.id)
+                    v.setOnClickPendingIntent(R.id.w_crumb, broadcast(ctx, ACTION_BACK, widgetId))
             }
 
             val service = Intent(ctx, TileService::class.java)

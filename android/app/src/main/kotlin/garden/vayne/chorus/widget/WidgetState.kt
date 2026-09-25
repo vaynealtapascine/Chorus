@@ -32,7 +32,23 @@ internal class WidgetState(ctx: Context) {
         prefs.edit().apply { if (folder == null) remove("folder_$widgetId") else putString("folder_$widgetId", folder) }.apply()
     }
 
-    fun forget(widgetId: Int) = setFolder(widgetId, null)
+    fun scope(widgetId: Int, accountId: String?): WidgetScope {
+        if (prefs.getString("scope_account_$widgetId", null) != accountId) return WidgetScope()
+        val kind = prefs.getString("scope_kind_$widgetId", "all").orEmpty()
+        val id = prefs.getString("scope_id_$widgetId", "").orEmpty()
+        return if (kind in setOf("group", "subsystem") && id.isNotBlank()) WidgetScope(kind, id) else WidgetScope()
+    }
+
+    fun setScope(widgetId: Int, accountId: String, scope: WidgetScope) {
+        prefs.edit().putString("scope_account_$widgetId", accountId)
+            .putString("scope_kind_$widgetId", scope.kind).putString("scope_id_$widgetId", scope.id)
+            .remove("folder_$widgetId").apply()
+    }
+
+    fun forget(widgetId: Int) {
+        prefs.edit().remove("folder_$widgetId").remove("scope_account_$widgetId")
+            .remove("scope_kind_$widgetId").remove("scope_id_$widgetId").apply()
+    }
 
     data class LastSwitch(val opId: String, val label: String, val at: Long)
 
