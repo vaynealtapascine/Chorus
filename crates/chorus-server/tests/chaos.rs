@@ -1176,8 +1176,24 @@ impl World {
                 let url = self.url(&format!("/channels/{channel}/messages?limit=100"));
                 let r = self.http.get(url).bearer_auth(&self.devs[d].token).send().await.unwrap();
                 let name = &self.devs[d].name;
-                if r.status() == 404 && mine.is_empty() {
-                    continue; // e.g. a thread under a message it can't see
+                if r.status() == 404 {
+                    // a channel it can't view any more: REST says so, but an author keeps its own
+                    // ops (SYNC.md §4.2), so the device may still show its own messages there
+                    let account = &self.accounts[d].id;
+                    let foreign: Vec<&String> = mine
+                        .keys()
+                        .filter(|id| {
+                            !self.devs[d].store.ops.values().any(|o| {
+                                o.entity() == Some(id.as_str())
+                                    && matches!(o.kind.as_str(), "message.send" | "message.forward")
+                                    && o.account_id.as_deref() == Some(account.as_str())
+                            })
+                        })
+                        .collect();
+                    if !foreign.is_empty() {
+                        problems.push(format!("{name}: channel {channel} is 404 but it holds others' {foreign:?}"));
+                    }
+                    continue;
                 }
                 if !r.status().is_success() {
                     problems.push(format!("{name}: GET messages of {channel}: {}", r.status()));
