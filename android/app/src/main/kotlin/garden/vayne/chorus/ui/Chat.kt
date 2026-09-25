@@ -69,6 +69,7 @@ import garden.vayne.chorus.data.ChannelWindow
 import garden.vayne.chorus.data.ChatAttachment
 import garden.vayne.chorus.data.SearchDocument
 import garden.vayne.chorus.data.ReadTracking
+import garden.vayne.chorus.data.PrivateReplies
 import garden.vayne.chorus.data.ChatCompose
 import garden.vayne.chorus.data.ChatSpace
 import garden.vayne.chorus.data.Chorus
@@ -89,6 +90,8 @@ import kotlinx.coroutines.withContext
 
 private data class StageRows(val channelId: String, val accountId: String, val spaceKind: String,
     val viewingAs: String?, val front: List<Entry>, val window: ChannelWindow)
+private data class PendingPrivateReply(val message: ChatMessage, val channelId: String? = null,
+    val spaceId: String? = null, val speakerId: String? = null)
 
 /** Local chat view: internal channels, shared spaces and account DMs use the same projection. */
 @Composable
@@ -115,6 +118,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var audience by rememberSaveable { mutableStateOf("all") }
     var visibleTo by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
+    var carriedReply by remember { mutableStateOf<ChatMessage?>(null) }
+    var pendingPrivateReply by remember { mutableStateOf<PendingPrivateReply?>(null) }
     var busy by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var directory by remember { mutableStateOf<Map<String, SpaceInfo>>(emptyMap()) }
@@ -157,6 +162,44 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
     val channels = model.channels.filter { it.spaceId == space?.id }
     val channel = channels.find { it.id == selectedChannel } ?: channels.firstOrNull()
+    LaunchedEffect(chorus.device?.accountId) { pendingPrivateReply = null; carriedReply = null }
+    val defaultAuthorId = remember(model, channel?.id) { channel?.id?.let { ChatSpeaker.pick(model, it) } }
+    val replySpeakerId = selectedAuthor.takeIf { id -> model.active.any { it.id == id } } ?: defaultAuthorId
+    fun replyPrivately(message: ChatMessage) {
+        val source = space ?: return
+        val dev = chorus.device ?: return
+        if (busy) return
+        busy = true; error = null
+        actions.launch {
+            try {
+                if (source.kind == "internal") {
+                    val speaker = replySpeakerId?.let(model::member)
+                        ?: throw IllegalArgumentException("Choose who is speaking first.")
+                    val author = message.authors.firstOrNull()?.let(model::member)
+                        ?: throw IllegalArgumentException("This message has no available member to reply to.")
+                    val existing = PrivateReplies.existing(model.channels, source.id, speaker.id, author.id)
+                    val target = existing?.id ?: chorus.newId().also { id ->
+                        chorus.create("channel.create", id, PrivateReplies.createPayload(source.id, speaker, author),
+                            scope = "space:${source.id}")
+                    }
+                    pendingPrivateReply = PendingPrivateReply(message, channelId = target, speakerId = speaker.id)
+                    selectedChannel = target
+                } else {
+                    val account = message.accountId?.takeIf { it != dev.accountId }
+                        ?: throw IllegalArgumentException("This message is from your account.")
+                    val targetSpace = Spaces.openDm(dev, account)
+                    pendingPrivateReply = PendingPrivateReply(message, spaceId = targetSpace, speakerId = replySpeakerId)
+                    selectedSpace = targetSpace
+                    selectedChannel = ""
+                    refresh++
+                }
+                replyTo = null
+                carriedReply = null
+                viewingAs = null
+            } catch (e: Exception) { error = e.message ?: "Could not open a private reply." }
+            finally { busy = false }
+        }
+    }
     fun setSpeakerDefault(mode: String, memberId: String? = null) {
         val id = channel?.id ?: return
         if (busy) return
@@ -201,11 +244,23 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
     LaunchedEffect(channel?.id, chorus.device?.accountId) {
         selectedAuthor = ""
+        replyTo = null
+        carriedReply = null
         speakerSettingsOpen = false
         staging = false
         capturing = false
         stageLimit = 100
         stageWindow = null
+    }
+    LaunchedEffect(channel?.id, space?.id, pendingPrivateReply) {
+        val pending = pendingPrivateReply ?: return@LaunchedEffect
+        val destination = channel ?: return@LaunchedEffect
+        if (pending.channelId == destination.id || pending.spaceId == destination.spaceId && pending.spaceId == space?.id) {
+            replyTo = pending.message.id
+            carriedReply = pending.message
+            selectedAuthor = pending.speakerId.orEmpty()
+            pendingPrivateReply = null
+        }
     }
     LaunchedEffect(staging, channel?.id, space?.kind, viewingAs, model, stageLimit, chorus.device?.accountId) {
         if (!staging || channel == null || space == null) { stageWindow = null; return@LaunchedEffect }
@@ -265,6 +320,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                             audience = "all"
                             visibleTo = emptyList()
                             replyTo = null
+                            carriedReply = null
+                            pendingPrivateReply = null
                             moreOpen = false
                         })
                     }
@@ -274,6 +331,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 items(channels, key = { it.id }) { candidate ->
                     ChatChip("#${candidate.name}", candidate.id == channel?.id) {
                         selectedChannel = candidate.id
+                        replyTo = null
+                        carriedReply = null
+                        pendingPrivateReply = null
                         replyTo = null
                     }
                 }
@@ -312,6 +372,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (channel == null) {
             Text("No channels in this space yet.", color = p.ink2, modifier = Modifier.padding(24.dp))
         } else {
+        if (pendingPrivateReply != null) Text("Opening private chat · Cancel", color = p.accent,
+            modifier = Modifier.clickable { pendingPrivateReply = null }.padding(horizontal = 16.dp))
         // A reversed list keeps its place on the message that was newest, so a new one would land
         // just out of view: follow it while the reader is at (or near) the bottom, and after sending.
         val listState = rememberLazyListState()
@@ -323,9 +385,12 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), state = listState, reverseLayout = true,
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(messages.asReversed(), key = { it.id }) { message ->
-                ChatMessageCard(message, model, foreignAuthors, chorus, unseenByMessage[message.id].orEmpty()) {
-                    replyTo = message.id
-                }
+                val canPrivate = if (space.kind == "internal") replySpeakerId != null &&
+                    message.authors.firstOrNull()?.let { it != replySpeakerId && model.member(it) != null } == true
+                else message.accountId != null && message.accountId != chorus.device?.accountId
+                ChatMessageCard(message, model, foreignAuthors, chorus, unseenByMessage[message.id].orEmpty(),
+                    onReply = { replyTo = message.id; carriedReply = null },
+                    onReplyPrivately = if (canPrivate) ({ replyPrivately(message) }) else null)
             }
             if (messages.isEmpty()) item {
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
@@ -334,19 +399,19 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         // Composer: one line (who's speaking, the text, options, send); options open above it
         Column(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 12.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            val defaultAuthorId = remember(model, channel.id) { ChatSpeaker.pick(model, channel.id) }
             val author = model.active.find { it.id == selectedAuthor }
                 ?: defaultAuthorId?.let(model::member)
-            val target = messages.find { it.id == replyTo }
+            val target = messages.find { it.id == replyTo } ?: carriedReply?.takeIf { it.id == replyTo }
             if (target != null) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("↪ Replying to a message", color = p.ink2, fontSize = 12.sp)
+                    Text(if (carriedReply?.id == replyTo) "↪ Replying privately to a message" else "↪ Replying to a message",
+                        color = p.ink2, fontSize = 12.sp)
                     Text("Cancel", color = p.accent, fontSize = 12.sp,
-                        modifier = Modifier.clickable { replyTo = null })
+                        modifier = Modifier.clickable { replyTo = null; carriedReply = null })
                 }
             } else if (replyTo != null) {
                 Text("Reply target unavailable · Cancel", color = p.accent, fontSize = 12.sp,
-                    modifier = Modifier.clickable { replyTo = null })
+                    modifier = Modifier.clickable { replyTo = null; carriedReply = null })
             }
             val audienceLabel = when (audience) {
                 "members" -> "Chosen members (${visibleTo.size})"
@@ -455,7 +520,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     fontSize = 20.sp,
                     modifier = Modifier.clickable { moreOpen = !moreOpen }.padding(8.dp)
                         .semantics { contentDescription = if (moreOpen) "Fewer options" else "Content warning and audience" })
-                val canSend = !busy && (draft.isNotBlank() || attachments.isNotEmpty()) && author != null && (replyTo == null || target != null) &&
+                val canSend = !busy && pendingPrivateReply == null && (draft.isNotBlank() || attachments.isNotEmpty()) &&
+                    author != null && (replyTo == null || target != null) &&
                     (audience != "members" || visibleTo.isNotEmpty())
                 Text(if (busy) "…" else "↑", color = if (canSend) p.bg else p.ink3, fontSize = 20.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.size(40.dp).clip(CircleShape).background(if (canSend) p.accent else p.surface2)
@@ -478,6 +544,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                     audience = "all"
                                     visibleTo = emptyList()
                                     replyTo = null
+                                    carriedReply = null
                                     moreOpen = false
                                 } catch (e: Exception) {
                                     error = e.message ?: "Could not send the message."
@@ -564,7 +631,7 @@ private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
 
 @Composable
 private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
-    chorus: Chorus, unseenBy: List<String>, onReply: () -> Unit) {
+    chorus: Chorus, unseenBy: List<String>, onReply: () -> Unit, onReplyPrivately: (() -> Unit)?) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
@@ -600,6 +667,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             "Chosen members".takeIf { message.visibilityMode == "members" },
         )
         if (tags.isNotEmpty()) Text(tags.joinToString(" · "), color = p.ink3, fontSize = 12.sp)
+        if (onReplyPrivately != null) Text("Reply privately", color = p.accent, fontSize = 12.sp,
+            modifier = Modifier.clickable(onClick = onReplyPrivately).padding(vertical = 3.dp))
         if (message.cw != null) {
             Text("Content warning: ${message.cw} · ${if (revealed) "Hide" else "Show"}", color = p.accent,
                 modifier = Modifier.clickable { revealed = !revealed })
