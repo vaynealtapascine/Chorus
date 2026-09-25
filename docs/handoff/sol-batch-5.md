@@ -44,6 +44,27 @@ frames exist, Claude will write you a hand-off mapping frames to code, and you'l
 Until then: favour the data, sync and logic side of each task, keep new screens plain (tokens,
 simple layout), and don't spend time on visual polish that a design will replace.
 
+**Update 2026-09-25, evening:** your V6 work through `99140f0` is merged (`f8e9c64`), and so is
+the remote Claude's batch R3 (`0a92e0a`). R3 adds core/FFI pieces Android should use; in order of
+importance (details in `opus-remote-3.md` §5):
+
+- **V10a · files after a server restore (data safety, do first).** After a `welcome` with
+  `reconcile: true`, call `replica.restoringBlobs()` and queue an upload (`Blobs`/`UploadWork`)
+  of each hash you have locally; `HEAD` first, and 200 or 403 both mean the server has it.
+  Without this, files uploaded after the server's last backup are lost by a restore.
+- **V10b · Sync issues.** `sync_issues` / `dismiss_issue`: refused ops (slow mode, permissions,
+  the new value rules) now have a list; show it plainly (Settings, or a banner in Chat), with the
+  text of a refused message kept so it can be copied.
+- **V10c · chat features:** edit history (`revisions`), local message search with the shared
+  filter syntax (`search_parse`/`search_filter`; run `fixtures/search`), the default speaker
+  chip (`default_speaker`, pref `autoproxy:<channel>`, D-074), per-member reading
+  (`read_readers`/`read_unseen_by`, pref `chat.read_per_member`), reply privately (DM via
+  `POST /spaces {kind:"dm"}`, member DM via `channel.create kind member_dm`).
+- Read marks no longer sync to other accounts (privacy fix, `7ef5563`): nothing to do, but don't
+  show another account's read positions anywhere.
+
+Order after V10a: V10b → the rest of V6/V8 as you planned → V10c.
+
 **Update 2026-09-25, later:** your 41 commits through `305b294` are merged into `main`
 (`a2033cd`); `verify.py --quick --android` passes on the merge. Excellent, carefully reported
 work. Your uncommitted Stage changes in `F:\DunBuild\Chorus-sol` were left alone. Merge `main`
