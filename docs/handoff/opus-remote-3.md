@@ -182,3 +182,41 @@ asked for; take **0010** and up.
   `read_readers`/`read_unseen_by` (pref `chat.read_per_member`), `revisions`, `restoring_blobs`,
   `sync_issues`/`dismiss_issue`. Reply privately: DM via `POST /spaces {kind:dm}`, member DM via
   `channel.create kind member_dm`.
+- 2026-09-25 remote Claude — **R23 done** (`9cea996`, `b6276e3`; **D-075**). A browser tab
+  without "keep everything" keeps the message, reaction, attachment and read ops the server
+  *received* in the last 90 days (`WINDOW_DAYS`). The digest problem is solved by saying the
+  window instead of remembering evictions. The device sends `hello.window`. The server then
+  leaves the same ops out of that connection's catch-up, fan-out, repairs and digests
+  (`sync::outside_window`, `visibility::visible_digest_in`). Both sides agree without an
+  evicted-id list, so there are no repair loops. The window goes by received time, so an old op
+  that arrived recently (e.g. after a restore) stays. `ClientStore::trim` runs at connect, and
+  older history pages in over REST ("older from the server" in the chat). SYNC §4.2/§6.2/§6.5
+  are updated. The simulator's `a-desk` is windowed and ran 1000 seeds clean. There is an
+  e2e test (`a_windowed_tab_keeps_recent_messages_and_its_digest_agrees`).
+  Measured on a year of 100k ops (`web/perf`):
+  - IndexedDB: ~31 MB → ~11 MB.
+  - Cold open: 9.3 s → 3.4 s.
+  **For Sol:** nothing. Android keeps everything; `set_window` is in the FFI if a low-storage
+  mode ever wants it.
+- 2026-09-25 remote Claude — **R24 done.**
+  - **Reconnect** (`f65985f`): `shared_space_catch_up_budget` (ignored like `sync_budgets`). A
+    device back from a week away, while another account sent 20 000 messages with edits,
+    reactions and permission changes (some hiding a channel, so the digest filters). It caught
+    up 24 910 ops in 1.1 s (release). Nothing was slow.
+  - **Web** (`14df55a`): `web/perf` "open a channel of 50000 messages" now asserts both budgets
+    on the median of three runs.
+    - First screen: 187–224 ms → 51–74 ms (budget 150).
+    - Send → on the page: 68–97 ms → 28–38 ms (budget 50).
+  - What was slow:
+    - The chat built a row for every message; it now builds only the shown page
+      (`messagePage`).
+    - Pins, thread previews and unread badges scanned all 50k messages; they now use the
+      per-channel order.
+    - `applyDelta` copied the 50k-key message table on every delta. That table is now patched
+      in place, with a version and a change log that `orderOf` catches up from. It is the only
+      in-place table, and the fuzz test checks it against a fresh rebuild.
+    - A `for…in` emptiness check listed 50k keys.
+    - Every message built its own `Intl` formatter.
+  - The rules are in CLIENTS §4.3.
+  - Not done: an unread badge still counts exactly. A channel with 50k unread walks them once
+    per change to that channel (~14 ms), and the count is cached otherwise.
