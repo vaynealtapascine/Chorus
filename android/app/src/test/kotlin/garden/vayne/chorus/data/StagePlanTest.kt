@@ -35,13 +35,16 @@ class StagePlanTest {
     @Test fun savedStagesKeepSupportedPlansAndFlagRicherWebViews() {
         val saved = StagePlan.definition("channel", StagePlan.Settings(selected = setOf("first"),
             unselected = "hidden", redactNames = true, fakeNames = mapOf("a" to "Blue"),
-            timeMode = "shift", shiftMinutes = -15, onlyMembers = setOf("a"), replyDepth = 1))
+            timeMode = "shift", shiftMinutes = -15, onlyMembers = setOf("a"), replyDepth = 1,
+            blurAttachments = true))
         assertEquals("channel", saved.getString("channel_id"))
         assertEquals(-900000L, saved.getJSONObject("time").getLong("offset_ms"))
         assertEquals(-15, StagePlan.supported(saved)?.shiftMinutes)
         assertEquals("Blue", StagePlan.supported(saved)?.fakeNames?.get("a"))
         assertEquals(setOf("a"), StagePlan.supported(saved)?.onlyMembers)
         assertEquals(1, StagePlan.supported(saved)?.replyDepth)
+        assertEquals(true, StagePlan.supported(saved)?.blurAttachments)
+        assertEquals(true, saved.getJSONObject("render").getBoolean("blur_attachments"))
         saved.put("render", JSONObject().put("style", "discord"))
         assertEquals(null, StagePlan.supported(saved))
     }

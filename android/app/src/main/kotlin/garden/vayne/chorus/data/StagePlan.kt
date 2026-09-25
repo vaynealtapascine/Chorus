@@ -15,6 +15,7 @@ object StagePlan {
         val shiftMinutes: Int = 0,
         val onlyMembers: Set<String> = emptySet(),
         val replyDepth: Int? = null,
+        val blurAttachments: Boolean = false,
     )
 
     data class Row(val id: String?, val selected: Boolean, val at: Long?, val replyShown: Boolean, val contextCount: Int)
@@ -37,6 +38,7 @@ object StagePlan {
             .put("reply_depth", settings.replyDepth ?: JSONObject.NULL)
             .put("redact_names", settings.redactNames)
             .put("fake_names", fakeNames).put("time", time)
+            .put("render", JSONObject().put("blur_attachments", settings.blurAttachments))
     }
 
     /** Reject richer saved views until Android can render them faithfully. */
@@ -49,7 +51,7 @@ object StagePlan {
         val render = definition.optJSONObject("render")
         if (render != null && (render.optString("style", "chorus") != "chorus" ||
                 render.optString("theme", "auto") != "auto" || render.optString("width", "phone") != "phone" ||
-                listOf("blur_avatars", "blur_attachments", "hide_header", "hide_reply_bars").any { render.optBoolean(it) })) return null
+                listOf("blur_avatars", "hide_header", "hide_reply_bars").any { render.optBoolean(it) })) return null
         val mode = definition.optString("unselected", "context")
         if (mode !in setOf("context", "hidden", "visible")) return null
         val time = definition.optJSONObject("time")
@@ -68,7 +70,8 @@ object StagePlan {
             (0 until a.length()).mapNotNull { n -> a.optString(n).takeIf { it.isNotBlank() } }.toSet()
         }.orEmpty()
         return Settings(selected, mode, definition.optBoolean("redact_names"), labels,
-            timeMode, (offset / 60_000).toInt(), onlyMembers, replyDepth)
+            timeMode, (offset / 60_000).toInt(), onlyMembers, replyDepth,
+            render?.optBoolean("blur_attachments") == true)
     }
 
     fun forMessages(messages: List<ChatMessage>, settings: Settings,

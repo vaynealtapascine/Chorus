@@ -617,3 +617,8 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 - **Status: code complete, device audit pending.** The Advanced controls now scroll inside a 220 dp panel, leaving room for the Stage message list even when a channel has many authors. The rest of Stage behavior is unchanged.
 - **Verified by running:** Android `:app:testDebugUnitTest :app:assembleDebug --offline` and `python scripts/verify.py --quick --android --offline` passed.
 - **Compiled/unit-tested only:** No phone layout was inspected. Check a small window with many authors and the keyboard open during the later device audit.
+
+#### V6 · Stage attachment readout and conceal control (2026-09-25)
+- **Status: code complete for visible message attachments, device audit pending.** Stage now shows ordinary file names and image thumbnails through the existing authenticated blob cache. A post/message CW still gates its attachments; spoiler attachments stay concealed throughout Stage capture. Advanced adds a saved `render.blur_attachments` option that uses a solid concealed card rather than platform blur, so Android 10 cannot accidentally show image pixels. The shared core continues to decide which message rows are on stage. No core or server semantics changed.
+- **Verified by running:** Android `:app:testDebugUnitTest :app:assembleDebug --offline` and `python scripts/verify.py --quick --android --offline` passed. JVM tests check saved blur-option round-trip and unsupported richer render styles.
+- **Compiled/unit-tested only:** No phone image was inspected. Later stage an image, a spoiler image and a non-image file offline and online, then capture with and without conceal enabled. Quoted/forwarded attachment snapshots and other Stage styles remain.

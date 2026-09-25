@@ -1,6 +1,7 @@
 package garden.vayne.chorus.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -24,18 +26,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.ChatChannel
 import garden.vayne.chorus.data.ChatMessage
+import garden.vayne.chorus.data.ChatAttachment
 import garden.vayne.chorus.data.Chorus
+import garden.vayne.chorus.data.Blobs
 import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.StagePlan
@@ -43,7 +51,9 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /** Screenshot view over already visible channel messages. All changes here are render-only. */
@@ -61,6 +71,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     var fakeNames by rememberSaveable(channel.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var onlyMembers by rememberSaveable(channel.id) { mutableStateOf<List<String>>(emptyList()) }
     var replyDepth by rememberSaveable(channel.id) { mutableStateOf<Int?>(null) }
+    var blurAttachments by rememberSaveable(channel.id) { mutableStateOf(false) }
     var saveName by rememberSaveable(channel.id) { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -75,7 +86,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     }
     val settings = StagePlan.Settings(selected.toSet(), if (capturing) unselected else "visible",
         redactNames, fakeNames, if (hideTimes) "hide" else if (shiftText.toIntOrNull() != null) "shift" else "real",
-        shiftText.toIntOrNull() ?: 0, onlyMembers.toSet(), replyDepth)
+        shiftText.toIntOrNull() ?: 0, onlyMembers.toSet(), replyDepth, blurAttachments)
     val plan = remember(messages, settings) { StagePlan.forMessages(messages, settings) }
     val byId = remember(messages) { messages.associateBy { it.id } }
     val authorIds = remember(messages) { messages.flatMap { it.authors }.distinct() }
@@ -105,6 +116,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                     JournalChoice("Hide real names", redactNames) { redactNames = !redactNames }
                     JournalChoice("Hide times", hideTimes) { hideTimes = !hideTimes }
                 }
+                JournalChoice("Conceal attachments", blurAttachments) { blurAttachments = !blurAttachments }
                 OutlinedTextField(shiftText, { shiftText = it.filter { c -> c.isDigit() || c == '-' }.take(7) },
                     label = { Text("Shift times by minutes (optional)") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
@@ -139,6 +151,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                         hideTimes = loaded.timeMode == "hide"
                         shiftText = if (loaded.timeMode == "shift") loaded.shiftMinutes.toString() else ""
                         onlyMembers = loaded.onlyMembers.toList(); replyDepth = loaded.replyDepth
+                        blurAttachments = loaded.blurAttachments
                         error = null
                     }) { Text(if (supported == null) "${stage.name} · web view" else stage.name) }
                     if (advanced) TextButton(enabled = !busy, onClick = {
@@ -197,8 +210,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                                 color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
                             if (message.cw == null || revealed) {
                                 Text(message.text, color = p.ink)
-                                if (message.attachments.isNotEmpty()) Text("${message.attachments.size} attachment(s)",
-                                    color = p.ink3, fontSize = 12.sp)
+                                for (attachment in message.attachments) StageAttachment(chorus, attachment, blurAttachments)
                             }
                         }
                     }
@@ -210,4 +222,26 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                     .clickable { onCapture(false) }.padding(horizontal = 16.dp, vertical = 8.dp))
         }
     }
+}
+
+/** Stage never reveals a spoiler; conceal mode uses a solid card on Android 10 too. */
+@Composable
+private fun StageAttachment(chorus: Chorus, attachment: ChatAttachment, conceal: Boolean) {
+    val p = LocalChorusPalette.current
+    if (attachment.spoiler || conceal) {
+        Text(if (attachment.spoiler) "Spoiler attachment" else "Attachment concealed", color = p.ink2,
+            fontSize = 12.sp, modifier = Modifier.fillMaxWidth().background(p.surface2).padding(12.dp))
+        return
+    }
+    Text("📎 ${attachment.filename}", color = p.ink2, fontSize = 12.sp)
+    if (!attachment.mime.startsWith("image/")) return
+    val ctx = LocalContext.current
+    val hash = attachment.thumbHash ?: attachment.blobHash
+    val device = chorus.device
+    val bitmap by produceState<android.graphics.Bitmap?>(null, hash, device?.session) {
+        value = withContext(Dispatchers.IO) { Blobs.image(ctx.applicationContext, hash, device) }
+    }
+    if (bitmap == null) Text("Image unavailable offline or still loading.", color = p.ink3, fontSize = 12.sp)
+    else Image(bitmap!!.asImageBitmap(), contentDescription = attachment.altText.ifBlank { attachment.filename },
+        contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().height(200.dp))
 }
