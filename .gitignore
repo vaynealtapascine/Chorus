@@ -11,3 +11,6 @@ local.properties
 /sol-dev.toml
 /crates/chorus-server/data/
 __pycache__/
+
+# the owner's TypeScript reading copy of the schema (not part of the app)
+/chorus-schema.ts
