@@ -106,6 +106,7 @@ class Model(
     val savedStages: List<SavedStage> = emptyList(),
     val speakerDefaults: Map<String, SpeakerDefault> = emptyMap(),
     val lastAuthorsByChannel: Map<String, List<String>> = emptyMap(),
+    val readMarks: Map<String, List<ReadMark>> = emptyMap(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -377,7 +378,8 @@ class Model(
                 followCeilings, posts, postReactions, memberLists, savedFeeds, highlights, frontSpans, systemZone,
                 messageCounts, LocalProfileFields.fromProjection(p), LocalRelationships.types(p),
                 LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages,
-                ChatSpeaker.preferences(p, accountId, channels), lastAuthorsByChannel)
+                ChatSpeaker.preferences(p, accountId, channels), lastAuthorsByChannel,
+                ReadTracking.marks(p, accountId))
         }
     }
 }

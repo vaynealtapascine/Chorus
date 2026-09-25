@@ -68,6 +68,7 @@ import garden.vayne.chorus.data.SpeakerDefault
 import garden.vayne.chorus.data.ChannelWindow
 import garden.vayne.chorus.data.ChatAttachment
 import garden.vayne.chorus.data.SearchDocument
+import garden.vayne.chorus.data.ReadTracking
 import garden.vayne.chorus.data.ChatCompose
 import garden.vayne.chorus.data.ChatSpace
 import garden.vayne.chorus.data.Chorus
@@ -172,6 +173,31 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val messages = model.chatMessages[channel?.id].orEmpty().filter {
         space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
             accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
+    }
+    val readMarks = model.readMarks[channel?.id].orEmpty()
+    LaunchedEffect(channel?.id, space?.id, messages.lastOrNull()?.id, readMarks,
+        model.current, model.accountPrefs.readPerMember, chorus.device?.accountId, staging) {
+        val latest = messages.lastOrNull() ?: return@LaunchedEffect
+        val chosen = channel ?: return@LaunchedEffect
+        val home = space ?: return@LaunchedEffect
+        if (staging || chorus.device == null) return@LaunchedEffect
+        try {
+            for (reader in ReadTracking.readers(model.accountPrefs.readPerMember, model.current)) {
+                if (!ReadTracking.needsMark(latest.occurredAt, latest.id, readMarks, reader)) continue
+                chorus.create("read.mark", null, JSONObject().put("channel_id", chosen.id)
+                    .put("message_id", latest.id).put("message_at", latest.occurredAt)
+                    .put("reader_member_id", reader), scope = "space:${home.id}")
+            }
+        } catch (e: Exception) { error = e.message ?: "Could not mark this channel read." }
+    }
+    val unseenByMessage by produceState<Map<String, List<String>>>(emptyMap(), messages, readMarks,
+        model.accountPrefs.readPerMember) {
+        value = emptyMap()
+        if (model.accountPrefs.readPerMember && readMarks.any { it.member.isNotEmpty() }) {
+            value = withContext(Dispatchers.Default) { messages.associate { message ->
+                message.id to ReadTracking.unseen(message.occurredAt, message.id, readMarks)
+            } }
+        }
     }
     LaunchedEffect(channel?.id, chorus.device?.accountId) {
         selectedAuthor = ""
@@ -297,7 +323,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), state = listState, reverseLayout = true,
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(messages.asReversed(), key = { it.id }) { message ->
-                ChatMessageCard(message, model, foreignAuthors, chorus) { replyTo = message.id }
+                ChatMessageCard(message, model, foreignAuthors, chorus, unseenByMessage[message.id].orEmpty()) {
+                    replyTo = message.id
+                }
             }
             if (messages.isEmpty()) item {
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
@@ -535,12 +563,14 @@ private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
 }
 
 @Composable
-private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>, chorus: Chorus, onReply: () -> Unit) {
+private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
+    chorus: Chorus, unseenBy: List<String>, onReply: () -> Unit) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
     var history by remember(message.id, message.text, message.cw) { mutableStateOf<List<MessageRevision>?>(null) }
     var historyError by remember(message.id) { mutableStateOf<String?>(null) }
+    var showUnseen by rememberSaveable(message.id) { mutableStateOf(false) }
     val authors = message.authors.map { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
         .joinToString(" & ").ifEmpty { "Someone" }
     Column(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(12.dp))
@@ -551,10 +581,19 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             Text(authors, color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
             Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(message.occurredAt)),
                 color = p.ink3, fontSize = 11.sp)
+            if (unseenBy.isNotEmpty()) {
+                val names = unseenBy.map { model.member(it)?.shownName ?: "Someone" }.joinToString(", ")
+                Text("●", color = p.accent, fontSize = 12.sp,
+                    modifier = Modifier.clickable { showUnseen = !showUnseen }
+                        .semantics { contentDescription = "Not seen by $names" })
+            }
             Text("↩", color = p.accent, fontSize = 16.sp,
                 modifier = Modifier.clickable(onClick = onReply).padding(horizontal = 4.dp)
                     .semantics { contentDescription = "Reply" })
         }
+        if (showUnseen && unseenBy.isNotEmpty()) Text("Not seen by " + unseenBy.map {
+            model.member(it)?.shownName ?: "Someone"
+        }.joinToString(", "), color = p.ink3, fontSize = 12.sp)
         val tags = listOfNotNull(
             "↪ reply".takeIf { message.replyTo != null },
             "Only this system".takeIf { message.visibilityMode == "system_only" },

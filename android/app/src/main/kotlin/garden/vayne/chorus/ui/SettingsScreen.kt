@@ -252,6 +252,9 @@ internal fun SettingsScreen(chorus: Chorus, model: Model) {
                 SettingToggle("Parse speaker annotations in chat", prefs.segmentParsing, !busy) {
                     save("chat.segment_parsing", it)
                 }
+                if (!model.isPerson) SettingToggle("Track reading per member", prefs.readPerMember, !busy) {
+                    save("chat.read_per_member", it)
+                }
             }
         }
         item { Text("", modifier = Modifier.padding(bottom = 16.dp)) }
