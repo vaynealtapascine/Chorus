@@ -817,7 +817,8 @@ mod tests {
     #[test]
     fn value_rules_never_hide_stored_ops() {
         let space = format!("space:{}", new_id(1, [5; 10]));
-        let old = op("message.send", &space, json!({"text": "hi", "entities": [{"type": "bold", "offset": 0, "length": 9}]}));
+        let old =
+            op("message.send", &space, json!({"text": "hi", "entities": [{"type": "bold", "offset": 0, "length": 9}]}));
         assert!(matches!(validate_new(&old), Err(OpError::BadPayload(_))), "refused as a new op");
         assert!(matches!(validate(&old), Ok(Known::Yes(_))));
         let p = crate::model::project([&old]);
