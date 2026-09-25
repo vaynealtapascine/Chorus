@@ -111,8 +111,8 @@ class SearchActivity : ComponentActivity() {
 }
 
 /** Members and subsystems matching `query`, best first. */
-fun searchSubjects(model: Model, query: String): List<Subject> {
-    val members = model.active.map { m ->
+fun searchSubjects(model: Model, query: String, accountId: String?): List<Subject> {
+    val members = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }.map { m ->
         Subject("member", m.id, m.shownName, m.color, m.glyph, m.avatarBlob) to listOfNotNull(m.name, m.displayName, m.pronouns, *m.sigils.toTypedArray()).joinToString(" ")
     }
     val groups = model.groups.filter { it.isSubsystem }.map { g ->
@@ -134,7 +134,8 @@ private fun Launcher(chorus: Chorus, close: () -> Unit) {
     val focus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val results = remember(model, query) { searchSubjects(model, query) }
+    val accountId = chorus.device?.accountId
+    val results = remember(model, query, accountId) { searchSubjects(model, query, accountId) }
 
     if (model.isPerson) {
         Box(Modifier.fillMaxSize().background(Color(0x66000000)).clickable(onClick = close).statusBarsPadding().padding(16.dp),
