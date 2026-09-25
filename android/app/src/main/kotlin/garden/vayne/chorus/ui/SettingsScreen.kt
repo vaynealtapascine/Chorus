@@ -46,7 +46,7 @@ import java.util.Date
 
 /** Account pref rows mirror web Settings; each change queues one pref.set (D-063). */
 @Composable
-internal fun SettingsScreen(chorus: Chorus, model: Model) {
+internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     val ctx = LocalContext.current
@@ -121,6 +121,7 @@ internal fun SettingsScreen(chorus: Chorus, model: Model) {
             Text("Settings", color = p.ink, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(top = 12.dp))
             Text("Account settings sync across devices. This device settings stay here.", color = p.ink2)
+            if (!model.isPerson) TextButton(onClick = onOpenInsights) { Text("Insights · Front history") }
             if (error != null) Text(error.orEmpty(), color = p.danger)
         }
         if (issues.isNotEmpty()) {

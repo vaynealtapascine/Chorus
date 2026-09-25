@@ -75,6 +75,8 @@ data class MemberList(val id: String, val name: String, val description: String?
 data class SavedFeed(val id: String, val name: String, val description: String?, val query: String, val visibility: String)
 data class SavedStage(val id: String, val name: String, val channelId: String, val definition: JSONObject)
 data class FrontSpan(val memberId: String, val startAt: Long, val endAt: Long?)
+data class FrontInterval(val id: String, val subjectType: String, val subjectId: String,
+    val level: String, val isPrimary: Boolean, val startAt: Long, val endAt: Long?)
 
 class Model(
     val members: List<Member>,
@@ -108,6 +110,7 @@ class Model(
     val speakerDefaults: Map<String, SpeakerDefault> = emptyMap(),
     val lastAuthorsByChannel: Map<String, List<String>> = emptyMap(),
     val readMarks: Map<String, List<ReadMark>> = emptyMap(),
+    val frontIntervals: List<FrontInterval> = emptyList(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -273,9 +276,13 @@ class Model(
             val current = entries(fold?.optJSONArray("current"))
             var since: Long? = null
             val frontSpans = ArrayList<FrontSpan>()
+            val frontIntervals = ArrayList<FrontInterval>()
             fold?.optJSONArray("intervals")?.let { iv ->
                 for (i in 0 until iv.length()) {
                     val o = iv.getJSONObject(i)
+                    frontIntervals.add(FrontInterval(o.optString("id"), o.optString("subject_type"),
+                        o.optString("subject_id"), o.optString("level"), o.optBoolean("is_primary"),
+                        o.optLong("start_at"), o.optLong("end_at").takeIf { o.has("end_at") && !o.isNull("end_at") }))
                     if (o.optString("subject_type") == "member" && o.optString("level") == "front") {
                         o.str("subject_id")?.let { frontSpans.add(FrontSpan(it, o.optLong("start_at"),
                             o.optLong("end_at").takeIf { o.has("end_at") && !o.isNull("end_at") })) }
@@ -380,7 +387,7 @@ class Model(
                 messageCounts, LocalProfileFields.fromProjection(p), LocalRelationships.types(p),
                 LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages,
                 ChatSpeaker.preferences(p, accountId, channels), lastAuthorsByChannel,
-                ReadTracking.marks(p, accountId))
+                ReadTracking.marks(p, accountId), frontIntervals)
         }
     }
 }

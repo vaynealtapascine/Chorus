@@ -58,6 +58,7 @@ import garden.vayne.chorus.ui.People
 import garden.vayne.chorus.ui.SettingsScreen
 import garden.vayne.chorus.ui.ContentSearch
 import garden.vayne.chorus.ui.Journal
+import garden.vayne.chorus.ui.InsightsScreen
 
 class MainActivity : ComponentActivity() {
     private var inviteLink = mutableStateOf<String?>(null)
@@ -116,6 +117,7 @@ private fun App(chorus: Chorus, invite: String?) {
     var linking by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var insightsOpen by rememberSaveable { mutableStateOf(false) }
     var lastAccount by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(chorus.device?.accountId) {
         val account = chorus.device?.accountId
@@ -124,12 +126,12 @@ private fun App(chorus: Chorus, invite: String?) {
             chatStageCapture = false
             chatSpace = null; chatChannel = null
             journalReplyPost = null; journalOpenPost = null
-            searchOpen = false; settingsOpen = false
+            searchOpen = false; settingsOpen = false; insightsOpen = false
         }
         lastAccount = account
     }
-    BackHandler(settingsOpen || searchOpen) {
-        if (searchOpen) searchOpen = false else settingsOpen = false
+    BackHandler(settingsOpen || searchOpen || insightsOpen) {
+        if (searchOpen) searchOpen = false else if (insightsOpen) insightsOpen = false else settingsOpen = false
     }
     if (linking && status != Status.NoDevice && status != Status.Loading) DeviceLink(chorus) { linking = false }
 
@@ -148,10 +150,10 @@ private fun App(chorus: Chorus, invite: String?) {
                 Text("Chorus", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = p.ink)
                 Spacer(Modifier.weight(1f))
                 Text("⌕", fontSize = 24.sp, color = p.accent,
-                    modifier = Modifier.clickable { searchOpen = !searchOpen; settingsOpen = false }
+                    modifier = Modifier.clickable { searchOpen = !searchOpen; settingsOpen = false; insightsOpen = false }
                         .padding(horizontal = 8.dp, vertical = 4.dp).semantics { contentDescription = "Search" })
-                Text(if (settingsOpen) "Close settings" else "Settings", fontSize = 12.sp, color = p.accent,
-                    modifier = Modifier.clickable { settingsOpen = !settingsOpen; searchOpen = false }
+                Text(if (settingsOpen) "Close settings" else if (insightsOpen) "Close insights" else "Settings", fontSize = 12.sp, color = p.accent,
+                    modifier = Modifier.clickable { if (insightsOpen) insightsOpen = false else settingsOpen = !settingsOpen; searchOpen = false }
                         .padding(horizontal = 10.dp, vertical = 6.dp))
                 Text("Link device", fontSize = 12.sp, color = p.accent,
                     modifier = Modifier.clickable { linking = true }.padding(horizontal = 10.dp, vertical = 6.dp))
@@ -177,7 +179,8 @@ private fun App(chorus: Chorus, invite: String?) {
                     onOpenPost = { id ->
                         journalReplyPost = null; journalOpenPost = id; tab = Tab.Journal; searchOpen = false
                     })
-                else if (settingsOpen) SettingsScreen(chorus, model)
+                else if (insightsOpen) InsightsScreen(model) { insightsOpen = false }
+                else if (settingsOpen) SettingsScreen(chorus, model) { insightsOpen = true; settingsOpen = false }
                 else when (if (person && (tab == Tab.Members || tab == Tab.History)) Tab.Home else tab) {
                     Tab.Home -> if (person) {
                         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -198,7 +201,7 @@ private fun App(chorus: Chorus, invite: String?) {
                 }
             }
             // the keyboard covers the tabs anyway; hiding them lets a screen's imePadding sit on it
-            if (!settingsOpen && !searchOpen && !chatStageCapture && !WindowInsets.isImeVisible) Row(
+            if (!settingsOpen && !searchOpen && !insightsOpen && !chatStageCapture && !WindowInsets.isImeVisible) Row(
                 Modifier.fillMaxWidth().background(p.surface).navigationBarsPadding().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {

@@ -47,6 +47,12 @@ pub fn fold_front(ops_json: String) -> Result<String, CoreError> {
     wrap(api::fold_front(&ops_json))
 }
 
+/// Daily front totals over a caller-clamped window with local UTC-offset transitions.
+#[uniffi::export]
+pub fn front_daily(intervals_json: String, now: i64, offsets_json: String) -> Result<String, CoreError> {
+    wrap(api::front_daily(&intervals_json, now, &offsets_json))
+}
+
 #[uniffi::export]
 pub fn project(ops_json: String) -> Result<String, CoreError> {
     wrap(api::project(&ops_json))
