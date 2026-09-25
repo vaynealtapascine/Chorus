@@ -9,14 +9,17 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import java.security.SecureRandom
+import java.io.File
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -24,6 +27,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -34,6 +40,8 @@ import uniffi.chorus_ffi.CoreReplica
 import uniffi.chorus_ffi.newId
 
 enum class Status { Loading, NoDevice, Offline, Connecting, Live, StorageError }
+
+data class RecheckProgress(val checked: Int, val total: Int)
 
 /**
  * The app's one sync client (CLIENTS.md §2.3): owns the core replica, the sync socket and the
@@ -55,6 +63,16 @@ class Chorus private constructor(private val ctx: Context) {
     val status: StateFlow<Status> = _status
     private val _model = MutableStateFlow(Model.Empty)
     val model: StateFlow<Model> = _model
+    private val _keepEverything = MutableStateFlow(true)
+    val keepEverything: StateFlow<Boolean> = _keepEverything
+    private val _fileProgress = MutableStateFlow<OfflineFiles.Progress?>(null)
+    val fileProgress: StateFlow<OfflineFiles.Progress?> = _fileProgress
+    private val _recheckProgress = MutableStateFlow<RecheckProgress?>(null)
+    val recheckProgress: StateFlow<RecheckProgress?> = _recheckProgress
+    private val fillMutex = Mutex()
+    private var fillStarted = false // once per process session
+    private var recheckWatch: ((String) -> Unit)? = null // store thread only
+    private var recheckDone: CompletableDeferred<Unit>? = null // store thread only
 
     @Volatile var device: DeviceRecord? = null
         private set
@@ -82,6 +100,7 @@ class Chorus private constructor(private val ctx: Context) {
     }
 
     private fun start() {
+        _keepEverything.value = store.get("setting:keep_everything") != "false"
         val dev = store.get("device")?.let { runCatching { DeviceRecord.fromJson(it) }.getOrNull() }
         device = dev
         Pins.trust(dev?.pin)
@@ -194,6 +213,72 @@ class Chorus private constructor(private val ctx: Context) {
     suspend fun setting(key: String): String? = withContext(dispatcher) { store.get(key) }
 
     suspend fun putSetting(key: String, value: String) = withContext(dispatcher) { store.put(key, value) }
+
+    /** Device-only preference: Android is installed, so file retention starts enabled. */
+    suspend fun setKeepEverything(on: Boolean) = withContext(dispatcher) {
+        store.put("setting:keep_everything", on.toString())
+        _keepEverything.value = on
+        if (on && _status.value == Status.Live) scheduleFileFill()
+    }
+
+    private fun scheduleFileFill() {
+        if (fillStarted || !_keepEverything.value) return
+        scope.launch {
+            delay(5_000)
+            if (fillStarted || !_keepEverything.value || _status.value != Status.Live) return@launch
+            fillStarted = true
+            runCatching { fillFiles() }.onFailure { Log.w(TAG, "offline file fill failed", it) }
+        }
+    }
+
+    /** A snapshot of the projection's file catalogue, then at most three IO downloads. */
+    suspend fun fillFiles(): OfflineFiles.Progress = fillMutex.withLock {
+        val (dev, hashes) = withContext(dispatcher) {
+            val d = device ?: error("Not signed in.")
+            d to OfflineFiles.filesOf(projectionCache ?: JSONObject(replica?.projection() ?: "{}"))
+        }
+        OfflineFiles.fill(ctx, dev, hashes) { _fileProgress.value = it }
+    }
+
+    /** Re-pull every scope and wait for digest repair before filling files. */
+    suspend fun recheckAll() {
+        val done = CompletableDeferred<Unit>()
+        val watch = withContext(dispatcher) {
+            check(_status.value == Status.Live && ws != null) { "Not connected to the server right now." }
+            check(recheckWatch == null) { "A full sync is already running." }
+            val r = replica ?: error("Not set up.")
+            val frames = JSONArray(r.recheck())
+            val waiting = mutableSetOf<String>()
+            for (i in 0 until frames.length()) waiting.add(frames.getJSONObject(i).getString("scope"))
+            val total = waiting.size
+            val callback: (String) -> Unit = { name ->
+                waiting.remove(name)
+                val repairing = JSONArray(r.repairing()).length()
+                _recheckProgress.value = RecheckProgress((total - waiting.size - repairing).coerceAtLeast(0), total)
+                if (waiting.isEmpty() && repairing == 0) done.complete(Unit)
+            }
+            recheckWatch = callback
+            recheckDone = done
+            callback("")
+            sendAll(frames)
+            callback
+        }
+        try {
+            withTimeout(120_000) { done.await() }
+            if (_keepEverything.value) fillFiles()
+        } finally {
+            withContext(dispatcher) {
+                if (recheckWatch === watch) { recheckWatch = null; recheckDone = null }
+            }
+        }
+    }
+
+    /** Replica, retained files, and evictable cache, including SQLite's WAL. */
+    suspend fun spaceUsedBytes(): Long = withContext(Dispatchers.IO) {
+        fun size(root: File): Long = if (!root.exists()) 0 else root.walkTopDown()
+            .filter { it.isFile }.sumOf { it.length() }
+        size(ctx.filesDir) + size(ctx.cacheDir) + size(ctx.getDatabasePath("unused").parentFile!!)
+    }
 
     /** The signed-in device, after the replica has loaded. */
     suspend fun awaitDevice(): DeviceRecord? = withContext(dispatcher) { device }
@@ -333,6 +418,7 @@ class Chorus private constructor(private val ctx: Context) {
                         }
                         _status.value = Status.Live
                         backoff = 1000
+                        scheduleFileFill()
                     }
                     if (kind == "scope") {
                         frame.optJSONArray("remove")?.let { a -> for (i in 0 until a.length()) { expectedScopes.remove(a.getString(i)); caughtScopes.remove(a.getString(i)) } }
@@ -346,6 +432,7 @@ class Chorus private constructor(private val ctx: Context) {
                             reply.optString("t") == "pull" && reply.optString("scope") == scopeName
                         }
                         if (!repairing) caughtScopes.add(scopeName)
+                        recheckWatch?.invoke(scopeName)
                     }
                     syncReady.value = _status.value == Status.Live &&
                         caughtScopes.containsAll(expectedScopes) && r.pendingCount() == 0UL
@@ -365,7 +452,10 @@ class Chorus private constructor(private val ctx: Context) {
         main.post {
             if (ws !== socket) return@post
             ws = null
-            scope.launch { replica?.disconnect(); syncReady.value = false }
+            scope.launch {
+                recheckDone?.completeExceptionally(IllegalStateException("Connection lost during full sync."))
+                replica?.disconnect(); syncReady.value = false
+            }
             _status.value = Status.Offline
             if (!renewing && (foreground || workLeases > 0)) schedule()
         }

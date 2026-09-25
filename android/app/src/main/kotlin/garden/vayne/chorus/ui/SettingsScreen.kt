@@ -13,6 +13,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +53,17 @@ internal fun SettingsScreen(chorus: Chorus, model: Model) {
     var followRefresh by remember { mutableStateOf(0) }
     var quietFrom by rememberSaveable { mutableStateOf("23:00") }
     var quietTo by rememberSaveable { mutableStateOf("08:00") }
+    val keepEverything by chorus.keepEverything.collectAsState()
+    val files by chorus.fileProgress.collectAsState()
+    val recheck by chorus.recheckProgress.collectAsState()
+    var syncBusy by remember { mutableStateOf(false) }
+    var syncError by remember { mutableStateOf<String?>(null) }
+    var deviceError by remember { mutableStateOf<String?>(null) }
+    var spaceUsed by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(chorus, files?.done == files?.total) {
+        spaceUsed = runCatching { chorus.spaceUsedBytes() }.getOrNull()
+    }
 
     LaunchedEffect(chorus.device?.session, followRefresh) {
         follows = FollowList(emptyList(), emptyList())
@@ -100,8 +112,34 @@ internal fun SettingsScreen(chorus: Chorus, model: Model) {
         item {
             Text("Settings", color = p.ink, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(top = 12.dp))
-            Text("Changes save on this phone and sync with your account.", color = p.ink2)
+            Text("Account settings sync across devices. This device settings stay here.", color = p.ink2)
             if (error != null) Text(error.orEmpty(), color = p.danger)
+        }
+        item {
+            Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("This device", color = p.ink, fontWeight = FontWeight.SemiBold)
+                SettingToggle("Keep everything on this device", keepEverything, !syncBusy) { on ->
+                    actions.launch {
+                        try { chorus.setKeepEverything(on); deviceError = null }
+                        catch (e: Exception) { deviceError = e.message ?: "Could not save this setting." }
+                    }
+                }
+                Text("Keeps available files for offline use. Files over 20 MB are opened online.", color = p.ink2)
+                TextButton(enabled = !syncBusy, onClick = {
+                    syncBusy = true; syncError = null
+                    actions.launch {
+                        try { chorus.recheckAll(); spaceUsed = chorus.spaceUsedBytes() }
+                        catch (e: Exception) { syncError = e.message ?: "Could not finish syncing." }
+                        finally { syncBusy = false }
+                    }
+                }) { Text(if (syncBusy) "Syncing…" else "Sync everything now") }
+                if (syncBusy && recheck != null) Text("Checked ${recheck!!.checked} of ${recheck!!.total} scopes", color = p.ink2)
+                if (files != null) Text("Files: ${files!!.done} of ${files!!.total} (${files!!.missing} not available)", color = p.ink2)
+                if (spaceUsed != null) Text("Space used: ${formatBytes(spaceUsed!!)}", color = p.ink2)
+                if (syncError != null) Text(syncError.orEmpty(), color = p.danger)
+                if (deviceError != null) Text(deviceError.orEmpty(), color = p.danger)
+            }
         }
         item {
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
@@ -186,6 +224,12 @@ internal fun SettingsScreen(chorus: Chorus, model: Model) {
         }
         item { Text("", modifier = Modifier.padding(bottom = 16.dp)) }
     }
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024 * 1024 -> "%.1f GB".format(bytes / (1024.0 * 1024 * 1024))
+    bytes >= 1024L * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024))
+    else -> "%.0f KB".format(bytes / 1024.0)
 }
 
 @Composable
