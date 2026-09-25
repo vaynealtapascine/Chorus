@@ -1,5 +1,6 @@
 package garden.vayne.chorus.ui
 
+import android.app.Activity
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.background
@@ -29,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +47,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import garden.vayne.chorus.data.ChatChannel
 import garden.vayne.chorus.data.ChatMessage
 import garden.vayne.chorus.data.ChatAttachment
@@ -93,6 +97,12 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     val actions = rememberCoroutineScope()
     var pillVisible by remember { mutableStateOf(true) }
     val p = when (theme) { "light" -> Tokens.Light; "dark" -> Tokens.Dark; else -> hostPalette }
+    val activity = LocalContext.current as? Activity
+    DisposableEffect(activity, capturing) {
+        val bars = activity?.let { WindowInsetsControllerCompat(it.window, it.window.decorView) }
+        if (capturing) bars?.hide(WindowInsetsCompat.Type.statusBars())
+        onDispose { if (capturing) bars?.show(WindowInsetsCompat.Type.statusBars()) }
+    }
     LaunchedEffect(capturing) {
         if (capturing) {
             pillVisible = true

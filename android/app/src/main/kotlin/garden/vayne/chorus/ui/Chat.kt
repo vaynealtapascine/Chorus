@@ -257,8 +257,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 .background(p.surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Search match · ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(searchHit.occurredAt))}",
-                        color = p.ink2)
-                    TextButton(onClick = onDismissSearchHit) { Text("Dismiss") }
+                        color = p.ink2, modifier = Modifier.weight(1f), maxLines = 2)
+                    TextButton(onClick = onDismissSearchHit) { Text("Dismiss", maxLines = 1) }
                 }
                 if (searchHit.cw != null) Text("Content warning: ${searchHit.cw} · ${if (revealed) "Hide" else "Show"}",
                     color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
