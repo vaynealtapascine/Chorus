@@ -117,6 +117,11 @@ pub fn feed_filter(ast_json: &str, items_json: &str, context_json: &str) -> Resu
     wrap(api::feed_filter(ast_json, items_json, context_json))
 }
 
+#[wasm_bindgen(js_name = defaultSpeaker)]
+pub fn default_speaker(context_json: &str) -> Result<String, JsError> {
+    wrap(api::default_speaker(context_json))
+}
+
 #[wasm_bindgen(js_name = searchParse)]
 pub fn search_parse(query: &str) -> Result<String, JsError> {
     wrap(api::search_parse(query))

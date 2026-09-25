@@ -186,6 +186,13 @@ pub fn feed_filter(ast_json: &str, items_json: &str, context_json: &str) -> Resu
         .collect::<Vec<_>>()))
 }
 
+/// Who the composer's speaker chip shows before anyone picks (SPEC §5.2, D-074): a
+/// `speaker::SpeakerContext` → member ids (JSON array; empty = nobody).
+pub fn default_speaker(context_json: &str) -> Result<String, String> {
+    let c: crate::speaker::SpeakerContext = parse("speaker context", context_json)?;
+    Ok(js(&crate::speaker::default_speaker(&c)))
+}
+
 /// A message search box → query JSON (`chorus_core::search`), or `Err` with `{"pos", "message"}`.
 pub fn search_parse(src: &str) -> Result<String, String> {
     crate::search::parse(src).map(|q| js(&q)).map_err(|e| js(&serde_json::json!({"pos": e.pos, "message": e.message})))

@@ -62,13 +62,28 @@
   let viewingAs = $state<string | null>(null);
   const activeMembers = $derived(activeViewers(fronting));
   const visibleMsgs = $derived(msgs.filter((m) => memberVisible(m, space?.kind, activeMembers, viewingAs)));
-  const defaultSpeaker = $derived(
-    self?.id ??
-      (fronting.find((e) => e.is_primary && e.subject_type === 'member') ??
-        fronting.find((e) => e.level === 'front' && e.subject_type === 'member'))?.subject_id,
-  );
+  // this account's autoproxy for the channel (D-074): pref `autoproxy:<channel id>`
+  type Autoproxy = 'off' | 'front' | 'latch' | 'member';
+  const autoproxyKey = $derived(current ? `autoproxy:${current.id}` : '');
+  const autoproxy = $derived.by((): { mode: Autoproxy; member?: string } => {
+    const rows = projection.rows.pref ?? {};
+    const v = (rows[`${sync.accountId}||${autoproxyKey}`] ?? rows[`||${autoproxyKey}`])?.fields.value as { mode?: string; member?: string } | undefined;
+    const mode = (['off', 'latch', 'member'].includes(v?.mode ?? '') ? v?.mode : 'front') as Autoproxy;
+    return { mode, member: typeof v?.member === 'string' ? v.member : undefined };
+  });
+  function setAutoproxy(mode: Autoproxy, member?: string) {
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: autoproxyKey, value: member ? { mode, member } : { mode } });
+  }
+  // the speaker chip before anyone picks: one rule in core (SPEC §5.2)
+  const defaults = $derived(core.defaultSpeaker({
+    mode: autoproxy.mode, member: autoproxy.member ?? null, self_member: self?.id ?? null,
+    fronting: fronting.filter((e) => e.subject_type === 'member')
+      .map((e) => ({ member_id: e.subject_id, is_primary: !!e.is_primary, level: e.level })),
+    last_authors: msgs.findLast((m) => m.account_id === sync.accountId && !m.deleted)?.authors ?? [],
+    members: members(projection).filter((m) => !m.deleted).map((m) => m.id),
+  }));
   let chosen = $state<string | null>(null);
-  const speaker = $derived(chosen ?? defaultSpeaker ?? null);
+  const speaker = $derived(chosen ?? defaults[0] ?? null);
   const speakers = $derived(
     [...people.values()].filter((m) => !m.deleted).map((m) => ({ member_id: m.id, sigils: m.sigils, proxy_tags: m.proxy_tags })),
   );
@@ -204,7 +219,7 @@
     visibleTo = [];
   });
 
-  const preview: Composed | null = $derived(draft.trim() && !editing ? core.compose(draft, speakers, { segments: parseSegments }, speaker ? [speaker] : [], names) : null);
+  const preview: Composed | null = $derived(draft.trim() && !editing ? core.compose(draft, speakers, { segments: parseSegments }, chosen ? [chosen] : defaults, names) : null);
   const previewNames = $derived(
     preview ? preview.segments.map((s) => s.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')).join(' → ') : '',
   );
@@ -244,7 +259,7 @@
     }
     if (!preview && !pending.length) return;
     if (visibilityMode === 'members' && !visibleTo.length) return;
-    const authors = preview?.authors ?? (speaker ? [speaker] : []);
+    const authors = preview?.authors ?? (chosen ? [chosen] : defaults);
     if (!authors.length) return;
     const attachmentIds: string[] = [];
     try {
@@ -727,6 +742,26 @@
       <details class="chat-advanced">
         <summary>Advanced chat settings</summary>
         <p>Speaker parsing and content warning preferences are in <a href="#/settings">Settings</a>.</p>
+        {#if !self}
+          <label>Speaker in this channel
+            <select aria-label="Autoproxy for this channel" value={autoproxy.mode}
+              onchange={(e) => setAutoproxy(e.currentTarget.value as Autoproxy, e.currentTarget.value === 'member' ? (autoproxy.member ?? speaker ?? undefined) : undefined)}>
+              <option value="front">Whoever is fronting</option>
+              <option value="latch">Whoever spoke last here</option>
+              <option value="member">Always one member</option>
+              <option value="off">Nobody (pick each time)</option>
+            </select>
+          </label>
+          {#if autoproxy.mode === 'member'}
+            <label>Always
+              <select aria-label="Sticky speaker" value={autoproxy.member ?? ''} onchange={(e) => setAutoproxy('member', e.currentTarget.value)}>
+                {#each members(projection).filter((m) => !m.deleted && !m.archived) as person (person.id)}
+                  <option value={person.id}>{person.display_name ?? person.name}</option>
+                {/each}
+              </select>
+            </label>
+          {/if}
+        {/if}
         <label>Content warning <input aria-label="Content warning" bind:value={cw} placeholder="Optional label" /></label>
         <label>Visibility
           <select aria-label="Message visibility" bind:value={visibilityMode}>

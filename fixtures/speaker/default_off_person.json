@@ -1,0 +1,18 @@
+{
+  "args": [
+    {
+      "fronting": [],
+      "last_authors": [],
+      "members": [
+        "me"
+      ],
+      "mode": "off",
+      "self_member": "me"
+    }
+  ],
+  "description": "a person account speaks as itself even with autoproxy off",
+  "expect": [
+    "me"
+  ],
+  "fn": "default_speaker"
+}

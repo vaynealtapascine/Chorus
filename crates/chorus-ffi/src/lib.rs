@@ -62,6 +62,15 @@ pub fn feed_parse(query: String) -> Result<String, CoreError> {
     wrap(api::feed_parse(&query))
 }
 
+/// Who the speaker chip shows before anyone picks (SPEC §5.2, D-074): `{mode: off|front|latch|
+/// member, member?, fronting: [{member_id, is_primary, level}], self_member?, last_authors,
+/// members}` → member ids (JSON array; empty = nobody). The mode is the account's pref
+/// `autoproxy:<channel id>` = `{"mode", "member"?}`; `last_authors` its latest message there.
+#[uniffi::export]
+pub fn default_speaker(context_json: String) -> Result<String, CoreError> {
+    wrap(api::default_speaker(&context_json))
+}
+
 /// A message search box → query JSON (SPEC §5.3: words, from:, in:, has:, before:/after:,
 /// is:pinned), or an error with `{"pos", "message"}`.
 #[uniffi::export]

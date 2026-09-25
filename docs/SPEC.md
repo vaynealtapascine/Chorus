@@ -167,7 +167,8 @@ custom order.
 - Parsing lives in `chorus-core` (M1.6) so all clients agree. A preview above the composer shows
   who it will be sent as before sending.
 - Autoproxy modes per channel (Advanced): `off` · `front` (primary fronter) · `latch` (last
-  explicit speaker) · `member` (locked to one member).
+  explicit speaker) · `member` (locked to one member). Each account sets its own (D-074); the
+  rule is `chorus_core::speaker::default_speaker`.
 - Formatting parity with Telegram: **bold**, *italic*, underline, ~~strike~~, spoiler, `code`,
   pre blocks with language, links with custom text, blockquote, expandable blockquote, mentions,
   custom emoji (the server-wide set, §5.5). Input via markdown-like shortcuts *and* a selection toolbar;
