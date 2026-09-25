@@ -42,6 +42,8 @@ object Blobs {
     private fun cacheDir(ctx: Context, kind: String) = File(ctx.cacheDir, "$kind-blobs").apply { mkdirs() }
     private fun keptDir(ctx: Context, accountId: String): File? =
         if (ACCOUNT.matches(accountId)) File(ctx.filesDir, "kept-blobs/$accountId").apply { mkdirs() } else null
+    private fun restoreDir(ctx: Context, accountId: String): File? =
+        if (ACCOUNT.matches(accountId)) File(ctx.filesDir, "restore-blobs/$accountId").apply { mkdirs() } else null
 
     /** Copy [input] into the upload queue, hashing as it goes. Throws past [MAX_UPLOAD]. */
     fun stage(ctx: Context, input: InputStream, mime: String, accountId: String): Staged {
@@ -149,8 +151,8 @@ object Blobs {
     }
 
     /** A failed copy never leaves a visible durable file under the content hash. */
-    internal fun promoteVerified(source: File, target: File, hash: String): Boolean {
-        if (!HASH.matches(hash) || source.length() > MAX_KEPT) return false
+    internal fun promoteVerified(source: File, target: File, hash: String, limit: Long = MAX_KEPT): Boolean {
+        if (!HASH.matches(hash) || source.length() > limit) return false
         target.parentFile?.mkdirs()
         val tmp = File.createTempFile("keep-", ".part", target.parentFile)
         try {
@@ -162,7 +164,7 @@ object Blobs {
                     val n = input.read(buf)
                     if (n < 0) break
                     total += n
-                    if (total > MAX_KEPT) return false
+                    if (total > limit) return false
                     digest.update(buf, 0, n)
                     out.write(buf, 0, n)
                 }
@@ -176,6 +178,27 @@ object Blobs {
         } finally {
             tmp.delete()
         }
+    }
+
+    /** Queue local copies named by restoring ops; never download from the restored server. */
+    fun queueRestore(ctx: Context, device: DeviceRecord, hashes: List<String>): Int {
+        val dir = restoreDir(ctx, device.accountId) ?: return 0
+        var queued = 0
+        for (hash in hashes.distinct()) {
+            if (!HASH.matches(hash)) continue
+            val target = File(dir, hash)
+            if (target.isFile) { queued++; continue }
+            val source = pendingFile(ctx, hash)
+                ?: keptDir(ctx, device.accountId)?.let { File(it, hash).takeIf(File::isFile) }
+                ?: listOf("chat", "avatar", "emoji").firstNotNullOfOrNull { kind ->
+                    File(cacheDir(ctx, kind), hash).takeIf(File::isFile)
+                }
+                ?: continue
+            if (runCatching { promoteVerified(source, target, hash, MAX_UPLOAD) }
+                    .onFailure { Log.w("ChorusBlobs", "could not queue restore copy", it) }
+                    .getOrDefault(false)) queued++
+        }
+        return queued
     }
 
     /** Decode an image blob no larger than [maxPx] on its long side. */
@@ -214,13 +237,33 @@ object Blobs {
         ok
     }
 
+    /** Retry restore copies independently of normal uploads, then discard only the queue copy. */
+    suspend fun flushRestore(ctx: Context, device: DeviceRecord): Boolean = withContext(Dispatchers.IO) {
+        val dir = restoreDir(ctx, device.accountId) ?: return@withContext false
+        var ok = true
+        for (file in dir.listFiles().orEmpty()) {
+            if (!HASH.matches(file.name) || !file.isFile) continue
+            try {
+                send(device, file.name, file, "application/octet-stream")
+                if (!file.delete()) {
+                    Log.w("ChorusBlobs", "could not remove completed restore copy")
+                    ok = false
+                }
+            } catch (e: Exception) {
+                Log.w("ChorusBlobs", "restore upload paused", e)
+                ok = false
+            }
+        }
+        ok
+    }
+
     private fun send(device: DeviceRecord, hash: String, file: File, mime: String) {
         val url = "${device.base.trimEnd('/')}/api/v1/blobs/$hash"
         val auth = "Bearer ${device.session}"
         val head = Api.http.newCall(Request.Builder().url(url).head().header("Authorization", auth).build()).execute()
         val offset0 = head.use { r ->
             when (r.code) {
-                200 -> return
+                200, 403 -> return // 403 means the server has this hash under another account
                 206 -> r.header("upload-offset")?.toLongOrNull() ?: 0L
                 404 -> 0L
                 else -> throw IOException("Blob HEAD: ${r.code}")
@@ -257,7 +300,9 @@ object Blobs {
 class UploadWork(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val device = Chorus.get(applicationContext).device ?: return Result.success()
-        return if (Blobs.flush(applicationContext, device)) Result.success() else Result.retry()
+        val uploads = Blobs.flush(applicationContext, device)
+        val restoring = Blobs.flushRestore(applicationContext, device)
+        return if (uploads && restoring) Result.success() else Result.retry()
     }
 
     companion object {

@@ -419,6 +419,16 @@ class Chorus private constructor(private val ctx: Context) {
                         _status.value = Status.Live
                         backoff = 1000
                         scheduleFileFill()
+                        if (frame.optBoolean("reconcile")) {
+                            val hashes = JSONArray(r.restoringBlobs())
+                            val localDevice = device
+                            if (localDevice != null && hashes.length() > 0) {
+                                val names = (0 until hashes.length()).map { hashes.getString(it) }
+                                scope.launch(Dispatchers.IO) {
+                                    if (Blobs.queueRestore(ctx, localDevice, names) > 0) UploadWork.enqueue(ctx)
+                                }
+                            }
+                        }
                     }
                     if (kind == "scope") {
                         frame.optJSONArray("remove")?.let { a -> for (i in 0 until a.length()) { expectedScopes.remove(a.getString(i)); caughtScopes.remove(a.getString(i)) } }

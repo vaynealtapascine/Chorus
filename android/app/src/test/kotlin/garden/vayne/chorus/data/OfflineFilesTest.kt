@@ -1,5 +1,6 @@
 package garden.vayne.chorus.data
 
+import android.content.ContextWrapper
 import org.json.JSONObject
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
@@ -58,5 +59,30 @@ class OfflineFilesTest {
         val tooLarge = File(dir, "1".repeat(64))
         assertFalse(Blobs.promoteVerified(large, tooLarge, tooLarge.name))
         assertFalse(tooLarge.exists())
+    }
+
+    @Test fun restoreQueueCopiesOnlyVerifiedLocalBytesWithoutNetwork() {
+        val files = folder.newFolder("app-files")
+        val cache = folder.newFolder("app-cache")
+        val ctx = object : ContextWrapper(null) {
+            override fun getFilesDir(): File = files
+            override fun getCacheDir(): File = cache
+        }
+        val account = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        val device = DeviceRecord("http://localhost", "device", "00000001", account, "session", 0)
+        val source = File(cache, "chat-blobs").apply { mkdirs() }
+        val bytes = "last upload after the backup".toByteArray()
+        val hash = MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+        File(source, hash).writeBytes(bytes)
+        val wrong = "0".repeat(64)
+        File(source, wrong).writeText("not that hash")
+
+        assertEquals(1, Blobs.queueRestore(ctx, device, listOf(hash, hash, wrong)))
+        val queued = File(files, "restore-blobs/$account/$hash")
+        assertTrue(queued.isFile)
+        assertEquals(bytes.toList(), queued.readBytes().toList())
+        assertFalse(File(queued.parentFile, wrong).exists())
+        assertEquals(1, Blobs.queueRestore(ctx, device, listOf(hash)))
     }
 }
