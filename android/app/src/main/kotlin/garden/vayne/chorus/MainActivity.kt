@@ -69,12 +69,15 @@ class MainActivity : ComponentActivity() {
     private var inviteLink = mutableStateOf<String?>(null)
     private var sharedDraft = mutableStateOf<SharedDraft?>(null)
     private var nextShareId = 0L
+    private var newEntryRequest = mutableStateOf<Long?>(null)
+    private var nextEntryId = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         inviteLink.value = inviteFrom(intent)
         sharedDraft.value = SharedDraft.from(intent, ++nextShareId)
+        if (intent.action == "garden.vayne.chorus.NEW_ENTRY") newEntryRequest.value = ++nextEntryId
         val chorus = Chorus.get(this)
         SyncWork.schedulePeriodic(this)
         // switch notifications (M8.1): ask once on Android 13+, then register with ntfy if present
@@ -85,7 +88,9 @@ class MainActivity : ComponentActivity() {
         }
         garden.vayne.chorus.data.Push.ensure(this)
         garden.vayne.chorus.data.Updater.schedule(this)
-        setContent { ChorusTheme { App(chorus, inviteLink.value, sharedDraft.value) { sharedDraft.value = null } } }
+        setContent { ChorusTheme { App(chorus, inviteLink.value, sharedDraft.value,
+            onShareDismissed = { sharedDraft.value = null }, newEntryRequest = newEntryRequest.value,
+            onNewEntryConsumed = { newEntryRequest.value = null }) } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -93,6 +98,10 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         inviteFrom(intent)?.let { inviteLink.value = it }
         SharedDraft.from(intent, ++nextShareId)?.let { sharedDraft.value = it }
+        if (intent.action == "garden.vayne.chorus.NEW_ENTRY") {
+            sharedDraft.value = null
+            newEntryRequest.value = ++nextEntryId
+        }
     }
 
     override fun onStart() {
@@ -113,7 +122,8 @@ private enum class Tab(val label: String) { Home("Home"), Chat("Chat"), Journal(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?, onShareDismissed: () -> Unit) {
+private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
+    onShareDismissed: () -> Unit, newEntryRequest: Long?, onNewEntryConsumed: () -> Unit) {
     val p = LocalChorusPalette.current
     val status by chorus.status.collectAsState()
     val model by chorus.model.collectAsState()
@@ -126,6 +136,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?, onSh
     var journalOpenPost by rememberSaveable { mutableStateOf<String?>(null) }
     var chatShare by remember { mutableStateOf<SharedDraft?>(null) }
     var journalShare by remember { mutableStateOf<SharedDraft?>(null) }
+    var journalNewEntry by remember { mutableStateOf<Long?>(null) }
     var sharedChannel by remember { mutableStateOf<String?>(null) }
     var linking by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
@@ -140,11 +151,19 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?, onSh
             chatStageCapture = false
             chatSpace = null; chatChannel = null
             journalReplyPost = null; journalOpenPost = null
-            chatShare = null; journalShare = null; sharedChannel = null
+            chatShare = null; journalShare = null; journalNewEntry = null; sharedChannel = null
             onShareDismissed()
             searchOpen = false; settingsOpen = false; insightsOpen = false
         }
         lastAccount = account
+    }
+    LaunchedEffect(newEntryRequest, status) {
+        if (newEntryRequest == null || status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
+        journalNewEntry = newEntryRequest
+        journalReplyPost = null; journalOpenPost = null
+        searchOpen = false; settingsOpen = false; insightsOpen = false
+        tab = Tab.Journal
+        onNewEntryConsumed()
     }
     BackHandler(sharedDraft != null || settingsOpen || searchOpen || insightsOpen) {
         if (sharedDraft != null) onShareDismissed()
@@ -227,7 +246,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?, onSh
                         onExternalReplyConsumed = { journalReplyPost = null },
                         externalOpenPost = journalOpenPost,
                         onExternalOpenConsumed = { journalOpenPost = null },
-                        sharedDraft = journalShare, onShareConsumed = { journalShare = null })
+                        sharedDraft = journalShare, onShareConsumed = { journalShare = null },
+                        externalNewEntry = journalNewEntry, onExternalNewEntryConsumed = { journalNewEntry = null })
                     Tab.People -> People(chorus, model,
                         onOpenChat = { spaceId -> chatSpace = spaceId; chatChannel = null; chatSearchHit = null; tab = Tab.Chat },
                         onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal })

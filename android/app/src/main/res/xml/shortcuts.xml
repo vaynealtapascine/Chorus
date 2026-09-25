@@ -10,4 +10,22 @@
             android:targetClass="garden.vayne.chorus.SearchActivity"
             android:targetPackage="garden.vayne.chorus" />
     </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:shortcutId="switch-out"
+        android:shortcutShortLabel="@string/shortcut_switch_out">
+        <intent
+            android:action="garden.vayne.chorus.SWITCH_OUT"
+            android:targetClass="garden.vayne.chorus.SearchActivity"
+            android:targetPackage="garden.vayne.chorus" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:shortcutId="new-entry"
+        android:shortcutShortLabel="@string/shortcut_new_entry">
+        <intent
+            android:action="garden.vayne.chorus.NEW_ENTRY"
+            android:targetClass="garden.vayne.chorus.MainActivity"
+            android:targetPackage="garden.vayne.chorus" />
+    </shortcut>
 </shortcuts>

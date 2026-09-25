@@ -54,7 +54,8 @@ import kotlinx.coroutines.launch
 fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     onExternalReplyConsumed: () -> Unit = {}, externalOpenPost: String? = null,
     onExternalOpenConsumed: () -> Unit = {}, sharedDraft: SharedDraft? = null,
-    onShareConsumed: () -> Unit = {}) {
+    onShareConsumed: () -> Unit = {}, externalNewEntry: Long? = null,
+    onExternalNewEntryConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     var editing by rememberSaveable { mutableStateOf(false) }
     var profileId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -95,6 +96,12 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         }
         editing = true
         onShareConsumed()
+    }
+    LaunchedEffect(externalNewEntry, chorus.device?.accountId) {
+        if (externalNewEntry == null || chorus.device == null) return@LaunchedEffect
+        profileId = null; threadPostId = null; replyTo = null
+        section = "timeline"; kind = "entry"; editing = true
+        onExternalNewEntryConsumed()
     }
 
     LaunchedEffect(externalReplyPost) {

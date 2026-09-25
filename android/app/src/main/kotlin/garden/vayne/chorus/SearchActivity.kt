@@ -69,6 +69,21 @@ class SearchActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val chorus = Chorus.get(this)
+        if (intent.action == "garden.vayne.chorus.SWITCH_OUT") {
+            if (savedInstanceState != null) { finish(); return }
+            lifecycleScope.launch {
+                try {
+                    val model = chorus.awaitModel()
+                    if (chorus.device == null || model.isPerson) throw IllegalStateException("Switching is for systems.")
+                    Front.switch(chorus, emptyList(), "Switched out")
+                    QuickSwitchWidget.refreshAll(this@SearchActivity)
+                    Toast.makeText(this@SearchActivity, "Switched out", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this@SearchActivity, e.message ?: "Couldn't switch out", Toast.LENGTH_LONG).show()
+                } finally { finish() }
+            }
+            return
+        }
         val pinnedId = intent.getStringExtra(PinnedShortcuts.EXTRA_MEMBER_ID)
         if (pinnedId != null) {
             val pinnedAccount = intent.getStringExtra(PinnedShortcuts.EXTRA_ACCOUNT_ID)
