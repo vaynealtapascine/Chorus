@@ -256,3 +256,34 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   live attachments (thumbnail plus original up to 20 MB), member/member-group avatars and custom
   emoji. Deduplicate hashes, limit concurrent downloads to three, and report missing files.
   Existing queued uploads must remain in their separate pending directory.
+- 2026-09-25 claude-opus-5.5 — wasm size (R25) — The web core went from 288 to 241 KB gz (the
+  SPEC §9 budget is 300; R25's target was ≤ 250). Measured with `twiggy top` on an unstripped
+  build (`CARGO_PROFILE_WASM_STRIP=false`); gzip -9 of the `wasm-bindgen` output, as `verify.py`
+  measures it. Serde was ~40 % of the code, and most of it was copies, not logic:
+  - **Internally tagged enums** (`#[serde(tag = …)]`) buffer input into serde's private
+    `Content` tree, with a copy of that code per enum and per input type (~150 KB raw). They
+    now derive the plain externally tagged form (`#[serde(remote = "Self")]`), and `tagged!`
+    (`chorus_core::tagged`) adds impls that write the tag first (same bytes) and read through a
+    `serde_json::Value`. `flatten` does the same buffering, so `text::Entity` reads by hand.
+    Trap: with `remote = "Self"`, a path call like `EntityKind::deserialize(v)` is the
+    *inherent* externally tagged function. Call `<EntityKind as Deserialize>::deserialize`.
+    **−31 KB gz.**
+  - **One deserializer per type.** `api::parse` goes text → `Value` → `T`, so a type isn't
+    compiled for both `from_str` and `from_value` (core payload code already used
+    `from_value`). −4 KB gz. But bulk op lists stay on `from_str` (`parse_ops`): through a
+    `Value`, opening a year of 100k ops was 9.7 → 11.7 s cold.
+  - **Sorts.** Every `sort_by` over a new type or closure is its own ~4 KB copy of the standard
+    sort, and `collect()` into a `BTreeMap`/`BTreeSet` sorts too. `chorus_core::sort` (`by`,
+    `by_key`, `ord`, `map`, `set`) sorts a list of indices through one shared comparator call on
+    wasm, and inserts one by one instead of collecting. Elsewhere it is the plain std call, so
+    the server's hot paths are unchanged. −13 KB gz. Use these helpers for new sorts in core.
+  - **What didn't help:**
+    - `wasm-opt -Oz` (binaryen 132): the raw file is 15 % smaller, but gzip is ~20 % bigger;
+      even a plain round trip through binaryen grows it after gzip.
+    - `lto = "fat"`: no change.
+    - `opt-level = "s"`: +15 %.
+  - **Left, if more is ever needed:**
+    - `core` float formatting (16 KB raw), not called from our code.
+    - `serde_json::Value` serialization (26 KB raw).
+    - Visitors and field identifiers generated per type (~150 KB raw): the real cost of
+      derive.

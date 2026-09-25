@@ -21,8 +21,16 @@ fn js<T: serde::Serialize>(v: &T) -> String {
     serde_json::to_string(v).unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"))
 }
 
+/// Through a `Value`: then every type is deserialized from `Value` only, not also from text, which
+/// halves the serde code in the web core (R25, NOTES.md). Bulk op lists use [`parse_ops`].
 fn parse<T: for<'de> Deserialize<'de>>(what: &str, s: &str) -> Result<T, String> {
-    serde_json::from_str(s).map_err(|e| format!("bad {what} JSON: {e}"))
+    let v: Value = serde_json::from_str(s).map_err(|e| format!("bad {what} JSON: {e}"))?;
+    serde_json::from_value(v).map_err(|e| format!("bad {what} JSON: {e}"))
+}
+
+/// Op lists straight from text: opening 100k ops through a `Value` tree was ~25 % slower.
+fn parse_ops(s: &str) -> Result<Vec<Op>, String> {
+    serde_json::from_str(s).map_err(|e| format!("bad ops JSON: {e}"))
 }
 
 pub fn version() -> String {
@@ -119,14 +127,14 @@ pub fn compose(
 
 /// Ops (JSON array) → `{"switches", "intervals", "current"}` for one account.
 pub fn fold_front(ops_json: &str) -> Result<String, String> {
-    let ops: Vec<Op> = parse("ops", ops_json)?;
+    let ops = parse_ops(ops_json)?;
     let fronts: Vec<FrontOp> = ops.iter().filter_map(|o| FrontOp::from_op(o).ok()).collect();
     Ok(js(&front::fold(&fronts)))
 }
 
 /// Ops (JSON array) → the reference projection (for tests and debugging views).
 pub fn project(ops_json: &str) -> Result<String, String> {
-    let ops: Vec<Op> = parse("ops", ops_json)?;
+    let ops = parse_ops(ops_json)?;
     Ok(js(&model::project(ops.iter()).canonical()))
 }
 
@@ -308,7 +316,7 @@ impl JsonReplica {
         hlc_last: &str,
     ) -> Result<JsonReplica, String> {
         let meta = if meta_json.trim().is_empty() { None } else { Some(parse("meta", meta_json)?) };
-        let ops: Vec<Op> = if ops_json.trim().is_empty() { vec![] } else { parse("ops", ops_json)? };
+        let ops = if ops_json.trim().is_empty() { vec![] } else { parse_ops(ops_json)? };
         let hlc = if hlc_last.is_empty() { None } else { Some(hlc_last.parse().map_err(|e| format!("{e}"))?) };
         Ok(JsonReplica(crate::replica::Replica::restore(device_id, node, meta, ops, hlc)))
     }
@@ -322,7 +330,7 @@ impl JsonReplica {
 
     /// A slice of persisted ops (JSON array).
     pub fn add_ops(&mut self, ops_json: &str) -> Result<(), String> {
-        let ops: Vec<Op> = parse("ops", ops_json)?;
+        let ops = parse_ops(ops_json)?;
         self.0.add_ops(ops);
         Ok(())
     }

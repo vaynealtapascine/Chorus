@@ -74,7 +74,7 @@ pub fn dedupe<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Vec<&'a Op> {
             .or_insert(o);
     }
     let mut v: Vec<&Op> = by_id.into_values().collect();
-    v.sort_by(|a, b| (a.hlc, &a.id).cmp(&(b.hlc, &b.id)));
+    crate::sort::by(&mut v, |a, b| (a.hlc, &a.id).cmp(&(b.hlc, &b.id)));
     v
 }
 

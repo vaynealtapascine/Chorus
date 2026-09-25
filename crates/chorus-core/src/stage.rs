@@ -39,7 +39,7 @@ pub struct FakeName {
 
 /// How shown times change (D-050). Times never change on real data.
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case")]
+#[serde(remote = "Self", rename_all = "snake_case")]
 pub enum TimeOverride {
     #[default]
     Real,
@@ -57,6 +57,7 @@ pub enum TimeOverride {
         at: BTreeMap<String, i64>,
     },
 }
+crate::tagged!(TimeOverride, "mode");
 
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -79,7 +80,7 @@ pub struct Definition {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(remote = "Self", rename_all = "snake_case")]
 pub enum Row {
     Item {
         id: String,
@@ -93,6 +94,7 @@ pub enum Row {
     /// Consecutive unselected items folded into one quiet row ("3 messages").
     Context { ids: Vec<String>, count: usize },
 }
+crate::tagged!(Row, "kind");
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Plan {
@@ -115,12 +117,13 @@ fn placeholder(n: usize) -> String {
 
 /// Plan a stage over `items` (in display order).
 pub fn plan(items: &[Item], def: &Definition) -> Plan {
-    let chosen: BTreeSet<&str> = def.selected.iter().map(String::as_str).collect();
-    let only: Option<BTreeSet<&str>> = def.only_members.as_ref().map(|v| v.iter().map(String::as_str).collect());
+    let chosen: BTreeSet<&str> = crate::sort::set(def.selected.iter().map(String::as_str));
+    let only: Option<BTreeSet<&str>> =
+        def.only_members.as_ref().map(|v| crate::sort::set(v.iter().map(String::as_str)));
     let passes = |it: &Item| only.as_ref().is_none_or(|o| it.authors.iter().all(|a| o.contains(a.as_str())));
 
     // reply depth of each item (hop-limited, so a malformed cycle can't loop)
-    let index: BTreeMap<&str, &Item> = items.iter().map(|it| (it.id.as_str(), it)).collect();
+    let index: BTreeMap<&str, &Item> = crate::sort::map(items.iter().map(|it| (it.id.as_str(), it)));
     let depth = |it: &Item| -> u32 {
         let mut d = 0;
         let mut cur = it;
@@ -170,8 +173,9 @@ pub fn plan(items: &[Item], def: &Definition) -> Plan {
         }
     };
 
-    let on_stage: BTreeSet<&str> =
-        items.iter().zip(&fates).filter(|(_, f)| matches!(f, Fate::Shown(_))).map(|(it, _)| it.id.as_str()).collect();
+    let on_stage: BTreeSet<&str> = crate::sort::set(
+        items.iter().zip(&fates).filter(|(_, f)| matches!(f, Fate::Shown(_))).map(|(it, _)| it.id.as_str()),
+    );
 
     // 3. rows, folding runs of context items
     let mut rows = Vec::new();

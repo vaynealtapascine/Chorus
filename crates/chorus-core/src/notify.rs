@@ -51,7 +51,7 @@ impl DelayRange {
 
 /// How the time of a switch is shown to a follower (§3 `time`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case")]
+#[serde(remote = "Self", rename_all = "snake_case")]
 pub enum TimeRule {
     Exact,
     Round {
@@ -65,6 +65,7 @@ pub enum TimeRule {
     PartOfDay,
     Hidden,
 }
+crate::tagged!(TimeRule, "mode");
 
 fn fifteen() -> i64 {
     15
@@ -340,7 +341,7 @@ impl Default for Prefs {
 
 /// One thing a follower may know is in front.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(tag = "t", rename_all = "snake_case")]
+#[serde(remote = "Self", rename_all = "snake_case")]
 pub enum Seen {
     Subject {
         subject_type: SubjectType,
@@ -353,6 +354,7 @@ pub enum Seen {
         level: Level,
     },
 }
+crate::tagged!(Seen, "t");
 
 impl Seen {
     pub fn level(&self) -> Level {
@@ -408,7 +410,7 @@ pub fn view(front: &[Entry], a: &Audience) -> Vec<Seen> {
             }
         }
     }
-    out.sort();
+    crate::sort::ord(&mut out);
     out
 }
 
@@ -459,8 +461,8 @@ pub fn diff(
         Seen::Subject { subject_type, subject_id, level, .. } => (Some((*subject_type, subject_id.clone())), *level),
         Seen::Someone { level } => (None, *level),
     };
-    let had: BTreeSet<_> = before.iter().map(key).collect();
-    let has: BTreeSet<_> = after.iter().map(key).collect();
+    let had: BTreeSet<_> = crate::sort::set(before.iter().map(key));
+    let has: BTreeSet<_> = crate::sort::set(after.iter().map(key));
     let arrived = after.iter().filter(|s| !had.contains(&key(s)) && wanted(s, prefs, groups)).cloned().collect();
     let leaving_ok = a.ceiling.announce_leaving && prefs.switch_outs;
     let left = before

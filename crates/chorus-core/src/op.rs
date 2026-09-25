@@ -769,7 +769,7 @@ mod tests {
     #[test]
     fn catalogue_kinds_are_unique_and_create_only_is_subset() {
         let mut kinds: Vec<_> = CATALOGUE.iter().map(|k| k.kind).collect();
-        kinds.sort();
+        crate::sort::ord(&mut kinds);
         let n = kinds.len();
         kinds.dedup();
         assert_eq!(n, kinds.len());

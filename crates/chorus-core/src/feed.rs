@@ -14,7 +14,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
+#[serde(remote = "Self", rename_all = "snake_case")]
 pub enum Expr {
     And { args: Vec<Expr> },
     Or { args: Vec<Expr> },
@@ -31,24 +31,27 @@ pub enum Expr {
     Fronting { value: bool },
     Text { value: String },
 }
+crate::tagged!(Expr, "op");
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(remote = "Self", rename_all = "snake_case")]
 pub enum FromRef {
     /// `@name` — a member or group name (or short id), resolved by the caller.
     Name { name: String },
     /// `list:"name"`.
     List { name: String },
 }
+crate::tagged!(FromRef, "type");
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(remote = "Self", rename_all = "snake_case")]
 pub enum TimeRef {
     /// Relative to now, in milliseconds (`30d`, `12h`, `2w`, `45m`).
     Ago { ms: i64 },
     /// A local date `YYYY-MM-DD` (start of day in the viewer's timezone).
     Date { date: String },
 }
+crate::tagged!(TimeRef, "type");
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{message} (at character {pos})")]

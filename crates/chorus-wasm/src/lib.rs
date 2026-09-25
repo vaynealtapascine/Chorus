@@ -69,7 +69,7 @@ pub fn front_daily(intervals_json: &str, now: f64, offsets_json: &str) -> Result
         });
     }
     let mut offsets: Vec<(i64, i32)> = serde_json::from_str(offsets_json).map_err(|e| JsError::new(&e.to_string()))?;
-    offsets.sort_by_key(|x| x.0);
+    chorus_core::sort::by_key(&mut offsets, |x| x.0);
     let at = |t: i64| {
         let idx = offsets.partition_point(|(start, _)| *start <= t);
         offsets.get(idx.saturating_sub(1)).map_or(0, |(_, offset)| *offset)

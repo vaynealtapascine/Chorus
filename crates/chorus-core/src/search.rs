@@ -236,14 +236,10 @@ const DAY: i64 = 86_400_000;
 impl Context {
     /// A context for `query` in a time zone `tz_offset_min` minutes east of UTC.
     pub fn at(now: i64, tz_offset_min: i32, query: &Query) -> Context {
-        let dates = [&query.before, &query.after]
-            .into_iter()
-            .flatten()
-            .filter_map(|t| match t {
-                TimeRef::Date { date } => date_start(date, tz_offset_min).map(|at| (date.clone(), at)),
-                TimeRef::Ago { .. } => None,
-            })
-            .collect();
+        let dates = crate::sort::map([&query.before, &query.after].into_iter().flatten().filter_map(|t| match t {
+            TimeRef::Date { date } => date_start(date, tz_offset_min).map(|at| (date.clone(), at)),
+            TimeRef::Ago { .. } => None,
+        }));
         Context { now, dates }
     }
 

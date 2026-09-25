@@ -41,7 +41,7 @@ pub fn revisions<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Vec<Revision> {
             _ => None,
         })
         .collect();
-    texts.sort_by(|a, b| (a.0.hlc, &a.0.id).cmp(&(b.0.hlc, &b.0.id)));
+    crate::sort::by(&mut texts, |a, b| (a.0.hlc, &a.0.id).cmp(&(b.0.hlc, &b.0.id)));
     let mut state = Map::new();
     texts
         .into_iter()

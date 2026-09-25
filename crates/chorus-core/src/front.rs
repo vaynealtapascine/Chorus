@@ -307,7 +307,7 @@ pub struct FoldResult {
 pub fn normalize(front: &mut Front) {
     let mut seen = std::collections::HashSet::new();
     front.retain(|e| seen.insert(e.subject()));
-    front.sort_by_key(|e| e.level); // stable
+    crate::sort::by_key(front, |e| e.level); // stable
     let mut have_primary = false;
     for e in front.iter_mut() {
         if e.is_primary && e.level == Level::Front && !have_primary {
@@ -466,7 +466,7 @@ pub fn fold(ops: &[FrontOp]) -> FoldResult {
             }
         })
         .collect();
-    items.sort_by(|a, b| (a.at, a.op.hlc, &a.op.id).cmp(&(b.at, b.op.hlc, &b.op.id)));
+    crate::sort::by(&mut items, |a, b| (a.at, a.op.hlc, &a.op.id).cmp(&(b.at, b.op.hlc, &b.op.id)));
 
     // 4–6. Fold and diff into intervals.
     let mut front: Front = Vec::new();
@@ -487,7 +487,7 @@ pub fn fold(ops: &[FrontOp]) -> FoldResult {
         result.switches.push(row);
     }
     result.intervals.extend(open.into_values());
-    result.intervals.sort_by(|a, b| (a.start_at, &a.id).cmp(&(b.start_at, &b.id)));
+    crate::sort::by(&mut result.intervals, |a, b| (a.start_at, &a.id).cmp(&(b.start_at, &b.id)));
     result.current = front;
     result
 }
@@ -695,7 +695,7 @@ pub fn reviews(ops: &[FrontOp], folded: &FoldResult, window_ms: i64) -> Vec<Revi
             out.extend(review_of((oa, &a.resulting_front), (ob, &b.resulting_front)));
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::sort::by(&mut out, |a, b| a.id.cmp(&b.id));
     out
 }
 

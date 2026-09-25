@@ -162,7 +162,7 @@ impl Stamp {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "t", rename_all = "snake_case")]
+#[serde(remote = "Self", rename_all = "snake_case")]
 pub enum Frame {
     Hello {
         device_id: String,
@@ -244,6 +244,7 @@ pub enum Frame {
         message: String,
     },
 }
+crate::tagged!(Frame, "t");
 
 /// Whether a windowed replica leaves `o` out (SYNC §6.5): a message, reaction, attachment or
 /// read mark the server received before `window`. Received, not written: a message written
@@ -353,9 +354,9 @@ impl ClientEngine {
             device_id: self.device_id.clone(),
             token: token.into(),
             epoch: store.epoch(),
-            cursors: scopes.iter().map(|s| (s.clone(), store.cursor(s))).collect(),
+            cursors: crate::sort::map(scopes.iter().map(|s| (s.clone(), store.cursor(s)))),
             view_seq: 0,
-            digests: scopes.iter().map(|s| (s.clone(), store.digest(s))).collect(),
+            digests: crate::sort::map(scopes.iter().map(|s| (s.clone(), store.digest(s)))),
             clock,
             core: env!("CARGO_PKG_VERSION").into(),
             app: String::new(),
@@ -378,7 +379,8 @@ impl ClientEngine {
         // Ops being restored after a server restore go first, in their own batches.
         for restore in [true, false] {
             while self.in_flight.len() < MAX_IN_FLIGHT {
-                let skip: BTreeSet<String> = self.in_flight.values().flatten().map(|(id, _)| id.clone()).collect();
+                let skip: BTreeSet<String> =
+                    crate::sort::set(self.in_flight.values().flatten().map(|(id, _)| id.clone()));
                 let ops = store.pending(&skip, BATCH_OPS, restore);
                 if ops.is_empty() {
                     break;
@@ -404,7 +406,7 @@ impl ClientEngine {
     /// Scopes being re-pulled after a digest mismatch.
     pub fn repairing(&self) -> Vec<String> {
         let mut v: Vec<String> = self.repairing.keys().cloned().collect();
-        v.sort();
+        crate::sort::ord(&mut v);
         v
     }
 
@@ -460,8 +462,9 @@ impl ClientEngine {
                 }
                 // a scope that went away while the batch was in flight: the server acks ops it
                 // already has by id (a restore push of a copy), but the device no longer reads it
-                let held: BTreeSet<String> = store.scopes().into_iter().collect();
-                let gone: BTreeSet<&String> = flown.iter().map(|(_, s)| s).filter(|s| !held.contains(*s)).collect();
+                let held: BTreeSet<String> = crate::sort::set(store.scopes());
+                let gone: BTreeSet<&String> =
+                    crate::sort::set(flown.iter().map(|(_, s)| s).filter(|s| !held.contains(*s)));
                 for scope in gone {
                     store.forget(scope);
                 }
@@ -501,7 +504,7 @@ impl ClientEngine {
                 }
             }
             Frame::Scope { add, remove } => {
-                let mut s: BTreeSet<String> = store.scopes().into_iter().collect();
+                let mut s: BTreeSet<String> = crate::sort::set(store.scopes());
                 for r in &remove {
                     s.remove(r);
                     self.repairing.remove(r);
@@ -660,7 +663,7 @@ impl ClientStore for MemStore {
             .filter(|o| o.scope == scope && o.seq.is_some())
             .map(|o| (o.seq.unwrap_or(0), o.id.clone()))
             .collect();
-        ids.sort();
+        crate::sort::ord(&mut ids);
         for (_, id) in ids {
             if let Some(o) = self.ops.get_mut(&id) {
                 o.seq = None;

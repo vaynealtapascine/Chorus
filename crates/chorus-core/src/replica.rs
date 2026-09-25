@@ -97,7 +97,7 @@ impl Replica {
     /// Rebuild from persisted metadata and ops.
     pub fn restore(device_id: &str, node: u32, meta: Option<MemStore>, ops: Vec<Op>, hlc_last: Option<Hlc>) -> Replica {
         let mut store = meta.unwrap_or_default();
-        store.ops = ops.into_iter().map(|o| (o.id.clone(), o)).collect();
+        store.ops = crate::sort::map(ops.into_iter().map(|o| (o.id.clone(), o)));
         store.dirty.clear();
         store.meta_dirty = false;
         let clock = match hlc_last {
@@ -268,7 +268,7 @@ impl Replica {
                 })
             })
             .collect();
-        v.sort_by_key(|i| (i.at, i.id.clone()));
+        crate::sort::by(&mut v, |a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
         v
     }
 
@@ -303,7 +303,7 @@ impl Replica {
             .flat_map(|restore| self.store.pending(&none, usize::MAX, restore))
             .flat_map(|o| crate::restore::blob_hashes(&o))
             .collect();
-        v.sort();
+        crate::sort::ord(&mut v);
         v.dedup();
         v
     }
