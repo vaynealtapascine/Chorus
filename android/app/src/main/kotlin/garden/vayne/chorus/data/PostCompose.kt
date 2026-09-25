@@ -15,12 +15,12 @@ object PostCompose {
     ): JSONObject {
         require(kind in setOf("note", "entry")) { "Choose a post type." }
         require(audience in setOf("private", "followers", "server")) { "Choose an audience." }
-        require(body.isNotBlank()) { "Write a post first." }
+        require(body.isNotBlank() || attachmentIds.isNotEmpty()) { "Write a post or attach a file first." }
         require(model.active.any { it.id == authorId && (it.createdByAccountId == null || it.createdByAccountId == accountId) }) {
             "Choose one of your members to write as."
         }
         val rich = JSONObject(markup(body, ""))
-        require(rich.getString("text").isNotBlank()) { "Write a post first." }
+        require(rich.getString("text").isNotBlank() || attachmentIds.isNotEmpty()) { "Write a post or attach a file first." }
         val result = JSONObject().put("kind", kind).put("authors", JSONArray().put(authorId))
             .put("title", title.trim().takeIf { kind == "entry" && it.isNotBlank() } ?: JSONObject.NULL)
             .put("text", rich.getString("text")).put("entities", rich.getJSONArray("entities"))

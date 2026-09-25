@@ -81,6 +81,7 @@ import garden.vayne.chorus.data.SpaceInfo
 import garden.vayne.chorus.data.Spaces
 import garden.vayne.chorus.data.accountVisible
 import garden.vayne.chorus.data.memberVisible
+import garden.vayne.chorus.SharedDraft
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import java.text.DateFormat
 import java.util.Date
@@ -98,7 +99,8 @@ private data class PendingPrivateReply(val message: ChatMessage, val channelId: 
 fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     requestedChannel: String? = null, searchHit: SearchDocument? = null,
     onStageCapture: (Boolean) -> Unit = {},
-    onDismissSearchHit: () -> Unit = {}) {
+    onDismissSearchHit: () -> Unit = {}, sharedDraft: SharedDraft? = null,
+    sharedChannel: String? = null, onShareConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     var selectedSpace by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(requestedSpace) {
@@ -162,6 +164,16 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
     val channels = model.channels.filter { it.spaceId == space?.id }
     val channel = channels.find { it.id == selectedChannel } ?: channels.firstOrNull()
+    LaunchedEffect(sharedDraft?.id, channel?.id, chorus.device?.accountId) {
+        val incoming = sharedDraft ?: return@LaunchedEffect
+        if (channel?.id != sharedChannel || chorus.device == null) return@LaunchedEffect
+        if (incoming.text.isNotBlank()) draft = listOf(draft, incoming.text).filter { it.isNotBlank() }.joinToString("\n")
+        for (uri in incoming.uris) {
+            try { attachments.add(PendingAttachment.of(ctx, uri)) }
+            catch (_: Exception) { error = "One shared file could not be opened. Please attach it again." }
+        }
+        onShareConsumed()
+    }
     LaunchedEffect(chorus.device?.accountId) { pendingPrivateReply = null; carriedReply = null }
     val defaultAuthorId = remember(model, channel?.id) { channel?.id?.let { ChatSpeaker.pick(model, it) } }
     val replySpeakerId = selectedAuthor.takeIf { id -> model.active.any { it.id == id } } ?: defaultAuthorId

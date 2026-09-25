@@ -42,6 +42,7 @@ import garden.vayne.chorus.data.PostReaction
 import garden.vayne.chorus.data.PostReactions
 import garden.vayne.chorus.data.PostThreads
 import garden.vayne.chorus.data.Reply
+import garden.vayne.chorus.SharedDraft
 import garden.vayne.chorus.data.ThreadReply
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import java.text.DateFormat
@@ -52,7 +53,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     onExternalReplyConsumed: () -> Unit = {}, externalOpenPost: String? = null,
-    onExternalOpenConsumed: () -> Unit = {}) {
+    onExternalOpenConsumed: () -> Unit = {}, sharedDraft: SharedDraft? = null,
+    onShareConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     var editing by rememberSaveable { mutableStateOf(false) }
     var profileId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -80,6 +82,20 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     }
     val mine = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId }
     val author = mine.find { it.id == authorId } ?: Reply.speaker(model)?.takeIf { it in mine } ?: mine.firstOrNull()
+
+    LaunchedEffect(sharedDraft?.id, chorus.device?.accountId) {
+        val incoming = sharedDraft ?: return@LaunchedEffect
+        if (chorus.device == null) return@LaunchedEffect
+        profileId = null; threadPostId = null; replyTo = null
+        section = "timeline"
+        if (incoming.text.isNotBlank()) body = listOf(body, incoming.text).filter { it.isNotBlank() }.joinToString("\n")
+        for (uri in incoming.uris) {
+            try { attachments.add(PendingAttachment.of(ctx, uri)) }
+            catch (_: Exception) { error = "One shared file could not be opened. Please attach it again." }
+        }
+        editing = true
+        onShareConsumed()
+    }
 
     LaunchedEffect(externalReplyPost) {
         if (externalReplyPost != null) {
@@ -127,7 +143,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 TextButton(enabled = !busy, onClick = { editing = false; replyTo = null; attachments.clear() }) { Text("Cancel") }
                 Text(if (replyTo == null) "Write a post" else "Write a reply", color = p.ink,
                     fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 14.dp))
-                TextButton(enabled = !busy && author != null && body.isNotBlank(), onClick = {
+                TextButton(enabled = !busy && author != null && (body.isNotBlank() || attachments.isNotEmpty()), onClick = {
                     val dev = chorus.device ?: return@TextButton
                     val writer = author ?: return@TextButton
                     val picked = attachments.toList()
