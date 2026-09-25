@@ -245,7 +245,11 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                             }
                             if (style == "transcript" && message.cw != null)
                                 Text("$pickMark$names:", color = p.ink, fontWeight = FontWeight.SemiBold)
-                            if (row.replyShown && !hideReplyBars) Text("↪ reply", color = p.ink3, fontSize = 11.sp)
+                            val parent = message.replyTo?.let(byId::get)
+                            if (row.replyShown && !hideReplyBars && parent != null)
+                                Text(StagePlan.replyPreview(parent, plan.names) { id ->
+                                    model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone"
+                                }, color = p.ink3, fontSize = 11.sp, maxLines = 1)
                             if (message.cw != null) Text("Content warning: ${message.cw} · ${if (revealed) "Hide" else "Show"}",
                                 color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
                             if (message.cw == null || revealed) {

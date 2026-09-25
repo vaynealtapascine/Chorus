@@ -642,3 +642,8 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 - **Status: code complete for the Chorus layout, device audit pending.** Stage now draws the lead member's cached avatar or glyph beside a message. If avatars are concealed, or the core has replaced that author's name, Android draws a neutral placeholder and never requests the original avatar for that card. Advanced saves `render.blur_avatars`; web-authored views with that option can load. Transcript and Minimal continue to omit avatars. No core or server semantics changed.
 - **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. A JVM definition test checks the saved avatar option.
 - **Compiled/unit-tested only:** No phone capture was inspected. Later capture a disposable message with an uploaded avatar under real, fake and concealed names, both online and offline. Other Stage layouts remain.
+
+#### V6 · Stage reply previews (2026-09-25)
+- **Status: code complete, device audit pending.** A Stage reply bar now names the parent and previews up to 60 characters when core says that parent is on stage. It uses staged name replacements and shows only the content-warning label for a warned parent. The existing hide-reply-bars control still removes it. No core or server semantics changed.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. A JVM test checks staged names, warning concealment and multiline preview text.
+- **Compiled/unit-tested only:** No phone capture was inspected. Later stage a reply whose parent has a CW, with the parent both selected and hidden.

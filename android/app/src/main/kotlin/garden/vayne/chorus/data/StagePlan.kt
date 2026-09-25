@@ -25,6 +25,14 @@ object StagePlan {
     data class Row(val id: String?, val selected: Boolean, val at: Long?, val replyShown: Boolean, val contextCount: Int)
     data class Result(val rows: List<Row>, val names: Map<String, String>)
 
+    /** A reply bar must not reveal the body of a parent behind its content warning. */
+    fun replyPreview(parent: ChatMessage, names: Map<String, String>, realName: (String) -> String): String {
+        val authors = parent.authors.map { names[it] ?: realName(it) }.joinToString(" & ").ifBlank { "Someone" }
+        val summary = parent.cw?.let { "Content warning: $it" }
+            ?: parent.text.replace('\n', ' ').trim().take(60)
+        return "↪ $authors: $summary"
+    }
+
     /** Save a definition that the web Stage can load without translating it. */
     fun definition(channelId: String, settings: Settings): JSONObject {
         val fakeNames = JSONObject()

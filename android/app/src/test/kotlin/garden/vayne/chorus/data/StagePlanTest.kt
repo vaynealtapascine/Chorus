@@ -70,4 +70,12 @@ class StagePlanTest {
         assertEquals(listOf("Quiet"), model.savedStages.map { it.name })
         assertEquals("c", model.savedStages.single().channelId)
     }
+
+    @Test fun replyPreviewUsesStagedNamesAndRespectsContentWarning() {
+        val parent = message("first", "a", 1000).copy(text = "Hidden private text", cw = "Sensitive")
+        assertEquals("↪ Alias: Content warning: Sensitive",
+            StagePlan.replyPreview(parent, mapOf("a" to "Alias")) { "Real name" })
+        assertEquals("↪ Real name: Public text",
+            StagePlan.replyPreview(parent.copy(text = "Public\ntext", cw = null), emptyMap()) { "Real name" })
+    }
 }
