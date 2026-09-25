@@ -15,6 +15,16 @@ use crate::projector::{Delta, Projector};
 use crate::sync::{ClientEngine, ClientState, ClientStore, ClockReading, Frame, MemStore};
 use crate::time::TimeSource;
 
+/// An op the server asked for again later (slow mode, D-076): it goes out at `until` (device ms).
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct Held {
+    /// The op.
+    pub id: String,
+    /// What it creates or changes (a message's id), for the UI to find it.
+    pub entity_id: Option<String>,
+    pub until: i64,
+}
+
 /// An op the server refused (SYNC §7 "Sync issues").
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct SyncIssue {
@@ -173,6 +183,7 @@ impl Replica {
     pub fn create(&mut self, n: NewOp, d: &DeviceNow, random: [u8; 10]) -> Result<(Op, Vec<Frame>), OpError> {
         let id = crate::id::new_id(d.now.max(0) as u64, random);
         let o = self.local_op(id, n, d)?;
+        self.engine.now = d.now;
         let frames = self.engine.pump(&self.store);
         Ok((o, frames))
     }
@@ -236,7 +247,46 @@ impl Replica {
                 self.clock.observe(o.hlc, now.max(0) as u64);
             }
         }
+        self.engine.now = now;
         self.engine.on_frame(&mut self.store, frame)
+    }
+
+    /// Time passing (D-076): send held ops whose wait is over. Call it at the earliest `until` of
+    /// [`Replica::held`] (or every second while any are held).
+    pub fn tick(&mut self, now: i64) -> Vec<Frame> {
+        self.engine.now = now;
+        self.engine.pump(&self.store)
+    }
+
+    /// Ops waiting to be sent again (slow mode), with the device time they go out, soonest first.
+    pub fn held(&self) -> Vec<Held> {
+        let mut v: Vec<Held> = self
+            .engine
+            .held
+            .iter()
+            .map(|(id, until)| Held {
+                id: id.clone(),
+                entity_id: self.store.ops.get(id).and_then(|o| o.entity_id.clone()),
+                until: *until,
+            })
+            .collect();
+        crate::sort::by(&mut v, |a, b| (a.until, &a.id).cmp(&(b.until, &b.id)));
+        v
+    }
+
+    /// Cancel a held op before it goes out (D-076): it's dropped here and never sent. Only held
+    /// ops can be cancelled; one already sent may be on the server.
+    pub fn cancel_held(&mut self, id: &str) -> bool {
+        if self.engine.held.remove(id).is_none() || self.store.ops.get(id).is_none_or(|o| o.seq.is_some()) {
+            return false;
+        }
+        self.store.ops.remove(id);
+        self.store.local_order.retain(|x| x != id);
+        self.store.dirty.remove(id);
+        self.store.touched.insert(id.into());
+        self.store.removed.insert(id.into());
+        self.store.meta_dirty = true;
+        true
     }
 
     /// Frames asking for every scope again (see [`ClientEngine::recheck`]).
@@ -407,6 +457,55 @@ mod tests {
         assert_eq!(r2.store.local_order, vec![o.id.clone()]);
     }
 
+    /// Slow mode (D-076): an op the server wants later is held, not rejected or re-sent at once;
+    /// it goes out when its time comes, and a held op can be cancelled instead.
+    #[test]
+    fn a_held_op_waits_goes_out_later_or_is_cancelled() {
+        let scope = format!("space:{}", crate::id::new_id(1, [1; 10]));
+        let send = |text: &str, n: u8| NewOp {
+            kind: "message.send".into(),
+            scope: scope.clone(),
+            entity_id: Some(crate::id::new_id(1, [n; 10])),
+            payload: json!({"channel_id": crate::id::new_id(1, [2; 10]), "text": text, "authors": []}),
+            member_id: None,
+            user_time: None,
+        };
+        let mut r = Replica::new("dev", 7);
+        r.engine.state = ClientState::Live;
+        let pushed = |frames: &[Frame]| -> Vec<String> {
+            frames
+                .iter()
+                .flat_map(|f| match f {
+                    Frame::Push { ops, .. } => ops.iter().map(|o| o.id.clone()).collect(),
+                    _ => vec![],
+                })
+                .collect()
+        };
+        let (a, f) = r.create(send("one", 10), &now(1_000), [1; 10]).unwrap();
+        let (b, g) = r.create(send("two", 11), &now(1_001), [2; 10]).unwrap();
+        // the server takes neither for now: both wait 30 s
+        let later = |id: &str| crate::sync::AckResult::later(id.into(), "slow_mode", "wait 30 s".into(), 30_000);
+        let mut out = Vec::new();
+        for frame in f.into_iter().chain(g) {
+            if let Frame::Push { batch, ops, .. } = frame {
+                let results = ops.iter().map(|o| later(&o.id)).collect();
+                out.extend(r.on_frame(Frame::Ack { batch, results }, 2_000));
+            }
+        }
+        assert!(pushed(&out).is_empty(), "held ops aren't re-sent at once");
+        assert_eq!(r.held().iter().map(|h| (h.id.clone(), h.until)).collect::<Vec<_>>().len(), 2);
+        assert_eq!(r.pending_count(), 2, "still pending, not a sync issue");
+        assert!(r.sync_issues().is_empty());
+        assert!(pushed(&r.tick(31_999)).is_empty(), "not yet");
+        // cancel one; the other goes out when its time comes
+        assert!(r.cancel_held(&b.id));
+        assert!(!r.cancel_held(&b.id));
+        assert!(r.take_changes().removed.contains(&b.id));
+        assert!(r.projection().row("message", b.entity().unwrap()).is_none_or(|m| !m.exists));
+        assert_eq!(pushed(&r.tick(32_000)), vec![a.id.clone()]);
+        assert!(r.held().is_empty());
+    }
+
     /// CLIENTS.md §4.3: open from a snapshot — metadata, ops in slices, a local op created while
     /// opening — and go on from the snapshot without projecting; a stale one projects it all.
     #[test]
@@ -462,7 +561,15 @@ mod tests {
         let (o, _) = r.create(new, &now(1000), [3; 10]).unwrap();
         r.take_changes();
         assert!(r.sync_issues().is_empty());
-        r.store.reject(&o.id, crate::sync::AckError { code: "forbidden".into(), message: "no".into(), retry: false });
+        r.store.reject(
+            &o.id,
+            crate::sync::AckError {
+                code: "forbidden".into(),
+                message: "no".into(),
+                retry: false,
+                retry_after_ms: None,
+            },
+        );
         let issues = r.sync_issues();
         assert_eq!(
             (issues.len(), issues[0].code.as_str(), issues[0].payload["name"].as_str()),

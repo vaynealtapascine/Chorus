@@ -60,6 +60,11 @@ importance (details in `opus-remote-3.md` §5):
   chip (`default_speaker`, pref `autoproxy:<channel>`, D-074), per-member reading
   (`read_readers`/`read_unseen_by`, pref `chat.read_per_member`), reply privately (DM via
   `POST /spaces {kind:"dm"}`, member DM via `channel.create kind member_dm`).
+- **V10d · slow mode holds messages (D-076, owner's answer to Q17).** FFI `tick(now)`, `held()`
+  (`[{id, entity_id, until}]`), `cancel_held(id)`. After each frame/create, read `held()`; set an
+  alarm (a coroutine delay is enough while the app is open) for the soonest `until`, then call
+  `tick(now)` and send its frames. On a held message show "Slow mode: sending in N s" and a
+  Cancel, and hide its other actions (web: `Message.svelte`). Web and server are done.
 - Read marks no longer sync to other accounts (privacy fix, `7ef5563`): nothing to do, but don't
   show another account's read positions anywhere.
 

@@ -305,6 +305,11 @@ of canonical JSON rows) is available in Developer settings for debugging.
 
 ### 6.5 Client engine
 
+**Held ops (D-076).** An ack error with `retry: true` and `retry_after_ms` holds that op: `pump`
+skips it until then, `tick(now)` sends it once the time has come, `held()` lists them for the UI
+and `cancel_held(id)` drops one before it is sent (it leaves through `Changes.removed`). Other
+retryable errors stay pending and go again with the next pump, as before.
+
 Local tables mirror the server's (`op` with `seq` nullable for pending ops, plus projections).
 
 ```
