@@ -430,5 +430,56 @@ optimization.
 
 ### 9.3 End-to-end chaos test
 
-An integration test starts the real server binary, spins up headless clients (Rust test client
-using the same core), and kills/restarts the server and sockets at random points. Same assertions.
+`crates/chorus-server/tests/chaos.rs` (R20) runs the real server binary on a temporary data
+directory and six headless devices on the real `ClientEngine` over real WebSockets: three
+accounts (two systems and a person), two devices each. Setup: B and C follow A, A makes a shared
+space with both and a DM with C, and shares one channel of its internal space with C (a guest).
+Then a seeded run of steps; each picks a device and an action:
+
+- ops of every chat kind, chosen from what the device's own projection offers (like its UI):
+  sends (replies, `system_only` asides, attachments with a real blob upload), edits, deletes and
+  restores, forwards, reactions, pins, read marks, channels and threads created, renamed,
+  archived, deleted and restored, `channel.set_permission` churn on role and account targets
+  (including the guest's channel), `space.set_role`, members and front switches;
+- follows ended and asked again, C leaving the shared space and A adding people back (REST);
+- a socket dropped right after pushing a burst (acks never read), a push sent twice, a device
+  offline for a few steps;
+- twice per run, `kill -9` of the server right under a burst of pushes, restarted a few steps
+  later (devices keep writing offline meanwhile);
+- an online backup (`chorus-server backup`) at 30 % of the run and, at 70 %, a restore from it
+  into a new data directory (a new op log, a new epoch: every device reconciles, §7.3).
+
+The desks "keep everything" (they download the files of what they receive), and every device
+re-sends files after a reconcile like the apps do. What a run does depends only on its seed; the
+timing is real. At quiescence (every device online, outboxes and upload queues empty, no frames
+for 600 ms), per device against the final database:
+
+- its scopes are the account's (`ingest::scopes_of`); for each scope it holds exactly the ops
+  `visibility::op_visible_to` allows the account, with the server's stamps, and the same
+  digest as `visible_digest`; nothing in scopes it doesn't have;
+- its outbox is empty; every rejected op has a code and a message;
+- a final `recheck` of every scope repairs nothing, and repairs stayed bounded (a repair per
+  permission change, reconnect or restore is normal; a loop is not);
+- its incremental projection equals a fresh `model::project` of the same ops, and each phone's
+  projected messages (ids and text) per channel equal what `GET /channels/{id}/messages` lists
+  for its account (the server's SQL projection);
+- every attachment's file is on the server, unless no device holding the op has a copy (a file
+  whose only copy is on a device that lost the op can't come back);
+- **no leaks**: every `ops` frame is recorded with its arrival time. Per op log (one before the
+  restore, one after), the log is replayed through `project::after_insert` into a fresh
+  database, and each frame's ops must be visible to its account (`ingest::can_access` and
+  `op_visible_to`) at some state it could have been sent from: between the frame's `to` and the
+  last op the server had received when the frame arrived (`received_at` is stamped before the
+  op commits, on the same clock). Visibility inside a scope depends only on that scope's ops,
+  so only the states after the scope's own ops are asked. The test also plants two leaks (an op
+  of A's account scope and one of A's asides, "delivered" to C) and checks they are reported.
+
+Default: 2 seeds of 160 steps (~15 s debug) in `cargo test`. Longer:
+`CHORUS_CHAOS_SEEDS=20 CHORUS_CHAOS_STEPS=300 cargo test --release -p chorus-server --test
+chaos -- --nocapture`; one seed with `CHORUS_CHAOS_SEED=<n>`; `CHORUS_CHAOS_TRACE=<n>` prints
+more of the action trace on failure. A failing seed keeps its data directory (databases,
+server logs) under `target/tmp/chaos-<seed>-*`.
+
+Found so far: files uploaded after the last backup were lost by a restore (fixed: §7.3 step 5),
+and a finished blob sent again by another account was refused, which stalled the web upload
+queue for good (fixed: API.md §5).
