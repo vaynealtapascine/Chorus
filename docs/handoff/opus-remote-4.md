@@ -62,3 +62,16 @@ take the next free number after checking `migrations/` (Sol may ask for one in i
 ## 5. Report (append below; newest last)
 
 - 2026-09-25 local Claude — batch R4 written; `handoff/opus-remote-1` fast-forwarded to `main`.
+- 2026-09-25 remote Claude — **R25 done**. The web core is **288 → 241 KB gz**, target ≤ 250.
+  - Serde's `Content` buffering for internally tagged enums is replaced by `tagged!`
+    (`chorus_core::tagged`). The wire bytes are unchanged; tests pin them.
+  - API inputs are parsed through a `Value`, except bulk op lists (`parse_ops`), which stay on
+    `from_str`.
+  - On wasm, sorts and `BTreeMap`/`BTreeSet` collects go through `chorus_core::sort`.
+  - The web open time and the reconnect budget are unchanged.
+  - NOTES.md has the numbers and what didn't help (`wasm-opt` made gzip bigger).
+  - **For everyone adding code to core:** use `crate::sort::*` rather than `sort_by`, or
+    `collect()` into a B-tree. Use `tagged!` rather than `#[serde(tag = …)]`, and avoid
+    `#[serde(flatten)]`.
+  - **For Sol:** nothing changes in the FFI. Its string inputs now parse through a `Value`
+    (slightly slower, same results); op lists don't.
