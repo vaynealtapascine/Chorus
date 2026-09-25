@@ -185,6 +185,10 @@ out, so digests agree); channels, spaces and permissions are always kept. Older 
 *Older messages (from the server)* at the top of a channel pages `GET /channels/{id}/messages
 ?before=` in, read-only and not stored. Pinned messages older than the window aren't kept (the
 window rule must be decidable from the op alone, on both sides); `GET /pins` has them.
+Measured (2026-09-25, `web/perf` "a year of 100000 ops", headless Chromium in the cloud box): a
+year of history held whole is 100 000 ops, ~31 MB of IndexedDB, 9.3 s to open cold (no
+snapshot); the same account in a windowed tab is 36 227 ops, ~11 MB, 3.4 s cold. From the
+snapshot (R18) both mount in well under a second.
 
 With the server down (or no network) the installed PWA keeps working (owner, 2026-09-24: this is
 what "desktop" means for v1): the service worker serves the app shell and wasm core, the replica
