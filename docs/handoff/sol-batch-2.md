@@ -652,3 +652,8 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 - **Status: code complete for these layouts, device audit pending.** Card uses separate bordered messages with larger avatars. Discord-ish uses compact spacing, a plain background and small avatars without rings. Both values survive Save/Load and matching web-authored views can open on Android. The existing Chorus, Transcript and Minimal layouts remain. Bubbles is the remaining unsupported preset. No core or server semantics changed.
 - **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM definitions accept Card and Discord-ish and still reject Bubbles.
 - **Compiled/unit-tested only:** No phone capture was inspected. Later compare the two layouts on a short and a long message, with uploaded and concealed avatars.
+
+#### V6 · Bubbles Stage layout (2026-09-25)
+- **Status: code complete, device audit pending.** Bubbles draws messages from this account on the right with a soft accent background, and other messages on the left with a neutral background. The saved style value matches the web definition, so all six Stage presets can now reopen on Android. No core or server semantics changed.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM definitions accept Bubbles and reject unknown styles.
+- **Compiled/unit-tested only:** No phone capture was inspected. Later compare both sides of a disposable shared-space exchange at phone width, including longer text and a CW.

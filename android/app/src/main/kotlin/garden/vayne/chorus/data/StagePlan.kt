@@ -63,7 +63,7 @@ object StagePlan {
             (0 until a.length()).mapNotNull { n -> a.optString(n).takeIf { it.isNotBlank() } }.toSet()
         }.orEmpty()
         val render = definition.optJSONObject("render")
-        if (render != null && (render.optString("style", "chorus") !in setOf("chorus", "discord", "card", "transcript", "minimal") ||
+        if (render != null && (render.optString("style", "chorus") !in setOf("chorus", "discord", "bubbles", "card", "transcript", "minimal") ||
                 render.optString("theme", "auto") != "auto" || render.optString("width", "phone") != "phone")) return null
         val mode = definition.optString("unselected", "context")
         if (mode !in setOf("context", "hidden", "visible")) return null

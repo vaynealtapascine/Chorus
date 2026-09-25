@@ -122,7 +122,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
             if (advanced) Column(Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(listOf("chorus" to "Chorus", "discord" to "Discord-ish", "card" to "Card",
+                    items(listOf("chorus" to "Chorus", "discord" to "Discord-ish", "bubbles" to "Bubbles", "card" to "Card",
                         "transcript" to "Transcript", "minimal" to "Minimal")) { (value, label) ->
                         JournalChoice(label, style == value) { style = value }
                     }
@@ -230,6 +230,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                         val names = message.authors.map { id -> plan.names[id] ?: model.member(id)?.shownName
                             ?: foreignAuthors[id]?.name ?: "Someone" }.joinToString(" & ")
                         val pickMark = if (!capturing && message.id in selected) "✓ " else ""
+                        val mine = message.accountId == chorus.device?.accountId
                         val pad = when (style) {
                             "transcript" -> 4.dp
                             "discord" -> 6.dp
@@ -237,15 +238,19 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                             "card" -> 16.dp
                             else -> 12.dp
                         }
-                        Column(Modifier.fillMaxWidth()
+                        Box(Modifier.fillMaxWidth(), contentAlignment = if (style == "bubbles" && mine)
+                            Alignment.CenterEnd else Alignment.CenterStart) {
+                        Column((if (style == "bubbles") Modifier.widthIn(max = 320.dp) else Modifier.fillMaxWidth())
                             .then(if (style == "card") Modifier.border(1.dp, p.line, RoundedCornerShape(14.dp)) else Modifier)
-                            .then(if (style == "card") Modifier.background(p.surface, RoundedCornerShape(14.dp))
+                            .then(if (style == "bubbles") Modifier.background(if (mine) p.accentSoft else p.surface2,
+                                RoundedCornerShape(18.dp))
+                                else if (style == "card") Modifier.background(p.surface, RoundedCornerShape(14.dp))
                                 else Modifier.background(if (style == "transcript" || style == "discord") p.bg else p.surface))
                             .clickable(enabled = !capturing) {
                             selected = if (message.id in selected) selected - message.id else selected + message.id
                         }.padding(pad),
                             verticalArrangement = Arrangement.spacedBy(if (style == "transcript" || style == "discord") 1.dp else 4.dp)) {
-                            if (style in setOf("chorus", "discord", "card")) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            if (style in setOf("chorus", "discord", "bubbles", "card")) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 val lead = message.authors.firstOrNull()
                                 val member = lead?.let(model::member)
                                 val concealed = blurAvatars || (lead != null && lead in plan.names)
@@ -275,6 +280,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                                 }, color = p.ink)
                                 for (attachment in message.attachments) StageAttachment(chorus, attachment, blurAttachments)
                             }
+                        }
                         }
                     }
                 }
