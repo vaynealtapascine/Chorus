@@ -6,6 +6,7 @@ import garden.vayne.chorus.data.Member
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.SwitchRow
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WidgetTilesTest {
@@ -82,5 +83,19 @@ class WidgetTilesTest {
     fun personAccountHasNoQuickSwitchTiles() {
         val person = Model(listOf(m("self").copy(isSelf = true)), emptyList(), emptyMap(), emptyList(), null, emptyList())
         assertEquals(emptyList<WidgetTile>(), widgetTiles(person, null))
+    }
+
+    @Test
+    fun scopedTilePreparationStaysWithinTheWidgetTapBudget() {
+        val members = (0 until 1_000).map { m("member-$it") }
+        val large = Model(members, listOf(Group("friends", "Friends", "group", null, null)),
+            mapOf("friends" to members.take(500).map { it.id }.toSet()), emptyList(), null, emptyList())
+        val scope = WidgetScope("group", "friends")
+        widgetTiles(large, null, scope = scope) // warm the JVM before measuring the pure filter
+        val start = System.nanoTime()
+        val tiles = widgetTiles(large, null, scope = scope)
+        val elapsedMs = (System.nanoTime() - start) / 1_000_000
+        assertEquals(500, tiles.size)
+        assertTrue("scoped tiles took ${elapsedMs}ms (150ms widget redraw budget)", elapsedMs < 150)
     }
 }
