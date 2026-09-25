@@ -260,12 +260,14 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
             LazyColumn(Modifier.widthIn(max = 390.dp).fillMaxSize().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(if (style == "discord") 0.dp else if (style == "card") 12.dp else 8.dp)) {
                 if (!hideHeader) item(key = "channel-header") {
-                    Text("#${channel.name}", color = p.ink2, fontWeight = FontWeight.SemiBold,
+                    val firstAt = plan.rows.firstOrNull { it.id != null }?.at
+                    val date = firstAt?.let { " · ${DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(it))}" }.orEmpty()
+                    Text("#${channel.name}$date", color = p.ink2, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
                 }
                 itemsIndexed(plan.rows, key = { index, row -> row.id ?: "context:$index" }) { _, row ->
                     if (row.id == null) {
-                        Text("${row.contextCount} messages", color = p.ink3, fontSize = 13.sp,
+                        Text("${row.contextCount} ${if (row.contextCount == 1) "message" else "messages"}", color = p.ink3, fontSize = 13.sp,
                             modifier = Modifier.fillMaxWidth().background(p.surface).padding(12.dp))
                     } else {
                         val message = byId[row.id] ?: return@itemsIndexed

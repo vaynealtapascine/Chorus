@@ -678,3 +678,8 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 - **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM tile tests cover group/subsystem filtering, stale folder state and missing scopes.
 - **Compiled/unit-tested only:** No launcher/widget configuration flow was run. Later add two widgets with different scopes, navigate a nested subsystem, switch accounts, and remove/re-add one widget without affecting the other.
 - **Follow-up:** The setup dialog now offers All members directly and places the per-subsystem/group list under Advanced, as DESIGN §6 requests. `python scripts/verify.py --quick --android --offline` passed for this follow-up; the native dialog still needs the phone audit above.
+
+#### V6 · Stage heading date and folded-gap labels (2026-09-25)
+- **Status: code complete, device audit pending.** The capture heading now includes the first shown row's staged date when times are visible, matching the web Stage cue. Folded context uses “message” for one row and “messages” otherwise. No data or saved definition changes.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed.
+- **Compiled/unit-tested only:** No phone capture was inspected. Check a first row shifted across a date boundary and a one-message folded gap.
