@@ -98,7 +98,7 @@ pub const SLOW_MODE_MAX_S: u64 = 6 * 3600;
 /// sends arrive (`received_at`) — a message written offline at 10:00 and synced at 12:00 counts
 /// at 12:00, and a device syncing several at once gets the later ones refused. Accounts that may
 /// `manage` the channel (its space's owner and admins) are exempt. `Some(reason)` = refused.
-pub fn slow_mode(conn: &Connection, author: &str, o: &Op, now: i64) -> anyhow::Result<Option<String>> {
+pub fn slow_mode(conn: &Connection, author: &str, o: &Op, now: i64) -> anyhow::Result<Option<(String, i64)>> {
     if !matches!(o.kind.as_str(), "message.send" | "message.forward") {
         return Ok(None);
     }
@@ -119,7 +119,9 @@ pub fn slow_mode(conn: &Connection, author: &str, o: &Op, now: i64) -> anyhow::R
         .prepare_cached("SELECT max(received_at) FROM message WHERE channel_id = ?1 AND account_id = ?2")?
         .query_row(params![channel, author], |r| r.get(0))?;
     let wait = last.map_or(0, |at| at + seconds as i64 * 1000 - now);
-    Ok((wait > 0).then(|| format!("slow mode: one message every {seconds} s here; wait {} s", (wait + 999) / 1000)))
+    Ok((wait > 0).then(|| {
+        (format!("slow mode: one message every {seconds} s here; sending in {} s", (wait + 999) / 1000), wait)
+    }))
 }
 
 /// The space's owner, or an account present in it (not a guest of one of its channels).

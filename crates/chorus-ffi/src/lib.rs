@@ -259,6 +259,22 @@ impl CoreReplica {
         self.lock().dismiss_issue(&id)
     }
 
+    /// Slow mode (D-076): frames for held ops whose wait is over (JSON array). Call it at the
+    /// soonest `until` of `held()`.
+    pub fn tick(&self, now: i64) -> String {
+        self.lock().tick(now)
+    }
+
+    /// Held ops, soonest first (JSON array of `{id, until}`): show "sending in N s · Cancel".
+    pub fn held(&self) -> String {
+        self.lock().held()
+    }
+
+    /// Cancel a held op; it comes out in `take_changes().removed`.
+    pub fn cancel_held(&self, id: String) -> bool {
+        self.lock().cancel_held(&id)
+    }
+
     /// → `{"added": n, "frames": […]}`. Safe to repeat.
     pub fn import_pluralkit(
         &self,

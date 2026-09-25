@@ -238,6 +238,22 @@ impl WebReplica {
     pub fn dismiss_issue(&mut self, id: &str) -> bool {
         self.0.dismiss_issue(id)
     }
+
+    /// Slow mode (D-076): frames for held ops whose wait is over (JSON array).
+    pub fn tick(&mut self, now: f64) -> String {
+        self.0.tick(now as i64)
+    }
+
+    /// Held ops, soonest first (JSON array of `{id, until}`).
+    pub fn held(&self) -> String {
+        self.0.held()
+    }
+
+    /// Cancel a held op before it goes out (persist with takeChanges).
+    #[wasm_bindgen(js_name = cancelHeld)]
+    pub fn cancel_held(&mut self, id: &str) -> bool {
+        self.0.cancel_held(id)
+    }
 }
 
 /// A new UUIDv7 (`random`: at least 10 bytes from `crypto.getRandomValues`).

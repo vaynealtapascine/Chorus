@@ -45,6 +45,8 @@
     onreact,
     emojiById,
     cwAutoExpand,
+    heldUntil,
+    oncancelheld,
   }: {
     m: MessageRow;
     cont: boolean;
@@ -57,6 +59,9 @@
     onreplyin: () => void;
     /** "Reply privately", where there's someone else to reply to. */
     onreplyprivately?: () => void;
+    /** Slow mode (D-076): this message waits to be sent until then (ms). */
+    heldUntil?: number;
+    oncancelheld?: () => void;
     /** Members who haven't read this yet ("track reading per member"). */
     unseen?: string[];
     onquote: (q: Quote) => void;
@@ -76,6 +81,13 @@
     emojiById: Map<string, EmojiRow>;
     cwAutoExpand: boolean;
   } = $props();
+  // a held message counts down each second
+  let nowMs = $state(Date.now());
+  $effect(() => {
+    if (!heldUntil) return;
+    const t = setInterval(() => (nowMs = Date.now()), 1000);
+    return () => clearInterval(t);
+  });
 
   const PALETTE = ['💜', '👍', '😂', '🥹', '🎉', '😢', '👀', '🔥'];
   let palette = $state(false);
@@ -245,6 +257,14 @@
         {/each}
       </div>
     {/if}
+    {#if heldUntil}
+      <p class="held" role="status">
+        Slow mode: sending in {Math.max(0, Math.ceil((heldUntil - nowMs) / 1000))} s
+        {#if oncancelheld}<button class="link" onclick={oncancelheld}>Cancel</button>{/if}
+      </p>
+    {/if}
+    <!-- a held message isn't sent yet: only Cancel, nothing covering it (narrow screens) -->
+    {#if !heldUntil}
     <div class="actions" role="toolbar" aria-label="Message actions">
       <button onclick={() => (palette = !palette)} title="React" disabled={!speaker}>☺</button>
       <button onclick={onreply} title="Reply">↩</button>
@@ -260,6 +280,7 @@
         <button onclick={ondelete} title="Delete">🗑</button>
       {/if}
     </div>
+    {/if}
   </div>
 {/if}
 
@@ -503,4 +524,5 @@
   .actions button:hover {
     background: var(--surface-2);
   }
+  .held { margin: 0; font-size: var(--fs-sm); color: var(--ink-3); }
 </style>

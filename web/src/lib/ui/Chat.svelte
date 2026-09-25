@@ -125,6 +125,10 @@
   let selecting = $state(false);
   let selectedIds = $state(new Set<string>());
   let showPins = $state(false);
+  // messages waiting out slow mode (D-076): not in the projection, so follow the sync client
+  let held = $state(sync.heldUntil);
+  const unheld = sync.subscribe(() => (held = sync.heldUntil));
+  onDestroy(unheld);
   let picking = $state(false);
   let box: HTMLTextAreaElement | undefined = $state();
   let emojiPicker = $state(false);
@@ -832,6 +836,8 @@
           {speaker}
           {emojiById}
           {cwAutoExpand}
+          heldUntil={held[m.id]?.until}
+          oncancelheld={() => sync.cancelHeld(m.id)}
           onreact={(emoji, on) => react(m, emoji, on)}
         />
       {:else}

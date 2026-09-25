@@ -185,6 +185,37 @@ test('space roles: the owner makes someone read-only, and their send is refused 
   await stars.page.getByLabel('Channel menu').click();
 });
 
+test('slow mode holds a second message and it can be cancelled (D-076)', async () => {
+  const club = `Book club ${run}`;
+  await go(stars.page, 'chat');
+  await stars.page.locator('nav[aria-label="Spaces"] a', { hasText: club }).click();
+  await stars.page.getByLabel('Channel menu').click();
+  const slow = stars.page.getByLabel('Slow mode for this channel');
+  await slow.selectOption('300');
+  await expect(slow).toHaveValue('300');
+
+  await go(friend.page, 'chat');
+  await friend.page.locator('nav[aria-label="Spaces"] a', { hasText: club }).click();
+  const box = friend.page.getByLabel('Message', { exact: true });
+  const first = `first under slow mode ${run}`;
+  const second = `second too soon ${run}`;
+  await box.fill(first);
+  await box.press('Enter');
+  await expect(stars.page.getByText(first)).toBeVisible();
+  await box.fill(second);
+  await box.press('Enter');
+  // held, not refused: a countdown and a Cancel, and no Sync issue
+  const held = friend.page.locator('.msg', { hasText: second }).locator('.held');
+  await expect(held).toContainText(/Slow mode: sending in \d+ s/);
+  await expect(friend.page.getByRole('list', { name: 'Messages not sent' })).toHaveCount(0);
+  await held.getByRole('button', { name: 'Cancel' }).click();
+  await expect(friend.page.getByText(second)).toHaveCount(0);
+  await expect(stars.page.getByText(second)).toHaveCount(0);
+  // off again for the rest of the run
+  await slow.selectOption('0');
+  await stars.page.getByLabel('Channel menu').click();
+});
+
 test('one internal channel shared with a follower (channel permissions)', async () => {
   const note = `news for Robin ${run}`;
   const inside = `inside only ${run}`;

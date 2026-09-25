@@ -95,6 +95,10 @@ pub struct AckError {
     pub code: String,
     pub message: String,
     pub retry: bool,
+    /// With `retry`: send it again no sooner than this many ms from now (slow mode, D-076). The
+    /// device holds the op until then instead of re-sending it at once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_after_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -136,8 +140,17 @@ impl AckResult {
             received_at: None,
             account_id: None,
             device_id: None,
-            error: Some(AckError { code: code.into(), message, retry }),
+            error: Some(AckError { code: code.into(), message, retry, retry_after_ms: None }),
         }
+    }
+
+    /// Refused for now: the device holds the op and sends it again after `after_ms` (D-076).
+    pub fn later(id: String, code: &str, message: String, after_ms: i64) -> AckResult {
+        let mut r = AckResult::err(id, code, message, true);
+        if let Some(e) = r.error.as_mut() {
+            e.retry_after_ms = Some(after_ms.max(0));
+        }
+        r
     }
 }
 
@@ -324,6 +337,11 @@ pub struct ClientEngine {
     /// Keep only message-family ops written since this time (SYNC §6.5), `None`: everything.
     /// Takes effect at the next connect.
     pub window: Option<i64>,
+    /// Ops the server asked to get again later (slow mode, D-076): op id → device time (ms) it
+    /// may be sent again. [`ClientEngine::pump`] skips them until then; `now` is the device
+    /// time of the latest event, set by the caller (`Replica::on_frame`, `tick`, `create`).
+    pub held: BTreeMap<String, i64>,
+    pub now: i64,
 }
 
 impl ClientEngine {
@@ -338,6 +356,8 @@ impl ClientEngine {
             account_id: None,
             repairing: HashMap::new(),
             window: None,
+            held: BTreeMap::new(),
+            now: 0,
         }
     }
 
@@ -375,10 +395,19 @@ impl ClientEngine {
         if self.state != ClientState::Live {
             return out;
         }
+        // held ops whose time has come go out again with the rest
+        let now = self.now;
+        self.held.retain(|_, until| *until > now);
         // Ops being restored after a server restore go first, in their own batches.
         for restore in [true, false] {
             while self.in_flight.len() < MAX_IN_FLIGHT {
-                let skip: BTreeSet<String> = self.in_flight.values().flatten().map(|(id, _)| id.clone()).collect();
+                let skip: BTreeSet<String> = self
+                    .in_flight
+                    .values()
+                    .flatten()
+                    .map(|(id, _)| id.clone())
+                    .chain(self.held.keys().cloned())
+                    .collect();
                 let ops = store.pending(&skip, BATCH_OPS, restore);
                 if ops.is_empty() {
                     break;
@@ -455,6 +484,9 @@ impl ClientEngine {
                             store.ack(&r.id, &stamp)
                         }
                         (_, _, Some(e)) if !e.retry => store.reject(&r.id, e),
+                        (_, _, Some(AckError { retry_after_ms: Some(ms), .. })) => {
+                            self.held.insert(r.id.clone(), self.now.saturating_add(ms));
+                        }
                         _ => {} // retryable: stays pending
                     }
                 }
