@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { channels, members, spaces } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
-  import { JournalIndex, SearchIndex, parseSearch, type SearchHit, type SearchQuery } from '../search';
+  import { JournalIndex, SearchIndex, parseSearch, type SearchHit } from '../search';
+  import { core, type SearchQuery } from '../core';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
   import { sync, type Projection } from '../sync/client';
@@ -29,7 +30,18 @@
   let index: SearchIndex | null = null;
   let journal: JournalIndex | null = null;
   const parsed = $derived(parseSearch(query));
-  const local = $derived.by(() => { void revision; return query.trim() ? index?.search(parsed) ?? [] : []; });
+  // messages: the search box as core reads it, like the server (SPEC §5.3)
+  const messageSearch = $derived.by((): { q: SearchQuery | null; error: string } => {
+    if (!query.trim()) return { q: null, error: '' };
+    try {
+      const q = core.searchParse(query);
+      return { q, error: '' };
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      try { return { q: null, error: (JSON.parse(why) as { message: string }).message }; } catch { return { q: null, error: why }; }
+    }
+  });
+  const local = $derived.by(() => { void revision; return messageSearch.q ? index?.find(messageSearch.q) ?? [] : []; });
   const known = $derived(new Set(local.map((h) => h.id)));
   const all = $derived([...local, ...remote.filter((h) => !known.has(h.id))]);
   const ch = $derived(new Map(channels(projection).map((c) => [c.id, c])));
@@ -58,19 +70,14 @@
   });
   const switches = $derived.by(() => { void revision; return tab === 'switches' && query.trim() ? journal?.searchSwitches(parsed) ?? [] : []; });
 
-  const paramsFor = (filter: SearchQuery, cursor?: string) => {
-    const params = new URLSearchParams({ q: filter.terms.join(' '), limit: '25' });
-    if (filter.in) params.set('in', filter.in);
-    if (filter.from) params.set('from', filter.from);
-    if (filter.has) params.set('has', filter.has);
-    if (filter.before !== undefined) params.set('before', String(filter.before));
-    if (filter.after !== undefined) params.set('after', String(filter.after));
+  const paramsFor = (box: string, cursor?: string) => {
+    const params = new URLSearchParams({ q: box.trim(), limit: '25', tz: String(-new Date().getTimezoneOffset()) });
     if (cursor) params.set('cursor', cursor);
     return params;
   };
 
-  const fetchPage = async (filter: SearchQuery, cursor: string | null, signal?: AbortSignal) => {
-    const response = await apiFetch(`${apiBase()}/search/messages?${paramsFor(filter, cursor ?? undefined)}`, {
+  const fetchPage = async (box: string, cursor: string | null, signal?: AbortSignal) => {
+    const response = await apiFetch(`${apiBase()}/search/messages?${paramsFor(box, cursor ?? undefined)}`, {
       headers: { authorization: `Bearer ${sync.device?.session ?? ''}` }, signal,
     });
     if (!response.ok) throw new Error(`Search HTTP ${response.status}`);
@@ -82,14 +89,14 @@
   };
 
   $effect(() => {
-    const filter = parsed;
-    if (!filter.terms.length || sync.status !== 'live') { remote = []; remoteCursor = null; remoteError = ''; return; }
+    const box = query;
+    if (!messageSearch.q || sync.status !== 'live') { remote = []; remoteCursor = null; remoteError = ''; return; }
     remote = [];
     remoteCursor = null;
     const abort = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const page = await fetchPage(filter, null, abort.signal);
+        const page = await fetchPage(box, null, abort.signal);
         if (abort.signal.aborted) return;
         remote = page.items;
         remoteCursor = page.cursor;
@@ -152,7 +159,7 @@
     const currentQuery = query;
     loadingMore = true;
     try {
-      const page = await fetchPage(parsed, cursor);
+      const page = await fetchPage(currentQuery, cursor);
       if (query !== currentQuery || remoteCursor !== cursor) return;
       remote = [...remote, ...page.items];
       remoteCursor = page.cursor;
@@ -219,7 +226,8 @@
       {/if}
     {/if}
   {:else}
-  <p class="hint">Use from:, in:, has:image, has:file, before: and after:. Search works offline on this device.</p>
+  <p class="hint">Use from:, in:, has:image, has:file, has:link, before:, after: and is:pinned. Search works offline on this device.</p>
+  {#if messageSearch.error}<p class="hint" role="alert">{messageSearch.error}</p>{/if}
   <label class="viewer">Viewing as
     <select aria-label="Search viewing as member" value={viewingAs ?? ''} onchange={(e) => (viewingAs = e.currentTarget.value || null)}>
       <option value="">Current front</option>

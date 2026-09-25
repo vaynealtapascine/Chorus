@@ -1,3 +1,4 @@
+import { core, type SearchCandidate, type SearchQuery as CoreQuery } from './core';
 import type { Projection } from './sync/client';
 import type { Delta } from './sync/delta';
 
@@ -13,6 +14,10 @@ export interface SearchHit {
   attachments: string[];
   has_image: boolean;
   has_file: boolean;
+  /** For core's filters (SPEC §5.3): attachment mime types, a link entity, pinned. */
+  mimes?: string[];
+  link?: boolean;
+  pinned?: boolean;
 }
 
 export interface SearchQuery {
@@ -52,6 +57,9 @@ export class SearchIndex {
   private attachmentUsers = new Map<string, Set<string>>();
   private members = new Map<string, string>();
   private channels = new Map<string, string>();
+  /** Names as written, for core's `from:`/`in:` (it folds them itself). */
+  private memberNames = new Map<string, string>();
+  private channelNames = new Map<string, string>();
   private sortedWords: string[] = [];
   private dirtyWords = true;
 
@@ -60,25 +68,26 @@ export class SearchIndex {
   rebuild(p: Projection): void {
     this.docs.clear(); this.words.clear(); this.docWords.clear(); this.attachmentUsers.clear();
     this.members.clear(); this.channels.clear();
-    for (const [id, row] of Object.entries(p.rows.member ?? {})) this.name(this.members, id, row);
-    for (const [id, row] of Object.entries(p.rows.channel ?? {})) this.name(this.channels, id, row);
+    for (const [id, row] of Object.entries(p.rows.member ?? {})) this.name(this.members, id, row, this.memberNames);
+    for (const [id, row] of Object.entries(p.rows.channel ?? {})) this.name(this.channels, id, row, this.channelNames);
     for (const id of Object.keys(p.rows.message ?? {})) this.updateMessage(p, id);
     this.dirtyWords = true;
   }
 
   apply(p: Projection, d: Delta): void {
     if (d.full) { this.rebuild(p); return; }
-    for (const id of Object.keys(d.rows.member ?? {})) this.name(this.members, id, p.rows.member?.[id]);
-    for (const id of Object.keys(d.rows.channel ?? {})) this.name(this.channels, id, p.rows.channel?.[id]);
+    for (const id of Object.keys(d.rows.member ?? {})) this.name(this.members, id, p.rows.member?.[id], this.memberNames);
+    for (const id of Object.keys(d.rows.channel ?? {})) this.name(this.channels, id, p.rows.channel?.[id], this.channelNames);
     const touched = new Set(Object.keys(d.rows.message ?? {}));
     for (const id of Object.keys(d.rows.attachment ?? {}))
       for (const messageId of this.attachmentUsers.get(id) ?? []) touched.add(messageId);
     for (const id of touched) this.updateMessage(p, id);
   }
 
-  private name(map: Map<string, string>, id: string, row: Projection['rows'][string][string] | undefined): void {
-    if (!row?.exists) { map.delete(id); return; }
+  private name(map: Map<string, string>, id: string, row: Projection['rows'][string][string] | undefined, raw: Map<string, string>): void {
+    if (!row?.exists) { map.delete(id); raw.delete(id); return; }
     map.set(id, fold([row.fields.name, row.fields.display_name].filter((v): v is string => typeof v === 'string').join(' ')));
+    raw.set(id, str(row.fields.name) ?? '');
   }
 
   private remove(id: string): void {
@@ -112,6 +121,9 @@ export class SearchIndex {
       authors: strs(f.authors), attachments,
       has_image: attachments.some((a) => str(p.rows.attachment?.[a]?.fields.mime)?.startsWith('image/')),
       has_file: attachments.some((a) => { const mime = str(p.rows.attachment?.[a]?.fields.mime); return !!mime && !mime.startsWith('image/'); }),
+      mimes: attachments.map((a) => str(p.rows.attachment?.[a]?.fields.mime) ?? ''),
+      link: Array.isArray(f.entities) && f.entities.some((e) => ['url', 'text_link'].includes((e as { type?: string })?.type ?? '')),
+      pinned: f.pinned_at != null,
     };
     this.docs.set(id, hit);
     for (const attachment of attachments) {
@@ -136,36 +148,24 @@ export class SearchIndex {
     return ids;
   }
 
-  search(query: SearchQuery, limit = 100): SearchHit[] {
-    const terms = query.terms.map(fold).filter(Boolean);
+  /** Messages a core-parsed search box finds (SPEC §5.3). The words narrow through this index
+   * (prefixes of folded words: never fewer than core), then core decides, as on the server. */
+  find(query: CoreQuery, now = Date.now(), limit = 100, tz = -new Date(now).getTimezoneOffset()): SearchHit[] {
     let ids: Set<string> | undefined;
-    for (const term of terms) {
+    for (const term of query.words.map(fold).filter(Boolean)) {
       const matches = this.prefix(term);
-      if (ids === undefined) ids = matches;
-      else {
-        const next = new Set<string>();
-        for (const id of ids) if (matches.has(id)) next.add(id);
-        ids = next;
-      }
+      ids = ids === undefined ? matches : new Set([...ids].filter((id) => matches.has(id)));
       if (!ids.size) return [];
     }
-    const from = query.from ? fold(query.from) : null;
-    const channel = query.in ? fold(query.in) : null;
-    const hits: SearchHit[] = [];
-    for (const id of ids ?? this.docs.keys()) {
-      const hit = this.docs.get(id)!;
-      if (from && !hit.authors.some((a) => a === query.from || this.members.get(a)?.includes(from))) continue;
-      if (channel && hit.channel_id !== query.in && !this.channels.get(hit.channel_id)?.includes(channel)) continue;
-      if (query.before !== undefined && hit.occurred_at >= query.before) continue;
-      if (query.after !== undefined && hit.occurred_at <= query.after) continue;
-      if (query.has && !(
-        query.has === 'image' ? hit.has_image :
-        query.has === 'file' ? hit.has_file :
-        query.has === 'attachment' ? hit.attachments.length : false
-      )) continue;
-      hits.push(hit);
-    }
-    return hits.sort((a, b) => b.occurred_at - a.occurred_at || b.id.localeCompare(a.id)).slice(0, limit);
+    const hits = [...(ids ?? this.docs.keys())].map((id) => this.docs.get(id)).filter((h): h is SearchHit => !!h);
+    const candidates: SearchCandidate[] = hits.map((h) => ({
+      text: h.text, cw: h.cw ?? null,
+      authors: h.authors.map((a): [string, string] => [a, this.memberNames.get(a) ?? '']),
+      channel: [h.channel_id, this.channelNames.get(h.channel_id) ?? ''],
+      at: h.occurred_at, mimes: h.mimes ?? [], link: !!h.link, pinned: !!h.pinned,
+    }));
+    const keep = core.searchFilter(query, candidates, { now, tz_offset_min: tz });
+    return keep.map((i) => hits[i]).sort((a, b) => b.occurred_at - a.occurred_at || b.id.localeCompare(a.id)).slice(0, limit);
   }
 }
 

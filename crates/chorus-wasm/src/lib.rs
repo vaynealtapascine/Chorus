@@ -117,6 +117,16 @@ pub fn feed_filter(ast_json: &str, items_json: &str, context_json: &str) -> Resu
     wrap(api::feed_filter(ast_json, items_json, context_json))
 }
 
+#[wasm_bindgen(js_name = searchParse)]
+pub fn search_parse(query: &str) -> Result<String, JsError> {
+    wrap(api::search_parse(query))
+}
+
+#[wasm_bindgen(js_name = searchFilter)]
+pub fn search_filter(query_json: &str, candidates_json: &str, context_json: &str) -> Result<String, JsError> {
+    wrap(api::search_filter(query_json, candidates_json, context_json))
+}
+
 #[wasm_bindgen(js_name = adaptColor)]
 pub fn adapt_color(color: &str, dark: bool, intensity: &str) -> String {
     api::adapt_color(color, dark, intensity)

@@ -189,7 +189,7 @@ custom order.
 | Mentions | `@member`, `@group` (all members in group), `@account` in shared spaces, `@front` (current fronters). Mention inbox per member. |
 | Read states | Per account; optionally **per member** (Advanced: "track reading per member") → "Kai hasn't seen this" dot. |
 | Attachments | Images (thumbnails, gallery, alt text), files; queued offline, upload resumable. |
-| Search | Full-text (FTS5), filters: `from:`, `in:`, `has:image`, `before:`/`after:`, `is:pinned`. |
+| Search | Full-text (FTS5), filters: `from:`, `in:`, `has:` (image, file, attachment, link), `before:`/`after:`, `is:pinned`, parsed by core so local and server search agree (`chorus_core::search`). |
 | Offline marker | Messages composed offline sort at original time, marked "sent offline · synced 14:32" (D-039). |
 
 ### 5.4 Hidden messages (D-010)

@@ -149,10 +149,17 @@ GET  /messages/{id}/revisions              edit history, oldest first; the last 
   → {items:[{rev,text,entities,cw,at}]}; an unedited message has one item (itself). Same read
     rule as the message (a stranger or another account's aside: 404); tokens need read:messages.
 GET  /messages/{id}/thread
-GET  /search/messages?q=&in=&from=&before=&after=&has=&limit=&cursor=
+GET  /search/messages?q=&tz=&in=&from=&before=&after=&has=&limit=&cursor=
   → {items:[{id,channel_id,space_id,account_id,occurred_at,text,cw,visibility,authors}],next_cursor}
-  Uses FTS5; `in` accepts a channel id/name, `from` a member id/name, before/after are
-  exclusive epoch milliseconds, and `has` is attachment/image/file. Pages contain 1–100
+  `q` is a search box, read by core (`chorus_core::search`, SPEC §5.3) exactly as the apps'
+  local search reads it: words (each a prefix of a word of the text or content warning, case
+  and accents ignored; through FTS5) and `from:` (member name or id; several = any),
+  `in:` (channel name or id, `#` optional; several = any), `has:image|file|attachment|link`
+  (all must hold), `before:`/`after:` (a date `2026-09-01` in the `tz` time zone, minutes east
+  of UTC, default 0: before its start / after its end; or an age `30d`, `12h`, `2w`),
+  `is:pinned`. Filters alone (no words) list the newest matches. A bad box is a 400 with where
+  and why. The older `in`, `from`, `has` (same values) and `before`/`after` (exclusive epoch
+  ms) parameters still narrow the search. Pages contain 1–100
   results (default 100). Pass `next_cursor` back with the same search and filters to continue;
   a null cursor means the results are exhausted. Results are ordered by FTS rank, occurred time,
   then id and limited to accessible spaces plus public or own messages. API tokens need

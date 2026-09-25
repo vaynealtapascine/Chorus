@@ -411,7 +411,8 @@ closes the window with `reconcile-close` or `POST /admin/reconcile/close`.
 ```
 
 Areas: `hlc`, `time`, `lww`, `set`, `groups_cycle`, `front`, `review`, `text_entities`,
-`speaker_parse`, `feed_query`, `visibility`, `digest`. Rust runs all of them in CI. Any non-Rust
+`speaker_parse`, `feed_query`, `visibility`, `digest`, `search` (message search: the web's word
+index runs these too, `web/src/lib/search.test.ts`). Rust runs all of them in CI. Any non-Rust
 reimplementation must run them too.
 
 ### 9.2 Convergence simulator

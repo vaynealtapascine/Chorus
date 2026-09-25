@@ -10,6 +10,27 @@ export interface Entity {
   length: number;
   [k: string]: unknown;
 }
+/** A parsed message search (core `search::Query`, SPEC §5.3). */
+export interface SearchQuery {
+  words: string[];
+  from: string[];
+  in: string[];
+  has: string[];
+  before: { type: 'ago'; ms: number } | { type: 'date'; date: string } | null;
+  after: { type: 'ago'; ms: number } | { type: 'date'; date: string } | null;
+  pinned: boolean;
+}
+/** A message as search filters see it (core `search::Candidate`). */
+export interface SearchCandidate {
+  text: string;
+  cw: string | null;
+  authors: [string, string][];
+  channel: [string, string];
+  at: number;
+  mimes: string[];
+  link: boolean;
+  pinned: boolean;
+}
 export interface Rich {
   text: string;
   entities: Entity[];
@@ -51,6 +72,11 @@ export const core = {
   frontDaily: (intervals: Json, now: number, offsets: [number, number][]): Json =>
     JSON.parse(wasm.frontDaily(JSON.stringify(intervals), now, JSON.stringify(offsets))),
   feedParse: (q: string): Json => JSON.parse(wasm.feedParse(q)),
+  /** A message search box → query (SPEC §5.3); throws `{"pos","message"}` JSON on a bad one. */
+  searchParse: (q: string): SearchQuery => JSON.parse(wasm.searchParse(q)),
+  /** Indexes of the candidates the query matches (the server's search agrees). */
+  searchFilter: (query: SearchQuery, candidates: SearchCandidate[], context: { now: number; tz_offset_min: number }): number[] =>
+    JSON.parse(wasm.searchFilter(JSON.stringify(query), JSON.stringify(candidates), JSON.stringify(context))),
   feedFilter: (ast: Json, items: Json[], context: Json): number[] =>
     JSON.parse(wasm.feedFilter(JSON.stringify(ast), JSON.stringify(items), JSON.stringify(context))),
   adaptColor: (color: string, dark: boolean, intensity: 'off' | 'subtle' | 'vivid' = 'subtle'): MemberColors =>

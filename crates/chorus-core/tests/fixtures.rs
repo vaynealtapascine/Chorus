@@ -35,6 +35,8 @@ fn call(f: &str, a: &[Value]) -> Result<String, String> {
         "project" => api::project(&s(a, 0)),
         "validate_op" => api::validate_op(&s(a, 0)).map(|k| json!(k).to_string()),
         "feed_parse" => api::feed_parse(&s(a, 0)),
+        "search_parse" => api::search_parse(&s(a, 0)),
+        "search_filter" => api::search_filter(&s(a, 0), &s(a, 1), &s(a, 2)),
         "adapt_color" => Ok(api::adapt_color(&s(a, 0), a[1].as_bool().unwrap_or(false), &s(a, 2))),
         "hlc_tick" => api::hlc_tick(&s(a, 0), a[1].as_u64().unwrap_or(0) as u32, a[2].as_u64().unwrap_or(0))
             .map(|h| json!(h).to_string()),

@@ -62,6 +62,21 @@ pub fn feed_parse(query: String) -> Result<String, CoreError> {
     wrap(api::feed_parse(&query))
 }
 
+/// A message search box → query JSON (SPEC §5.3: words, from:, in:, has:, before:/after:,
+/// is:pinned), or an error with `{"pos", "message"}`.
+#[uniffi::export]
+pub fn search_parse(query: String) -> Result<String, CoreError> {
+    wrap(api::search_parse(&query))
+}
+
+/// Query JSON, candidate messages (JSON array of `{text, cw?, authors: [[id, name]], channel:
+/// [id, name], at, mimes, link, pinned}`) and `{now, tz_offset_min}` → indexes that match. Local
+/// search filters through this so it finds what `GET /search/messages` finds.
+#[uniffi::export]
+pub fn search_filter(query_json: String, candidates_json: String, context_json: String) -> Result<String, CoreError> {
+    wrap(api::search_filter(&query_json, &candidates_json, &context_json))
+}
+
 #[uniffi::export]
 pub fn notify_preset(name: String) -> Result<String, CoreError> {
     wrap(api::notify_preset(&name))

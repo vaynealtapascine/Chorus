@@ -186,6 +186,32 @@ pub fn feed_filter(ast_json: &str, items_json: &str, context_json: &str) -> Resu
         .collect::<Vec<_>>()))
 }
 
+/// A message search box → query JSON (`chorus_core::search`), or `Err` with `{"pos", "message"}`.
+pub fn search_parse(src: &str) -> Result<String, String> {
+    crate::search::parse(src).map(|q| js(&q)).map_err(|e| js(&serde_json::json!({"pos": e.pos, "message": e.message})))
+}
+
+#[derive(Deserialize)]
+struct SearchContextIn {
+    now: i64,
+    #[serde(default)]
+    tz_offset_min: i32,
+}
+
+/// Query, candidate messages and `{now, tz_offset_min}` → indexes of the matching candidates.
+/// Every client filters its local messages through this, so they find what the server finds.
+pub fn search_filter(query_json: &str, candidates_json: &str, context_json: &str) -> Result<String, String> {
+    let q: crate::search::Query = parse("search query", query_json)?;
+    let items: Vec<crate::search::Candidate> = parse("search candidates", candidates_json)?;
+    let c: SearchContextIn = parse("search context", context_json)?;
+    let ctx = crate::search::Context::at(c.now, c.tz_offset_min, &q);
+    Ok(js(&items
+        .iter()
+        .enumerate()
+        .filter_map(|(i, item)| crate::search::matches(&q, item, &ctx).then_some(i))
+        .collect::<Vec<_>>()))
+}
+
 /// Member colour variants: `{"name", "ring", "tint"}`. `intensity`: off | subtle | vivid.
 pub fn adapt_color(color: &str, dark: bool, intensity: &str) -> String {
     let i = match intensity {

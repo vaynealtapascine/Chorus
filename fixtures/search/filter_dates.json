@@ -1,0 +1,108 @@
+{
+  "args": [
+    {
+      "after": {
+        "date": "2024-09-06",
+        "type": "date"
+      },
+      "before": {
+        "ms": 86400000,
+        "type": "ago"
+      },
+      "from": [],
+      "has": [],
+      "in": [],
+      "pinned": false,
+      "words": []
+    },
+    [
+      {
+        "at": 1727827200000,
+        "authors": [
+          [
+            "m1",
+            "Kai"
+          ]
+        ],
+        "channel": [
+          "c1",
+          "general"
+        ],
+        "cw": null,
+        "link": false,
+        "mimes": [],
+        "pinned": false,
+        "text": "Lunch at the Café"
+      },
+      {
+        "at": 1727827200000,
+        "authors": [
+          [
+            "m2",
+            "Élise"
+          ]
+        ],
+        "channel": [
+          "c2",
+          "random"
+        ],
+        "cw": null,
+        "link": false,
+        "mimes": [
+          "image/png"
+        ],
+        "pinned": true,
+        "text": "garden plans"
+      },
+      {
+        "at": 1724544000000,
+        "authors": [
+          [
+            "m1",
+            "Kai"
+          ]
+        ],
+        "channel": [
+          "c1",
+          "general"
+        ],
+        "cw": null,
+        "link": true,
+        "mimes": [],
+        "pinned": false,
+        "text": "see https://x.test"
+      },
+      {
+        "at": 1727827200000,
+        "authors": [
+          [
+            "m1",
+            "Kai"
+          ]
+        ],
+        "channel": [
+          "c1",
+          "general"
+        ],
+        "cw": "lunch spoilers",
+        "link": false,
+        "mimes": [
+          "application/pdf"
+        ],
+        "pinned": false,
+        "text": "notes"
+      }
+    ],
+    {
+      "now": 1728000000000,
+      "tz_offset_min": 120
+    }
+  ],
+  "description": "before: an age; after: a date is the end of that local day",
+  "expect": [
+    0,
+    1,
+    3
+  ],
+  "fn": "search_filter"
+}
