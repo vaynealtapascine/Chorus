@@ -97,7 +97,10 @@ object Blobs {
         val target = File(cacheDir(ctx, kind), hash)
         if (target.isFile) return target
         device ?: return null
-        val partial = File(target.path + ".part")
+        // A foreground open and the background keeper may fetch the same hash together.
+        // Give each request its own partial so neither can corrupt the other's download.
+        val partial = try { File.createTempFile("$hash-", ".part", target.parentFile) }
+            catch (e: IOException) { Log.w("ChorusBlobs", "could not start download", e); return null }
         return try {
             val req = Request.Builder().url("${device.base.trimEnd('/')}/api/v1/blobs/$hash")
                 .header("Authorization", "Bearer ${device.session}").build()
@@ -119,6 +122,7 @@ object Blobs {
                     }
                 }
             }
+            if (target.isFile) return target
             if (!partial.renameTo(target)) throw IOException("could not finish the cache file")
             target
         } catch (e: Exception) {
