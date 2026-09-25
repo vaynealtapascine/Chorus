@@ -612,3 +612,8 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 - **Status: code complete for these filters, device audit pending.** Android Stage Advanced can keep only selected authors and crop reply chains to none, direct replies or two levels. Both options flow through `chorus_core::stage` rather than Android-specific filtering, and survive Save/Load in the native and web Stage definition. The prior saved-Stage compatibility check now accepts these two web filters. No core or server semantics changed.
 - **Verified by running:** Android `:app:testDebugUnitTest :app:assembleDebug --offline` and `python scripts/verify.py --quick --android --offline` passed. JVM definition tests check filter round-trip; Rust core tests cover filter semantics.
 - **Compiled/unit-tested only:** No phone UI was run. Later use a disposable thread with two authors and three reply levels, save it and compare the Android and web plans. Other Stage styles, blur controls and older-message paging remain.
+
+#### V6 · Bound Stage Advanced controls on short screens (2026-09-25)
+- **Status: code complete, device audit pending.** The Advanced controls now scroll inside a 220 dp panel, leaving room for the Stage message list even when a channel has many authors. The rest of Stage behavior is unchanged.
+- **Verified by running:** Android `:app:testDebugUnitTest :app:assembleDebug --offline` and `python scripts/verify.py --quick --android --offline` passed.
+- **Compiled/unit-tested only:** No phone layout was inspected. Check a small window with many authors and the keyboard open during the later device audit.

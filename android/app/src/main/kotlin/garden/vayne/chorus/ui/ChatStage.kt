@@ -2,12 +2,15 @@ package garden.vayne.chorus.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
@@ -96,7 +99,8 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                 JournalChoice("Show", unselected == "visible") { unselected = "visible" }
                 TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Less" else "Advanced") }
             }
-            if (advanced) {
+            if (advanced) Column(Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     JournalChoice("Hide real names", redactNames) { redactNames = !redactNames }
                     JournalChoice("Hide times", hideTimes) { hideTimes = !hideTimes }

@@ -22,3 +22,11 @@ Three source files are changed: `data/FollowPresets.kt` adds `withSharing`, `ui/
 3. Use F: build paths in every shell: `CARGO_TARGET_DIR=F:\DunBuild\chorus-target-sol`, `CHORUS_GRADLE_BUILD_DIR=F:\DunBuild\chorus-gradle-sol`, `GRADLE_USER_HOME=F:\DunBuild\gradle`, `JAVA_HOME=C:\Program Files\Android\Android Studio\jbr`, `PYTHONIOENCODING=utf-8`. Gradle must run `--offline`. Dev ports remain 5261/5262. `verify.py --quick --android --offline` must pass before every commit.
 
 No `chorus_core` sync/model/notify/stage/front/text semantics changed in this session. No proposed D-S2 decision. The owner said this session may have a bug; do not infer a code defect from that remark without reproducing one.
+
+## Continuation after the owner's request to continue (same date)
+
+The V4 sharing WIP above was finished in the later commits recorded in `docs/handoff/sol-batch-2.md`. That file is now the authoritative slice-by-slice log; the old "Stopped mid-slice" and "Next work" sections above describe the starting point, not remaining work. This continuation stayed in `F:\DunBuild\Chorus-sol` on `sol/batch-2`. No C: checkout edits, push, deploy, service change or adb session occurred.
+
+The continuation added Android V4/V5 profile, settings and search work, Journal attachment display/composition and file opening, and the first V6 chat Stage, saved plans, widget pins and pinned launcher shortcuts. Each committed slice passed `python scripts/verify.py --quick --android --offline`; UI was compiled and unit-tested, not run on the phone. The latest concrete Stage work adds core-backed member/reply filters and bounds the Advanced panel so many author controls remain scrollable. See the end of `docs/handoff/sol-batch-2.md` for commits, tested scope and remaining limitations.
+
+**Next concrete step:** finish the Android Stage render options (styles, attachment blur, wider plans and old-message paging) or the widget's per-instance scope from `docs/handoff/sol-batch-5.md`. On a future owner-approved phone session, audit the V3–V6 screens and widget/shortcut behavior with disposable data. Keep the phone's app data intact. The full verifier requires these additional F: environment locations while C: is full: `TEMP=TMP=TMPDIR=F:\DunBuild\temp-sol` and `npm_config_cache=F:\DunBuild\npm-cache-sol`, alongside the earlier Cargo/Gradle/JBR variables.
