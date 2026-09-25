@@ -62,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.ChatMessage
+import garden.vayne.chorus.data.MessageRevision
 import garden.vayne.chorus.data.ChannelWindow
 import garden.vayne.chorus.data.ChatAttachment
 import garden.vayne.chorus.data.SearchDocument
@@ -489,7 +490,10 @@ private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
 @Composable
 private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>, chorus: Chorus, onReply: () -> Unit) {
     val p = LocalChorusPalette.current
+    val actions = rememberCoroutineScope()
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
+    var history by remember(message.id, message.text, message.cw) { mutableStateOf<List<MessageRevision>?>(null) }
+    var historyError by remember(message.id) { mutableStateOf<String?>(null) }
     val authors = message.authors.map { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
         .joinToString(" & ").ifEmpty { "Someone" }
     Column(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(12.dp))
@@ -518,6 +522,29 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             Text(message.text, color = p.ink, fontSize = 16.sp)
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus)
+            }
+            if (message.edited) {
+                TextButton(onClick = {
+                    if (history != null) history = null else actions.launch {
+                        try { history = chorus.revisions(message.id); historyError = null }
+                        catch (e: Exception) { historyError = e.message ?: "Could not load edit history." }
+                    }
+                }) { Text(if (history == null) "(edited) · View history" else "Hide edit history") }
+                if (historyError != null) Text(historyError.orEmpty(), color = p.danger)
+                history?.forEach { revision ->
+                    var revisionRevealed by rememberSaveable(message.id, revision.rev) {
+                        mutableStateOf(revision.contentWarning == null)
+                    }
+                    Column(Modifier.fillMaxWidth().background(p.surface2).padding(8.dp)) {
+                        Text("${if (revision.original) "Original" else "Edit ${revision.rev}"} · " +
+                            DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(revision.at)),
+                            color = p.ink3, fontSize = 12.sp)
+                        if (revision.contentWarning != null) Text(
+                            "Content warning: ${revision.contentWarning} · ${if (revisionRevealed) "Hide" else "Show"}",
+                            color = p.accent, modifier = Modifier.clickable { revisionRevealed = !revisionRevealed })
+                        if (revisionRevealed) Text(revision.text, color = p.ink)
+                    }
+                }
             }
         }
     }

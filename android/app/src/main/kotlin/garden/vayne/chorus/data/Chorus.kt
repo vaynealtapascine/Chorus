@@ -47,6 +47,9 @@ data class RecheckProgress(val checked: Int, val total: Int)
 data class SyncIssue(val id: String, val kind: String, val at: Long, val code: String,
     val message: String, val text: String)
 
+data class MessageRevision(val rev: Int, val at: Long, val original: Boolean, val text: String,
+    val contentWarning: String?)
+
 /**
  * The app's one sync client (CLIENTS.md §2.3): owns the core replica, the sync socket and the
  * on-disk store. All protocol logic is in chorus-core; this class only moves bytes and timers —
@@ -194,6 +197,18 @@ class Chorus private constructor(private val ctx: Context) {
         if (!r.dismissIssue(id)) return@withContext
         try { store.save(r.takeChanges()) } catch (e: Exception) { storageFailed(e); throw e }
         refreshIssues(r)
+    }
+
+    /** Core's locally replicated versions, including the original and each accepted edit. */
+    suspend fun revisions(entityId: String): List<MessageRevision> = withContext(dispatcher) {
+        val rows = JSONArray(replica?.revisions(entityId) ?: "[]")
+        (0 until rows.length()).map { n ->
+            val row = rows.getJSONObject(n)
+            val fields = row.getJSONObject("fields")
+            MessageRevision(row.getInt("rev"), row.getLong("at"), row.getBoolean("original"),
+                fields.optString("text"),
+                if (fields.has("cw") && !fields.isNull("cw")) fields.optString("cw").ifEmpty { null } else null)
+        }
     }
 
     /** Coalesced: at most one pending rebuild of the typed model. */
