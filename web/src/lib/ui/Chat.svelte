@@ -458,6 +458,18 @@
 
   let newChannel = $state('');
   // may this account add channels and change permissions here? (perms.rs: the owner, admins; in a DM, both)
+  // slow mode (OPEN_QUESTIONS Q17 default): the channel's settings.slow_mode_s, enforced by the
+  // server when a send arrives; managers are exempt
+  const slowMode = $derived.by(() => {
+    const v = (projection.rows.channel?.[current?.id ?? '']?.fields.settings as { slow_mode_s?: unknown } | undefined)?.slow_mode_s;
+    return typeof v === 'number' && v > 0 ? v : 0;
+  });
+  function setSlowMode(seconds: number) {
+    if (!current) return;
+    const old = (projection.rows.channel?.[current.id]?.fields.settings ?? {}) as Record<string, unknown>;
+    sync.create('channel.set', scope, current.id, { settings: { ...old, slow_mode_s: seconds } });
+  }
+  const slowLabel = (s: number) => (s < 60 ? `${s} s` : s < 3600 ? `${s / 60} min` : `${s / 3600} h`);
   const canManage = $derived.by(() => {
     if (!space) return false;
     const info = directory.get(space.id);
@@ -674,6 +686,13 @@
           <div class="menu-items">
             <a href="#/stage/{current.id}">Stage… (screenshot)</a>
             <a href="#/trash/{current.id}">Show deleted</a>
+            {#if space && canManage && space.kind !== 'dm'}
+              <label class="notify">Slow mode
+                <select value={String(slowMode)} onchange={(e) => setSlowMode(Number(e.currentTarget.value))} aria-label="Slow mode for this channel">
+                  {#each [0, 5, 30, 60, 300, 900, 3600] as s (s)}<option value={String(s)}>{s ? `one message every ${slowLabel(s)}` : 'off'}</option>{/each}
+                </select>
+              </label>
+            {/if}
             {#if space && canManage && space.kind !== 'dm' && current.kind !== 'thread'}
               <ChannelPermissions {projection} channelId={current.id} spaceId={space.id} info={directory.get(space.id)} />
             {/if}
@@ -781,6 +800,7 @@
         <button class="x" onclick={() => (forwarding = null)} aria-label="Cancel forward">✕</button>
       </div>
     {/if}
+    {#if slowMode && !canManage}<p class="hint slow">Slow mode: one message every {slowLabel(slowMode)} here.</p>{/if}
     {#if replyIn}
       <div class="reply-in" role="group" aria-label="Reply in another channel">
         Reply to {replyIn.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')} in

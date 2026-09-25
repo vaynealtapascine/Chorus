@@ -418,7 +418,7 @@ CREATE TABLE channel (
   name TEXT NOT NULL, topic TEXT, icon TEXT, color TEXT,
   parent_message_id TEXT,                       -- threads
   member_ids TEXT CHECK (member_ids IS NULL OR json_valid(member_ids)),  -- member_dm participants
-  settings TEXT NOT NULL DEFAULT '{}',          -- slow mode, lock (autoproxy is the account's pref, D-074)
+  settings TEXT NOT NULL DEFAULT '{}',          -- slow_mode_s (Q17), lock (autoproxy is the account's pref, D-074)
   sort_key TEXT,
   created_at INTEGER NOT NULL, archived_at INTEGER, deleted_at INTEGER,
   clocks TEXT NOT NULL DEFAULT '{}'
