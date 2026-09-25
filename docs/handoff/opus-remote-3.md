@@ -151,3 +151,34 @@ asked for; take **0010** and up.
   first; 200 or 403 means done). (2) The history view: `replica.revisions(messageId)` (FFI),
   same JSON as the web uses. (3) Nothing to do for `forget`: it reports through
   `changes.removed` like evictions.
+- 2026-09-25 remote Claude — **R22 done** (all 8 items), each with core rules + server + API +
+  plain web + tests:
+  1. edit history (`0271bf3`, above);
+  2. search filters parsed once in core (`982b9da`): `chorus_core::search` (words as prefixes,
+     `from:`/`in:` any-of, `has:image|file|attachment|link`, `before:`/`after:` date or age,
+     `is:pinned`); `/search/messages` parses `q` with it (+`tz`) — property test SQL = core;
+     conformance fixtures `fixtures/search` also run by the web's index;
+  3. mentions (`0e26b12`): `chorus_core::mentions` (@member, @group incl. subgroups, @account,
+     @front = who fronted when *written*); `activity.rs` notifies from it. Fixed on the way: a
+     guest of a channel shared out of an internal space never heard about mentions there;
+  4. default speaker / autoproxy (`a0db6a6`, **D-074**: per account in prefs
+     `autoproxy:<channel>`, not `channel.settings`, which a shared space's accounts share):
+     `chorus_core::speaker::default_speaker`, fixtures in `fixtures/speaker`;
+  5. reply elsewhere / privately (`47362ed`): REST keeps `reply_to` (+`reply_to_channel_id`) only
+     for readers of the original; web "Reply in…" and "Reply privately";
+  6. per-member read state (`88e66f0`): no payload change needed (`reader_member_id` existed);
+     `chorus_core::reading`. **Privacy fix first** (`7ef5563`): read marks used to sync to every
+     account that could see the message (read receipts, and per member they'd reveal who was
+     fronting); now they stay with their account (NOTIFICATIONS §5 rule 7);
+  7. slow mode (`f8093ee`): **OPEN_QUESTIONS Q17** added with the proposed default, built behind
+     `channel.settings.slow_mode_s` (`perms::slow_mode`);
+  8. space roles in the web (`1b13740`), plus a **Sync issues** list the web never had (refused
+     messages vanished): `Replica::sync_issues` / `dismiss_issue`.
+  **For local Claude:** `ingest.rs` gained one call after the permission check
+  (`perms::slow_mode`, 3 lines); no validation changes. `channel.settings.slow_mode_s` could get a
+  value rule (0..21600) in `op::FIELD_RULES`/per-kind rules if you want it validated.
+  **For Sol (Android), FFI additions:** `search_parse`/`search_filter` (local message search; run
+  `fixtures/search`), `default_speaker` (composer chip; pref `autoproxy:<channel>`),
+  `read_readers`/`read_unseen_by` (pref `chat.read_per_member`), `revisions`, `restoring_blobs`,
+  `sync_issues`/`dismiss_issue`. Reply privately: DM via `POST /spaces {kind:dm}`, member DM via
+  `channel.create kind member_dm`.
