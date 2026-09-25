@@ -56,11 +56,13 @@ data class ChatAttachment(
     val id: String, val blobHash: String, val thumbHash: String?, val filename: String,
     val mime: String, val size: Long, val altText: String, val spoiler: Boolean,
 )
+data class ChatSegment(val offset: Int, val length: Int, val authors: List<String>)
 data class ChatMessage(
     val id: String, val channelId: String, val authors: List<String>, val text: String,
     val occurredAt: Long, val cw: String?, val visibilityMode: String,
     val visibleMemberIds: Set<String>, val accountId: String?, val replyTo: String?,
     val attachments: List<ChatAttachment>, val edited: Boolean = false,
+    val entities: String = "[]", val segments: List<ChatSegment> = emptyList(),
 )
 data class ChannelWindow(val messages: List<ChatMessage>, val hasOlder: Boolean)
 
@@ -194,7 +196,12 @@ class Model(
             return ChatMessage(id, f.str("channel_id").orEmpty(), strings(f.optJSONArray("authors")), f.str("text").orEmpty(),
                 f.optLong("occurred_at"), f.str("cw"), visibility?.optString("mode")?.ifEmpty { "all" } ?: "all",
                 stringSet(visibility?.optJSONArray("member_ids")), f.str("account_id"), f.str("reply_to"),
-                files(f.optJSONArray("attachments"), attachments), edited)
+                files(f.optJSONArray("attachments"), attachments), edited,
+                f.optJSONArray("entities")?.toString() ?: "[]",
+                f.optJSONArray("segments")?.let { rows -> (0 until rows.length()).map { index ->
+                    val row = rows.getJSONObject(index)
+                    ChatSegment(row.getInt("offset"), row.getInt("length"), strings(row.optJSONArray("authors")))
+                } } ?: emptyList())
         }
 
         /** Page backward through locally replicated messages without enlarging the chat model. */

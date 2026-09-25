@@ -10,6 +10,7 @@ import uniffi.chorus_ffi.coreVersion
 import uniffi.chorus_ffi.feedParse
 import uniffi.chorus_ffi.newId
 import uniffi.chorus_ffi.parseMarkup
+import uniffi.chorus_ffi.toMarkup
 
 /** The generated UniFFI bindings call into the real Rust core (host build). */
 class CoreBridgeTest {
@@ -18,6 +19,12 @@ class CoreBridgeTest {
         assertEquals("0.1.0", coreVersion())
         val r = parseMarkup("hi **there**", "")
         assertTrue(r, r.contains("\"type\":\"bold\""))
+    }
+
+    @Test
+    fun editMarkupRoundTripsUtf16Ranges() {
+        assertEquals("**Hi😀**", toMarkup("""{"text":"Hi😀","entities":[{"type":"bold","offset":0,"length":4}]}"""))
+        assertTrue(parseMarkup("**Hi😀!**", "").contains("\"length\":5"))
     }
 
     @Test

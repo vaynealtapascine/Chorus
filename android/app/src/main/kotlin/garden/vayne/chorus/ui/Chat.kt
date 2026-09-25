@@ -38,6 +38,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
@@ -73,6 +75,7 @@ import garden.vayne.chorus.data.ReadTracking
 import garden.vayne.chorus.data.HeldMessage
 import garden.vayne.chorus.data.PrivateReplies
 import garden.vayne.chorus.data.ChatCompose
+import garden.vayne.chorus.data.ChatEdit
 import garden.vayne.chorus.data.ChatSpace
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Model
@@ -126,6 +129,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
     var carriedReply by remember { mutableStateOf<ChatMessage?>(null) }
     var pendingPrivateReply by remember { mutableStateOf<PendingPrivateReply?>(null) }
+    var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var busy by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var directory by remember { mutableStateOf<Map<String, SpaceInfo>>(emptyMap()) }
@@ -259,6 +263,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
     }
     LaunchedEffect(channel?.id, chorus.device?.accountId) {
+        editingMessage = null
         selectedAuthor = ""
         replyTo = null
         carriedReply = null
@@ -407,7 +412,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 ChatMessageCard(message, model, foreignAuthors, chorus, unseenByMessage[message.id].orEmpty(),
                     heldMessages[message.id],
                     onReply = { replyTo = message.id; carriedReply = null },
-                    onReplyPrivately = if (canPrivate) ({ replyPrivately(message) }) else null)
+                    onReplyPrivately = if (canPrivate) ({ replyPrivately(message) }) else null,
+                    onEdit = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
+                        heldMessages[message.id] == null)
+                        ({ editingMessage = message }) else null)
             }
             if (messages.isEmpty()) item {
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
@@ -577,6 +585,50 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
         }
     }
+    editingMessage?.let { original ->
+        var editError by remember(original.id) { mutableStateOf<String?>(null) }
+        var editBusy by remember(original.id) { mutableStateOf(false) }
+        val parts = remember(original.id, original.text, original.entities) {
+            mutableStateListOf<String>().also { it.addAll(ChatEdit.parts(original)) }
+        }
+        AlertDialog(onDismissRequest = { if (!editBusy) editingMessage = null },
+            title = { Text("Edit message") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (parts.size > 1) Text("Each part keeps its original speaker.")
+                    for (index in parts.indices) {
+                        OutlinedTextField(parts[index], { parts[index] = it }, modifier = Modifier.fillMaxWidth(),
+                            label = { Text(if (parts.size == 1) "Message" else "Part ${index + 1} · " +
+                                original.segments[index].authors.map { model.member(it)?.shownName ?: "Someone" }.joinToString(" & ")) },
+                            minLines = 2, maxLines = 6)
+                    }
+                    if (editError != null) Text(editError.orEmpty(), color = p.danger)
+                }
+            },
+            confirmButton = { TextButton(enabled = !editBusy && parts.any { it.isNotBlank() }, onClick = {
+                val current = model.chatMessages[original.channelId]?.find { it.id == original.id }
+                val ownAccount = chorus.device?.accountId
+                if (ownAccount == null || original.accountId != ownAccount || current == null ||
+                    current.text != original.text || current.entities != original.entities ||
+                    current.segments != original.segments ||
+                    current.accountId != ownAccount) {
+                    editError = "The message changed. Close Edit and reopen it."
+                    return@TextButton
+                }
+                editBusy = true; editError = null
+                actions.launch {
+                    try {
+                        chorus.create("message.edit", original.id,
+                            ChatEdit.payload(original, parts.toList(), ChatEdit.names(original, model)),
+                            scope = "space:${requireNotNull(space?.id) { "Space unavailable" }}")
+                        editingMessage = null
+                    } catch (e: Exception) { editError = e.message ?: "Could not edit the message." }
+                    finally { editBusy = false }
+                }
+            }) { Text(if (editBusy) "Saving…" else "Save") } },
+            dismissButton = { TextButton(enabled = !editBusy, onClick = { editingMessage = null }) { Text("Cancel") } })
+    }
     if (spaceAction == "new") {
         AlertDialog(onDismissRequest = { spaceAction = "" }, title = { Text("Start a chat") },
             text = {
@@ -649,7 +701,7 @@ private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
 @Composable
 private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
     chorus: Chorus, unseenBy: List<String>, held: HeldMessage?, onReply: () -> Unit,
-    onReplyPrivately: (() -> Unit)?) {
+    onReplyPrivately: (() -> Unit)?, onEdit: (() -> Unit)?) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
@@ -717,6 +769,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
         }
         if (message.cw == null || revealed) {
             Text(message.text, color = p.ink, fontSize = 16.sp)
+            if (onEdit != null) TextButton(onClick = onEdit) { Text("Edit") }
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus)
             }
