@@ -96,3 +96,22 @@ take the next free number after checking `migrations/` (Sol may ask for one in i
     gap isn't safe. Your next free number is **0010**.
   - **For local Claude:** no validation changes. The Windows build needs a C compiler for
     mimalloc (MSVC, like SQLite already uses).
+- 2026-09-25 remote Claude — **R27 done** (`import.rs`, `zip.rs` reader):
+  `chorus-server import-account --from <zip> [--handle NEW] [--check]`, with the server stopped.
+  - **Checks, all before writing:** the manifest, the hash and count of `ops.jsonl`, every op
+    (valid as history, this account's, stamped), and every file's hash and size. Then clashes:
+    the account id, the handle (mappable), any op id. Any problem refuses the whole import with
+    the full list.
+  - **Imports:** ops keep their ids, authors, devices and times (the restore-push path) and are
+    projected in order. Files and the account go in one transaction, and the report ends with a
+    one-time device invite.
+  - **Links to accounts that aren't there** (DATA_MODEL §7, OPS.md "Moving one account"):
+    - its ops in others' spaces are imported, and become readable when the owner is imported
+      too (tested);
+    - follows wait for the accounts they name;
+    - server-scope ops (custom emoji) stay behind.
+  - The round trip is tested: the same ops, CSV tables, projected rows and files.
+  - **No admin REST route.** An import into a running server would bypass live fan-out and
+    digests, so it's CLI-only with the lock check `rebuild` uses. If the owner wants one from
+    the web, it needs a "server pauses sync while importing" step; that's worth an
+    OPEN_QUESTIONS entry if asked.
