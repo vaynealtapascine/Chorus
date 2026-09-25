@@ -410,6 +410,60 @@ fn only_the_author_edits_a_message() {
     assert!(push(&b, "message.edit", &ma, json!({"message_id": ma, "text": "nope"})).is_some());
 }
 
+/// Another account can't change your attachment or overwrite your message by re-creating it.
+#[test]
+fn attachments_and_messages_stay_their_creators() {
+    let (c, a, b) = setup();
+    let y = new_id(2, [60; 10]);
+    let sy = format!("space:{y}");
+    let (cy, mb, att) = (new_id(2, [61; 10]), new_id(2, [62; 10]), new_id(2, [63; 10]));
+    ingest::grant(&c, &a, &sy).unwrap();
+    ingest::grant(&c, &b, &sy).unwrap();
+    ingest::server_op(&c, &a, "space.create", &sy, Some(&y), json!({"kind": "shared", "name": "Y"}), NOW).unwrap();
+    ingest::server_op(&c, &a, "space.join", &sy, Some(&y), json!({"account_id": a}), NOW).unwrap();
+    ingest::server_op(&c, &a, "space.join", &sy, Some(&y), json!({"account_id": b}), NOW).unwrap();
+    ingest::server_op(&c, &a, "channel.create", &sy, Some(&cy), json!({"space_id": y, "name": "y"}), NOW).unwrap();
+    ingest::server_op(
+        &c,
+        &b,
+        "attachment.create",
+        &sy,
+        Some(&att),
+        json!({"blob_hash": "ab", "filename": "b.png", "mime": "image/png", "size": 1}),
+        NOW,
+    )
+    .unwrap();
+    ingest::server_op(
+        &c,
+        &b,
+        "message.send",
+        &sy,
+        Some(&mb),
+        json!({"channel_id": cy, "text": "b", "authors": [], "attachments": [att]}),
+        NOW,
+    )
+    .unwrap();
+    let mut n = 110u8;
+    let mut push = |who: &str, kind: &str, entity: &str, payload: Value| {
+        n += 1;
+        let mut o = op(n, kind, &sy, payload, NOW);
+        o.entity_id = Some(entity.to_string());
+        let (r, _) = ingest::accept(&c, &session(who, 0), o, NOW, false).unwrap();
+        r.error.map(|e| e.message)
+    };
+    let refused = |r: Option<String>| r.is_some_and(|m| m.contains("belongs to another account"));
+    // a owns the space, and still can't
+    assert!(refused(push(&a, "attachment.set", &att, json!({"alt_text": "something else"}))));
+    assert!(refused(push(
+        &a,
+        "attachment.create",
+        &att,
+        json!({"blob_hash": "cd", "filename": "x", "mime": "image/png", "size": 1})
+    )));
+    assert!(refused(push(&a, "message.send", &mb, json!({"channel_id": cy, "text": "overwritten", "authors": []}))));
+    assert_eq!(push(&b, "attachment.set", &att, json!({"alt_text": "a cat"})), None);
+}
+
 /// Slow mode (OPEN_QUESTIONS Q17 default): one message per account per channel every N seconds,
 /// counted when the server receives it; the space's owner (who may `manage`) is exempt.
 #[test]

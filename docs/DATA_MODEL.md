@@ -115,7 +115,8 @@ checks more than `op::validate`'s field names: every payload field stored in a c
 `target_type`/`target_id`/`emoji`, message and post `text` is text and `entities`/`tags` lists, entities and segments are
 `{offset, length}` ranges (UTF-16) inside the text with a `type`/`authors` (so another
 account's message can't make a renderer slice out of range),
-`space.set_roles` a list of `{id, name, perms}`). A test compares `FIELD_RULES` with the SQL
+`space.set_roles` a list of `{id, name, perms}`, a channel's `settings.slow_mode_s` whole seconds
+up to 21 600). A test compares `FIELD_RULES` with the SQL
 schema, so a migration that adds a constraint must add its rule. The rules apply to **new** ops
 only: projection (`model::apply_op`, the server's rebuild) and restore pushes use the structural
 `op::validate`, so an op stored before a rule existed keeps projecting exactly as before.
@@ -721,7 +722,8 @@ write must stay in its own space (`perms::foreign_space`, for everyone including
 channel, message or thread parent an op names, and a `channel.create`'s `space_id`, belong to the
 op's `space:` scope; and the members a message, reaction or post speaks as (`authors`, segment
 `authors`, `member_id`, the envelope's `member_id`) are the author account's own or not yet known
-(`ingest::foreign_speaker`). `can(account, channel,
+(`ingest::foreign_speaker`); and a message or attachment stays its creator's: no other account
+sets an attachment's fields or re-creates an existing id (`ingest::foreign_item`). `can(account, channel,
 perm)` holds when both `perm` and `view` resolve to allow:
 
 1. A thread uses its parent message's channel.

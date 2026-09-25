@@ -85,6 +85,9 @@ pub fn accept(
         return Ok((AckResult::err(o.id, "forbidden", "message is private to another account".into(), false), None));
     }
     // speaking as someone else's member (impersonation in a shared space)
+    if !preserved && let Some(why) = foreign_item(conn, &author, &o)? {
+        return Ok((AckResult::err(o.id, "forbidden", why, false), None));
+    }
     if !preserved && let Some(why) = foreign_speaker(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
     }
@@ -199,6 +202,24 @@ fn store_and_project(conn: &Connection, o: &mut Op, suspect: bool, preserved: bo
         crate::activity::on_op(conn, o, now)?;
     }
     Ok(())
+}
+
+/// A message or attachment belongs to the account that created it: another account can't
+/// change an attachment's fields (alt text, spoiler) or send a second create for an existing id,
+/// which would overwrite its text or file. (Moderation of messages goes through the channel
+/// rules in `perms.rs`: delete, restore and pin.)
+fn foreign_item(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
+    let Some(spec) = op::spec(&o.kind) else { return Ok(None) };
+    let table = match (spec.table, spec.action) {
+        ("message" | "attachment", op::Action::Append) | ("attachment", op::Action::Set) => spec.table,
+        _ => return Ok(None),
+    };
+    let Some(id) = o.entity() else { return Ok(None) };
+    let owner: Option<Option<String>> = conn
+        .prepare_cached(&format!("SELECT account_id FROM {table} WHERE id = ?1"))?
+        .query_row([id], |r| r.get(0))
+        .optional()?;
+    Ok(owner.flatten().filter(|a| a != author).map(|_| format!("that {table} belongs to another account")))
 }
 
 /// Messages, reactions and posts speak as members (`authors`, each segment's `authors`, a
