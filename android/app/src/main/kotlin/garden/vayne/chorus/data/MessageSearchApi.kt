@@ -8,6 +8,15 @@ data class MessageSearchPage(val items: List<SearchDocument>, val nextCursor: St
 
 /** Server-filtered history for matches outside the local replica's current window. */
 object MessageSearchApi {
+    fun pathRaw(raw: String, cursor: String? = null, tzOffsetMin: Int): String {
+        require(raw.isNotBlank())
+        val params = listOf("q" to raw.trim(), "limit" to "25", "tz" to tzOffsetMin.toString()) +
+            listOfNotNull(cursor?.let { "cursor" to it })
+        return "/search/messages?" + params.joinToString("&") { (key, value) ->
+            "$key=${URLEncoder.encode(value, StandardCharsets.UTF_8.toString())}"
+        }
+    }
+
     fun path(query: LocalSearchQuery, cursor: String? = null): String {
         require(query.terms.isNotEmpty())
         val params = ArrayList<Pair<String, String>>()
@@ -43,4 +52,7 @@ object MessageSearchApi {
 
     suspend fun page(dev: DeviceRecord, query: LocalSearchQuery, cursor: String? = null): MessageSearchPage =
         parse(Api.call("GET", dev.base, path(query, cursor), null, dev.session))
+
+    suspend fun pageRaw(dev: DeviceRecord, raw: String, tzOffsetMin: Int, cursor: String? = null): MessageSearchPage =
+        parse(Api.call("GET", dev.base, pathRaw(raw, cursor, tzOffsetMin), null, dev.session))
 }

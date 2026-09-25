@@ -316,7 +316,11 @@ class Model(
                 SearchDocument(id, "Messages", f.optLong("occurred_at"), f.str("text").orEmpty(),
                     cw = f.str("cw"), authors = strings(f.optJSONArray("authors")), channelId = f.str("channel_id"),
                     hasImage = mimes.any { it.startsWith("image/") },
-                    hasFile = mimes.any { !it.startsWith("image/") }, hasAttachment = linked.isNotEmpty())
+                    hasFile = mimes.any { !it.startsWith("image/") }, hasAttachment = linked.isNotEmpty(),
+                    mimes = linked.map { attachments[it]?.str("mime").orEmpty() },
+                    hasLink = f.optJSONArray("entities")?.let { entities ->
+                        (0 until entities.length()).any { entities.optJSONObject(it)?.str("type") in listOf("url", "text_link") }
+                    } ?: false, pinned = f.present("pinned_at"))
             }
             val latestOwn = HashMap<String, Triple<Long, String, List<String>>>()
             for ((id, fields) in messageRows) {

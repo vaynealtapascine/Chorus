@@ -7,6 +7,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MessageSearchApiTest {
+    @Test fun rawRequestKeepsCoreSyntaxAndAllowsFilterOnlySearch() {
+        val path = MessageSearchApi.pathRaw("is:pinned from:@Kai has:link", "opaque+/=", 480)
+        assertTrue(path.startsWith("/search/messages?q=is%3Apinned+from%3A%40Kai+has%3Alink&limit=25&tz=480"))
+        assertTrue("cursor=opaque%2B%2F%3D" in path)
+    }
+
     @Test fun requestKeepsFiltersAndOpaqueCursorBoundToTheQuery() {
         val q = LocalSearchQuery(listOf("garden", "room"), from = "Kai Vale", inChannel = "general",
             has = "image", before = 200, after = 100)

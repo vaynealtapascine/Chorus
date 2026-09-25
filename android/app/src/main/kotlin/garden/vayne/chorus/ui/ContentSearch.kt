@@ -27,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.LocalSearch
+import garden.vayne.chorus.data.CoreMessageSearch
+import garden.vayne.chorus.data.MessageSearchResult
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.MessageSearchApi
 import garden.vayne.chorus.data.PostSearchApi
@@ -35,6 +37,7 @@ import garden.vayne.chorus.data.SearchDocument
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import java.text.DateFormat
 import java.util.Date
+import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -57,17 +60,34 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
         value = null
         value = withContext(Dispatchers.Default) { LocalSearch.fromModel(model) }
     }
-    val results = remember(index, query, section) { index?.search(query, section).orEmpty() }
+    val messageIndex by produceState<CoreMessageSearch?>(initialValue = null, model) {
+        value = null
+        value = withContext(Dispatchers.Default) { CoreMessageSearch(model) }
+    }
+    val messageResult by produceState(initialValue = MessageSearchResult(emptyList()), messageIndex, query, section) {
+        value = MessageSearchResult(emptyList())
+        val source = messageIndex
+        if (section == "Messages" && source != null && query.isNotBlank()) {
+            val now = System.currentTimeMillis()
+            val tz = TimeZone.getDefault().getOffset(now) / 60_000
+            value = withContext(Dispatchers.Default) { source.search(query, now, tz) }
+        }
+    }
+    val results = if (section == "Messages") messageResult.items else
+        remember(index, query, section) { index?.search(query, section).orEmpty() }
     val parsed = remember(query) { LocalSearch.parse(query) }
-    LaunchedEffect(query, section, chorus.device?.session, online, model) {
+    LaunchedEffect(query, section, chorus.device?.session, online, model, messageResult) {
         remote = emptyList(); cursor = null; remoteError = null; loading = false
         val dev = chorus.device ?: return@LaunchedEffect
-        if (!online || section == "Switches" || parsed.terms.isEmpty()) return@LaunchedEffect
+        if (!online || section == "Switches" || query.isBlank()) return@LaunchedEffect
+        if (section == "Messages" && (messageResult.raw != query || !messageResult.validQuery) ||
+            section == "Posts" && parsed.terms.isEmpty()) return@LaunchedEffect
         delay(250)
         loading = true
         try {
             if (section == "Messages") {
-                val page = MessageSearchApi.page(dev, parsed)
+                val now = System.currentTimeMillis()
+                val page = MessageSearchApi.pageRaw(dev, query, TimeZone.getDefault().getOffset(now) / 60_000)
                 remote = page.items
                 cursor = page.nextCursor
             } else {
@@ -94,7 +114,9 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
         actions.launch {
             try {
                 if (requestedSection == "Messages") {
-                    val page = MessageSearchApi.page(dev, parsed, next)
+                    val now = System.currentTimeMillis()
+                    val page = MessageSearchApi.pageRaw(dev, requestedQuery,
+                        TimeZone.getDefault().getOffset(now) / 60_000, next)
                     if (query == requestedQuery && section == requestedSection && currentSession == dev.session && cursor == next) {
                         remote = remote + page.items
                         cursor = page.nextCursor
@@ -124,7 +146,7 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
             }
             OutlinedTextField(query, { query = it }, label = { Text("Search this device") },
                 singleLine = true, modifier = Modifier.fillMaxWidth())
-            Text("Try words or from:, in:, has:, before:, after:.", color = p.ink2)
+            Text("Try words or from:, in:, has:, before:, after:, is:pinned.", color = p.ink2)
         }
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -133,8 +155,11 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
                 }
             }
         }
-        if (index == null) item { Text("Preparing local search…", color = p.ink2) }
+        if (index == null || section == "Messages" && messageIndex == null)
+            item { Text("Preparing local search…", color = p.ink2) }
         else if (query.isBlank()) item { Text("Type to search messages, posts and switches on this device.", color = p.ink2) }
+        else if (section == "Messages" && messageResult.error != null)
+            item { Text("Search: ${messageResult.error}", color = p.ink2) }
         else if (shown.isEmpty() && !loading) item { Text("No $section matches on this device${if (online && section != "Switches") " or server" else ""}.", color = p.ink2) }
         for (doc in shown) item(key = "${doc.kind}:${doc.id}") {
             SearchCard(doc, model, onOpenMessage, onOpenPost)
