@@ -80,6 +80,10 @@
                 android:resource="@xml/quick_switch_widget" />
         </receiver>
 
+        <activity
+            android:name=".widget.WidgetConfigureActivity"
+            android:exported="true" />
+
         <receiver
             android:name=".data.UpdateReceiver"
             android:exported="false" />

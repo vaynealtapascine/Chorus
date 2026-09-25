@@ -20,10 +20,24 @@ object StagePlan {
         val hideReplyBars: Boolean = false,
         val style: String = "chorus",
         val blurAvatars: Boolean = false,
+        val startAt: Long = 0L,
+        val theme: String = "auto",
     )
 
     data class Row(val id: String?, val selected: Boolean, val at: Long?, val replyShown: Boolean, val contextCount: Int)
     data class Result(val rows: List<Row>, val names: Map<String, String>)
+
+    /** A saved selection must not be captured while some picked rows are outside the loaded window. */
+    fun missingSelected(selected: Set<String>, messages: List<ChatMessage>): Set<String> =
+        selected - messages.mapTo(HashSet()) { it.id }
+
+    /** A reply bar must not reveal the body of a parent behind its content warning. */
+    fun replyPreview(parent: ChatMessage, names: Map<String, String>, realName: (String) -> String): String {
+        val authors = parent.authors.map { names[it] ?: realName(it) }.joinToString(" & ").ifBlank { "Someone" }
+        val summary = parent.cw?.let { "Content warning: $it" }
+            ?: parent.text.replace('\n', ' ').trim().take(60)
+        return "↪ $authors: $summary"
+    }
 
     /** Save a definition that the web Stage can load without translating it. */
     fun definition(channelId: String, settings: Settings): JSONObject {
@@ -33,6 +47,7 @@ object StagePlan {
         val time = when (settings.timeMode) {
             "hide" -> JSONObject().put("mode", "hide")
             "shift" -> JSONObject().put("mode", "shift").put("offset_ms", settings.shiftMinutes.toLong() * 60_000)
+            "start" -> JSONObject().put("mode", "start").put("start", settings.startAt)
             else -> JSONObject().put("mode", "real")
         }
         return JSONObject().put("channel_id", channelId)
@@ -42,7 +57,8 @@ object StagePlan {
             .put("reply_depth", settings.replyDepth ?: JSONObject.NULL)
             .put("redact_names", settings.redactNames)
             .put("fake_names", fakeNames).put("time", time)
-            .put("render", JSONObject().put("style", settings.style).put("blur_avatars", settings.blurAvatars)
+            .put("render", JSONObject().put("style", settings.style).put("theme", settings.theme)
+                .put("blur_avatars", settings.blurAvatars)
                 .put("blur_attachments", settings.blurAttachments)
                 .put("hide_header", settings.hideHeader).put("hide_reply_bars", settings.hideReplyBars))
     }
@@ -55,13 +71,15 @@ object StagePlan {
             (0 until a.length()).mapNotNull { n -> a.optString(n).takeIf { it.isNotBlank() } }.toSet()
         }.orEmpty()
         val render = definition.optJSONObject("render")
-        if (render != null && (render.optString("style", "chorus") !in setOf("chorus", "transcript", "minimal") ||
-                render.optString("theme", "auto") != "auto" || render.optString("width", "phone") != "phone")) return null
+        if (render != null && (render.optString("style", "chorus") !in setOf("chorus", "discord", "bubbles", "card", "transcript", "minimal") ||
+                render.optString("theme", "auto") !in setOf("auto", "light", "dark") ||
+                render.optString("width", "phone") != "phone")) return null
         val mode = definition.optString("unselected", "context")
         if (mode !in setOf("context", "hidden", "visible")) return null
         val time = definition.optJSONObject("time")
         val timeMode = time?.optString("mode", "real") ?: "real"
-        if (timeMode !in setOf("real", "hide", "shift")) return null
+        if (timeMode !in setOf("real", "hide", "shift", "start")) return null
+        if (timeMode == "start" && time?.opt("start") !is Number) return null
         val offset = time?.optLong("offset_ms") ?: 0L
         if (timeMode == "shift" && (offset % 60_000 != 0L || offset / 60_000 < Int.MIN_VALUE.toLong() ||
                 offset / 60_000 > Int.MAX_VALUE.toLong())) return null
@@ -78,7 +96,8 @@ object StagePlan {
             timeMode, (offset / 60_000).toInt(), onlyMembers, replyDepth,
             render?.optBoolean("blur_attachments") == true,
             render?.optBoolean("hide_header") == true, render?.optBoolean("hide_reply_bars") == true,
-            render?.optString("style", "chorus") ?: "chorus", render?.optBoolean("blur_avatars") == true)
+            render?.optString("style", "chorus") ?: "chorus", render?.optBoolean("blur_avatars") == true,
+            time?.optLong("start") ?: 0L, render?.optString("theme", "auto") ?: "auto")
     }
 
     fun forMessages(messages: List<ChatMessage>, settings: Settings,
