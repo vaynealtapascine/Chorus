@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -21,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -30,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.ChatChannel
 import garden.vayne.chorus.data.ChatMessage
+import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.StagePlan
@@ -37,10 +40,12 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 /** Screenshot view over already visible channel messages. All changes here are render-only. */
 @Composable
-internal fun ChatStage(channel: ChatChannel, messages: List<ChatMessage>, model: Model,
+internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<ChatMessage>, model: Model,
     foreignAuthors: Map<String, ForeignAuthor>, capturing: Boolean, onCapture: (Boolean) -> Unit,
     onClose: () -> Unit) {
     val p = LocalChorusPalette.current
@@ -51,6 +56,10 @@ internal fun ChatStage(channel: ChatChannel, messages: List<ChatMessage>, model:
     var hideTimes by rememberSaveable(channel.id) { mutableStateOf(false) }
     var shiftText by rememberSaveable(channel.id) { mutableStateOf("") }
     var fakeNames by rememberSaveable(channel.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var saveName by rememberSaveable(channel.id) { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val actions = rememberCoroutineScope()
     var pillVisible by remember { mutableStateOf(true) }
     LaunchedEffect(capturing) {
         if (capturing) {
@@ -65,6 +74,7 @@ internal fun ChatStage(channel: ChatChannel, messages: List<ChatMessage>, model:
     val plan = remember(messages, settings) { StagePlan.forMessages(messages, settings) }
     val byId = remember(messages) { messages.associateBy { it.id } }
     val authorIds = remember(messages) { messages.flatMap { it.authors }.distinct() }
+    val saved = model.savedStages.filter { it.channelId == channel.id }
 
     Column(Modifier.fillMaxSize().background(p.bg).then(if (capturing) Modifier.statusBarsPadding() else Modifier)) {
         if (!capturing) {
@@ -102,6 +112,45 @@ internal fun ChatStage(channel: ChatChannel, messages: List<ChatMessage>, model:
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                 }
             }
+            if (saved.isNotEmpty()) LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(saved, key = { it.id }) { stage ->
+                    val supported = StagePlan.supported(stage.definition)
+                    TextButton(enabled = !busy && supported != null, onClick = {
+                        val loaded = supported ?: return@TextButton
+                        selected = loaded.selected.toList(); unselected = loaded.unselected
+                        redactNames = loaded.redactNames; fakeNames = loaded.fakeNames
+                        hideTimes = loaded.timeMode == "hide"
+                        shiftText = if (loaded.timeMode == "shift") loaded.shiftMinutes.toString() else ""
+                        error = null
+                    }) { Text(if (supported == null) "${stage.name} · web view" else stage.name) }
+                    if (advanced) TextButton(enabled = !busy, onClick = {
+                        busy = true; error = null
+                        actions.launch {
+                            try { chorus.create("stage.delete", stage.id, JSONObject()) }
+                            catch (e: Exception) { error = e.message ?: "Could not delete this stage." }
+                            finally { busy = false }
+                        }
+                    }) { Text("Remove") }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(saveName, { saveName = it }, label = { Text("Name this stage") },
+                    singleLine = true, modifier = Modifier.weight(1f), enabled = !busy)
+                TextButton(enabled = !busy && saveName.isNotBlank(), onClick = {
+                    val name = saveName.trim()
+                    val definition = StagePlan.definition(channel.id, settings.copy(unselected = unselected))
+                    busy = true; error = null
+                    actions.launch {
+                        try {
+                            chorus.create("stage.save", chorus.newId(), JSONObject().put("name", name).put("definition", definition))
+                            saveName = ""
+                        } catch (e: Exception) { error = e.message ?: "Could not save this stage." }
+                        finally { busy = false }
+                    }
+                }) { Text("Save") }
+            }
+            if (error != null) Text(error.orEmpty(), color = p.danger, modifier = Modifier.padding(horizontal = 16.dp))
         }
         if (messages.isEmpty()) Text("No messages to stage in this channel.", color = p.ink2,
             modifier = Modifier.padding(16.dp))

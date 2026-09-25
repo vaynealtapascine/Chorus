@@ -31,4 +31,26 @@ class StagePlanTest {
         assertFalse(plan.names.containsKey("b"))
         assertEquals(true, plan.rows[2].replyShown)
     }
+
+    @Test fun savedStagesKeepSupportedPlansAndFlagRicherWebViews() {
+        val saved = StagePlan.definition("channel", StagePlan.Settings(selected = setOf("first"),
+            unselected = "hidden", redactNames = true, fakeNames = mapOf("a" to "Blue"),
+            timeMode = "shift", shiftMinutes = -15))
+        assertEquals("channel", saved.getString("channel_id"))
+        assertEquals(-900000L, saved.getJSONObject("time").getLong("offset_ms"))
+        assertEquals(-15, StagePlan.supported(saved)?.shiftMinutes)
+        assertEquals("Blue", StagePlan.supported(saved)?.fakeNames?.get("a"))
+        saved.put("render", JSONObject().put("style", "discord"))
+        assertEquals(null, StagePlan.supported(saved))
+    }
+
+    @Test fun modelShowsOnlyLiveSavedStages() {
+        val model = Model.parse("""{"rows":{"stage":{
+            "live":{"exists":true,"fields":{"name":"Quiet","definition":{"channel_id":"c","selected":[]}}},
+            "gone":{"exists":true,"fields":{"name":"Old","definition":{"channel_id":"c"},"deleted_at":123}},
+            "removed":{"exists":false,"fields":{"name":"Removed","definition":{"channel_id":"c"}}}
+        }}}""", "mine")
+        assertEquals(listOf("Quiet"), model.savedStages.map { it.name })
+        assertEquals("c", model.savedStages.single().channelId)
+    }
 }

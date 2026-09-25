@@ -18,25 +18,58 @@ object StagePlan {
     data class Row(val id: String?, val selected: Boolean, val at: Long?, val replyShown: Boolean, val contextCount: Int)
     data class Result(val rows: List<Row>, val names: Map<String, String>)
 
+    /** Save a definition that the web Stage can load without translating it. */
+    fun definition(channelId: String, settings: Settings): JSONObject {
+        val fakeNames = JSONObject()
+        for ((id, label) in settings.fakeNames) if (label.isNotBlank())
+            fakeNames.put(id, JSONObject().put("label", label.trim()))
+        val time = when (settings.timeMode) {
+            "hide" -> JSONObject().put("mode", "hide")
+            "shift" -> JSONObject().put("mode", "shift").put("offset_ms", settings.shiftMinutes.toLong() * 60_000)
+            else -> JSONObject().put("mode", "real")
+        }
+        return JSONObject().put("channel_id", channelId)
+            .put("selected", JSONArray(settings.selected.toList()))
+            .put("unselected", settings.unselected)
+            .put("redact_names", settings.redactNames)
+            .put("fake_names", fakeNames).put("time", time)
+    }
+
+    /** Reject richer saved views until Android can render them faithfully. */
+    fun supported(definition: JSONObject): Settings? {
+        if (!definition.isNull("only_members") || !definition.isNull("reply_depth")) return null
+        val render = definition.optJSONObject("render")
+        if (render != null && (render.optString("style", "chorus") != "chorus" ||
+                render.optString("theme", "auto") != "auto" || render.optString("width", "phone") != "phone" ||
+                listOf("blur_avatars", "blur_attachments", "hide_header", "hide_reply_bars").any { render.optBoolean(it) })) return null
+        val mode = definition.optString("unselected", "context")
+        if (mode !in setOf("context", "hidden", "visible")) return null
+        val time = definition.optJSONObject("time")
+        val timeMode = time?.optString("mode", "real") ?: "real"
+        if (timeMode !in setOf("real", "hide", "shift")) return null
+        val offset = time?.optLong("offset_ms") ?: 0L
+        if (timeMode == "shift" && (offset % 60_000 != 0L || offset / 60_000 < Int.MIN_VALUE.toLong() ||
+                offset / 60_000 > Int.MAX_VALUE.toLong())) return null
+        val fakeNames = definition.optJSONObject("fake_names")
+        val labels = fakeNames?.keys()?.asSequence()?.associateWith { id ->
+            val fake = fakeNames.optJSONObject(id) ?: return null
+            if (!fake.isNull("color")) return null
+            fake.optString("label")
+        }.orEmpty()
+        val selected = definition.optJSONArray("selected")?.let { a ->
+            (0 until a.length()).mapNotNull { n -> a.optString(n).takeIf { it.isNotBlank() } }.toSet()
+        }.orEmpty()
+        return Settings(selected, mode, definition.optBoolean("redact_names"), labels,
+            timeMode, (offset / 60_000).toInt())
+    }
+
     fun forMessages(messages: List<ChatMessage>, settings: Settings,
         planner: (String, String) -> String = ::stagePlan): Result {
         val items = JSONArray()
         for (message in messages) items.put(JSONObject()
             .put("id", message.id).put("authors", JSONArray(message.authors))
             .put("at", message.occurredAt).put("reply_to", message.replyTo ?: JSONObject.NULL))
-        val names = JSONObject()
-        for ((id, label) in settings.fakeNames) if (label.isNotBlank())
-            names.put(id, JSONObject().put("label", label.trim()))
-        val time = when (settings.timeMode) {
-            "hide" -> JSONObject().put("mode", "hide")
-            "shift" -> JSONObject().put("mode", "shift").put("offset_ms", settings.shiftMinutes.toLong() * 60_000)
-            else -> JSONObject().put("mode", "real")
-        }
-        val definition = JSONObject()
-            .put("selected", JSONArray(settings.selected.toList()))
-            .put("unselected", settings.unselected)
-            .put("redact_names", settings.redactNames)
-            .put("fake_names", names).put("time", time)
+        val definition = definition("", settings)
         val plan = JSONObject(planner(items.toString(), definition.toString()))
         val rows = plan.getJSONArray("rows")
         val resultRows = (0 until rows.length()).map { n ->

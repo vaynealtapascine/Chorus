@@ -159,7 +159,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (capturing) capturing = false else staging = false
     }
     if (staging && channel != null) {
-        ChatStage(channel, messages, model, foreignAuthors, capturing,
+        ChatStage(chorus, channel, messages, model, foreignAuthors, capturing,
             onCapture = { capturing = it }, onClose = { capturing = false; staging = false })
         return
     }

@@ -71,6 +71,7 @@ data class JournalPost(
 
 data class MemberList(val id: String, val name: String, val description: String?, val memberIds: Set<String>)
 data class SavedFeed(val id: String, val name: String, val description: String?, val query: String, val visibility: String)
+data class SavedStage(val id: String, val name: String, val channelId: String, val definition: JSONObject)
 data class FrontSpan(val memberId: String, val startAt: Long, val endAt: Long?)
 
 class Model(
@@ -101,6 +102,7 @@ class Model(
     val accountPrefs: AccountPrefs = AccountPrefs(),
     /** All locally visible messages for search, including older chat rows outside the display window. */
     val searchMessages: List<SearchDocument> = emptyList(),
+    val savedStages: List<SavedStage> = emptyList(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -327,12 +329,16 @@ class Model(
                 .map { (id, f) -> SavedFeed(id, f.str("name") ?: "Untitled", f.str("description"), f.str("query").orEmpty(),
                     f.optJSONObject("visibility")?.str("mode") ?: "private") }
                 .sortedWith(compareBy<SavedFeed> { it.name.lowercase() }.thenBy { it.id })
+            val savedStages = rows(p, "stage").filter { (_, f) -> !f.present("deleted_at") && f.optJSONObject("definition") != null }
+                .map { (id, f) -> SavedStage(id, f.str("name") ?: "Untitled", f.getJSONObject("definition").str("channel_id").orEmpty(),
+                    f.getJSONObject("definition")) }
+                .sortedWith(compareBy<SavedStage> { it.name.lowercase() }.thenBy { it.id })
             val highlights = ProfileHighlights.fromProjection(p.optJSONObject("sets"))
             val systemZone = rows(p, "system").firstOrNull { it.first == accountId }?.second?.str("timezone")
             return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages,
                 followCeilings, posts, postReactions, memberLists, savedFeeds, highlights, frontSpans, systemZone,
                 messageCounts, LocalProfileFields.fromProjection(p), LocalRelationships.types(p),
-                LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages)
+                LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages)
         }
     }
 }
