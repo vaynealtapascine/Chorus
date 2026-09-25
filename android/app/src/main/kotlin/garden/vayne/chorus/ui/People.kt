@@ -1,6 +1,8 @@
 package garden.vayne.chorus.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,45 +26,67 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.FollowList
 import garden.vayne.chorus.data.FollowPresets
+import garden.vayne.chorus.data.FollowerView
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PeopleApi
+import garden.vayne.chorus.data.PostReactions
+import garden.vayne.chorus.data.Reply
 import garden.vayne.chorus.data.Spaces
+import garden.vayne.chorus.data.SharedPost
 import garden.vayne.chorus.designsystem.LocalChorusPalette
+import java.text.DateFormat
+import java.util.Date
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /** Account relationships. Other accounts' presence is read only through the filtered server view. */
 @Composable
-fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
+fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPost: (String) -> Unit) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var follows by remember { mutableStateOf(FollowList(emptyList(), emptyList())) }
-    var frontNames by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    var views by remember { mutableStateOf<Map<String, FollowerView>>(emptyMap()) }
+    var sharedPosts by remember { mutableStateOf<Map<String, List<SharedPost>>>(emptyMap()) }
     var target by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var refresh by remember { mutableStateOf(0) }
     var loadedAccount by remember { mutableStateOf<String?>(null) }
     var requestChoices by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var threadPostId by rememberSaveable { mutableStateOf<String?>(null) }
+    val reactMember = Reply.speaker(model)?.takeIf { member ->
+        member.createdByAccountId == null || member.createdByAccountId == chorus.device?.accountId
+    }
 
     LaunchedEffect(chorus.device?.session, model, refresh) {
         val dev = chorus.device ?: return@LaunchedEffect
         if (loadedAccount != dev.accountId) {
             follows = FollowList(emptyList(), emptyList())
-            frontNames = emptyMap()
+            views = emptyMap()
+            sharedPosts = emptyMap()
             loadedAccount = dev.accountId
         }
+        sharedPosts = emptyMap()
+        views = emptyMap()
         try {
             val next = PeopleApi.list(dev)
             follows = next
-            frontNames = next.following.filter { it.status == "active" }.mapNotNull { f ->
-                runCatching { f.account.id to PeopleApi.frontNames(PeopleApi.view(dev, f.account.id)) }.getOrNull()
+            views = next.following.filter { it.status == "active" }.mapNotNull { f ->
+                runCatching { f.account.id to PeopleApi.followerView(PeopleApi.view(dev, f.account.id)) }.getOrNull()
+            }.toMap()
+            sharedPosts = next.following.filter { it.status == "active" }.mapNotNull { f ->
+                runCatching { f.account.id to PeopleApi.posts(dev, f.account.id) }.getOrNull()
             }.toMap()
             error = null
-        } catch (e: Exception) { error = e.message ?: "Could not load people." }
+        } catch (e: Exception) {
+            sharedPosts = emptyMap()
+            views = emptyMap()
+            error = e.message ?: "Could not load people."
+        }
     }
 
     fun action(block: suspend () -> Unit) {
@@ -73,6 +97,14 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
             catch (e: Exception) { error = e.message ?: "Could not update this follow." }
             finally { busy = false }
         }
+    }
+
+    if (threadPostId != null) {
+        val id = threadPostId!!
+        BackHandler { threadPostId = null }
+        JournalThread(chorus, model, id, onClose = { threadPostId = null },
+            onReply = { threadPostId = null; onReplyPost(id) })
+        return
     }
 
     LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
@@ -130,6 +162,12 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
                             FollowPresets.ceiling(choice, model.followCeilings[f.id] ?: JSONObject())))
                     }
                 }
+                FollowAdvanced(model.followCeilings[f.id] ?: JSONObject(), !busy) { key, enabled ->
+                    action {
+                        chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
+                            FollowPresets.withSharing(model.followCeilings[f.id] ?: JSONObject(), key, enabled)))
+                    }
+                }
                 Row {
                     TextButton(enabled = !busy, onClick = { action {
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
@@ -147,8 +185,9 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
                 Text(f.account.shownName, color = p.ink)
                 Text(if (f.status == "requested") "Waiting for them to accept"
-                    else frontNames[f.account.id]?.takeIf { it.isNotEmpty() }?.joinToString(" & ") ?: "Nothing shared yet",
+                    else views[f.account.id]?.frontNames?.takeIf { it.isNotEmpty() }?.joinToString(" & ") ?: "Nothing shared yet",
                     color = p.ink2)
+                if (f.status == "active") views[f.account.id]?.let { FollowerViewDetails(it) }
                 Row {
                     if (f.status == "active") TextButton(enabled = !busy, onClick = { action {
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
@@ -159,10 +198,98 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit) {
                         PeopleApi.unfollow(dev, f.id)
                     } }) { Text("Unfollow") }
                 }
+                sharedPosts[f.account.id]?.takeIf { it.isNotEmpty() }?.let { posts ->
+                    Text("Shared posts", color = p.ink2, fontWeight = FontWeight.SemiBold)
+                    for (post in posts) SharedPostPreview(post, f.account.shownName, chorus,
+                        reactMember?.id, !busy, onThread = { threadPostId = it.id },
+                        onReply = { onReplyPost(it.id) }) { selected ->
+                        val member = reactMember ?: return@SharedPostPreview
+                        if (busy) return@SharedPostPreview
+                        busy = true; error = null
+                        actions.launch {
+                            try {
+                                val chosen = selected.reactions.any { it.emoji == PostReactions.HEART && it.memberId == member.id }
+                                chorus.create(if (chosen) "post.unreact" else "post.react", selected.id,
+                                    PostReactions.payload(selected.id, member.id))
+                                sharedPosts = sharedPosts + (f.account.id to posts.map { item ->
+                                    if (item.id == selected.id) item.copy(reactions = PostReactions.toggle(item.reactions,
+                                        member.id, member.shownName)) else item
+                                })
+                            } catch (e: Exception) { error = e.message ?: "Could not react to this post." }
+                            finally { busy = false }
+                        }
+                    }
+                }
             }
         }
         item { Text("A follower sees your switches only within the sharing limit you choose for them.",
             color = p.ink2, modifier = Modifier.padding(bottom = 20.dp)) }
+    }
+}
+
+@Composable
+private fun FollowerViewDetails(view: FollowerView) {
+    val p = LocalChorusPalette.current
+    view.stats?.let { stats ->
+        val shown = stats.members.filter { it.second > 0 }.joinToString(" · ") { "${it.first} ${it.second}%" }
+        Text(if (shown.isEmpty()) "No complete days of shared fronting yet"
+            else "Most often, last ${stats.days} days: $shown", color = p.ink2)
+    }
+    view.history?.takeIf { it.size > 1 }?.let { history ->
+        var open by rememberSaveable { mutableStateOf(false) }
+        TextButton(onClick = { open = !open }) { Text(if (open) "Hide earlier fronts" else "Earlier fronts") }
+        if (open) for (front in history.drop(1)) {
+            Text(front.names.joinToString(" & ").ifBlank { "Nobody shared" } +
+                front.time.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(), color = p.ink2)
+        }
+    }
+}
+
+@Composable
+private fun FollowAdvanced(ceiling: JSONObject, enabled: Boolean, onChange: (String, Boolean) -> Unit) {
+    val p = LocalChorusPalette.current
+    var open by rememberSaveable { mutableStateOf(false) }
+    TextButton(onClick = { open = !open }) { Text(if (open) "Advanced sharing ▴" else "Advanced sharing ▾") }
+    if (open) {
+        Text("History shows only already revealed, fuzzed fronts; stats use rounded whole days.", color = p.ink2)
+        for ((key, label) in listOf("share_history" to "Can look back at who fronted",
+            "share_stats" to "Can see fronting stats")) {
+            TextButton(enabled = enabled, onClick = { onChange(key, !ceiling.optBoolean(key, false)) }) {
+                Text("${if (ceiling.optBoolean(key, false)) "✓" else "○"} $label")
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Chorus, reactMemberId: String? = null,
+    enabled: Boolean = true, onThread: ((SharedPost) -> Unit)? = null,
+    onReply: ((SharedPost) -> Unit)? = null, onReact: (SharedPost) -> Unit = {}) {
+    val p = LocalChorusPalette.current
+    var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().background(p.surface2).padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("${post.authorNames.joinToString(" & ").ifBlank { accountName }} · ${post.kind}",
+            color = p.ink, fontWeight = FontWeight.SemiBold)
+        Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(post.occurredAt)),
+            color = p.ink3, fontSize = 12.sp)
+        if (post.cw != null) Text("Content warning: ${post.cw} · ${if (revealed) "Hide" else "Show"}",
+            color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
+        if (post.cw == null || revealed) {
+            if (post.title != null) Text(post.title, color = p.ink, fontWeight = FontWeight.SemiBold)
+            Text(post.text, color = p.ink)
+            for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
+            if (post.reactions.isNotEmpty()) Text(post.reactions.joinToString(" · ") { "${it.emoji} ${it.memberName}" }, color = p.ink2)
+            if (onThread != null) TextButton(enabled = enabled, onClick = { onThread(post) }) { Text("Thread") }
+            if (reactMemberId != null) {
+                val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == reactMemberId }
+                TextButton(enabled = enabled, onClick = { onReact(post) }) {
+                    Text(if (selected) "Remove 💜 reaction" else "React 💜")
+                }
+                Text("Reacting shows this member to post readers right away.", color = p.ink3, fontSize = 12.sp)
+                if (onReply != null) TextButton(enabled = enabled, onClick = { onReply(post) }) { Text("Reply") }
+            }
+        }
     }
 }
 

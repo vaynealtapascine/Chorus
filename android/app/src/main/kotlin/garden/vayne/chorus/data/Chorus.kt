@@ -176,6 +176,17 @@ class Chorus private constructor(private val ctx: Context) {
     /** The projection as last applied (store thread only). */
     private var projectionCache: JSONObject? = null
 
+    /** Older Stage rows come from the same local projection as Chat, on the store thread. */
+    suspend fun stageWindow(channelId: String, limit: Int, spaceKind: String, front: List<Entry>,
+        viewingAs: String?): ChannelWindow = withContext(dispatcher) {
+        val p = projectionCache ?: replica?.projection()?.let(::JSONObject)
+            ?: return@withContext ChannelWindow(emptyList(), false)
+        val accountId = device?.accountId.orEmpty()
+        Model.channelWindow(p, channelId, limit) { message ->
+            memberVisible(message, spaceKind, front, viewingAs) && accountVisible(message, spaceKind, accountId)
+        }
+    }
+
     /** Called on the store thread after each model rebuild (the widget refreshes itself here). */
     @Volatile var onModel: ((Model) -> Unit)? = null
 

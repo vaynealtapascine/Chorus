@@ -1,0 +1,413 @@
+package garden.vayne.chorus.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import garden.vayne.chorus.data.Chorus
+import garden.vayne.chorus.data.UploadWork
+import garden.vayne.chorus.data.JournalPost
+import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.PostCompose
+import garden.vayne.chorus.data.PostDetail
+import garden.vayne.chorus.data.PostReaction
+import garden.vayne.chorus.data.PostReactions
+import garden.vayne.chorus.data.PostThreads
+import garden.vayne.chorus.data.Reply
+import garden.vayne.chorus.data.ThreadReply
+import garden.vayne.chorus.designsystem.LocalChorusPalette
+import java.text.DateFormat
+import java.util.Date
+import kotlinx.coroutines.launch
+
+/** Own posts and switches remain readable from the local replica while offline. */
+@Composable
+fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
+    onExternalReplyConsumed: () -> Unit = {}, externalOpenPost: String? = null,
+    onExternalOpenConsumed: () -> Unit = {}) {
+    val p = LocalChorusPalette.current
+    var editing by rememberSaveable { mutableStateOf(false) }
+    var profileId by rememberSaveable { mutableStateOf<String?>(null) }
+    var threadPostId by rememberSaveable { mutableStateOf<String?>(null) }
+    var section by rememberSaveable { mutableStateOf("timeline") }
+    var selectedListId by rememberSaveable { mutableStateOf("") }
+    var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
+    var kind by rememberSaveable { mutableStateOf("note") }
+    var authorId by rememberSaveable { mutableStateOf("") }
+    var body by rememberSaveable { mutableStateOf("") }
+    var title by rememberSaveable { mutableStateOf("") }
+    var cw by rememberSaveable { mutableStateOf("") }
+    var mood by rememberSaveable { mutableStateOf("") }
+    var tags by rememberSaveable { mutableStateOf("") }
+    var audience by rememberSaveable { mutableStateOf("private") }
+    var busy by rememberSaveable { mutableStateOf(false) }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var reactionError by remember { mutableStateOf<String?>(null) }
+    var reactionBusy by remember { mutableStateOf(false) }
+    val actions = rememberCoroutineScope()
+    val ctx = LocalContext.current
+    val attachments = remember { mutableStateListOf<PendingAttachment>() }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        for (uri in uris) attachments.add(PendingAttachment.of(ctx, uri))
+    }
+    val mine = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId }
+    val author = mine.find { it.id == authorId } ?: Reply.speaker(model)?.takeIf { it in mine } ?: mine.firstOrNull()
+
+    LaunchedEffect(externalReplyPost) {
+        if (externalReplyPost != null) {
+            profileId = null; threadPostId = null
+            section = "timeline"
+            replyTo = externalReplyPost
+            kind = "note"; title = ""; body = ""; cw = ""; mood = ""; tags = ""
+            attachments.clear()
+            audience = "server" // the foreign parent author must be able to read this reply
+            authorId = Reply.speaker(model)?.id.orEmpty()
+            editing = true
+            onExternalReplyConsumed()
+        }
+    }
+
+    LaunchedEffect(externalOpenPost) {
+        if (externalOpenPost != null) {
+            editing = false; profileId = null; threadPostId = externalOpenPost
+            attachments.clear()
+            section = "timeline"
+            onExternalOpenConsumed()
+        }
+    }
+
+    if (!editing && profileId != null) {
+        val id = profileId!!
+        BackHandler { profileId = null }
+        MemberProfile(chorus, model, id, onClose = { profileId = null },
+            onWrite = { authorId = id; replyTo = null; editing = true },
+            onReply = { postId -> authorId = id; replyTo = postId; editing = true })
+        return
+    }
+
+    if (!editing && threadPostId != null) {
+        val id = threadPostId!!
+        BackHandler { threadPostId = null }
+        JournalThread(chorus, model, id, onClose = { threadPostId = null },
+            onReply = { replyTo = id; editing = true })
+        return
+    }
+
+    if (editing) {
+        Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(enabled = !busy, onClick = { editing = false; replyTo = null; attachments.clear() }) { Text("Cancel") }
+                Text(if (replyTo == null) "Write a post" else "Write a reply", color = p.ink,
+                    fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 14.dp))
+                TextButton(enabled = !busy && author != null && body.isNotBlank(), onClick = {
+                    val dev = chorus.device ?: return@TextButton
+                    val writer = author ?: return@TextButton
+                    val picked = attachments.toList()
+                    busy = true; error = null
+                    actions.launch {
+                        try {
+                            val attachmentIds = picked.map { a ->
+                                sendAttachment(chorus, ctx, a, opKind = "post.attachment")
+                            }
+                            val payload = PostCompose.payload(model, dev.accountId, kind, writer.id, body,
+                                title, cw, audience, mood, tags, replyTo, attachmentIds = attachmentIds)
+                            chorus.create("post.create", chorus.newId(), payload)
+                            if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
+                            body = ""; title = ""; cw = ""; mood = ""; tags = ""; replyTo = null
+                            attachments.clear()
+                            editing = false
+                        } catch (e: Exception) { error = e.message ?: "Could not post." }
+                        finally { busy = false }
+                    }
+                }) { Text(if (busy) "Posting…" else "Post") }
+            }
+            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (replyTo != null) item {
+                    Text("Replying to a post. Check the audience before posting.", color = p.ink2)
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        JournalChoice("Note", kind == "note") { kind = "note" }
+                        JournalChoice("Entry", kind == "entry") { kind = "entry" }
+                    }
+                }
+                item { Text("Writing as", color = p.ink2) }
+                item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(mine, key = { it.id }) { member ->
+                            JournalChoice(member.shownName, member.id == author?.id) { authorId = member.id }
+                        }
+                    }
+                }
+                if (kind == "entry") item {
+                    OutlinedTextField(title, { title = it }, label = { Text("Title (optional)") }, modifier = Modifier.fillMaxWidth())
+                }
+                item {
+                    OutlinedTextField(body, { body = it }, label = { Text(if (kind == "entry") "Write your entry" else "Write a note") },
+                        minLines = if (kind == "entry") 8 else 4, modifier = Modifier.fillMaxWidth())
+                }
+                item {
+                    TextButton(enabled = !busy, onClick = { picker.launch("*/*") }) { Text("Attach images or files") }
+                }
+                for ((i, attachment) in attachments.withIndex()) {
+                    item(key = "picked:$i") {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("📎 ${attachment.name}", color = p.ink, maxLines = 1)
+                                TextButton(enabled = !busy, onClick = { attachments.removeAt(i) }) { Text("Remove") }
+                            }
+                            JournalChoice(if (attachment.spoiler) "Spoiler ✓" else "Mark as spoiler", attachment.spoiler) {
+                                if (busy) return@JournalChoice
+                                attachments[i] = attachment.copy(spoiler = !attachment.spoiler)
+                            }
+                            if (attachment.mime.startsWith("image/")) OutlinedTextField(attachment.alt,
+                                { attachments[i] = attachment.copy(alt = it) }, label = { Text("Image description (alt text)") },
+                                modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !busy)
+                        }
+                    }
+                }
+                item { Text("Visible to", color = p.ink2) }
+                item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item { JournalChoice("Only this account", audience == "private") { audience = "private" } }
+                        item { JournalChoice("Followers", audience == "followers") { audience = "followers" } }
+                        item { JournalChoice("Everyone on server", audience == "server") { audience = "server" } }
+                    }
+                }
+                item { OutlinedTextField(cw, { cw = it }, label = { Text("Content warning (optional)") }, modifier = Modifier.fillMaxWidth()) }
+                item { OutlinedTextField(mood, { mood = it }, label = { Text("Mood (optional)") }, modifier = Modifier.fillMaxWidth()) }
+                item { OutlinedTextField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, modifier = Modifier.fillMaxWidth()) }
+                if (error != null) item { Text(error.orEmpty(), color = p.danger) }
+            }
+        }
+        return
+    }
+
+    if (section == "lists") {
+        JournalLists(chorus, model, selectedListId, onSelect = { selectedListId = it },
+            onTimeline = { section = "timeline" },
+            onReply = { replyTo = it; editing = true },
+            onThread = { threadPostId = it })
+        return
+    }
+    if (section == "feeds") {
+        JournalFeeds(chorus, model, onTimeline = { section = "timeline" })
+        return
+    }
+
+    val events = (model.posts.map { JournalEvent(it.id, it.occurredAt, it, null) } +
+        model.switches.map { JournalEvent(it.id, it.occurredAt, null,
+            if (it.retracted) "Undone switch" else "Front: " +
+                (it.resultingFront.filter { e -> e.level == "front" }.mapNotNull { e -> model.subject(e.subjectType, e.subjectId)?.name }
+                    .joinToString(" & ").ifBlank { "no one" })) })
+        .sortedWith(compareByDescending<JournalEvent> { it.at }.thenByDescending { it.id })
+    LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Journal", color = p.ink, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 14.dp))
+                Row {
+                    TextButton(onClick = { section = "lists" }) { Text("Lists") }
+                    TextButton(onClick = { section = "feeds" }) { Text("Feeds") }
+                    TextButton(onClick = { editing = true }) { Text("Write") }
+                }
+            }
+        }
+        if (reactionError != null) item { Text(reactionError.orEmpty(), color = p.danger) }
+        if (events.isEmpty()) item { Text("No posts or switches yet. Write the first note.", color = p.ink2) }
+        for (event in events) item(key = "${if (event.post == null) "switch" else "post"}:${event.id}") {
+            if (event.post != null) JournalPostCard(event.post, model, chorus,
+                onReply = { replyTo = event.post.id; editing = true },
+                onThread = { threadPostId = event.post.id },
+                reactMemberId = Reply.speaker(model)?.id,
+                reactionEnabled = !reactionBusy,
+                onReact = { post ->
+                    val member = Reply.speaker(model) ?: return@JournalPostCard
+                    if (reactionBusy) return@JournalPostCard
+                    reactionBusy = true; reactionError = null
+                    actions.launch {
+                        try {
+                            val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == member.id }
+                            chorus.create(if (selected) "post.unreact" else "post.react", post.id,
+                                PostReactions.payload(post.id, member.id))
+                        } catch (e: Exception) { reactionError = e.message ?: "Could not react to this post." }
+                        finally { reactionBusy = false }
+                    }
+                },
+                onProfile = { profileId = it })
+            else Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
+                Text(event.switchLabel.orEmpty(), color = p.ink2)
+                Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(event.at)),
+                    color = p.ink3, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+private data class JournalEvent(val id: String, val at: Long, val post: JournalPost?, val switchLabel: String?)
+
+@Composable
+internal fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+    val p = LocalChorusPalette.current
+    Text(label, color = if (selected) p.accent else p.ink2,
+        modifier = Modifier.background(if (selected) p.surface2 else p.surface)
+            .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp))
+}
+
+@Composable
+internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, onReply: () -> Unit,
+    onThread: (() -> Unit)? = null,
+    reactMemberId: String? = null, reactionEnabled: Boolean = true,
+    onReact: ((JournalPost) -> Unit)? = null,
+    onProfile: (String) -> Unit = {}) {
+    val p = LocalChorusPalette.current
+    var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (post.authors.isEmpty()) Text("Someone", color = p.ink, fontWeight = FontWeight.SemiBold)
+        else Row {
+            for (id in post.authors) model.member(id)?.let { member ->
+                TextButton(onClick = { onProfile(id) }) { Text(member.shownName) }
+            }
+        }
+        Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(post.occurredAt)),
+            color = p.ink3, fontSize = 12.sp)
+        if (post.replyTo != null) Text("↪ Reply", color = p.ink3)
+        if (post.cw != null) Text("Content warning: ${post.cw} · ${if (revealed) "Hide" else "Show"}",
+            color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
+        if (post.cw == null || revealed) {
+            if (post.title != null) Text(post.title, color = p.ink, fontWeight = FontWeight.SemiBold)
+            Text(post.text, color = p.ink)
+            if (post.mood != null) Text(post.mood, color = p.ink2)
+            if (post.tags.isNotEmpty()) Text(post.tags.joinToString(" ") { "#$it" }, color = p.ink2)
+            for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
+            if (post.reactions.isNotEmpty()) ReactionNames(post.reactions)
+            if (reactMemberId != null && onReact != null) {
+                val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == reactMemberId }
+                TextButton(enabled = reactionEnabled, onClick = { onReact(post) }) {
+                    Text(if (selected) "Remove 💜 reaction" else "React 💜")
+                }
+                Text("Reacting shows this member to post readers right away.", color = p.ink3, fontSize = 12.sp)
+            }
+        }
+        Row {
+            TextButton(onClick = onReply) { Text("Reply") }
+            if (onThread != null) TextButton(onClick = onThread) { Text("Thread") }
+        }
+    }
+}
+
+/** Server replies can come from other accounts, while own replies remain available offline. */
+@Composable
+internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose: () -> Unit, onReply: () -> Unit) {
+    val p = LocalChorusPalette.current
+    val actions = rememberCoroutineScope()
+    var remote by remember(postId) { mutableStateOf<PostDetail?>(null) }
+    var error by remember(postId) { mutableStateOf<String?>(null) }
+    var refresh by remember(postId) { mutableStateOf(0) }
+    var reactionError by remember(postId) { mutableStateOf<String?>(null) }
+    var reactionBusy by remember(postId) { mutableStateOf(false) }
+    val local = PostThreads.ownReplies(model, postId)
+    LaunchedEffect(postId, chorus.device?.session, refresh) {
+        val dev = chorus.device ?: return@LaunchedEffect
+        try {
+            remote = PostThreads.load(dev, postId)
+            error = null
+        } catch (e: Exception) {
+            remote = null
+            error = e.message ?: "Could not load replies."
+        }
+    }
+    val replies = PostThreads.merge(local, remote?.replies.orEmpty())
+    val reactions = PostReactions.merge(model.postReactions[postId].orEmpty(), remote?.reactions.orEmpty())
+    val reactMember = Reply.speaker(model)?.takeIf { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId }
+    LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = onClose) { Text("Back") }
+                Text("Replies", color = p.ink, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 14.dp))
+                TextButton(onClick = { refresh++ }) { Text("Refresh") }
+            }
+        }
+        if (error != null) item { Text("Showing replies on this device. ${error.orEmpty()}", color = p.ink2) }
+        if (reactionError != null) item { Text(reactionError.orEmpty(), color = p.danger) }
+        if (reactions.isNotEmpty()) item { ReactionNames(reactions) }
+        if (reactMember != null) item {
+            val selected = reactions.any { it.emoji == PostReactions.HEART && it.memberId == reactMember.id }
+            TextButton(enabled = !reactionBusy, onClick = {
+                if (reactionBusy) return@TextButton
+                reactionBusy = true; reactionError = null
+                actions.launch {
+                    try {
+                        chorus.create(if (selected) "post.unreact" else "post.react", postId,
+                            PostReactions.payload(postId, reactMember.id))
+                        remote = remote?.copy(reactions = PostReactions.toggle(remote?.reactions.orEmpty(),
+                            reactMember.id, reactMember.shownName))
+                    } catch (e: Exception) { reactionError = e.message ?: "Could not react to this post." }
+                    finally { reactionBusy = false }
+                }
+            }) { Text(if (selected) "Remove 💜 reaction" else "React 💜") }
+            Text("Reacting shows this member to post readers right away.", color = p.ink3, fontSize = 12.sp)
+        }
+        if (replies.isEmpty()) item {
+            Text(if (remote == null && error == null) "Loading replies…" else "No replies yet.", color = p.ink2)
+        }
+        items(replies, key = { it.id }) { reply -> ThreadReplyCard(reply) }
+        item { TextButton(onClick = onReply) { Text("Write a reply") } }
+    }
+}
+
+@Composable
+private fun ReactionNames(reactions: List<PostReaction>) {
+    val p = LocalChorusPalette.current
+    Text(reactions.joinToString(" · ") { "${it.emoji} ${it.memberName}" }, color = p.ink2)
+}
+
+@Composable
+private fun ThreadReplyCard(reply: ThreadReply) {
+    val p = LocalChorusPalette.current
+    var revealed by rememberSaveable(reply.id) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(reply.authorNames.joinToString(" & ").ifBlank { "Someone" }, color = p.ink,
+            fontWeight = FontWeight.SemiBold)
+        Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(reply.occurredAt)),
+            color = p.ink3, fontSize = 12.sp)
+        if (reply.cw != null) Text("Content warning: ${reply.cw} · ${if (revealed) "Hide" else "Show"}",
+            color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
+        if (reply.cw == null || revealed) {
+            if (reply.title != null) Text(reply.title, color = p.ink, fontWeight = FontWeight.SemiBold)
+            Text(reply.text, color = p.ink)
+        }
+    }
+}

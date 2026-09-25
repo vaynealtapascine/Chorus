@@ -17,6 +17,9 @@ data class Member(
     val avatarBlob: String? = null,
     val isSelf: Boolean = false,
     val proxyTags: List<ProxyTag> = emptyList(),
+    val createdByAccountId: String? = null,
+    val bannerBlob: String? = null,
+    val pinnedPostId: String? = null,
 ) {
     val shownName: String get() = displayName ?: name
     val glyph: String get() = sigils.firstOrNull() ?: name.take(1).uppercase()
@@ -58,6 +61,19 @@ data class ChatMessage(
     val visibleMemberIds: Set<String>, val accountId: String?, val replyTo: String?,
     val attachments: List<ChatAttachment>,
 )
+data class ChannelWindow(val messages: List<ChatMessage>, val hasOlder: Boolean)
+
+data class JournalPost(
+    val id: String, val kind: String, val authors: List<String>, val title: String?, val text: String,
+    val occurredAt: Long, val cw: String?, val visibility: String, val replyTo: String?,
+    val mood: String?, val tags: List<String>, val reactions: List<PostReaction> = emptyList(),
+    val attachments: List<ChatAttachment> = emptyList(),
+)
+
+data class MemberList(val id: String, val name: String, val description: String?, val memberIds: Set<String>)
+data class SavedFeed(val id: String, val name: String, val description: String?, val query: String, val visibility: String)
+data class SavedStage(val id: String, val name: String, val channelId: String, val definition: JSONObject)
+data class FrontSpan(val memberId: String, val startAt: Long, val endAt: Long?)
 
 class Model(
     val members: List<Member>,
@@ -73,6 +89,21 @@ class Model(
     val chatMessages: Map<String, List<ChatMessage>> = emptyMap(),
     /** Own account's per-follower ceiling overrides; absent means inherit the account default. */
     val followCeilings: Map<String, JSONObject> = emptyMap(),
+    val posts: List<JournalPost> = emptyList(),
+    val postReactions: Map<String, List<PostReaction>> = emptyMap(),
+    val memberLists: List<MemberList> = emptyList(),
+    val savedFeeds: List<SavedFeed> = emptyList(),
+    val highlights: Map<String, Set<String>> = emptyMap(),
+    val frontSpans: List<FrontSpan> = emptyList(),
+    val systemZone: String? = null,
+    val messageCounts: Map<String, Int> = emptyMap(),
+    val profileFields: Map<String, List<ProfileField>> = emptyMap(),
+    val relationshipTypes: List<RelationshipType> = emptyList(),
+    val relationships: List<MemberRelationship> = emptyList(),
+    val accountPrefs: AccountPrefs = AccountPrefs(),
+    /** All locally visible messages for search, including older chat rows outside the display window. */
+    val searchMessages: List<SearchDocument> = emptyList(),
+    val savedStages: List<SavedStage> = emptyList(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -141,6 +172,36 @@ class Model(
 
         private fun stringSet(a: JSONArray?): Set<String> = strings(a).toSet()
 
+        private fun files(ids: JSONArray?, attachments: Map<String, JSONObject>): List<ChatAttachment> =
+            if (ids == null) emptyList() else (0 until ids.length()).mapNotNull { i ->
+                val id = ids.optString(i)
+                val row = attachments[id] ?: return@mapNotNull null
+                val hash = row.str("blob_hash") ?: return@mapNotNull null
+                ChatAttachment(id, hash, row.str("thumb_blob_hash"), row.str("filename") ?: "file",
+                    row.str("mime") ?: "application/octet-stream", row.optLong("size"),
+                    row.str("alt_text").orEmpty(), row.optBoolean("is_spoiler"))
+            }
+
+        private fun chatMessage(id: String, f: JSONObject, attachments: Map<String, JSONObject>): ChatMessage {
+            val visibility = f.optJSONObject("visibility")
+            return ChatMessage(id, f.str("channel_id").orEmpty(), strings(f.optJSONArray("authors")), f.str("text").orEmpty(),
+                f.optLong("occurred_at"), f.str("cw"), visibility?.optString("mode")?.ifEmpty { "all" } ?: "all",
+                stringSet(visibility?.optJSONArray("member_ids")), f.str("account_id"), f.str("reply_to"),
+                files(f.optJSONArray("attachments"), attachments))
+        }
+
+        /** Page backward through locally replicated messages without enlarging the chat model. */
+        fun channelWindow(p: JSONObject, channelId: String, limit: Int,
+            visible: (ChatMessage) -> Boolean = { true }): ChannelWindow {
+            val attachments = rows(p, "attachment").associate { it.first to it.second }
+            val messages = rows(p, "message").filter { (_, f) ->
+                !f.present("deleted_at") && f.str("channel_id") == channelId
+            }.sortedWith(compareBy<Pair<String, JSONObject>> { it.second.optLong("occurred_at") }.thenBy { it.first })
+            val view = messages.map { (id, f) -> chatMessage(id, f, attachments) }.filter(visible)
+            val count = limit.coerceAtLeast(1)
+            return ChannelWindow(view.takeLast(count), view.size > count)
+        }
+
         private fun entries(a: JSONArray?): List<Entry> = if (a == null) emptyList() else List(a.length()) {
             val e = a.getJSONObject(it)
             Entry(e.getString("subject_type"), e.getString("subject_id"), e.optString("level", "front"), e.optBoolean("is_primary"))
@@ -184,6 +245,7 @@ class Model(
                         f.optJSONArray("proxy_tags")?.let { tags -> (0 until tags.length()).mapNotNull { i ->
                             tags.optJSONObject(i)?.let { ProxyTag(it.optString("prefix"), it.optString("suffix")) }
                         } } ?: emptyList(),
+                        f.str("created_by_account_id"), f.str("banner_blob"), f.str("pinned_post_id"),
                     )
                 }
                 .sortedBy { it.shownName.lowercase() }
@@ -203,9 +265,14 @@ class Model(
             val fold = p.optJSONObject("fronts")?.optJSONObject(accountId)
             val current = entries(fold?.optJSONArray("current"))
             var since: Long? = null
+            val frontSpans = ArrayList<FrontSpan>()
             fold?.optJSONArray("intervals")?.let { iv ->
                 for (i in 0 until iv.length()) {
                     val o = iv.getJSONObject(i)
+                    if (o.optString("subject_type") == "member" && o.optString("level") == "front") {
+                        o.str("subject_id")?.let { frontSpans.add(FrontSpan(it, o.optLong("start_at"),
+                            o.optLong("end_at").takeIf { o.has("end_at") && !o.isNull("end_at") })) }
+                    }
                     if (o.isNull("end_at")) {
                         val s = o.getLong("start_at")
                         since = since?.let { minOf(it, s) } ?: s
@@ -232,27 +299,61 @@ class Model(
                 .sortedBy { it.name }
             val channelIds = channels.map { it.id }.toSet()
             val attachments = rows(p, "attachment").associate { it.first to it.second }
-            val selected = rows(p, "message")
+            val messageRows = rows(p, "message")
                 .filter { (_, f) -> !f.present("deleted_at") && f.str("channel_id") in channelIds }
+            val messageCounts = HashMap<String, Int>()
+            for ((_, fields) in messageRows) for (author in strings(fields.optJSONArray("authors"))) {
+                messageCounts[author] = (messageCounts[author] ?: 0) + 1
+            }
+            val searchMessages = messageRows.map { (id, f) ->
+                val linked = strings(f.optJSONArray("attachments"))
+                val mimes = linked.mapNotNull { attachments[it]?.str("mime") }
+                SearchDocument(id, "Messages", f.optLong("occurred_at"), f.str("text").orEmpty(),
+                    cw = f.str("cw"), authors = strings(f.optJSONArray("authors")), channelId = f.str("channel_id"),
+                    hasImage = mimes.any { it.startsWith("image/") },
+                    hasFile = mimes.any { !it.startsWith("image/") }, hasAttachment = linked.isNotEmpty())
+            }
+            val selected = messageRows
                 .groupBy { (_, f) -> f.str("channel_id").orEmpty() }
                 .mapValues { (_, values) -> values.sortedWith(compareBy<Pair<String, JSONObject>> { it.second.optLong("occurred_at") }.thenBy { it.first }).takeLast(100) }
-            val chatMessages = selected.mapValues { (_, values) -> values.map { (id, f) ->
-                val links = f.optJSONArray("attachments")
-                val files = if (links == null) emptyList() else (0 until links.length()).mapNotNull { i ->
-                    val attachmentId = links.optString(i)
-                    val a = attachments[attachmentId] ?: return@mapNotNull null
-                    val hash = a.str("blob_hash") ?: return@mapNotNull null
-                    ChatAttachment(attachmentId, hash, a.str("thumb_blob_hash"), a.str("filename") ?: "file",
-                        a.str("mime") ?: "application/octet-stream", a.optLong("size"), a.str("alt_text").orEmpty(),
-                        a.optBoolean("is_spoiler"))
-                }
-                val visibility = f.optJSONObject("visibility")
-                ChatMessage(id, f.str("channel_id").orEmpty(), strings(f.optJSONArray("authors")), f.str("text").orEmpty(),
-                    f.optLong("occurred_at"), f.str("cw"), visibility?.optString("mode")?.ifEmpty { "all" } ?: "all",
-                    stringSet(visibility?.optJSONArray("member_ids")), f.str("account_id"), f.str("reply_to"), files)
-            } }
+            val chatMessages = selected.mapValues { (_, values) -> values.map { (id, f) -> chatMessage(id, f, attachments) } }
             val followCeilings = rows(p, "follow").associate { (id, f) -> id to (f.optJSONObject("ceiling") ?: JSONObject()) }
-            return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages, followCeilings)
+            val postReactions = PostReactions.fromProjection(p.optJSONObject("sets"), members.associate { it.id to it.shownName })
+            val posts = rows(p, "post").filter { (_, f) -> !f.present("deleted_at") }
+                .map { (id, f) -> JournalPost(id, f.str("kind") ?: "note", strings(f.optJSONArray("authors")),
+                    f.str("title"), f.str("text").orEmpty(), f.optLong("occurred_at"), f.str("cw"),
+                    f.optJSONObject("visibility")?.str("mode") ?: "private", f.str("reply_to"),
+                    f.str("mood"), strings(f.optJSONArray("tags")), postReactions[id].orEmpty(),
+                    files(f.optJSONArray("attachments"), attachments)) }
+                .sortedWith(compareByDescending<JournalPost> { it.occurredAt }.thenByDescending { it.id })
+            val listItems = HashMap<String, MutableSet<String>>()
+            p.optJSONObject("sets")?.optJSONObject("member_list_item")?.let { set ->
+                for (key in set.keys()) {
+                    if (!set.optBoolean(key)) continue
+                    val bar = key.indexOf('|')
+                    if (bar < 0) continue
+                    val memberId = runCatching { JSONObject(key.substring(bar + 1)).optString("member_id") }.getOrNull()
+                        ?.takeIf { it.isNotBlank() && it != "null" } ?: continue
+                    listItems.getOrPut(key.substring(0, bar)) { HashSet() }.add(memberId)
+                }
+            }
+            val memberLists = rows(p, "member_list").filter { (_, f) -> !f.present("deleted_at") }
+                .map { (id, f) -> MemberList(id, f.str("name") ?: "Untitled", f.str("description"), listItems[id].orEmpty()) }
+                .sortedWith(compareBy<MemberList> { it.name.lowercase() }.thenBy { it.id })
+            val savedFeeds = rows(p, "feed").filter { (_, f) -> !f.present("deleted_at") && f.present("query_ast") && !f.str("query").isNullOrBlank() }
+                .map { (id, f) -> SavedFeed(id, f.str("name") ?: "Untitled", f.str("description"), f.str("query").orEmpty(),
+                    f.optJSONObject("visibility")?.str("mode") ?: "private") }
+                .sortedWith(compareBy<SavedFeed> { it.name.lowercase() }.thenBy { it.id })
+            val savedStages = rows(p, "stage").filter { (_, f) -> !f.present("deleted_at") && f.optJSONObject("definition") != null }
+                .map { (id, f) -> SavedStage(id, f.str("name") ?: "Untitled", f.getJSONObject("definition").str("channel_id").orEmpty(),
+                    f.getJSONObject("definition")) }
+                .sortedWith(compareBy<SavedStage> { it.name.lowercase() }.thenBy { it.id })
+            val highlights = ProfileHighlights.fromProjection(p.optJSONObject("sets"))
+            val systemZone = rows(p, "system").firstOrNull { it.first == accountId }?.second?.str("timezone")
+            return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages,
+                followCeilings, posts, postReactions, memberLists, savedFeeds, highlights, frontSpans, systemZone,
+                messageCounts, LocalProfileFields.fromProjection(p), LocalRelationships.types(p),
+                LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages)
         }
     }
 }

@@ -49,9 +49,20 @@ class ChatModelTest {
             .put("space", JSONObject().put("s", row(JSONObject().put("kind", "shared").put("name", "Shared"))))
             .put("channel", JSONObject().put("c", row(JSONObject().put("space_id", "s").put("name", "general"))))
             .put("message", messages)
-        val model = Model.parse(JSONObject().put("rows", rows), "acct")
+        val projection = JSONObject().put("rows", rows)
+        val model = Model.parse(projection, "acct")
         assertEquals(100, model.chatMessages["c"]!!.size)
         assertEquals("20", model.chatMessages["c"]!!.first().text)
         assertEquals("119", model.chatMessages["c"]!!.last().text)
+        val firstWindow = Model.channelWindow(projection, "c", 100)
+        assertTrue(firstWindow.hasOlder)
+        assertEquals(model.chatMessages["c"], firstWindow.messages)
+        val expanded = Model.channelWindow(projection, "c", 200)
+        assertFalse(expanded.hasOlder)
+        assertEquals(120, expanded.messages.size)
+        assertEquals("0", expanded.messages.first().text)
+        val filtered = Model.channelWindow(projection, "c", 100) { it.occurredAt < 10 }
+        assertFalse(filtered.hasOlder)
+        assertEquals(10, filtered.messages.size)
     }
 }

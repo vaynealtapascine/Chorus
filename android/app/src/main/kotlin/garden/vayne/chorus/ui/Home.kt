@@ -34,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -48,6 +49,7 @@ import garden.vayne.chorus.data.Mode
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.Subject
 import garden.vayne.chorus.designsystem.LocalChorusPalette
+import garden.vayne.chorus.widget.WidgetPins
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -77,6 +79,12 @@ private sealed interface Tile {
 @Composable
 fun Home(chorus: Chorus, model: Model) {
     val p = LocalChorusPalette.current
+    val ctx = LocalContext.current
+    val accountId = chorus.device?.accountId
+    val ownMembers = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }
+    var pins by remember(accountId) { mutableStateOf(WidgetPins.read(ctx, accountId)) }
+    var editingPins by remember { mutableStateOf(false) }
+    fun setPins(next: List<String>) { pins = next; WidgetPins.write(ctx, accountId, next) }
     var mode by remember { mutableStateOf(Mode.Replace) }
     var modeUsed by remember { mutableLongStateOf(0L) }
     var query by remember { mutableStateOf("") }
@@ -102,7 +110,7 @@ fun Home(chorus: Chorus, model: Model) {
     BackHandler(enabled = folder != null) { folder = folder?.let { model.group(it)?.parentId } }
 
     val here = model.current.map { it.subjectType to it.subjectId }.toSet()
-    val tiles: List<Tile> = remember(model, query, folder) { tiles(model, query, folder) }
+    val tiles: List<Tile> = remember(model, query, folder, pins, accountId) { tiles(model, query, folder, pins, accountId) }
 
     LazyVerticalGrid(
         columns = GridCells.Adaptive(84.dp),
@@ -145,6 +153,38 @@ fun Home(chorus: Chorus, model: Model) {
                 SearchField(query, { query = it; folder = null }, "Search ${model.active.size} members", Modifier.weight(1f))
             }
         }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Column {
+                Text(if (editingPins) "Done arranging pins" else "Arrange widget pins", color = p.accent,
+                    modifier = Modifier.clickable { editingPins = !editingPins }.padding(vertical = 6.dp))
+                if (editingPins) {
+                    Text("Tap a member tile to pin or unpin. Pins appear first on this device's widget.",
+                        color = p.ink2, fontSize = 12.sp)
+                    val visiblePins = pins.filter { id -> ownMembers.any { it.id == id } }
+                    visiblePins.forEachIndexed { i, id ->
+                        val member = ownMembers.first { it.id == id }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text("★ ${member.shownName}", color = p.ink, modifier = Modifier.weight(1f))
+                            Text("↑", color = if (i > 0) p.accent else p.ink3,
+                                modifier = Modifier.clickable(enabled = i > 0) {
+                                    val next = pins.toMutableList(); val previous = visiblePins[i - 1]
+                                    val pos = next.indexOf(id); val previousPos = next.indexOf(previous)
+                                    next[pos] = previous; next[previousPos] = id; setPins(next)
+                                }.padding(8.dp))
+                            Text("↓", color = if (i < visiblePins.lastIndex) p.accent else p.ink3,
+                                modifier = Modifier.clickable(enabled = i < visiblePins.lastIndex) {
+                                    val next = pins.toMutableList(); val following = visiblePins[i + 1]
+                                    val pos = next.indexOf(id); val followingPos = next.indexOf(following)
+                                    next[pos] = following; next[followingPos] = id; setPins(next)
+                                }.padding(8.dp))
+                            Text("Remove", color = p.accent,
+                                modifier = Modifier.clickable { setPins(pins - id) }.padding(8.dp))
+                        }
+                    }
+                }
+            }
+        }
         if (folder != null && query.isBlank()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 val g = model.group(folder!!)
@@ -165,7 +205,13 @@ fun Home(chorus: Chorus, model: Model) {
         }
         items(tiles, key = { t -> when (t) { is Tile.One -> "${t.s.type}:${t.s.id}:${t.whole}"; is Tile.Folder -> "f:${t.id}" } }) { t ->
             when (t) {
-                is Tile.One -> SubjectTile(t.s, (t.s.type to t.s.id) in here, if (t.whole) "Whole subsystem" else null) {
+                is Tile.One -> SubjectTile(t.s, (t.s.type to t.s.id) in here,
+                    if (editingPins && t.s.type == "member") (if (t.s.id in pins) "★ Pinned" else "Tap to pin")
+                    else if (t.whole) "Whole subsystem" else null) {
+                    if (editingPins && t.s.type == "member") {
+                        setPins(if (t.s.id in pins) pins - t.s.id else pins + t.s.id)
+                        return@SubjectTile
+                    }
                     actions.launch {
                         try {
                             Front.tap(chorus, t.s, mode)
@@ -182,8 +228,8 @@ fun Home(chorus: Chorus, model: Model) {
     }
 }
 
-private fun tiles(model: Model, query: String, folder: String?): List<Tile> {
-    val members = model.active
+private fun tiles(model: Model, query: String, folder: String?, pins: List<String> = emptyList(), accountId: String? = null): List<Tile> {
+    val members = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }
     if (query.isNotBlank()) {
         val ms = members.mapNotNull { m ->
             fuzzy(query, listOfNotNull(m.name, m.displayName, m.pronouns, *m.sigils.toTypedArray()).joinToString(" "))?.let { it to Tile.One(Subject("member", m.id, m.shownName, m.color, m.glyph, m.avatarBlob)) }
@@ -205,9 +251,11 @@ private fun tiles(model: Model, query: String, folder: String?): List<Tile> {
     }
     val recents = model.recents(8)
     val byId = members.associateBy { it.id }
-    val first = recents.mapNotNull { byId[it] }
-    val rest = members.filter { it.id !in recents }
-    return first.map { Tile.One(Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob)) } +
+    val pinned = pins.distinct().mapNotNull { byId[it] }
+    val pinIds = pinned.map { it.id }.toSet()
+    val first = recents.filter { it !in pinIds }.mapNotNull { byId[it] }
+    val rest = members.filter { it.id !in recents && it.id !in pinIds }
+    return (pinned + first).map { Tile.One(Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob)) } +
         subsystems.filter { it.parentId == null }.map { Tile.Folder(it.id, it.name, it.color, model.membership[it.id]?.size ?: 0) } +
         rest.map { Tile.One(Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob)) }
 }

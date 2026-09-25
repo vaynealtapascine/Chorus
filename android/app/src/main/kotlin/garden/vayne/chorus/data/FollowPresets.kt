@@ -25,6 +25,12 @@ object FollowPresets {
         return choices.drop(1).firstOrNull { canonical(base) == canonical(JSONObject(core(it))) } ?: "custom"
     }
 
+    /** Advanced follower permissions remain separate from the Basic notification preset. */
+    fun withSharing(previous: JSONObject, key: String, enabled: Boolean): JSONObject {
+        require(key == "share_history" || key == "share_stats")
+        return JSONObject(previous.toString()).put(key, enabled)
+    }
+
     private fun canonical(value: Any?): String = when (value) {
         null, JSONObject.NULL -> "null"
         is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") {

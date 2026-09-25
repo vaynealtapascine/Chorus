@@ -36,6 +36,26 @@ class WidgetTilesTest {
     }
 
     @Test
+    fun manualPinsComeFirstWithoutDuplicatingRecentsOrArchivedMembers() {
+        assertEquals(listOf("june", "rin", "kai", "[stars]", "ash"),
+            names(widgetTiles(model, null, pinned = listOf("june", "old", "rin", "june"))))
+    }
+
+    @Test
+    fun shortcutsUseOnlyTheFirstFourLivePinnedMembers() {
+        assertEquals(listOf("june", "rin", "kai", "ash"),
+            PinnedShortcuts.members(model, listOf("june", "old", "rin", "kai", "ash", "june"), "acct").map { it.id })
+    }
+
+    @Test
+    fun foreignMemberCannotBecomeAWidgetTileOrShortcut() {
+        val mixed = Model(listOf(m("mine").copy(createdByAccountId = "acct"),
+            m("guest").copy(createdByAccountId = "other")), emptyList(), emptyMap(), emptyList(), null, emptyList())
+        assertEquals(listOf("mine"), names(widgetTiles(mixed, null, pinned = listOf("guest", "mine"), accountId = "acct")))
+        assertEquals(listOf("mine"), PinnedShortcuts.members(mixed, listOf("guest", "mine"), "acct").map { it.id })
+    }
+
+    @Test
     fun folderShowsWholeSubsystemThenSubfoldersThenMembersByRecency() {
         assertEquals(listOf("stars", "[inner]", "kai", "june"), names(widgetTiles(model, "stars")))
     }

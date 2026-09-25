@@ -39,6 +39,9 @@ interface ReplicaDao {
     @Query("DELETE FROM ops")
     fun clearOps()
 
+    @Query("DELETE FROM ops WHERE id IN (:ids)")
+    fun deleteOps(ids: List<String>)
+
     @Query("DELETE FROM kv")
     fun clearValues()
 }

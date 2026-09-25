@@ -10,20 +10,21 @@ internal sealed interface WidgetTile {
 }
 
 /**
- * What the grid shows (CLIENTS.md §3.1). Root: recents, then top-level subsystem folders, then
+ * What the grid shows (CLIENTS.md §3.1). Root: pins, recents, then top-level subsystem folders, then
  * everyone else A–Z. Folder: "Whole subsystem" first, sub-folders, then its members by most recent
  * front. Pure, so it is unit-tested without a device.
  */
-internal fun widgetTiles(model: Model, folder: String?, recentLimit: Int = 8): List<WidgetTile> {
+internal fun widgetTiles(model: Model, folder: String?, recentLimit: Int = 8,
+    pinned: List<String> = emptyList(), accountId: String? = null): List<WidgetTile> {
     if (model.isPerson) return emptyList()
     val subsystems = model.groups.filter { it.isSubsystem }
-    val active = model.active
+    val active = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }
     val recent = model.recents(Int.MAX_VALUE)
     fun count(id: String) = model.membership[id]?.size ?: 0
     fun member(m: garden.vayne.chorus.data.Member) = WidgetTile.Subject("member", m.id, m.shownName, m.color, m.glyph)
 
     if (folder != null) {
-        val g = model.group(folder) ?: return widgetTiles(model, null, recentLimit)
+        val g = model.group(folder) ?: return widgetTiles(model, null, recentLimit, pinned, accountId)
         val inside = model.membership[folder].orEmpty()
         val rank = { id: String -> recent.indexOf(id).let { if (it < 0) Int.MAX_VALUE else it } }
         return listOf<WidgetTile>(WidgetTile.Subject("group", g.id, "All of ${g.name}", g.color ?: "#A09184", "◌")) +
@@ -31,9 +32,11 @@ internal fun widgetTiles(model: Model, folder: String?, recentLimit: Int = 8): L
             active.filter { it.id in inside }.sortedWith(compareBy({ rank(it.id) }, { it.shownName.lowercase() })).map(::member)
     }
     val byId = active.associateBy { it.id }
-    val first = recent.take(recentLimit).mapNotNull { byId[it] }
-    val firstIds = first.map { it.id }.toSet()
-    return first.map(::member) +
+    val pins = pinned.distinct().mapNotNull { byId[it] }
+    val pinnedIds = pins.map { it.id }.toSet()
+    val first = recent.filter { it !in pinnedIds }.take(recentLimit).mapNotNull { byId[it] }
+    val firstIds = first.map { it.id }.toSet() + pinnedIds
+    return (pins + first).map(::member) +
         subsystems.filter { it.parentId == null }.map { WidgetTile.Folder(it.id, it.name, it.color ?: "#A09184", count(it.id)) } +
         active.filter { it.id !in firstIds }.map(::member)
 }

@@ -3,6 +3,7 @@ package garden.vayne.chorus
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -25,20 +26,26 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Status
 import garden.vayne.chorus.data.SyncWork
+import garden.vayne.chorus.data.SearchDocument
 import garden.vayne.chorus.designsystem.ChorusTheme
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.ui.History
@@ -48,6 +55,9 @@ import garden.vayne.chorus.ui.Chat
 import garden.vayne.chorus.ui.Members
 import garden.vayne.chorus.ui.Onboarding
 import garden.vayne.chorus.ui.People
+import garden.vayne.chorus.ui.SettingsScreen
+import garden.vayne.chorus.ui.ContentSearch
+import garden.vayne.chorus.ui.Journal
 
 class MainActivity : ComponentActivity() {
     private var inviteLink = mutableStateOf<String?>(null)
@@ -88,7 +98,7 @@ class MainActivity : ComponentActivity() {
         i?.data?.toString()?.takeIf { "/i/" in it } ?: i?.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { "/i/" in it }
 }
 
-private enum class Tab(val label: String) { Home("Home"), Chat("Chat"), People("People"), Members("Members"), History("History") }
+private enum class Tab(val label: String) { Home("Home"), Chat("Chat"), Journal("Journal"), People("People"), Members("Members"), History("History") }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -98,7 +108,29 @@ private fun App(chorus: Chorus, invite: String?) {
     val model by chorus.model.collectAsState()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var chatSpace by rememberSaveable { mutableStateOf<String?>(null) }
+    var chatChannel by rememberSaveable { mutableStateOf<String?>(null) }
+    var chatSearchHit by remember { mutableStateOf<SearchDocument?>(null) }
+    var chatStageCapture by remember { mutableStateOf(false) }
+    var journalReplyPost by rememberSaveable { mutableStateOf<String?>(null) }
+    var journalOpenPost by rememberSaveable { mutableStateOf<String?>(null) }
     var linking by rememberSaveable { mutableStateOf(false) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var lastAccount by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(chorus.device?.accountId) {
+        val account = chorus.device?.accountId
+        if (lastAccount != null && lastAccount != account) {
+            chatSearchHit = null
+            chatStageCapture = false
+            chatSpace = null; chatChannel = null
+            journalReplyPost = null; journalOpenPost = null
+            searchOpen = false; settingsOpen = false
+        }
+        lastAccount = account
+    }
+    BackHandler(settingsOpen || searchOpen) {
+        if (searchOpen) searchOpen = false else settingsOpen = false
+    }
     if (linking && status != Status.NoDevice && status != Status.Loading) DeviceLink(chorus) { linking = false }
 
     when (status) {
@@ -109,12 +141,18 @@ private fun App(chorus: Chorus, invite: String?) {
         }
         else -> Column(Modifier.fillMaxSize().background(p.bg)) {
             val person = model.isPerson
-            Row(
+            if (!chatStageCapture) Row(
                 Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("Chorus", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = p.ink)
                 Spacer(Modifier.weight(1f))
+                Text("⌕", fontSize = 24.sp, color = p.accent,
+                    modifier = Modifier.clickable { searchOpen = !searchOpen; settingsOpen = false }
+                        .padding(horizontal = 8.dp, vertical = 4.dp).semantics { contentDescription = "Search" })
+                Text(if (settingsOpen) "Close settings" else "Settings", fontSize = 12.sp, color = p.accent,
+                    modifier = Modifier.clickable { settingsOpen = !settingsOpen; searchOpen = false }
+                        .padding(horizontal = 10.dp, vertical = 6.dp))
                 Text("Link device", fontSize = 12.sp, color = p.accent,
                     modifier = Modifier.clickable { linking = true }.padding(horizontal = 10.dp, vertical = 6.dp))
                 val (dot, label) = when (status) {
@@ -127,20 +165,40 @@ private fun App(chorus: Chorus, invite: String?) {
                 Text(label, fontSize = 12.sp, color = p.ink3)
             }
             Box(Modifier.weight(1f)) {
-                when (if (person && (tab == Tab.Members || tab == Tab.History)) Tab.Home else tab) {
+                if (searchOpen) ContentSearch(chorus, model, status == Status.Live,
+                    onClose = { searchOpen = false },
+                    onOpenMessage = { hit ->
+                        val channel = model.channels.find { it.id == hit.channelId }
+                        if (channel != null) {
+                            chatSpace = channel.spaceId; chatChannel = channel.id; chatSearchHit = hit
+                            tab = Tab.Chat; searchOpen = false
+                        }
+                    },
+                    onOpenPost = { id ->
+                        journalReplyPost = null; journalOpenPost = id; tab = Tab.Journal; searchOpen = false
+                    })
+                else if (settingsOpen) SettingsScreen(chorus, model)
+                else when (if (person && (tab == Tab.Members || tab == Tab.History)) Tab.Home else tab) {
                     Tab.Home -> if (person) {
                         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                             Text("Chorus quick switching is for systems. Your personal profile and journal are available on the web.", color = p.ink2)
                         }
                     } else Home(chorus, model)
-                    Tab.Chat -> Chat(chorus, model, chatSpace)
-                    Tab.People -> People(chorus, model) { spaceId -> chatSpace = spaceId; tab = Tab.Chat }
+                    Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
+                        onStageCapture = { chatStageCapture = it }, onDismissSearchHit = { chatSearchHit = null })
+                    Tab.Journal -> Journal(chorus, model, journalReplyPost,
+                        onExternalReplyConsumed = { journalReplyPost = null },
+                        externalOpenPost = journalOpenPost,
+                        onExternalOpenConsumed = { journalOpenPost = null })
+                    Tab.People -> People(chorus, model,
+                        onOpenChat = { spaceId -> chatSpace = spaceId; chatChannel = null; chatSearchHit = null; tab = Tab.Chat },
+                        onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal })
                     Tab.Members -> Members(chorus, model)
                     Tab.History -> History(chorus, model)
                 }
             }
             // the keyboard covers the tabs anyway; hiding them lets a screen's imePadding sit on it
-            if (!WindowInsets.isImeVisible) Row(
+            if (!settingsOpen && !searchOpen && !chatStageCapture && !WindowInsets.isImeVisible) Row(
                 Modifier.fillMaxWidth().background(p.surface).navigationBarsPadding().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
@@ -149,8 +207,13 @@ private fun App(chorus: Chorus, invite: String?) {
                         t.label,
                         color = if (t == tab) p.accent else p.ink2,
                         fontWeight = if (t == tab) FontWeight.SemiBold else FontWeight.Normal,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f).clickable { tab = t }.padding(horizontal = 3.dp, vertical = 12.dp),
+                        modifier = Modifier.weight(1f).clickable { tab = t }.padding(horizontal = 1.dp, vertical = 12.dp)
+                            .semantics { contentDescription = t.label },
                     )
                 }
             }

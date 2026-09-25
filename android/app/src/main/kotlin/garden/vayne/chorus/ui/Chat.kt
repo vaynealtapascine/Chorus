@@ -1,11 +1,16 @@
 package garden.vayne.chorus.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateListOf
 import android.net.Uri
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.Intent
 import android.provider.OpenableColumns
+import androidx.core.content.FileProvider
 import garden.vayne.chorus.data.Blobs
 import garden.vayne.chorus.data.UploadWork
 import org.json.JSONObject
@@ -36,6 +41,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,11 +62,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.ChatMessage
+import garden.vayne.chorus.data.ChannelWindow
 import garden.vayne.chorus.data.ChatAttachment
+import garden.vayne.chorus.data.SearchDocument
 import garden.vayne.chorus.data.ChatCompose
 import garden.vayne.chorus.data.ChatSpace
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.Entry
 import garden.vayne.chorus.data.Reply
 import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.SpaceAccount
@@ -75,15 +84,24 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private data class StageRows(val channelId: String, val accountId: String, val spaceKind: String,
+    val viewingAs: String?, val front: List<Entry>, val window: ChannelWindow)
+
 /** Local chat view: internal channels, shared spaces and account DMs use the same projection. */
 @Composable
-fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null) {
+fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
+    requestedChannel: String? = null, searchHit: SearchDocument? = null,
+    onStageCapture: (Boolean) -> Unit = {},
+    onDismissSearchHit: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     var selectedSpace by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(requestedSpace) {
         if (requestedSpace != null) selectedSpace = requestedSpace
     }
     var selectedChannel by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(requestedChannel) {
+        if (requestedChannel != null) selectedChannel = requestedChannel
+    }
     var viewingAs by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedAuthor by rememberSaveable { mutableStateOf("") }
     var draft by rememberSaveable { mutableStateOf("") }
@@ -102,6 +120,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null) {
     var spaceAction by rememberSaveable { mutableStateOf("") }
     var newSpaceName by rememberSaveable { mutableStateOf("") }
     var invitedAccounts by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var staging by rememberSaveable { mutableStateOf(false) }
+    var capturing by rememberSaveable { mutableStateOf(false) }
+    var stageLimit by rememberSaveable { mutableStateOf(100) }
+    var stageWindow by remember { mutableStateOf<StageRows?>(null) }
+    var stageLoading by remember { mutableStateOf(false) }
     val actions = rememberCoroutineScope()
     val ctx = LocalContext.current
     // picked files waiting to be sent: staged (copied, hashed) only on send
@@ -134,11 +157,43 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null) {
         space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
             accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
     }
+    LaunchedEffect(channel?.id, chorus.device?.accountId) {
+        staging = false
+        capturing = false
+        stageLimit = 100
+        stageWindow = null
+    }
+    LaunchedEffect(staging, channel?.id, space?.kind, viewingAs, model, stageLimit, chorus.device?.accountId) {
+        if (!staging || channel == null || space == null) { stageWindow = null; return@LaunchedEffect }
+        stageLoading = true
+        try { stageWindow = StageRows(channel.id, chorus.device?.accountId.orEmpty(), space.kind,
+            viewingAs, model.current, chorus.stageWindow(channel.id, stageLimit, space.kind, model.current, viewingAs)) }
+        finally { stageLoading = false }
+    }
+    LaunchedEffect(capturing) { onStageCapture(capturing) }
+    DisposableEffect(Unit) { onDispose { onStageCapture(false) } }
+    BackHandler(staging) {
+        if (capturing) capturing = false else staging = false
+    }
+    if (staging && channel != null) {
+        val window = stageWindow?.takeIf { it.channelId == channel.id && it.accountId == chorus.device?.accountId &&
+            it.spaceKind == space?.kind && it.viewingAs == viewingAs && it.front == model.current }?.window
+        val stageMessages = window?.messages?.filter {
+            space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
+                accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
+        } ?: messages
+        ChatStage(chorus, channel, stageMessages, model, foreignAuthors, capturing,
+            hasOlder = window?.hasOlder == true, loadingOlder = stageLoading,
+            onLoadOlder = { stageLimit += 100 },
+            onCapture = { capturing = it }, onClose = { capturing = false; staging = false })
+        return
+    }
 
     Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Chat", color = p.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            if (channel != null) ChatChip("Stage", false) { staging = true }
             if (connections.isNotEmpty()) ChatChip("New chat", false) { spaceAction = "new" }
             val canLeave = space != null && space.kind != "internal" &&
                 directory[space.id]?.let { space.kind != "shared" || it.ownerAccountId != chorus.device?.accountId } == true
@@ -194,6 +249,20 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null) {
                         }
                     }
                 }
+            }
+        }
+        if (searchHit != null && searchHit.channelId == channel?.id) {
+            var revealed by rememberSaveable(searchHit.id) { mutableStateOf(false) }
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+                .background(p.surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Search match · ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(searchHit.occurredAt))}",
+                        color = p.ink2)
+                    TextButton(onClick = onDismissSearchHit) { Text("Dismiss") }
+                }
+                if (searchHit.cw != null) Text("Content warning: ${searchHit.cw} · ${if (revealed) "Hide" else "Show"}",
+                    color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
+                if (searchHit.cw == null || revealed) Text(searchHit.text, color = p.ink)
             }
         }
         if (channel == null) {
@@ -455,11 +524,14 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
 }
 
 @Composable
-private fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
+internal fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val device = chorus.device
     val image = attachment.mime.startsWith("image/")
+    val scope = rememberCoroutineScope()
+    var opening by remember(attachment.id) { mutableStateOf(false) }
+    var openError by remember(attachment.id) { mutableStateOf<String?>(null) }
     var opened by rememberSaveable(attachment.id) { mutableStateOf(false) }
     if (attachment.spoiler && !opened) {
         Text("Spoiler attachment · Reveal", color = p.accent, fontSize = 13.sp,
@@ -468,33 +540,62 @@ private fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
     }
     Text("Attachment: ${attachment.filename}", color = p.ink2, fontSize = 13.sp)
     if (attachment.altText.isNotBlank()) Text(attachment.altText, color = p.ink3, fontSize = 12.sp)
-    if (!image) {
-        if (attachment.spoiler) Text("Hide attachment", color = p.accent, fontSize = 12.sp,
-            modifier = Modifier.clickable { opened = false })
-        return
-    }
-    if (!opened) {
-        Text(if (attachment.spoiler) "Reveal image spoiler" else "View image", color = p.accent,
-            modifier = Modifier.clickable { opened = true }.padding(vertical = 4.dp))
-        return
-    }
-    val hash = attachment.thumbHash ?: attachment.blobHash
-    val bitmap by produceState<android.graphics.Bitmap?>(null, hash, device?.session) {
-        value = if (device == null) null else withContext(Dispatchers.IO) {
-            Blobs.image(ctx.applicationContext, hash, device)
+    if (image) {
+        if (!opened) {
+            Text(if (attachment.spoiler) "Reveal image spoiler" else "View image", color = p.accent,
+                modifier = Modifier.clickable { opened = true }.padding(vertical = 4.dp))
+        } else {
+            val hash = attachment.thumbHash ?: attachment.blobHash
+            val bitmap by produceState<android.graphics.Bitmap?>(null, hash, device?.session) {
+                value = withContext(Dispatchers.IO) { Blobs.image(ctx.applicationContext, hash, device) }
+            }
+            if (bitmap == null) {
+                Text("Loading image, or unavailable offline.", color = p.ink3, fontSize = 12.sp)
+            } else {
+                Image(bitmap!!.asImageBitmap(), contentDescription = attachment.altText.ifBlank { attachment.filename },
+                    contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().height(200.dp))
+            }
+            Text("Hide image", color = p.accent, fontSize = 12.sp, modifier = Modifier.clickable { opened = false })
         }
     }
-    if (bitmap == null) {
-        Text("Loading image, or unavailable offline.", color = p.ink3, fontSize = 12.sp)
-    } else {
-        Image(bitmap!!.asImageBitmap(), contentDescription = attachment.altText.ifBlank { attachment.filename },
-            contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().height(200.dp))
+    TextButton(enabled = !opening, onClick = {
+        opening = true
+        openError = null
+        scope.launch {
+            val file = withContext(Dispatchers.IO) {
+                Blobs.file(ctx.applicationContext, attachment.blobHash, device)
+            }
+            if (file == null) {
+                openError = "File unavailable offline or download failed."
+            } else {
+                try {
+                    val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, attachment.mime.ifBlank { "application/octet-stream" })
+                        clipData = ClipData.newUri(ctx.contentResolver, attachment.filename, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    ctx.startActivity(Intent.createChooser(intent, "Open ${attachment.filename}"))
+                } catch (_: ActivityNotFoundException) {
+                    openError = "No app can open this file type."
+                } catch (_: SecurityException) {
+                    openError = "Could not share this file."
+                } catch (_: IllegalArgumentException) {
+                    openError = "Could not share this file."
+                }
+            }
+            opening = false
+        }
+    }) { Text(if (opening) "Opening…" else "Open file") }
+    if (openError != null) Text(openError.orEmpty(), color = p.danger, fontSize = 12.sp)
+    if (attachment.spoiler && !image) {
+        Text("Hide attachment", color = p.accent, fontSize = 12.sp,
+            modifier = Modifier.clickable { opened = false })
     }
-    Text("Hide image", color = p.accent, fontSize = 12.sp, modifier = Modifier.clickable { opened = false })
 }
 
 /** A file picked for the next message: named and described, not yet copied. */
-private data class PendingAttachment(val uri: Uri, val name: String, val mime: String, val alt: String = "", val spoiler: Boolean = false) {
+internal data class PendingAttachment(val uri: Uri, val name: String, val mime: String, val alt: String = "", val spoiler: Boolean = false) {
     companion object {
         fun of(ctx: android.content.Context, uri: Uri): PendingAttachment {
             val name = ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
@@ -509,7 +610,8 @@ private data class PendingAttachment(val uri: Uri, val name: String, val mime: S
  * Copy one picked file into the upload queue (with a thumbnail for images) and record its
  * attachment; the message that lists it is written right after, and [UploadWork] sends the bytes.
  */
-private suspend fun sendAttachment(chorus: Chorus, ctx: android.content.Context, a: PendingAttachment, scope: String): String {
+internal suspend fun sendAttachment(chorus: Chorus, ctx: android.content.Context, a: PendingAttachment,
+    scope: String? = null, opKind: String = "attachment.create"): String {
     val account = chorus.device?.accountId ?: throw IllegalStateException("Not signed in.")
     val staged = withContext(Dispatchers.IO) {
         val input = ctx.contentResolver.openInputStream(a.uri) ?: throw IllegalStateException("Can't read ${a.name}.")
@@ -522,6 +624,7 @@ private suspend fun sendAttachment(chorus: Chorus, ctx: android.content.Context,
     val payload = JSONObject().put("blob_hash", staged.hash).put("filename", a.name).put("mime", staged.mime)
         .put("size", staged.size).put("alt_text", a.alt.trim()).put("is_spoiler", a.spoiler)
     if (thumb != null) payload.put("thumb_blob_hash", thumb.hash)
-    chorus.create("attachment.create", id, payload, scope = scope)
+    if (scope == null) chorus.create(opKind, id, payload)
+    else chorus.create(opKind, id, payload, scope = scope)
     return id
 }
