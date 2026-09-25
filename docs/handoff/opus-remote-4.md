@@ -115,3 +115,21 @@ take the next free number after checking `migrations/` (Sol may ask for one in i
     digests, so it's CLI-only with the lock check `rebuild` uses. If the owner wants one from
     the web, it needs a "server pauses sync while importing" step; that's worth an
     OPEN_QUESTIONS entry if asked.
+- 2026-09-25 remote Claude — **R28 done** (`tests/rest_fuzz.rs`).
+  - **What it sends:** all 76 routes (read from app.rs the way api-check.py does) get random and
+    malformed path ids, queries and bodies: junk, 3 MB, wrong content types, and plausible
+    shapes mixing both accounts' ids.
+  - **Callers:** anonymous, a device, an admin, another account, and an API token of each scope.
+  - **What fails it:**
+    - a 5xx, a panic or a dropped connection;
+    - another account's marked texts or private ids in a response;
+    - messages or posts reaching a token without their scope;
+    - any change to the other account's rows.
+  - It runs in `verify` (3 per route and caller, random seed printed). `CHORUS_FUZZ_SEED` and
+    `CHORUS_FUZZ_ROUNDS` give longer runs.
+  - **Result:** 7 seeds × 13 500 requests are clean (~15 % of requests succeed, the rest are
+    proper 4xx). No server bug to fix. What it found were harness traps (NOTES.md): unread
+    bodies cause broken pipes and resets, and tokens must be `chorus_…`. The test now guards
+    against the latter by checking its oracle first.
+  - **For local Claude:** if you add a route, the fuzzer picks it up by itself. A new private
+    table is worth a `SECRETB` marker in its seed.
