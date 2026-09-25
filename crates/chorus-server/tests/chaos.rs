@@ -217,6 +217,8 @@ struct Dev {
     /// downloaded, with the tries left.
     keep_all: bool,
     fetch_due: BTreeMap<String, u8>,
+    /// Files it had at a reconcile, named by ops it held then: those must come back.
+    held_at_reconcile: BTreeSet<String>,
 }
 
 impl Dev {
@@ -425,7 +427,16 @@ impl World {
             .flat_map(|o| chorus_core::restore::blob_hashes(&o))
             .filter(|h| dev.files.contains_key(h))
             .collect();
+        // what the check expects back (from the ops it holds, not from the outbox logic above)
+        let held: Vec<String> = dev
+            .store
+            .ops
+            .values()
+            .flat_map(chorus_core::restore::blob_hashes)
+            .filter(|h| dev.files.contains_key(h))
+            .collect();
         let line = format!("{}: uploads {} file(s) again after the restore", self.devs[d].name, hashes.len());
+        self.devs[d].held_at_reconcile.extend(held);
         self.note(line);
         self.devs[d].uploads_due.extend(hashes);
         self.flush_uploads(d).await;
@@ -434,7 +445,10 @@ impl World {
     async fn flush_uploads(&mut self, d: usize) {
         for hash in self.devs[d].uploads_due.clone() {
             let bytes = self.devs[d].files[&hash].clone();
-            if !self.put_blob(d, &hash, bytes).await {
+            let ok = self.put_blob(d, &hash, bytes).await;
+            let line = format!("{}: re-sent {hash}: {ok}", self.devs[d].name);
+            self.note(line);
+            if !ok {
                 return; // retried at the next connection
             }
             self.devs[d].uploads_due.remove(&hash);
@@ -569,6 +583,7 @@ impl World {
                 uploads_due: BTreeSet::new(),
                 keep_all: i >= 3,
                 fetch_due: BTreeMap::new(),
+                held_at_reconcile: BTreeSet::new(),
             })
             .collect();
         let mut w = World {
@@ -937,7 +952,11 @@ impl World {
     async fn put_blob(&mut self, d: usize, hash: &str, bytes: Vec<u8>) -> bool {
         let head = self.http.head(self.url(&format!("/blobs/{hash}"))).bearer_auth(&self.devs[d].token).send().await;
         match head.map(|r| r.status().as_u16()) {
-            Ok(200 | 403) => return true,
+            Ok(code @ (200 | 403)) => {
+                let line = format!("{}: HEAD {hash}: {code}", self.devs[d].name);
+                self.note(line);
+                return true;
+            }
             Ok(404) => {}
             _ => return false,
         }
@@ -1390,27 +1409,26 @@ fn converged(w: &World) -> Vec<String> {
             }
         }
     }
-    // every file an attachment names is on the server, unless no device that holds the op has
-    // a copy (a restore can't bring back a file whose only copy is on a device that can't see
-    // the op any more)
+    // every file an attachment names is on the server if, at a reconcile, a device held both an
+    // op naming it and a copy (a file whose only copy is on a device that couldn't see the op
+    // then, e.g. a guest who had lost the channel, can't come back)
     let blobs = w.server.data[w.server.generation()].join("blobs");
     let mut st = conn.prepare("SELECT id, blob_hash FROM attachment WHERE blob_hash IS NOT NULL").unwrap();
     let rows: Vec<(String, String)> =
         st.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap();
     for (id, hash) in rows {
-        let recoverable = w
-            .devs
-            .iter()
-            .any(|d| d.files.contains_key(&hash) && d.store.ops.values().any(|o| o.entity() == Some(id.as_str())));
+        let recoverable = w.devs.iter().any(|d| d.held_at_reconcile.contains(&hash));
         if recoverable && !blobs.join(&hash[..2]).join(&hash[2..4]).join(&hash).exists() {
-            let holders: Vec<String> = w
-                .devs
-                .iter()
-                .map(|d| {
-                    let op = d.store.ops.values().any(|o| o.entity() == Some(id.as_str()));
-                    format!("{}: op {op}, file {}", d.name, d.files.contains_key(&hash))
-                })
-                .collect();
+            let holders: Vec<String> =
+                w.devs
+                    .iter()
+                    .map(|d| {
+                        let op = d.store.ops.values().find(|o| o.entity() == Some(id.as_str())).map(|o| {
+                            format!("{} seq {:?} rejected {}", o.id, o.seq, d.store.rejected.contains_key(&o.id))
+                        });
+                        format!("{}: op {op:?}, file {}", d.name, d.files.contains_key(&hash))
+                    })
+                    .collect();
             problems.push(format!("attachment {id}: its file {hash} isn't on the server ({holders:?})"));
         }
     }
