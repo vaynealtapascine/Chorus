@@ -93,7 +93,7 @@ impl Device {
         let (ws, _) = tokio_tungstenite::connect_async(format!("ws://{}/api/v1/sync", s.base)).await.unwrap();
         self.ws = Some(ws);
         let clock = ClockReading { wall: chorus_server::now_ms(), mono: None, boot_id: None };
-        let hello = self.engine.on_connect(&self.store, clock, &self.token);
+        let hello = self.engine.on_connect(&mut self.store, clock, &self.token);
         self.send(vec![hello]).await;
     }
 
@@ -249,6 +249,7 @@ async fn bad_token_is_refused() {
         core: String::new(),
         app: String::new(),
         outbox: 0,
+        window: None,
     };
     ws.send(Message::Text(serde_json::to_string(&hello).unwrap().into())).await.unwrap();
     let Some(Ok(Message::Text(t))) = ws.next().await else { panic!("no reply") };
@@ -1331,7 +1332,7 @@ async fn start_with_addresses(cfg: Config) -> Server {
 async fn signed_socket(s: &Server, token: &str, device: &str) -> Ws {
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{}/api/v1/sync", s.base)).await.unwrap();
     let clock = ClockReading { wall: chorus_server::now_ms(), mono: None, boot_id: None };
-    let hello = ClientEngine::new(device).on_connect(&MemStore::default(), clock, token);
+    let hello = ClientEngine::new(device).on_connect(&mut MemStore::default(), clock, token);
     ws.send(Message::Text(serde_json::to_string(&hello).unwrap().into())).await.unwrap();
     loop {
         match next_frame(&mut ws).await {
@@ -1429,7 +1430,7 @@ async fn unsigned_sync_sockets_are_limited_per_address() {
     // signing in frees a slot
     let clock = ClockReading { wall: chorus_server::now_ms(), mono: None, boot_id: None };
     let hello = ClientEngine::new(a["device_id"].as_str().unwrap()).on_connect(
-        &MemStore::default(),
+        &mut MemStore::default(),
         clock,
         a["session"].as_str().unwrap(),
     );
@@ -2055,4 +2056,71 @@ async fn read_marks_stay_with_their_account() {
     assert!(!laptop.store.confirmed().any(|o| o.id == mark), "another account never does");
     assert!(laptop.store.confirmed().any(|o| o.entity_id.as_deref() == Some(hello.as_str())));
     assert_eq!(laptop.engine.repairs, 0, "and its digest agrees without it");
+}
+
+/// SYNC §6.5 windowed replica: a tab keeping only what arrived since its window gets no older
+/// messages, its digests still agree (no repair), and older history is there over REST.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_windowed_tab_keeps_recent_messages_and_its_digest_agrees() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 131, "stars").await;
+    let sys_id = sys["account_id"].as_str().unwrap().to_string();
+    let tab_e = enrol(&s, auth::InviteKind::Device, Some(&sys_id), 132, "").await;
+    let mut phone = Device::new(&sys, 131);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct = phone.scope("account:");
+    let space = phone.scope("space:");
+    let general =
+        phone.store.confirmed().find(|o| o.kind == "channel.create").and_then(|o| o.entity_id.clone()).unwrap();
+    let kai = new_id(1, [133; 10]);
+    phone.create("member.create", &acct, &kai, json!({"name": "Kai"})).await;
+    let say = |text: &str| json!({"channel_id": general, "authors": [kai], "text": text, "entities": []});
+    let old = new_id(6, [1; 10]);
+    phone.create("message.send", &space, &old, say("before the window")).await;
+    let old_mark = phone
+        .create("read.mark", &space, &old, json!({"channel_id": general, "message_id": old, "reader_member_id": ""}))
+        .await;
+    phone.drain(Q).await;
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    let window = chorus_server::now_ms();
+    let fresh = new_id(6, [2; 10]);
+    phone.create("message.send", &space, &fresh, say("inside the window")).await;
+    phone.drain(Q).await;
+
+    let mut tab = Device::new(&tab_e, 132);
+    tab.engine.window = Some(window);
+    tab.connect(&s).await;
+    tab.drain(Q).await;
+    let held = |d: &Device, id: &str| d.store.confirmed().any(|o| o.id == id || o.entity_id.as_deref() == Some(id));
+    assert!(held(&tab, &fresh) && !held(&tab, &old) && !held(&tab, &old_mark));
+    assert!(held(&tab, &general), "channels are always kept");
+    assert!(tab.store.confirmed().any(|o| o.kind == "member.create"), "and the account scope");
+    // live: a new message arrives; a recheck of every scope repairs nothing
+    let live = new_id(6, [3; 10]);
+    phone.create("message.send", &space, &live, say("live")).await;
+    phone.drain(Q).await;
+    tab.drain(Q).await;
+    assert!(held(&tab, &live));
+    let frames = tab.engine.recheck(&tab.store);
+    tab.send(frames).await;
+    tab.drain(Q).await;
+    assert_eq!(tab.engine.repairs, 0, "the windowed digest agrees");
+    // what the window leaves out is still readable over REST
+    let page: Value = reqwest::Client::new()
+        .get(format!("http://{}/api/v1/channels/{general}/messages", s.base))
+        .bearer_auth(tab_e["session"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(page["items"].as_array().unwrap().iter().any(|m| m["id"] == old.as_str()));
+    // and a tab without a window, on the same account, has everything
+    let full_e = enrol(&s, auth::InviteKind::Device, Some(&sys_id), 134, "").await;
+    let mut full = Device::new(&full_e, 134);
+    full.connect(&s).await;
+    full.drain(Q).await;
+    assert!(held(&full, &old) && held(&full, &old_mark));
 }

@@ -240,7 +240,8 @@ Reviews are computed by the server (it knows `seq`) and sync down as rows.
  "cursors":{"account:…":1234,"space:…":998},"view_seq":77,
  "digests":{"account:…":{"count":1234,"xor":"9f…"}},
  "clock":{"wall":1790000000000,"mono":81234567,"boot_id":"41"},
- "core":"1.2.0","app":"android 1.0.3","outbox":12}
+ "core":"1.2.0","app":"android 1.0.3","outbox":12,
+ "window":1782000000000}          // optional: a windowed replica (§6.5)
 
 // S→C
 {"t":"welcome","server_time":1790000000123,"epoch":"…","account_id":"…","offset_ms":-340,
@@ -335,8 +336,22 @@ user action
   web `online` event) and on a push tickle; otherwise exponential 1 s → 5 min with ±30 % jitter.
 - **Android background**: WorkManager unique work `sync` with `NetworkType.CONNECTED`, expedited
   when the outbox is non-empty; the widget's switch op enqueues it.
-- **Windowed web replica**: messages older than the window are evicted locally (not ops of the
-  account scope, which are small); scrolling up past the window fetches pages over REST.
+- **Windowed web replica** (R23, D-075): a browser tab not set to "keep everything" (CLIENTS
+  §4.3) keeps only the message-family ops (`message.*`, `reaction.*`, `attachment.*`, `read.*`)
+  the server received in the last 90 days; channels, spaces, permissions and the account scope
+  are always kept. The rule is `sync::outside_window(op, window)`, and the device says its window
+  in `hello.window` (epoch ms). The digest problem — an evicted op mustn't look missing — is
+  solved by both sides leaving the same ops out, so nothing evicted is remembered: for that
+  connection the server skips those ops in catch-up, live fan-out and repair pulls, and
+  computes `caught` digests without them (`visibility::visible_digest_in`); the device drops
+  them at connect (`ClientStore::trim`, before the hello's digests are taken) and when an ack
+  confirms one (`trim_ids`), reporting them in `Changes.removed`. It's by **received** time, not
+  written time: a message written offline months ago that arrived today is newer than any
+  backup, so the tab keeps it (it may be what brings it back after a restore, §7.3). A windowed
+  device isn't a backup of history older than its window; full replicas (the installed app,
+  Android) are. Older history reads over REST (`GET /channels/{id}/messages?before=`), shown
+  read-only above what the tab holds. Turning "keep everything" on reconnects without a window:
+  the digests no longer match, so the scopes are pulled again (the repair, above).
 
 ## 7. Failure scenarios
 

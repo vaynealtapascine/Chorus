@@ -749,7 +749,7 @@ Property-tested against an independent model of these rules in `tests/permission
 | --- | --- |
 | Server | Everything. |
 | Owner's Android | Full replica of its own `account:` scope (D-043) + joined `space:` scopes + follower views + blobs on demand (thumbnails always). |
-| Web PWA | Same scopes as Android but message history is windowed (Advanced: "keep last N days offline", default 90) to keep IndexedDB small. |
+| Web PWA | Same scopes as Android; in a browser tab without "keep everything" (CLIENTS §4.3), message history is windowed to what arrived in the last 90 days (SYNC §6.5, D-075) to keep IndexedDB small; older history reads over REST. |
 
 ## 6. Analysis views (stable, documented; exported as CSV)
 

@@ -211,6 +211,13 @@ impl WebReplica {
         wrap(self.0.create(new_op_json, device_now_json, random))
     }
 
+    /// A windowed replica (SYNC §6.5): keep message-family ops written since `window` (epoch
+    /// ms), or everything (`undefined`). Takes effect at the next connect.
+    #[wasm_bindgen(js_name = setWindow)]
+    pub fn set_window(&mut self, window: Option<f64>) {
+        self.0.set_window(window.map(|w| w as i64));
+    }
+
     pub fn connect(&mut self, clock_json: &str, token: &str) -> Result<String, JsError> {
         wrap(self.0.connect(clock_json, token))
     }

@@ -16,7 +16,7 @@ use chorus_core::id::new_id;
 use chorus_core::model;
 use chorus_core::op::Op;
 use chorus_core::projector::Projector;
-use chorus_core::sync::{ClientEngine, ClientStore, ClockReading, Frame, MemServer, MemStore};
+use chorus_core::sync::{ClientEngine, ClientStore, ClockReading, Frame, MemServer, MemStore, outside_window};
 use chorus_core::time::TimeSource;
 use serde_json::{Value, json};
 
@@ -163,11 +163,16 @@ impl World {
             let dev_id = id(&mut rng);
             server.devices.insert(dev_id.clone(), [&acct_a, &acct_b][account].clone());
             let skew = (rng.below(6 * 3_600_000) as i64) - 3 * 3_600_000; // ±3 h
+            let mut engine = ClientEngine::new(&dev_id);
+            // a-desk is a browser tab: it keeps only messages written after its window (SYNC §6.5)
+            if name == "a-desk" {
+                engine.window = Some(1_790_000_000_000 + 20 * 60_000);
+            }
             devices.push(Device {
                 name: name.into(),
                 account,
                 store: MemStore::default(),
-                engine: ClientEngine::new(&dev_id),
+                engine,
                 clock: HlcClock::new(0xa000_0000 + i as u32),
                 skew,
                 boot: 1,
@@ -523,7 +528,7 @@ impl World {
         let clock = self.clock_reading(d);
         let dev = &mut self.devices[d];
         dev.connected = true;
-        let hello = dev.engine.on_connect(&dev.store, clock, "t");
+        let hello = dev.engine.on_connect(&mut dev.store, clock, "t");
         dev.to_server.push_back(hello);
     }
 
@@ -689,7 +694,10 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
         // author's devices had forgotten the scope and others can't restore it for an author
         // without access (SYNC.md §7.3).
         for (id, scope) in &dev.created {
-            let lost_scope = w.revoked.contains(&(dev.account, scope.clone()));
+            let lost_scope = w.revoked.contains(&(dev.account, scope.clone()))
+                // a windowed device isn't a backup of what it no longer keeps: here a restore can
+                // go back further than its window (real backups are hours old, windows months)
+                || (dev.engine.window.is_some() && scope.starts_with("space:"));
             if !server_ids.contains(id.as_str())
                 && !w.devices.iter().any(|d| d.store.rejected.contains_key(id))
                 && !lost_scope
@@ -725,13 +733,20 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
         for s in scopes {
             let mine: BTreeSet<&str> =
                 dev.store.confirmed().filter(|o| &scope_for(o) == s).map(|o| o.id.as_str()).collect();
-            let theirs: BTreeSet<&str> = w.server.log.iter().filter(|o| &o.scope == s).map(|o| o.id.as_str()).collect();
+            let window = dev.engine.window;
+            let theirs: BTreeSet<&str> = w
+                .server
+                .log
+                .iter()
+                .filter(|o| &o.scope == s && !outside_window(o, window))
+                .map(|o| o.id.as_str())
+                .collect();
             if mine != theirs {
                 let missing: Vec<_> = theirs.difference(&mine).take(3).collect();
                 let extra: Vec<_> = mine.difference(&theirs).take(3).collect();
                 return Err(format!("{}: scope {s} differs: missing {missing:?} extra {extra:?}", dev.name));
             }
-            if dev.store.digest(s) != w.server.digest(s) {
+            if dev.store.digest(s) != w.server.digest_in(s, window) {
                 return Err(format!("{}: digest differs for {s}", dev.name));
             }
             // stamps agree
@@ -744,7 +759,9 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
         }
         // 4. identical projections
         let mine = model::project(dev.store.confirmed().filter(|o| scopes.contains(&o.scope)));
-        let theirs = model::project(w.server.log.iter().filter(|o| scopes.contains(&o.scope)));
+        let theirs = model::project(
+            w.server.log.iter().filter(|o| scopes.contains(&o.scope) && !outside_window(o, dev.engine.window)),
+        );
         if mine.canonical() != theirs.canonical() {
             return Err(format!("{}: projection differs", dev.name));
         }

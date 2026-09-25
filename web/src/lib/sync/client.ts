@@ -11,6 +11,9 @@ import { fillFiles, keepEverything } from './keep';
 import type { Entity } from '../core';
 
 /** An op the server refused (SYNC §7 "Sync issues"). */
+/** A browser tab's message window (DATA_MODEL §5: "keep last N days offline", default 90). */
+export const WINDOW_DAYS = 90;
+
 export interface SyncIssue {
   id: string;
   kind: string;
@@ -94,6 +97,8 @@ export class SyncClient {
   /** told about each `caught` frame while "Sync everything now" runs */
   private caughtWatch: ((scope: string) => void) | null = null;
   private keptFiles = false;
+  /** "Keep everything on this device" (keep.ts): off, a browser tab keeps a window (SYNC §6.5). */
+  private keepAll = true;
 
   async start(): Promise<void> {
     // open-time marks (CLIENTS.md §4.3: a 100k-op device opens in ≤ 2 s); web/perf measures them
@@ -155,8 +160,22 @@ export class SyncClient {
       this.scheduleSnapshot();
     }
     performance.mark('chorus:restored');
+    this.keepAll = await keepEverything();
     this.emit();
     this.connect();
+  }
+
+  /** Only messages from the last WINDOW_DAYS on this device; older ones page in over REST. */
+  get windowed(): boolean {
+    return !this.keepAll;
+  }
+
+  /** "Keep everything" changed: connect again, which trims to the window or (off → on) repairs
+   * back to everything (the digest no longer matches, so the scopes are pulled again). */
+  setKeepAll(on: boolean): void {
+    this.keepAll = on;
+    this.emit();
+    this.ws?.close();
   }
 
   /** With "keep everything" on, fetch files into the offline cache once a session (keep.ts). */
@@ -366,7 +385,9 @@ export class SyncClient {
     this.ws = ws;
     ws.onopen = () => {
       const clock = { wall: Date.now(), mono: null, boot_id: null };
+      this.replica!.setWindow(this.keepAll ? undefined : Date.now() - WINDOW_DAYS * 86_400_000);
       ws.send(this.replica!.connect(JSON.stringify(clock), this.device!.session));
+      this.changed(); // what the window dropped leaves storage too
     };
     ws.onmessage = async (ev) => {
       const frame = JSON.parse(ev.data as string);

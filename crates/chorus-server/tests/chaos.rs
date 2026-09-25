@@ -357,7 +357,7 @@ impl World {
         dev.conn = Some(Conn { sink, rx, reader, generation });
         dev.connects += 1;
         let clock = ClockReading { wall: chorus_server::now_ms(), mono: None, boot_id: None };
-        let hello = dev.engine.on_connect(&dev.store, clock, &dev.token);
+        let hello = dev.engine.on_connect(&mut dev.store, clock, &dev.token);
         dev.send(vec![hello]).await;
     }
 

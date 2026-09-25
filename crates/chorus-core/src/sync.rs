@@ -182,6 +182,11 @@ pub enum Frame {
         app: String,
         #[serde(default)]
         outbox: usize,
+        /// A windowed replica (SYNC §6.5): message-family ops written before this time are left
+        /// out of this connection's catch-up, live ops, repairs and digests; the device keeps
+        /// none of them either, and reads older history over REST. `None`: everything.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        window: Option<i64>,
     },
     Welcome {
         server_time: i64,
@@ -240,6 +245,18 @@ pub enum Frame {
     },
 }
 
+/// Whether a windowed replica leaves `o` out (SYNC §6.5): a message, reaction, attachment or
+/// read mark the server received before `window`. Received, not written: a message written
+/// offline long ago that arrived today stays on the device (it's newer than any backup, so the
+/// device may be what brings it back after a restore). Channels, spaces, permissions and the
+/// account scope are never left out: they're small and everything else hangs on them.
+pub fn outside_window(o: &Op, window: Option<i64>) -> bool {
+    let Some(w) = window else { return false };
+    let k = o.kind.as_str();
+    (k.starts_with("message.") || k.starts_with("reaction.") || k.starts_with("attachment.") || k.starts_with("read."))
+        && o.received_at.or(o.occurred_at).unwrap_or(o.device_at) < w
+}
+
 // ─── client ──────────────────────────────────────────────────────────────────
 
 /// What the client engine needs from the device's database. Implemented over Room (Android),
@@ -274,6 +291,11 @@ pub trait ClientStore {
     /// to a restored server (the server would refuse them now, or ack ones it has, which would
     /// confirm them here again). The device's own unsent ops stay, to be refused with a reason.
     fn forget(&mut self, scope: &str);
+    /// A windowed replica (SYNC §6.5): drop confirmed ops [`outside_window`] (not pending or
+    /// restoring ones), reporting them as removed.
+    fn trim(&mut self, window: i64);
+    /// [`ClientStore::trim`] for just these ops (ones confirmed a moment ago).
+    fn trim_ids(&mut self, window: i64, ids: &[String]);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -299,6 +321,9 @@ pub struct ClientEngine {
     /// far: at the next `caught` for the scope, confirmed ops not among them are swept (the
     /// account may no longer see them, e.g. it lost `view` on a channel).
     repairing: HashMap<String, BTreeSet<String>>,
+    /// Keep only message-family ops written since this time (SYNC §6.5), `None`: everything.
+    /// Takes effect at the next connect.
+    pub window: Option<i64>,
 }
 
 impl ClientEngine {
@@ -312,12 +337,17 @@ impl ClientEngine {
             repairs: 0,
             account_id: None,
             repairing: HashMap::new(),
+            window: None,
         }
     }
 
-    pub fn on_connect(&mut self, store: &dyn ClientStore, clock: ClockReading, token: &str) -> Frame {
+    pub fn on_connect(&mut self, store: &mut dyn ClientStore, clock: ClockReading, token: &str) -> Frame {
         self.state = ClientState::AwaitWelcome;
         self.in_flight.clear();
+        // what the window left behind goes before the digests are taken
+        if let Some(w) = self.window {
+            store.trim(w);
+        }
         let scopes = store.scopes();
         Frame::Hello {
             device_id: self.device_id.clone(),
@@ -330,6 +360,7 @@ impl ClientEngine {
             core: env!("CARGO_PKG_VERSION").into(),
             app: String::new(),
             outbox: store.pending(&BTreeSet::new(), usize::MAX, false).len(),
+            window: self.window,
         }
     }
 
@@ -434,6 +465,11 @@ impl ClientEngine {
                 for scope in gone {
                     store.forget(scope);
                 }
+                // one written long ago (offline) and only now confirmed: outside the window
+                if let Some(w) = self.window {
+                    let ids: Vec<String> = flown.iter().map(|(id, _)| id.clone()).collect();
+                    store.trim_ids(w, &ids);
+                }
                 out.extend(self.pump(store));
             }
             Frame::Ops { scope, ops, to } => {
@@ -441,7 +477,7 @@ impl ClientEngine {
                 if let Some(seen) = repair {
                     seen.extend(ops.iter().map(|o| o.id.clone()));
                 }
-                for o in ops {
+                for o in ops.into_iter().filter(|o| !outside_window(o, self.window)) {
                     store.put_remote(o);
                 }
                 if to > store.cursor(&scope) {
@@ -642,6 +678,34 @@ impl ClientStore for MemStore {
         self.cursors.insert(scope.into(), 0);
         self.meta_dirty = true;
     }
+    fn trim(&mut self, window: i64) {
+        let gone: Vec<String> = self
+            .ops
+            .values()
+            .filter(|o| o.seq.is_some() && outside_window(o, Some(window)) && !self.restoring.contains(&o.id))
+            .map(|o| o.id.clone())
+            .collect();
+        for id in gone {
+            self.ops.remove(&id);
+            self.dirty.remove(&id);
+            self.touched.insert(id.clone());
+            self.removed.insert(id);
+        }
+    }
+    fn trim_ids(&mut self, window: i64, ids: &[String]) {
+        for id in ids {
+            let out = self
+                .ops
+                .get(id)
+                .is_some_and(|o| o.seq.is_some() && outside_window(o, Some(window)) && !self.restoring.contains(id));
+            if out {
+                self.ops.remove(id);
+                self.dirty.remove(id);
+                self.touched.insert(id.clone());
+                self.removed.insert(id.clone());
+            }
+        }
+    }
     fn forget(&mut self, scope: &str) {
         self.evict(scope, &BTreeSet::new());
         let restoring: Vec<String> =
@@ -682,6 +746,8 @@ struct Conn {
     sample: ClockSample,
     /// Scopes the connection receives live ops for.
     scopes: BTreeSet<String>,
+    /// Its window (SYNC §6.5), from its hello.
+    window: Option<i64>,
 }
 
 /// In-memory reference server.
@@ -758,7 +824,12 @@ impl MemServer {
     }
 
     pub fn digest(&self, scope: &str) -> Digest {
-        Digest::of(self.scope_ops(scope, 0).map(|o| o.id.as_str()))
+        self.digest_in(scope, None)
+    }
+
+    /// The digest a windowed device holds (SYNC §6.5).
+    pub fn digest_in(&self, scope: &str, window: Option<i64>) -> Digest {
+        Digest::of(self.scope_ops(scope, 0).filter(|o| !outside_window(o, window)).map(|o| o.id.as_str()))
     }
 
     pub fn disconnect(&mut self, device: &str) {
@@ -779,8 +850,8 @@ impl MemServer {
         self.conns.clear();
     }
 
-    fn catch_up(&self, scope: &str, after: i64) -> Vec<Frame> {
-        let ops: Vec<Op> = self.scope_ops(scope, after).cloned().collect();
+    fn catch_up(&self, scope: &str, after: i64, window: Option<i64>) -> Vec<Frame> {
+        let ops: Vec<Op> = self.scope_ops(scope, after).filter(|o| !outside_window(o, window)).cloned().collect();
         let to = self.max_seq(scope);
         let mut out: Vec<Frame> = ops
             .chunks(PAGE_OPS)
@@ -790,7 +861,7 @@ impl MemServer {
                 to: c.last().and_then(|o| o.seq).unwrap_or(to),
             })
             .collect();
-        out.push(Frame::Caught { scope: scope.into(), to, digest: self.digest(scope) });
+        out.push(Frame::Caught { scope: scope.into(), to, digest: self.digest_in(scope, window) });
         out
     }
 
@@ -857,7 +928,7 @@ impl MemServer {
     pub fn on_frame(&mut self, device: &str, frame: Frame, now: i64) -> Vec<(String, Frame)> {
         let mut out = Vec::new();
         match frame {
-            Frame::Hello { epoch, cursors, clock, .. } => {
+            Frame::Hello { epoch, cursors, clock, window, .. } => {
                 let Some(account) = self.devices.get(device).cloned() else {
                     out.push((
                         device.into(),
@@ -877,7 +948,8 @@ impl MemServer {
                 let max_seq: BTreeMap<String, i64> = scopes.iter().map(|s| (s.clone(), self.max_seq(s))).collect();
                 let reconcile = epoch.as_ref().is_some_and(|e| *e != self.epoch_str())
                     || cursors.iter().any(|(s, c)| *c > *max_seq.get(s).unwrap_or(&0));
-                self.conns.insert(device.into(), Conn { account, sample, scopes: scopes.iter().cloned().collect() });
+                self.conns
+                    .insert(device.into(), Conn { account, sample, scopes: scopes.iter().cloned().collect(), window });
                 out.push((
                     device.into(),
                     Frame::Welcome {
@@ -894,7 +966,7 @@ impl MemServer {
                 if !reconcile {
                     for s in &scopes {
                         let after = *cursors.get(s).unwrap_or(&0);
-                        out.extend(self.catch_up(s, after).into_iter().map(|f| (device.to_string(), f)));
+                        out.extend(self.catch_up(s, after, window).into_iter().map(|f| (device.to_string(), f)));
                     }
                 }
             }
@@ -914,7 +986,7 @@ impl MemServer {
                 // fan out to every other connected device that reads the scope
                 for o in fresh {
                     for (d, c) in &self.conns {
-                        if d != device && c.scopes.contains(&o.scope) {
+                        if d != device && c.scopes.contains(&o.scope) && !outside_window(&o, c.window) {
                             let seq = o.seq.unwrap_or(0);
                             out.push((d.clone(), Frame::Ops { scope: o.scope.clone(), ops: vec![o.clone()], to: seq }));
                         }
@@ -922,8 +994,9 @@ impl MemServer {
                 }
             }
             Frame::Pull { scope, after } => {
-                if self.conns.get(device).is_some_and(|c| c.scopes.contains(&scope)) {
-                    out.extend(self.catch_up(&scope, after).into_iter().map(|f| (device.to_string(), f)));
+                if let Some(c) = self.conns.get(device).filter(|c| c.scopes.contains(&scope)) {
+                    let window = c.window;
+                    out.extend(self.catch_up(&scope, after, window).into_iter().map(|f| (device.to_string(), f)));
                 }
             }
             Frame::Ping { .. } => out.push((device.into(), Frame::Pong { server_time: now })),
@@ -1067,6 +1140,35 @@ mod tests {
         let held: Vec<&str> = store.confirmed().map(|o| o.scope.as_str()).collect();
         assert_eq!(held, vec!["space:t"], "nothing of space:s is confirmed again");
         assert!(store.pending(&BTreeSet::new(), usize::MAX, false).is_empty());
+    }
+
+    /// SYNC §6.5: turning a window on drops, at the next connect, the confirmed message-family
+    /// ops that arrived before it (reported as removed), keeps everything else, and says so in
+    /// the hello so the server leaves them out too.
+    #[test]
+    fn a_window_trims_at_connect() {
+        let mut store = MemStore::default();
+        let mut old = confirmed(1, "space:s");
+        old.received_at = Some(100);
+        let mut new = confirmed(2, "space:s");
+        new.received_at = Some(300);
+        let mut channel = confirmed(3, "space:s");
+        channel.kind = "channel.create".into();
+        channel.received_at = Some(50);
+        let mut pending = confirmed(4, "space:s");
+        pending.seq = None;
+        pending.received_at = Some(10);
+        for o in [&old, &new, &channel] {
+            store.put_remote((*o).clone());
+        }
+        store.add_local(pending.clone());
+        let mut engine = ClientEngine::new("d");
+        engine.window = Some(200);
+        let hello = engine.on_connect(&mut store, ClockReading { wall: 0, mono: None, boot_id: None }, "t");
+        assert!(matches!(hello, Frame::Hello { window: Some(200), .. }));
+        let kept: BTreeSet<String> = store.ops.keys().cloned().collect();
+        assert_eq!(kept, BTreeSet::from([new.id, channel.id, pending.id]));
+        assert_eq!(store.removed, BTreeSet::from([old.id]));
     }
 
     #[test]

@@ -27,6 +27,8 @@ use crate::{blobs, db, ingest, now_ms, oplog};
 struct Peer {
     account: String,
     scopes: BTreeSet<String>,
+    /// A windowed replica's window (SYNC §6.5), from its hello.
+    window: Option<i64>,
     tx: mpsc::UnboundedSender<Frame>,
 }
 
@@ -1806,6 +1808,7 @@ fn catch_up(
     account: &str,
     scope: &str,
     after: i64,
+    window: Option<i64>,
 ) -> anyhow::Result<()> {
     let mut cursor = after;
     loop {
@@ -1815,6 +1818,7 @@ fn catch_up(
         let n = ops.len();
         let visible = ops
             .into_iter()
+            .filter(|o| !chorus_core::sync::outside_window(o, window))
             .filter_map(|o| match crate::visibility::op_visible_to(conn, account, &o) {
                 Ok(true) => Some(Ok(o)),
                 Ok(false) => None,
@@ -1831,7 +1835,11 @@ fn catch_up(
     let to = oplog::max_seq(conn, scope)?;
     send(
         tx,
-        Frame::Caught { scope: scope.into(), to, digest: crate::visibility::visible_digest(conn, account, scope)? },
+        Frame::Caught {
+            scope: scope.into(),
+            to,
+            digest: crate::visibility::visible_digest_in(conn, account, scope, window)?,
+        },
     );
     Ok(())
 }
@@ -1857,6 +1865,7 @@ async fn run_socket(s: AppState, socket: WebSocket, unsigned: Unsigned) {
     });
 
     let mut me: Option<(String, ingest::Session)> = None; // (device, session)
+    let mut window: Option<i64> = None; // SYNC §6.5, from the hello
     loop {
         // on a public server anyone can open a socket: one that hasn't signed in with a Hello
         // within HELLO_WITHIN is closed rather than held open
@@ -1903,8 +1912,9 @@ async fn run_socket(s: AppState, socket: WebSocket, unsigned: Unsigned) {
             break;
         }
         let result = match (&me, frame) {
-            (None, Frame::Hello { token, epoch, cursors, clock, outbox, .. }) => {
-                match hello(&s, &tx, &token, epoch, cursors, clock, outbox) {
+            (None, Frame::Hello { token, epoch, cursors, clock, outbox, window: w, .. }) => {
+                window = w;
+                match hello(&s, &tx, &token, HelloIn { epoch, cursors, clock, outbox, window: w }) {
                     Ok(session) => {
                         unsigned = None;
                         signed = Some(Signed::add(&s, &session.account_id, close.clone()));
@@ -1926,7 +1936,7 @@ async fn run_socket(s: AppState, socket: WebSocket, unsigned: Unsigned) {
             (Some((_, sess)), Frame::Pull { scope, after }) => {
                 let conn = s.db();
                 if ingest::can_access(&conn, &sess.account_id, &scope).unwrap_or(false) {
-                    catch_up(&conn, &tx, &sess.account_id, &scope, after)
+                    catch_up(&conn, &tx, &sess.account_id, &scope, after, window)
                 } else {
                     Ok(())
                 }
@@ -1960,15 +1970,22 @@ async fn run_socket(s: AppState, socket: WebSocket, unsigned: Unsigned) {
     }
 }
 
-fn hello(
-    s: &AppState,
-    tx: &mpsc::UnboundedSender<Frame>,
-    token: &str,
+/// What a `hello` says about the device's state.
+struct HelloIn {
     epoch: Option<String>,
     cursors: BTreeMap<String, i64>,
     clock: chorus_core::sync::ClockReading,
     outbox: usize,
+    window: Option<i64>,
+}
+
+fn hello(
+    s: &AppState,
+    tx: &mpsc::UnboundedSender<Frame>,
+    token: &str,
+    h: HelloIn,
 ) -> Result<ingest::Session, AuthError> {
+    let HelloIn { epoch, cursors, clock, outbox, window } = h;
     let now = now_ms();
     let conn = s.db();
     let who = auth::authenticate(&conn, token, now, s.session_ttl())?;
@@ -2001,13 +2018,13 @@ fn hello(
             tracing::warn!(error = %e, "can't note a reconciled device");
         }
         for sc in &scopes {
-            catch_up(&conn, tx, &who.account_id, sc, *cursors.get(sc).unwrap_or(&0))?;
+            catch_up(&conn, tx, &who.account_id, sc, *cursors.get(sc).unwrap_or(&0), window)?;
         }
     }
     // registered while still holding the db lock: live ops can't overtake the catch-up
     s.peers.lock().unwrap_or_else(|e| e.into_inner()).insert(
         who.device_id.clone(),
-        Peer { account: who.account_id.clone(), scopes: scopes.into_iter().collect(), tx: tx.clone() },
+        Peer { account: who.account_id.clone(), scopes: scopes.into_iter().collect(), window, tx: tx.clone() },
     );
     Ok(ingest::Session {
         account_id: who.account_id,
@@ -2121,7 +2138,9 @@ pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Optio
             continue;
         }
         let mut by_scope: BTreeMap<&str, Vec<Op>> = BTreeMap::new();
-        for o in deliver.values().filter(|o| p.scopes.contains(&o.scope)) {
+        for o in
+            deliver.values().filter(|o| p.scopes.contains(&o.scope) && !chorus_core::sync::outside_window(o, p.window))
+        {
             if crate::visibility::op_visible_to(conn, &p.account, o)? {
                 by_scope.entry(o.scope.as_str()).or_default().push(o.clone());
             }
@@ -2132,7 +2151,7 @@ pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Optio
         }
         for scope in rechecked.iter().filter(|sc| p.scopes.contains(**sc)) {
             let to = oplog::max_seq(conn, scope)?;
-            let digest = crate::visibility::visible_digest(conn, &p.account, scope)?;
+            let digest = crate::visibility::visible_digest_in(conn, &p.account, scope, p.window)?;
             send(&p.tx, Frame::Caught { scope: (*scope).into(), to, digest });
         }
     }

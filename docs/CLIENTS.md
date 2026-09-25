@@ -178,8 +178,13 @@ server doesn't count them.
 
 ### 4.3 Offline window
 
-Account scope is fully replicated; `space:` scopes keep the last N days (default 90) of messages
-plus everything pinned or starred. Scrolling beyond fetches from REST and caches read-only.
+Account scope is fully replicated. A browser tab without "keep everything" (below) keeps the
+messages, reactions, attachments and read marks of `space:` scopes that arrived in the last 90
+days (SYNC §6.5, D-075: the device says its window in `hello`, the server leaves the same ops
+out, so digests agree); channels, spaces and permissions are always kept. Older history:
+*Older messages (from the server)* at the top of a channel pages `GET /channels/{id}/messages
+?before=` in, read-only and not stored. Pinned messages older than the window aren't kept (the
+window rule must be decidable from the op alone, on both sides); `GET /pins` has them.
 
 With the server down (or no network) the installed PWA keeps working (owner, 2026-09-24: this is
 what "desktop" means for v1): the service worker serves the app shell and wasm core, the replica
@@ -192,9 +197,9 @@ silently to installed apps and engaged sites, so an uninstalled tab may still be
 Checked 2026-09-24: enrol, add a member, stop the server, reload — Home, Chat, Journal and two
 image attachments render, a member added and switched in offline reached the server on restart.
 
-**Keep everything on this device** (D-070, R18). Every op the account may see is already kept
-on every device (the window above is not built; when it is, it applies only with this setting
-off). The setting is per device — kept in IndexedDB (`kv["setting:keep_everything"]`), never
+**Keep everything on this device** (D-070, R18). On, every op the account may see is kept (no
+window); off, the window above applies (turning it on reconnects and the digest mismatch pulls
+everything again). The setting is per device — kept in IndexedDB (`kv["setting:keep_everything"]`), never
 synced — and defaults to on in the installed app (`display-mode: standalone`), off in a tab. On,
 it also keeps the *files*: once per session, 5 s after the socket is live, every attachment
 (thumbnail, and the file itself up to 20 MB), avatar and custom emoji the projection refers to is

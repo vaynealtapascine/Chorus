@@ -349,6 +349,11 @@ impl JsonReplica {
         Ok(js(&serde_json::json!({"op": o, "frames": frames})))
     }
 
+    /// Keep only message-family ops written since `window` ms (SYNC §6.5); `None` = everything.
+    pub fn set_window(&mut self, window: Option<i64>) {
+        self.0.set_window(window);
+    }
+
     pub fn connect(&mut self, clock_json: &str, token: &str) -> Result<String, String> {
         let c: crate::sync::ClockReading = parse("clock", clock_json)?;
         Ok(js(&self.0.connect(c, token)))

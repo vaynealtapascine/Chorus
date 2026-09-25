@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
-  import { core, type Composed } from '../core';
+  import { core, type Composed, type Entity } from '../core';
+  import RichText from './RichText.svelte';
   import { channels, contentWarningsAutoExpand, customEmojis, lastRead, memberMarks, members, messageById, messages, reactions, readPerMember, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
   import { router } from '../router.svelte';
@@ -221,9 +222,36 @@
     visibilityMode = 'all';
     visibleTo = [];
     replyIn = null;
+    older = [];
+    olderDone = false;
     // a reply started elsewhere ("Reply in…", "Reply privately") lands here
     if (current) replyTo = takeReply(current.id, current.space_id);
   });
+
+  // a browser tab keeps a window of messages (SYNC §6.5): older history comes over REST, on
+  // request, shown read-only above what this device holds
+  interface OlderMessage { id: string; authors: string[]; text: string; entities: Entity[]; cw: string | null; occurred_at: number }
+  let older = $state<OlderMessage[]>([]);
+  let olderDone = $state(false);
+  let olderBusy = $state(false);
+  async function loadOlder() {
+    if (!current) return;
+    const channel = current.id;
+    const before = older[0]?.occurred_at ?? msgs[0]?.occurred_at ?? Date.now();
+    olderBusy = true;
+    try {
+      const r = await apiFetch(`${apiBase()}/channels/${encodeURIComponent(channel)}/messages?before=${before}&limit=50`, {
+        headers: { authorization: `Bearer ${sync.device?.session ?? ''}` },
+      });
+      if (!r.ok || current?.id !== channel) return;
+      const items = ((await r.json()) as { items: OlderMessage[] }).items;
+      const have = new Set(msgs.map((m) => m.id));
+      older = [...items.filter((m) => !have.has(m.id)), ...older];
+      olderDone = items.length < 50;
+    } finally {
+      olderBusy = false;
+    }
+  }
 
   // Reply elsewhere (SPEC §5.3): the reply goes to another channel, thread or DM and links back
   // (a reference card, for readers who can see the original)
@@ -756,6 +784,18 @@
           </article>
         {:else if historyError}<p class="hint" role="status">{historyError}</p>{/if}
       {/if}
+      {#if sync.windowed && current && !olderDone}
+        <button class="older-load" disabled={olderBusy || sync.status !== 'live'} onclick={() => void loadOlder()}>
+          {olderBusy ? 'Loading…' : 'Older messages (from the server)'}
+        </button>
+      {/if}
+      {#each older as o (o.id)}
+        <article class="older">
+          <span class="who">{o.authors.map((id) => people.get(id)?.name ?? 'Someone').join(' & ')}</span>
+          <time>{new Date(o.occurred_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</time>
+          {#if o.cw}<div class="hint">Content warning: {o.cw}</div>{:else}<p><RichText text={o.text} entities={o.entities} emoji={emojiById} /></p>{/if}
+        </article>
+      {/each}
       {#each grouped as { m, cont } (m.id)}
         <Message
           {m}
@@ -1187,6 +1227,10 @@
     padding: var(--s-3);
     border-top: 1px solid var(--line);
   }
+  .older-load { justify-self: center; margin: var(--s-2) auto; }
+  .older { padding: var(--s-1) var(--s-3); color: var(--ink-2); }
+  .older .who { font-weight: 600; margin-right: var(--s-2); }
+  .older time { font-size: var(--fs-xs); color: var(--ink-3); }
   .not-sent { list-style: none; margin: 0; padding: var(--s-2); display: grid; gap: var(--s-1); border-left: 2px solid var(--line); }
   .not-sent li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
   .not-sent .why { color: var(--ink-2); font-size: var(--fs-sm); }

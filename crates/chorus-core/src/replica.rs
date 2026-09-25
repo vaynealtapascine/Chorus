@@ -221,7 +221,13 @@ impl Replica {
     }
 
     pub fn connect(&mut self, clock: ClockReading, token: &str) -> Frame {
-        self.engine.on_connect(&self.store, clock, token)
+        self.engine.on_connect(&mut self.store, clock, token)
+    }
+
+    /// A windowed replica (SYNC §6.5): keep message-family ops written since `window` (ms), or
+    /// everything (`None`). Takes effect at the next connect, which drops what fell out.
+    pub fn set_window(&mut self, window: Option<i64>) {
+        self.engine.window = window;
     }
 
     pub fn on_frame(&mut self, frame: Frame, now: i64) -> Vec<Frame> {

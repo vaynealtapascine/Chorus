@@ -176,6 +176,12 @@ impl CoreReplica {
         wrap(self.lock().create(&new_op_json, &device_now_json, &random))
     }
 
+    /// A windowed replica (SYNC §6.5): keep message-family ops written since `window` (epoch
+    /// ms), or everything (`null`); takes effect at the next connect. Android keeps everything.
+    pub fn set_window(&self, window: Option<i64>) {
+        self.lock().set_window(window);
+    }
+
     pub fn connect(&self, clock_json: String, token: String) -> Result<String, CoreError> {
         wrap(self.lock().connect(&clock_json, &token))
     }
