@@ -356,3 +356,56 @@ fn nobody_speaks_as_another_accounts_member() {
         None
     );
 }
+
+/// Moderators delete and pin other people's messages; nobody edits them, the space's owner
+/// included (D-073).
+#[test]
+fn only_the_author_edits_a_message() {
+    let (c, a, b) = setup();
+    let y = new_id(2, [50; 10]);
+    let sy = format!("space:{y}");
+    let (cy, mb, ma) = (new_id(2, [51; 10]), new_id(2, [52; 10]), new_id(2, [53; 10]));
+    ingest::grant(&c, &a, &sy).unwrap();
+    ingest::grant(&c, &b, &sy).unwrap();
+    // a owns the space; b is a member and writes a message
+    ingest::server_op(&c, &a, "space.create", &sy, Some(&y), json!({"kind": "shared", "name": "Y"}), NOW).unwrap();
+    ingest::server_op(&c, &a, "space.join", &sy, Some(&y), json!({"account_id": a}), NOW).unwrap();
+    ingest::server_op(&c, &a, "space.join", &sy, Some(&y), json!({"account_id": b}), NOW).unwrap();
+    ingest::server_op(&c, &a, "channel.create", &sy, Some(&cy), json!({"space_id": y, "name": "y"}), NOW).unwrap();
+    ingest::server_op(
+        &c,
+        &b,
+        "message.send",
+        &sy,
+        Some(&mb),
+        json!({"channel_id": cy, "text": "b's words", "authors": []}),
+        NOW,
+    )
+    .unwrap();
+    ingest::server_op(
+        &c,
+        &a,
+        "message.send",
+        &sy,
+        Some(&ma),
+        json!({"channel_id": cy, "text": "a's words", "authors": []}),
+        NOW,
+    )
+    .unwrap();
+    let mut n = 90u8;
+    let mut push = |who: &str, kind: &str, msg: &str, payload: Value| {
+        n += 1;
+        let mut o = op(n, kind, &sy, payload, NOW);
+        o.entity_id = Some(msg.to_string());
+        let (r, _) = ingest::accept(&c, &session(who, 0), o, NOW, false).unwrap();
+        r.error.map(|e| e.message)
+    };
+    assert!(
+        push(&a, "message.edit", &mb, json!({"message_id": mb, "text": "rewritten"}))
+            .is_some_and(|m| m.contains("only its author"))
+    );
+    assert_eq!(push(&a, "message.pin", &mb, json!({})), None, "the owner still moderates");
+    assert_eq!(push(&a, "message.delete", &mb, json!({})), None);
+    assert_eq!(push(&b, "message.edit", &mb, json!({"message_id": mb, "text": "my fix"})), None);
+    assert!(push(&b, "message.edit", &ma, json!({"message_id": ma, "text": "nope"})).is_some());
+}

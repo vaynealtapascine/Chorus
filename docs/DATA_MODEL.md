@@ -733,7 +733,8 @@ perm)` holds when both `perm` and `view` resolve to allow:
 Writes: `space.*` needs an admin (never in a DM; leaving is your own); `channel.create` needs a
 manager (admin, or a DM participant), or `thread` on the parent's channel for a thread; other
 `channel.*` need `manage`; `message.send`/`forward` need `send`; `message.pin`/`unpin` need `pin`;
-other `message.*` need `view` on your own message and `manage` on someone else's; `reaction.*`
+other `message.*` need `view` on your own message and `manage` on someone else's, except
+`message.edit`, which only the message's author may send (D-073); `reaction.*`
 needs `react`; `read.*` needs `view`. A refused op is acked `forbidden` with the reason.
 Property-tested against an independent model of these rules in `tests/permissions.rs`.
 
