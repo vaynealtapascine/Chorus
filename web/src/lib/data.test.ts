@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bucketAssignments, buckets, customEmojis, fuzzy, groupPath, memberListItems, memberLists, memberMarks, membership, messages, relationshipTypes, readPerMember, relationships, segmentParsing, threadSummaries, type GroupRow } from './data';
+import { bucketAssignments, buckets, customEmojis, fuzzy, groupPath, memberListItems, memberLists, memberMarks, membership, messages, pinnedMessages, relationshipTypes, readPerMember, relationships, segmentParsing, threadSummaries, type GroupRow } from './data';
 import type { Projection } from './sync/client';
 
 describe('data helpers', () => {
@@ -146,35 +146,59 @@ describe('incremental message lists', () => {
     const { applyDelta } = await import('./sync/delta');
     const { unread } = await import('./data');
     let seed = 7;
-    const rand = (n: number) => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) % n);
+    // (the high bits: an LCG's low ones repeat every few calls)
+    const rand = (n: number) => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) >>> 16) % n;
     const row = (ch: string, at: number, extra: Record<string, unknown> = {}) =>
       ({ exists: true, fields: { channel_id: ch, authors: ['k'], text: `t${at}`, entities: [], occurred_at: at, account_id: 'x', ...extra } });
+    // four channels, so a row moved twice between looks has a list no other change touches
+    const CH = ['a', 'b', 'c', 'd'];
     const message: Projection['rows'][string] = {};
-    for (let i = 0; i < 40; i++) message[`m${i}`] = row(i % 2 ? 'a' : 'b', i * 10);
+    for (let i = 0; i < 40; i++) message[`m${i}`] = row(CH[i % 4], i * 10);
     let p: Projection = { rows: { message, attachment: { f1: { exists: true, fields: { blob_hash: 'h1' } } } }, sets: {}, fronts: {}, opaque: 0 };
     const fresh = (q: Projection): Projection => ({ ...q, rows: Object.fromEntries(Object.entries(q.rows).map(([k, v]) => [k, { ...v }])) });
-    for (let step = 0; step < 300; step++) {
-      for (const ch of ['a', 'b']) void messages(p, ch); // index the current version
+    for (let step = 0; step < 1000; step++) {
+      // index and check the current version, mostly: skipped steps are caught up from the in-place
+      // log, and a run of 20 is further back than it keeps
+      const look = step % 50 >= 20 && rand(3) > 0;
+      if (look) for (const ch of CH) void [messages(p, ch), pinnedMessages(p, ch)];
       const ids = Object.keys(p.rows.message ?? {});
       const changes: Record<string, unknown> = {};
       for (let k = 0; k <= rand(3); k++) {
-        const kind = rand(5);
+        const kind = rand(6);
         const id = ids[rand(ids.length)];
-        if (kind === 0) changes[`n${step}_${k}`] = row(rand(2) ? 'a' : 'b', rand(500), rand(4) === 0 ? { attachments: ['f1'] } : {});
+        if (kind === 0) changes[`n${step}_${k}`] = row(CH[rand(4)], rand(500), rand(4) === 0 ? { attachments: ['f1'] } : {});
         else if (kind === 1) changes[id] = row(String(p.rows.message[id].fields.channel_id), rand(500));
-        else if (kind === 2) changes[id] = row(rand(2) ? 'a' : 'b', Number(p.rows.message[id].fields.occurred_at));
+        else if (kind === 2) changes[id] = row(CH[rand(4)], Number(p.rows.message[id].fields.occurred_at));
         else if (kind === 3) changes[id] = null;
-        else changes[id] = { ...p.rows.message[id], fields: { ...p.rows.message[id].fields, deleted_at: 1 } };
+        else if (kind === 4) changes[id] = { ...p.rows.message[id], fields: { ...p.rows.message[id].fields, deleted_at: 1 } };
+        else changes[id] = { ...p.rows.message[id], fields: { ...p.rows.message[id].fields, pinned_at: rand(2) ? 1 : null } };
       }
       const rows: Record<string, Record<string, unknown>> = { message: changes };
       if (rand(10) === 0) rows.attachment = { f1: { exists: true, fields: { blob_hash: `h${step}` } } };
       p = applyDelta(p, { rows: rows as never, sets: {}, fronts: {}, reviews: {}, opaque: step, full: false });
+      if (!look) continue;
       const q = fresh(p);
-      for (const ch of ['a', 'b']) {
+      for (const ch of CH) {
         expect(messages(p, ch)).toEqual(messages(q, ch));
         expect(unread(p, ch, 'me')).toBe(unread(q, ch, 'me'));
+        expect(pinnedMessages(p, ch)).toEqual(pinnedMessages(q, ch));
       }
     }
+  });
+  it('catch up from several in-place patches, each row from where it was first', async () => {
+    const { applyDelta } = await import('./sync/delta');
+    const row = (ch: string, at: number, extra: Record<string, unknown> = {}) =>
+      ({ exists: true, fields: { channel_id: ch, authors: ['k'], text: `t${at}`, entities: [], occurred_at: at, account_id: 'x', ...extra } });
+    const delta = (message: Record<string, unknown>) => ({ rows: { message } as never, sets: {}, fronts: {}, reviews: {}, opaque: 0, full: false });
+    let p: Projection = { rows: { message: { x: row('a', 1, { pinned_at: 1 }), y: row('a', 2) } }, sets: {}, fronts: {}, opaque: 0 };
+    expect(messages(p, 'a').map((m) => m.id)).toEqual(['x', 'y']);
+    expect(pinnedMessages(p, 'a').map((m) => m.id)).toEqual(['x']);
+    // moved to b, then edited there, with nobody looking in between
+    p = applyDelta(p, delta({ x: row('b', 1, { pinned_at: 1 }) }));
+    p = applyDelta(p, delta({ x: row('b', 1, { pinned_at: 1, text: 'edited' }) }));
+    expect(messages(p, 'a').map((m) => m.id)).toEqual(['y']);
+    expect(messages(p, 'b').map((m) => m.id)).toEqual(['x']);
+    expect(pinnedMessages(p, 'a')).toEqual([]);
   });
 });
 

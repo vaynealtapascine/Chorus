@@ -1,3 +1,10 @@
+<script lang="ts" module>
+  import type { MemberColors } from '../core';
+  // one formatter and one adapted colour per value for every message on the page (R24)
+  const clock = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' });
+  const adapted = new Map<string, MemberColors>();
+</script>
+
 <script lang="ts">
   import { core } from '../core';
   import type { EmojiRow, MemberRow, MessageRow, SnapshotItem, TextRange, ThreadSummary } from '../data';
@@ -75,9 +82,15 @@
   let cwExpanded = $state<boolean | null>(null);
   const showBody = $derived(!m.cw || (cwExpanded ?? cwAutoExpand));
 
-  const color = (id: string) => core.adaptColor(people.get(id)?.color ?? '#A09184', dark);
+  const color = (id: string) => {
+    const hex = people.get(id)?.color ?? '#A09184';
+    const key = `${hex}|${dark}`;
+    let c = adapted.get(key);
+    if (c === undefined) adapted.set(key, (c = core.adaptColor(hex, dark)));
+    return c;
+  };
   const nameOf = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
-  const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = (t: number) => clock.format(t);
   // "edited" opens what it said before (SPEC §5.3)
   let history = $state<Revision[] | null>(null);
   const toggleHistory = () => (history = history ? null : sync.revisions(m.id));
