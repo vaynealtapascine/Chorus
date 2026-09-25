@@ -2,6 +2,7 @@ package garden.vayne.chorus
 
 import android.os.Bundle
 import android.widget.Toast
+import androidx.lifecycle.lifecycleScope
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -57,6 +58,7 @@ import garden.vayne.chorus.ui.Avatar
 import garden.vayne.chorus.ui.fuzzy
 import garden.vayne.chorus.ui.tonesOf
 import garden.vayne.chorus.widget.QuickSwitchWidget
+import garden.vayne.chorus.widget.PinnedShortcuts
 import kotlinx.coroutines.launch
 
 /**
@@ -67,6 +69,28 @@ class SearchActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val chorus = Chorus.get(this)
+        val pinnedId = intent.getStringExtra(PinnedShortcuts.EXTRA_MEMBER_ID)
+        if (pinnedId != null) {
+            val pinnedAccount = intent.getStringExtra(PinnedShortcuts.EXTRA_ACCOUNT_ID)
+            lifecycleScope.launch {
+                try {
+                    val model = chorus.awaitModel()
+                    val member = model.active.find { it.id == pinnedId &&
+                        (it.createdByAccountId == null || it.createdByAccountId == pinnedAccount) }
+                    if (chorus.device?.accountId != pinnedAccount || member == null || model.isPerson) {
+                        Toast.makeText(this@SearchActivity, "This shortcut is no longer available.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val subject = Subject("member", member.id, member.shownName, member.color, member.glyph, member.avatarBlob)
+                        val label = Front.tap(chorus, subject, Mode.Replace)
+                        QuickSwitchWidget.refreshAll(this@SearchActivity)
+                        Toast.makeText(this@SearchActivity, label, Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(this@SearchActivity, e.message ?: "Couldn't switch", Toast.LENGTH_LONG).show()
+                } finally { finish() }
+            }
+            return
+        }
         setContent { ChorusTheme { Launcher(chorus, ::finish) } }
     }
 }

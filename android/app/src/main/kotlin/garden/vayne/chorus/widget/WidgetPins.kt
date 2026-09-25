@@ -20,5 +20,6 @@ object WidgetPins {
         if (accountId.isNullOrBlank()) return
         prefs(ctx).edit().putString(accountId, JSONArray(ids.distinct()).toString()).apply()
         QuickSwitchWidget.refreshAll(ctx)
+        PinnedShortcuts.refresh(ctx, garden.vayne.chorus.data.Chorus.get(ctx).model.value)
     }
 }

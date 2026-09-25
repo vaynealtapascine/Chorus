@@ -15,16 +15,16 @@ internal sealed interface WidgetTile {
  * front. Pure, so it is unit-tested without a device.
  */
 internal fun widgetTiles(model: Model, folder: String?, recentLimit: Int = 8,
-    pinned: List<String> = emptyList()): List<WidgetTile> {
+    pinned: List<String> = emptyList(), accountId: String? = null): List<WidgetTile> {
     if (model.isPerson) return emptyList()
     val subsystems = model.groups.filter { it.isSubsystem }
-    val active = model.active
+    val active = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }
     val recent = model.recents(Int.MAX_VALUE)
     fun count(id: String) = model.membership[id]?.size ?: 0
     fun member(m: garden.vayne.chorus.data.Member) = WidgetTile.Subject("member", m.id, m.shownName, m.color, m.glyph)
 
     if (folder != null) {
-        val g = model.group(folder) ?: return widgetTiles(model, null, recentLimit, pinned)
+        val g = model.group(folder) ?: return widgetTiles(model, null, recentLimit, pinned, accountId)
         val inside = model.membership[folder].orEmpty()
         val rank = { id: String -> recent.indexOf(id).let { if (it < 0) Int.MAX_VALUE else it } }
         return listOf<WidgetTile>(WidgetTile.Subject("group", g.id, "All of ${g.name}", g.color ?: "#A09184", "◌")) +

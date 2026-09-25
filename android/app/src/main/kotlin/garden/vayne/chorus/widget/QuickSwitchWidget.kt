@@ -227,6 +227,7 @@ class QuickSwitchWidget : AppWidgetProvider() {
             val app = ctx.applicationContext
             var lastKey: Any? = null
             Chorus.get(app).onModel = { m ->
+                PinnedShortcuts.refresh(app, m)
                 // only redraw when something the widget shows changed
                 val key = listOf(m.current, m.members.map { Triple(it.id, it.shownName, it.color to it.glyph) }, m.groups, m.membership, m.switches.size)
                 if (key != lastKey) {

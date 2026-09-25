@@ -81,6 +81,7 @@ fun Home(chorus: Chorus, model: Model) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val accountId = chorus.device?.accountId
+    val ownMembers = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }
     var pins by remember(accountId) { mutableStateOf(WidgetPins.read(ctx, accountId)) }
     var editingPins by remember { mutableStateOf(false) }
     fun setPins(next: List<String>) { pins = next; WidgetPins.write(ctx, accountId, next) }
@@ -109,7 +110,7 @@ fun Home(chorus: Chorus, model: Model) {
     BackHandler(enabled = folder != null) { folder = folder?.let { model.group(it)?.parentId } }
 
     val here = model.current.map { it.subjectType to it.subjectId }.toSet()
-    val tiles: List<Tile> = remember(model, query, folder, pins) { tiles(model, query, folder, pins) }
+    val tiles: List<Tile> = remember(model, query, folder, pins, accountId) { tiles(model, query, folder, pins, accountId) }
 
     LazyVerticalGrid(
         columns = GridCells.Adaptive(84.dp),
@@ -159,9 +160,9 @@ fun Home(chorus: Chorus, model: Model) {
                 if (editingPins) {
                     Text("Tap a member tile to pin or unpin. Pins appear first on this device's widget.",
                         color = p.ink2, fontSize = 12.sp)
-                    val visiblePins = pins.filter { id -> model.active.any { it.id == id } }
+                    val visiblePins = pins.filter { id -> ownMembers.any { it.id == id } }
                     visiblePins.forEachIndexed { i, id ->
-                        val member = model.active.first { it.id == id }
+                        val member = ownMembers.first { it.id == id }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             Text("★ ${member.shownName}", color = p.ink, modifier = Modifier.weight(1f))
@@ -227,8 +228,8 @@ fun Home(chorus: Chorus, model: Model) {
     }
 }
 
-private fun tiles(model: Model, query: String, folder: String?, pins: List<String> = emptyList()): List<Tile> {
-    val members = model.active
+private fun tiles(model: Model, query: String, folder: String?, pins: List<String> = emptyList(), accountId: String? = null): List<Tile> {
+    val members = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }
     if (query.isNotBlank()) {
         val ms = members.mapNotNull { m ->
             fuzzy(query, listOfNotNull(m.name, m.displayName, m.pronouns, *m.sigils.toTypedArray()).joinToString(" "))?.let { it to Tile.One(Subject("member", m.id, m.shownName, m.color, m.glyph, m.avatarBlob)) }

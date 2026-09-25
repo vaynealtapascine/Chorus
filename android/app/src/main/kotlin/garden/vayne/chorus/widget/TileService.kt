@@ -23,8 +23,9 @@ class TileService : RemoteViewsService() {
 
         override fun onDataSetChanged() {
             val model = runBlocking { Chorus.get(ctx).awaitModel() }
+            val account = Chorus.get(ctx).device?.accountId
             tiles = widgetTiles(model, WidgetState(ctx).folder(widgetId),
-                pinned = WidgetPins.read(ctx, Chorus.get(ctx).device?.accountId))
+                pinned = WidgetPins.read(ctx, account), accountId = account)
             here = model.current.map { it.subjectType to it.subjectId }.toSet()
         }
 
