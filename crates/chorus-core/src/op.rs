@@ -482,6 +482,247 @@ pub fn validate(op: &Op) -> Result<Known, OpError> {
     Ok(Known::Yes(spec))
 }
 
+/// [`validate`] plus the value rules (`FIELD_RULES`, [`payload_shape`]) for an op being created or
+/// received now: clients run it when creating an op, the server at ingest. Projection runs only
+/// [`validate`], so an op stored before a rule existed keeps projecting as it always did.
+pub fn validate_new(op: &Op) -> Result<Known, OpError> {
+    let known = validate(op)?;
+    if matches!(known, Known::Yes(_)) {
+        payload_shape(op)?;
+    }
+    Ok(known)
+}
+
+/// Value rules for payload keys whose projection can only store certain values (new ops only,
+/// [`validate_new`]) (DATA_MODEL.md
+/// §2, "Payload rules"). Found by `chorus-server/tests/ingest_fuzz.rs`: an op that passes here must
+/// project on every client and on the server.
+fn payload_shape(op: &Op) -> Result<(), OpError> {
+    let p = &op.payload;
+    let bad = |msg: &str| Err(OpError::BadPayload(msg.into()));
+    let one_of = |key: &str, allowed: &[&str], required: bool| -> Result<(), OpError> {
+        match p.get(key) {
+            None | Some(Value::Null) if !required => Ok(()),
+            Some(Value::String(v)) if allowed.contains(&v.as_str()) => Ok(()),
+            _ => Err(OpError::BadPayload(format!("{key} must be one of {}", allowed.join(", ")))),
+        }
+    };
+    let nonempty = |key: &str| -> Result<(), OpError> {
+        match p.get(key) {
+            Some(Value::String(v)) if !v.is_empty() => Ok(()),
+            _ => Err(OpError::BadPayload(format!("{key} is required"))),
+        }
+    };
+    // present means of the right type: `null` is not "leave it out" for these
+    let typed = |key: &str, ok: fn(&Value) -> bool, what: &str| -> Result<(), OpError> {
+        match p.get(key) {
+            None => Ok(()),
+            Some(v) if ok(v) => Ok(()),
+            _ => Err(OpError::BadPayload(format!("{key} must be {what}"))),
+        }
+    };
+    let strings = |v: &Value| v.as_array().is_some_and(|a| a.iter().all(Value::is_string));
+    if let Some(spec) = spec(&op.kind)
+        && matches!(spec.action, Action::Create | Action::Set | Action::Append | Action::Revise)
+        && let Some(obj) = p.as_object()
+    {
+        for (table, field, rules) in FIELD_RULES {
+            if *table != spec.table {
+                continue;
+            }
+            if let Some(v) = obj.get(*field)
+                && let Some(why) = broken(v, rules)
+            {
+                return Err(OpError::BadPayload(format!("{field} must be {why}")));
+            }
+        }
+    }
+    match op.kind.as_str() {
+        "message.send" | "message.forward" | "message.edit" | "post.create" | "post.edit" => {
+            typed("text", Value::is_string, "text")?;
+            typed("entities", Value::is_array, "a list")?;
+            typed("tags", strings, "a list of tags")?;
+            ranges(p)?;
+        }
+        "field.define" | "field.set_def" => one_of("type", FIELD_TYPES, false)?,
+        "space.set_role" => {
+            nonempty("account_id")?;
+            nonempty("role")?;
+        }
+        "space.set_roles" => {
+            let role_ok = |r: &Value| {
+                r.get("id").and_then(Value::as_str).is_some_and(|id| !id.is_empty())
+                    && r.get("perms").is_none_or(|x| {
+                        x.as_array()
+                            .is_some_and(|a| a.iter().all(|x| x.as_str().is_some_and(|x| PERMISSIONS.contains(&x))))
+                    })
+            };
+            if !p.get("roles").and_then(Value::as_array).is_some_and(|a| a.iter().all(role_ok)) {
+                return bad("roles must be a list of {id, name, perms}");
+            }
+        }
+        "channel.create" | "channel.set" => one_of("kind", &["text", "thread", "member_dm"], false)?,
+        "channel.set_permission" => {
+            if op.entity_id.is_none() {
+                return Err(OpError::MissingEntity);
+            }
+            one_of("target_type", &["role", "account"], true)?;
+            nonempty("target_id")?;
+            for key in ["allow", "deny"] {
+                match p.get(key) {
+                    None | Some(Value::Null) => {}
+                    Some(Value::Array(a)) if a.iter().all(|x| x.as_str().is_some_and(|x| PERMISSIONS.contains(&x))) => {
+                    }
+                    _ => return bad(&format!("{key} must be a list of {}", PERMISSIONS.join(", "))),
+                }
+            }
+        }
+        "reaction.add" | "reaction.remove" => {
+            one_of("target_type", &["message", "post"], true)?;
+            nonempty("target_id")?;
+            nonempty("emoji")?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// What a payload field may hold, from the column it is stored in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rule {
+    /// never `null` (the column is NOT NULL)
+    NotNull,
+    /// a JSON object or list (the column holds JSON)
+    Json,
+    /// `true` or `false`
+    Bool,
+    /// one of these strings
+    OneOf(&'static [&'static str]),
+}
+
+/// Payload fields whose column constrains them (DATA_MODEL.md §4), per table. Every op that
+/// writes the table obeys them, so what the server accepts it can also store and rebuild.
+/// `chorus-server/tests/ingest_fuzz.rs` checks this list against the SQL schema.
+pub const FIELD_RULES: &[(&str, &str, &[Rule])] = {
+    use Rule::*;
+    &[
+        ("account", "settings", &[Json, NotNull]),
+        ("attachment", "is_spoiler", &[Bool, NotNull]),
+        ("bucket", "ceiling", &[Json, NotNull]),
+        ("channel", "kind", &[OneOf(&["text", "thread", "member_dm"])]),
+        ("channel", "member_ids", &[Json]),
+        ("channel", "settings", &[Json, NotNull]),
+        ("custom_emoji", "aliases", &[Json, NotNull]),
+        ("custom_emoji", "is_animated", &[Bool, NotNull]),
+        ("draft", "entities", &[Json, NotNull]),
+        ("feed", "visibility", &[Json, NotNull]),
+        ("field_def", "type", &[OneOf(FIELD_TYPES)]),
+        ("field_def", "options", &[Json, NotNull]),
+        ("field_def", "default_visibility", &[Json, NotNull]),
+        ("member", "sigils", &[Json, NotNull]),
+        ("member", "proxy_tags", &[Json, NotNull]),
+        ("member", "is_self", &[Bool, NotNull]),
+        ("member", "is_locked", &[Bool, NotNull]),
+        ("member", "visibility", &[Json, NotNull]),
+        ("member", "field_visibility", &[Json, NotNull]),
+        ("member", "notify_policy", &[Json, NotNull]),
+        ("member_group", "kind", &[OneOf(&["subsystem", "group"])]),
+        ("member_group", "can_front", &[Bool, NotNull]),
+        ("member_group", "visibility", &[Json, NotNull]),
+        ("member_list", "visibility", &[Json, NotNull]),
+        ("message", "sent_offline", &[Bool, NotNull]),
+        ("message", "kind", &[NotNull]),
+        ("message", "text", &[NotNull]),
+        ("message", "entities", &[Json, NotNull]),
+        ("post", "text", &[NotNull]),
+        ("post", "entities", &[Json, NotNull]),
+        ("post", "tags", &[Json, NotNull]),
+        ("post", "visibility", &[Json, NotNull]),
+        ("post", "sent_offline", &[Bool, NotNull]),
+        ("relationship", "visibility", &[Json, NotNull]),
+        ("relationship_type", "is_symmetric", &[Bool, NotNull]),
+        ("space", "kind", &[OneOf(&["internal", "shared", "dm"])]),
+        ("space", "settings", &[Json, NotNull]),
+        ("space", "roles", &[Json, NotNull]),
+        ("system", "terminology", &[Json, NotNull]),
+    ]
+};
+
+/// Why `v` breaks `rules`, if it does.
+fn broken(v: &Value, rules: &[Rule]) -> Option<String> {
+    for r in rules {
+        let ok = match r {
+            Rule::NotNull => !v.is_null(),
+            Rule::Json => v.is_null() || v.is_object() || v.is_array(),
+            Rule::Bool => v.is_null() || v.is_boolean(),
+            Rule::OneOf(allowed) => v.is_null() || v.as_str().is_some_and(|s| allowed.contains(&s)),
+        };
+        if !ok {
+            return Some(match r {
+                Rule::NotNull => "set (not null)".into(),
+                Rule::Json => "an object or a list".into(),
+                Rule::Bool => "true or false".into(),
+                Rule::OneOf(allowed) => format!("one of {}", allowed.join(", ")),
+            });
+        }
+    }
+    None
+}
+
+/// Custom field types (DATA_MODEL `field_def.type`).
+pub const FIELD_TYPES: &[&str] = &[
+    "text",
+    "long_text",
+    "number",
+    "date",
+    "select",
+    "multi_select",
+    "boolean",
+    "color",
+    "url",
+    "member_ref",
+    "rating",
+];
+
+/// Entities and segments are `{offset, length}` ranges in UTF-16 units that stay inside the text
+/// (when the op carries it), so every renderer can slice with them. Entities are objects with a
+/// `type` (unknown types from newer clients pass); segments name their `authors`.
+fn ranges(p: &Value) -> Result<(), OpError> {
+    let len = p.get("text").and_then(Value::as_str).map(crate::text::utf16_len);
+    let range = |x: &Value, what: &str| -> Result<(), OpError> {
+        let n = |k: &str| x.get(k).and_then(Value::as_u64).filter(|v| *v <= u32::MAX as u64);
+        let (Some(offset), Some(length)) = (n("offset"), n("length")) else {
+            return Err(OpError::BadPayload(format!("each {what} needs a whole-number offset and length")));
+        };
+        if len.is_some_and(|len| offset + length > len as u64) {
+            return Err(OpError::BadPayload(format!("a {what} runs past the end of the text")));
+        }
+        Ok(())
+    };
+    for e in p.get("entities").and_then(Value::as_array).into_iter().flatten() {
+        if !e.get("type").is_some_and(Value::is_string) {
+            return Err(OpError::BadPayload("each entity needs a type".into()));
+        }
+        range(e, "entity")?;
+    }
+    match p.get("segments") {
+        None | Some(Value::Null) => {}
+        Some(Value::Array(segs)) => {
+            for g in segs {
+                if !g.get("authors").and_then(Value::as_array).is_some_and(|a| a.iter().all(Value::is_string)) {
+                    return Err(OpError::BadPayload("each segment needs a list of authors".into()));
+                }
+                range(g, "segment")?;
+            }
+        }
+        _ => return Err(OpError::BadPayload("segments must be a list".into())),
+    }
+    Ok(())
+}
+
+/// Channel permissions (SPEC §5.1, D-047).
+pub const PERMISSIONS: &[&str] = &["view", "send", "react", "thread", "pin", "manage"];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -546,6 +787,42 @@ mod tests {
         assert!(matches!(validate(&o), Err(OpError::WrongScope { .. })));
         let o = op("emoji.create", "server", json!({"name": "kai_wave"}));
         assert!(matches!(validate(&o), Ok(Known::Yes(_))));
+    }
+
+    #[test]
+    fn text_ranges_stay_inside_the_text() {
+        let space = format!("space:{}", new_id(1, [4; 10]));
+        let send = |payload: Value| validate_new(&op("message.send", &space, payload));
+        let ok = send(json!({"text": "hé 🌌", "entities": [{"type": "bold", "offset": 3, "length": 2}],
+            "segments": [{"offset": 0, "length": 5, "authors": ["a"]}]}));
+        assert!(matches!(ok, Ok(Known::Yes(_))), "{ok:?}");
+        for bad in [
+            json!({"text": "hi", "entities": [{"type": "bold", "offset": 1, "length": 2}]}),
+            json!({"text": "hi", "entities": [null]}),
+            json!({"text": "hi", "entities": [{"offset": 0, "length": 1}]}),
+            json!({"text": "hi", "entities": [{"type": "bold", "offset": -1, "length": 1}]}),
+            json!({"text": "hi", "entities": [{"type": "bold", "offset": "0", "length": 1}]}),
+            json!({"text": "hi", "segments": [{"offset": 0, "length": 3, "authors": ["a"]}]}),
+            json!({"text": "hi", "segments": [{"offset": 0, "length": 2}]}),
+            json!({"text": "hi", "segments": {}}),
+        ] {
+            assert!(matches!(send(bad.clone()), Err(OpError::BadPayload(_))), "{bad}");
+        }
+        // an edit without its text can't be bounds-checked, only shape-checked
+        let edit = op("message.edit", &space, json!({"entities": [{"type": "x_new_kind", "offset": 9, "length": 1}]}));
+        assert!(matches!(validate_new(&edit), Ok(Known::Yes(_))));
+    }
+
+    /// A stored op from before a value rule existed still projects: the rules are for new ops.
+    #[test]
+    fn value_rules_never_hide_stored_ops() {
+        let space = format!("space:{}", new_id(1, [5; 10]));
+        let old =
+            op("message.send", &space, json!({"text": "hi", "entities": [{"type": "bold", "offset": 0, "length": 9}]}));
+        assert!(matches!(validate_new(&old), Err(OpError::BadPayload(_))), "refused as a new op");
+        assert!(matches!(validate(&old), Ok(Known::Yes(_))));
+        let p = crate::model::project([&old]);
+        assert!(p.row("message", old.entity().unwrap()).is_some_and(|r| r.exists), "still shown");
     }
 
     #[test]

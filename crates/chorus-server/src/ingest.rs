@@ -68,7 +68,9 @@ pub fn accept(
     if let Some(existing) = oplog::by_id(conn, &o.id)? {
         return Ok((AckResult::ok(&existing), None));
     }
-    if let Err(e) = op::validate(&o) {
+    // restore pushes re-send history, which only has to be what was valid when it was written
+    let checked = if restore { op::validate(&o) } else { op::validate_new(&o) };
+    if let Err(e) = checked {
         return Ok((AckResult::err(o.id, e.code(), e.to_string(), false), None));
     }
     let preserved = restore && restore_open(conn, now)? && o.account_id.is_some() && o.occurred_at.is_some();
@@ -81,6 +83,13 @@ pub fn accept(
     }
     if !preserved && !crate::visibility::related_write_allowed(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", "message is private to another account".into(), false), None));
+    }
+    // speaking as someone else's member (impersonation in a shared space)
+    if !preserved && let Some(why) = foreign_item(conn, &author, &o)? {
+        return Ok((AckResult::err(o.id, "forbidden", why, false), None));
+    }
+    if !preserved && let Some(why) = foreign_speaker(conn, &author, &o)? {
+        return Ok((AckResult::err(o.id, "forbidden", why, false), None));
     }
     // channel permissions (perms.rs, D-047)
     if !preserved && let Some(why) = crate::perms::write_denied(conn, &author, &o)? {
@@ -153,9 +162,31 @@ pub fn accept(
         o.device_id = Some(s.device_id.clone());
         o.received_at = Some(now);
     }
-    let seq = oplog::insert(conn, &o, suspect, preserved)?;
+    // Storing and projecting run in a savepoint: an op the projection can't apply (a payload of a
+    // shape `op::validate` let through) is refused on its own. Failing here would roll back the
+    // whole pushed batch, and the device would resend it forever, its outbox stuck behind one op.
+    conn.execute_batch("SAVEPOINT accept_op")?;
+    match store_and_project(conn, &mut o, suspect, preserved, now) {
+        Ok(()) => {
+            conn.execute_batch("RELEASE accept_op")?;
+            Ok((AckResult::ok(&o), Some(o)))
+        }
+        Err(e) if !is_transient(&e) => {
+            conn.execute_batch("ROLLBACK TO accept_op; RELEASE accept_op")?;
+            tracing::warn!(op = %o.id, kind = %o.kind, error = %format!("{e:#}"), "ingest: op refused, the projection can't apply it");
+            Ok((AckResult::err(o.id, "unprocessable", format!("{} can't be applied: {e:#}", o.kind), false), None))
+        }
+        Err(e) => {
+            conn.execute_batch("ROLLBACK TO accept_op; RELEASE accept_op")?;
+            Err(e)
+        }
+    }
+}
+
+fn store_and_project(conn: &Connection, o: &mut Op, suspect: bool, preserved: bool, now: i64) -> anyhow::Result<()> {
+    let seq = oplog::insert(conn, o, suspect, preserved)?;
     o.seq = Some(seq);
-    project::after_insert(conn, &o)?;
+    project::after_insert(conn, o)?;
     // follower notifications are queued from live ingest only (never from a rebuild or a restore)
     if !preserved
         && o.kind.starts_with("front.")
@@ -164,9 +195,75 @@ pub fn accept(
         crate::notifier::on_front_change(conn, account, now)?;
     }
     if !preserved {
-        crate::activity::on_op(conn, &o, now)?;
+        crate::activity::on_op(conn, o, now)?;
     }
-    Ok((AckResult::ok(&o), Some(o)))
+    Ok(())
+}
+
+/// A message or attachment belongs to the account that created it: another account can't
+/// change an attachment's fields (alt text, spoiler) or send a second create for an existing id,
+/// which would overwrite its text or file. (Moderation of messages goes through the channel
+/// rules in `perms.rs`: delete, restore and pin.)
+fn foreign_item(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
+    let Some(spec) = op::spec(&o.kind) else { return Ok(None) };
+    let table = match (spec.table, spec.action) {
+        ("message" | "attachment", op::Action::Append) | ("attachment", op::Action::Set) => spec.table,
+        _ => return Ok(None),
+    };
+    let Some(id) = o.entity() else { return Ok(None) };
+    let owner: Option<Option<String>> = conn
+        .prepare_cached(&format!("SELECT account_id FROM {table} WHERE id = ?1"))?
+        .query_row([id], |r| r.get(0))
+        .optional()?;
+    Ok(owner.flatten().filter(|a| a != author).map(|_| format!("that {table} belongs to another account")))
+}
+
+/// Messages, reactions and posts speak as members (`authors`, each segment's `authors`, a
+/// reaction's `member_id`, the envelope's `member_id`): those must be the author account's own.
+/// An id the server doesn't know yet passes (a member created offline, still on its way); one
+/// that belongs to another account is refused, or anyone in a shared space could post as someone
+/// else's member.
+fn foreign_speaker(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
+    let k = o.kind.as_str();
+    if !(k.starts_with("message.") || k.starts_with("reaction.") || k.starts_with("post.")) {
+        return Ok(None);
+    }
+    let p = &o.payload;
+    let ids = |v: Option<&serde_json::Value>| -> Vec<String> {
+        v.and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|x| x.as_str().map(str::to_string))
+            .collect()
+    };
+    let mut named: Vec<String> = ids(p.get("authors"));
+    for seg in p.get("segments").and_then(serde_json::Value::as_array).into_iter().flatten() {
+        named.extend(ids(seg.get("authors")));
+    }
+    named.extend(p.get("member_id").and_then(serde_json::Value::as_str).map(str::to_string));
+    named.extend(o.member_id.clone());
+    let mut st = conn.prepare_cached("SELECT account_id FROM member WHERE id = ?1")?;
+    for id in named {
+        let owner: Option<Option<String>> = st.query_row([&id], |r| r.get(0)).optional()?;
+        if owner.flatten().is_some_and(|a| a != author) {
+            return Ok(Some("that member belongs to another account".into()));
+        }
+    }
+    Ok(None)
+}
+
+/// A database failure that says nothing about the op (a full disk, I/O, a lock): the batch fails
+/// and the device retries it later, rather than the op being refused for good.
+fn is_transient(e: &anyhow::Error) -> bool {
+    use rusqlite::ErrorCode::*;
+    e.chain().any(|c| {
+        matches!(
+            c.downcast_ref::<rusqlite::Error>(),
+            Some(rusqlite::Error::SqliteFailure(f, _))
+                if matches!(f.code, DiskFull | SystemIoFailure | DatabaseBusy | DatabaseLocked | OutOfMemory
+                    | ReadOnly | DatabaseCorrupt | NotADatabase | CannotOpen | FileLockingProtocolFailed)
+        )
+    })
 }
 
 /// The server's own HLC, persisted in `server_meta`.

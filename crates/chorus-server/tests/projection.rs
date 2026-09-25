@@ -907,3 +907,49 @@ fn read_states_match_the_model_in_any_order() {
         assert_eq!(rebuilt, want, "seed {seed}: rebuild");
     }
 }
+
+/// A member whose role was changed stays in the space after a rebuild (found by
+/// `ingest_fuzz.rs`: the membership set counted `space.set_role` as a leave, so a rebuild or a
+/// restore removed everyone whose role had ever been changed, and their access with it).
+#[test]
+fn a_role_change_survives_a_rebuild() {
+    let (mut c, owner, _, scope) = setup();
+    let space = scope.strip_prefix("space:").unwrap().to_string();
+    let friend = new_id(1, [202; 10]);
+    c.execute("INSERT INTO account(id, kind, created_at) VALUES (?1, 'person', 0)", [&friend]).unwrap();
+    ingest::server_op(
+        &c,
+        &owner,
+        "space.create",
+        &scope,
+        Some(&space),
+        json!({"kind": "shared", "name": "Book club"}),
+        T,
+    )
+    .unwrap();
+    ingest::server_op(&c, &owner, "space.join", &scope, Some(&space), json!({"account_id": owner}), T + 1).unwrap();
+    ingest::server_op(&c, &owner, "space.join", &scope, Some(&space), json!({"account_id": friend}), T + 2).unwrap();
+    ingest::server_op(
+        &c,
+        &owner,
+        "space.set_role",
+        &scope,
+        Some(&space),
+        json!({"account_id": friend, "role": "read_only"}),
+        T + 3,
+    )
+    .unwrap();
+    let state = |db: &Connection| -> (bool, String, bool) {
+        let (present, role) = db
+            .query_row(
+                "SELECT is_present, role FROM space_member WHERE space_id = ?1 AND account_id = ?2",
+                [&space, &friend],
+                |r| Ok((r.get::<_, bool>(0)?, r.get::<_, String>(1)?)),
+            )
+            .unwrap();
+        (present, role, ingest::can_access(db, &friend, &scope).unwrap())
+    };
+    assert_eq!(state(&c), (true, "read_only".into(), true));
+    project::rebuild(&mut c).unwrap();
+    assert_eq!(state(&c), (true, "read_only".into(), true), "the rebuild kept the member, the role and the access");
+}

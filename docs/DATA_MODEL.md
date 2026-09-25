@@ -105,6 +105,29 @@ Rules:
 The server adds `seq`, `account_id`, `device_id` (from the authenticated session — never trusted
 from the payload), `occurred_at`, `received_at`.
 
+### 2.2 Payload rules
+
+`op::validate_new` (core, run by every client when creating an op and by the server at ingest)
+checks more than `op::validate`'s field names: every payload field stored in a constrained column obeys
+`op::FIELD_RULES` (never `null` for a NOT NULL column, an object or list for a JSON column,
+`true`/`false` for a flag, one of the allowed values for an `IN (…)` check), plus per-kind rules
+(`channel.set_permission` needs a `target_type`/`target_id` and known permissions, reactions a
+`target_type`/`target_id`/`emoji`, message and post `text` is text and `entities`/`tags` lists, entities and segments are
+`{offset, length}` ranges (UTF-16) inside the text with a `type`/`authors` (so another
+account's message can't make a renderer slice out of range),
+`space.set_roles` a list of `{id, name, perms}`). A test compares `FIELD_RULES` with the SQL
+schema, so a migration that adds a constraint must add its rule. The rules apply to **new** ops
+only: projection (`model::apply_op`, the server's rebuild) and restore pushes use the structural
+`op::validate`, so an op stored before a rule existed keeps projecting exactly as before.
+
+Why it matters: the server stores and projects each pushed op in its own savepoint. An op the
+projection can't apply is refused on its own (`unprocessable`, logged) instead of failing the
+batch, which would otherwise be resent forever with the device's outbox stuck behind it. Two
+fuzz tests keep this honest: `chorus-server/tests/ingest_fuzz.rs` (random ops of every kind
+through ingest: never a failed batch, never `unprocessable`, and a rebuild reproduces the live
+tables) and `chorus-core/tests/payload_fuzz.rs` (the client projection: no panic, same state in
+any order). `CHORUS_FUZZ_CASES=<n>` runs the server one longer.
+
 ## 3. Op catalogue (v1)
 
 Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW element set
@@ -690,7 +713,13 @@ Message-only extra modes: `{"mode":"members","member_ids":[…]}` (soft in-syste
 One rule, `chorus-server/src/perms.rs::can_sql`, is spliced into every server path that decides
 what an account may see or do in a space: writes (`perms::write_denied`, from `ingest::accept`),
 sync fan-out and catch-up (`visibility::op_visible_to` and the batched `visible_digest`), the REST
-message reads, search, blobs, author cards and notification recipients. `can(account, channel,
+message reads, search, blobs, author cards and notification recipients. Before any of it, a
+write must stay in its own space (`perms::foreign_space`, for everyone including the owner): the
+channel, message or thread parent an op names, and a `channel.create`'s `space_id`, belong to the
+op's `space:` scope; and the members a message, reaction or post speaks as (`authors`, segment
+`authors`, `member_id`, the envelope's `member_id`) are the author account's own or not yet known
+(`ingest::foreign_speaker`); and a message or attachment stays its creator's: no other account
+sets an attachment's fields or re-creates an existing id (`ingest::foreign_item`). `can(account, channel,
 perm)` holds when both `perm` and `view` resolve to allow:
 
 1. A thread uses its parent message's channel.
@@ -707,7 +736,8 @@ perm)` holds when both `perm` and `view` resolve to allow:
 Writes: `space.*` needs an admin (never in a DM; leaving is your own); `channel.create` needs a
 manager (admin, or a DM participant), or `thread` on the parent's channel for a thread; other
 `channel.*` need `manage`; `message.send`/`forward` need `send`; `message.pin`/`unpin` need `pin`;
-other `message.*` need `view` on your own message and `manage` on someone else's; `reaction.*`
+other `message.*` need `view` on your own message and `manage` on someone else's, except
+`message.edit`, which only the message's author may send (D-073); `reaction.*`
 needs `react`; `read.*` needs `view`. A refused op is acked `forbidden` with the reason.
 Property-tested against an independent model of these rules in `tests/permissions.rs`.
 

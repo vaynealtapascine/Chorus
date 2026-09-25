@@ -212,3 +212,254 @@ fn enrolment_ops_are_readable_through_the_log() {
     assert_eq!(oplog::scope_after(&c, space, 0, 100).unwrap().len(), 3);
     assert_eq!(oplog::digest(&c, space).unwrap().count, 3);
 }
+
+/// An op in one space can't reach into another space the author is also in: not a message into
+/// its channel, a channel created in it, a reaction or a pin on its messages, or a thread under
+/// one of them — not even from the first space's owner, whom the channel rules let do anything.
+#[test]
+fn ops_stay_in_their_own_space() {
+    let (c, a, b) = setup();
+    let (x, y) = (new_id(2, [30; 10]), new_id(2, [31; 10]));
+    let (sx, sy) = (format!("space:{x}"), format!("space:{y}"));
+    let (cx, cy, my) = (new_id(2, [32; 10]), new_id(2, [33; 10]), new_id(2, [34; 10]));
+    // a owns X; b owns Y and lets a in (spaces.rs grants the scope before the ops)
+    ingest::grant(&c, &a, &sx).unwrap();
+    ingest::grant(&c, &b, &sy).unwrap();
+    ingest::grant(&c, &a, &sy).unwrap();
+    ingest::server_op(&c, &a, "space.create", &sx, Some(&x), json!({"kind": "shared", "name": "X"}), NOW).unwrap();
+    ingest::server_op(&c, &a, "space.join", &sx, Some(&x), json!({"account_id": a}), NOW).unwrap();
+    ingest::server_op(&c, &b, "space.create", &sy, Some(&y), json!({"kind": "shared", "name": "Y"}), NOW).unwrap();
+    ingest::server_op(&c, &b, "space.join", &sy, Some(&y), json!({"account_id": b}), NOW).unwrap();
+    ingest::server_op(&c, &b, "space.join", &sy, Some(&y), json!({"account_id": a}), NOW).unwrap();
+    ingest::server_op(&c, &a, "channel.create", &sx, Some(&cx), json!({"space_id": x, "name": "x"}), NOW).unwrap();
+    ingest::server_op(&c, &b, "channel.create", &sy, Some(&cy), json!({"space_id": y, "name": "y"}), NOW).unwrap();
+    ingest::server_op(
+        &c,
+        &b,
+        "message.send",
+        &sy,
+        Some(&my),
+        json!({"channel_id": cy, "text": "hi", "authors": []}),
+        NOW,
+    )
+    .unwrap();
+
+    let s = session(&a, 0);
+    let mut n = 60u8;
+    let mut push = |scope: &str, kind: &str, entity: Option<String>, payload: Value| {
+        n += 1;
+        let mut o = op(n, kind, scope, payload, NOW);
+        o.entity_id = entity.or(o.entity_id);
+        let (r, _) = ingest::accept(&c, &s, o, NOW, false).unwrap();
+        r.error.map(|e| e.message)
+    };
+    let refused = |r: Option<String>| r.is_some_and(|m| m.contains("in another space"));
+    assert!(refused(push(&sx, "message.send", None, json!({"channel_id": cy, "text": "in", "authors": []}))));
+    assert!(refused(push(&sx, "channel.create", None, json!({"space_id": y, "name": "planted"}))));
+    assert!(refused(push(
+        &sx,
+        "channel.create",
+        None,
+        json!({"space_id": x, "name": "t", "kind": "thread", "parent_message_id": my})
+    )));
+    assert!(refused(push(
+        &sx,
+        "reaction.add",
+        Some(my.clone()),
+        json!({"target_type": "message", "target_id": my, "emoji": "👍", "member_id": a})
+    )));
+    assert!(refused(push(&sx, "message.pin", Some(my.clone()), json!({}))));
+    assert!(refused(push(&sx, "channel.set", Some(cy.clone()), json!({"name": "renamed"}))));
+    // the same ops in their own spaces are fine
+    assert_eq!(push(&sx, "message.send", None, json!({"channel_id": cx, "text": "ok", "authors": []})), None);
+    assert_eq!(push(&sy, "message.send", None, json!({"channel_id": cy, "text": "ok", "authors": []})), None);
+    assert_eq!(
+        push(
+            &sy,
+            "reaction.add",
+            Some(my.clone()),
+            json!({"target_type": "message", "target_id": my, "emoji": "👍", "member_id": a})
+        ),
+        None
+    );
+}
+
+/// Nobody speaks as another account's member: message authors, segment authors, reactions and
+/// the envelope's acting member must be the sender's own (or not known yet: created offline).
+#[test]
+fn nobody_speaks_as_another_accounts_member() {
+    let (c, a, b) = setup();
+    let y = new_id(2, [40; 10]);
+    let sy = format!("space:{y}");
+    let (cy, my) = (new_id(2, [41; 10]), new_id(2, [42; 10]));
+    let (ka, kb) = (new_id(2, [43; 10]), new_id(2, [44; 10]));
+    ingest::grant(&c, &b, &sy).unwrap();
+    ingest::grant(&c, &a, &sy).unwrap();
+    ingest::server_op(&c, &a, "member.create", &format!("account:{a}"), Some(&ka), json!({"name": "Kai"}), NOW)
+        .unwrap();
+    ingest::server_op(&c, &b, "member.create", &format!("account:{b}"), Some(&kb), json!({"name": "Bee"}), NOW)
+        .unwrap();
+    ingest::server_op(&c, &b, "space.create", &sy, Some(&y), json!({"kind": "shared", "name": "Y"}), NOW).unwrap();
+    ingest::server_op(&c, &b, "space.join", &sy, Some(&y), json!({"account_id": b}), NOW).unwrap();
+    ingest::server_op(&c, &b, "space.join", &sy, Some(&y), json!({"account_id": a}), NOW).unwrap();
+    ingest::server_op(&c, &b, "channel.create", &sy, Some(&cy), json!({"space_id": y, "name": "y"}), NOW).unwrap();
+    ingest::server_op(
+        &c,
+        &b,
+        "message.send",
+        &sy,
+        Some(&my),
+        json!({"channel_id": cy, "text": "hi", "authors": [kb]}),
+        NOW,
+    )
+    .unwrap();
+
+    let s = session(&a, 0);
+    let mut n = 80u8;
+    let mut push = |kind: &str, entity: Option<String>, member: Option<&str>, payload: Value| {
+        n += 1;
+        let mut o = op(n, kind, &sy, payload, NOW);
+        o.entity_id = entity.or(o.entity_id);
+        o.member_id = member.map(str::to_string);
+        let (r, _) = ingest::accept(&c, &s, o, NOW, false).unwrap();
+        r.error.map(|e| e.message)
+    };
+    let refused = |r: Option<String>| r.is_some_and(|m| m.contains("another account"));
+    assert!(refused(push("message.send", None, None, json!({"channel_id": cy, "text": "as Bee", "authors": [kb]}))));
+    assert!(refused(push(
+        "message.send",
+        None,
+        None,
+        json!({"channel_id": cy, "text": "ab", "authors": [ka], "segments": [{"offset": 0, "length": 1, "authors": [ka]}, {"offset": 1, "length": 1, "authors": [kb]}]})
+    )));
+    assert!(refused(push(
+        "reaction.add",
+        Some(my.clone()),
+        None,
+        json!({"target_type": "message", "target_id": my, "emoji": "👍", "member_id": kb})
+    )));
+    assert!(refused(push("message.send", None, Some(&kb), json!({"channel_id": cy, "text": "x", "authors": [ka]}))));
+    // own members, and members the server hasn't seen yet, are fine
+    assert_eq!(
+        push("message.send", None, Some(&ka), json!({"channel_id": cy, "text": "as Kai", "authors": [ka]})),
+        None
+    );
+    let offline = new_id(2, [45; 10]);
+    assert_eq!(push("message.send", None, None, json!({"channel_id": cy, "text": "new", "authors": [offline]})), None);
+    assert_eq!(
+        push(
+            "reaction.add",
+            Some(my.clone()),
+            None,
+            json!({"target_type": "message", "target_id": my, "emoji": "👍", "member_id": ka})
+        ),
+        None
+    );
+}
+
+/// Moderators delete and pin other people's messages; nobody edits them, the space's owner
+/// included (D-073).
+#[test]
+fn only_the_author_edits_a_message() {
+    let (c, a, b) = setup();
+    let y = new_id(2, [50; 10]);
+    let sy = format!("space:{y}");
+    let (cy, mb, ma) = (new_id(2, [51; 10]), new_id(2, [52; 10]), new_id(2, [53; 10]));
+    ingest::grant(&c, &a, &sy).unwrap();
+    ingest::grant(&c, &b, &sy).unwrap();
+    // a owns the space; b is a member and writes a message
+    ingest::server_op(&c, &a, "space.create", &sy, Some(&y), json!({"kind": "shared", "name": "Y"}), NOW).unwrap();
+    ingest::server_op(&c, &a, "space.join", &sy, Some(&y), json!({"account_id": a}), NOW).unwrap();
+    ingest::server_op(&c, &a, "space.join", &sy, Some(&y), json!({"account_id": b}), NOW).unwrap();
+    ingest::server_op(&c, &a, "channel.create", &sy, Some(&cy), json!({"space_id": y, "name": "y"}), NOW).unwrap();
+    ingest::server_op(
+        &c,
+        &b,
+        "message.send",
+        &sy,
+        Some(&mb),
+        json!({"channel_id": cy, "text": "b's words", "authors": []}),
+        NOW,
+    )
+    .unwrap();
+    ingest::server_op(
+        &c,
+        &a,
+        "message.send",
+        &sy,
+        Some(&ma),
+        json!({"channel_id": cy, "text": "a's words", "authors": []}),
+        NOW,
+    )
+    .unwrap();
+    let mut n = 90u8;
+    let mut push = |who: &str, kind: &str, msg: &str, payload: Value| {
+        n += 1;
+        let mut o = op(n, kind, &sy, payload, NOW);
+        o.entity_id = Some(msg.to_string());
+        let (r, _) = ingest::accept(&c, &session(who, 0), o, NOW, false).unwrap();
+        r.error.map(|e| e.message)
+    };
+    assert!(
+        push(&a, "message.edit", &mb, json!({"message_id": mb, "text": "rewritten"}))
+            .is_some_and(|m| m.contains("only its author"))
+    );
+    assert_eq!(push(&a, "message.pin", &mb, json!({})), None, "the owner still moderates");
+    assert_eq!(push(&a, "message.delete", &mb, json!({})), None);
+    assert_eq!(push(&b, "message.edit", &mb, json!({"message_id": mb, "text": "my fix"})), None);
+    assert!(push(&b, "message.edit", &ma, json!({"message_id": ma, "text": "nope"})).is_some());
+}
+
+/// Another account can't change your attachment or overwrite your message by re-creating it.
+#[test]
+fn attachments_and_messages_stay_their_creators() {
+    let (c, a, b) = setup();
+    let y = new_id(2, [60; 10]);
+    let sy = format!("space:{y}");
+    let (cy, mb, att) = (new_id(2, [61; 10]), new_id(2, [62; 10]), new_id(2, [63; 10]));
+    ingest::grant(&c, &a, &sy).unwrap();
+    ingest::grant(&c, &b, &sy).unwrap();
+    ingest::server_op(&c, &a, "space.create", &sy, Some(&y), json!({"kind": "shared", "name": "Y"}), NOW).unwrap();
+    ingest::server_op(&c, &a, "space.join", &sy, Some(&y), json!({"account_id": a}), NOW).unwrap();
+    ingest::server_op(&c, &a, "space.join", &sy, Some(&y), json!({"account_id": b}), NOW).unwrap();
+    ingest::server_op(&c, &a, "channel.create", &sy, Some(&cy), json!({"space_id": y, "name": "y"}), NOW).unwrap();
+    ingest::server_op(
+        &c,
+        &b,
+        "attachment.create",
+        &sy,
+        Some(&att),
+        json!({"blob_hash": "ab", "filename": "b.png", "mime": "image/png", "size": 1}),
+        NOW,
+    )
+    .unwrap();
+    ingest::server_op(
+        &c,
+        &b,
+        "message.send",
+        &sy,
+        Some(&mb),
+        json!({"channel_id": cy, "text": "b", "authors": [], "attachments": [att]}),
+        NOW,
+    )
+    .unwrap();
+    let mut n = 110u8;
+    let mut push = |who: &str, kind: &str, entity: &str, payload: Value| {
+        n += 1;
+        let mut o = op(n, kind, &sy, payload, NOW);
+        o.entity_id = Some(entity.to_string());
+        let (r, _) = ingest::accept(&c, &session(who, 0), o, NOW, false).unwrap();
+        r.error.map(|e| e.message)
+    };
+    let refused = |r: Option<String>| r.is_some_and(|m| m.contains("belongs to another account"));
+    // a owns the space, and still can't
+    assert!(refused(push(&a, "attachment.set", &att, json!({"alt_text": "something else"}))));
+    assert!(refused(push(
+        &a,
+        "attachment.create",
+        &att,
+        json!({"blob_hash": "cd", "filename": "x", "mime": "image/png", "size": 1})
+    )));
+    assert!(refused(push(&a, "message.send", &mb, json!({"channel_id": cy, "text": "overwritten", "authors": []}))));
+    assert_eq!(push(&b, "attachment.set", &att, json!({"alt_text": "a cat"})), None);
+}
