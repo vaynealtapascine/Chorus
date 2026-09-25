@@ -31,13 +31,17 @@ import org.json.JSONObject
  */
 object Blobs {
     private val HASH = Regex("^[0-9a-f]{64}$")
+    private val ACCOUNT = Regex("^[0-9a-f-]{36}$")
     private const val CHUNK = 4 * 1024 * 1024
     const val MAX_UPLOAD = 100L * 1024 * 1024
+    const val MAX_KEPT = 20L * 1024 * 1024
 
     data class Staged(val hash: String, val size: Long, val mime: String)
 
     private fun pendingDir(ctx: Context) = File(ctx.filesDir, "pending-blobs").apply { mkdirs() }
     private fun cacheDir(ctx: Context, kind: String) = File(ctx.cacheDir, "$kind-blobs").apply { mkdirs() }
+    private fun keptDir(ctx: Context, accountId: String): File? =
+        if (ACCOUNT.matches(accountId)) File(ctx.filesDir, "kept-blobs/$accountId").apply { mkdirs() } else null
 
     /** Copy [input] into the upload queue, hashing as it goes. Throws past [MAX_UPLOAD]. */
     fun stage(ctx: Context, input: InputStream, mime: String, accountId: String): Staged {
@@ -89,6 +93,7 @@ object Blobs {
     fun file(ctx: Context, hash: String, device: DeviceRecord?, kind: String = "chat", maxBytes: Long = MAX_UPLOAD): File? {
         if (!HASH.matches(hash)) return null
         pendingFile(ctx, hash)?.let { return it }
+        device?.let { dev -> keptDir(ctx, dev.accountId)?.let { File(it, hash).takeIf(File::isFile) } }?.let { return it }
         val target = File(cacheDir(ctx, kind), hash)
         if (target.isFile) return target
         device ?: return null
@@ -121,6 +126,51 @@ object Blobs {
             null
         } finally {
             partial.delete()
+        }
+    }
+
+    /** Promote a verified, account-visible file out of Android's evictable cache. */
+    fun keep(ctx: Context, hash: String, device: DeviceRecord): Boolean {
+        if (!HASH.matches(hash)) return false
+        val dir = keptDir(ctx, device.accountId) ?: return false
+        val target = File(dir, hash)
+        if (target.isFile) return true
+        val source = pendingFile(ctx, hash)
+            ?: listOf("chat", "avatar", "emoji").firstNotNullOfOrNull { kind ->
+                File(cacheDir(ctx, kind), hash).takeIf(File::isFile)
+            }
+            ?: file(ctx, hash, device, maxBytes = MAX_KEPT)
+            ?: return false
+        return promoteVerified(source, target, hash)
+    }
+
+    /** A failed copy never leaves a visible durable file under the content hash. */
+    internal fun promoteVerified(source: File, target: File, hash: String): Boolean {
+        if (!HASH.matches(hash) || source.length() > MAX_KEPT) return false
+        target.parentFile?.mkdirs()
+        val tmp = File.createTempFile("keep-", ".part", target.parentFile)
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            source.inputStream().use { input -> tmp.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    total += n
+                    if (total > MAX_KEPT) return false
+                    digest.update(buf, 0, n)
+                    out.write(buf, 0, n)
+                }
+            } }
+            if (digest.digest().joinToString("") { "%02x".format(it) } != hash) return false
+            if (target.isFile) return true
+            return tmp.renameTo(target)
+        } catch (e: Exception) {
+            Log.w("ChorusBlobs", "could not keep file", e)
+            return false
+        } finally {
+            tmp.delete()
         }
     }
 
