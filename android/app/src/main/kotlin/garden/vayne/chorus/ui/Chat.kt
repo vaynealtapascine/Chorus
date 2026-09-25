@@ -1,5 +1,6 @@
 package garden.vayne.chorus.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,6 +41,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -84,6 +86,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     requestedChannel: String? = null, searchHit: SearchDocument? = null,
+    onStageCapture: (Boolean) -> Unit = {},
     onDismissSearchHit: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     var selectedSpace by rememberSaveable { mutableStateOf("") }
@@ -112,6 +115,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var spaceAction by rememberSaveable { mutableStateOf("") }
     var newSpaceName by rememberSaveable { mutableStateOf("") }
     var invitedAccounts by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var staging by rememberSaveable { mutableStateOf(false) }
+    var capturing by rememberSaveable { mutableStateOf(false) }
     val actions = rememberCoroutineScope()
     val ctx = LocalContext.current
     // picked files waiting to be sent: staged (copied, hashed) only on send
@@ -144,11 +149,26 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
             accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
     }
+    LaunchedEffect(channel?.id, chorus.device?.accountId) {
+        staging = false
+        capturing = false
+    }
+    LaunchedEffect(capturing) { onStageCapture(capturing) }
+    DisposableEffect(Unit) { onDispose { onStageCapture(false) } }
+    BackHandler(staging) {
+        if (capturing) capturing = false else staging = false
+    }
+    if (staging && channel != null) {
+        ChatStage(channel, messages, model, foreignAuthors, capturing,
+            onCapture = { capturing = it }, onClose = { capturing = false; staging = false })
+        return
+    }
 
     Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Chat", color = p.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            if (channel != null) ChatChip("Stage", false) { staging = true }
             if (connections.isNotEmpty()) ChatChip("New chat", false) { spaceAction = "new" }
             val canLeave = space != null && space.kind != "internal" &&
                 directory[space.id]?.let { space.kind != "shared" || it.ownerAccountId != chorus.device?.accountId } == true

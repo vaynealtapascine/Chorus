@@ -110,6 +110,7 @@ private fun App(chorus: Chorus, invite: String?) {
     var chatSpace by rememberSaveable { mutableStateOf<String?>(null) }
     var chatChannel by rememberSaveable { mutableStateOf<String?>(null) }
     var chatSearchHit by remember { mutableStateOf<SearchDocument?>(null) }
+    var chatStageCapture by remember { mutableStateOf(false) }
     var journalReplyPost by rememberSaveable { mutableStateOf<String?>(null) }
     var journalOpenPost by rememberSaveable { mutableStateOf<String?>(null) }
     var linking by rememberSaveable { mutableStateOf(false) }
@@ -120,6 +121,7 @@ private fun App(chorus: Chorus, invite: String?) {
         val account = chorus.device?.accountId
         if (lastAccount != null && lastAccount != account) {
             chatSearchHit = null
+            chatStageCapture = false
             chatSpace = null; chatChannel = null
             journalReplyPost = null; journalOpenPost = null
             searchOpen = false; settingsOpen = false
@@ -139,7 +141,7 @@ private fun App(chorus: Chorus, invite: String?) {
         }
         else -> Column(Modifier.fillMaxSize().background(p.bg)) {
             val person = model.isPerson
-            Row(
+            if (!chatStageCapture) Row(
                 Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -182,7 +184,8 @@ private fun App(chorus: Chorus, invite: String?) {
                             Text("Chorus quick switching is for systems. Your personal profile and journal are available on the web.", color = p.ink2)
                         }
                     } else Home(chorus, model)
-                    Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit) { chatSearchHit = null }
+                    Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
+                        onStageCapture = { chatStageCapture = it }, onDismissSearchHit = { chatSearchHit = null })
                     Tab.Journal -> Journal(chorus, model, journalReplyPost,
                         onExternalReplyConsumed = { journalReplyPost = null },
                         externalOpenPost = journalOpenPost,
@@ -195,7 +198,7 @@ private fun App(chorus: Chorus, invite: String?) {
                 }
             }
             // the keyboard covers the tabs anyway; hiding them lets a screen's imePadding sit on it
-            if (!settingsOpen && !searchOpen && !WindowInsets.isImeVisible) Row(
+            if (!settingsOpen && !searchOpen && !chatStageCapture && !WindowInsets.isImeVisible) Row(
                 Modifier.fillMaxWidth().background(p.surface).navigationBarsPadding().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
