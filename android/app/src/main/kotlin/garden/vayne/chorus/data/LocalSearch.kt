@@ -10,7 +10,8 @@ data class SearchDocument(val id: String, val kind: String, val occurredAt: Long
     val title: String? = null, val cw: String? = null, val authors: List<String> = emptyList(),
     val channelId: String? = null, val tags: List<String> = emptyList(),
     val hasImage: Boolean = false, val hasFile: Boolean = false, val hasAttachment: Boolean = false,
-    val authorNames: List<String> = emptyList())
+    val authorNames: List<String> = emptyList(), val mimes: List<String> = emptyList(),
+    val hasLink: Boolean = false, val pinned: Boolean = false)
 
 data class LocalSearchQuery(val terms: List<String>, val from: String? = null, val inChannel: String? = null,
     val has: String? = null, val before: Long? = null, val after: Long? = null)

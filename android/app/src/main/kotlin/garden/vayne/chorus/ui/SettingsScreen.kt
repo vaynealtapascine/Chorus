@@ -1,5 +1,7 @@
 package garden.vayne.chorus.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,11 +10,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.AccountPrefs
@@ -34,14 +39,17 @@ import garden.vayne.chorus.data.QuietHours
 import garden.vayne.chorus.data.QuietWindow
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import kotlinx.coroutines.launch
+import java.text.DateFormat
 import java.time.Instant
 import java.time.ZoneId
+import java.util.Date
 
 /** Account pref rows mirror web Settings; each change queues one pref.set (D-063). */
 @Composable
-internal fun SettingsScreen(chorus: Chorus, model: Model) {
+internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
+    val ctx = LocalContext.current
     val prefs = model.accountPrefs
     var advanced by rememberSaveable { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -52,6 +60,18 @@ internal fun SettingsScreen(chorus: Chorus, model: Model) {
     var followRefresh by remember { mutableStateOf(0) }
     var quietFrom by rememberSaveable { mutableStateOf("23:00") }
     var quietTo by rememberSaveable { mutableStateOf("08:00") }
+    val keepEverything by chorus.keepEverything.collectAsState()
+    val files by chorus.fileProgress.collectAsState()
+    val recheck by chorus.recheckProgress.collectAsState()
+    val issues by chorus.syncIssues.collectAsState()
+    var syncBusy by remember { mutableStateOf(false) }
+    var syncError by remember { mutableStateOf<String?>(null) }
+    var deviceError by remember { mutableStateOf<String?>(null) }
+    var spaceUsed by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(chorus, files?.done == files?.total) {
+        spaceUsed = runCatching { chorus.spaceUsedBytes() }.getOrNull()
+    }
 
     LaunchedEffect(chorus.device?.session, followRefresh) {
         follows = FollowList(emptyList(), emptyList())
@@ -100,8 +120,59 @@ internal fun SettingsScreen(chorus: Chorus, model: Model) {
         item {
             Text("Settings", color = p.ink, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(top = 12.dp))
-            Text("Changes save on this phone and sync with your account.", color = p.ink2)
+            Text("Account settings sync across devices. This device settings stay here.", color = p.ink2)
+            if (!model.isPerson) TextButton(onClick = onOpenInsights) { Text("Insights · Front history") }
             if (error != null) Text(error.orEmpty(), color = p.danger)
+        }
+        if (issues.isNotEmpty()) {
+            item { Text("Sync issues · ${issues.size}", color = p.ink, fontWeight = FontWeight.SemiBold) }
+            items(issues, key = { it.id }) { issue ->
+                Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Could not sync ${issue.kind}", color = p.ink, fontWeight = FontWeight.SemiBold)
+                    Text(issue.message, color = p.danger)
+                    if (issue.at > 0) Text(DateFormat.getDateTimeInstance().format(Date(issue.at)), color = p.ink2)
+                    if (issue.text.isNotEmpty()) {
+                        Text(issue.text, color = p.ink2)
+                        TextButton(onClick = {
+                            ctx.getSystemService(ClipboardManager::class.java)
+                                ?.setPrimaryClip(ClipData.newPlainText("Chorus text", issue.text))
+                        }) { Text("Copy text") }
+                    }
+                    TextButton(onClick = {
+                        actions.launch {
+                            try { chorus.dismissIssue(issue.id); error = null }
+                            catch (e: Exception) { error = e.message ?: "Could not dismiss this issue." }
+                        }
+                    }) { Text("Dismiss") }
+                }
+            }
+        }
+        item {
+            Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("This device", color = p.ink, fontWeight = FontWeight.SemiBold)
+                SettingToggle("Keep everything on this device", keepEverything, !syncBusy) { on ->
+                    actions.launch {
+                        try { chorus.setKeepEverything(on); deviceError = null }
+                        catch (e: Exception) { deviceError = e.message ?: "Could not save this setting." }
+                    }
+                }
+                Text("Keeps available files for offline use. Files over 20 MB are opened online.", color = p.ink2)
+                TextButton(enabled = !syncBusy, onClick = {
+                    syncBusy = true; syncError = null
+                    actions.launch {
+                        try { chorus.recheckAll(); spaceUsed = chorus.spaceUsedBytes() }
+                        catch (e: Exception) { syncError = e.message ?: "Could not finish syncing." }
+                        finally { syncBusy = false }
+                    }
+                }) { Text(if (syncBusy) "Syncing…" else "Sync everything now") }
+                if (syncBusy && recheck != null) Text("Checked ${recheck!!.checked} of ${recheck!!.total} scopes", color = p.ink2)
+                if (files != null) Text("Files: ${files!!.done} of ${files!!.total} (${files!!.missing} not available)", color = p.ink2)
+                if (spaceUsed != null) Text("Space used: ${formatBytes(spaceUsed!!)}", color = p.ink2)
+                if (syncError != null) Text(syncError.orEmpty(), color = p.danger)
+                if (deviceError != null) Text(deviceError.orEmpty(), color = p.danger)
+            }
         }
         item {
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
@@ -182,10 +253,19 @@ internal fun SettingsScreen(chorus: Chorus, model: Model) {
                 SettingToggle("Parse speaker annotations in chat", prefs.segmentParsing, !busy) {
                     save("chat.segment_parsing", it)
                 }
+                if (!model.isPerson) SettingToggle("Track reading per member", prefs.readPerMember, !busy) {
+                    save("chat.read_per_member", it)
+                }
             }
         }
         item { Text("", modifier = Modifier.padding(bottom = 16.dp)) }
     }
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024 * 1024 -> "%.1f GB".format(bytes / (1024.0 * 1024 * 1024))
+    bytes >= 1024L * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024))
+    else -> "%.0f KB".format(bytes / 1024.0)
 }
 
 @Composable

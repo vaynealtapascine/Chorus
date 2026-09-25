@@ -31,13 +31,19 @@ import org.json.JSONObject
  */
 object Blobs {
     private val HASH = Regex("^[0-9a-f]{64}$")
+    private val ACCOUNT = Regex("^[0-9a-f-]{36}$")
     private const val CHUNK = 4 * 1024 * 1024
     const val MAX_UPLOAD = 100L * 1024 * 1024
+    const val MAX_KEPT = 20L * 1024 * 1024
 
     data class Staged(val hash: String, val size: Long, val mime: String)
 
     private fun pendingDir(ctx: Context) = File(ctx.filesDir, "pending-blobs").apply { mkdirs() }
     private fun cacheDir(ctx: Context, kind: String) = File(ctx.cacheDir, "$kind-blobs").apply { mkdirs() }
+    private fun keptDir(ctx: Context, accountId: String): File? =
+        if (ACCOUNT.matches(accountId)) File(ctx.filesDir, "kept-blobs/$accountId").apply { mkdirs() } else null
+    private fun restoreDir(ctx: Context, accountId: String): File? =
+        if (ACCOUNT.matches(accountId)) File(ctx.filesDir, "restore-blobs/$accountId").apply { mkdirs() } else null
 
     /** Copy [input] into the upload queue, hashing as it goes. Throws past [MAX_UPLOAD]. */
     fun stage(ctx: Context, input: InputStream, mime: String, accountId: String): Staged {
@@ -89,10 +95,14 @@ object Blobs {
     fun file(ctx: Context, hash: String, device: DeviceRecord?, kind: String = "chat", maxBytes: Long = MAX_UPLOAD): File? {
         if (!HASH.matches(hash)) return null
         pendingFile(ctx, hash)?.let { return it }
+        device?.let { dev -> keptDir(ctx, dev.accountId)?.let { File(it, hash).takeIf(File::isFile) } }?.let { return it }
         val target = File(cacheDir(ctx, kind), hash)
         if (target.isFile) return target
         device ?: return null
-        val partial = File(target.path + ".part")
+        // A foreground open and the background keeper may fetch the same hash together.
+        // Give each request its own partial so neither can corrupt the other's download.
+        val partial = try { File.createTempFile("$hash-", ".part", target.parentFile) }
+            catch (e: IOException) { Log.w("ChorusBlobs", "could not start download", e); return null }
         return try {
             val req = Request.Builder().url("${device.base.trimEnd('/')}/api/v1/blobs/$hash")
                 .header("Authorization", "Bearer ${device.session}").build()
@@ -114,6 +124,7 @@ object Blobs {
                     }
                 }
             }
+            if (target.isFile) return target
             if (!partial.renameTo(target)) throw IOException("could not finish the cache file")
             target
         } catch (e: Exception) {
@@ -122,6 +133,72 @@ object Blobs {
         } finally {
             partial.delete()
         }
+    }
+
+    /** Promote a verified, account-visible file out of Android's evictable cache. */
+    fun keep(ctx: Context, hash: String, device: DeviceRecord): Boolean {
+        if (!HASH.matches(hash)) return false
+        val dir = keptDir(ctx, device.accountId) ?: return false
+        val target = File(dir, hash)
+        if (target.isFile) return true
+        val source = pendingFile(ctx, hash)
+            ?: listOf("chat", "avatar", "emoji").firstNotNullOfOrNull { kind ->
+                File(cacheDir(ctx, kind), hash).takeIf(File::isFile)
+            }
+            ?: file(ctx, hash, device, maxBytes = MAX_KEPT)
+            ?: return false
+        return promoteVerified(source, target, hash)
+    }
+
+    /** A failed copy never leaves a visible durable file under the content hash. */
+    internal fun promoteVerified(source: File, target: File, hash: String, limit: Long = MAX_KEPT): Boolean {
+        if (!HASH.matches(hash) || source.length() > limit) return false
+        target.parentFile?.mkdirs()
+        val tmp = File.createTempFile("keep-", ".part", target.parentFile)
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            source.inputStream().use { input -> tmp.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    total += n
+                    if (total > limit) return false
+                    digest.update(buf, 0, n)
+                    out.write(buf, 0, n)
+                }
+            } }
+            if (digest.digest().joinToString("") { "%02x".format(it) } != hash) return false
+            if (target.isFile) return true
+            return tmp.renameTo(target)
+        } catch (e: Exception) {
+            Log.w("ChorusBlobs", "could not keep file", e)
+            return false
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    /** Queue local copies named by restoring ops; never download from the restored server. */
+    fun queueRestore(ctx: Context, device: DeviceRecord, hashes: List<String>): Int {
+        val dir = restoreDir(ctx, device.accountId) ?: return 0
+        var queued = 0
+        for (hash in hashes.distinct()) {
+            if (!HASH.matches(hash)) continue
+            val target = File(dir, hash)
+            if (target.isFile) { queued++; continue }
+            val source = pendingFile(ctx, hash)
+                ?: keptDir(ctx, device.accountId)?.let { File(it, hash).takeIf(File::isFile) }
+                ?: listOf("chat", "avatar", "emoji").firstNotNullOfOrNull { kind ->
+                    File(cacheDir(ctx, kind), hash).takeIf(File::isFile)
+                }
+                ?: continue
+            if (runCatching { promoteVerified(source, target, hash, MAX_UPLOAD) }
+                    .onFailure { Log.w("ChorusBlobs", "could not queue restore copy", it) }
+                    .getOrDefault(false)) queued++
+        }
+        return queued
     }
 
     /** Decode an image blob no larger than [maxPx] on its long side. */
@@ -160,13 +237,33 @@ object Blobs {
         ok
     }
 
+    /** Retry restore copies independently of normal uploads, then discard only the queue copy. */
+    suspend fun flushRestore(ctx: Context, device: DeviceRecord): Boolean = withContext(Dispatchers.IO) {
+        val dir = restoreDir(ctx, device.accountId) ?: return@withContext false
+        var ok = true
+        for (file in dir.listFiles().orEmpty()) {
+            if (!HASH.matches(file.name) || !file.isFile) continue
+            try {
+                send(device, file.name, file, "application/octet-stream")
+                if (!file.delete()) {
+                    Log.w("ChorusBlobs", "could not remove completed restore copy")
+                    ok = false
+                }
+            } catch (e: Exception) {
+                Log.w("ChorusBlobs", "restore upload paused", e)
+                ok = false
+            }
+        }
+        ok
+    }
+
     private fun send(device: DeviceRecord, hash: String, file: File, mime: String) {
         val url = "${device.base.trimEnd('/')}/api/v1/blobs/$hash"
         val auth = "Bearer ${device.session}"
         val head = Api.http.newCall(Request.Builder().url(url).head().header("Authorization", auth).build()).execute()
         val offset0 = head.use { r ->
             when (r.code) {
-                200 -> return
+                200, 403 -> return // 403 means the server has this hash under another account
                 206 -> r.header("upload-offset")?.toLongOrNull() ?: 0L
                 404 -> 0L
                 else -> throw IOException("Blob HEAD: ${r.code}")
@@ -203,7 +300,9 @@ object Blobs {
 class UploadWork(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val device = Chorus.get(applicationContext).device ?: return Result.success()
-        return if (Blobs.flush(applicationContext, device)) Result.success() else Result.retry()
+        val uploads = Blobs.flush(applicationContext, device)
+        val restoring = Blobs.flushRestore(applicationContext, device)
+        return if (uploads && restoring) Result.success() else Result.retry()
     }
 
     companion object {

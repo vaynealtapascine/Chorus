@@ -3,4 +3,6 @@
     <string name="widget_name">Quick switch</string>
     <string name="widget_description">Switch who\'s fronting with one tap</string>
     <string name="shortcut_switch">Switch…</string>
+    <string name="shortcut_switch_out">Switch out</string>
+    <string name="shortcut_new_entry">New entry</string>
 </resources>

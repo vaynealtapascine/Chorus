@@ -2,4 +2,5 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="chat" path="chat-blobs/" />
     <files-path name="pending" path="pending-blobs/" />
+    <files-path name="kept" path="kept-blobs/" />
 </paths>

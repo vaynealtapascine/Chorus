@@ -52,7 +52,7 @@ importance (details in `opus-remote-3.md` §5):
   `reconcile: true`, call `replica.restoringBlobs()` and queue an upload (`Blobs`/`UploadWork`)
   of each hash you have locally; `HEAD` first, and 200 or 403 both mean the server has it.
   Without this, files uploaded after the server's last backup are lost by a restore.
-- **V10b · Sync issues.** `sync_issues` / `dismiss_issue`: refused ops (slow mode, permissions,
+- **V10b · Sync issues.** `sync_issues` / `dismiss_issue`: refused ops (permissions,
   the new value rules) now have a list; show it plainly (Settings, or a banner in Chat), with the
   text of a refused message kept so it can be copied.
 - **V10c · chat features:** edit history (`revisions`), local message search with the shared

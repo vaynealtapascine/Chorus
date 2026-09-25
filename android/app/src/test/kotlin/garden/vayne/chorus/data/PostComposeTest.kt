@@ -40,4 +40,19 @@ class PostComposeTest {
         assertEquals("own", p.getJSONArray("authors").getString(0))
         assertEquals("server", p.getJSONObject("visibility").getString("mode"))
     }
+
+    @Test fun attachmentOnlyShareCanBecomeAPostButAnEmptyPostCannot() {
+        val plain: (String, String) -> String = { body, _ ->
+            assertEquals("", body)
+            """{"text":"","entities":[]}"""
+        }
+        val post = PostCompose.payload(model, "mine", "note", "own", "", "", "", "private",
+            "", "", markup = plain, attachmentIds = listOf("photo"))
+        assertEquals("", post.getString("text"))
+        assertEquals("photo", post.getJSONArray("attachments").getString(0))
+        var rejected = false
+        try { PostCompose.payload(model, "mine", "note", "own", "", "", "", "private", "", "", markup = plain) }
+        catch (_: IllegalArgumentException) { rejected = true }
+        assertTrue(rejected)
+    }
 }

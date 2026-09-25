@@ -50,16 +50,19 @@ data class SwitchRow(
 data class Subject(val type: String, val id: String, val name: String, val color: String, val glyph: String, val avatarBlob: String? = null)
 
 data class ChatSpace(val id: String, val kind: String, val name: String)
-data class ChatChannel(val id: String, val spaceId: String, val kind: String, val name: String, val parentMessageId: String?)
+data class ChatChannel(val id: String, val spaceId: String, val kind: String, val name: String,
+    val parentMessageId: String?, val memberIds: List<String> = emptyList())
 data class ChatAttachment(
     val id: String, val blobHash: String, val thumbHash: String?, val filename: String,
     val mime: String, val size: Long, val altText: String, val spoiler: Boolean,
 )
+data class ChatSegment(val offset: Int, val length: Int, val authors: List<String>)
 data class ChatMessage(
     val id: String, val channelId: String, val authors: List<String>, val text: String,
     val occurredAt: Long, val cw: String?, val visibilityMode: String,
     val visibleMemberIds: Set<String>, val accountId: String?, val replyTo: String?,
-    val attachments: List<ChatAttachment>,
+    val attachments: List<ChatAttachment>, val edited: Boolean = false,
+    val entities: String = "[]", val segments: List<ChatSegment> = emptyList(),
 )
 data class ChannelWindow(val messages: List<ChatMessage>, val hasOlder: Boolean)
 
@@ -74,6 +77,8 @@ data class MemberList(val id: String, val name: String, val description: String?
 data class SavedFeed(val id: String, val name: String, val description: String?, val query: String, val visibility: String)
 data class SavedStage(val id: String, val name: String, val channelId: String, val definition: JSONObject)
 data class FrontSpan(val memberId: String, val startAt: Long, val endAt: Long?)
+data class FrontInterval(val id: String, val subjectType: String, val subjectId: String,
+    val level: String, val isPrimary: Boolean, val startAt: Long, val endAt: Long?)
 
 class Model(
     val members: List<Member>,
@@ -104,6 +109,10 @@ class Model(
     /** All locally visible messages for search, including older chat rows outside the display window. */
     val searchMessages: List<SearchDocument> = emptyList(),
     val savedStages: List<SavedStage> = emptyList(),
+    val speakerDefaults: Map<String, SpeakerDefault> = emptyMap(),
+    val lastAuthorsByChannel: Map<String, List<String>> = emptyMap(),
+    val readMarks: Map<String, List<ReadMark>> = emptyMap(),
+    val frontIntervals: List<FrontInterval> = emptyList(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -182,12 +191,17 @@ class Model(
                     row.str("alt_text").orEmpty(), row.optBoolean("is_spoiler"))
             }
 
-        private fun chatMessage(id: String, f: JSONObject, attachments: Map<String, JSONObject>): ChatMessage {
+        private fun chatMessage(id: String, f: JSONObject, attachments: Map<String, JSONObject>, edited: Boolean): ChatMessage {
             val visibility = f.optJSONObject("visibility")
             return ChatMessage(id, f.str("channel_id").orEmpty(), strings(f.optJSONArray("authors")), f.str("text").orEmpty(),
                 f.optLong("occurred_at"), f.str("cw"), visibility?.optString("mode")?.ifEmpty { "all" } ?: "all",
                 stringSet(visibility?.optJSONArray("member_ids")), f.str("account_id"), f.str("reply_to"),
-                files(f.optJSONArray("attachments"), attachments))
+                files(f.optJSONArray("attachments"), attachments), edited,
+                f.optJSONArray("entities")?.toString() ?: "[]",
+                f.optJSONArray("segments")?.let { rows -> (0 until rows.length()).map { index ->
+                    val row = rows.getJSONObject(index)
+                    ChatSegment(row.getInt("offset"), row.getInt("length"), strings(row.optJSONArray("authors")))
+                } } ?: emptyList())
         }
 
         /** Page backward through locally replicated messages without enlarging the chat model. */
@@ -197,7 +211,10 @@ class Model(
             val messages = rows(p, "message").filter { (_, f) ->
                 !f.present("deleted_at") && f.str("channel_id") == channelId
             }.sortedWith(compareBy<Pair<String, JSONObject>> { it.second.optLong("occurred_at") }.thenBy { it.first })
-            val view = messages.map { (id, f) -> chatMessage(id, f, attachments) }.filter(visible)
+            val messageTable = p.optJSONObject("rows")?.optJSONObject("message")
+            val view = messages.map { (id, f) ->
+                chatMessage(id, f, attachments, (messageTable?.optJSONObject(id)?.optInt("edits") ?: 0) > 0)
+            }.filter(visible)
             val count = limit.coerceAtLeast(1)
             return ChannelWindow(view.takeLast(count), view.size > count)
         }
@@ -266,9 +283,13 @@ class Model(
             val current = entries(fold?.optJSONArray("current"))
             var since: Long? = null
             val frontSpans = ArrayList<FrontSpan>()
+            val frontIntervals = ArrayList<FrontInterval>()
             fold?.optJSONArray("intervals")?.let { iv ->
                 for (i in 0 until iv.length()) {
                     val o = iv.getJSONObject(i)
+                    frontIntervals.add(FrontInterval(o.optString("id"), o.optString("subject_type"),
+                        o.optString("subject_id"), o.optString("level"), o.optBoolean("is_primary"),
+                        o.optLong("start_at"), o.optLong("end_at").takeIf { o.has("end_at") && !o.isNull("end_at") }))
                     if (o.optString("subject_type") == "member" && o.optString("level") == "front") {
                         o.str("subject_id")?.let { frontSpans.add(FrontSpan(it, o.optLong("start_at"),
                             o.optLong("end_at").takeIf { o.has("end_at") && !o.isNull("end_at") })) }
@@ -294,7 +315,7 @@ class Model(
                 .sortedWith(compareBy<ChatSpace> { if (it.kind == "internal") 0 else if (it.kind == "shared") 1 else 2 }.thenBy { it.name })
             val channels = rows(p, "channel").filter { (_, f) -> !f.present("deleted_at") && !f.present("archived_at") }
                 .map { (id, f) -> ChatChannel(id, f.str("space_id") ?: "", f.str("kind") ?: "text",
-                    f.str("name") ?: "Channel", f.str("parent_message_id")) }
+                    f.str("name") ?: "Channel", f.str("parent_message_id"), strings(f.optJSONArray("member_ids"))) }
                 .filter { channel -> spaces.any { it.id == channel.spaceId } }
                 .sortedBy { it.name }
             val channelIds = channels.map { it.id }.toSet()
@@ -311,12 +332,30 @@ class Model(
                 SearchDocument(id, "Messages", f.optLong("occurred_at"), f.str("text").orEmpty(),
                     cw = f.str("cw"), authors = strings(f.optJSONArray("authors")), channelId = f.str("channel_id"),
                     hasImage = mimes.any { it.startsWith("image/") },
-                    hasFile = mimes.any { !it.startsWith("image/") }, hasAttachment = linked.isNotEmpty())
+                    hasFile = mimes.any { !it.startsWith("image/") }, hasAttachment = linked.isNotEmpty(),
+                    mimes = linked.map { attachments[it]?.str("mime").orEmpty() },
+                    hasLink = f.optJSONArray("entities")?.let { entities ->
+                        (0 until entities.length()).any { entities.optJSONObject(it)?.str("type") in listOf("url", "text_link") }
+                    } ?: false, pinned = f.present("pinned_at"))
             }
+            val latestOwn = HashMap<String, Triple<Long, String, List<String>>>()
+            for ((id, fields) in messageRows) {
+                if (fields.str("account_id") != accountId) continue
+                val channelId = fields.str("channel_id") ?: continue
+                val at = fields.optLong("occurred_at")
+                val prior = latestOwn[channelId]
+                if (prior == null || at > prior.first || at == prior.first && id > prior.second) {
+                    latestOwn[channelId] = Triple(at, id, strings(fields.optJSONArray("authors")))
+                }
+            }
+            val lastAuthorsByChannel = latestOwn.mapValues { it.value.third }
             val selected = messageRows
                 .groupBy { (_, f) -> f.str("channel_id").orEmpty() }
                 .mapValues { (_, values) -> values.sortedWith(compareBy<Pair<String, JSONObject>> { it.second.optLong("occurred_at") }.thenBy { it.first }).takeLast(100) }
-            val chatMessages = selected.mapValues { (_, values) -> values.map { (id, f) -> chatMessage(id, f, attachments) } }
+            val messageTable = p.optJSONObject("rows")?.optJSONObject("message")
+            val chatMessages = selected.mapValues { (_, values) -> values.map { (id, f) ->
+                chatMessage(id, f, attachments, (messageTable?.optJSONObject(id)?.optInt("edits") ?: 0) > 0)
+            } }
             val followCeilings = rows(p, "follow").associate { (id, f) -> id to (f.optJSONObject("ceiling") ?: JSONObject()) }
             val postReactions = PostReactions.fromProjection(p.optJSONObject("sets"), members.associate { it.id to it.shownName })
             val posts = rows(p, "post").filter { (_, f) -> !f.present("deleted_at") }
@@ -353,7 +392,9 @@ class Model(
             return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages,
                 followCeilings, posts, postReactions, memberLists, savedFeeds, highlights, frontSpans, systemZone,
                 messageCounts, LocalProfileFields.fromProjection(p), LocalRelationships.types(p),
-                LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages)
+                LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages,
+                ChatSpeaker.preferences(p, accountId, channels), lastAuthorsByChannel,
+                ReadTracking.marks(p, accountId), frontIntervals)
         }
     }
 }

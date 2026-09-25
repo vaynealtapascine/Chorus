@@ -38,9 +38,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -62,38 +65,50 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.ChatMessage
+import garden.vayne.chorus.data.MessageRevision
+import garden.vayne.chorus.data.ChatSpeaker
+import garden.vayne.chorus.data.SpeakerDefault
 import garden.vayne.chorus.data.ChannelWindow
 import garden.vayne.chorus.data.ChatAttachment
 import garden.vayne.chorus.data.SearchDocument
+import garden.vayne.chorus.data.ReadTracking
+import garden.vayne.chorus.data.HeldMessage
+import garden.vayne.chorus.data.PrivateReplies
 import garden.vayne.chorus.data.ChatCompose
+import garden.vayne.chorus.data.ChatEdit
 import garden.vayne.chorus.data.ChatSpace
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.Entry
-import garden.vayne.chorus.data.Reply
 import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.SpaceAccount
 import garden.vayne.chorus.data.SpaceInfo
 import garden.vayne.chorus.data.Spaces
 import garden.vayne.chorus.data.accountVisible
 import garden.vayne.chorus.data.memberVisible
+import garden.vayne.chorus.SharedDraft
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private data class StageRows(val channelId: String, val accountId: String, val spaceKind: String,
     val viewingAs: String?, val front: List<Entry>, val window: ChannelWindow)
+private data class PendingPrivateReply(val message: ChatMessage, val channelId: String? = null,
+    val spaceId: String? = null, val speakerId: String? = null)
 
 /** Local chat view: internal channels, shared spaces and account DMs use the same projection. */
 @Composable
 fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     requestedChannel: String? = null, searchHit: SearchDocument? = null,
     onStageCapture: (Boolean) -> Unit = {},
-    onDismissSearchHit: () -> Unit = {}) {
+    onDismissSearchHit: () -> Unit = {}, sharedDraft: SharedDraft? = null,
+    sharedChannel: String? = null, onShareConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
+    val heldMessages by chorus.heldMessages.collectAsState()
     var selectedSpace by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(requestedSpace) {
         if (requestedSpace != null) selectedSpace = requestedSpace
@@ -107,10 +122,14 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var draft by rememberSaveable { mutableStateOf("") }
     var cw by rememberSaveable { mutableStateOf("") }
     var moreOpen by rememberSaveable { mutableStateOf(false) }
+    var speakerSettingsOpen by rememberSaveable { mutableStateOf(false) }
     var followNext by remember { mutableStateOf(false) }
     var audience by rememberSaveable { mutableStateOf("all") }
     var visibleTo by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
+    var carriedReply by remember { mutableStateOf<ChatMessage?>(null) }
+    var pendingPrivateReply by remember { mutableStateOf<PendingPrivateReply?>(null) }
+    var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var busy by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var directory by remember { mutableStateOf<Map<String, SpaceInfo>>(emptyMap()) }
@@ -153,15 +172,116 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
     val channels = model.channels.filter { it.spaceId == space?.id }
     val channel = channels.find { it.id == selectedChannel } ?: channels.firstOrNull()
+    LaunchedEffect(sharedDraft?.id, channel?.id, chorus.device?.accountId) {
+        val incoming = sharedDraft ?: return@LaunchedEffect
+        if (channel?.id != sharedChannel || chorus.device == null) return@LaunchedEffect
+        if (incoming.text.isNotBlank()) draft = listOf(draft, incoming.text).filter { it.isNotBlank() }.joinToString("\n")
+        for (uri in incoming.uris) {
+            try { attachments.add(PendingAttachment.of(ctx, uri)) }
+            catch (_: Exception) { error = "One shared file could not be opened. Please attach it again." }
+        }
+        onShareConsumed()
+    }
+    LaunchedEffect(chorus.device?.accountId) { pendingPrivateReply = null; carriedReply = null }
+    val defaultAuthorId = remember(model, channel?.id) { channel?.id?.let { ChatSpeaker.pick(model, it) } }
+    val replySpeakerId = selectedAuthor.takeIf { id -> model.active.any { it.id == id } } ?: defaultAuthorId
+    fun replyPrivately(message: ChatMessage) {
+        val source = space ?: return
+        val dev = chorus.device ?: return
+        if (busy) return
+        busy = true; error = null
+        actions.launch {
+            try {
+                if (source.kind == "internal") {
+                    val speaker = replySpeakerId?.let(model::member)
+                        ?: throw IllegalArgumentException("Choose who is speaking first.")
+                    val author = message.authors.firstOrNull()?.let(model::member)
+                        ?: throw IllegalArgumentException("This message has no available member to reply to.")
+                    val existing = PrivateReplies.existing(model.channels, source.id, speaker.id, author.id)
+                    val target = existing?.id ?: chorus.newId().also { id ->
+                        chorus.create("channel.create", id, PrivateReplies.createPayload(source.id, speaker, author),
+                            scope = "space:${source.id}")
+                    }
+                    pendingPrivateReply = PendingPrivateReply(message, channelId = target, speakerId = speaker.id)
+                    selectedChannel = target
+                } else {
+                    val account = message.accountId?.takeIf { it != dev.accountId }
+                        ?: throw IllegalArgumentException("This message is from your account.")
+                    val targetSpace = Spaces.openDm(dev, account)
+                    pendingPrivateReply = PendingPrivateReply(message, spaceId = targetSpace, speakerId = replySpeakerId)
+                    selectedSpace = targetSpace
+                    selectedChannel = ""
+                    refresh++
+                }
+                replyTo = null
+                carriedReply = null
+                viewingAs = null
+            } catch (e: Exception) { error = e.message ?: "Could not open a private reply." }
+            finally { busy = false }
+        }
+    }
+    fun setSpeakerDefault(mode: String, memberId: String? = null) {
+        val id = channel?.id ?: return
+        if (busy) return
+        busy = true; error = null
+        actions.launch {
+            try {
+                chorus.create("pref.set", null, ChatSpeaker.payload(id, mode, memberId))
+                selectedAuthor = ""
+            }
+            catch (e: Exception) { error = e.message ?: "Could not save the speaker default." }
+            finally { busy = false }
+        }
+    }
     val messages = model.chatMessages[channel?.id].orEmpty().filter {
         space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
             accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
     }
+    val readMarks = model.readMarks[channel?.id].orEmpty()
+    LaunchedEffect(channel?.id, space?.id, messages.lastOrNull()?.id, readMarks,
+        model.current, model.accountPrefs.readPerMember, chorus.device?.accountId, staging) {
+        val latest = messages.lastOrNull() ?: return@LaunchedEffect
+        val chosen = channel ?: return@LaunchedEffect
+        val home = space ?: return@LaunchedEffect
+        if (staging || chorus.device == null) return@LaunchedEffect
+        try {
+            for (reader in ReadTracking.readers(model.accountPrefs.readPerMember, model.current)) {
+                if (!ReadTracking.needsMark(latest.occurredAt, latest.id, readMarks, reader)) continue
+                chorus.create("read.mark", null, JSONObject().put("channel_id", chosen.id)
+                    .put("message_id", latest.id).put("message_at", latest.occurredAt)
+                    .put("reader_member_id", reader), scope = "space:${home.id}")
+            }
+        } catch (e: Exception) { error = e.message ?: "Could not mark this channel read." }
+    }
+    val unseenByMessage by produceState<Map<String, List<String>>>(emptyMap(), messages, readMarks,
+        model.accountPrefs.readPerMember) {
+        value = emptyMap()
+        if (model.accountPrefs.readPerMember && readMarks.any { it.member.isNotEmpty() }) {
+            value = withContext(Dispatchers.Default) { messages.associate { message ->
+                message.id to ReadTracking.unseen(message.occurredAt, message.id, readMarks)
+            } }
+        }
+    }
     LaunchedEffect(channel?.id, chorus.device?.accountId) {
+        editingMessage = null
+        selectedAuthor = ""
+        replyTo = null
+        carriedReply = null
+        speakerSettingsOpen = false
         staging = false
         capturing = false
         stageLimit = 100
         stageWindow = null
+    }
+    LaunchedEffect(channel?.id, space?.id, pendingPrivateReply) {
+        val pending = pendingPrivateReply ?: return@LaunchedEffect
+        val destination = channel ?: return@LaunchedEffect
+        if (pending.channelId == destination.id || pending.spaceId == destination.spaceId && pending.spaceId == space?.id) {
+            replyTo = pending.message.id
+            carriedReply = pending.message
+            selectedAuthor = pending.speakerId.orEmpty()
+            pendingPrivateReply = null
+        }
     }
     LaunchedEffect(staging, channel?.id, space?.kind, viewingAs, model, stageLimit, chorus.device?.accountId) {
         if (!staging || channel == null || space == null) { stageWindow = null; return@LaunchedEffect }
@@ -221,6 +341,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                             audience = "all"
                             visibleTo = emptyList()
                             replyTo = null
+                            carriedReply = null
+                            pendingPrivateReply = null
                             moreOpen = false
                         })
                     }
@@ -230,6 +352,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 items(channels, key = { it.id }) { candidate ->
                     ChatChip("#${candidate.name}", candidate.id == channel?.id) {
                         selectedChannel = candidate.id
+                        replyTo = null
+                        carriedReply = null
+                        pendingPrivateReply = null
                         replyTo = null
                     }
                 }
@@ -268,6 +393,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (channel == null) {
             Text("No channels in this space yet.", color = p.ink2, modifier = Modifier.padding(24.dp))
         } else {
+        if (pendingPrivateReply != null) Text("Opening private chat · Cancel", color = p.accent,
+            modifier = Modifier.clickable { pendingPrivateReply = null }.padding(horizontal = 16.dp))
         // A reversed list keeps its place on the message that was newest, so a new one would land
         // just out of view: follow it while the reader is at (or near) the bottom, and after sending.
         val listState = rememberLazyListState()
@@ -279,7 +406,16 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), state = listState, reverseLayout = true,
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(messages.asReversed(), key = { it.id }) { message ->
-                ChatMessageCard(message, model, foreignAuthors, chorus) { replyTo = message.id }
+                val canPrivate = if (space.kind == "internal") replySpeakerId != null &&
+                    message.authors.firstOrNull()?.let { it != replySpeakerId && model.member(it) != null } == true
+                else message.accountId != null && message.accountId != chorus.device?.accountId
+                ChatMessageCard(message, model, foreignAuthors, chorus, unseenByMessage[message.id].orEmpty(),
+                    heldMessages[message.id],
+                    onReply = { replyTo = message.id; carriedReply = null },
+                    onReplyPrivately = if (canPrivate) ({ replyPrivately(message) }) else null,
+                    onEdit = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
+                        heldMessages[message.id] == null)
+                        ({ editingMessage = message }) else null)
             }
             if (messages.isEmpty()) item {
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
@@ -288,17 +424,19 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         // Composer: one line (who's speaking, the text, options, send); options open above it
         Column(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 12.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            val author = model.active.find { it.id == selectedAuthor } ?: Reply.speaker(model)
-            val target = messages.find { it.id == replyTo }
+            val author = model.active.find { it.id == selectedAuthor }
+                ?: defaultAuthorId?.let(model::member)
+            val target = messages.find { it.id == replyTo } ?: carriedReply?.takeIf { it.id == replyTo }
             if (target != null) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("↪ Replying to a message", color = p.ink2, fontSize = 12.sp)
+                    Text(if (carriedReply?.id == replyTo) "↪ Replying privately to a message" else "↪ Replying to a message",
+                        color = p.ink2, fontSize = 12.sp)
                     Text("Cancel", color = p.accent, fontSize = 12.sp,
-                        modifier = Modifier.clickable { replyTo = null })
+                        modifier = Modifier.clickable { replyTo = null; carriedReply = null })
                 }
             } else if (replyTo != null) {
                 Text("Reply target unavailable · Cancel", color = p.accent, fontSize = 12.sp,
-                    modifier = Modifier.clickable { replyTo = null })
+                    modifier = Modifier.clickable { replyTo = null; carriedReply = null })
             }
             val audienceLabel = when (audience) {
                 "members" -> "Chosen members (${visibleTo.size})"
@@ -344,6 +482,34 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 if (space.kind != "internal" && audience == "all") {
                     Text("Everyone in this space can see who is speaking.", color = p.ink3, fontSize = 12.sp)
                 }
+                if (!model.isPerson) {
+                    Text(if (speakerSettingsOpen) "Advanced · Hide speaker default" else "Advanced · Speaker default ›",
+                        color = p.accent, fontSize = 13.sp,
+                        modifier = Modifier.clickable { speakerSettingsOpen = !speakerSettingsOpen }.padding(vertical = 4.dp))
+                    if (speakerSettingsOpen) {
+                        val setting = model.speakerDefaults[channel.id] ?: SpeakerDefault()
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            item { ChatChip("Front", setting.mode == "front") { setSpeakerDefault("front") } }
+                            item { ChatChip("Last speaker", setting.mode == "latch") { setSpeakerDefault("latch") } }
+                            item { ChatChip("Ask me", setting.mode == "off") { setSpeakerDefault("off") } }
+                            item { ChatChip("One member", setting.mode == "member") {
+                                (setting.memberId ?: author?.id ?: model.active.firstOrNull()?.id)?.let {
+                                    setSpeakerDefault("member", it)
+                                }
+                            } }
+                        }
+                        if (setting.mode == "member") {
+                            Text("Always speak as", color = p.ink2, fontSize = 12.sp)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(model.active, key = { it.id }) { member ->
+                                    ChatChip(member.shownName, member.id == setting.memberId) {
+                                        setSpeakerDefault("member", member.id)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             } else if (audience != "all" || cw.isNotBlank()) {
                 Text(listOfNotNull(audienceLabel.takeIf { audience != "all" }, "CW: ${cw.trim()}".takeIf { cw.isNotBlank() })
                     .joinToString(" · "), color = p.ink2, fontSize = 12.sp)
@@ -379,7 +545,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     fontSize = 20.sp,
                     modifier = Modifier.clickable { moreOpen = !moreOpen }.padding(8.dp)
                         .semantics { contentDescription = if (moreOpen) "Fewer options" else "Content warning and audience" })
-                val canSend = !busy && (draft.isNotBlank() || attachments.isNotEmpty()) && author != null && (replyTo == null || target != null) &&
+                val canSend = !busy && pendingPrivateReply == null && (draft.isNotBlank() || attachments.isNotEmpty()) &&
+                    author != null && (replyTo == null || target != null) &&
                     (audience != "members" || visibleTo.isNotEmpty())
                 Text(if (busy) "…" else "↑", color = if (canSend) p.bg else p.ink3, fontSize = 20.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.size(40.dp).clip(CircleShape).background(if (canSend) p.accent else p.surface2)
@@ -402,6 +569,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                     audience = "all"
                                     visibleTo = emptyList()
                                     replyTo = null
+                                    carriedReply = null
                                     moreOpen = false
                                 } catch (e: Exception) {
                                     error = e.message ?: "Could not send the message."
@@ -416,6 +584,50 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
         }
         }
+    }
+    editingMessage?.let { original ->
+        var editError by remember(original.id) { mutableStateOf<String?>(null) }
+        var editBusy by remember(original.id) { mutableStateOf(false) }
+        val parts = remember(original.id, original.text, original.entities) {
+            mutableStateListOf<String>().also { it.addAll(ChatEdit.parts(original)) }
+        }
+        AlertDialog(onDismissRequest = { if (!editBusy) editingMessage = null },
+            title = { Text("Edit message") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (parts.size > 1) Text("Each part keeps its original speaker.")
+                    for (index in parts.indices) {
+                        OutlinedTextField(parts[index], { parts[index] = it }, modifier = Modifier.fillMaxWidth(),
+                            label = { Text(if (parts.size == 1) "Message" else "Part ${index + 1} · " +
+                                original.segments[index].authors.map { model.member(it)?.shownName ?: "Someone" }.joinToString(" & ")) },
+                            minLines = 2, maxLines = 6)
+                    }
+                    if (editError != null) Text(editError.orEmpty(), color = p.danger)
+                }
+            },
+            confirmButton = { TextButton(enabled = !editBusy && parts.any { it.isNotBlank() }, onClick = {
+                val current = model.chatMessages[original.channelId]?.find { it.id == original.id }
+                val ownAccount = chorus.device?.accountId
+                if (ownAccount == null || original.accountId != ownAccount || current == null ||
+                    current.text != original.text || current.entities != original.entities ||
+                    current.segments != original.segments ||
+                    current.accountId != ownAccount) {
+                    editError = "The message changed. Close Edit and reopen it."
+                    return@TextButton
+                }
+                editBusy = true; editError = null
+                actions.launch {
+                    try {
+                        chorus.create("message.edit", original.id,
+                            ChatEdit.payload(original, parts.toList(), ChatEdit.names(original, model)),
+                            scope = "space:${requireNotNull(space?.id) { "Space unavailable" }}")
+                        editingMessage = null
+                    } catch (e: Exception) { editError = e.message ?: "Could not edit the message." }
+                    finally { editBusy = false }
+                }
+            }) { Text(if (editBusy) "Saving…" else "Save") } },
+            dismissButton = { TextButton(enabled = !editBusy, onClick = { editingMessage = null }) { Text("Cancel") } })
     }
     if (spaceAction == "new") {
         AlertDialog(onDismissRequest = { spaceAction = "" }, title = { Text("Start a chat") },
@@ -487,9 +699,21 @@ private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
 }
 
 @Composable
-private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>, chorus: Chorus, onReply: () -> Unit) {
+private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
+    chorus: Chorus, unseenBy: List<String>, held: HeldMessage?, onReply: () -> Unit,
+    onReplyPrivately: (() -> Unit)?, onEdit: (() -> Unit)?) {
     val p = LocalChorusPalette.current
+    val actions = rememberCoroutineScope()
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
+    var history by remember(message.id, message.text, message.cw) { mutableStateOf<List<MessageRevision>?>(null) }
+    var historyError by remember(message.id) { mutableStateOf<String?>(null) }
+    var showUnseen by rememberSaveable(message.id) { mutableStateOf(false) }
+    var cancelBusy by remember(message.id) { mutableStateOf(false) }
+    var cancelError by remember(message.id) { mutableStateOf<String?>(null) }
+    var now by remember(held?.until) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(held?.until) {
+        while (held != null) { delay(1_000); now = System.currentTimeMillis() }
+    }
     val authors = message.authors.map { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
         .joinToString(" & ").ifEmpty { "Someone" }
     Column(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(12.dp))
@@ -500,24 +724,77 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             Text(authors, color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
             Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(message.occurredAt)),
                 color = p.ink3, fontSize = 11.sp)
-            Text("↩", color = p.accent, fontSize = 16.sp,
+            if (held == null && unseenBy.isNotEmpty()) {
+                val names = unseenBy.map { model.member(it)?.shownName ?: "Someone" }.joinToString(", ")
+                Text("●", color = p.accent, fontSize = 12.sp,
+                    modifier = Modifier.clickable { showUnseen = !showUnseen }
+                        .semantics { contentDescription = "Not seen by $names" })
+            }
+            if (held == null) Text("↩", color = p.accent, fontSize = 16.sp,
                 modifier = Modifier.clickable(onClick = onReply).padding(horizontal = 4.dp)
                     .semantics { contentDescription = "Reply" })
         }
+        if (held != null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("Slow mode: sending in ${((held.until - now).coerceAtLeast(0L) + 999L) / 1000L} s",
+                    color = p.ink2, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Text(if (cancelBusy) "Canceling…" else "Cancel", color = p.accent, fontSize = 12.sp,
+                    modifier = Modifier.clickable(enabled = !cancelBusy) {
+                        cancelBusy = true; cancelError = null
+                        actions.launch {
+                            try {
+                                if (!chorus.cancelHeld(message.id)) cancelError = "This message is already sending."
+                            } catch (e: Exception) { cancelError = e.message ?: "Could not cancel this message." }
+                            finally { cancelBusy = false }
+                        }
+                    }.padding(4.dp).semantics { contentDescription = "Cancel held message" })
+            }
+            if (cancelError != null) Text(cancelError.orEmpty(), color = p.danger, fontSize = 12.sp)
+        }
+        if (showUnseen && unseenBy.isNotEmpty()) Text("Not seen by " + unseenBy.map {
+            model.member(it)?.shownName ?: "Someone"
+        }.joinToString(", "), color = p.ink3, fontSize = 12.sp)
         val tags = listOfNotNull(
             "↪ reply".takeIf { message.replyTo != null },
             "Only this system".takeIf { message.visibilityMode == "system_only" },
             "Chosen members".takeIf { message.visibilityMode == "members" },
         )
         if (tags.isNotEmpty()) Text(tags.joinToString(" · "), color = p.ink3, fontSize = 12.sp)
+        if (held == null && onReplyPrivately != null) Text("Reply privately", color = p.accent, fontSize = 12.sp,
+            modifier = Modifier.clickable(onClick = onReplyPrivately).padding(vertical = 3.dp))
         if (message.cw != null) {
             Text("Content warning: ${message.cw} · ${if (revealed) "Hide" else "Show"}", color = p.accent,
                 modifier = Modifier.clickable { revealed = !revealed })
         }
         if (message.cw == null || revealed) {
             Text(message.text, color = p.ink, fontSize = 16.sp)
+            if (onEdit != null) TextButton(onClick = onEdit) { Text("Edit") }
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus)
+            }
+            if (held == null && message.edited) {
+                TextButton(onClick = {
+                    if (history != null) history = null else actions.launch {
+                        try { history = chorus.revisions(message.id); historyError = null }
+                        catch (e: Exception) { historyError = e.message ?: "Could not load edit history." }
+                    }
+                }) { Text(if (history == null) "(edited) · View history" else "Hide edit history") }
+                if (historyError != null) Text(historyError.orEmpty(), color = p.danger)
+                history?.forEach { revision ->
+                    var revisionRevealed by rememberSaveable(message.id, revision.rev) {
+                        mutableStateOf(revision.contentWarning == null)
+                    }
+                    Column(Modifier.fillMaxWidth().background(p.surface2).padding(8.dp)) {
+                        Text("${if (revision.original) "Original" else "Edit ${revision.rev}"} · " +
+                            DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(revision.at)),
+                            color = p.ink3, fontSize = 12.sp)
+                        if (revision.contentWarning != null) Text(
+                            "Content warning: ${revision.contentWarning} · ${if (revisionRevealed) "Hide" else "Show"}",
+                            color = p.accent, modifier = Modifier.clickable { revisionRevealed = !revisionRevealed })
+                        if (revisionRevealed) Text(revision.text, color = p.ink)
+                    }
+                }
             }
         }
     }

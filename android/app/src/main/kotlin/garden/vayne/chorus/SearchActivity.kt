@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -47,7 +48,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import garden.vayne.chorus.data.Chorus
+import garden.vayne.chorus.data.Entry
 import garden.vayne.chorus.data.Front
 import garden.vayne.chorus.data.Mode
 import garden.vayne.chorus.data.Model
@@ -69,6 +73,21 @@ class SearchActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val chorus = Chorus.get(this)
+        if (intent.action == "garden.vayne.chorus.SWITCH_OUT") {
+            if (savedInstanceState != null) { finish(); return }
+            lifecycleScope.launch {
+                try {
+                    val model = chorus.awaitModel()
+                    if (chorus.device == null || model.isPerson) throw IllegalStateException("Switching is for systems.")
+                    Front.switch(chorus, emptyList(), "Switched out")
+                    QuickSwitchWidget.refreshAll(this@SearchActivity)
+                    Toast.makeText(this@SearchActivity, "Switched out", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this@SearchActivity, e.message ?: "Couldn't switch out", Toast.LENGTH_LONG).show()
+                } finally { finish() }
+            }
+            return
+        }
         val pinnedId = intent.getStringExtra(PinnedShortcuts.EXTRA_MEMBER_ID)
         if (pinnedId != null) {
             val pinnedAccount = intent.getStringExtra(PinnedShortcuts.EXTRA_ACCOUNT_ID)
@@ -96,8 +115,8 @@ class SearchActivity : ComponentActivity() {
 }
 
 /** Members and subsystems matching `query`, best first. */
-fun searchSubjects(model: Model, query: String): List<Subject> {
-    val members = model.active.map { m ->
+fun searchSubjects(model: Model, query: String, accountId: String?): List<Subject> {
+    val members = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }.map { m ->
         Subject("member", m.id, m.shownName, m.color, m.glyph, m.avatarBlob) to listOfNotNull(m.name, m.displayName, m.pronouns, *m.sigils.toTypedArray()).joinToString(" ")
     }
     val groups = model.groups.filter { it.isSubsystem }.map { g ->
@@ -111,15 +130,38 @@ fun searchSubjects(model: Model, query: String): List<Subject> {
         .sortedBy { it.second }.map { it.first }.take(30)
 }
 
+/** Keep the user's selection order; only subjects this account can switch to enter the op. */
+fun multiSwitchEntries(model: Model, selected: List<Subject>, accountId: String?): List<Entry> {
+    val ownMembers = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }
+        .map { it.id }.toSet()
+    val subsystems = model.groups.filter { it.isSubsystem }.map { it.id }.toSet()
+    val seen = HashSet<Pair<String, String>>()
+    return selected.filter { subject ->
+        seen.add(subject.type to subject.id) && when (subject.type) {
+            "member" -> subject.id in ownMembers
+            "group" -> subject.id in subsystems
+            else -> false
+        }
+    }.mapIndexed { index, subject -> Entry(subject.type, subject.id, "front", index == 0) }
+}
+
 @Composable
 private fun Launcher(chorus: Chorus, close: () -> Unit) {
     val p = LocalChorusPalette.current
     val model by chorus.model.collectAsState()
     var query by remember { mutableStateOf("") }
+    var multi by remember { mutableStateOf(false) }
+    val selected = remember { mutableStateListOf<Subject>() }
     val focus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val results = remember(model, query) { searchSubjects(model, query) }
+    val accountId = chorus.device?.accountId
+    val results = remember(model, query, accountId) { searchSubjects(model, query, accountId) }
+    LaunchedEffect(accountId) { selected.clear() }
+    LaunchedEffect(model) {
+        val valid = multiSwitchEntries(model, selected, accountId).map { it.subjectType to it.subjectId }.toSet()
+        selected.removeAll { (it.type to it.id) !in valid }
+    }
 
     if (model.isPerson) {
         Box(Modifier.fillMaxSize().background(Color(0x66000000)).clickable(onClick = close).statusBarsPadding().padding(16.dp),
@@ -130,10 +172,27 @@ private fun Launcher(chorus: Chorus, close: () -> Unit) {
         return
     }
 
-    fun pick(s: Subject) {
+    fun pick(s: Subject, mode: Mode) {
         scope.launch {
             try {
-                val label = Front.tap(chorus, s, Mode.Replace)
+                val label = Front.tap(chorus, s, mode)
+                QuickSwitchWidget.refreshAll(ctx)
+                Toast.makeText(ctx, label, Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(ctx, e.message ?: "Couldn't switch", Toast.LENGTH_LONG).show()
+            }
+            close()
+        }
+    }
+    fun switchSelected() {
+        val entries = multiSwitchEntries(model, selected, accountId)
+        if (entries.isEmpty()) return
+        scope.launch {
+            try {
+                val names = selected.filter { s -> entries.any { it.subjectType == s.type && it.subjectId == s.id } }
+                    .joinToString(" + ") { it.name }
+                val label = "Switched to $names"
+                Front.switch(chorus, entries, label)
                 QuickSwitchWidget.refreshAll(ctx)
                 Toast.makeText(ctx, label, Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
@@ -164,20 +223,41 @@ private fun Launcher(chorus: Chorus, close: () -> Unit) {
                     textStyle = TextStyle(color = p.ink, fontSize = 16.sp),
                     cursorBrush = SolidColor(p.accent),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { results.firstOrNull()?.let(::pick) }),
+                    keyboardActions = KeyboardActions(onGo = {
+                        if (multi) switchSelected() else results.firstOrNull()?.let { pick(it, Mode.Replace) }
+                    }),
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
                 )
             }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(if (multi) "Multi ✓" else "Multi", color = if (multi) p.accent else p.ink2,
+                    modifier = Modifier.clickable { multi = !multi; selected.clear() }.padding(8.dp)
+                        .semantics { contentDescription = "Multi switch" })
+                if (multi) Text("Switch (${selected.size})", color = if (selected.isNotEmpty()) p.accent else p.ink3,
+                    modifier = Modifier.clickable(enabled = selected.isNotEmpty()) { switchSelected() }.padding(8.dp)
+                        .semantics { contentDescription = "Switch selected members" })
+            }
             if (results.isEmpty()) Text(if (query.isBlank()) "No members yet." else "No one matches “$query”.", color = p.ink3, modifier = Modifier.padding(12.dp))
             LazyColumn {
-                items(results, key = { "${it.type}:${it.id}" }) { s -> ResultRow(s) { pick(s) } }
+                items(results, key = { "${it.type}:${it.id}" }) { s ->
+                    ResultRow(s, multi, selected.any { it.type == s.type && it.id == s.id },
+                        onTap = {
+                            if (multi) {
+                                val index = selected.indexOfFirst { it.type == s.type && it.id == s.id }
+                                if (index >= 0) selected.removeAt(index) else selected.add(s)
+                            } else pick(s, Mode.Replace)
+                        },
+                        onAdd = { pick(s, Mode.Add) }, onRemove = { pick(s, Mode.Remove) })
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ResultRow(s: Subject, onTap: () -> Unit) {
+private fun ResultRow(s: Subject, multi: Boolean, selected: Boolean, onTap: () -> Unit,
+    onAdd: () -> Unit, onRemove: () -> Unit) {
     val p = LocalChorusPalette.current
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onTap).padding(horizontal = 8.dp, vertical = 8.dp),
@@ -186,6 +266,15 @@ private fun ResultRow(s: Subject, onTap: () -> Unit) {
         Avatar(s.glyph, s.color, 36.dp, avatarBlob = s.avatarBlob)
         Spacer(Modifier.width(12.dp))
         Text(s.name, color = tonesOf(s.color).name, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-        if (s.type == "group") Text("whole subsystem", color = p.ink3, fontSize = 12.sp)
+        if (multi) Text(if (selected) "✓" else "+", color = p.accent, fontSize = 18.sp,
+            modifier = Modifier.padding(horizontal = 10.dp))
+        else {
+            Text("Add", color = p.accent, fontSize = 12.sp,
+                modifier = Modifier.clickable(onClick = onAdd).padding(horizontal = 6.dp, vertical = 8.dp)
+                    .semantics { contentDescription = "Add ${s.name} to front" })
+            Text("Remove", color = p.accent, fontSize = 12.sp,
+                modifier = Modifier.clickable(onClick = onRemove).padding(horizontal = 6.dp, vertical = 8.dp)
+                    .semantics { contentDescription = "Remove ${s.name} from front" })
+        }
     }
 }

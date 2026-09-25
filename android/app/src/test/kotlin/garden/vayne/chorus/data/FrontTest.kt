@@ -20,7 +20,9 @@ class FrontTest {
         assertFalse(entries.getJSONObject(1).getBoolean("is_primary"))
         assertEquals("backdated", payload.getString("note"))
         assertEquals("silent", payload.getString("notify"))
-        assertFalse(Front.switchPayload(emptyList()).has("notify"))
+        val switchOut = Front.switchPayload(emptyList())
+        assertEquals(0, switchOut.getJSONArray("entries").length())
+        assertFalse(switchOut.has("notify"))
     }
 
     @Test fun typedTimeRejectsPartialOrInvalidDates() {

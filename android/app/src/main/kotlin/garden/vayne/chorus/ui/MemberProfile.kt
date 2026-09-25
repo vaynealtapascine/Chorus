@@ -122,10 +122,12 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
             val groups = model.membership.filter { memberId in it.value }.keys.mapNotNull { model.group(it)?.name }
             if (groups.isNotEmpty()) Text(groups.joinToString(" · "), color = p.ink2)
             for (field in model.profileFields[memberId].orEmpty()) Text("${field.name}: ${field.value}", color = p.ink2)
-            Text("Front: ${"%.1f".format(metrics.weekHours)} h in 7 days · ${"%.1f".format(metrics.monthHours)} h in 28 days",
-                color = p.ink2)
-            Text(metrics.lastFrontAt?.let { "Last fronted ${DateFormat.getDateInstance().format(Date(it))}" }
-                ?: "No front recorded", color = p.ink2)
+            if (!model.isPerson) {
+                Text("Front: ${"%.1f".format(metrics.weekHours)} h in 7 days · ${"%.1f".format(metrics.monthHours)} h in 28 days",
+                    color = p.ink2)
+                Text(metrics.lastFrontAt?.let { "Last fronted ${DateFormat.getDateInstance().format(Date(it))}" }
+                    ?: "No front recorded", color = p.ink2)
+            }
             Text("${metrics.messages} messages", color = p.ink2)
             bundle?.let { details ->
                 Text("${details.posts} posts · ${details.entries} entries · ${details.notes} notes", color = p.ink2)

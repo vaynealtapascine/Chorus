@@ -9,14 +9,18 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import java.security.SecureRandom
+import java.io.File
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -24,6 +28,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -34,6 +41,15 @@ import uniffi.chorus_ffi.CoreReplica
 import uniffi.chorus_ffi.newId
 
 enum class Status { Loading, NoDevice, Offline, Connecting, Live, StorageError }
+
+data class RecheckProgress(val checked: Int, val total: Int)
+
+/** A permanently refused local op; core keeps the payload until the owner dismisses it. */
+data class SyncIssue(val id: String, val kind: String, val at: Long, val code: String,
+    val message: String, val text: String)
+
+data class MessageRevision(val rev: Int, val at: Long, val original: Boolean, val text: String,
+    val contentWarning: String?)
 
 /**
  * The app's one sync client (CLIENTS.md §2.3): owns the core replica, the sync socket and the
@@ -55,6 +71,21 @@ class Chorus private constructor(private val ctx: Context) {
     val status: StateFlow<Status> = _status
     private val _model = MutableStateFlow(Model.Empty)
     val model: StateFlow<Model> = _model
+    private val _keepEverything = MutableStateFlow(true)
+    val keepEverything: StateFlow<Boolean> = _keepEverything
+    private val _fileProgress = MutableStateFlow<OfflineFiles.Progress?>(null)
+    val fileProgress: StateFlow<OfflineFiles.Progress?> = _fileProgress
+    private val _syncIssues = MutableStateFlow<List<SyncIssue>>(emptyList())
+    val syncIssues: StateFlow<List<SyncIssue>> = _syncIssues
+    private val _heldMessages = MutableStateFlow<Map<String, HeldMessage>>(emptyMap())
+    val heldMessages: StateFlow<Map<String, HeldMessage>> = _heldMessages
+    private var heldTimer: Job? = null // store thread only
+    private val _recheckProgress = MutableStateFlow<RecheckProgress?>(null)
+    val recheckProgress: StateFlow<RecheckProgress?> = _recheckProgress
+    private val fillMutex = Mutex()
+    private var fillStarted = false // once per process session
+    private var recheckWatch: ((String) -> Unit)? = null // store thread only
+    private var recheckDone: CompletableDeferred<Unit>? = null // store thread only
 
     @Volatile var device: DeviceRecord? = null
         private set
@@ -82,6 +113,10 @@ class Chorus private constructor(private val ctx: Context) {
     }
 
     private fun start() {
+        heldTimer?.cancel()
+        heldTimer = null
+        _heldMessages.value = emptyMap()
+        _keepEverything.value = store.get("setting:keep_everything") != "false"
         val dev = store.get("device")?.let { runCatching { DeviceRecord.fromJson(it) }.getOrNull() }
         device = dev
         Pins.trust(dev?.pin)
@@ -90,6 +125,8 @@ class Chorus private constructor(private val ctx: Context) {
             return
         }
         replica = CoreReplica.restore(dev.deviceId, dev.node, store.get("meta").orEmpty(), store.opsJson(), store.get("hlc").orEmpty())
+        refreshIssues(replica!!)
+        refreshHeld(replica!!)
         rebuild()
         main.post { connect() }
     }
@@ -138,6 +175,7 @@ class Chorus private constructor(private val ctx: Context) {
                 throw e
             }
             rebuild()
+            refreshHeld(r)
             sendAll(out.getJSONArray("frames"))
             syncReady.value = false
             SyncWork.enqueue(ctx)
@@ -148,7 +186,71 @@ class Chorus private constructor(private val ctx: Context) {
 
     private fun changed(r: CoreReplica) {
         try { store.save(r.takeChanges()) } catch (e: Exception) { storageFailed(e); return }
+        refreshIssues(r)
+        refreshHeld(r)
         rebuild()
+    }
+
+    private fun refreshIssues(r: CoreReplica) {
+        val rows = JSONArray(r.syncIssues())
+        _syncIssues.value = (0 until rows.length()).map { n ->
+            val row = rows.getJSONObject(n)
+            SyncIssue(row.getString("id"), row.getString("kind"), row.getLong("at"),
+                row.getString("code"), row.getString("message"),
+                row.optJSONObject("payload")?.optString("text").orEmpty())
+        }
+    }
+
+    private fun refreshHeld(r: CoreReplica) {
+        val held = HeldMessages.parse(r.held())
+        _heldMessages.value = held.associateBy { it.messageId }
+        heldTimer?.cancel()
+        heldTimer = null
+        val next = held.firstOrNull() ?: return
+        heldTimer = scope.launch {
+            delay((next.until - System.currentTimeMillis()).coerceAtLeast(0L) + 50L)
+            heldTimer = null
+            if (_status.value == Status.Live) {
+                val frames = JSONArray(r.tick(System.currentTimeMillis()))
+                changed(r) // keep the new queue state on disk before sending
+                if (_status.value != Status.StorageError) sendAll(frames)
+                syncReady.value = false
+            } else {
+                // A background socket lease may have ended; WorkManager reconnects when due.
+                SyncWork.enqueue(ctx)
+            }
+        }
+    }
+
+    /** Cancel a locally held send while the server has not accepted it. */
+    suspend fun cancelHeld(messageId: String): Boolean = withContext(dispatcher) {
+        val held = _heldMessages.value[messageId] ?: return@withContext false
+        val r = replica ?: return@withContext false
+        if (!r.cancelHeld(held.opId)) return@withContext false
+        changed(r)
+        syncReady.value = _status.value == Status.Live && caughtScopes.containsAll(expectedScopes) &&
+            HeldMessages.caughtUp(r.pendingCount(), _heldMessages.value.size)
+        true
+    }
+
+    /** Dismiss only after core and the encrypted replica both forget the refused op. */
+    suspend fun dismissIssue(id: String) = withContext(dispatcher) {
+        val r = replica ?: return@withContext
+        if (!r.dismissIssue(id)) return@withContext
+        try { store.save(r.takeChanges()) } catch (e: Exception) { storageFailed(e); throw e }
+        refreshIssues(r)
+    }
+
+    /** Core's locally replicated versions, including the original and each accepted edit. */
+    suspend fun revisions(entityId: String): List<MessageRevision> = withContext(dispatcher) {
+        val rows = JSONArray(replica?.revisions(entityId) ?: "[]")
+        (0 until rows.length()).map { n ->
+            val row = rows.getJSONObject(n)
+            val fields = row.getJSONObject("fields")
+            MessageRevision(row.getInt("rev"), row.getLong("at"), row.getBoolean("original"),
+                fields.optString("text"),
+                if (fields.has("cw") && !fields.isNull("cw")) fields.optString("cw").ifEmpty { null } else null)
+        }
     }
 
     /** Coalesced: at most one pending rebuild of the typed model. */
@@ -195,6 +297,72 @@ class Chorus private constructor(private val ctx: Context) {
 
     suspend fun putSetting(key: String, value: String) = withContext(dispatcher) { store.put(key, value) }
 
+    /** Device-only preference: Android is installed, so file retention starts enabled. */
+    suspend fun setKeepEverything(on: Boolean) = withContext(dispatcher) {
+        store.put("setting:keep_everything", on.toString())
+        _keepEverything.value = on
+        if (on && _status.value == Status.Live) scheduleFileFill()
+    }
+
+    private fun scheduleFileFill() {
+        if (fillStarted || !_keepEverything.value) return
+        scope.launch {
+            delay(5_000)
+            if (fillStarted || !_keepEverything.value || _status.value != Status.Live) return@launch
+            fillStarted = true
+            runCatching { fillFiles() }.onFailure { Log.w(TAG, "offline file fill failed", it) }
+        }
+    }
+
+    /** A snapshot of the projection's file catalogue, then at most three IO downloads. */
+    suspend fun fillFiles(): OfflineFiles.Progress = fillMutex.withLock {
+        val (dev, hashes) = withContext(dispatcher) {
+            val d = device ?: error("Not signed in.")
+            d to OfflineFiles.filesOf(projectionCache ?: JSONObject(replica?.projection() ?: "{}"))
+        }
+        OfflineFiles.fill(ctx, dev, hashes) { _fileProgress.value = it }
+    }
+
+    /** Re-pull every scope and wait for digest repair before filling files. */
+    suspend fun recheckAll() {
+        val done = CompletableDeferred<Unit>()
+        val watch = withContext(dispatcher) {
+            check(_status.value == Status.Live && ws != null) { "Not connected to the server right now." }
+            check(recheckWatch == null) { "A full sync is already running." }
+            val r = replica ?: error("Not set up.")
+            val frames = JSONArray(r.recheck())
+            val waiting = mutableSetOf<String>()
+            for (i in 0 until frames.length()) waiting.add(frames.getJSONObject(i).getString("scope"))
+            val total = waiting.size
+            val callback: (String) -> Unit = { name ->
+                waiting.remove(name)
+                val repairing = JSONArray(r.repairing()).length()
+                _recheckProgress.value = RecheckProgress((total - waiting.size - repairing).coerceAtLeast(0), total)
+                if (waiting.isEmpty() && repairing == 0) done.complete(Unit)
+            }
+            recheckWatch = callback
+            recheckDone = done
+            callback("")
+            sendAll(frames)
+            callback
+        }
+        try {
+            withTimeout(120_000) { done.await() }
+            if (_keepEverything.value) fillFiles()
+        } finally {
+            withContext(dispatcher) {
+                if (recheckWatch === watch) { recheckWatch = null; recheckDone = null }
+            }
+        }
+    }
+
+    /** Replica, retained files, and evictable cache, including SQLite's WAL. */
+    suspend fun spaceUsedBytes(): Long = withContext(Dispatchers.IO) {
+        fun size(root: File): Long = if (!root.exists()) 0 else root.walkTopDown()
+            .filter { it.isFile }.sumOf { it.length() }
+        size(ctx.filesDir) + size(ctx.cacheDir) + size(ctx.getDatabasePath("unused").parentFile!!)
+    }
+
     /** The signed-in device, after the replica has loaded. */
     suspend fun awaitDevice(): DeviceRecord? = withContext(dispatcher) { device }
 
@@ -224,6 +392,8 @@ class Chorus private constructor(private val ctx: Context) {
     private fun storageFailed(e: Exception) {
         Log.e(TAG, "local replica unavailable", e)
         syncReady.value = false
+        heldTimer?.cancel()
+        heldTimer = null
         _status.value = Status.StorageError
         main.post { ws?.close(1000, "storage unavailable"); ws = null; main.removeCallbacks(retry) }
     }
@@ -333,6 +503,17 @@ class Chorus private constructor(private val ctx: Context) {
                         }
                         _status.value = Status.Live
                         backoff = 1000
+                        scheduleFileFill()
+                        if (frame.optBoolean("reconcile")) {
+                            val hashes = JSONArray(r.restoringBlobs())
+                            val localDevice = device
+                            if (localDevice != null && hashes.length() > 0) {
+                                val names = (0 until hashes.length()).map { hashes.getString(it) }
+                                scope.launch(Dispatchers.IO) {
+                                    if (Blobs.queueRestore(ctx, localDevice, names) > 0) UploadWork.enqueue(ctx)
+                                }
+                            }
+                        }
                     }
                     if (kind == "scope") {
                         frame.optJSONArray("remove")?.let { a -> for (i in 0 until a.length()) { expectedScopes.remove(a.getString(i)); caughtScopes.remove(a.getString(i)) } }
@@ -346,9 +527,11 @@ class Chorus private constructor(private val ctx: Context) {
                             reply.optString("t") == "pull" && reply.optString("scope") == scopeName
                         }
                         if (!repairing) caughtScopes.add(scopeName)
+                        recheckWatch?.invoke(scopeName)
                     }
                     syncReady.value = _status.value == Status.Live &&
-                        caughtScopes.containsAll(expectedScopes) && r.pendingCount() == 0UL
+                        caughtScopes.containsAll(expectedScopes) &&
+                        HeldMessages.caughtUp(r.pendingCount(), _heldMessages.value.size)
                 }
             }
 
@@ -365,7 +548,10 @@ class Chorus private constructor(private val ctx: Context) {
         main.post {
             if (ws !== socket) return@post
             ws = null
-            scope.launch { replica?.disconnect(); syncReady.value = false }
+            scope.launch {
+                recheckDone?.completeExceptionally(IllegalStateException("Connection lost during full sync."))
+                replica?.disconnect(); syncReady.value = false
+            }
             _status.value = Status.Offline
             if (!renewing && (foreground || workLeases > 0)) schedule()
         }

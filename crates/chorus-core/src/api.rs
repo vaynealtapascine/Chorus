@@ -124,6 +124,58 @@ pub fn fold_front(ops_json: &str) -> Result<String, String> {
     Ok(js(&front::fold(&fronts)))
 }
 
+/// Front intervals and local UTC-offset transitions → daily totals. Callers clamp the requested
+/// window and supply the timezone schedule; core owns splitting and accounting on every client.
+pub fn front_daily(intervals_json: &str, now: i64, offsets_json: &str) -> Result<String, String> {
+    use front::{Interval, Level, SubjectType};
+
+    let raw: Vec<Value> = parse("front intervals", intervals_json)?;
+    let mut intervals = Vec::with_capacity(raw.len());
+    for (position, v) in raw.into_iter().enumerate() {
+        let subject_type: SubjectType = serde_json::from_value(v["subject_type"].clone()).map_err(|e| e.to_string())?;
+        let level: Level = serde_json::from_value(v["level"].clone()).map_err(|e| e.to_string())?;
+        let start_at = v["start_at"].as_i64().ok_or("interval start_at missing")?;
+        intervals.push(Interval {
+            id: v["id"].as_str().unwrap_or("").into(),
+            subject_type,
+            subject_id: v["subject_id"].as_str().unwrap_or("").into(),
+            level,
+            is_primary: v["is_primary"].as_bool().unwrap_or(false),
+            position,
+            start_at,
+            end_at: v["end_at"].as_i64(),
+            start_switch_id: String::new(),
+            end_switch_id: None,
+            start_tz_offset_min: 0,
+        });
+    }
+    let mut offsets: Vec<(i64, i32)> = parse("UTC offsets", offsets_json)?;
+    offsets.sort_by_key(|x| x.0);
+    let at = |t: i64| {
+        let idx = offsets.partition_point(|(start, _)| *start <= t);
+        offsets.get(idx.saturating_sub(1)).map_or(0, |(_, offset)| *offset)
+    };
+    let mut split = Vec::new();
+    for interval in intervals {
+        let end = interval.end_at.unwrap_or(now);
+        let mut start = interval.start_at;
+        for &(transition, _) in &offsets {
+            if transition <= start || transition >= end {
+                continue;
+            }
+            let mut piece = interval.clone();
+            piece.start_at = start;
+            piece.end_at = Some(transition);
+            split.push(piece);
+            start = transition;
+        }
+        let mut piece = interval;
+        piece.start_at = start;
+        split.push(piece);
+    }
+    Ok(js(&front::daily(&split, now, at)))
+}
+
 /// Ops (JSON array) → the reference projection (for tests and debugging views).
 pub fn project(ops_json: &str) -> Result<String, String> {
     let ops: Vec<Op> = parse("ops", ops_json)?;
@@ -482,6 +534,18 @@ mod tests {
         assert_eq!(h, "0000000003e8-0000-00000007");
         assert!(hlc_observe(&h, 7, "0000000007d0-0005-00000009", 1000).unwrap().starts_with("0000000007d0-0006"));
         assert_eq!(fold_front("[]").unwrap(), r#"{"switches":[],"intervals":[],"current":[]}"#);
+    }
+
+    #[test]
+    fn daily_api_splits_at_an_offset_transition() {
+        let intervals = r#"[{"subject_type":"member","subject_id":"kai","level":"front","is_primary":true,"start_at":0,"end_at":86400000}]"#;
+        let rows: Vec<Value> =
+            serde_json::from_str(&front_daily(intervals, 86_400_000, "[[0,0],[7200000,60]]").unwrap()).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["day"], "1970-01-01");
+        assert_eq!(rows[0]["seconds"], 82_800);
+        assert_eq!(rows[1]["day"], "1970-01-02");
+        assert_eq!(rows[1]["seconds"], 3_600);
     }
 
     #[test]
