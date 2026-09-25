@@ -550,7 +550,7 @@ internal fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
 }
 
 /** A file picked for the next message: named and described, not yet copied. */
-private data class PendingAttachment(val uri: Uri, val name: String, val mime: String, val alt: String = "", val spoiler: Boolean = false) {
+internal data class PendingAttachment(val uri: Uri, val name: String, val mime: String, val alt: String = "", val spoiler: Boolean = false) {
     companion object {
         fun of(ctx: android.content.Context, uri: Uri): PendingAttachment {
             val name = ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
@@ -565,7 +565,8 @@ private data class PendingAttachment(val uri: Uri, val name: String, val mime: S
  * Copy one picked file into the upload queue (with a thumbnail for images) and record its
  * attachment; the message that lists it is written right after, and [UploadWork] sends the bytes.
  */
-private suspend fun sendAttachment(chorus: Chorus, ctx: android.content.Context, a: PendingAttachment, scope: String): String {
+internal suspend fun sendAttachment(chorus: Chorus, ctx: android.content.Context, a: PendingAttachment,
+    scope: String? = null, opKind: String = "attachment.create"): String {
     val account = chorus.device?.accountId ?: throw IllegalStateException("Not signed in.")
     val staged = withContext(Dispatchers.IO) {
         val input = ctx.contentResolver.openInputStream(a.uri) ?: throw IllegalStateException("Can't read ${a.name}.")
@@ -578,6 +579,7 @@ private suspend fun sendAttachment(chorus: Chorus, ctx: android.content.Context,
     val payload = JSONObject().put("blob_hash", staged.hash).put("filename", a.name).put("mime", staged.mime)
         .put("size", staged.size).put("alt_text", a.alt.trim()).put("is_spoiler", a.spoiler)
     if (thumb != null) payload.put("thumb_blob_hash", thumb.hash)
-    chorus.create("attachment.create", id, payload, scope = scope)
+    if (scope == null) chorus.create(opKind, id, payload)
+    else chorus.create(opKind, id, payload, scope = scope)
     return id
 }

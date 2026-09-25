@@ -1,6 +1,8 @@
 package garden.vayne.chorus.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,10 +28,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
+import garden.vayne.chorus.data.UploadWork
 import garden.vayne.chorus.data.JournalPost
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PostCompose
@@ -68,6 +73,11 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     var reactionError by remember { mutableStateOf<String?>(null) }
     var reactionBusy by remember { mutableStateOf(false) }
     val actions = rememberCoroutineScope()
+    val ctx = LocalContext.current
+    val attachments = remember { mutableStateListOf<PendingAttachment>() }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        for (uri in uris) attachments.add(PendingAttachment.of(ctx, uri))
+    }
     val mine = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId }
     val author = mine.find { it.id == authorId } ?: Reply.speaker(model)?.takeIf { it in mine } ?: mine.firstOrNull()
 
@@ -77,6 +87,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             section = "timeline"
             replyTo = externalReplyPost
             kind = "note"; title = ""; body = ""; cw = ""; mood = ""; tags = ""
+            attachments.clear()
             audience = "server" // the foreign parent author must be able to read this reply
             authorId = Reply.speaker(model)?.id.orEmpty()
             editing = true
@@ -87,6 +98,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     LaunchedEffect(externalOpenPost) {
         if (externalOpenPost != null) {
             editing = false; profileId = null; threadPostId = externalOpenPost
+            attachments.clear()
             section = "timeline"
             onExternalOpenConsumed()
         }
@@ -112,19 +124,25 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     if (editing) {
         Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { editing = false; replyTo = null }) { Text("Cancel") }
+                TextButton(enabled = !busy, onClick = { editing = false; replyTo = null; attachments.clear() }) { Text("Cancel") }
                 Text(if (replyTo == null) "Write a post" else "Write a reply", color = p.ink,
                     fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 14.dp))
                 TextButton(enabled = !busy && author != null && body.isNotBlank(), onClick = {
                     val dev = chorus.device ?: return@TextButton
                     val writer = author ?: return@TextButton
+                    val picked = attachments.toList()
                     busy = true; error = null
                     actions.launch {
                         try {
+                            val attachmentIds = picked.map { a ->
+                                sendAttachment(chorus, ctx, a, opKind = "post.attachment")
+                            }
                             val payload = PostCompose.payload(model, dev.accountId, kind, writer.id, body,
-                                title, cw, audience, mood, tags, replyTo)
+                                title, cw, audience, mood, tags, replyTo, attachmentIds = attachmentIds)
                             chorus.create("post.create", chorus.newId(), payload)
+                            if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
                             body = ""; title = ""; cw = ""; mood = ""; tags = ""; replyTo = null
+                            attachments.clear()
                             editing = false
                         } catch (e: Exception) { error = e.message ?: "Could not post." }
                         finally { busy = false }
@@ -155,6 +173,26 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 item {
                     OutlinedTextField(body, { body = it }, label = { Text(if (kind == "entry") "Write your entry" else "Write a note") },
                         minLines = if (kind == "entry") 8 else 4, modifier = Modifier.fillMaxWidth())
+                }
+                item {
+                    TextButton(enabled = !busy, onClick = { picker.launch("*/*") }) { Text("Attach images or files") }
+                }
+                for ((i, attachment) in attachments.withIndex()) {
+                    item(key = "picked:$i") {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("📎 ${attachment.name}", color = p.ink, maxLines = 1)
+                                TextButton(enabled = !busy, onClick = { attachments.removeAt(i) }) { Text("Remove") }
+                            }
+                            JournalChoice(if (attachment.spoiler) "Spoiler ✓" else "Mark as spoiler", attachment.spoiler) {
+                                if (busy) return@JournalChoice
+                                attachments[i] = attachment.copy(spoiler = !attachment.spoiler)
+                            }
+                            if (attachment.mime.startsWith("image/")) OutlinedTextField(attachment.alt,
+                                { attachments[i] = attachment.copy(alt = it) }, label = { Text("Image description (alt text)") },
+                                modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !busy)
+                        }
+                    }
                 }
                 item { Text("Visible to", color = p.ink2) }
                 item {

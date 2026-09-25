@@ -11,6 +11,7 @@ object PostCompose {
         title: String, cw: String, audience: String, mood: String, tags: String,
         replyTo: String? = null,
         markup: (String, String) -> String = ::parseMarkup,
+        attachmentIds: List<String> = emptyList(),
     ): JSONObject {
         require(kind in setOf("note", "entry")) { "Choose a post type." }
         require(audience in setOf("private", "followers", "server")) { "Choose an audience." }
@@ -28,6 +29,7 @@ object PostCompose {
             .put("cw", cw.trim().ifBlank { null } ?: JSONObject.NULL)
             .put("visibility", JSONObject().put("mode", audience))
         if (replyTo != null) result.put("reply_to", replyTo)
+        if (attachmentIds.isNotEmpty()) result.put("attachments", JSONArray(attachmentIds))
         return result
     }
 }

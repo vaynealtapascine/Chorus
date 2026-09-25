@@ -15,12 +15,15 @@ class PostComposeTest {
 
     @Test fun entryKeepsCoreRichTextAudienceReplyAndTags() {
         val p = PostCompose.payload(model, "mine", "entry", "own", "**hello**", "Title", "Sensitive", "followers",
-            "bright", "#day, notes", "parent", markup)
+            "bright", "#day, notes", "parent", markup, listOf("photo", "notes-file"))
         assertEquals("hello", p.getString("text"))
         assertEquals("bold", p.getJSONArray("entities").getJSONObject(0).getString("type"))
         assertEquals("followers", p.getJSONObject("visibility").getString("mode"))
         assertEquals("parent", p.getString("reply_to"))
         assertEquals("day", p.getJSONArray("tags").getString(0))
+        assertEquals(listOf("photo", "notes-file"), (0 until p.getJSONArray("attachments").length()).map {
+            p.getJSONArray("attachments").getString(it)
+        })
     }
 
     @Test fun foreignMemberCannotBeUsedAsOwnPostAuthor() {
