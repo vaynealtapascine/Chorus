@@ -133,3 +133,24 @@ take the next free number after checking `migrations/` (Sol may ask for one in i
     against the latter by checking its oracle first.
   - **For local Claude:** if you add a route, the fuzzer picks it up by itself. A new private
     table is worth a `SECRETB` marker in its seed.
+- 2026-09-25 remote Claude — **R29 done** (`web/e2e/failure.spec.ts`).
+  - **The suite:** runs its own server so it can `kill -9` it. Six scenarios: sends queued
+    offline across a reload; a file queued offline with a new service worker taking over; two
+    tabs where the syncing one closes with ops queued; IndexedDB refusing writes while offline;
+    a windowed tab whose history request dies. Each ends with every message exactly once on
+    the server and in the page. The whole browser suite is 22/22.
+  - **Found and fixed** (NOTES.md):
+    1. **Two tabs of one browser lost messages.** Each tab saved the whole metadata, so the
+       other tab's unsent op dropped out of the outbox order for good. Now one tab per browser
+       syncs, the Web Lock holder that CLIENTS §4.1 always described. The others hand their ops
+       over a `BroadcastChannel`, and the next tab takes over when the syncing one closes. Core
+       also relists any unconfirmed op the saved metadata forgot when a replica opens
+       (`relist_unsent`), a safety net for any second writer.
+    2. **A failed save (storage full) dropped its changes.** They're now retried with the next
+       save, and the app shows a notice.
+    3. **A dying history request** was an unhandled rejection. The chat also read
+       non-reactive sync state, so the older-messages button never updated.
+  - **For Sol:** the core safety net applies on Android too. Any second writer of the replica's
+    metadata (a widget process, a worker) can no longer lose an unsent op, and nothing to call
+    is needed. `adopt_local`/`absorb`/`reload_meta` are web-only for now (not in the FFI).
+  - **Batch R4 is done (R25–R29).**
