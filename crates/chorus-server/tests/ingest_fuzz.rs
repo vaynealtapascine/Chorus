@@ -377,3 +377,32 @@ fn field_rules_match_the_schema() {
     }
     assert!(missing.is_empty(), "add these to op::FIELD_RULES:\n{}", missing.join("\n"));
 }
+
+/// How many stored ops of a real database the value rules would refuse today, by kind and reason
+/// (never their content): `CHORUS_CHECK_DB=<a copy of chorus.db> cargo test -p chorus-server
+/// --test ingest_fuzz stored_ops -- --ignored --nocapture`. Stored ops keep projecting either way
+/// (the rules are for new ops); a count here points at a client that wrote a bad shape.
+#[test]
+#[ignore]
+fn stored_ops_against_the_value_rules() {
+    let Ok(path) = std::env::var("CHORUS_CHECK_DB") else { return };
+    let conn = Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    let mut total = 0;
+    let mut after = 0;
+    loop {
+        let page = chorus_server::oplog::applied_after(&conn, after, 5000).unwrap();
+        let Some(last) = page.last() else { break };
+        after = last.seq.unwrap();
+        for o in page {
+            total += 1;
+            if let Err(e) = chorus_core::op::validate_new(&o) {
+                *counts.entry(format!("{} — {e}", o.kind)).or_default() += 1;
+            }
+        }
+    }
+    println!("{total} ops; refused by today's rules:");
+    for (k, n) in &counts {
+        println!("  {n:>6}  {k}");
+    }
+}
