@@ -15,6 +15,16 @@ param([switch]$NoBuild, [switch]$Android, [string]$Target = (Join-Path $HOME 'se
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 
+# Build off the small C: drive when the F: build area exists (C: filling up made a deploy stop
+# before copying anything). Its own target dir: a dev server running from another one locks it.
+if (Test-Path 'F:\DunBuild') {
+    if (-not $env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR = 'F:\DunBuild\chorus-target-deploy' }
+    if (-not $env:CHORUS_GRADLE_BUILD_DIR) { $env:CHORUS_GRADLE_BUILD_DIR = 'F:\DunBuild\chorus-gradle-deploy' }
+    if (-not $env:GRADLE_USER_HOME) { $env:GRADLE_USER_HOME = 'F:\DunBuild\gradle' }
+    $env:CARGO_INCREMENTAL = '0'
+    Write-Host "Building in $env:CARGO_TARGET_DIR"
+}
+
 # Build everything before copying anything, so a failed build leaves the live copy untouched
 # (a web app newer than its server can call routes the server doesn't have yet).
 if (-not $NoBuild) {
