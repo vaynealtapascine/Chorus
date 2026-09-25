@@ -20,6 +20,7 @@ object StagePlan {
         val hideReplyBars: Boolean = false,
         val style: String = "chorus",
         val blurAvatars: Boolean = false,
+        val startAt: Long = 0L,
     )
 
     data class Row(val id: String?, val selected: Boolean, val at: Long?, val replyShown: Boolean, val contextCount: Int)
@@ -41,6 +42,7 @@ object StagePlan {
         val time = when (settings.timeMode) {
             "hide" -> JSONObject().put("mode", "hide")
             "shift" -> JSONObject().put("mode", "shift").put("offset_ms", settings.shiftMinutes.toLong() * 60_000)
+            "start" -> JSONObject().put("mode", "start").put("start", settings.startAt)
             else -> JSONObject().put("mode", "real")
         }
         return JSONObject().put("channel_id", channelId)
@@ -69,7 +71,8 @@ object StagePlan {
         if (mode !in setOf("context", "hidden", "visible")) return null
         val time = definition.optJSONObject("time")
         val timeMode = time?.optString("mode", "real") ?: "real"
-        if (timeMode !in setOf("real", "hide", "shift")) return null
+        if (timeMode !in setOf("real", "hide", "shift", "start")) return null
+        if (timeMode == "start" && time?.opt("start") !is Number) return null
         val offset = time?.optLong("offset_ms") ?: 0L
         if (timeMode == "shift" && (offset % 60_000 != 0L || offset / 60_000 < Int.MIN_VALUE.toLong() ||
                 offset / 60_000 > Int.MAX_VALUE.toLong())) return null
@@ -86,7 +89,8 @@ object StagePlan {
             timeMode, (offset / 60_000).toInt(), onlyMembers, replyDepth,
             render?.optBoolean("blur_attachments") == true,
             render?.optBoolean("hide_header") == true, render?.optBoolean("hide_reply_bars") == true,
-            render?.optString("style", "chorus") ?: "chorus", render?.optBoolean("blur_avatars") == true)
+            render?.optString("style", "chorus") ?: "chorus", render?.optBoolean("blur_avatars") == true,
+            time?.optLong("start") ?: 0L)
     }
 
     fun forMessages(messages: List<ChatMessage>, settings: Settings,

@@ -1,5 +1,7 @@
 package garden.vayne.chorus.ui
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
@@ -52,6 +54,7 @@ import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.StagePlan
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import java.text.DateFormat
+import java.util.Calendar
 import java.util.Date
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -70,8 +73,9 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
     var unselected by rememberSaveable(channel.id) { mutableStateOf("context") }
     var advanced by rememberSaveable(channel.id) { mutableStateOf(false) }
     var redactNames by rememberSaveable(channel.id) { mutableStateOf(false) }
-    var hideTimes by rememberSaveable(channel.id) { mutableStateOf(false) }
+    var timeMode by rememberSaveable(channel.id) { mutableStateOf("real") }
     var shiftText by rememberSaveable(channel.id) { mutableStateOf("") }
+    var startAt by rememberSaveable(channel.id) { mutableStateOf(System.currentTimeMillis()) }
     var fakeNames by rememberSaveable(channel.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var onlyMembers by rememberSaveable(channel.id) { mutableStateOf<List<String>>(emptyList()) }
     var replyDepth by rememberSaveable(channel.id) { mutableStateOf<Int?>(null) }
@@ -93,9 +97,9 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
         }
     }
     val settings = StagePlan.Settings(selected.toSet(), if (capturing) unselected else "visible",
-        redactNames, fakeNames, if (hideTimes) "hide" else if (shiftText.toIntOrNull() != null) "shift" else "real",
+        redactNames, fakeNames, timeMode,
         shiftText.toIntOrNull() ?: 0, onlyMembers.toSet(), replyDepth, blurAttachments, hideHeader, hideReplyBars,
-        style, blurAvatars)
+        style, blurAvatars, startAt)
     val plan = remember(messages, settings) { StagePlan.forMessages(messages, settings) }
     val byId = remember(messages) { messages.associateBy { it.id } }
     val authorIds = remember(messages) { messages.flatMap { it.authors }.distinct() }
@@ -127,9 +131,11 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                         JournalChoice(label, style == value) { style = value }
                     }
                 }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    JournalChoice("Hide real names", redactNames) { redactNames = !redactNames }
-                    JournalChoice("Hide times", hideTimes) { hideTimes = !hideTimes }
+                JournalChoice("Hide real names", redactNames) { redactNames = !redactNames }
+                LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(listOf("real" to "Real times", "hide" to "Hide times", "shift" to "Shift", "start" to "Start at")) { (value, label) ->
+                        JournalChoice(label, timeMode == value) { timeMode = value }
+                    }
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     JournalChoice("Conceal avatars", blurAvatars) { blurAvatars = !blurAvatars }
@@ -139,9 +145,27 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                     JournalChoice("Hide channel name", hideHeader) { hideHeader = !hideHeader }
                     JournalChoice("Hide reply bars", hideReplyBars) { hideReplyBars = !hideReplyBars }
                 }
-                OutlinedTextField(shiftText, { shiftText = it.filter { c -> c.isDigit() || c == '-' }.take(7) },
-                    label = { Text("Shift times by minutes (optional)") }, singleLine = true,
+                if (timeMode == "shift") OutlinedTextField(shiftText,
+                    { shiftText = it.filter { c -> c.isDigit() || c == '-' }.take(7) },
+                    label = { Text("Shift times by minutes") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+                if (timeMode == "start") {
+                    val ctx = LocalContext.current
+                    TextButton(onClick = {
+                        val day = Calendar.getInstance().apply { timeInMillis = startAt }
+                        DatePickerDialog(ctx, { _, year, month, date ->
+                            val chosen = Calendar.getInstance().apply {
+                                timeInMillis = startAt
+                                set(Calendar.YEAR, year); set(Calendar.MONTH, month); set(Calendar.DAY_OF_MONTH, date)
+                            }
+                            TimePickerDialog(ctx, { _, hour, minute ->
+                                chosen.set(Calendar.HOUR_OF_DAY, hour); chosen.set(Calendar.MINUTE, minute)
+                                chosen.set(Calendar.SECOND, 0); chosen.set(Calendar.MILLISECOND, 0)
+                                startAt = chosen.timeInMillis
+                            }, day.get(Calendar.HOUR_OF_DAY), day.get(Calendar.MINUTE), false).show()
+                        }, day.get(Calendar.YEAR), day.get(Calendar.MONTH), day.get(Calendar.DAY_OF_MONTH)).show()
+                    }) { Text("First shown time: ${DateFormat.getDateTimeInstance().format(Date(startAt))}") }
+                }
                 for (id in authorIds) {
                     val realName = model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone"
                     JournalChoice("Only $realName", id in onlyMembers) {
@@ -170,8 +194,9 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                         val loaded = supported ?: return@TextButton
                         selected = loaded.selected.toList(); unselected = loaded.unselected
                         redactNames = loaded.redactNames; fakeNames = loaded.fakeNames
-                        hideTimes = loaded.timeMode == "hide"
+                        timeMode = loaded.timeMode
                         shiftText = if (loaded.timeMode == "shift") loaded.shiftMinutes.toString() else ""
+                        startAt = if (loaded.timeMode == "start") loaded.startAt else System.currentTimeMillis()
                         onlyMembers = loaded.onlyMembers.toList(); replyDepth = loaded.replyDepth
                         blurAttachments = loaded.blurAttachments
                         hideHeader = loaded.hideHeader; hideReplyBars = loaded.hideReplyBars

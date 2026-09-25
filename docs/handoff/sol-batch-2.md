@@ -657,3 +657,8 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 - **Status: code complete, device audit pending.** Bubbles draws messages from this account on the right with a soft accent background, and other messages on the left with a neutral background. The saved style value matches the web definition, so all six Stage presets can now reopen on Android. No core or server semantics changed.
 - **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM definitions accept Bubbles and reject unknown styles.
 - **Compiled/unit-tested only:** No phone capture was inspected. Later compare both sides of a disposable shared-space exchange at phone width, including longer text and a CW.
+
+#### V6 · Start-at Stage timestamps (2026-09-25)
+- **Status: code complete, device audit pending.** Advanced now offers Real, Hide, Shift and Start at for displayed times. Start at uses the phone's date and time pickers; core shifts the first shown row to that instant and preserves gaps. The choice round-trips with web Stage definitions; malformed Start definitions stay unavailable instead of silently showing 1970. No message timestamps are edited.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM tests check saved start values and reject missing ones; Rust core already tests Start planning.
+- **Compiled/unit-tested only:** No phone picker or capture was inspected. Later choose a local date near a daylight-saving transition and check the staged times on web and Android.

@@ -63,6 +63,11 @@ class StagePlanTest {
         assertEquals("bubbles", StagePlan.supported(saved)?.style)
         assertEquals("minimal", StagePlan.definition("channel", StagePlan.Settings(style = "minimal"))
             .getJSONObject("render").getString("style"))
+        val start = StagePlan.definition("channel", StagePlan.Settings(timeMode = "start", startAt = 123_456L))
+        assertEquals(123_456L, start.getJSONObject("time").getLong("start"))
+        assertEquals(123_456L, StagePlan.supported(start)?.startAt)
+        start.getJSONObject("time").remove("start")
+        assertEquals(null, StagePlan.supported(start))
         saved.put("render", JSONObject().put("style", "unknown"))
         assertEquals(null, StagePlan.supported(saved))
     }
