@@ -93,4 +93,11 @@ class StagePlanTest {
         assertEquals("↪ Real name: Public text",
             StagePlan.replyPreview(parent.copy(text = "Public\ntext", cw = null), emptyMap()) { "Real name" })
     }
+
+    @Test fun incompleteSavedSelectionIsNotReadyForCapture() {
+        val current = listOf(message("new", "a", 2000))
+        assertEquals(setOf("old"), StagePlan.missingSelected(setOf("old", "new"), current))
+        assertEquals(emptySet<String>(), StagePlan.missingSelected(setOf("old", "new"),
+            listOf(message("old", "a", 1000)) + current))
+    }
 }

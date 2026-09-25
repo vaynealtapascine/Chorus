@@ -667,3 +667,8 @@ ceilings (most permissive wins, inherited defaults) and bucket-restricted member
 - **Status: code complete for preset colors, device audit pending.** Advanced offers Auto, Light and Dark colors. Android applies the selected Chorus palette throughout Stage capture and saves the matching web theme value. Custom palettes and square/wide capture widths remain unavailable on a phone.
 - **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. JVM definitions check Light/Dark values.
 - **Compiled/unit-tested only:** No phone capture was inspected. Later compare Light and Dark captures while the phone system theme is opposite each choice, including avatar and attachment cards.
+
+#### V6 · Guard capture of incomplete saved selections (2026-09-25)
+- **Status: code complete, device audit pending.** A saved Stage may pick messages older than Android's currently loaded window. Capture is now disabled while any picked ID is missing, with a count, a path to load older messages and a Clear action for picks unavailable in the local replica. This prevents an incomplete screenshot from silently appearing to be the saved stage. No core or server semantics changed.
+- **Verified by running:** `python scripts/verify.py --quick --android --offline` passed. A JVM test checks the missing-pick guard before and after loading the older row.
+- **Compiled/unit-tested only:** No phone capture was inspected. Later save a stage on web with an older picked message, load it on Android and check paging, capture and Clear.

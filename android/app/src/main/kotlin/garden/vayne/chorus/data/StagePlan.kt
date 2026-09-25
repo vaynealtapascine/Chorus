@@ -27,6 +27,10 @@ object StagePlan {
     data class Row(val id: String?, val selected: Boolean, val at: Long?, val replyShown: Boolean, val contextCount: Int)
     data class Result(val rows: List<Row>, val names: Map<String, String>)
 
+    /** A saved selection must not be captured while some picked rows are outside the loaded window. */
+    fun missingSelected(selected: Set<String>, messages: List<ChatMessage>): Set<String> =
+        selected - messages.mapTo(HashSet()) { it.id }
+
     /** A reply bar must not reveal the body of a parent behind its content warning. */
     fun replyPreview(parent: ChatMessage, names: Map<String, String>, realName: (String) -> String): String {
         val authors = parent.authors.map { names[it] ?: realName(it) }.joinToString(" & ").ifBlank { "Someone" }

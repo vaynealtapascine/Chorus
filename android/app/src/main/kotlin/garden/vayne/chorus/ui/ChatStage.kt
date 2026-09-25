@@ -106,6 +106,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
         style, blurAvatars, startAt, theme)
     val plan = remember(messages, settings) { StagePlan.forMessages(messages, settings) }
     val byId = remember(messages) { messages.associateBy { it.id } }
+    val missingSelected = remember(messages, selected) { StagePlan.missingSelected(selected.toSet(), messages) }
     val authorIds = remember(messages) { messages.flatMap { it.authors }.distinct() }
     val saved = model.savedStages.filter { it.channelId == channel.id }
 
@@ -116,11 +117,17 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                 verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onClose) { Text("Back") }
                 Text("Stage · #${channel.name}", color = p.ink, fontWeight = FontWeight.SemiBold)
-                TextButton(onClick = { onCapture(true) }) { Text("Capture") }
+                TextButton(enabled = missingSelected.isEmpty(), onClick = { onCapture(true) }) { Text("Capture") }
             }
             Text(if (selected.isEmpty()) "Tap messages to pick them. With nothing picked, all show."
                 else "${selected.size} picked · tap to add or remove.", color = p.ink2, fontSize = 13.sp,
                 modifier = Modifier.padding(horizontal = 16.dp))
+            if (missingSelected.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("${missingSelected.size} picked ${if (missingSelected.size == 1) "message is" else "messages are"} not loaded. Load older messages or clear those picks.",
+                    color = p.warn, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                TextButton(onClick = { selected = selected.filterNot { it in missingSelected } }) { Text("Clear") }
+            }
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 JournalChoice("Fold", unselected == "context") { unselected = "context" }
