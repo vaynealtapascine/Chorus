@@ -119,3 +119,35 @@ asked for; take **0010** and up.
   fuzz tests `tests/ingest_fuzz.rs` + `chorus-core/tests/payload_fuzz.rs` (DATA_MODEL §2.2).
   If a migration of yours adds a NOT NULL/JSON/IN constraint, add its rule, or
   `field_rules_match_the_schema` fails. R22 gained item 8 (space roles). Pull before starting.
+- 2026-09-25 remote Claude — **R20 done** (`3fa2e3f`, SYNC §9.3): `tests/chaos.rs` runs the real
+  `chorus-server` binary (kill -9 under bursts, restarts, a mid-run backup and a restore into a new
+  data dir) with 6 devices of 3 accounts on the real engine: every chat op kind, permission
+  churn with a guest, follows/membership churn over REST, real blob uploads, dropped sockets,
+  duplicated pushes, offline spells. At quiescence: replicas = what the server lets each account
+  see (ids, stamps, digests), empty outboxes, reasons on rejections, no repair left and bounded
+  repairs, REST message lists = each phone's projection, files back after the restore, and **no
+  leak**: every `ops` frame is checked against the rule's history by replaying the op log through
+  the server's projection (planted leaks are caught). Default 2 seeds (~15 s debug); soaks run
+  clean: 20×300 and 40×500 in release. It found, all fixed with regression tests:
+  - files uploaded after the last backup were lost by a restore → devices re-send the files their
+    restoring/queued ops name (`Replica::restoring_blobs`, SYNC §7.3 step 5; web done);
+  - a finished blob sent again by another account got 403 and stalled the web upload queue
+    forever → 200 (API §5), and the web counts HEAD 403 as "the server has it";
+  - (from R21) a device that lost a scope kept restoring copies, re-pushed them, and the server's
+    by-id ack confirmed them again → `ClientStore::forget` (SYNC §6.5).
+  Known limit (documented, not fixable by the protocol): a file whose only copy is on a device
+  that couldn't see the op at the restore (a guest who had lost the channel) doesn't come back.
+- 2026-09-25 remote Claude — **R21 done** (`ffe2df0`, SYNC §9.2): the simulator writes channels,
+  threads, forwards, attachments and real channel ids, and `MemServer::set_access` grants/revokes
+  scopes live (B joins/leaves the shared space and gains/loses A's internal space). Channel
+  permissions aren't modelled in `MemServer` (R20 covers them). 3000 seeds clean. The simulator
+  takes ~25 s release for 300 seeds (it did before too; SYNC said ~2 s, corrected).
+- 2026-09-25 remote Claude — **R22.1 edit history done** (`0271bf3`): rule in core
+  (`chorus_core::revisions`), `message_revision`/`post_revision` projected for edited items,
+  `GET /messages/{id}/revisions` and `GET /posts/{id}/revisions` (item's read rule), web
+  "(edited)" opens the history (browser test added).
+  **For Sol (Android):** (1) after a `welcome` with `reconcile: true`, call
+  `replica.restoringBlobs()` and queue an upload of each hash you have a local copy of (`HEAD`
+  first; 200 or 403 means done). (2) The history view: `replica.revisions(messageId)` (FFI),
+  same JSON as the web uses. (3) Nothing to do for `forget`: it reports through
+  `changes.removed` like evictions.
