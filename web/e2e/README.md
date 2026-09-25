@@ -15,6 +15,19 @@ person), a second device of the system, and the flows v1 promises:
 
 Handles carry a per-run suffix, so the suite can run again against the same server.
 
+`failure.spec.ts` (R29) is the web client under failure. It starts its **own** server from the
+binary the script built (port `CHORUS_E2E_FAILURE_PORT`, default 5398), so it can `kill -9` it.
+Scenarios:
+- messages sent with the server down, across a reload;
+- a file queued offline, with a new service worker taking over;
+- two tabs of one browser, the syncing one closing with ops queued;
+- IndexedDB refusing writes (a full disk) while offline;
+- a windowed tab whose history request dies.
+
+Each ends with the server holding every message exactly once, checked through the page's own
+session, and the page showing each once. It skips itself against a real server
+(`CHORUS_E2E_BASE` not on 127.0.0.1).
+
 **Locally / in CI:** `bash scripts/e2e-web.sh` builds the server and the web app, starts a server
 on a temporary data directory (port `CHORUS_E2E_PORT`, default 5399) and runs Playwright
 (`--no-build` skips the builds; arguments after `--` go to Playwright, e.g. `-- --headed`).

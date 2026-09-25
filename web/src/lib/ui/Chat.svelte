@@ -127,7 +127,14 @@
   let showPins = $state(false);
   // messages waiting out slow mode (D-076): not in the projection, so follow the sync client
   let held = $state(sync.heldUntil);
-  const unheld = sync.subscribe(() => (held = sync.heldUntil));
+  // the sync client isn't reactive state: what the template shows of it is copied here on change
+  let syncLive = $state(sync.status === 'live');
+  let windowed = $state(sync.windowed);
+  const unheld = sync.subscribe(() => {
+    held = sync.heldUntil;
+    syncLive = sync.status === 'live';
+    windowed = sync.windowed;
+  });
   onDestroy(unheld);
   let picking = $state(false);
   let box: HTMLTextAreaElement | undefined = $state();
@@ -233,6 +240,7 @@
     replyIn = null;
     older = [];
     olderDone = false;
+    olderError = '';
     // a reply started elsewhere ("Reply in…", "Reply privately") lands here
     if (current) replyTo = takeReply(current.id, current.space_id);
   });
@@ -243,20 +251,29 @@
   let older = $state<OlderMessage[]>([]);
   let olderDone = $state(false);
   let olderBusy = $state(false);
+  let olderError = $state('');
   async function loadOlder() {
     if (!current) return;
     const channel = current.id;
     const before = older[0]?.occurred_at ?? msgs[0]?.occurred_at ?? Date.now();
     olderBusy = true;
+    olderError = '';
     try {
       const r = await apiFetch(`${apiBase()}/channels/${encodeURIComponent(channel)}/messages?before=${before}&limit=50`, {
         headers: { authorization: `Bearer ${sync.device?.session ?? ''}` },
       });
-      if (!r.ok || current?.id !== channel) return;
+      if (current?.id !== channel) return;
+      if (!r.ok) {
+        olderError = `The server couldn't give older messages (${r.status}); try again.`;
+        return;
+      }
       const items = ((await r.json()) as { items: OlderMessage[] }).items;
       const have = new Set(msgs.map((m) => m.id));
       older = [...items.filter((m) => !have.has(m.id)), ...older];
       olderDone = items.length < 50;
+    } catch {
+      // the server went away mid-request (R29): say so, the button stays for another try
+      if (current?.id === channel) olderError = "Couldn't reach the server for older messages; try again when it's back.";
     } finally {
       olderBusy = false;
     }
@@ -797,10 +814,11 @@
           </article>
         {:else if historyError}<p class="hint" role="status">{historyError}</p>{/if}
       {/if}
-      {#if sync.windowed && current && !olderDone && !first}
-        <button class="older-load" disabled={olderBusy || sync.status !== 'live'} onclick={() => void loadOlder()}>
+      {#if windowed && current && !olderDone && !first}
+        <button class="older-load" disabled={olderBusy || !syncLive} onclick={() => void loadOlder()}>
           {olderBusy ? 'Loading…' : 'Older messages (from the server)'}
         </button>
+        {#if olderError}<p class="hint" role="status">{olderError}</p>{/if}
       {/if}
       {#each older as o (o.id)}
         <article class="older">

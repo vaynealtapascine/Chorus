@@ -171,7 +171,8 @@ impl Projector {
         if snapshot == Some(d) {
             self.partial = true;
             self.delivered_once = true;
-            let dirty: BTreeSet<Key> = fresh.iter().filter_map(|id| self.op_keys.get(id)).flatten().cloned().collect();
+            let dirty: BTreeSet<Key> =
+                crate::sort::set(fresh.iter().filter_map(|id| self.op_keys.get(id)).flatten().cloned());
             self.changed.clear();
             self.recompute(&dirty);
             self.changed.extend(dirty);

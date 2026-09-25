@@ -225,7 +225,7 @@ pub fn pluralkit(export: &Value, scope: &str) -> Result<Plan, String> {
             Some((t, ms))
         })
         .collect();
-    switches.sort();
+    crate::sort::ord(&mut switches);
     for (t, ms) in switches {
         let entries: Vec<Value> = ms
             .iter()
@@ -319,7 +319,7 @@ mod tests {
         let b: Vec<String> = pluralkit(&export(), scope).unwrap().ops.into_iter().map(|o| o.id).collect();
         assert_eq!(a, b);
         let mut dedup = a.clone();
-        dedup.sort();
+        crate::sort::ord(&mut dedup);
         dedup.dedup();
         assert_eq!(dedup.len(), a.len(), "no two planned ops share an id");
     }

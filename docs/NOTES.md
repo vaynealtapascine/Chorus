@@ -256,3 +256,109 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   live attachments (thumbnail plus original up to 20 MB), member/member-group avatars and custom
   emoji. Deduplicate hashes, limit concurrent downloads to three, and report missing files.
   Existing queued uploads must remain in their separate pending directory.
+- 2026-09-25 claude-opus-5.5 — wasm size (R25) — The web core went from 288 to 241 KB gz (the
+  SPEC §9 budget is 300; R25's target was ≤ 250). Measured with `twiggy top` on an unstripped
+  build (`CARGO_PROFILE_WASM_STRIP=false`); gzip -9 of the `wasm-bindgen` output, as `verify.py`
+  measures it. Serde was ~40 % of the code, and most of it was copies, not logic:
+  - **Internally tagged enums** (`#[serde(tag = …)]`) buffer input into serde's private
+    `Content` tree, with a copy of that code per enum and per input type (~150 KB raw). They
+    now derive the plain externally tagged form (`#[serde(remote = "Self")]`), and `tagged!`
+    (`chorus_core::tagged`) adds impls that write the tag first (same bytes) and read through a
+    `serde_json::Value`. `flatten` does the same buffering, so `text::Entity` reads by hand.
+    Trap: with `remote = "Self"`, a path call like `EntityKind::deserialize(v)` is the
+    *inherent* externally tagged function. Call `<EntityKind as Deserialize>::deserialize`.
+    **−31 KB gz.**
+  - **One deserializer per type.** `api::parse` goes text → `Value` → `T`, so a type isn't
+    compiled for both `from_str` and `from_value` (core payload code already used
+    `from_value`). −4 KB gz. But bulk op lists stay on `from_str` (`parse_ops`): through a
+    `Value`, opening a year of 100k ops was 9.7 → 11.7 s cold.
+  - **Sorts.** Every `sort_by` over a new type or closure is its own ~4 KB copy of the standard
+    sort, and `collect()` into a `BTreeMap`/`BTreeSet` sorts too. `chorus_core::sort` (`by`,
+    `by_key`, `ord`, `map`, `set`) sorts a list of indices through one shared comparator call on
+    wasm, and inserts one by one instead of collecting. Elsewhere it is the plain std call, so
+    the server's hot paths are unchanged. −13 KB gz. Use these helpers for new sorts in core.
+  - **What didn't help:**
+    - `wasm-opt -Oz` (binaryen 132): the raw file is 15 % smaller, but gzip is ~20 % bigger;
+      even a plain round trip through binaryen grows it after gzip.
+    - `lto = "fat"`: no change.
+    - `opt-level = "s"`: +15 %.
+  - **Left, if more is ever needed:**
+    - `core` float formatting (16 KB raw), not called from our code.
+    - `serde_json::Value` serialization (26 KB raw).
+    - Visitors and field identifiers generated per type (~150 KB raw): the real cost of
+      derive.
+- 2026-09-25 claude-opus-5.5 — server rebuild (R26) — A 1M-op `rebuild` into a fresh file went
+  from 58.0 s to ~40–41.6 s on the remote Linux box (4 cores; the box changed mid-task, so the
+  baseline is HEAD re-measured on the same box). The replay went from 32.0 s to 16.3 s. What's
+  left is mostly disk-bound and varies ±2 s per run here: copy 4.5–8 s, check ~5 s, indexes ~5 s,
+  search index ~4 s. Profiled with `perf` (linux-tools, frame pointers, `line-tables-only`).
+  - **Writer, the critical path:**
+    - Reactions counted as ops of their message's entity, so 60k reacted-to messages took the
+      slow re-read path. Element-set kinds no longer count toward "multi".
+    - `entity()` reads the whole log, so an edited message was fully projected at each of its
+      ops. A rebuild now projects each entity row once (`PROJECTED`).
+    - New messages are written in runs (`write_new_messages`, multi-row INSERTs of up to 64 rows,
+      power-of-two chunks). Their derived rows are computed with the row (`MessageRows`).
+    - Migration 0009 makes the six per-item key tables `WITHOUT ROWID`: one B-tree per row
+      instead of two.
+    - Read-state and a few other per-op queries went through the statement cache
+      (`query_cached`). Before, SQLite re-prepared them on every op.
+    - Reactions read only their set ops (`for_entity_of_kinds`).
+  - **Reader:**
+    - Row preparation and JSON payload parsing run on `cores − 2` worker threads.
+    - The next log slice is read while the last one is prepared, so the writer no longer waits.
+  - **Everywhere:**
+    - mimalloc as the global allocator. Malloc and free were ~45 % of the reader and ~20 % of
+      the writer.
+    - SQLite built without memory statistics and memory management (`.cargo/config.toml`):
+      −12 %.
+    - The fresh file uses 8 KB pages. 16 KB was a hair faster but writes bigger WAL frames for
+      every live commit after the swap.
+    - The copy skips CHECK constraints the source already enforced (`ignore_check_constraints`).
+  - **What didn't help:**
+    - Copying the log without its indexes and building them afterwards: the copy got 3 s faster,
+      but building the indexes (the `json_extract` one especially) took 4.5 s.
+    - `PRAGMA threads` for index builds: no change.
+  - A third of this box's time is `pwrite` from the page cache spilling mid-transaction. Those
+    bytes would be written at commit anyway, so a bigger cache only moves them. The owner's SSD
+    should show more of the CPU gains.
+  - `tests/projection.rs` now also compares segments, segment authors, mentions, attachments and
+    replies. Its generator makes one-op messages, so the batched path is covered: skipping the
+    mention inserts fails it.
+- 2026-09-25 claude-opus-5.5 — REST fuzzing (R28, `tests/rest_fuzz.rs`) — Every route in
+  app.rs (76, read the way api-check.py reads them) gets random and malformed path ids, queries,
+  bodies (raw junk, a 3 MB text, wrong content types, and "plausible" bodies with real keys and
+  both accounts' ids). Callers: anonymous, a device session, an admin, another account, and an
+  API token of each scope. Seven seeds × 13 500 requests (~15 % succeed) gave no 5xx, no panics,
+  no leaks and no change to the other account's rows. The traps were all in the harness:
+  - A request body the server doesn't read, because it refused first (413, 401): the client
+    then gets "broken pipe" writing it. That's expected for oversized bodies.
+  - A GET with a body plus a large response: the server closes over unread bytes, TCP sends a
+    reset, and the client sees "connection reset" mid-response. The fuzzer sends no GET bodies.
+  - Pooled connections compound both, so the fuzzer doesn't pool.
+  - API tokens only authenticate as `chorus_…` (api_data.rs). A fuzzer that makes up its own
+    tokens silently tests as anonymous, so the test first checks its oracle sees the markers.
+  - The chaos test's oracle is per op for sync. For REST, unique marker texts in private rows
+    and private ids (skipped when the request named them) are the direct check.
+- 2026-09-25 claude-opus-5.5 — web under failure (R29, `web/e2e/failure.spec.ts`) — A real
+  browser, with the server `kill -9`ed, found three bugs:
+  1. **Two tabs of one browser lost messages.** Every tab ran its own replica and socket on the
+     same IndexedDB, and each saved the whole metadata. The tab that saved last didn't list
+     another tab's unsent op in the outbox order, so that op was never sent, even after a
+     reload. The fix is the Web Locks leader CLIENTS §4.1 describes (other tabs hand ops over a
+     `BroadcastChannel`), plus a core safety net: opening relists any unconfirmed op the
+     metadata forgot.
+  2. **A failed save (storage full) dropped its changes.** `takeChanges` had already cleared
+     them. Ops written then and not yet sent were gone after a reload. They're now kept and
+     retried with the next save, and the app says the storage is full.
+  3. **A history request that died** (server gone mid-request) was an unhandled rejection with
+     nothing shown. Also, the chat read `sync.windowed` / `sync.status` straight from the client,
+     which isn't reactive state, so the older-messages button didn't update. They're copied into
+     `$state` on each change now.
+
+  Test traps:
+  - `page.goto('/#/chat')` can report ERR_ABORTED, because the app rewrites the hash at once;
+    click through instead.
+  - A test's message text must not contain the warning it waits for.
+  - The failure suite keeps its own console-problem list, or v1's "no console errors" would see
+    the killed server's refused requests.

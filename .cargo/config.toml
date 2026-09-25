@@ -1,0 +1,6 @@
+[env]
+# The server's bundled SQLite (libsqlite3-sys `bundled`), R26: no memory-usage statistics (each
+# allocation otherwise takes a global mutex; SQLite recommends this off for speed) and no
+# memory-management hooks (sqlite3_release_memory; not used). The 1M-op rebuild was 12 % faster.
+# See NOTES.md. Changing this rebuilds SQLite.
+LIBSQLITE3_FLAGS = "-DSQLITE_DEFAULT_MEMSTATUS=0 -USQLITE_ENABLE_MEMORY_MANAGEMENT"

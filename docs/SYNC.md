@@ -486,8 +486,10 @@ Then a seeded run of steps; each picks a device and an action:
   into a new data directory (a new op log, a new epoch: every device reconciles, §7.3).
 
 The desks "keep everything" (they download the files of what they receive), and every device
-re-sends files after a reconcile like the apps do. What a run does depends only on its seed; the
-timing is real. At quiescence (every device online, outboxes and upload queues empty, no frames
+re-sends files after a reconcile like the apps do. B's phone is a windowed browser tab (§6.5,
+D-075) with a 1.5 s window taken at each connect, so reconnects trim it (tens of ops a run): it
+must hold exactly the visible ops its window keeps, with the digest `visible_digest_in` gives.
+What a run does depends only on its seed; the timing is real. At quiescence (every device online, outboxes and upload queues empty, no frames
 for 600 ms), per device against the final database:
 
 - its scopes are the account's (`ingest::scopes_of`); for each scope it holds exactly the ops

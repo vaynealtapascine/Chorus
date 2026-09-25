@@ -147,9 +147,25 @@ stage several then **Switch**. Also reachable from app shortcuts and the in-app 
 
 - Svelte 5 (runes) + Vite + TypeScript strict. Router: a small hash/history router (as in
   Arbor) or SvelteKit in SPA mode — implementer's choice, record it in DECISIONS.
-- **Worker architecture**: a dedicated worker owns IndexedDB, the wasm core and the sync socket;
-  the UI talks to it via a typed message RPC. One leader per browser profile via Web Locks; other
-  tabs attach through `BroadcastChannel`.
+- **Tabs** (built R29; the worker architecture is still later): each tab runs the client
+  (`sync/client.ts`) and the wasm core on its main thread, and **one tab per browser profile
+  syncs**: the holder of the `chorus-sync` Web Lock.
+  - **The syncing tab** runs the socket and owns the shared metadata (cursors, outbox order,
+    clock) in IndexedDB.
+  - **Other tabs** stay fully usable. They save only the ops they make, send them over the
+    `chorus-sync` `BroadcastChannel` (the leader `adoptLocal`s and sends them), take in what the
+    leader saved (`absorb`), and show its status.
+  - **When the syncing tab closes,** the next one gets the lock and takes over. It reads the
+    saved ops and metadata again (`reloadMeta`) first, so an op the old leader made and never
+    sent still goes out.
+  - **No Web Locks** (a plain-http address): every tab syncs, as before.
+  - **The safety net under all of this is in core:** when a replica opens, any unconfirmed op
+    that the saved metadata doesn't list goes back in the outbox (`relist_unsent`). Two writers
+    of the metadata can't lose an op.
+  - **A save that fails** (the browser's storage is full) is kept and tried again with the next
+    one, and the app says so until one succeeds.
+  - Tested in a real browser with the server killed, a reload, a service-worker update, a
+    closing tab and a full disk: `web/e2e/failure.spec.ts`.
 - IndexedDB through `idb`; object stores mirror DATA_MODEL tables with indexes for the hot
   queries (`message: [channel_id, occurred_at, id]`, `front_interval: [account_id, start_at]`…).
 - Service worker precaches the app shell and fonts; the app is fully usable offline after first

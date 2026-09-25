@@ -115,6 +115,16 @@ fn exec<P: rusqlite::Params>(conn: &Connection, sql: &str, params: P) -> rusqlit
     conn.prepare_cached(sql)?.execute(params)
 }
 
+/// `query_row` through the statement cache: these run for every op of their kind.
+fn query_cached<T, P: rusqlite::Params>(
+    conn: &Connection,
+    sql: &str,
+    params: P,
+    f: impl FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+) -> rusqlite::Result<T> {
+    conn.prepare_cached(sql)?.query_row(params, f)
+}
+
 fn account_of(scope: &str) -> Option<&str> {
     scope.strip_prefix("account:")
 }
@@ -124,12 +134,17 @@ pub fn entity(conn: &Connection, table: &str, id: &str) -> anyhow::Result<()> {
     if id.is_empty() {
         return Ok(());
     }
+    // A rebuild reads the whole log, so the first projection of an entity already sees every op
+    // it will ever have: projecting it again at each later op wrote the same row again (R26).
+    if REBUILDING.with(std::cell::Cell::get) && !PROJECTED.with(|p| p.borrow_mut().insert((table.into(), id.into()))) {
+        return Ok(());
+    }
     entity_from(conn, table, id, oplog::for_entity(conn, id)?)
 }
 
 /// [`entity`] over a given set of the entity's ops (all of them).
 fn entity_from(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Result<()> {
-    match prepare(conn, table, id, ops)? {
+    match prepare(&writable(conn, table)?, table, id, ops)? {
         Some(p) => write(conn, &p),
         None => Ok(()),
     }
@@ -147,11 +162,79 @@ struct Prepared {
     first_scope: Option<String>,
     /// An edited message's or post's versions (`chorus_core::revisions`); empty otherwise.
     revisions: Vec<chorus_core::revisions::Revision>,
+    /// A message's authors, segments, mentions and attachments.
+    message_rows: Option<MessageRows>,
+}
+
+/// The rows a message's fields project to beside its own (DATA_MODEL §4). Computed with the row
+/// (on a rebuild's reader thread when it can), written by [`message_extras`] or, for a run of new
+/// messages in a rebuild, by [`write_new_messages`].
+#[derive(Default)]
+struct MessageRows {
+    /// (member id, position); a member listed twice keeps its first place (`INSERT OR IGNORE`)
+    authors: Vec<(String, i64)>,
+    /// (index, UTF-16 offset, UTF-16 length, text)
+    segments: Vec<(i64, u32, u32, String)>,
+    /// (segment index, member id, position)
+    segment_authors: Vec<(i64, String, i64)>,
+    /// (target type, target id)
+    mentions: Vec<(String, String)>,
+    /// (attachment id, position)
+    attachments: Vec<(String, i64)>,
+}
+
+fn message_rows(f: &serde_json::Map<String, Value>) -> anyhow::Result<MessageRows> {
+    let mut out = MessageRows::default();
+    let a = f.get("authors");
+    for (i, m) in a.and_then(Value::as_array).into_iter().flatten().enumerate() {
+        if let Some(m) = m.as_str() {
+            out.authors.push((m.to_string(), i as i64));
+        }
+    }
+    let text_s = f.get("text").and_then(Value::as_str).unwrap_or("");
+    let default;
+    let segs: &[Value] = match f.get("segments").and_then(Value::as_array) {
+        Some(s) if !s.is_empty() => s,
+        _ => {
+            default = [
+                serde_json::json!({"offset": 0, "length": text::utf16_len(text_s), "authors": a.cloned().unwrap_or_default()}),
+            ];
+            &default
+        }
+    };
+    for (i, s) in segs.iter().enumerate() {
+        let off = s.get("offset").and_then(Value::as_u64).unwrap_or(0) as u32;
+        let len = s.get("length").and_then(Value::as_u64).unwrap_or(0) as u32;
+        out.segments.push((i as i64, off, len, text::utf16_slice(text_s, off, len).to_string()));
+        for (p, m) in s.get("authors").and_then(Value::as_array).into_iter().flatten().enumerate() {
+            if let Some(m) = m.as_str() {
+                out.segment_authors.push((i as i64, m.to_string(), p as i64));
+            }
+        }
+    }
+    // only mentions matter here: don't read every entity of every message
+    let entities = f.get("entities").and_then(Value::as_array);
+    if entities.is_some_and(|es| es.iter().any(|e| e.get("type").and_then(Value::as_str) == Some("mention"))) {
+        let ents: Vec<Entity> =
+            f.get("entities").and_then(|e| serde_json::from_value(e.clone()).ok()).unwrap_or_default();
+        for e in ents {
+            if let text::EntityKind::Mention { target_type, target_id } = e.kind {
+                let tt = serde_json::to_value(target_type)?.as_str().unwrap_or("member").to_string();
+                out.mentions.push((tt, target_id.unwrap_or_default()));
+            }
+        }
+    }
+    for (position, id) in f.get("attachments").and_then(Value::as_array).into_iter().flatten().enumerate() {
+        if let Some(id) = id.as_str() {
+            out.attachments.push((id.to_string(), position as i64));
+        }
+    }
+    Ok(out)
 }
 
 /// The row `ops` project to; `None` if the entity isn't created yet (fields wait in the log
-/// until the create arrives). `conn` is only asked for the table's columns.
-fn prepare(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Result<Option<Prepared>> {
+/// until the create arrives). `cols`: the table's writable columns ([`writable`]).
+fn prepare(cols: &[String], table: &str, id: &str, ops: Vec<Op>) -> anyhow::Result<Option<Prepared>> {
     if id.is_empty() {
         return Ok(None);
     }
@@ -214,7 +297,6 @@ fn prepare(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Re
     if table == "custom_emoji" {
         vals.entry("created_by".into()).or_insert(Value::from(first.and_then(|f| f.account_id.clone())));
     }
-    let cols = writable(conn, table)?;
     let (names, values): (Vec<String>, Vec<Sql>) =
         vals.iter().filter(|(k, _)| cols.contains(k)).map(|(k, v)| (k.clone(), to_sql(v))).unzip();
     // only edited items keep versions (a row per message would double a rebuild's writes)
@@ -223,6 +305,7 @@ fn prepare(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Re
     } else {
         Vec::new()
     };
+    let message_rows = if table == "message" { Some(message_rows(&row.fields)?) } else { None };
     Ok(Some(Prepared {
         table: table.to_string(),
         id: id.to_string(),
@@ -232,11 +315,12 @@ fn prepare(conn: &Connection, table: &str, id: &str, ops: Vec<Op>) -> anyhow::Re
         fresh,
         first_scope: first.map(|f| f.scope.clone()),
         revisions,
+        message_rows,
     }))
 }
 
 fn write(conn: &Connection, p: &Prepared) -> anyhow::Result<()> {
-    let Prepared { table, id, fields, names, values, fresh, first_scope, revisions } = p;
+    let Prepared { table, id, fields, names, values, fresh, first_scope, revisions, message_rows } = p;
     let (table, id, fresh) = (table.as_str(), id.as_str(), *fresh);
     let old_thread_parent = if table == "channel" { thread_parent(conn, id)? } else { None };
     match table {
@@ -264,8 +348,9 @@ fn write(conn: &Connection, p: &Prepared) -> anyhow::Result<()> {
     match table {
         "message" => {
             write_revisions(conn, "message", id, revisions)?;
-            message_extras(conn, id, fields.get("authors"), fields, fresh)?;
-            item_attachments(conn, "message", id, fields.get("attachments"), fresh)?;
+            if let Some(rows) = message_rows {
+                message_extras(conn, id, rows, fresh)?;
+            }
             refresh_thread_link(conn, id)?;
         }
         "channel" => {
@@ -333,12 +418,14 @@ fn write_revisions(
 }
 
 fn thread_parent(conn: &Connection, channel_id: &str) -> anyhow::Result<Option<String>> {
-    Ok(conn
-        .query_row("SELECT parent_message_id FROM channel WHERE id = ?1 AND kind = 'thread'", [channel_id], |r| {
-            r.get(0)
-        })
-        .optional()?
-        .flatten())
+    Ok(query_cached(
+        conn,
+        "SELECT parent_message_id FROM channel WHERE id = ?1 AND kind = 'thread'",
+        [channel_id],
+        |r| r.get(0),
+    )
+    .optional()?
+    .flatten())
 }
 
 /// A thread is a channel, and its parent message keeps a reverse pointer for read APIs. Refresh
@@ -369,6 +456,8 @@ thread_local! {
     /// Upsert SQL by table and column list: rows of a table come in a few shapes, and building
     /// the statement text for every row showed up in rebuild profiles (SPEC §9).
     static UPSERT_SQL: std::cell::RefCell<SqlShapes> = Default::default();
+    /// [`insert_many`]'s statements by (prefix and suffix, row count).
+    static MANY_SQL: std::cell::RefCell<HashMap<(String, usize), std::rc::Rc<str>>> = Default::default();
 }
 
 fn upsert(conn: &Connection, table: &str, key: &[&str], names: &[String], values: &[Sql]) -> anyhow::Result<()> {
@@ -389,6 +478,87 @@ fn upsert(conn: &Connection, table: &str, key: &[&str], names: &[String], values
         }
     };
     exec(conn, &sql, params_from_iter(values))?;
+    Ok(())
+}
+
+/// Rows per multi-row statement at most. A run is cut into powers of two, so each statement has
+/// a handful of shapes in the cache.
+const MANY: usize = 64;
+
+type SqlRow<'a> = Vec<&'a dyn rusqlite::ToSql>;
+
+/// `{prefix} (?, …), (?, …) …{suffix}` over `rows` (each `width` parameters), in order.
+fn insert_many(conn: &Connection, prefix: &str, suffix: &str, width: usize, rows: &[SqlRow]) -> anyhow::Result<()> {
+    let mut at = 0;
+    while at < rows.len() {
+        let left = (rows.len() - at).min(MANY);
+        let k = 1 << (usize::BITS - 1 - left.leading_zeros()); // the largest power of two ≤ left
+        let sql = MANY_SQL.with(|c| {
+            c.borrow_mut()
+                .entry((format!("{prefix}\u{0}{suffix}"), k))
+                .or_insert_with(|| {
+                    let row = format!("({})", vec!["?"; width].join(", "));
+                    format!("{prefix} {}{suffix}", vec![row; k].join(", ")).into()
+                })
+                .clone()
+        });
+        exec(conn, &sql, params_from_iter(rows[at..at + k].iter().flat_map(|r| r.iter())))?;
+        at += k;
+    }
+    Ok(())
+}
+
+/// Whether a rebuild may write this prepared row in a run of new messages: a message that is its
+/// entity's only op (so nothing was written for it before, and it has no versions).
+fn is_new_message(p: &Prepared) -> bool {
+    p.table == "message" && p.fresh && p.revisions.is_empty() && p.message_rows.is_some()
+}
+
+/// A rebuild's run of new messages ([`is_new_message`]): the rows [`write`] writes one message at
+/// a time, in the same order per table, but each table's in multi-row statements (SPEC §9
+/// rebuild budget, R26).
+fn write_new_messages(conn: &Connection, run: &[&Prepared]) -> anyhow::Result<()> {
+    // the message rows, in order (their rowids follow it), grouped by column list: optional
+    // fields vary
+    let mut i = 0;
+    while i < run.len() {
+        let names = &run[i].names;
+        let j = i + run[i..].iter().take_while(|p| p.names == *names).count();
+        let updates: Vec<String> =
+            names.iter().filter(|n| n.as_str() != "id").map(|n| format!("{n} = excluded.{n}")).collect();
+        let suffix = if updates.is_empty() {
+            " ON CONFLICT(id) DO NOTHING".to_string()
+        } else {
+            format!(" ON CONFLICT(id) DO UPDATE SET {}", updates.join(", "))
+        };
+        let rows: Vec<SqlRow> =
+            run[i..j].iter().map(|p| p.values.iter().map(|v| v as &dyn rusqlite::ToSql).collect()).collect();
+        insert_many(conn, &format!("INSERT INTO message ({}) VALUES", names.join(", ")), &suffix, names.len(), &rows)?;
+        i = j;
+    }
+    const MESSAGE: &str = "message";
+    let mut authors: Vec<SqlRow> = Vec::new();
+    let mut segments: Vec<SqlRow> = Vec::new();
+    let mut segment_authors: Vec<SqlRow> = Vec::new();
+    let mut mentions: Vec<SqlRow> = Vec::new();
+    let mut attachments: Vec<SqlRow> = Vec::new();
+    for p in run {
+        let Some(r) = &p.message_rows else { continue };
+        authors.extend(r.authors.iter().map(|(m, i)| vec![&p.id as &dyn rusqlite::ToSql, m, i]));
+        segments.extend(
+            r.segments.iter().map(|(i, off, len, text)| vec![&p.id as &dyn rusqlite::ToSql, i, off, len, text]),
+        );
+        segment_authors
+            .extend(r.segment_authors.iter().map(|(i, m, pos)| vec![&p.id as &dyn rusqlite::ToSql, i, m, pos]));
+        mentions
+            .extend(r.mentions.iter().map(|(tt, target)| vec![&MESSAGE as &dyn rusqlite::ToSql, &p.id, tt, target]));
+        attachments.extend(r.attachments.iter().map(|(a, pos)| vec![&MESSAGE as &dyn rusqlite::ToSql, &p.id, a, pos]));
+    }
+    insert_many(conn, AUTHOR_INSERT, "", 3, &authors)?;
+    insert_many(conn, SEGMENT_INSERT, "", 5, &segments)?;
+    insert_many(conn, SEGMENT_AUTHOR_INSERT, "", 4, &segment_authors)?;
+    insert_many(conn, MENTION_INSERT, "", 4, &mentions)?;
+    insert_many(conn, ATTACHMENT_INSERT, "", 4, &attachments)?;
     Ok(())
 }
 
@@ -449,56 +619,36 @@ fn item_attachments(
     Ok(())
 }
 
-fn message_extras(
-    conn: &Connection,
-    id: &str,
-    a: Option<&Value>,
-    f: &serde_json::Map<String, Value>,
-    fresh: bool,
-) -> anyhow::Result<()> {
-    authors(conn, "message_author", "message_id", id, a, fresh)?;
-    let text_s = f.get("text").and_then(Value::as_str).unwrap_or("");
+const AUTHOR_INSERT: &str = "INSERT OR IGNORE INTO message_author (message_id, member_id, position) VALUES";
+const SEGMENT_INSERT: &str = "INSERT INTO message_segment (message_id, idx, offset_u16, length_u16, text) VALUES";
+const SEGMENT_AUTHOR_INSERT: &str =
+    "INSERT OR IGNORE INTO message_segment_author (message_id, idx, member_id, position) VALUES";
+const MENTION_INSERT: &str = "INSERT OR IGNORE INTO mention (source_type, source_id, target_type, target_id) VALUES";
+const ATTACHMENT_INSERT: &str =
+    "INSERT OR IGNORE INTO item_attachment (owner_type, owner_id, attachment_id, position) VALUES";
+
+fn message_extras(conn: &Connection, id: &str, rows: &MessageRows, fresh: bool) -> anyhow::Result<()> {
     if !fresh {
+        exec(conn, "DELETE FROM message_author WHERE message_id = ?1", [id])?;
         exec(conn, "DELETE FROM message_segment WHERE message_id = ?1", [id])?;
         exec(conn, "DELETE FROM message_segment_author WHERE message_id = ?1", [id])?;
-    }
-    let segs: Vec<Value> = match f.get("segments").and_then(Value::as_array) {
-        Some(s) if !s.is_empty() => s.clone(),
-        _ => vec![
-            serde_json::json!({"offset": 0, "length": text::utf16_len(text_s), "authors": a.cloned().unwrap_or_default()}),
-        ],
-    };
-    for (i, s) in segs.iter().enumerate() {
-        let off = s.get("offset").and_then(Value::as_u64).unwrap_or(0) as u32;
-        let len = s.get("length").and_then(Value::as_u64).unwrap_or(0) as u32;
-        exec(
-            conn,
-            "INSERT INTO message_segment (message_id, idx, offset_u16, length_u16, text) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, i as i64, off, len, text::utf16_slice(text_s, off, len)],
-        )?;
-        for (p, m) in s.get("authors").and_then(Value::as_array).into_iter().flatten().enumerate() {
-            if let Some(m) = m.as_str() {
-                exec(
-                    conn,
-                    "INSERT OR IGNORE INTO message_segment_author (message_id, idx, member_id, position) VALUES (?1, ?2, ?3, ?4)",
-                    params![id, i as i64, m, p as i64],
-                )?;
-            }
-        }
-    }
-    if !fresh {
         exec(conn, "DELETE FROM mention WHERE source_type = 'message' AND source_id = ?1", [id])?;
+        exec(conn, "DELETE FROM item_attachment WHERE owner_type = 'message' AND owner_id = ?1", [id])?;
     }
-    let ents: Vec<Entity> = f.get("entities").and_then(|e| serde_json::from_value(e.clone()).ok()).unwrap_or_default();
-    for e in ents {
-        if let text::EntityKind::Mention { target_type, target_id } = e.kind {
-            let tt = serde_json::to_value(target_type)?.as_str().unwrap_or("member").to_string();
-            exec(
-                conn,
-                "INSERT OR IGNORE INTO mention (source_type, source_id, target_type, target_id) VALUES ('message', ?1, ?2, ?3)",
-                params![id, tt, target_id.unwrap_or_default()],
-            )?;
-        }
+    for (m, i) in &rows.authors {
+        exec(conn, &format!("{AUTHOR_INSERT} (?1, ?2, ?3)"), params![id, m, i])?;
+    }
+    for (i, off, len, text) in &rows.segments {
+        exec(conn, &format!("{SEGMENT_INSERT} (?1, ?2, ?3, ?4, ?5)"), params![id, i, off, len, text])?;
+    }
+    for (i, m, p) in &rows.segment_authors {
+        exec(conn, &format!("{SEGMENT_AUTHOR_INSERT} (?1, ?2, ?3, ?4)"), params![id, i, m, p])?;
+    }
+    for (tt, target) in &rows.mentions {
+        exec(conn, &format!("{MENTION_INSERT} ('message', ?1, ?2, ?3)"), params![id, tt, target])?;
+    }
+    for (a, p) in &rows.attachments {
+        exec(conn, &format!("{ATTACHMENT_INSERT} ('message', ?1, ?2, ?3)"), params![id, a, p])?;
     }
     // FTS keeps its own copy keyed by the message rowid; replace it (deleted messages drop out).
     // A rebuild fills the index in one pass at the end instead.
@@ -640,12 +790,13 @@ fn element_set(conn: &Connection, table: &str, o: &Op) -> anyhow::Result<()> {
     // All adds and removes of the same element: same entity, same table, same key. Only those:
     // `space.set_role` shares the table, and counting it as a remove made a rebuild drop every
     // member whose role had been changed.
-    let ops: Vec<Op> = oplog::for_entity(conn, o.entity().unwrap_or(""))?
+    let kinds: Vec<&str> = op::CATALOGUE
+        .iter()
+        .filter(|s| s.table == table && matches!(s.action, Action::SetAdd | Action::SetRemove))
+        .map(|s| s.kind)
+        .collect();
+    let ops: Vec<Op> = oplog::for_entity_of_kinds(conn, o.entity().unwrap_or(""), &kinds)?
         .into_iter()
-        .filter(|x| {
-            op::spec(&x.kind)
-                .is_some_and(|s| s.table == table && matches!(s.action, Action::SetAdd | Action::SetRemove))
-        })
         .filter(|x| key_of(x) == want)
         .collect();
     let mut e = SetElem::default();
@@ -676,8 +827,10 @@ fn element_set(conn: &Connection, table: &str, o: &Op) -> anyhow::Result<()> {
 /// their own internal space, and the owner of a shared space can't strand it by leaving.
 fn space_access(conn: &Connection, o: &Op, account: &str, present: bool) -> anyhow::Result<()> {
     let space = o.entity().unwrap_or("");
-    let row: Option<(String, Option<String>)> = conn
-        .query_row("SELECT owner_account_id, kind FROM space WHERE id = ?1", [space], |r| Ok((r.get(0)?, r.get(1)?)))
+    let row: Option<(String, Option<String>)> =
+        query_cached(conn, "SELECT owner_account_id, kind FROM space WHERE id = ?1", [space], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
         .optional()?;
     let (owner, kind) = row.map_or((None, None), |(o, k)| (Some(o), k));
     let author = o.account_id.clone().unwrap_or_default();
@@ -1056,12 +1209,14 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
                 upsert(conn, "channel_permission", &["channel_id", "target_type", "target_id"], &names, &vals)?;
                 // an account override can make an outside account a guest of the space (perms.rs)
                 if p("target_type") == "account"
-                    && let Some(space) = conn
-                        .query_row("SELECT space_id FROM channel WHERE id = ?1", [o.entity().unwrap_or("")], |r| {
-                            r.get::<_, Option<String>>(0)
-                        })
-                        .optional()?
-                        .flatten()
+                    && let Some(space) = query_cached(
+                        conn,
+                        "SELECT space_id FROM channel WHERE id = ?1",
+                        [o.entity().unwrap_or("")],
+                        |r| r.get::<_, Option<String>>(0),
+                    )
+                    .optional()?
+                    .flatten()
                 {
                     crate::perms::refresh_guest(conn, &p("target_id"), &space)?;
                 }
@@ -1107,13 +1262,13 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
 
 fn newer_than_stored(conn: &Connection, table: &str, key: &[(&str, String)], o: &Op) -> anyhow::Result<bool> {
     let cond: Vec<String> = key.iter().enumerate().map(|(i, (c, _))| format!("{c} = ?{}", i + 1)).collect();
-    let cur: Option<String> = conn
-        .query_row(
-            &format!("SELECT hlc FROM {table} WHERE {}", cond.join(" AND ")),
-            params_from_iter(key.iter().map(|(_, v)| v)),
-            |r| r.get(0),
-        )
-        .optional()?;
+    let cur: Option<String> = query_cached(
+        conn,
+        &format!("SELECT hlc FROM {table} WHERE {}", cond.join(" AND ")),
+        params_from_iter(key.iter().map(|(_, v)| v)),
+        |r| r.get(0),
+    )
+    .optional()?;
     Ok(cur.is_none_or(|c| o.hlc.to_string() > c))
 }
 
@@ -1138,14 +1293,14 @@ fn read_state(conn: &Connection, o: &Op) -> anyhow::Result<()> {
     let channel = o.payload.get("channel_id").and_then(Value::as_str).unwrap_or("");
     let reader = o.payload.get("reader_member_id").and_then(Value::as_str).unwrap_or("");
     let account = o.account_id.clone().unwrap_or_default();
-    let stored: Option<Stored> = conn
-        .query_row(
-            "SELECT mark_at, mark_id, mark_hlc, set_at, set_id, set_hlc, state_ok FROM read_state
+    let stored: Option<Stored> = query_cached(
+        conn,
+        "SELECT mark_at, mark_id, mark_hlc, set_at, set_id, set_hlc, state_ok FROM read_state
              WHERE channel_id = ?1 AND account_id = ?2 AND reader_member_id = ?3",
-            params![channel, account, reader],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
-        )
-        .optional()?;
+        params![channel, account, reader],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+    )
+    .optional()?;
     let mark = |at: Option<i64>, id: Option<String>, hlc: Option<String>| -> Option<model::ReadMark> {
         Some((at?, id?, hlc?.parse().ok()?))
     };
@@ -1268,8 +1423,11 @@ thread_local! {
     static REPLAYED_UPTO: std::cell::Cell<i64> = const { std::cell::Cell::new(i64::MAX) };
     /// Set while [`rebuild_timed`] replays the log on this thread.
     static REBUILDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// During a rebuild: the entities with more than one op. Any other entity's op is its only
-    /// one, so it can be projected without reading it back from the log.
+    /// During a rebuild: the entity rows [`entity`] has projected (from all their ops) so far.
+    static PROJECTED: std::cell::RefCell<std::collections::HashSet<(String, String)>> = Default::default();
+    /// During a rebuild: the entities with more than one op for their own row (element-set ops
+    /// aside). Any other entity's op is its only one, so it can be projected without reading it
+    /// back from the log.
     static SINGLE_OP: std::cell::RefCell<Option<std::sync::Arc<std::collections::HashSet<String>>>> = const { std::cell::RefCell::new(None) };
 }
 
@@ -1281,7 +1439,7 @@ type Batch = Vec<(Op, Option<Option<Prepared>>)>;
 /// [`after_insert`] would project it (`Some(None)`: nothing to write), or `None` to leave the op
 /// to `after_insert`.
 fn prepare_single(
-    conn: &Connection,
+    columns: &HashMap<String, Vec<String>>,
     multi: &std::collections::HashSet<String>,
     o: &Op,
 ) -> anyhow::Result<Option<Option<Prepared>>> {
@@ -1289,10 +1447,64 @@ fn prepare_single(
     if !matches!(spec.action, Action::Create | Action::Append) {
         return Ok(None);
     }
+    let Some(cols) = columns.get(spec.table) else { return Ok(None) };
     match o.entity() {
-        Some(id) if !id.is_empty() && !multi.contains(id) => Ok(Some(prepare(conn, spec.table, id, vec![o.clone()])?)),
+        Some(id) if !id.is_empty() && !multi.contains(id) => Ok(Some(prepare(cols, spec.table, id, vec![o.clone()])?)),
         _ => Ok(None),
     }
+}
+
+/// Every table's writable columns ([`writable`]), for threads without a connection of their own.
+fn all_writable(conn: &Connection) -> anyhow::Result<HashMap<String, Vec<String>>> {
+    let tables: Vec<String> = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")?
+        .query_map([], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    let mut out = HashMap::new();
+    for t in tables {
+        let cols = writable(conn, &t)?;
+        out.insert(t, cols.as_ref().clone());
+    }
+    Ok(out)
+}
+
+/// A rebuild's slice of the log (payloads still text), each op parsed and its row prepared where
+/// [`prepare_single`] can, on up to `workers` threads (the order is kept).
+fn prepare_batch(
+    columns: &HashMap<String, Vec<String>>,
+    multi: &std::collections::HashSet<String>,
+    batch: Vec<(Op, String)>,
+    workers: usize,
+) -> anyhow::Result<Batch> {
+    let each = |ops: Vec<(Op, String)>| -> anyhow::Result<Batch> {
+        ops.into_iter()
+            .map(|(mut o, payload)| {
+                o.payload = oplog::parse_payload(&payload);
+                let p = prepare_single(columns, multi, &o)?;
+                Ok((o, p))
+            })
+            .collect()
+    };
+    if workers <= 1 || batch.len() < 64 {
+        return each(batch);
+    }
+    let size = batch.len().div_ceil(workers);
+    let mut parts = Vec::new();
+    let mut rest = batch;
+    while rest.len() > size {
+        let tail = rest.split_off(size);
+        parts.push(rest);
+        rest = tail;
+    }
+    parts.push(rest);
+    std::thread::scope(|s| {
+        let handles: Vec<_> = parts.into_iter().map(|part| s.spawn(move || each(part))).collect();
+        let mut out = Batch::new();
+        for h in handles {
+            out.extend(h.join().unwrap_or_else(|e| std::panic::resume_unwind(e))?);
+        }
+        Ok(out)
+    })
 }
 
 pub fn rebuild(conn: &mut Connection) -> anyhow::Result<u64> {
@@ -1345,7 +1557,7 @@ pub fn rebuild_swap_timed(
             let mut out = Connection::open(&fresh)?;
             out.set_prepared_statement_cache_capacity(256);
             out.execute_batch(
-                "PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF; PRAGMA foreign_keys = OFF;
+                "PRAGMA page_size = 8192; PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF; PRAGMA foreign_keys = OFF;
                  PRAGMA temp_store = MEMORY; PRAGMA locking_mode = EXCLUSIVE",
             )?;
             crate::db::migrate(&mut out)?;
@@ -1365,7 +1577,9 @@ pub fn rebuild_swap_timed(
                 .map(|(n, _)| n.as_str())
                 .collect();
             let mut counts = Vec::new();
-            src.execute_batch("BEGIN")?;
+            // the rows held their CHECKs in the source; checking each op's JSON again is most of
+            // a copy's work
+            src.execute_batch("PRAGMA ignore_check_constraints = ON; BEGIN")?;
             for (name, sql) in &tables {
                 let shadow = virtuals.iter().any(|v| name.starts_with(&format!("{v}_")));
                 if DERIVED.contains(&name.as_str())
@@ -1392,6 +1606,7 @@ pub fn rebuild_swap_timed(
         if copied.is_err() && !src.is_autocommit() {
             let _ = src.execute_batch("ROLLBACK");
         }
+        src.execute_batch("PRAGMA ignore_check_constraints = OFF")?;
         src.execute_batch("DETACH DATABASE fresh")?;
         let copied = copied?;
         time("(copy the log and server tables)", t.elapsed());
@@ -1506,12 +1721,23 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
     let mut n = 0u64;
     let mut seq = 0i64;
     REBUILDING.with(|r| r.set(true));
+    PROJECTED.with(|p| p.borrow_mut().clear());
     let t = std::time::Instant::now();
+    // Element-set ops (a reaction names its message as entity) project into their own tables
+    // and `prepare` leaves them out of the entity's row, so they don't make an entity "multi":
+    // counting them sent every reacted-to message down the slow path (R26).
     let multi: std::sync::Arc<std::collections::HashSet<String>> = {
-        let mut st = tx.prepare(
+        let set_kinds: Vec<String> = op::CATALOGUE
+            .iter()
+            .filter(|k| matches!(k.action, Action::SetAdd | Action::SetRemove))
+            .map(|k| format!("'{}'", k.kind))
+            .collect();
+        let mut st = tx.prepare(&format!(
             "SELECT entity_id FROM op WHERE status = 'applied' AND entity_id IS NOT NULL
+               AND kind NOT IN ({})
              GROUP BY entity_id HAVING count(*) > 1",
-        )?;
+            set_kinds.join(", ")
+        ))?;
         std::sync::Arc::new(st.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?)
     };
     time("(entity counts)", t.elapsed());
@@ -1522,7 +1748,28 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
     let replayed = (|| -> anyhow::Result<()> {
         // an op, and its entity's row if the reader thread already prepared it
         let mut apply = |batch: &Batch| -> anyhow::Result<()> {
+            // new messages wait here to be written together, until something else comes
+            let mut run: Vec<&Prepared> = Vec::new();
+            let flush = |run: &mut Vec<&Prepared>, time: &mut dyn FnMut(&str, std::time::Duration)| {
+                if run.is_empty() {
+                    return Ok(());
+                }
+                let t = std::time::Instant::now();
+                write_new_messages(&tx, run)?;
+                time("(new messages, together)", t.elapsed());
+                run.clear();
+                anyhow::Ok(())
+            };
             for (o, ready) in batch {
+                n += 1;
+                if let Some(Some(p)) = ready
+                    && is_new_message(p)
+                {
+                    run.push(p);
+                    time(&o.kind, std::time::Duration::ZERO);
+                    continue;
+                }
+                flush(&mut run, time)?;
                 let t = std::time::Instant::now();
                 REPLAYED_UPTO.with(|u| u.set(o.seq.unwrap_or(i64::MAX)));
                 match ready {
@@ -1531,9 +1778,8 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
                     None => after_insert(&tx, o)?,
                 }
                 time(&o.kind, t.elapsed());
-                n += 1;
             }
-            Ok(())
+            flush(&mut run, time)
         };
         // decode the log on a second (read-only) connection while this one writes; the op table
         // doesn't change during a rebuild, so its committed snapshot is the same log. A caller
@@ -1557,23 +1803,35 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
                 // another thread's allocations contends for its allocator lock (5 s at 1M ops).
                 let (spent, spent_back) = std::sync::mpsc::channel::<Batch>();
                 let multi = multi.clone();
+                // preparing rows is most of the reader's work: spread it over the cores the
+                // writer and the reader leave (R26)
+                let workers = std::thread::available_parallelism().map_or(1, |n| n.get().saturating_sub(2).clamp(1, 4));
                 let handle = s.spawn(move || {
                     let read = || -> anyhow::Result<()> {
+                        let columns = all_writable(&conn)?;
+                        let (columns, multi) = (&columns, &multi);
                         let mut seq = 0;
-                        loop {
-                            spent_back.try_iter().for_each(drop);
-                            let batch = oplog::applied_after(&conn, seq, 1000)?;
-                            let Some(last) = batch.last() else { return Ok(()) };
-                            seq = last.seq.unwrap_or(seq);
-                            let mut ready = Batch::with_capacity(batch.len());
-                            for o in batch {
-                                let p = prepare_single(&conn, &multi, &o)?;
-                                ready.push((o, p));
+                        // the next slice is read from the log while the last one is prepared
+                        std::thread::scope(|s| -> anyhow::Result<()> {
+                            let mut preparing: Option<std::thread::ScopedJoinHandle<anyhow::Result<Batch>>> = None;
+                            loop {
+                                spent_back.try_iter().for_each(drop);
+                                let batch = oplog::applied_after_raw(&conn, seq, 1000)?;
+                                if let Some(last) = batch.last() {
+                                    seq = last.0.seq.unwrap_or(seq);
+                                }
+                                if let Some(h) = preparing.take() {
+                                    let ready = h.join().unwrap_or_else(|e| std::panic::resume_unwind(e))?;
+                                    if send.send(Ok(ready)).is_err() {
+                                        return Ok(()); // the writer stopped early
+                                    }
+                                }
+                                if batch.is_empty() {
+                                    return Ok(());
+                                }
+                                preparing = Some(s.spawn(move || prepare_batch(columns, multi, batch, workers)));
                             }
-                            if send.send(Ok(ready)).is_err() {
-                                return Ok(()); // the writer stopped early
-                            }
-                        }
+                        })
                     };
                     if let Err(e) = read() {
                         let _ = send.send(Err(e));
@@ -1610,6 +1868,7 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
         }
     })();
     REBUILDING.with(|r| r.set(false));
+    PROJECTED.with(|p| p.borrow_mut().clear());
     REPLAYED_UPTO.with(|u| u.set(i64::MAX));
     SINGLE_OP.with(|m| *m.borrow_mut() = None);
     replayed?;

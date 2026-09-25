@@ -198,7 +198,11 @@ generated into `fixtures/schema/` so Kotlin/TS can validate.
 > written by re-projecting an entity's ops through `chorus_core::model`, and validation happens
 > on ops); `op.restored` marks ops re-pushed in a restore window; server-only tables `session`,
 > `auth_nonce` and `scope_access` exist; `member_group.effective_parent_id` holds the cycle-guarded
-> parent; `space.roles` holds custom roles; `device.platform` allows `token` (API-token writes).
+> parent; `space.roles` holds custom roles; `device.platform` allows `token` (API-token writes);
+> since migration 0009 (R26) the per-item key tables (`message_author`, `message_segment`,
+> `message_segment_author`, `mention`, `post_author`, `item_attachment`) are `WITHOUT ROWID`:
+> the same columns and keys, stored in their primary key's B-tree alone. A rebuilt database
+> (`chorus-server rebuild`) has 8 KB pages.
 
 Android's Room schema mirrors these tables for the scopes the device holds. The web client keeps
 the same shapes as IndexedDB object stores. Column names are identical everywhere.
@@ -831,3 +835,17 @@ columns above. No full-server pages are copied into the file. The CLI uses
 with files is the export bundle job (`POST /exports {kind:"full"}`, API.md §4, D-068):
 `README.txt`, `ops.jsonl`, `csv/`, `blobs/<sha256>` (files the account's own ops point at) and
 `manifest.json`, as a stored ZIP built in the background (`export_job`).
+
+**Import** (R27, `chorus-server import-account`, `import.rs`) takes that bundle into another
+server. It checks the manifest, `ops.jsonl` against its hash and count, every op (valid as
+history, written by this account, stamped), and every file against its hash and size. Then it
+refuses on clashes: the account id, the handle (unless mapped with `--handle`), any op id.
+Nothing is half imported. The ops keep their ids, authors, devices and times, like restore
+pushes (SYNC.md §7.3), and are projected in their old order. What the bundle can't carry:
+- **Other accounts.** Its ops in spaces other accounts own are imported but stay unreadable
+  until the owner's account is imported too. That owner's `space.join` then grants access, so
+  moving a whole group one account at a time converges.
+- **Follows** naming absent accounts wait the same way.
+- **Server-scope ops** (custom emoji) stay with the old server.
+- **Devices.** The import prints a one-time device invite instead. The round trip is tested
+  (`tests/import.rs`): the same ops, CSV tables and files.

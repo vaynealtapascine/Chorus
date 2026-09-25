@@ -91,7 +91,16 @@ export async function saveSnapshot(snapshot: Snapshot): Promise<void> {
   await (await db()).put('kv', snapshot, 'snapshot');
 }
 
-export async function save(ch: Changes): Promise<void> {
+/** `opsOnly`: a tab that doesn't sync (another tab of this browser does, SYNC §6.1) saves the
+ * ops it makes and nothing of the shared metadata, which the syncing tab owns. */
+export async function save(ch: Changes, opsOnly = false): Promise<void> {
+  if (opsOnly) {
+    if (!ch.ops.length) return;
+    const tx = (await db()).transaction('ops', 'readwrite');
+    for (const o of ch.ops) void tx.store.put(o);
+    await tx.done;
+    return;
+  }
   if (!ch.ops.length && !ch.removed?.length && ch.meta === undefined) {
     const d = await db();
     await d.put('kv', ch.hlc_last, 'hlc');

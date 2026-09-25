@@ -35,7 +35,7 @@ pub enum MentionTarget {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(remote = "Self", rename_all = "snake_case")]
 pub enum EntityKind {
     Blockquote,
     ExpandableBlockquote,
@@ -62,13 +62,30 @@ pub enum EntityKind {
         emoji_id: String,
     },
 }
+crate::tagged!(EntityKind, "type");
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
 pub struct Entity {
     #[serde(flatten)]
     pub kind: EntityKind,
     pub offset: u32,
     pub length: u32,
+}
+
+// By hand: `flatten` would buffer through serde's `Content` (see `tagged`).
+impl<'de> Deserialize<'de> for Entity {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let mut map = serde_json::Map::deserialize(d)?;
+        let mut take = |k: &'static str| {
+            let v = map.remove(k).ok_or_else(|| D::Error::missing_field(k))?;
+            u32::deserialize(v).map_err(D::Error::custom)
+        };
+        let (offset, length) = (take("offset")?, take("length")?);
+        let kind =
+            <EntityKind as Deserialize>::deserialize(serde_json::Value::Object(map)).map_err(D::Error::custom)?;
+        Ok(Entity { kind, offset, length })
+    }
 }
 
 impl Entity {
@@ -80,7 +97,7 @@ impl Entity {
 /// Canonical order: by offset, then longer first, then kind. Parsers and projections store
 /// entities in this order so equal content compares equal.
 pub fn sort_entities(e: &mut [Entity]) {
-    e.sort_by(|a, b| {
+    crate::sort::by(e, |a, b| {
         (a.offset, std::cmp::Reverse(a.length), &a.kind).cmp(&(b.offset, std::cmp::Reverse(b.length), &b.kind))
     });
 }
@@ -100,7 +117,7 @@ pub fn normalize_entities(e: &mut Vec<Entity>) {
     };
     let mut others: Vec<Entity> = e.iter().filter(|x| !simple(&x.kind)).cloned().collect();
     let mut styled: Vec<Entity> = e.iter().filter(|x| simple(&x.kind)).cloned().collect();
-    styled.sort_by(|a, b| (&a.kind, a.offset).cmp(&(&b.kind, b.offset)));
+    crate::sort::by(&mut styled, |a, b| (&a.kind, a.offset).cmp(&(&b.kind, b.offset)));
     let mut merged: Vec<Entity> = Vec::new();
     for x in styled {
         match merged.last_mut() {
@@ -651,7 +668,7 @@ pub fn to_markup(rich: &Rich) -> String {
     let text: Vec<u16> = rich.text.encode_utf16().collect();
     let len = text.len() as u32;
     let mut ents: Vec<&Entity> = rich.entities.iter().filter(|e| e.end() <= len && e.length > 0).collect();
-    ents.sort_by_key(|a| (a.offset, std::cmp::Reverse(a.length)));
+    crate::sort::by_key(&mut ents, |a| (a.offset, std::cmp::Reverse(a.length)));
     let is_quote = |k: &EntityKind| matches!(k, EntityKind::Blockquote | EntityKind::ExpandableBlockquote);
     let is_literal = |k: &EntityKind| matches!(k, EntityKind::Code | EntityKind::Pre { .. });
     let quotes: Vec<&Entity> = ents.iter().copied().filter(|e| is_quote(&e.kind)).collect();

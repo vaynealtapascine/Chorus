@@ -9,16 +9,29 @@ const COLS: &str = "seq, id, scope, kind, entity_id, payload, v, hlc, account_id
     occurred_at, device_at, tz_offset_min, mono, boot_id, time_source, seen_seq, received_at";
 
 fn from_row(r: &Row) -> rusqlite::Result<Op> {
+    let (mut o, payload) = from_row_raw(r)?;
+    o.payload = parse_payload(&payload);
+    Ok(o)
+}
+
+/// An op's payload as stored (checked JSON when it was written).
+pub fn parse_payload(payload: &str) -> serde_json::Value {
+    serde_json::from_str(payload).unwrap_or_default()
+}
+
+/// [`from_row`] with the payload left as text (`Value::Null` in the op), for a caller that parses
+/// it elsewhere: a rebuild does that on its worker threads (R26).
+fn from_row_raw(r: &Row) -> rusqlite::Result<(Op, String)> {
     let payload: String = r.get(5)?;
     let hlc: String = r.get(7)?;
     let ts: String = r.get(16)?;
-    Ok(Op {
+    let o = Op {
         seq: Some(r.get(0)?),
         id: r.get(1)?,
         scope: r.get(2)?,
         kind: r.get(3)?,
         entity_id: r.get(4)?,
-        payload: serde_json::from_str(&payload).unwrap_or_default(),
+        payload: serde_json::Value::Null,
         v: r.get(6)?,
         hlc: hlc.parse().unwrap_or_default(),
         account_id: Some(r.get(8)?),
@@ -32,7 +45,8 @@ fn from_row(r: &Row) -> rusqlite::Result<Op> {
         time_source: if ts == "user" { TimeSource::User } else { TimeSource::Auto },
         seen_seq: r.get(17)?,
         received_at: Some(r.get(18)?),
-    })
+    };
+    Ok((o, payload))
 }
 
 /// Insert a fully stamped op; returns its new seq.
@@ -90,8 +104,29 @@ pub fn applied_after(conn: &Connection, after: i64, limit: usize) -> anyhow::Res
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// [`applied_after`], each payload still text ([`from_row_raw`]).
+pub fn applied_after_raw(conn: &Connection, after: i64, limit: usize) -> anyhow::Result<Vec<(Op, String)>> {
+    let mut st = conn.prepare_cached(&format!(
+        "SELECT {COLS} FROM op WHERE seq > ?1 AND status = 'applied' ORDER BY seq LIMIT ?2"
+    ))?;
+    let rows = st.query_map(params![after, limit as i64], from_row_raw)?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 pub fn for_entity(conn: &Connection, entity_id: &str) -> anyhow::Result<Vec<Op>> {
     let mut st = conn.prepare_cached(&format!("SELECT {COLS} FROM op WHERE entity_id = ?1 AND status = 'applied'"))?;
+    let rows = st.query_map([entity_id], from_row)?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// [`for_entity`], only ops of these kinds (e.g. a reaction's adds and removes, not the message's
+/// own ops). Kinds are catalogue names, so they're written into the SQL as they are.
+pub fn for_entity_of_kinds(conn: &Connection, entity_id: &str, kinds: &[&str]) -> anyhow::Result<Vec<Op>> {
+    let list: Vec<String> = kinds.iter().map(|k| format!("'{k}'")).collect();
+    let mut st = conn.prepare_cached(&format!(
+        "SELECT {COLS} FROM op WHERE entity_id = ?1 AND status = 'applied' AND kind IN ({})",
+        list.join(", ")
+    ))?;
     let rows = st.query_map([entity_id], from_row)?;
     Ok(rows.collect::<Result<_, _>>()?)
 }

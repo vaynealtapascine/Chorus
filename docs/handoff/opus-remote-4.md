@@ -62,3 +62,95 @@ take the next free number after checking `migrations/` (Sol may ask for one in i
 ## 5. Report (append below; newest last)
 
 - 2026-09-25 local Claude — batch R4 written; `handoff/opus-remote-1` fast-forwarded to `main`.
+- 2026-09-25 remote Claude — **R25 done**. The web core is **288 → 241 KB gz**, target ≤ 250.
+  - Serde's `Content` buffering for internally tagged enums is replaced by `tagged!`
+    (`chorus_core::tagged`). The wire bytes are unchanged; tests pin them.
+  - API inputs are parsed through a `Value`, except bulk op lists (`parse_ops`), which stay on
+    `from_str`.
+  - On wasm, sorts and `BTreeMap`/`BTreeSet` collects go through `chorus_core::sort`.
+  - The web open time and the reconnect budget are unchanged.
+  - NOTES.md has the numbers and what didn't help (`wasm-opt` made gzip bigger).
+  - **For everyone adding code to core:** use `crate::sort::*` rather than `sort_by`, or
+    `collect()` into a B-tree. Use `tagged!` rather than `#[serde(tag = …)]`, and avoid
+    `#[serde(flatten)]`.
+  - **For Sol:** nothing changes in the FFI. Its string inputs now parse through a `Value`
+    (slightly slower, same results); op lists don't.
+- 2026-09-25 remote Claude — **R26 done, short of a full third here.** Measured on the same box
+  (HEAD re-measured after the box changed): the 1M-op rebuild into a fresh file went
+  **58.0 → ~40–41.6 s** (−28 to −31 %). The **replay went 32.0 → 16.3 s (−49 %)**. What's left
+  is mostly disk-bound here and varies run to run (copy, check, indexes, search index). NOTES.md
+  has the numbers and what didn't help.
+  - **Please re-measure on the PC:** `CHORUS_PERF_DB=… cargo test --release -p chorus-server
+    --test perf -- --ignored --nocapture`. The first run migrates the saved DB's copy through
+    0009.
+  - The biggest wins:
+    - reactions no longer mark their message as a multi-op entity;
+    - each entity is projected once per rebuild;
+    - new messages are batched;
+    - migration **0009** makes the per-item key tables `WITHOUT ROWID`;
+    - mimalloc;
+    - SQLite built without memory statistics (`.cargo/config.toml`, DECISIONS §Versions).
+  - `tests/projection.rs` stays byte-identical and now covers segments, mentions, attachments
+    and one-op messages.
+  - **For Sol:** I took migration **0009**, because migrations are numbered by position, so a
+    gap isn't safe. Your next free number is **0010**.
+  - **For local Claude:** no validation changes. The Windows build needs a C compiler for
+    mimalloc (MSVC, like SQLite already uses).
+- 2026-09-25 remote Claude — **R27 done** (`import.rs`, `zip.rs` reader):
+  `chorus-server import-account --from <zip> [--handle NEW] [--check]`, with the server stopped.
+  - **Checks, all before writing:** the manifest, the hash and count of `ops.jsonl`, every op
+    (valid as history, this account's, stamped), and every file's hash and size. Then clashes:
+    the account id, the handle (mappable), any op id. Any problem refuses the whole import with
+    the full list.
+  - **Imports:** ops keep their ids, authors, devices and times (the restore-push path) and are
+    projected in order. Files and the account go in one transaction, and the report ends with a
+    one-time device invite.
+  - **Links to accounts that aren't there** (DATA_MODEL §7, OPS.md "Moving one account"):
+    - its ops in others' spaces are imported, and become readable when the owner is imported
+      too (tested);
+    - follows wait for the accounts they name;
+    - server-scope ops (custom emoji) stay behind.
+  - The round trip is tested: the same ops, CSV tables, projected rows and files.
+  - **No admin REST route.** An import into a running server would bypass live fan-out and
+    digests, so it's CLI-only with the lock check `rebuild` uses. If the owner wants one from
+    the web, it needs a "server pauses sync while importing" step; that's worth an
+    OPEN_QUESTIONS entry if asked.
+- 2026-09-25 remote Claude — **R28 done** (`tests/rest_fuzz.rs`).
+  - **What it sends:** all 76 routes (read from app.rs the way api-check.py does) get random and
+    malformed path ids, queries and bodies: junk, 3 MB, wrong content types, and plausible
+    shapes mixing both accounts' ids.
+  - **Callers:** anonymous, a device, an admin, another account, and an API token of each scope.
+  - **What fails it:**
+    - a 5xx, a panic or a dropped connection;
+    - another account's marked texts or private ids in a response;
+    - messages or posts reaching a token without their scope;
+    - any change to the other account's rows.
+  - It runs in `verify` (3 per route and caller, random seed printed). `CHORUS_FUZZ_SEED` and
+    `CHORUS_FUZZ_ROUNDS` give longer runs.
+  - **Result:** 7 seeds × 13 500 requests are clean (~15 % of requests succeed, the rest are
+    proper 4xx). No server bug to fix. What it found were harness traps (NOTES.md): unread
+    bodies cause broken pipes and resets, and tokens must be `chorus_…`. The test now guards
+    against the latter by checking its oracle first.
+  - **For local Claude:** if you add a route, the fuzzer picks it up by itself. A new private
+    table is worth a `SECRETB` marker in its seed.
+- 2026-09-25 remote Claude — **R29 done** (`web/e2e/failure.spec.ts`).
+  - **The suite:** runs its own server so it can `kill -9` it. Six scenarios: sends queued
+    offline across a reload; a file queued offline with a new service worker taking over; two
+    tabs where the syncing one closes with ops queued; IndexedDB refusing writes while offline;
+    a windowed tab whose history request dies. Each ends with every message exactly once on
+    the server and in the page. The whole browser suite is 22/22.
+  - **Found and fixed** (NOTES.md):
+    1. **Two tabs of one browser lost messages.** Each tab saved the whole metadata, so the
+       other tab's unsent op dropped out of the outbox order for good. Now one tab per browser
+       syncs, the Web Lock holder that CLIENTS §4.1 always described. The others hand their ops
+       over a `BroadcastChannel`, and the next tab takes over when the syncing one closes. Core
+       also relists any unconfirmed op the saved metadata forgot when a replica opens
+       (`relist_unsent`), a safety net for any second writer.
+    2. **A failed save (storage full) dropped its changes.** They're now retried with the next
+       save, and the app shows a notice.
+    3. **A dying history request** was an unhandled rejection. The chat also read
+       non-reactive sync state, so the older-messages button never updated.
+  - **For Sol:** the core safety net applies on Android too. Any second writer of the replica's
+    metadata (a widget process, a worker) can no longer lose an unsent op, and nothing to call
+    is needed. `adopt_local`/`absorb`/`reload_meta` are web-only for now (not in the FFI).
+  - **Batch R4 is done (R25–R29).**
