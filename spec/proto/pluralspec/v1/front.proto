@@ -26,8 +26,8 @@ enum FrontLevel {
 }
 
 // One continuous stretch of one subject at one level. Co-fronting is several spans that
-// overlap in time. A change of level, primary, parts, blend or for_group_id ends one span and
-// starts another.
+// overlap in time. A change of level, primary, parts, blend, blend degree or for_group_id ends
+// one span and starts another.
 //
 // Each span belongs to a front: the system's own (scope_group_id empty), or the internal front
 // of a subsystem (scope_group_id = that subsystem). A subsystem can front as a unit in the
@@ -68,6 +68,9 @@ message FrontSpan {
   string blend_id = 24;
   // The subject is out on behalf of this subsystem, without the subsystem itself fronting.
   string for_group_id = 25;
+  // How blended, from 0 (barely) to 1 (fully), when the span is part of a blend (blend_id set,
+  // or the subject is a BLEND composite). Unset means not recorded.
+  optional double blend_degree = 26;
 
   repeated SourceRef source_refs = 900;
   map<string, google.protobuf.Struct> ext = 901;
@@ -82,6 +85,7 @@ message FrontEntry {
   repeated string part_member_ids = 4;
   string blend_id = 5;
   string for_group_id = 6;
+  optional double blend_degree = 7;
 }
 
 // A recorded change of front: the moment, what changed, and why.

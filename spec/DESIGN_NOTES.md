@@ -57,7 +57,7 @@ independent co-fronting needs no ordering tricks. What only the switch log keeps
 switches and pure reorderings, which is why the log stays as an optional record. Note that with
 history (D11) a file can now also carry every change to spans and switches as events.
 
-## D5 · Subsystems, collectives and blends — proposed (in the schema, for review)
+## D5 · Subsystems, collectives and blends — settled
 
 The owner asked for subsystem fronting fields, then how to model blends, fronting for a subsystem,
 and subsystems that "decohere" into separate parts, and answered five questions (2026-09-26):
@@ -95,10 +95,16 @@ The example (`examples/small-system.json`) has a blend of Moss and Wren each sti
 Garden fronting as a group, Moss leading inside it, and then the Garden coherent as its own
 someone with Moss and Wren aware inside.
 
-Still open for the owner: whether blends need a *degree* (a little blended, fully blended);
-whether a collective's parts should be listed as co-authors automatically when it writes; and
-whether a subsystem that is out as its group (no identity of its own) and a collective should be
-one concept or two, as now.
+Follow-up answers (2026-09-26):
+
+> [Should blends have a degree?] I would think so. I don't need it enough to need that, but I can
+> see someone needing it.
+> [Should a collective's parts be added as co-authors automatically?] No.
+> [Keep "a subsystem out as its group" and "a collective" as two things?] Yes.
+
+So: an optional `blend_degree` (0–1) on spans and switch entries (SPEC §5.3, invariant 9); a
+composite's parts are authors only when listed (SPEC §7.3); a group fronting as a unit and a
+collective member stay separate.
 
 ## D6 · Custom fronts are their own record — settled
 

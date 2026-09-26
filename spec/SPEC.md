@@ -469,7 +469,7 @@ in §5.5. Consumers MUST implement the fold.
 
 ### 5.3 Subsystems, collectives and blends
 
-**Status:** proposed; waiting for the owner's review (DESIGN_NOTES D5).
+**Status:** settled by the owner, 2026-09-26 (DESIGN_NOTES D5).
 
 **Fronts.** There is one **system front** (spans with no `scope_group_id`), and each subsystem
 MAY have its own **internal front** (spans whose `scope_group_id` is that subsystem): who is at
@@ -488,6 +488,11 @@ as themselves, outside the subsystem.
   `blend_id`. Nobody new fronts; the blend is a feature of those members' fronting.
 - **A blend that is its own someone**: a Member whose `composition` is BLEND (named or not,
   reused when the same members blend again) fronts, with `part_member_ids` saying who is in it.
+
+Either form MAY record how blended it is: `blend_degree`, from 0 (barely) to 1 (fully), per
+span, so members of one blend can be blended to different degrees. Apps with named steps map them
+to fixed points (for example slight 0.25, partial 0.5, full 1) and keep their own label in `ext`.
+A consumer without degrees drops them with `blend_flattened`.
 
 A consumer that has only one form converts the other: a BLEND member's span becomes spans for
 its parts sharing a `blend_id` (keeping the blend member as an archived member for authorship),
@@ -509,7 +514,7 @@ gatekeeper handling something, say) without the subsystem itself fronting.
 | It has decohered; its parts front as themselves | ordinary spans for those members; the subsystem is not a subject |
 | One member leads inside the subsystem | a span in the subsystem's internal front, usually `primary` |
 | Someone fronts for the subsystem | a span with `for_group_id` = the subsystem |
-| Members front blended, each still themselves | their spans share a `blend_id` |
+| Members front blended, each still themselves | their spans share a `blend_id` (and MAY carry a `blend_degree`) |
 | A blend fronts as its own someone | a span for the BLEND member, with `part_member_ids` |
 
 - `scope_group_id` and `for_group_id` MUST refer to Groups of kind SUBSYSTEM. A span in a
@@ -533,6 +538,8 @@ For each front (the system front, and each subsystem's internal front):
 7. A member is in one place at a time: not in the `part_member_ids` of a composite's span (or,
    when those are empty, among its parts) while also having a span of their own.
 8. Spans that share a `blend_id` overlap in time.
+9. `blend_degree` is between 0 and 1, and set only on a span with a `blend_id` or whose subject is
+   a BLEND composite.
 
 Across fronts, the same member may appear in both (inside a coherent collective in the system
 front, and aware in its subsystem's internal front).
@@ -553,16 +560,16 @@ For each switch `s`:
    - ADD: for each entry, if its subject is in `F`, replace that entry in place; otherwise append
      it.
    - REMOVE: `F'` = `F` without the entries' subjects.
-   - UPDATE: for each entry whose subject is in `F`, set its level, primary, parts, blend id and
-     `for_group_id` in place; entries for subjects not in `F` are ignored with a
+   - UPDATE: for each entry whose subject is in `F`, set its level, primary, parts, blend id,
+     blend degree and `for_group_id` in place; entries for subjects not in `F` are ignored with a
      `switch_update_ignored` warning.
    - In every case, if an entry of `s` is primary, every other entry of `F'` loses primary.
-2. For each subject in `F` that is not in `F'`, or whose level, primary, parts, blend id or
-   `for_group_id` differs: end its open span at `s.at` with `end_switch_id = s.id`.
-3. For each subject in `F'` that was not in `F`, or whose level, primary, parts, blend id or
-   `for_group_id` differs: start a span at `s.at` with `start_switch_id = s.id`, the switch's
-   `scope_group_id`, the entry's parts, blend id and `for_group_id`, and `position` = its index
-   among the entries of `F'` at the same level.
+2. For each subject in `F` that is not in `F'`, or whose level, primary, parts, blend id, blend
+   degree or `for_group_id` differs: end its open span at `s.at` with `end_switch_id = s.id`.
+3. For each subject in `F'` that was not in `F`, or whose level, primary, parts, blend id, blend
+   degree or `for_group_id` differs: start a span at `s.at` with `start_switch_id = s.id`, the
+   switch's `scope_group_id`, the entry's parts, blend id, blend degree and `for_group_id`, and
+   `position` = its index among the entries of `F'` at the same level.
 4. `F` = `F'`.
 
 Spans still open at the end have no `ended_at`. A producer writing spans derived this way SHOULD
@@ -639,8 +646,9 @@ channel (e.g. visible only to chosen members).
 
 Several `authors` speak a message **jointly**. Composites are ordinary authors: a coherent
 collective or a blend may write alone, or alongside some of its parts, and parts may write on
-their own at any time; fronting does not limit authorship. A consumer that flattens composites
-(§5.3) keeps the composite as an author. `segments` assign parts of the body to other
+their own at any time; fronting does not limit authorship. A composite's parts are authors only
+when they are listed: consumers MUST NOT add them because the composite wrote. A consumer that
+flattens composites (§5.3) keeps the composite as an author. `segments` assign parts of the body to other
 authors: each segment is a range of the body's plain characters (the markdown source, or
 `entities.text`), counted in the file's text offset unit (§2.6), with its own authors; ranges
 MUST NOT overlap; text outside every segment belongs to `authors`. A consumer that supports one
