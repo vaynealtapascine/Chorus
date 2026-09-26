@@ -101,3 +101,49 @@ number after checking `migrations/`.
   fix that too.)
 
 ## 5. Report (append below; newest last)
+
+### 2026-09-26 · remote Claude · R35 done; R30–R34 paused by the owner
+
+**R30–R34 (PluralSpec) not started.** The owner said in the session that the spec is still being
+worked on and asked for modular, out-of-the-way work instead. Nothing under `spec/` or
+`crates/pluralspec` was added. Notes from reading the spec, for whoever picks it up:
+- pbjson-build 0.9 has what SPEC §3.1 needs: `preserve_proto_field_names()`, camelCase accepted
+  on input, integer enums, `ignore_unknown_enum_variants()` and `ignore_unknown_fields()`.
+  Unknown values are then dropped silently, so reporting `unknown_value` needs a separate walk of
+  the JSON against the descriptors (prost-reflect 0.16 comes with protox 0.9).
+- Other apps' containers may be deflate-compressed; the server's own `zip.rs` reads stored
+  entries only. The `zip` crate 8.x with `default-features = false` and
+  `deflate-flate2-zlib-rs` covers it in pure Rust.
+
+**R35 · the flaky `rest_fuzz`: a server behaviour, fixed on the server** (NOTES 2026-09-26).
+- **Cause:** routes that answer before reading the body closed the connection with the body
+  still arriving:
+  - 401 from handlers that authenticate first (`/devices/invite` never reads its body);
+  - 415 from `Json` on a wrong content type (`/auth/session`);
+  - 404, and 429 from the rate limiter.
+
+  hyper drains only what has already arrived. The late bytes meet a closed socket, the TCP stack
+  sends a reset, and Windows throws away the answer the client had already received: 10053 or
+  10054 instead of a 401. Real clients hit this too, e.g. a web client with an expired session
+  sending a larger body. Linux keeps the answer readable, which is why only the PC saw it.
+- **Ruled out:** pooled-connection reuse (the R28 fuzzer didn't pool) and TIME_WAIT churn
+  (measured: the client closes first, so no server-side collisions).
+- **Fix:** `crates/chorus-server/src/drain.rs`, the outermost layer in `app::router`. It keeps a
+  handle on each request body. When the handler has answered and dropped a body it didn't
+  finish, a background task reads and discards the rest, up to 8 MiB (above every route's limit)
+  and for at most 10 s. The connection stays usable. New pin: `http-body` 1.1.0, already in the
+  tree through axum.
+- **Tests:**
+  - `tests/early_answer.rs` (new) sends the head and part of the body over a raw socket, the
+    rest late, and fails on the reset the late part meets. It covers 401 (no caller, bad
+    caller), 415, 404 and 413.
+  - `rest_fuzz` pools connections again, like browsers, and no longer excuses failed body
+    writes on oversized requests.
+  - Mutation check: without the layer, `early_answer` fails four of its five cases (413 was
+    already fine), and
+    `rest_fuzz` fails every run on Linux with 13–14 "error writing a body… broken pipe"
+    problems, the owner's failure. With it, five seeds pass, and faster (~6 s against 8.7 s).
+- `scripts/verify.py` now reconfigures stdout/stderr to UTF-8, so a piped run on Windows no
+  longer crashes printing `▶`.
+- For local Claude: nothing here touches validation. Please re-run `rest_fuzz` a few times on
+  the PC to confirm; it has only been seen passing on Linux.
