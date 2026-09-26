@@ -939,6 +939,46 @@ fn read_states_match_the_model_in_any_order() {
     }
 }
 
+#[test]
+fn read_state_rescan_fails_if_an_existing_op_cannot_be_read() {
+    let (mut c, account, _, space) = setup();
+    let first = ingest::server_op(
+        &c,
+        &account,
+        "read.mark",
+        &space,
+        None,
+        json!({"channel_id":"c", "message_id":"m1", "message_at":100, "reader_member_id":""}),
+        T,
+    )
+    .unwrap();
+    let position = |c: &Connection| -> (String, i64) {
+        c.query_row(
+            "SELECT last_read_message_id, last_read_message_at FROM read_state WHERE channel_id = 'c'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+    };
+    let before = position(&c);
+    c.execute("UPDATE op SET device_at = 'invalid' WHERE id = ?1", [&first.id]).unwrap();
+
+    let tx = c.transaction().unwrap();
+    let result = ingest::server_op(
+        &tx,
+        &account,
+        "read.set",
+        &space,
+        None,
+        json!({"channel_id":"c", "message_id":"m2", "message_at":200, "reader_member_id":""}),
+        T + 1,
+    );
+    let error = result.unwrap_err();
+    assert!(format!("{error:#}").contains("device_at"), "unexpected rescan error: {error:#}");
+    drop(tx);
+    assert_eq!(position(&c), before);
+}
+
 /// A member whose role was changed stays in the space after a rebuild (found by
 /// `ingest_fuzz.rs`: the membership set counted `space.set_role` as a leave, so a rebuild or a
 /// restore removed everyone whose role had ever been changed, and their access with it).

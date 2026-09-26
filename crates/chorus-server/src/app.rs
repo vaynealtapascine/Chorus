@@ -1845,14 +1845,90 @@ fn catch_up(
     Ok(())
 }
 
+enum SocketStep {
+    Continue,
+    Close,
+}
+
+struct SocketSession {
+    unsigned: Option<Unsigned>,
+    signed: Option<Signed>,
+    me: Option<ingest::Session>,
+    window: Option<i64>,
+    close: Arc<tokio::sync::Notify>,
+}
+
+impl SocketSession {
+    fn new(unsigned: Unsigned) -> Self {
+        Self {
+            unsigned: Some(unsigned),
+            signed: None,
+            me: None,
+            window: None,
+            close: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    fn dispatch(
+        &mut self,
+        s: &AppState,
+        tx: &mpsc::UnboundedSender<Frame>,
+        frame: Frame,
+    ) -> anyhow::Result<SocketStep> {
+        // a device signed out from another one stops here, even mid-connection
+        if let Some(sess) = &self.me
+            && !auth::device_active(&s.db(), &sess.device_id)
+        {
+            send(tx, Frame::Error { code: "unauthenticated".into(), message: "this device was signed out".into() });
+            return Ok(SocketStep::Close);
+        }
+        match (&self.me, frame) {
+            (None, Frame::Hello { token, epoch, cursors, clock, outbox, window, .. }) => {
+                self.window = window;
+                match hello(s, tx, &token, HelloIn { epoch, cursors, clock, outbox, window }) {
+                    Ok(session) => {
+                        self.unsigned = None;
+                        self.signed = Some(Signed::add(s, &session.account_id, self.close.clone()));
+                        self.me = Some(session);
+                        Ok(SocketStep::Continue)
+                    }
+                    Err(e) => {
+                        let code = if matches!(e, AuthError::Internal(_)) { "internal" } else { "unauthenticated" };
+                        send(tx, Frame::Error { code: code.into(), message: e.to_string() });
+                        Ok(SocketStep::Close)
+                    }
+                }
+            }
+            (None, _) => {
+                send(tx, Frame::Error { code: "unauthenticated".into(), message: "send hello first".into() });
+                Ok(SocketStep::Close)
+            }
+            (Some(sess), Frame::Push { batch, ops, restore }) => {
+                push(s, tx, sess, batch, ops, restore)?;
+                Ok(SocketStep::Continue)
+            }
+            (Some(sess), Frame::Pull { scope, after }) => {
+                let conn = s.db();
+                if ingest::can_access(&conn, &sess.account_id, &scope).unwrap_or(false) {
+                    catch_up(&conn, tx, &sess.account_id, &scope, after, self.window)?;
+                }
+                Ok(SocketStep::Continue)
+            }
+            (Some(_), Frame::Ping { .. }) => {
+                send(tx, Frame::Pong { server_time: now_ms() });
+                Ok(SocketStep::Continue)
+            }
+            (Some(_), _) => Ok(SocketStep::Continue),
+        }
+    }
+}
+
 async fn run_socket(s: AppState, socket: WebSocket, unsigned: Unsigned) {
     use futures_util::{SinkExt, StreamExt};
     let limits = s.cfg.security.sync_limits();
     // every frame the device sends takes one from its budget (OPS.md §9)
     let mut budget = crate::ratelimit::Bucket::full(limits.frame_burst, std::time::Instant::now());
-    let close = Arc::new(tokio::sync::Notify::new());
-    let mut unsigned = Some(unsigned);
-    let mut signed: Option<Signed> = None;
+    let mut session = SocketSession::new(unsigned);
     let (mut sink, mut stream) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<Frame>();
     let writer = tokio::spawn(async move {
@@ -1865,12 +1941,10 @@ async fn run_socket(s: AppState, socket: WebSocket, unsigned: Unsigned) {
         sink
     });
 
-    let mut me: Option<(String, ingest::Session)> = None; // (device, session)
-    let mut window: Option<i64> = None; // SYNC §6.5, from the hello
     loop {
         // on a public server anyone can open a socket: one that hasn't signed in with a Hello
         // within HELLO_WITHIN is closed rather than held open
-        let next = if me.is_none() {
+        let next = if session.me.is_none() {
             match tokio::time::timeout(HELLO_WITHIN, stream.next()).await {
                 Ok(n) => n,
                 Err(_) => break,
@@ -1879,7 +1953,7 @@ async fn run_socket(s: AppState, socket: WebSocket, unsigned: Unsigned) {
             tokio::select! {
                 n = stream.next() => n,
                 // a newer socket of this account went over its limit: this one is the oldest
-                () = close.notified() => {
+                () = session.close.notified() => {
                     let message = "too many open connections for this account; closing the oldest".into();
                     send(&tx, Frame::Error { code: "too_many_connections".into(), message });
                     break;
@@ -1905,62 +1979,23 @@ async fn run_socket(s: AppState, socket: WebSocket, unsigned: Unsigned) {
                 continue;
             }
         };
-        // a device signed out from another one stops here, even mid-connection
-        if let Some((device, _)) = &me
-            && !auth::device_active(&s.db(), device)
-        {
-            send(&tx, Frame::Error { code: "unauthenticated".into(), message: "this device was signed out".into() });
-            break;
-        }
-        let result = match (&me, frame) {
-            (None, Frame::Hello { token, epoch, cursors, clock, outbox, window: w, .. }) => {
-                window = w;
-                match hello(&s, &tx, &token, HelloIn { epoch, cursors, clock, outbox, window: w }) {
-                    Ok(session) => {
-                        unsigned = None;
-                        signed = Some(Signed::add(&s, &session.account_id, close.clone()));
-                        me = Some((session.device_id.clone(), session));
-                        Ok(())
-                    }
-                    Err(e) => {
-                        let code = if matches!(e, AuthError::Internal(_)) { "internal" } else { "unauthenticated" };
-                        send(&tx, Frame::Error { code: code.into(), message: e.to_string() });
-                        break;
-                    }
-                }
+        match session.dispatch(&s, &tx, frame) {
+            Ok(SocketStep::Continue) => {}
+            Ok(SocketStep::Close) => break,
+            Err(e) => {
+                tracing::error!(error = %e, "sync error");
+                send(&tx, Frame::Error { code: "internal".into(), message: "internal error".into() });
             }
-            (None, _) => {
-                send(&tx, Frame::Error { code: "unauthenticated".into(), message: "send hello first".into() });
-                break;
-            }
-            (Some((_, sess)), Frame::Push { batch, ops, restore }) => push(&s, &tx, sess, batch, ops, restore),
-            (Some((_, sess)), Frame::Pull { scope, after }) => {
-                let conn = s.db();
-                if ingest::can_access(&conn, &sess.account_id, &scope).unwrap_or(false) {
-                    catch_up(&conn, &tx, &sess.account_id, &scope, after, window)
-                } else {
-                    Ok(())
-                }
-            }
-            (Some(_), Frame::Ping { .. }) => {
-                send(&tx, Frame::Pong { server_time: now_ms() });
-                Ok(())
-            }
-            (Some(_), _) => Ok(()),
-        };
-        if let Err(e) = result {
-            tracing::error!(error = %e, "sync error");
-            send(&tx, Frame::Error { code: "internal".into(), message: "internal error".into() });
         }
     }
-    if let Some((device, _)) = me {
+    if let Some(sess) = &session.me {
         // the device may have connected again meanwhile: leave its newer socket registered
         let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
-        if peers.get(&device).is_some_and(|p| p.tx.same_channel(&tx)) {
-            peers.remove(&device);
+        if peers.get(&sess.device_id).is_some_and(|p| p.tx.same_channel(&tx)) {
+            peers.remove(&sess.device_id);
         }
     }
-    drop((unsigned, signed));
+    drop(session);
     drop(tx);
     if let Ok(mut sink) = writer.await {
         // Close politely and read until the client closes too: dropping a socket with unread
@@ -2060,10 +2095,7 @@ fn push(
     fan_out(s, &conn, &fresh, Some(&sess.device_id))
 }
 
-/// Send freshly accepted ops to every connected device that reads their scope (and tell devices
-/// whose scopes changed). Call it while still holding the db lock so per-connection order matches
-/// seq order. `skip` is the device that pushed them (it already has them).
-pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Option<&str>) -> anyhow::Result<()> {
+fn emit_live_events(s: &AppState, conn: &Connection, fresh: &[Op]) {
     // the owner's live stream: one front event per account that just changed
     let changed: BTreeSet<&str> = fresh
         .iter()
@@ -2099,6 +2131,13 @@ pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Optio
             }
         }
     }
+}
+
+/// Send freshly accepted ops to every connected device that reads their scope (and tell devices
+/// whose scopes changed). Call it while still holding the db lock so per-connection order matches
+/// seq order. `skip` is the device that pushed them (it already has them).
+pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Option<&str>) -> anyhow::Result<()> {
+    emit_live_events(s, conn, fresh);
     match crate::webhooks::deliveries_for(conn, fresh, now_ms()) {
         Ok(ds) => ds.into_iter().for_each(|d| {
             let _ = s.hooks.send(d);
@@ -2126,13 +2165,20 @@ pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Optio
         .map(|o| o.scope.as_str())
         .collect();
     let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
+    // The caller holds the db lock, so scopes cannot change during this fan-out.
+    let mut scopes_by_account: HashMap<&str, BTreeSet<String>> = HashMap::new();
     for (device, p) in peers.iter_mut() {
         // scope changes (e.g. someone was added to a space)
-        let now_scopes: BTreeSet<String> = ingest::scopes_of(conn, &p.account)?.into_iter().collect();
-        if now_scopes != p.scopes {
+        let now_scopes = match scopes_by_account.entry(p.account.as_str()) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(ingest::scopes_of(conn, &p.account)?.into_iter().collect())
+            }
+        };
+        if *now_scopes != p.scopes {
             let add: Vec<String> = now_scopes.difference(&p.scopes).cloned().collect();
-            let remove: Vec<String> = p.scopes.difference(&now_scopes).cloned().collect();
-            p.scopes = now_scopes;
+            let remove: Vec<String> = p.scopes.difference(now_scopes).cloned().collect();
+            p.scopes = now_scopes.clone();
             send(&p.tx, Frame::Scope { add, remove });
         }
         if skip == Some(device.as_str()) {

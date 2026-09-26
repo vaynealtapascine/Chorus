@@ -1099,6 +1099,55 @@ async fn friends_share_spaces_and_dms() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_new_space_reaches_both_devices_of_an_account() {
+    let s = start().await;
+    let first = enrol(&s, auth::InviteKind::System, None, 101, "stars").await;
+    let account = first["account_id"].as_str().unwrap();
+    let second = enrol(&s, auth::InviteKind::Device, Some(account), 102, "").await;
+    let friend = enrol(&s, auth::InviteKind::Person, None, 103, "alex").await;
+    let mut phone = Device::new(&first, 101);
+    let mut desk = Device::new(&second, 102);
+    let mut other = Device::new(&friend, 103);
+    for device in [&mut phone, &mut desk, &mut other] {
+        device.connect(&s).await;
+        device.drain(Q).await;
+    }
+
+    let http = reqwest::Client::new();
+    let base = format!("http://{}/api/v1", s.base);
+    let follow: Value = http
+        .post(format!("{base}/follows"))
+        .bearer_auth(friend["session"].as_str().unwrap())
+        .json(&json!({"target":"stars"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    phone.drain(Q).await;
+    let account_scope = phone.scope("account:");
+    phone.create("follow.accept", &account_scope, follow["id"].as_str().unwrap(), json!({})).await;
+    phone.drain(Q).await;
+    desk.drain(Q).await;
+
+    let response = http
+        .post(format!("{base}/spaces"))
+        .bearer_auth(first["session"].as_str().unwrap())
+        .json(&json!({"kind":"dm", "accounts":[friend["account_id"]]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 201);
+    let space: Value = response.json().await.unwrap();
+    let scope = format!("space:{}", space["id"].as_str().unwrap());
+    for device in [&mut phone, &mut desk, &mut other] {
+        device.drain(Q).await;
+        assert!(device.store.scopes.contains(&scope));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_lost_device_can_be_signed_out() {
     let s = start().await;
     let a = enrol(&s, auth::InviteKind::System, None, 91, "stars").await;

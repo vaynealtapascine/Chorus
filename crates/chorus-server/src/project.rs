@@ -1286,41 +1286,67 @@ fn lww_keyed(conn: &Connection, o: &Op, table: &str, key: &[(&str, String)], fie
     upsert(conn, table, &key_cols, &names, &vals)
 }
 
-/// Read states (SYNC.md §5.5), one op at a time: a mark folds into the stored best mark
-/// (`model::read_best`), a newer manual `read.set` raises the floor and rescans that key's marks.
+#[derive(Clone, Copy)]
+struct ReadStateKey<'a> {
+    channel: &'a str,
+    account: &'a str,
+    reader: &'a str,
+}
+
+struct StoredReadState {
+    best: Option<model::ReadMark>,
+    manual: Option<model::ReadMark>,
+    state_ok: bool,
+}
+
+fn stored_read_mark(at: Option<i64>, id: Option<String>, hlc: Option<String>) -> Option<model::ReadMark> {
+    Some((at?, id?, hlc?.parse().ok()?))
+}
+
+fn next_read_marks(
+    conn: &Connection,
+    key: ReadStateKey<'_>,
+    stored: Option<StoredReadState>,
+    o: &Op,
+) -> anyhow::Result<Option<(Option<model::ReadMark>, Option<model::ReadMark>)>> {
+    let this = model::read_mark_of(o);
+    match stored {
+        // from before migration 0004: rebuild this key from the log
+        Some(StoredReadState { state_ok: false, .. }) => Ok(Some(read_state_scan(conn, key)?)),
+        Some(StoredReadState { best, manual, .. }) if o.kind == "read.mark" => {
+            Ok(Some((model::read_best(best.into_iter().chain([this]), manual.as_ref()), manual)))
+        }
+        Some(StoredReadState { manual, .. }) if manual.as_ref().is_none_or(|m| this.2 > m.2) => {
+            Ok(Some(read_state_scan(conn, key)?))
+        }
+        Some(_) => Ok(None),
+        None if o.kind == "read.mark" => Ok(Some((Some(this), None))),
+        None => Ok(Some((None, Some(this)))),
+    }
+}
+
+/// Read states (SYNC.md §5.5): marks fold into the stored best mark; newer manual sets rescan.
 fn read_state(conn: &Connection, o: &Op) -> anyhow::Result<()> {
-    type Stored = (Option<i64>, Option<String>, Option<String>, Option<i64>, Option<String>, Option<String>, bool);
-    let channel = o.payload.get("channel_id").and_then(Value::as_str).unwrap_or("");
-    let reader = o.payload.get("reader_member_id").and_then(Value::as_str).unwrap_or("");
-    let account = o.account_id.clone().unwrap_or_default();
-    let stored: Option<Stored> = query_cached(
+    let key = ReadStateKey {
+        channel: o.payload.get("channel_id").and_then(Value::as_str).unwrap_or(""),
+        account: o.account_id.as_deref().unwrap_or(""),
+        reader: o.payload.get("reader_member_id").and_then(Value::as_str).unwrap_or(""),
+    };
+    let stored = query_cached(
         conn,
         "SELECT mark_at, mark_id, mark_hlc, set_at, set_id, set_hlc, state_ok FROM read_state
              WHERE channel_id = ?1 AND account_id = ?2 AND reader_member_id = ?3",
-        params![channel, account, reader],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+        params![key.channel, key.account, key.reader],
+        |r| {
+            Ok(StoredReadState {
+                best: stored_read_mark(r.get(0)?, r.get(1)?, r.get(2)?),
+                manual: stored_read_mark(r.get(3)?, r.get(4)?, r.get(5)?),
+                state_ok: r.get(6)?,
+            })
+        },
     )
     .optional()?;
-    let mark = |at: Option<i64>, id: Option<String>, hlc: Option<String>| -> Option<model::ReadMark> {
-        Some((at?, id?, hlc?.parse().ok()?))
-    };
-    let this = model::read_mark_of(o);
-    let (best, manual) = match stored {
-        // from before migration 0004: rebuild this key from the log
-        Some((.., false)) => read_state_scan(conn, &account, channel, reader)?,
-        Some((ma, mi, mh, sa, si, sh, true)) => {
-            let (best, manual) = (mark(ma, mi, mh), mark(sa, si, sh));
-            if o.kind == "read.mark" {
-                (model::read_best(best.into_iter().chain([this]), manual.as_ref()), manual)
-            } else if manual.as_ref().is_none_or(|m| this.2 > m.2) {
-                read_state_scan(conn, &account, channel, reader)?
-            } else {
-                return Ok(());
-            }
-        }
-        None if o.kind == "read.mark" => (Some(this), None),
-        None => (None, Some(this)),
-    };
+    let Some((best, manual)) = next_read_marks(conn, key, stored, o)? else { return Ok(()) };
     let Some(effective) = model::read_effective(best.clone(), manual.clone()) else { return Ok(()) };
     let parts = |m: &Option<model::ReadMark>| {
         (m.as_ref().map(|m| m.0), m.as_ref().map(|m| m.1.clone()), m.as_ref().map(|m| m.2.to_string()))
@@ -1335,7 +1361,7 @@ fn read_state(conn: &Connection, o: &Op) -> anyhow::Result<()> {
            last_read_message_id = excluded.last_read_message_id, last_read_message_at = excluded.last_read_message_at,
            mark_at = excluded.mark_at, mark_id = excluded.mark_id, mark_hlc = excluded.mark_hlc,
            set_at = excluded.set_at, set_id = excluded.set_id, set_hlc = excluded.set_hlc, state_ok = 1",
-        params![channel, account, reader, effective.1, effective.0, ma, mi, mh, sa, si, sh],
+        params![key.channel, key.account, key.reader, effective.1, effective.0, ma, mi, mh, sa, si, sh],
     )?;
     Ok(())
 }
@@ -1343,18 +1369,18 @@ fn read_state(conn: &Connection, o: &Op) -> anyhow::Result<()> {
 /// Best mark and latest manual set for one read-state key, from every read op in the log.
 fn read_state_scan(
     conn: &Connection,
-    account: &str,
-    channel: &str,
-    reader: &str,
+    key: ReadStateKey<'_>,
 ) -> anyhow::Result<(Option<model::ReadMark>, Option<model::ReadMark>)> {
     let mut st = conn.prepare_cached(
         "SELECT id FROM op WHERE kind IN ('read.mark','read.set') AND account_id = ?1 AND status = 'applied'
             AND json_extract(payload, '$.channel_id') = ?2 AND coalesce(json_extract(payload, '$.reader_member_id'), '') = ?3",
     )?;
-    let ids: Vec<String> = st.query_map(params![account, channel, reader], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    let ids: Vec<String> =
+        st.query_map(params![key.account, key.channel, key.reader], |r| r.get(0))?.collect::<Result<_, _>>()?;
     let mut marks = Vec::new();
     let mut manual: Option<model::ReadMark> = None;
-    for o in ids.iter().filter_map(|i| oplog::by_id(conn, i).ok().flatten()) {
+    for id in ids {
+        let o = oplog::by_id(conn, &id)?.ok_or_else(|| anyhow::anyhow!("read op {id} disappeared during scan"))?;
         let m = model::read_mark_of(&o);
         if o.kind == "read.mark" {
             marks.push(m);

@@ -386,3 +386,9 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
     excuses failed body writes. Without the layer both fail on Linux in every run.
   - Ruled out: pooled-connection reuse (the fuzzer didn't pool) and TIME_WAIT churn (the
     client closes first, so nothing collides on the server side).
+- 2026-09-27 gpt-6 — read-state projection — A rescan fetched matching read-op IDs and used
+  `.ok().flatten()` for each op-log lookup. A row read failure silently omitted that mark or
+  manual set, so the saved read position could differ from the op log. The scan now returns the
+  error and leaves the previous projection intact. For the regression test, corrupt a typed
+  column such as `device_at`: the op decoder deliberately defaults a malformed HLC string, so
+  changing `hlc` would not exercise the read-error path.
