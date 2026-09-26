@@ -1,11 +1,23 @@
 PluralSpec — an open data format for plural systems
 Copyright (c) 2026 Vayne Altapascine
 
-Everything in this directory (spec/) — the specification text, the Protocol Buffers schema
-under proto/, and the examples — is licensed under the Creative Commons
-Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0).
+This directory (spec/) is under two licences:
 
-  Summary:  https://creativecommons.org/licenses/by-nc-sa/4.0/
-  Legal code: https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode
+1. The schema and data — everything under proto/ (the Protocol Buffers schema), schema/
+   (schemas generated from it), examples/, and any fixtures published with the spec — is
+   licensed under Creative Commons Attribution 4.0 International (CC BY 4.0), so any app,
+   commercial or not, may use it and compile it into its code, with attribution.
+
+     Summary:    https://creativecommons.org/licenses/by/4.0/
+     Legal code: https://creativecommons.org/licenses/by/4.0/legalcode
+     SPDX:       CC-BY-4.0
+
+2. The specification text — the Markdown documents (SPEC.md, DESIGN_NOTES.md, PRIOR_ART.md,
+   README.md) — is licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0
+   International (CC BY-NC-SA 4.0).
+
+     Summary:    https://creativecommons.org/licenses/by-nc-sa/4.0/
+     Legal code: https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode
+     SPDX:       CC-BY-NC-SA-4.0
 
 The rest of the Chorus repository is licensed separately under the MIT License (../LICENSE).

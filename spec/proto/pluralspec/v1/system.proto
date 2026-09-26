@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: CC-BY-4.0
 // PluralSpec v0.1 draft — core records: the system, its members, custom states, groups and
 // subsystems, labels, and visibility classes.
 syntax = "proto3";
@@ -271,9 +272,21 @@ message VisibilityClass {
   // Classes whose members are all in this one too ("Partners" inside "Close friends"): an app
   // that shows one class may show everyone in the classes listed here. Must not form a cycle.
   repeated string includes_class_ids = 17;
+  // What people in the class may see and do beyond reading records whose audience includes
+  // the class (SPEC.md §4.8). Grants add up; there are no denials.
+  repeated Grant grants = 18;
 
   repeated SourceRef source_refs = 900;
   map<string, google.protobuf.Struct> ext = 901;
+}
+
+// One permission given to a visibility class.
+message Grant {
+  // Registered ("front.view", "front.history", "posts.reply", …; SPEC.md §4.8) or namespaced
+  // ("chorus:front.stats").
+  string permission = 1;
+  // Settings for the permission, if it has any (e.g. how soon switch notifications arrive).
+  google.protobuf.Struct params = 2;
 }
 
 enum VisibilityClassKind {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: CC-BY-4.0
 // PluralSpec v0.1 draft — optional module "chat": a system's channels and the messages its
 // members send in them. Earlier versions of edited messages are history events (record.proto).
 // Spaces shared between several accounts are server-side and out of scope; a system's export

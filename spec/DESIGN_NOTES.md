@@ -57,22 +57,77 @@ independent co-fronting needs no ordering tricks. What only the switch log keeps
 switches and pure reorderings, which is why the log stays as an optional record. Note that with
 history (D11) a file can now also carry every change to spans and switches as events.
 
-## D5 · Subsystem fronting — proposed (owner asked "Fields for subsystem fronting?")
+## D5 · Subsystem fronting — internal fronts proposed; blends, "fronting for" and decoherence open
 
-Before: a subsystem could only front as a unit (a span whose subject is the group, which needs
-`can_front`). Added in this draft:
+> "Fields for subsystem fronting?" … "What would be a means to model blends, fronting for a
+> subsystem, etc? More broadly, how does this model subsystems that 'decohere' into separate
+> parts (like ours)?"
 
-- **`scope_group_id`** on `FrontSpan` and `FrontSwitch`: each span belongs to a *front* — the
-  system's (empty) or a subsystem's **internal front** (the subsystem's id). A subsystem can be
-  out as a unit in the system front while its own members take turns at its internal front, and
-  it can have internal front history while it isn't out at all.
-- The fold and the invariants run per front (SPEC §5.3–5.5).
-- Existing fields that describe subsystems: `Group.kind = SUBSYSTEM`, `can_front`,
-  `Subsystem.structure` (with / without a main member), `main_member_id`, and a subsystem `tag`.
+**In the draft now:** a subsystem can front as a unit (a span whose subject is the group, which
+needs `can_front`), and each subsystem can have an **internal front** (`scope_group_id` on
+spans and switches: who is at the front *inside* it). SPEC §5.3.
 
-SPEC §5.3 has a table of the four situations this covers. For review: are there subsystem
-fronting situations it doesn't cover? Candidates we have not modelled: blends (members merged
-into one), and a member fronting "for" a subsystem without the subsystem itself being out.
+**What the draft cannot say about a subsystem that decoheres into separate parts:**
+
+- *Coherent*: the subsystem fronts as its group, but a group is not a full someone: it can't
+  author messages or posts, and has no pronouns, proxy tags or member fields.
+- *Decohered*: its parts front as ordinary members, and nothing ties those spans back to the
+  subsystem, so "was the subsystem out?" misses those hours.
+- *Partly decohered*: a group span and a member span at the same time can't say that the member
+  is no longer inside the group.
+- *Blends* (members merged for a while): no way at all.
+
+**Proposal: composite identities** (not in the schema yet; waiting for the questions below).
+
+1. **`Member.composition`** `{kind, member_ids, group_id}`: a member who *is* several members
+   together. Because it is a Member, it can speak, write, have pronouns, proxy tags, fields and a
+   profile, and front like anyone.
+   - `COLLECTIVE`: a subsystem's coherent self. `group_id` points at the subsystem and its parts
+     follow the group's membership; `Subsystem.collective_member_id` points back.
+   - `BLEND`: two or more members merged for a while. May be unnamed (apps show "Kai + Moss"),
+     and is reused when the same parts blend again.
+   - `FUSION`: a lasting merge; the parts are usually archived with a reason.
+2. **`FrontSpan.parts`**: for a composite subject, which parts are in it during this span
+   (empty = all). This is what makes *partial* decoherence expressible.
+3. **`FrontSpan.for_group_id`**: this subject is out *as part of*, or *on behalf of*, a subsystem
+   without the subsystem itself being the subject. Covers both "fronting for a subsystem" and
+   the parts of a decohered subsystem.
+4. **Invariant**: in each front, a member is in one place at a time: not inside a composite's
+   `parts` and also in a span of their own.
+5. Internal fronts (`scope_group_id`) stay, for what happens inside a subsystem.
+
+A decohering day, with "the Garden" (Kai, Moss, Wren) and its collective self "Garden":
+
+| Time | Spans in the system front |
+| --- | --- |
+| 09:00–11:00 | Garden (collective), parts: all |
+| 11:00–12:30 | Garden, parts: Kai, Wren · Moss (for the Garden) |
+| 12:30–14:00 | Kai, Moss, Wren, each for the Garden |
+| 14:00– | Garden, parts: all |
+| 16:00–16:45 | Kai + Moss (a blend) · Wren (for the Garden) |
+
+"Was the Garden out?" = spans of its collective, of the group itself, or `for_group_id` = it.
+"Who was actually there?" = the parts plus everyone with a span of their own.
+
+Apps without composites keep a composite as an ordinary member and put `parts` / `for_group_id`
+in `ext` with a `composition_flattened` warning, so nothing is lost on the way through.
+
+Alternatives considered: a span-level `blend_key` (spans sharing it fronted blended) is lighter
+for one-off blends but can't be named or speak; making every member able to contain members (the
+2024 sketch) is the most direct model but no other app could map it, while a composite member
+linked to a group gives the same result and stays mappable.
+
+**Questions for the owner** (the answers decide the details):
+
+1. When your subsystem is coherent, is it its own someone (a name, pronouns, speaking as itself),
+   or the parts together without an identity of their own?
+2. Can it partly decohere (some parts split off while the rest stays together)?
+3. When decohered, do the parts front "as the subsystem" (it still counts as out) or simply as
+   themselves?
+4. While it is coherent, are the parts still there in some sense (aware inside, reachable), or not
+   present at all?
+5. Should blends be their own someone (named, able to post), or only a record that these
+   members fronted blended?
 
 ## D6 · Custom fronts are their own record — settled
 
@@ -90,41 +145,34 @@ entity spans, message segments, quote ranges (SPEC §2.6). Chorus writes UTF16 a
 conversion. A third option (Unicode code points, native to Python and Swift) can be added later
 as a new enum value without breaking anything.
 
-## D8 · Visibility classes are records — proposed (owner: "customizable … their own record")
+## D8 · Visibility classes with permissions — settled
 
-> "Visibilities classes should be customizable and so they should be their own record."
+> "Visibilities classes should be customizable and so they should be their own record." … "yes,
+> it should also be able to carry perms."
 
-Replaces the fixed tiers and `Bucket` of the first draft:
-
-- **`VisibilityClass`** record: `name`, `description`, `color`, `emoji`, `sort_key`, and a
-  `kind` that says who is in it — CUSTOM (contacts assigned via `Contact.class_ids`), FRIENDS,
-  INSTANCE, PUBLIC. Built-in kinds are records too, so a system can rename "Friends" to
-  "Followers" or colour "Public". `includes_class_ids` nests classes ("Partners" ⊂ "Close
-  friends").
+- **`VisibilityClass`** record: `name`, `description`, `color`, `emoji`, `sort_key`, a `kind`
+  that says who is in it — CUSTOM (contacts assigned via `Contact.class_ids`), FRIENDS,
+  INSTANCE, PUBLIC — and `includes_class_ids` for nesting ("Partners" ⊂ "Close friends").
+  Built-in kinds are records too, so a system can rename or colour them.
 - **`Audience`** = `class_ids` (the system plus everyone in those classes) or `member_ids` (an
-  in-system limit), or empty for "only the system".
-- Narrowing when a target can't express a class uses the kinds' subset order (SPEC §4.7), so a
-  custom class is never widened to "friends".
+  in-system limit), or empty for "only the system". Narrowing never widens (SPEC §4.7).
+- **Permissions** (SPEC §4.8): each class carries `grants`, each a registered or namespaced
+  `permission` with optional `params`: `front.view`, `front.history`, `front.stats`,
+  `front.notify` (params for delays and digests — Chorus's follower ceilings live here),
+  `front.log`, `members.list`, `groups.list`, `posts.reply`, `posts.react`, `messages.send`,
+  `polls.vote`. Grants add up; there are no denials; the audience of each record stays the
+  ceiling, so a grant never reveals a record hidden from the class.
 
-For review: whether classes should also carry *permissions* (PluralSpace's roles decide what a
-friend can do, not only see — e.g. "can see front history"). The draft expresses those as the
-audience of each record type, which covers seeing but not acting.
-
-## D9 · Files: a ZIP container with a record stream, optional age encryption — proposed
+## D9 · Files: ZIP container with a record stream; age for encryption — settled
 
 `manifest.json` + `data.jsonl` or `data.binpb` + content-addressed `blobs/`, or a single JSON
 document for small files (SPEC §3.3).
 
-> "What do you mean by age layer?"
+> "What do you mean by age layer?" … "ah ok. yeah."
 
-**age** ([age-encryption.org](https://age-encryption.org/v1)) is a small, modern, widely reviewed
-format and tool for encrypting a whole file, with implementations in Go, Rust (rage), TypeScript
-(typage) and others. "An age layer" means: take the finished `.pluralspec` file and encrypt the
-whole thing with age, giving `system.pluralspec.age`, with either a passphrase or a public key.
-Decrypting gives back the ordinary file. PluralSpec would recommend it for FULL exports (which
-contain everything private) instead of inventing its own encryption or relying on ZIP's
-password protection, which is weak or unevenly supported. For review: keep age as the
-recommended encryption, or leave encryption out of the spec entirely?
+Encryption is the whole finished file encrypted with **age** ([age-encryption.org](https://age-encryption.org/v1)),
+by passphrase or public key: `system.pluralspec.age`; decrypting gives back the ordinary file.
+Recommended for FULL exports; PluralSpec defines no encryption of its own (SPEC §3.5).
 
 ## D10 · Closed enums vs open vocabularies — proposed
 
@@ -171,19 +219,17 @@ A system's own channels and messages, plus what it can read in shared channels (
 `shared`, external authors as display names). Spaces, roles and permissions between accounts
 are server state and out of scope.
 
-## D14 · Licence — settled: CC BY-NC-SA 4.0
+## D14 · Licence — settled: schema CC BY 4.0, text CC BY-NC-SA 4.0
 
-> "CC BY-SA-NC."
+> "CC BY-SA-NC." … "I think the schema should be CC-BY, but the text should be NC."
 
-The whole `spec/` directory (text, schema, examples) is under CC BY-NC-SA 4.0 (`spec/LICENSE`);
-the rest of the Chorus repository stays MIT. Consequences worth knowing before 1.0:
-
-- The `.proto` files are copied into implementations and compiled into their code, so
-  **NonCommercial also applies to the schema**: an app that charges money (as Simply Plural's
-  paid tier did) could not use the schema files as they are. If that is not the intent, the
-  schema could be licensed separately (e.g. MIT) while the prose stays BY-NC-SA.
-- PluralPort is MIT. Proposals sent there are the owner's to license as the owner likes, but
-  text copied from this spec into PluralPort would need the owner's permission under MIT terms.
+- **Schema and data** — `proto/`, generated schemas (`schema/`), `examples/`, and fixtures
+  published with the spec — are **CC BY 4.0**: any app, commercial or not, may compile them into
+  its code, with attribution. Each `.proto` carries `SPDX-License-Identifier: CC-BY-4.0`.
+- **Specification text** — the Markdown documents — is **CC BY-NC-SA 4.0**.
+- The rest of the Chorus repository stays MIT. `spec/LICENSE` says all of this.
+- PluralPort is MIT; proposals sent there are the owner's to license, and text copied from this
+  spec into PluralPort needs the owner's permission under MIT terms.
 
 ## D15 · Where the spec lives — settled
 

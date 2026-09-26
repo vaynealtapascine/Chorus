@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: CC-BY-4.0
 // PluralSpec v0.1 draft — fronting.
 //
 // FrontSpan is the one source of truth for who was fronting when (SPEC.md §5). FrontSwitch is

@@ -390,7 +390,18 @@
       "system_id": "01923e6a-0000-7000-8000-000000000001",
       "kind": "VISIBILITY_CLASS_KIND_FRIENDS",
       "name": "Friends",
-      "sort_key": "b0"
+      "sort_key": "b0",
+      "grants": [
+        {
+          "permission": "front.view"
+        },
+        {
+          "permission": "members.list"
+        },
+        {
+          "permission": "posts.react"
+        }
+      ]
     },
     {
       "id": "01923e6a-0000-7000-8000-000000000090",
@@ -398,7 +409,22 @@
       "kind": "VISIBILITY_CLASS_KIND_CUSTOM",
       "name": "Close friends",
       "color": "#d98fa3",
-      "sort_key": "a0"
+      "sort_key": "a0",
+      "grants": [
+        {
+          "permission": "front.history"
+        },
+        {
+          "permission": "front.notify",
+          "params": {
+            "chorus": {
+              "delay_min_s": 300,
+              "delay_max_s": 1200,
+              "time_shown": "rounded_15"
+            }
+          }
+        }
+      ]
     }
   ],
   "events": [

@@ -1,6 +1,7 @@
 # PluralSpec
 
-**An open data format for plural systems · Draft 0.1.0 · 2026-09-26 · CC BY-NC-SA 4.0**
+**An open data format for plural systems · Draft 0.1.0 · 2026-09-26**
+**Text: CC BY-NC-SA 4.0 · Schema and examples: CC BY 4.0** (see `LICENSE`)
 
 PluralSpec is a format for storing and moving the data of plural systems: members, groups and
 subsystems, custom fields, visibility classes, front history, journals, chat, the files they use,
@@ -397,6 +398,35 @@ a subset of everything. A consumer without custom classes therefore maps a CUSTO
 the system", never to "friends". A consumer that has its own custom classes SHOULD create matching
 ones and keep contacts' assignments.
 
+### 4.8 Permissions
+
+A visibility class also carries **grants**: what the people in it may see and do beyond reading
+records whose audience includes the class. Each `Grant` names a `permission` and MAY carry
+`params` (settings for it). Grants add up across the classes a person is in (and the classes
+those include); there are no denials. **Audiences stay the ceiling**: a grant never shows a record
+whose audience excludes the class. `front.view` lets a class see who is fronting, but a member
+whose audience excludes the class still doesn't appear (apps show "someone" or leave them out).
+
+Registered permissions (others MUST be namespaced, `myapp:permission`):
+
+| Permission | Lets people in the class | Typical source |
+| --- | --- | --- |
+| `front.view` | see who is fronting now | PluralKit front privacy, Simply Plural friend settings, Chorus follows |
+| `front.history` | see past fronting | PluralKit front-history privacy, Chorus `share_history` |
+| `front.stats` | see fronting statistics | Chorus `share_stats` |
+| `front.notify` | be notified of switches; `params` MAY limit how (delay, time shown, digest) | Simply Plural front notifications, Chorus follower ceilings |
+| `front.log` | record switches on the system's behalf | trusted partners |
+| `members.list` | see the list of members (each still subject to its audience) | PluralKit member-list privacy |
+| `groups.list` | see the list of groups | PluralKit group-list privacy |
+| `posts.reply` | reply to posts they can read | Chorus |
+| `posts.react` | react to posts and messages they can read | Chorus |
+| `messages.send` | message the system | Chorus DMs |
+| `polls.vote` | vote in polls they can read | |
+
+A consumer that cannot represent a grant drops it (never keeps a broader one in its place) and
+warns `permission_dropped`. `params` are app-shaped: registered keys may be added in later
+versions; until then, apps namespace them (`{"chorus": {...}}`).
+
 ---
 
 ## 5. Fronting
@@ -726,7 +756,7 @@ Registered codes (producers and consumers MAY add namespaced ones, `myapp:code`)
 `text_format_degraded`, `front_levels_flattened`, `front_states_dropped`,
 `subsystem_fronts_dropped`, `spans_repaired`, `switch_update_ignored`, `message_split`,
 `asset_uri_only`, `asset_missing`, `asset_corrupt`, `merge_undated`, `event_archived`,
-`history_inconsistent`.
+`history_inconsistent`, `permission_dropped`.
 
 ### 10.4 The import report
 
@@ -818,7 +848,8 @@ Kept with the spec and changed by pull request:
   namespaces; shared with PluralPort: `prism`, `sheaf`, `simply_plural`, `pluralkit`, `octocon`,
   `plural_star`, `lighthouse`, `openselves`, `ampersand`, `pluralspace`, `tupperbox`, and
   `chorus`. Others use reverse-DNS names until registered.
-- **Label kinds** (§4.5), **modules** (§3.4) and **warning codes** (§10.3).
+- **Label kinds** (§4.5), **permissions** (§4.8), **modules** (§3.4) and **warning codes**
+  (§10.3).
 - **Custom event types** apps want standardised, and the **upgrades** that standardise them
   (§9.5).
 
@@ -864,7 +895,7 @@ history, and the fields listed in PRIOR_ART.md.
 | --- | --- |
 | system `id`, `uuid` | `System` + `source_refs {app: pluralkit, collection: system, id, uuid}` |
 | `tag`, `pronouns`, `avatar_url`, `banner`, `color`, `description` | same fields; URLs → URI-only assets |
-| `privacy.*_privacy` | `audience` / `field_audience`: `public` → the PUBLIC class (created if needed), `private` → only the system |
+| `privacy.*_privacy` | `audience` / `field_audience`: `public` → the PUBLIC class (created if needed), `private` → only the system; system-level `front_privacy`, `front_history_privacy`, `member_list_privacy`, `group_list_privacy` = `public` → grants `front.view`, `front.history`, `members.list`, `groups.list` on the PUBLIC class |
 | `members[]` | `Member`; `proxy_tags` as is; `keep_proxy`, `tts`, `autoproxy_enabled`, `webhook_avatar_url`, message count → `ext.pluralkit` |
 | `groups[]` (`members` inline) | `Group` + `GroupMembership` per member; `icon` → `emoji` if an emoji, else an asset |
 | `switches[] {timestamp, members}` | `FrontSwitch` REPLACE, entries FRONTING in PluralKit's order (which becomes `position`), none primary: PluralKit has order but no primary; then the fold |
@@ -885,7 +916,7 @@ history, and the fields listed in PRIOR_ART.md.
 | `channels`, `channelCategories`, `chatMessages` | `Channel` (`category` = category name), `Message` |
 | `polls` | `Poll` + `Vote` |
 | `privacyBuckets` | `VisibilityClass` CUSTOM each; legacy `private` / `preventTrusted` flags → only the system / a CUSTOM "Trusted" class |
-| `friends` | `Contact` + the FRIENDS class; bucket assignments → `Contact.class_ids` |
+| `friends` | `Contact` + the FRIENDS class; bucket assignments → `Contact.class_ids`; per-friend settings (see members, see front, front notifications) → grants on the matching class (`members.list`, `front.view`, `front.notify`) |
 | reminders | custom events `simply_plural:reminder.*` and `ext.simply_plural` until the `reminders` module exists |
 
 ### A.4 PluralSpace GDPR export → PluralSpec
@@ -899,7 +930,7 @@ history, and the fields listed in PRIOR_ART.md.
 | `chat_channels[].messages[]` (`member_name` only) | `Channel`, `Message`; authors resolved by name → placeholders + `identity_by_name` |
 | `member_groups[]` | `Group` (flat; `hierarchy_dropped`) + memberships from the group side |
 | `polls[]` | `Poll` + `Vote` |
-| sharing roles (Owner, Partner, Trusted Friend, Friend) | `VisibilityClass` CUSTOM per role except Friend → FRIENDS; Owner is the system itself |
+| sharing roles (Owner, Partner, Trusted Friend, Friend) | `VisibilityClass` CUSTOM per role except Friend → FRIENDS; Owner is the system itself; each role's permissions → grants (unmatched ones namespaced `pluralspace:*`) |
 | `media_files[]`, `media/` | `Asset` + blobs |
 
 ### A.5 Chorus → PluralSpec
@@ -915,7 +946,7 @@ history, and the fields listed in PRIOR_ART.md.
 | `front_interval` | `FrontSpan` in the system front (`front` → FRONTING, `cocon` → CO_CONSCIOUS, `present` → PRESENT) |
 | `post` kind note / entry | `Post` POST / ENTRY |
 | `space` internal + `channel` + `message` (+ segments) | `Channel`, `Message`; text + entities → `RichText.entities`, positions as they are (`text_offset_unit` UTF16) |
-| `bucket`, follows | `VisibilityClass` CUSTOM per bucket, the FRIENDS class for followers, INSTANCE for `server` |
+| `bucket`, follows | `VisibilityClass` CUSTOM per bucket, the FRIENDS class for followers, INSTANCE for `server`; follower ceilings → grants: `front.notify` (delay, fuzz, time shown, digest, quiet hours in `params.chorus`), `front.view`, `front.history`, `front.stats` from the ceiling's `share_current_front`, `share_history`, `share_stats` |
 | visibility JSON | `Audience` (`followers` → FRIENDS class, `server` → INSTANCE class, `buckets` → their classes, `members` → `member_ids`, `private` / `system_only` → empty) |
 | `reaction`, `emoji` | `Reaction`, `CustomEmoji` |
 | `relationship`, `reltype` | `Relationship`, `RelationshipType` |
