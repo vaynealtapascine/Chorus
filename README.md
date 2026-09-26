@@ -59,5 +59,5 @@ For development: `cargo run -p chorus-server -- --dev serve` (port 5251) and, in
 
 MIT. See [LICENSE](LICENSE).
 
-The PluralSpec data format in [`spec/`](spec/) is licensed separately under CC BY-NC-SA 4.0 (see
-[spec/LICENSE](spec/LICENSE)).
+The PluralSpec data format in [`spec/`](spec/) is licensed separately: its schema and examples
+under CC BY 4.0, its text under CC BY-NC-SA 4.0 (see [spec/LICENSE](spec/LICENSE)).

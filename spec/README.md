@@ -32,5 +32,6 @@ buf convert . --type pluralspec.v1.Archive --from /tmp/small.binpb --to /tmp/sma
 
 ## Licence
 
-Everything in `spec/` is [CC BY-NC-SA 4.0](LICENSE); the rest of the Chorus repository is MIT.
-See DESIGN_NOTES D14 for what NonCommercial means for the schema.
+The schema, generated schemas and examples are [CC BY 4.0](LICENSE): any app may use them, with
+attribution. The specification text is [CC BY-NC-SA 4.0](LICENSE). The rest of the Chorus
+repository is MIT (DESIGN_NOTES D14).

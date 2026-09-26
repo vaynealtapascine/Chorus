@@ -57,22 +57,48 @@ independent co-fronting needs no ordering tricks. What only the switch log keeps
 switches and pure reorderings, which is why the log stays as an optional record. Note that with
 history (D11) a file can now also carry every change to spans and switches as events.
 
-## D5 · Subsystem fronting — proposed (owner asked "Fields for subsystem fronting?")
+## D5 · Subsystems, collectives and blends — proposed (in the schema, for review)
 
-Before: a subsystem could only front as a unit (a span whose subject is the group, which needs
-`can_front`). Added in this draft:
+The owner asked for subsystem fronting fields, then how to model blends, fronting for a subsystem,
+and subsystems that "decohere" into separate parts, and answered five questions (2026-09-26):
 
-- **`scope_group_id`** on `FrontSpan` and `FrontSwitch`: each span belongs to a *front* — the
-  system's (empty) or a subsystem's **internal front** (the subsystem's id). A subsystem can be
-  out as a unit in the system front while its own members take turns at its internal front, and
-  it can have internal front history while it isn't out at all.
-- The fold and the invariants run per front (SPEC §5.3–5.5).
-- Existing fields that describe subsystems: `Group.kind = SUBSYSTEM`, `can_front`,
-  `Subsystem.structure` (with / without a main member), `main_member_id`, and a subsystem `tag`.
+> 1. [Is a coherent subsystem its own someone?] Can be. But messages and the like should still be
+>    able to have multiple authors.
+> 2. [Partial decoherence?] Unsure. In our system this can not happen, but I don't want to say
+>    this can't happen in others.
+> 3. [Decohered parts front as?] They can front as themselves, outside of their subsystem.
+> 4. [Parts while coherent?] Yes, they still ~exist, maintain some level of awareness, and can
+>    communicate with each other and separately.
+> 5. [Blends?] For some people they may be named and function separately, but for others this may
+>    just be a feature of each member separately.
 
-SPEC §5.3 has a table of the four situations this covers. For review: are there subsystem
-fronting situations it doesn't cover? Candidates we have not modelled: blends (members merged
-into one), and a member fronting "for" a subsystem without the subsystem itself being out.
+What the draft now has (SPEC §4.2, §4.4, §5.3, §5.4, §7.3):
+
+- **Internal fronts** (`scope_group_id` on spans and switches): each subsystem can have its own
+  front — who leads inside it, and who is aware inside it.
+- **Composite members** (`Member.composition`: COLLECTIVE, BLEND, FUSION). Answer 1: a subsystem
+  *may* have a coherent self (`Subsystem.collective_member_id`), a full member that fronts, speaks
+  and writes; one that doesn't simply fronts as its group. Messages and posts keep several
+  authors: a collective can write alone or with some of its parts, and parts can write any time.
+- **Parts go on existing** (answer 4): while the collective fronts in the system front, its parts
+  can have spans in the subsystem's internal front (typically CO_CONSCIOUS). A member may be in
+  both fronts at once; within one front they are in one place at a time.
+- **Decohered parts front as themselves** (answer 3): ordinary spans, not tied to the subsystem.
+  `for_group_id` is only for someone fronting *on behalf of* a subsystem.
+- **Partial decoherence is allowed, not assumed** (answer 2): `part_member_ids` on a collective's
+  span may list fewer than all its parts; empty means all.
+- **Blends in both forms** (answer 5): spans that share a `blend_id` (each member still
+  themselves: blending as a feature of their fronting), or a BLEND composite that is its own
+  someone, named or not. A consumer with only one form converts the other, with a warning.
+
+The example (`examples/small-system.json`) has a blend of Moss and Wren each still themselves, the
+Garden fronting as a group, Moss leading inside it, and then the Garden coherent as its own
+someone with Moss and Wren aware inside.
+
+Still open for the owner: whether blends need a *degree* (a little blended, fully blended);
+whether a collective's parts should be listed as co-authors automatically when it writes; and
+whether a subsystem that is out as its group (no identity of its own) and a collective should be
+one concept or two, as now.
 
 ## D6 · Custom fronts are their own record — settled
 
@@ -90,41 +116,34 @@ entity spans, message segments, quote ranges (SPEC §2.6). Chorus writes UTF16 a
 conversion. A third option (Unicode code points, native to Python and Swift) can be added later
 as a new enum value without breaking anything.
 
-## D8 · Visibility classes are records — proposed (owner: "customizable … their own record")
+## D8 · Visibility classes with permissions — settled
 
-> "Visibilities classes should be customizable and so they should be their own record."
+> "Visibilities classes should be customizable and so they should be their own record." … "yes,
+> it should also be able to carry perms."
 
-Replaces the fixed tiers and `Bucket` of the first draft:
-
-- **`VisibilityClass`** record: `name`, `description`, `color`, `emoji`, `sort_key`, and a
-  `kind` that says who is in it — CUSTOM (contacts assigned via `Contact.class_ids`), FRIENDS,
-  INSTANCE, PUBLIC. Built-in kinds are records too, so a system can rename "Friends" to
-  "Followers" or colour "Public". `includes_class_ids` nests classes ("Partners" ⊂ "Close
-  friends").
+- **`VisibilityClass`** record: `name`, `description`, `color`, `emoji`, `sort_key`, a `kind`
+  that says who is in it — CUSTOM (contacts assigned via `Contact.class_ids`), FRIENDS,
+  INSTANCE, PUBLIC — and `includes_class_ids` for nesting ("Partners" ⊂ "Close friends").
+  Built-in kinds are records too, so a system can rename or colour them.
 - **`Audience`** = `class_ids` (the system plus everyone in those classes) or `member_ids` (an
-  in-system limit), or empty for "only the system".
-- Narrowing when a target can't express a class uses the kinds' subset order (SPEC §4.7), so a
-  custom class is never widened to "friends".
+  in-system limit), or empty for "only the system". Narrowing never widens (SPEC §4.7).
+- **Permissions** (SPEC §4.8): each class carries `grants`, each a registered or namespaced
+  `permission` with optional `params`: `front.view`, `front.history`, `front.stats`,
+  `front.notify` (params for delays and digests — Chorus's follower ceilings live here),
+  `front.log`, `members.list`, `groups.list`, `posts.reply`, `posts.react`, `messages.send`,
+  `polls.vote`. Grants add up; there are no denials; the audience of each record stays the
+  ceiling, so a grant never reveals a record hidden from the class.
 
-For review: whether classes should also carry *permissions* (PluralSpace's roles decide what a
-friend can do, not only see — e.g. "can see front history"). The draft expresses those as the
-audience of each record type, which covers seeing but not acting.
-
-## D9 · Files: a ZIP container with a record stream, optional age encryption — proposed
+## D9 · Files: ZIP container with a record stream; age for encryption — settled
 
 `manifest.json` + `data.jsonl` or `data.binpb` + content-addressed `blobs/`, or a single JSON
 document for small files (SPEC §3.3).
 
-> "What do you mean by age layer?"
+> "What do you mean by age layer?" … "ah ok. yeah."
 
-**age** ([age-encryption.org](https://age-encryption.org/v1)) is a small, modern, widely reviewed
-format and tool for encrypting a whole file, with implementations in Go, Rust (rage), TypeScript
-(typage) and others. "An age layer" means: take the finished `.pluralspec` file and encrypt the
-whole thing with age, giving `system.pluralspec.age`, with either a passphrase or a public key.
-Decrypting gives back the ordinary file. PluralSpec would recommend it for FULL exports (which
-contain everything private) instead of inventing its own encryption or relying on ZIP's
-password protection, which is weak or unevenly supported. For review: keep age as the
-recommended encryption, or leave encryption out of the spec entirely?
+Encryption is the whole finished file encrypted with **age** ([age-encryption.org](https://age-encryption.org/v1)),
+by passphrase or public key: `system.pluralspec.age`; decrypting gives back the ordinary file.
+Recommended for FULL exports; PluralSpec defines no encryption of its own (SPEC §3.5).
 
 ## D10 · Closed enums vs open vocabularies — proposed
 
@@ -171,19 +190,17 @@ A system's own channels and messages, plus what it can read in shared channels (
 `shared`, external authors as display names). Spaces, roles and permissions between accounts
 are server state and out of scope.
 
-## D14 · Licence — settled: CC BY-NC-SA 4.0
+## D14 · Licence — settled: schema CC BY 4.0, text CC BY-NC-SA 4.0
 
-> "CC BY-SA-NC."
+> "CC BY-SA-NC." … "I think the schema should be CC-BY, but the text should be NC."
 
-The whole `spec/` directory (text, schema, examples) is under CC BY-NC-SA 4.0 (`spec/LICENSE`);
-the rest of the Chorus repository stays MIT. Consequences worth knowing before 1.0:
-
-- The `.proto` files are copied into implementations and compiled into their code, so
-  **NonCommercial also applies to the schema**: an app that charges money (as Simply Plural's
-  paid tier did) could not use the schema files as they are. If that is not the intent, the
-  schema could be licensed separately (e.g. MIT) while the prose stays BY-NC-SA.
-- PluralPort is MIT. Proposals sent there are the owner's to license as the owner likes, but
-  text copied from this spec into PluralPort would need the owner's permission under MIT terms.
+- **Schema and data** — `proto/`, generated schemas (`schema/`), `examples/`, and fixtures
+  published with the spec — are **CC BY 4.0**: any app, commercial or not, may compile them into
+  its code, with attribution. Each `.proto` carries `SPDX-License-Identifier: CC-BY-4.0`.
+- **Specification text** — the Markdown documents — is **CC BY-NC-SA 4.0**.
+- The rest of the Chorus repository stays MIT. `spec/LICENSE` says all of this.
+- PluralPort is MIT; proposals sent there are the owner's to license, and text copied from this
+  spec into PluralPort needs the owner's permission under MIT terms.
 
 ## D15 · Where the spec lives — settled
 

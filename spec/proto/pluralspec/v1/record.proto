@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: CC-BY-4.0
 // PluralSpec v0.1 draft — the record union, and history (module "history").
 //
 // History is a log of Events. A standard event is a change to one record (created, updated,

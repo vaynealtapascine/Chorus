@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: CC-BY-4.0
 // PluralSpec v0.1 draft — core records: the system, its members, custom states, groups and
 // subsystems, labels, and visibility classes.
 syntax = "proto3";
@@ -101,9 +102,32 @@ message Member {
   bool locked = 26;
   Audience audience = 27;
   map<string, Audience> field_audience = 28;
+  // Set when this member is several members together: a subsystem's coherent self, a blend
+  // that is its own someone, or a lasting fusion (SPEC.md §5.3). Unset for everyone else.
+  Composition composition = 29;
 
   repeated SourceRef source_refs = 900;
   map<string, google.protobuf.Struct> ext = 901;
+}
+
+message Composition {
+  CompositionKind kind = 1;
+  // The members it is made of. For a COLLECTIVE with group_id set, leave empty: its parts are
+  // the group's members.
+  repeated string member_ids = 2;
+  // COLLECTIVE: the subsystem whose coherent self this is.
+  string group_id = 3;
+}
+
+enum CompositionKind {
+  COMPOSITION_KIND_UNSPECIFIED = 0;
+  // A subsystem's coherent self. Its parts go on existing (aware, able to talk and to front on
+  // their own) whether or not it is coherent.
+  COMPOSITION_KIND_COLLECTIVE = 1;
+  // Members blended into someone who functions as their own person, for a while or recurring.
+  COMPOSITION_KIND_BLEND = 2;
+  // A lasting merge; the parts are usually archived with a reason.
+  COMPOSITION_KIND_FUSION = 3;
 }
 
 // PluralKit-style proxy tag: a message wrapped in prefix…suffix is sent as the member.
@@ -180,6 +204,8 @@ message Subsystem {
   string main_member_id = 2;
   // A tag of its own, shown like System.tag.
   string tag = 3;
+  // The subsystem's coherent self, if it has one: a Member with a COLLECTIVE composition.
+  string collective_member_id = 4;
 }
 
 enum SubsystemStructure {
@@ -271,9 +297,21 @@ message VisibilityClass {
   // Classes whose members are all in this one too ("Partners" inside "Close friends"): an app
   // that shows one class may show everyone in the classes listed here. Must not form a cycle.
   repeated string includes_class_ids = 17;
+  // What people in the class may see and do beyond reading records whose audience includes
+  // the class (SPEC.md §4.8). Grants add up; there are no denials.
+  repeated Grant grants = 18;
 
   repeated SourceRef source_refs = 900;
   map<string, google.protobuf.Struct> ext = 901;
+}
+
+// One permission given to a visibility class.
+message Grant {
+  // Registered ("front.view", "front.history", "posts.reply", …; SPEC.md §4.8) or namespaced
+  // ("chorus:front.stats").
+  string permission = 1;
+  // Settings for the permission, if it has any (e.g. how soon switch notifications arrive).
+  google.protobuf.Struct params = 2;
 }
 
 enum VisibilityClassKind {

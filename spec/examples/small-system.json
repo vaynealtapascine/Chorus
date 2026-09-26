@@ -24,8 +24,8 @@
     "body_encoding": "BODY_ENCODING_JSON_DOCUMENT",
     "counts": {
       "system": "1",
-      "member": "2",
-      "front_span": "5"
+      "member": "4",
+      "front_span": "10"
     },
     "warnings": [
       {
@@ -125,6 +125,29 @@
         "🌿"
       ],
       "sort_key": "a1"
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000012",
+      "created_at": "2026-01-02T10:07:00Z",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "name": "Wren",
+      "pronouns": "she/her",
+      "sort_key": "a2"
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000013",
+      "created_at": "2026-02-10T12:00:00Z",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "name": "Garden",
+      "pronouns": "we/us",
+      "description": {
+        "plain": "The Garden, when we're together."
+      },
+      "sort_key": "a3",
+      "composition": {
+        "kind": "COMPOSITION_KIND_COLLECTIVE",
+        "group_id": "01923e6a-0000-7000-8000-000000000030"
+      }
     }
   ],
   "states": [
@@ -144,7 +167,8 @@
       "can_front": true,
       "subsystem": {
         "structure": "SUBSYSTEM_STRUCTURE_WITH_MAIN",
-        "main_member_id": "01923e6a-0000-7000-8000-000000000011"
+        "main_member_id": "01923e6a-0000-7000-8000-000000000011",
+        "collective_member_id": "01923e6a-0000-7000-8000-000000000013"
       }
     }
   ],
@@ -154,6 +178,13 @@
       "group_id": "01923e6a-0000-7000-8000-000000000030",
       "subject": {
         "member_id": "01923e6a-0000-7000-8000-000000000011"
+      }
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000032",
+      "group_id": "01923e6a-0000-7000-8000-000000000030",
+      "subject": {
+        "member_id": "01923e6a-0000-7000-8000-000000000012"
       }
     }
   ],
@@ -262,7 +293,8 @@
         "group_id": "01923e6a-0000-7000-8000-000000000030"
       },
       "level": "FRONT_LEVEL_CO_CONSCIOUS",
-      "started_at": "2026-09-26T08:30:00Z"
+      "started_at": "2026-09-26T08:30:00Z",
+      "ended_at": "2026-09-26T10:00:00Z"
     },
     {
       "id": "01923e6a-0000-7000-8000-000000000064",
@@ -273,7 +305,62 @@
       },
       "level": "FRONT_LEVEL_FRONTING",
       "primary": true,
-      "started_at": "2026-09-26T08:30:00Z"
+      "started_at": "2026-09-26T08:30:00Z",
+      "ended_at": "2026-09-26T10:00:00Z"
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000065",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "subject": {
+        "member_id": "01923e6a-0000-7000-8000-000000000011"
+      },
+      "level": "FRONT_LEVEL_FRONTING",
+      "started_at": "2026-09-26T06:00:00Z",
+      "ended_at": "2026-09-26T06:30:00Z",
+      "blend_id": "01923e6a-0000-7000-8000-0000000000f1"
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000066",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "subject": {
+        "member_id": "01923e6a-0000-7000-8000-000000000012"
+      },
+      "level": "FRONT_LEVEL_FRONTING",
+      "position": 1,
+      "started_at": "2026-09-26T06:00:00Z",
+      "ended_at": "2026-09-26T06:30:00Z",
+      "blend_id": "01923e6a-0000-7000-8000-0000000000f1"
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000067",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "subject": {
+        "member_id": "01923e6a-0000-7000-8000-000000000013"
+      },
+      "level": "FRONT_LEVEL_FRONTING",
+      "position": 1,
+      "started_at": "2026-09-26T10:00:00Z"
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000068",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "scope_group_id": "01923e6a-0000-7000-8000-000000000030",
+      "subject": {
+        "member_id": "01923e6a-0000-7000-8000-000000000011"
+      },
+      "level": "FRONT_LEVEL_CO_CONSCIOUS",
+      "started_at": "2026-09-26T10:00:00Z"
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000069",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "scope_group_id": "01923e6a-0000-7000-8000-000000000030",
+      "subject": {
+        "member_id": "01923e6a-0000-7000-8000-000000000012"
+      },
+      "level": "FRONT_LEVEL_CO_CONSCIOUS",
+      "position": 1,
+      "started_at": "2026-09-26T10:00:00Z"
     }
   ],
   "front_switches": [
@@ -390,7 +477,18 @@
       "system_id": "01923e6a-0000-7000-8000-000000000001",
       "kind": "VISIBILITY_CLASS_KIND_FRIENDS",
       "name": "Friends",
-      "sort_key": "b0"
+      "sort_key": "b0",
+      "grants": [
+        {
+          "permission": "front.view"
+        },
+        {
+          "permission": "members.list"
+        },
+        {
+          "permission": "posts.react"
+        }
+      ]
     },
     {
       "id": "01923e6a-0000-7000-8000-000000000090",
@@ -398,7 +496,22 @@
       "kind": "VISIBILITY_CLASS_KIND_CUSTOM",
       "name": "Close friends",
       "color": "#d98fa3",
-      "sort_key": "a0"
+      "sort_key": "a0",
+      "grants": [
+        {
+          "permission": "front.history"
+        },
+        {
+          "permission": "front.notify",
+          "params": {
+            "chorus": {
+              "delay_min_s": 300,
+              "delay_max_s": 1200,
+              "time_shown": "rounded_15"
+            }
+          }
+        }
+      ]
     }
   ],
   "events": [

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: CC-BY-4.0
 // PluralSpec v0.1 draft — custom fields: a definition set up once, values filled in per subject.
 syntax = "proto3";
 

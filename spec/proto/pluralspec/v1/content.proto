@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: CC-BY-4.0
 // PluralSpec v0.1 draft — optional modules: posts (notes, journals, board messages, microposts),
 // reactions, relationships, contacts and polls.
 syntax = "proto3";
