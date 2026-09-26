@@ -14,7 +14,7 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** (owner, 2026-09-25) no release until the owner's UI redesign lands (Figma, from docs/FLOWS.md + ENTITIES.md); until then features + a robust core and messaging/channels. **Remote Claude**: batch R4 (`docs/handoff/opus-remote-4.md`: wasm headroom, rebuild replay speed, account import, REST fuzzing, the web client under failure); R3 merged. **Claude (local)**: op payload validation hardening + fuzzing, audits/merges. **gpt-6-sol**: Android (`docs/handoff/sol-batch-5.md`). Chorus Home paused until the designs.
+- **In progress:** (owner, 2026-09-25) no release until the owner's UI redesign lands (Figma, from docs/FLOWS.md + ENTITIES.md); until then features + a robust core and messaging/channels. **Remote Claude**: batch R5 (`docs/handoff/opus-remote-5.md`: PluralSpec crate, fixtures, validator, converters, Chorus export/import; flaky rest_fuzz); R4 merged. **Claude (local)**: op payload validation hardening + fuzzing, audits/merges. **gpt-6-sol**: Android (`docs/handoff/sol-batch-5.md`). Chorus Home paused until the designs.
 - **Owner:** deploy `main` to the PC service: `pwsh scripts/deploy.ps1 -Android` (the 2026-09-24 attempt failed on Java 8 from JAVA_HOME after copying only the web app; fixed in 63d1481/9bcc709, so rerun it). The server backs the database up to `backups/pre-migrate-<time>.db` and then applies migrations 0005 (an index) and 0006 (fills in reply/repost links). Behaviour changes to expect: API requests are rate limited (50 burst, 10/s per token; `security.rate_burst`/`rate_per_second` in chorus.toml), the web app is served with a strict CSP, an open restore window now closes by itself 7 days after a restore (`chorus-server reconcile-status` shows it), and blobs are no longer cacheable by shared caches. Phone: Battery Saver is off (2026-09-24); the owner is using the phone, so agree device time before adb work. Chrome notifications are allowed for chorus.vayne.garden: after the deploy, test Web Push from the People page opt-in.
 - **Next concrete step:** see Notes
 - **Notes:** State 2026-09-23 (end of Claude session 2). Since gpt-6-sol's turn: audited + finished M5.12 Trash (fixed early out-of-order restores being rejected permanently); Android quick-switch widget + search launcher (RemoteViews, D-058; built + unit-tested, **not yet run on a device** — the phone dropped off adb); follows end to end (M6.1: server-written requests/prefs, People page with presets; per-member "followers hear when X fronts"); switch notifications core (`chorus_core::notify`) + server scheduler (`notifier.rs`) + follower view/inbox on the web — verified in the browser that nothing is revealed before due. **C: has <1 GB free: always `CARGO_TARGET_DIR=F:\DunBuild\chorus-target` and `CHORUS_GRADLE_BUILD_DIR=F:\DunBuild\chorus-gradle`** (deploy/web/android scripts honour them now; the dev-server launch config runs the F: release exe, so stop it before `cargo build --release`). The stale `Chorus\target` on C: was cargo-cleaned on 2026-09-23 (C: had hit 0 bytes free), and deleted again later that day after verify runs had refilled it to 12.7 GB; `verify.py` now defaults `CARGO_TARGET_DIR` to `F:\DunBuild\chorus-target` when unset. Keep building on F:. Owner reran install.cmd on 2026-09-23; the Chorus service is running again. Session 3 (same day) added: webhooks, more REST reads, write:front tokens + POST /front/switch, Web Push (D-061, owner question Q13), shared spaces + DMs (M6.2 server + web), QR device invites, device sign-out — see the log. Suggested next: device check of M4.2/M4.5/M4.6 when the phone is on adb; M6.2 on Android; a real-browser Web Push check once Q13 is answered; M9 stage mode; M7 journals.
@@ -158,14 +158,19 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M13.4 Web setup page and settings
 - [ ] M13.5 Android: pinned self-signed certificate from `#pin=` invites; mDNS rediscovery
 - [x] M13.6 Release build (`ChorusHome-<version>.exe`) in CI, linked from the landing page
-### M14 · Open data spec (PSDS, spec/)
+### M14 · PluralSpec, the open data format (spec/, D-077)
 
-- [x] M14.1 Prior-art survey: OpenPlural v0.1, PluralKit, Simply Plural, PluralSpace, the owner's 2024 plural.proto, Chorus (spec/PRIOR_ART.md). PluralSpec not found; waiting for a link from the owner
-- [x] M14.2 Base draft 0.1.0 (spec/SPEC.md) + design notes with open decisions D0–D15 (spec/DESIGN_NOTES.md)
-- [x] M14.3 proto3 schema (spec/proto/psds/v1), `buf build` + `buf lint` (STANDARD) clean; examples/small-system.json round-trips JSON → binary → JSON with `buf convert`
-- [ ] M14.4 Owner settles D0–D15 (name, OpenPlural relationship, text offsets, …)
-- [ ] M14.5 0.2: generated JSON Schema, fixtures per mapped app, validator CLI (V1–V10)
-- [ ] M14.6 Chorus: `chorus-psds` crate (prost + protox), export FULL/SHARED, import PSDS + OpenPlural through normal ingestion
+- [x] M14.1 Prior-art survey: PluralPort (formerly OpenPlural) v0.1, PluralKit, Simply Plural, PluralSpace, the owner's 2024 plural.proto, Chorus (spec/PRIOR_ART.md)
+- [x] M14.2 Base draft 0.1.0 (spec/SPEC.md) + design notes (spec/DESIGN_NOTES.md)
+- [x] M14.3 proto3 schema (spec/proto/pluralspec/v1), `buf build` + `buf lint` (STANDARD) clean; examples/small-system.json round-trips JSON → binary → JSON with `buf convert`
+- [~] M14.4 Owner decisions: D0–D4, D6, D7, D12, D14, D15 settled 2026-09-26 and applied (name PluralSpec, PluralPort superset, UTF-16 default offsets, CC BY-NC-SA 4.0); new designs for D5 (subsystem internal fronts), D8 (visibility classes as records), D9 (age), D11 (history events) await the owner's review
+- [ ] M14.5 R30 `pluralspec` crate (prost + protox + pbjson), file readers/writers, generated JSON Schema — remote batch R5
+- [ ] M14.6 R31 fixtures per source app + valid/invalid files per rule — remote R5
+- [ ] M14.7 R32 validator CLI (V1–V12) — remote R5
+- [ ] M14.8 R33 converters (PluralKit, Simply Plural, PluralSpace, PluralPort → PluralSpec; → PluralPort) — remote R5
+- [ ] M14.9 R34 Chorus export/import + round-trip test — remote R5
+- [-] M14.10 Proposals to PluralPort — on hold until the owner reviews the spec
+
 ### Later (not v1)
 
 - [ ] L1 Voice messages, video messages
@@ -305,3 +310,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-26 gpt-6-sol — Android Chat can edit the account's own messages. The editor keeps each segment's speakers and UTF-16 rich-text ranges, then queues a `message.edit` through core; edit history was already present. Android build, unit tests and full quick Android verifier pass; phone audit remains batched (details in `docs/handoff/sol-batch-2.md`).
 - 2026-09-26 claude-opus-5.5 — Merged gpt-6-sol V10a–d + share target, shortcuts, offline insights/files (187065b) and remote batch R4 (R25 wasm 288→247 KB gz, R26 rebuild ~30% faster with migration 0009, R27 import-account from an export zip, R28 REST fuzz of all 76 routes, R29 PWA failure suite: two tabs no longer lose each other's messages, a full disk loses nothing). Conflict: Sol moved front_daily into core api while R25 edited the wasm copy; kept Sol's, with core::sort. On Windows: workspace tests, verify --android, all 22 browser tests pass.
 - 2026-09-26 claude-opus-5.5 — M14.1–M14.3 PSDS open data spec: prior-art survey, base draft 0.1.0, proto3 schema (buf build/lint clean, example round-trips); decisions D0–D15 await the owner (spec/DESIGN_NOTES.md)
+- 2026-09-26 claude-opus-5.5 — M14 PluralSpec second revision: owner decisions D0–D15 applied (renamed from PSDS; PluralPort superset; UTF-16 default text offsets; visibility classes as records; subsystem internal fronts; history module with standard + custom events and forward upgrades; CC BY-NC-SA 4.0 for spec/); D-077; remote batch R5 written for readiness steps 1–4
