@@ -43,6 +43,10 @@ def bundle_budgets(assets):
 
 
 def main():
+    # ▶ and ✓ crash a Windows console codepage when the output goes through a pipe
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8')
     # the owner's C: is nearly full: build on F: there unless told otherwise (NOTES, PROGRESS)
     roomy = r'F:\DunBuild\chorus-target'
     if os.name == 'nt' and 'CARGO_TARGET_DIR' not in os.environ and os.path.isdir(roomy):
