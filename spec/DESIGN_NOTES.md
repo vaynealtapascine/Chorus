@@ -57,77 +57,48 @@ independent co-fronting needs no ordering tricks. What only the switch log keeps
 switches and pure reorderings, which is why the log stays as an optional record. Note that with
 history (D11) a file can now also carry every change to spans and switches as events.
 
-## D5 · Subsystem fronting — internal fronts proposed; blends, "fronting for" and decoherence open
+## D5 · Subsystems, collectives and blends — proposed (in the schema, for review)
 
-> "Fields for subsystem fronting?" … "What would be a means to model blends, fronting for a
-> subsystem, etc? More broadly, how does this model subsystems that 'decohere' into separate
-> parts (like ours)?"
+The owner asked for subsystem fronting fields, then how to model blends, fronting for a subsystem,
+and subsystems that "decohere" into separate parts, and answered five questions (2026-09-26):
 
-**In the draft now:** a subsystem can front as a unit (a span whose subject is the group, which
-needs `can_front`), and each subsystem can have an **internal front** (`scope_group_id` on
-spans and switches: who is at the front *inside* it). SPEC §5.3.
+> 1. [Is a coherent subsystem its own someone?] Can be. But messages and the like should still be
+>    able to have multiple authors.
+> 2. [Partial decoherence?] Unsure. In our system this can not happen, but I don't want to say
+>    this can't happen in others.
+> 3. [Decohered parts front as?] They can front as themselves, outside of their subsystem.
+> 4. [Parts while coherent?] Yes, they still ~exist, maintain some level of awareness, and can
+>    communicate with each other and separately.
+> 5. [Blends?] For some people they may be named and function separately, but for others this may
+>    just be a feature of each member separately.
 
-**What the draft cannot say about a subsystem that decoheres into separate parts:**
+What the draft now has (SPEC §4.2, §4.4, §5.3, §5.4, §7.3):
 
-- *Coherent*: the subsystem fronts as its group, but a group is not a full someone: it can't
-  author messages or posts, and has no pronouns, proxy tags or member fields.
-- *Decohered*: its parts front as ordinary members, and nothing ties those spans back to the
-  subsystem, so "was the subsystem out?" misses those hours.
-- *Partly decohered*: a group span and a member span at the same time can't say that the member
-  is no longer inside the group.
-- *Blends* (members merged for a while): no way at all.
+- **Internal fronts** (`scope_group_id` on spans and switches): each subsystem can have its own
+  front — who leads inside it, and who is aware inside it.
+- **Composite members** (`Member.composition`: COLLECTIVE, BLEND, FUSION). Answer 1: a subsystem
+  *may* have a coherent self (`Subsystem.collective_member_id`), a full member that fronts, speaks
+  and writes; one that doesn't simply fronts as its group. Messages and posts keep several
+  authors: a collective can write alone or with some of its parts, and parts can write any time.
+- **Parts go on existing** (answer 4): while the collective fronts in the system front, its parts
+  can have spans in the subsystem's internal front (typically CO_CONSCIOUS). A member may be in
+  both fronts at once; within one front they are in one place at a time.
+- **Decohered parts front as themselves** (answer 3): ordinary spans, not tied to the subsystem.
+  `for_group_id` is only for someone fronting *on behalf of* a subsystem.
+- **Partial decoherence is allowed, not assumed** (answer 2): `part_member_ids` on a collective's
+  span may list fewer than all its parts; empty means all.
+- **Blends in both forms** (answer 5): spans that share a `blend_id` (each member still
+  themselves: blending as a feature of their fronting), or a BLEND composite that is its own
+  someone, named or not. A consumer with only one form converts the other, with a warning.
 
-**Proposal: composite identities** (not in the schema yet; waiting for the questions below).
+The example (`examples/small-system.json`) has a blend of Moss and Wren each still themselves, the
+Garden fronting as a group, Moss leading inside it, and then the Garden coherent as its own
+someone with Moss and Wren aware inside.
 
-1. **`Member.composition`** `{kind, member_ids, group_id}`: a member who *is* several members
-   together. Because it is a Member, it can speak, write, have pronouns, proxy tags, fields and a
-   profile, and front like anyone.
-   - `COLLECTIVE`: a subsystem's coherent self. `group_id` points at the subsystem and its parts
-     follow the group's membership; `Subsystem.collective_member_id` points back.
-   - `BLEND`: two or more members merged for a while. May be unnamed (apps show "Kai + Moss"),
-     and is reused when the same parts blend again.
-   - `FUSION`: a lasting merge; the parts are usually archived with a reason.
-2. **`FrontSpan.parts`**: for a composite subject, which parts are in it during this span
-   (empty = all). This is what makes *partial* decoherence expressible.
-3. **`FrontSpan.for_group_id`**: this subject is out *as part of*, or *on behalf of*, a subsystem
-   without the subsystem itself being the subject. Covers both "fronting for a subsystem" and
-   the parts of a decohered subsystem.
-4. **Invariant**: in each front, a member is in one place at a time: not inside a composite's
-   `parts` and also in a span of their own.
-5. Internal fronts (`scope_group_id`) stay, for what happens inside a subsystem.
-
-A decohering day, with "the Garden" (Kai, Moss, Wren) and its collective self "Garden":
-
-| Time | Spans in the system front |
-| --- | --- |
-| 09:00–11:00 | Garden (collective), parts: all |
-| 11:00–12:30 | Garden, parts: Kai, Wren · Moss (for the Garden) |
-| 12:30–14:00 | Kai, Moss, Wren, each for the Garden |
-| 14:00– | Garden, parts: all |
-| 16:00–16:45 | Kai + Moss (a blend) · Wren (for the Garden) |
-
-"Was the Garden out?" = spans of its collective, of the group itself, or `for_group_id` = it.
-"Who was actually there?" = the parts plus everyone with a span of their own.
-
-Apps without composites keep a composite as an ordinary member and put `parts` / `for_group_id`
-in `ext` with a `composition_flattened` warning, so nothing is lost on the way through.
-
-Alternatives considered: a span-level `blend_key` (spans sharing it fronted blended) is lighter
-for one-off blends but can't be named or speak; making every member able to contain members (the
-2024 sketch) is the most direct model but no other app could map it, while a composite member
-linked to a group gives the same result and stays mappable.
-
-**Questions for the owner** (the answers decide the details):
-
-1. When your subsystem is coherent, is it its own someone (a name, pronouns, speaking as itself),
-   or the parts together without an identity of their own?
-2. Can it partly decohere (some parts split off while the rest stays together)?
-3. When decohered, do the parts front "as the subsystem" (it still counts as out) or simply as
-   themselves?
-4. While it is coherent, are the parts still there in some sense (aware inside, reachable), or not
-   present at all?
-5. Should blends be their own someone (named, able to post), or only a record that these
-   members fronted blended?
+Still open for the owner: whether blends need a *degree* (a little blended, fully blended);
+whether a collective's parts should be listed as co-authors automatically when it writes; and
+whether a subsystem that is out as its group (no identity of its own) and a collective should be
+one concept or two, as now.
 
 ## D6 · Custom fronts are their own record — settled
 

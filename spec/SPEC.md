@@ -54,6 +54,10 @@ and `ext`).
   (`Terminology`).
 - **State**: something that can front but is not a member: a custom front or status.
 - **Subsystem**: a system within the system: a `Group` of kind SUBSYSTEM.
+- **Composite**: a member who is several members together: a subsystem's coherent self
+  (collective), a blend that is its own someone, or a lasting fusion (§5.3).
+- **Blend**: members fronting merged; either each still themselves (a shared `blend_id`) or as a
+  composite of their own (§5.3).
 - **Subject**: whatever a front, a label or a field is about: a member, a group, a state, or the
   system (`SubjectRef`).
 - **Front**: who is at the front of the system, or at the front *within* a subsystem (§5.3).
@@ -301,6 +305,11 @@ concept. A file MAY contain several systems (`manifest.system_ids`).
 gate the member behind a PIN; consumers that support locks SHOULD honour it. `archived_at` +
 `archived_reason` cover dormant and integrated members.
 
+A member MAY be a **composite**, several members together (`composition`): a subsystem's
+coherent self (COLLECTIVE), a blend that is its own someone (BLEND), or a lasting merge
+(FUSION). A composite is a full member in every other respect. Compositions MUST NOT contain
+themselves, directly or through other composites. See §5.3.
+
 ### 4.3 State (custom fronts and statuses)
 
 A `State` can front like a member but is not one: it is not counted as a member, cannot author,
@@ -315,8 +324,9 @@ A `Group` has `kind` GROUP (organisation) or SUBSYSTEM (a system within the syst
 through `parent_group_id`; a member may be in many groups. A group with `can_front` may be a
 front subject, fronting as a unit. A subsystem may also have its own internal front (§5.3).
 
-A subsystem MAY describe its `structure` (WITH_MAIN or WITHOUT_MAIN), `main_member_id` and its
-own `tag`. The main member SHOULD also be a member of the group.
+A subsystem MAY describe its `structure` (WITH_MAIN or WITHOUT_MAIN), `main_member_id`, its
+own `tag`, and its coherent self (`collective_member_id`, a COLLECTIVE composite, §5.3). The main
+member SHOULD also be a member of the group.
 
 A parent cycle is invalid; consumers break it at the record with the largest id and warn
 `hierarchy_repaired`. Nested systems in apps that model subsystems as whole systems (Lighthouse,
@@ -457,26 +467,58 @@ in §5.5. Consumers MUST implement the fold.
   the same front. A change of order alone does not end a span; a change of level or of `primary`
   does.
 
-### 5.3 Fronts and subsystems
+### 5.3 Subsystems, collectives and blends
 
-There is one **system front** (spans with no `scope_group_id`), and each subsystem MAY have its
-own **internal front** (spans whose `scope_group_id` is that subsystem). This covers the ways
-systems describe subsystem fronting:
+**Status:** proposed; waiting for the owner's review (DESIGN_NOTES D5).
+
+**Fronts.** There is one **system front** (spans with no `scope_group_id`), and each subsystem
+MAY have its own **internal front** (spans whose `scope_group_id` is that subsystem): who is at
+the front inside it, and who is aware inside it.
+
+**Collectives.** A subsystem MAY have a coherent self: a Member whose `composition` is
+COLLECTIVE, pointing at the subsystem (`group_id`), with `Subsystem.collective_member_id`
+pointing back. The collective is a full member: it can front, speak, write and have a profile.
+Its parts go on existing while it is coherent: they can be aware inside (spans in the
+subsystem's internal front, typically CO_CONSCIOUS), talk to each other and to others, and front
+as themselves, outside the subsystem.
+
+**Blends.** Two forms, because systems experience blending in two ways, and a file MAY use both:
+
+- **Blended, each still themselves**: each member keeps their own span, and the spans share a
+  `blend_id`. Nobody new fronts; the blend is a feature of those members' fronting.
+- **A blend that is its own someone**: a Member whose `composition` is BLEND (named or not,
+  reused when the same members blend again) fronts, with `part_member_ids` saying who is in it.
+
+A consumer that has only one form converts the other: a BLEND member's span becomes spans for
+its parts sharing a `blend_id` (keeping the blend member as an archived member for authorship),
+and spans sharing a `blend_id` can become an unnamed BLEND member, with a `blend_flattened`
+warning either way.
+
+**Fusions.** A Member whose `composition` is FUSION is a lasting merge; its parts are usually
+archived with an `archived_reason`.
+
+**Fronting on behalf of a subsystem.** `for_group_id` says a subject is out for a subsystem (its
+gatekeeper handling something, say) without the subsystem itself fronting.
 
 | Situation | Spans |
 | --- | --- |
-| The subsystem fronts as one | a span in the system front whose `subject.group_id` is the subsystem (the group has `can_front`) |
-| …and one of its members leads from within | the same, plus a span in the subsystem's internal front for that member (usually `primary`) |
-| Members of the subsystem front individually | spans in the system front for those members; the subsystem is not a subject |
-| Life inside a subsystem while it is not out | spans in the subsystem's internal front only |
+| The subsystem fronts as one, with no identity of its own | a span in the system front whose `subject.group_id` is the subsystem (`can_front`) |
+| The subsystem is coherent as its own someone | a span in the system front for its collective member |
+| …and its parts are aware inside | also spans in the subsystem's internal front for those parts |
+| …and some parts have split off (partial decoherence) | the collective's span lists the remaining `part_member_ids`; the others have spans of their own |
+| It has decohered; its parts front as themselves | ordinary spans for those members; the subsystem is not a subject |
+| One member leads inside the subsystem | a span in the subsystem's internal front, usually `primary` |
+| Someone fronts for the subsystem | a span with `for_group_id` = the subsystem |
+| Members front blended, each still themselves | their spans share a `blend_id` |
+| A blend fronts as its own someone | a span for the BLEND member, with `part_member_ids` |
 
-- `scope_group_id` MUST refer to a Group of kind SUBSYSTEM. A span in a subsystem's internal
-  front SHOULD have a subject that belongs to that subsystem (a member, a state, or a nested
-  subsystem).
-- A switch's `scope_group_id` says which front it changes. The fold (§5.5) runs separately for
-  each front.
-- A consumer without internal fronts keeps the system front and warns `subsystem_fronts_dropped`
-  for the rest (or keeps them in its archive).
+- `scope_group_id` and `for_group_id` MUST refer to Groups of kind SUBSYSTEM. A span in a
+  subsystem's internal front SHOULD have a subject that belongs to that subsystem.
+- A switch's `scope_group_id` says which front it changes; the fold (§5.5) runs separately for
+  each front. Switch entries carry `part_member_ids`, `blend_id` and `for_group_id` like spans.
+- Consumers without these concepts keep what they can and warn: `subsystem_fronts_dropped` for
+  internal fronts, `composition_flattened` for collectives, blends and fusions (the composite
+  stays an ordinary member; `part_member_ids` goes to `ext`), `blend_flattened` for blend ids.
 
 ### 5.4 Invariants
 
@@ -487,6 +529,13 @@ For each front (the system front, and each subsystem's internal front):
 3. At most one FRONTING span is `primary` at any instant.
 4. A group subject has `can_front`.
 5. At most one span per subject is open (no `ended_at`), and it is the subject's latest.
+6. `part_member_ids` is set only when the subject is a composite member, and lists only its parts.
+7. A member is in one place at a time: not in the `part_member_ids` of a composite's span (or,
+   when those are empty, among its parts) while also having a span of their own.
+8. Spans that share a `blend_id` overlap in time.
+
+Across fronts, the same member may appear in both (inside a coherent collective in the system
+front, and aware in its subsystem's internal front).
 
 Validators report violations (§10.2). Consumers SHOULD import a file with violations by trimming
 the earlier of two overlapping spans to end where the later starts, warning `spans_repaired`.
@@ -504,14 +553,16 @@ For each switch `s`:
    - ADD: for each entry, if its subject is in `F`, replace that entry in place; otherwise append
      it.
    - REMOVE: `F'` = `F` without the entries' subjects.
-   - UPDATE: for each entry whose subject is in `F`, set its level and primary in place; entries
-     for subjects not in `F` are ignored with a `switch_update_ignored` warning.
+   - UPDATE: for each entry whose subject is in `F`, set its level, primary, parts, blend id and
+     `for_group_id` in place; entries for subjects not in `F` are ignored with a
+     `switch_update_ignored` warning.
    - In every case, if an entry of `s` is primary, every other entry of `F'` loses primary.
-2. For each subject in `F` that is not in `F'`, or whose level or primary differs: end its open
-   span at `s.at` with `end_switch_id = s.id`.
-3. For each subject in `F'` that was not in `F`, or whose level or primary differs: start a span
-   at `s.at` with `start_switch_id = s.id`, the switch's `scope_group_id`, and `position` = its
-   index among the entries of `F'` at the same level.
+2. For each subject in `F` that is not in `F'`, or whose level, primary, parts, blend id or
+   `for_group_id` differs: end its open span at `s.at` with `end_switch_id = s.id`.
+3. For each subject in `F'` that was not in `F`, or whose level, primary, parts, blend id or
+   `for_group_id` differs: start a span at `s.at` with `start_switch_id = s.id`, the switch's
+   `scope_group_id`, the entry's parts, blend id and `for_group_id`, and `position` = its index
+   among the entries of `F'` at the same level.
 4. `F` = `F'`.
 
 Spans still open at the end have no `ended_at`. A producer writing spans derived this way SHOULD
@@ -586,7 +637,10 @@ channel (e.g. visible only to chosen members).
 
 ### 7.3 Several authors and segments
 
-Several `authors` speak a message **jointly**. `segments` assign parts of the body to other
+Several `authors` speak a message **jointly**. Composites are ordinary authors: a coherent
+collective or a blend may write alone, or alongside some of its parts, and parts may write on
+their own at any time; fronting does not limit authorship. A consumer that flattens composites
+(§5.3) keeps the composite as an author. `segments` assign parts of the body to other
 authors: each segment is a range of the body's plain characters (the markdown source, or
 `entities.text`), counted in the file's text offset unit (§2.6), with its own authors; ranges
 MUST NOT overlap; text outside every segment belongs to `authors`. A consumer that supports one
@@ -736,7 +790,7 @@ A file is **valid** when:
 | V3 | Every reference resolves, or a `reference_unresolved` warning covers it. |
 | V4 | Colours, sort keys and partial dates are well formed (§2.5, §2.3). |
 | V5 | Every FieldValue's case matches its definition's type, and option ids exist in the definition. |
-| V6 | Front spans satisfy §5.4 in every front, and every `scope_group_id` is a SUBSYSTEM. |
+| V6 | Front spans satisfy §5.4 in every front; every `scope_group_id` and `for_group_id` is a SUBSYSTEM; compositions don't contain themselves. |
 | V7 | Text positions lie within their text, on character boundaries in the declared unit, and segments don't overlap. |
 | V8 | Group parents and visibility-class includes form no cycle. |
 | V9 | In a container, `body_sha256` and every blob match their bytes, and every asset with a `sha256` and no `uri` has a blob. |
@@ -756,7 +810,7 @@ Registered codes (producers and consumers MAY add namespaced ones, `myapp:code`)
 `text_format_degraded`, `front_levels_flattened`, `front_states_dropped`,
 `subsystem_fronts_dropped`, `spans_repaired`, `switch_update_ignored`, `message_split`,
 `asset_uri_only`, `asset_missing`, `asset_corrupt`, `merge_undated`, `event_archived`,
-`history_inconsistent`, `permission_dropped`.
+`history_inconsistent`, `permission_dropped`, `composition_flattened`, `blend_flattened`.
 
 ### 10.4 The import report
 
@@ -886,8 +940,9 @@ Reserved names: `reminders`, `habits`, `safety`, `proxy` (Discord proxy settings
 | `extensions` | `ext` |
 
 PluralSpec → PluralPort drops what PluralPort cannot hold, with warnings: custom visibility
-classes (→ `trusted` or `private`), subsystem internal fronts, message segments and co-authors,
-history, and the fields listed in PRIOR_ART.md.
+classes (→ `trusted` or `private`), subsystem internal fronts, compositions and blends (composites
+become ordinary members), message segments and co-authors, history, and the fields listed in
+PRIOR_ART.md.
 
 ### A.2 PluralKit datafile v2 → PluralSpec
 
