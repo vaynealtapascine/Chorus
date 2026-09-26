@@ -19,6 +19,7 @@ chorus-core = { path = "../chorus-core" }
 clap = { version = "4.6.7", features = ["derive"] }
 futures-util = "0.3.34"
 hkdf = "0.12"
+http-body = "1.1.0"
 mimalloc = { version = "0.1.52", default-features = false }
 p256 = { version = "0.14", features = ["ecdh", "ecdsa", "pkcs8"] }
 rand = "0.10.3"

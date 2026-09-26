@@ -480,6 +480,7 @@ dependencies = [
  "clap",
  "futures-util",
  "hkdf 0.12.4",
+ "http-body",
  "include_dir",
  "mimalloc",
  "p256",
