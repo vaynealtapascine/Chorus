@@ -158,6 +158,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [x] M13.4 Web setup page and settings
 - [ ] M13.5 Android: pinned self-signed certificate from `#pin=` invites; mDNS rediscovery
 - [x] M13.6 Release build (`ChorusHome-<version>.exe`) in CI, linked from the landing page
+### M14 · Open data spec (PSDS, spec/)
+
+- [x] M14.1 Prior-art survey: OpenPlural v0.1, PluralKit, Simply Plural, PluralSpace, the owner's 2024 plural.proto, Chorus (spec/PRIOR_ART.md). PluralSpec not found; waiting for a link from the owner
+- [x] M14.2 Base draft 0.1.0 (spec/SPEC.md) + design notes with open decisions D0–D15 (spec/DESIGN_NOTES.md)
+- [x] M14.3 proto3 schema (spec/proto/psds/v1), `buf build` + `buf lint` (STANDARD) clean; examples/small-system.json round-trips JSON → binary → JSON with `buf convert`
+- [ ] M14.4 Owner settles D0–D15 (name, OpenPlural relationship, text offsets, …)
+- [ ] M14.5 0.2: generated JSON Schema, fixtures per mapped app, validator CLI (V1–V10)
+- [ ] M14.6 Chorus: `chorus-psds` crate (prost + protox), export FULL/SHARED, import PSDS + OpenPlural through normal ingestion
 ### Later (not v1)
 
 - [ ] L1 Voice messages, video messages
@@ -296,3 +304,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-26 gpt-6-sol — Android share receiver now preserves distinct text from multi-item shares and ClipData, avoiding duplicate drafts when EXTRA_TEXT repeats. Android build, JVM test and full quick Android verifier pass; phone audit remains batched (details in `docs/handoff/sol-batch-2.md`).
 - 2026-09-26 gpt-6-sol — Android Chat can edit the account's own messages. The editor keeps each segment's speakers and UTF-16 rich-text ranges, then queues a `message.edit` through core; edit history was already present. Android build, unit tests and full quick Android verifier pass; phone audit remains batched (details in `docs/handoff/sol-batch-2.md`).
 - 2026-09-26 claude-opus-5.5 — Merged gpt-6-sol V10a–d + share target, shortcuts, offline insights/files (187065b) and remote batch R4 (R25 wasm 288→247 KB gz, R26 rebuild ~30% faster with migration 0009, R27 import-account from an export zip, R28 REST fuzz of all 76 routes, R29 PWA failure suite: two tabs no longer lose each other's messages, a full disk loses nothing). Conflict: Sol moved front_daily into core api while R25 edited the wasm copy; kept Sol's, with core::sort. On Windows: workspace tests, verify --android, all 22 browser tests pass.
+- 2026-09-26 claude-opus-5.5 — M14.1–M14.3 PSDS open data spec: prior-art survey, base draft 0.1.0, proto3 schema (buf build/lint clean, example round-trips); decisions D0–D15 await the owner (spec/DESIGN_NOTES.md)

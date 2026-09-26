@@ -1,0 +1,129 @@
+// PSDS v0.1 draft — shared value types.
+//
+// Field-number convention used by every record in this package:
+//   1–9      common header (id, created_at, updated_at, deleted_at, archived_at)
+//   10–899   the record's own fields
+//   900–999  preservation (source_refs = 900, ext = 901)
+// Numbers are never reused; removed fields are `reserved`.
+//
+// `ext` (901) on every record is `map<string, google.protobuf.Struct>`: app- or spec-namespaced
+// data that has no PSDS field, keyed by a registered app id or a reverse-DNS name. "psds" is
+// reserved for the spec itself.
+syntax = "proto3";
+
+package psds.v1;
+
+// A reference to the same record in the app it came from. Several are allowed when a
+// record has travelled through more than one app.
+message SourceRef {
+  // Registered app id ("pluralkit", "simply_plural", "chorus", …) or a reverse-DNS name.
+  string app = 1;
+  // The source app's collection or table ("members", "switches", "frontHistory").
+  string collection = 2;
+  // The source primary key, as a string.
+  string id = 3;
+  // A second stable id when the source has one (PluralKit exposes both a short id and a UUID).
+  string uuid = 4;
+}
+
+// A calendar date where any part may be unknown. 0 means unknown.
+// {year: 0, month: 4, day: 2} is "2 April, year unknown".
+message PartialDate {
+  int32 year = 1;
+  int32 month = 2;
+  int32 day = 3;
+}
+
+message DateRange {
+  PartialDate start = 1;
+  PartialDate end = 2;
+}
+
+// Formatted text. Exactly one form is set. Readers MUST handle all three: render them, or at
+// least fall back to the plain characters (markdown source, or EntityText.text).
+message RichText {
+  oneof body {
+    // No formatting.
+    string plain = 1;
+    // PSDS markdown: CommonMark + GFM tables, strikethrough and task lists, `||spoiler||`,
+    // and `psds:` links for mentions and custom emoji (SPEC.md §2.6).
+    string markdown = 2;
+    // Plain text plus formatting spans (the Telegram / Chorus model).
+    EntityText entities = 3;
+  }
+}
+
+message EntityText {
+  string text = 1;
+  repeated Span spans = 2;
+}
+
+// A formatting range over EntityText.text. Offsets and lengths count Unicode code points.
+message Span {
+  SpanType type = 1;
+  uint32 offset = 2;
+  uint32 length = 3;
+  // TEXT_LINK: the target. MENTION / CUSTOM_EMOJI: a psds: URI (psds:member/<id>, …).
+  string url = 4;
+  // PRE: the code language, if known.
+  string language = 5;
+}
+
+enum SpanType {
+  SPAN_TYPE_UNSPECIFIED = 0;
+  SPAN_TYPE_BOLD = 1;
+  SPAN_TYPE_ITALIC = 2;
+  SPAN_TYPE_UNDERLINE = 3;
+  SPAN_TYPE_STRIKETHROUGH = 4;
+  SPAN_TYPE_SPOILER = 5;
+  SPAN_TYPE_CODE = 6;
+  SPAN_TYPE_PRE = 7;
+  SPAN_TYPE_BLOCKQUOTE = 8;
+  SPAN_TYPE_URL = 9;
+  SPAN_TYPE_TEXT_LINK = 10;
+  SPAN_TYPE_MENTION = 11;
+  SPAN_TYPE_CUSTOM_EMOJI = 12;
+  SPAN_TYPE_HEADING = 13;
+}
+
+// Who may see something. Missing or UNSPECIFIED means PRIVATE.
+// Strictness, most to least: MEMBERS, PRIVATE, BUCKETS, FRIENDS, INSTANCE, PUBLIC.
+message Audience {
+  AudienceTier tier = 1;
+  // tier = BUCKETS: the buckets (friend groups) allowed to see it.
+  repeated string bucket_ids = 2;
+  // tier = MEMBERS: the members of this system allowed to see it (a soft, in-system limit).
+  repeated string member_ids = 3;
+}
+
+enum AudienceTier {
+  AUDIENCE_TIER_UNSPECIFIED = 0;
+  // Only chosen members of the system.
+  AUDIENCE_TIER_MEMBERS = 1;
+  // The system itself.
+  AUDIENCE_TIER_PRIVATE = 2;
+  // Chosen groups of friends.
+  AUDIENCE_TIER_BUCKETS = 3;
+  // Everyone the system has accepted as a friend or follower.
+  AUDIENCE_TIER_FRIENDS = 4;
+  // Everyone signed in to the same server or instance.
+  AUDIENCE_TIER_INSTANCE = 5;
+  // Anyone.
+  AUDIENCE_TIER_PUBLIC = 6;
+}
+
+// A link shown on a profile.
+message Link {
+  string label = 1;
+  string url = 2;
+}
+
+// What can front, be grouped, be labelled or be the subject of a custom field.
+message SubjectRef {
+  oneof subject {
+    string member_id = 1;
+    string group_id = 2;
+    string state_id = 3;
+    string system_id = 4;
+  }
+}

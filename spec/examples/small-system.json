@@ -1,0 +1,239 @@
+{
+  "manifest": {
+    "psds_version": "0.1.0",
+    "exported_at": "2026-09-26T09:00:00Z",
+    "producer": { "app": "Chorus", "app_id": "chorus", "app_version": "0.9.0" },
+    "modules": ["core", "fields", "fronting", "posts", "reactions", "chat", "assets"],
+    "profile": "EXPORT_PROFILE_FULL",
+    "system_ids": ["01923e6a-0000-7000-8000-000000000001"],
+    "body_encoding": "BODY_ENCODING_JSON_DOCUMENT",
+    "counts": { "system": "1", "member": "2", "front_span": "3" },
+    "warnings": [
+      {
+        "level": "WARNING_LEVEL_INFO",
+        "code": "extension_only",
+        "record_type": "member",
+        "message": "Chorus notification policies are kept in ext.chorus.",
+        "count": "1"
+      }
+    ]
+  },
+  "systems": [
+    {
+      "id": "01923e6a-0000-7000-8000-000000000001",
+      "created_at": "2026-01-02T10:00:00Z",
+      "kind": "SYSTEM_KIND_PLURAL",
+      "name": "The Stars",
+      "tag": "✦ Stars",
+      "color": "#c0694e",
+      "timezone": "Asia/Manila",
+      "description": { "markdown": "We are **the Stars**. Say hi to [@Kai](psds:member/01923e6a-0000-7000-8000-000000000010)." },
+      "terminology": { "member": { "singular": "headmate", "plural": "headmates" } },
+      "audience": { "tier": "AUDIENCE_TIER_FRIENDS" }
+    }
+  ],
+  "members": [
+    {
+      "id": "01923e6a-0000-7000-8000-000000000010",
+      "created_at": "2026-01-02T10:05:00Z",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "name": "Kai",
+      "pronouns": "they/them",
+      "color": "#5b8def",
+      "birthday": { "month": 4, "day": 2 },
+      "proxy_tags": [{ "prefix": "k:" }],
+      "sigils": ["🌌"],
+      "sort_key": "a0",
+      "avatar_asset_id": "01923e6a-0000-7000-8000-0000000000a1",
+      "audience": { "tier": "AUDIENCE_TIER_FRIENDS" },
+      "field_audience": { "birthday": { "tier": "AUDIENCE_TIER_PRIVATE" } },
+      "source_refs": [{ "app": "pluralkit", "collection": "members", "id": "kaiabc", "uuid": "5b2a8c1e-3f4d-4e5a-9b6c-7d8e9f0a1b2c" }],
+      "ext": { "chorus": { "notify_policy": { "announce": "everyone", "announce_leaving": false } } }
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000011",
+      "created_at": "2026-01-02T10:06:00Z",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "name": "Moss",
+      "pronouns": "he/him, it/its",
+      "age": "around 30",
+      "sigils": ["🌿"],
+      "sort_key": "a1"
+    }
+  ],
+  "states": [
+    {
+      "id": "01923e6a-0000-7000-8000-000000000020",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "name": "Blurry",
+      "emoji": "🌫️"
+    }
+  ],
+  "groups": [
+    {
+      "id": "01923e6a-0000-7000-8000-000000000030",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "kind": "GROUP_KIND_SUBSYSTEM",
+      "name": "The Garden",
+      "can_front": true,
+      "subsystem": { "structure": "SUBSYSTEM_STRUCTURE_WITH_MAIN", "main_member_id": "01923e6a-0000-7000-8000-000000000011" }
+    }
+  ],
+  "group_memberships": [
+    {
+      "id": "01923e6a-0000-7000-8000-000000000031",
+      "group_id": "01923e6a-0000-7000-8000-000000000030",
+      "subject": { "member_id": "01923e6a-0000-7000-8000-000000000011" }
+    }
+  ],
+  "labels": [
+    {
+      "id": "01923e6a-0000-7000-8000-000000000040",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "kind": "role",
+      "name": "Protector"
+    }
+  ],
+  "label_assignments": [
+    {
+      "id": "01923e6a-0000-7000-8000-000000000041",
+      "label_id": "01923e6a-0000-7000-8000-000000000040",
+      "target": { "type": "member", "id": "01923e6a-0000-7000-8000-000000000011" }
+    }
+  ],
+  "field_definitions": [
+    {
+      "id": "01923e6a-0000-7000-8000-000000000050",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "name": "Favourite season",
+      "type": "FIELD_TYPE_SELECT",
+      "options": [
+        { "id": "spring", "label": "Spring" },
+        { "id": "autumn", "label": "Autumn" }
+      ]
+    }
+  ],
+  "field_values": [
+    {
+      "id": "01923e6a-0000-7000-8000-000000000051",
+      "field_id": "01923e6a-0000-7000-8000-000000000050",
+      "subject": { "member_id": "01923e6a-0000-7000-8000-000000000010" },
+      "option_ids": { "ids": ["autumn"] }
+    }
+  ],
+  "assets": [
+    {
+      "id": "01923e6a-0000-7000-8000-0000000000a1",
+      "sha256": "9f2c1d0a3b4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8",
+      "mime_type": "image/webp",
+      "size_bytes": "18422",
+      "width": 512,
+      "height": 512,
+      "alt_text": "A small blue star"
+    }
+  ],
+  "front_spans": [
+    {
+      "id": "01923e6a-0000-7000-8000-000000000060",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "subject": { "member_id": "01923e6a-0000-7000-8000-000000000010" },
+      "level": "FRONT_LEVEL_FRONTING",
+      "primary": true,
+      "position": 0,
+      "started_at": "2026-09-26T07:00:00Z",
+      "start_utc_offset_minutes": 480,
+      "start_switch_id": "01923e6a-0000-7000-8000-000000000070"
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000061",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "subject": { "member_id": "01923e6a-0000-7000-8000-000000000011" },
+      "level": "FRONT_LEVEL_FRONTING",
+      "position": 1,
+      "started_at": "2026-09-26T07:00:00Z",
+      "ended_at": "2026-09-26T08:30:00Z",
+      "start_utc_offset_minutes": 480,
+      "start_switch_id": "01923e6a-0000-7000-8000-000000000070"
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000062",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "subject": { "state_id": "01923e6a-0000-7000-8000-000000000020" },
+      "level": "FRONT_LEVEL_CO_CONSCIOUS",
+      "started_at": "2026-09-26T07:40:00Z",
+      "ended_at": "2026-09-26T08:10:00Z"
+    }
+  ],
+  "front_switches": [
+    {
+      "id": "01923e6a-0000-7000-8000-000000000070",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "at": "2026-09-26T07:00:00Z",
+      "utc_offset_minutes": 480,
+      "kind": "SWITCH_KIND_REPLACE",
+      "entries": [
+        { "subject": { "member_id": "01923e6a-0000-7000-8000-000000000010" }, "level": "FRONT_LEVEL_FRONTING", "primary": true },
+        { "subject": { "member_id": "01923e6a-0000-7000-8000-000000000011" }, "level": "FRONT_LEVEL_FRONTING" }
+      ],
+      "note": { "plain": "Morning walk" }
+    }
+  ],
+  "posts": [
+    {
+      "id": "01923e6a-0000-7000-8000-000000000080",
+      "created_at": "2026-09-26T08:45:00Z",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "kind": "POST_KIND_ENTRY",
+      "author_member_ids": ["01923e6a-0000-7000-8000-000000000010"],
+      "title": "A quiet morning",
+      "body": { "markdown": "## Walk\n\nWe saw the heron again. ||It waited for us.||" },
+      "entry_date": { "year": 2026, "month": 9, "day": 26 },
+      "mood": "calm",
+      "audience": { "tier": "AUDIENCE_TIER_BUCKETS", "bucket_ids": ["01923e6a-0000-7000-8000-000000000090"] }
+    }
+  ],
+  "buckets": [
+    {
+      "id": "01923e6a-0000-7000-8000-000000000090",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "name": "Close friends"
+    }
+  ],
+  "channels": [
+    {
+      "id": "01923e6a-0000-7000-8000-0000000000b0",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "kind": "CHANNEL_KIND_TEXT",
+      "name": "general"
+    }
+  ],
+  "messages": [
+    {
+      "id": "01923e6a-0000-7000-8000-0000000000b1",
+      "created_at": "2026-09-26T08:50:00Z",
+      "channel_id": "01923e6a-0000-7000-8000-0000000000b0",
+      "kind": "MESSAGE_KIND_TEXT",
+      "authors": [
+        { "member_id": "01923e6a-0000-7000-8000-000000000010" },
+        { "member_id": "01923e6a-0000-7000-8000-000000000011" }
+      ],
+      "body": {
+        "entities": {
+          "text": "Back home!\nI'll make tea.",
+          "spans": [{ "type": "SPAN_TYPE_BOLD", "offset": 0, "length": 9 }]
+        }
+      },
+      "segments": [
+        { "offset": 11, "length": 14, "authors": [{ "member_id": "01923e6a-0000-7000-8000-000000000011" }] }
+      ]
+    }
+  ],
+  "reactions": [
+    {
+      "id": "01923e6a-0000-7000-8000-0000000000b2",
+      "message_id": "01923e6a-0000-7000-8000-0000000000b1",
+      "member_id": "01923e6a-0000-7000-8000-000000000010",
+      "emoji": "🍵"
+    }
+  ]
+}

@@ -1,0 +1,268 @@
+// PSDS v0.1 draft — core records: the system, its members, custom states, groups and
+// subsystems, labels, and sharing buckets.
+syntax = "proto3";
+
+package psds.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "psds/v1/common.proto";
+
+// A plural system, or a singlet using the same tools.
+message System {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+  google.protobuf.Timestamp archived_at = 5;
+
+  SystemKind kind = 10;
+  string name = 11;
+  string display_name = 12;
+  RichText description = 13;
+  // Shown after member names where several systems meet ("Kai · Stars", PluralKit's tag).
+  string tag = 14;
+  string pronouns = 15;
+  // "#rrggbb", lowercase.
+  string color = 16;
+  string avatar_asset_id = 17;
+  string banner_asset_id = 18;
+  // IANA time zone ("Asia/Manila"), for local days in statistics.
+  string timezone = 19;
+  Terminology terminology = 20;
+  repeated Link links = 21;
+  Audience audience = 22;
+  // Per-field overrides of `audience`, keyed by field name ("description", "pronouns", …).
+  map<string, Audience> field_audience = 23;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+enum SystemKind {
+  SYSTEM_KIND_UNSPECIFIED = 0;
+  // Several members.
+  SYSTEM_KIND_PLURAL = 1;
+  // One person; exactly one member, marked `is_self`.
+  SYSTEM_KIND_SINGLET = 2;
+}
+
+// The system's own words. Every field is optional; apps fall back to their defaults.
+message Terminology {
+  Term member = 1;
+  Term front = 2;
+  Term switch = 3;
+  Term subsystem = 4;
+  Term co_conscious = 5;
+  Term present = 6;
+  Term group = 7;
+  // Anything else an app lets people rename, keyed by a stable key.
+  map<string, Term> other = 15;
+}
+
+message Term {
+  string singular = 1;
+  string plural = 2;
+}
+
+// A member (alter, headmate, part, …).
+message Member {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+  // Archived members are kept but hidden from switchers and lists (dormant, integrated, …).
+  google.protobuf.Timestamp archived_at = 5;
+
+  string system_id = 10;
+  // May be empty: some systems have nameless members. Readers derive a label from
+  // display_name, pronouns or a placeholder.
+  string name = 11;
+  string display_name = 12;
+  // Free text; may hold several sets ("they/them, xe/xem").
+  string pronouns = 13;
+  RichText description = 14;
+  string color = 15;
+  string avatar_asset_id = 16;
+  string banner_asset_id = 17;
+  PartialDate birthday = 18;
+  // Free text: "17", "ageless", "around 30".
+  string age = 19;
+  repeated ProxyTag proxy_tags = 20;
+  // Short prefixes (usually an emoji) typed before a message to speak as this member.
+  repeated string sigils = 21;
+  // The one member of a singlet system.
+  bool is_self = 22;
+  // Manual ordering: sort by this string, compared by code point (a fractional index).
+  string sort_key = 23;
+  repeated Link links = 24;
+  string archived_reason = 25;
+  // A hint that the owner's apps gate this member behind a PIN or biometric lock.
+  bool locked = 26;
+  Audience audience = 27;
+  map<string, Audience> field_audience = 28;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+// PluralKit-style proxy tag: a message wrapped in prefix…suffix is sent as the member.
+message ProxyTag {
+  string prefix = 1;
+  string suffix = 2;
+}
+
+// Something that can front but is not a member: a custom front or status
+// ("blurry", "dissociated", "asleep", "unknown").
+message State {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+  google.protobuf.Timestamp archived_at = 5;
+
+  string system_id = 10;
+  string name = 11;
+  RichText description = 12;
+  string color = 13;
+  string emoji = 14;
+  string avatar_asset_id = 15;
+  string sort_key = 16;
+  Audience audience = 17;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+// A group of members, or a subsystem. Groups nest through parent_group_id.
+message Group {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+  google.protobuf.Timestamp archived_at = 5;
+
+  string system_id = 10;
+  GroupKind kind = 11;
+  // Empty for a top-level group. A cycle is invalid; readers break it at the record with the
+  // largest id and report a warning.
+  string parent_group_id = 12;
+  string name = 13;
+  string display_name = 14;
+  RichText description = 15;
+  string color = 16;
+  string emoji = 17;
+  string avatar_asset_id = 18;
+  string banner_asset_id = 19;
+  // The group can front as a unit (SubjectRef.group_id in fronting).
+  bool can_front = 20;
+  string sort_key = 21;
+  // Subsystems only.
+  Subsystem subsystem = 22;
+  Audience audience = 23;
+  map<string, Audience> field_audience = 24;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+enum GroupKind {
+  GROUP_KIND_UNSPECIFIED = 0;
+  // An organisational group (a folder or a label with members).
+  GROUP_KIND_GROUP = 1;
+  // A subsystem: a system within the system.
+  GROUP_KIND_SUBSYSTEM = 2;
+}
+
+message Subsystem {
+  SubsystemStructure structure = 1;
+  // structure = WITH_MAIN: the subsystem's main member, if known.
+  string main_member_id = 2;
+  // A tag of its own, shown like System.tag.
+  string tag = 3;
+}
+
+enum SubsystemStructure {
+  SUBSYSTEM_STRUCTURE_UNSPECIFIED = 0;
+  // Has a main member (the other members "belong to" them).
+  SUBSYSTEM_STRUCTURE_WITH_MAIN = 1;
+  // No main member.
+  SUBSYSTEM_STRUCTURE_WITHOUT_MAIN = 2;
+}
+
+// Membership of a member or custom state in a group. One record per edge.
+message GroupMembership {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string group_id = 10;
+  // A member_id or state_id.
+  SubjectRef subject = 11;
+  // Position within the group.
+  string sort_key = 12;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+// A reusable label of some kind: a role ("protector"), a tag, a source, a topic.
+message Label {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string system_id = 10;
+  // Registered vocabulary (SPEC.md §4.5): "role", "tag", "source", "topic", "identity",
+  // "status", or an app-namespaced value ("myapp:mood").
+  string kind = 11;
+  string name = 12;
+  RichText description = 13;
+  string color = 14;
+  string emoji = 15;
+  string parent_label_id = 16;
+  string sort_key = 17;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+// A label attached to something.
+message LabelAssignment {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string label_id = 10;
+  RecordRef target = 11;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+// A reference to any record, for things that can point at many kinds.
+message RecordRef {
+  // The record type as named in Record (archive.proto): "member", "post", "front_span", …
+  string type = 1;
+  string id = 2;
+}
+
+// A named group of friends, used by Audience.tier = BUCKETS.
+message Bucket {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string system_id = 10;
+  string name = 11;
+  RichText description = 12;
+  string color = 13;
+  string sort_key = 14;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}

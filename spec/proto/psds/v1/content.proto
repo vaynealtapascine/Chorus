@@ -1,0 +1,208 @@
+// PSDS v0.1 draft — optional modules: posts (notes, journals, board messages, microposts),
+// reactions, relationships, contacts and polls.
+syntax = "proto3";
+
+package psds.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "psds/v1/common.proto";
+import "psds/v1/front.proto";
+
+// Module "posts". Anything written that is not a chat message.
+message Post {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+  google.protobuf.Timestamp archived_at = 5;
+
+  string system_id = 10;
+  PostKind kind = 11;
+  // Who wrote it. Empty when unknown (an import from an app that did not record it).
+  repeated string author_member_ids = 12;
+  // Who it is about (a member note, a per-member journal).
+  repeated string about_member_ids = 13;
+  // Who it is addressed to (a board message left for a member).
+  repeated string recipient_member_ids = 14;
+  string title = 15;
+  RichText body = 16;
+  // When the author says it was written, if it differs from created_at (backdated, imported).
+  google.protobuf.Timestamp written_at = 17;
+  // The day a journal entry is for.
+  PartialDate entry_date = 18;
+  optional sint32 utc_offset_minutes = 19;
+  string mood = 20;
+  string content_warning = 21;
+  string color = 22;
+  bool pinned = 23;
+  string reply_to_post_id = 24;
+  string quote_of_post_id = 25;
+  string repost_of_post_id = 26;
+  repeated string attachment_asset_ids = 27;
+  // Who was fronting when it was written, as the author's app recorded it.
+  repeated FrontEntry fronting = 28;
+  google.protobuf.Timestamp edited_at = 29;
+  Audience audience = 30;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+enum PostKind {
+  POST_KIND_UNSPECIFIED = 0;
+  // A short status or microblog post (Chorus notes).
+  POST_KIND_POST = 1;
+  // A long-form journal entry, usually titled.
+  POST_KIND_ENTRY = 2;
+  // A note kept about or for a member (Simply Plural and Prism notes).
+  POST_KIND_NOTE = 3;
+  // A message left on a member's board (Simply Plural board messages, Prism board posts).
+  POST_KIND_BOARD = 4;
+}
+
+// Module "reactions" (used with posts and chat).
+message Reaction {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  oneof target {
+    string post_id = 10;
+    string message_id = 11;
+  }
+  // Empty for an anonymous reaction.
+  string member_id = 12;
+  // A Unicode emoji, or psds:emoji/<id> for a custom one.
+  string emoji = 13;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+// Module "relationships".
+message RelationshipType {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string system_id = 10;
+  // "sibling", "partner", "protector".
+  string name = 11;
+  // For one-way types: the other direction ("protected by"). Empty when symmetric.
+  string inverse_name = 12;
+  bool symmetric = 13;
+  RichText description = 14;
+  string color = 15;
+  string emoji = 16;
+  string sort_key = 17;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+message Relationship {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string system_id = 10;
+  string type_id = 11;
+  string from_member_id = 12;
+  oneof to {
+    string to_member_id = 13;
+    string to_contact_id = 14;
+    // Someone with no record (a free-text name).
+    string to_label = 15;
+  }
+  RichText note = 16;
+  PartialDate started_on = 17;
+  PartialDate ended_on = 18;
+  Audience audience = 19;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+// Module "contacts". Someone outside the system: a friend, a partner, another system.
+message Contact {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string system_id = 10;
+  string display_name = 11;
+  // Where to find them ("pluralkit" + "abcdef", "chorus" + "@stars@chorus.example").
+  repeated Handle handles = 12;
+  // The buckets they are in.
+  repeated string bucket_ids = 13;
+  RichText note = 14;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+message Handle {
+  string service = 1;
+  string value = 2;
+}
+
+// Module "polls".
+message Poll {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string system_id = 10;
+  string author_member_id = 11;
+  string title = 12;
+  RichText description = 13;
+  repeated PollOption options = 14;
+  bool multiple_choice = 15;
+  bool allow_abstain = 16;
+  bool allow_veto = 17;
+  google.protobuf.Timestamp closes_at = 18;
+  google.protobuf.Timestamp closed_at = 19;
+  // A poll for chosen members only; empty means everyone.
+  repeated string voter_member_ids = 20;
+  Audience audience = 21;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+message PollOption {
+  string id = 1;
+  string label = 2;
+  string color = 3;
+  string sort_key = 4;
+}
+
+message Vote {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string poll_id = 10;
+  string member_id = 11;
+  VoteKind kind = 12;
+  // VoteKind.CHOICE: the chosen PollOption ids.
+  repeated string option_ids = 13;
+  RichText comment = 14;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+enum VoteKind {
+  VOTE_KIND_UNSPECIFIED = 0;
+  VOTE_KIND_CHOICE = 1;
+  VOTE_KIND_ABSTAIN = 2;
+  VOTE_KIND_VETO = 3;
+}

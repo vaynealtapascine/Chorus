@@ -1,0 +1,119 @@
+// PSDS v0.1 draft — fronting.
+//
+// FrontSpan is the one source of truth for who was fronting when (SPEC.md §5). FrontSwitch is
+// an optional log of the moments someone recorded a change, with the note they gave; a file
+// that has only switches (PluralKit) is turned into spans by the fold in SPEC.md §5.4.
+syntax = "proto3";
+
+package psds.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "psds/v1/common.proto";
+
+enum FrontLevel {
+  // Readers treat it as FRONTING.
+  FRONT_LEVEL_UNSPECIFIED = 0;
+  // In control of the body, alone or co-fronting.
+  FRONT_LEVEL_FRONTING = 1;
+  // Aware and watching, not in control.
+  FRONT_LEVEL_CO_CONSCIOUS = 2;
+  // Affecting thoughts or feelings from the background, not in control.
+  FRONT_LEVEL_INFLUENCING = 3;
+  // Around but not fronting (a rarely present member passing through).
+  FRONT_LEVEL_PRESENT = 4;
+}
+
+// One continuous stretch of one subject at one level. Co-fronting is several spans that
+// overlap in time. A change of level or of primary ends one span and starts another.
+message FrontSpan {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string system_id = 10;
+  // A member, a group that can front, or a custom state.
+  SubjectRef subject = 11;
+  FrontLevel level = 12;
+  // The primary fronter. At most one FRONTING span may be primary at any instant.
+  bool primary = 13;
+  // Fronting order at the start of the span, 0 first, among spans at the same level.
+  uint32 position = 14;
+  google.protobuf.Timestamp started_at = 15;
+  // Unset while the span is ongoing.
+  google.protobuf.Timestamp ended_at = 16;
+  // UTC offset in minutes where the system was when the span started (for local days).
+  optional sint32 start_utc_offset_minutes = 17;
+  RichText note = 18;
+  // The switches that started and ended it, when the file has a switch log.
+  string start_switch_id = 19;
+  string end_switch_id = 20;
+  // The source's confidence in this span, 0–1, when it records one.
+  optional double confidence = 21;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+// What one subject is doing in a snapshot or in a change.
+message FrontEntry {
+  SubjectRef subject = 1;
+  FrontLevel level = 2;
+  bool primary = 3;
+}
+
+// A recorded change of front: the moment, what changed, and why.
+message FrontSwitch {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  // A retracted (undone) switch is deleted.
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string system_id = 10;
+  // When the change happened (may be earlier than created_at: backdated or made offline).
+  google.protobuf.Timestamp at = 11;
+  optional sint32 utc_offset_minutes = 12;
+  SwitchKind kind = 13;
+  // REPLACE: the whole front afterwards, in fronting order. ADD / UPDATE: the entries added or
+  // changed. REMOVE: the subjects that left (level and primary ignored).
+  repeated FrontEntry entries = 14;
+  RichText note = 15;
+  // Who recorded it, if known.
+  string recorded_by_member_id = 16;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+enum SwitchKind {
+  SWITCH_KIND_UNSPECIFIED = 0;
+  // Everyone not in `entries` leaves; `entries` is the new front. An empty list is a
+  // switch-out (nobody fronting).
+  SWITCH_KIND_REPLACE = 1;
+  SWITCH_KIND_ADD = 2;
+  SWITCH_KIND_REMOVE = 3;
+  SWITCH_KIND_UPDATE = 4;
+}
+
+// A comment about a moment in the front history.
+message FrontComment {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string system_id = 10;
+  // The moment the comment is about.
+  google.protobuf.Timestamp at = 11;
+  // Optional anchors.
+  string front_span_id = 12;
+  string switch_id = 13;
+  string author_member_id = 14;
+  RichText body = 15;
+  Audience audience = 16;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}

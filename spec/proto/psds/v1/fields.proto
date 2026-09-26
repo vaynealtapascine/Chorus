@@ -1,0 +1,124 @@
+// PSDS v0.1 draft — custom fields: a definition set up once, values filled in per subject.
+syntax = "proto3";
+
+package psds.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "psds/v1/common.proto";
+
+message FieldDefinition {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string system_id = 10;
+  string name = 11;
+  RichText description = 12;
+  FieldType type = 13;
+  // SELECT and MULTI_SELECT. Values refer to options by id, so renaming one breaks nothing.
+  repeated FieldOption options = 14;
+  // NUMBER and RATING bounds; unset means unbounded.
+  optional double min_value = 15;
+  optional double max_value = 16;
+  // DATE and DATE_RANGE: the precision people are asked for.
+  DatePrecision date_precision = 17;
+  // What the field can be set on. Empty means members only.
+  repeated SubjectKind applies_to = 18;
+  string sort_key = 19;
+  // Default audience for values; a value may narrow it.
+  Audience audience = 20;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+enum FieldType {
+  FIELD_TYPE_UNSPECIFIED = 0;
+  FIELD_TYPE_TEXT = 1;
+  FIELD_TYPE_RICH_TEXT = 2;
+  FIELD_TYPE_NUMBER = 3;
+  FIELD_TYPE_BOOLEAN = 4;
+  FIELD_TYPE_DATE = 5;
+  FIELD_TYPE_DATE_RANGE = 6;
+  FIELD_TYPE_TIMESTAMP = 7;
+  FIELD_TYPE_COLOR = 8;
+  FIELD_TYPE_URL = 9;
+  FIELD_TYPE_SELECT = 10;
+  FIELD_TYPE_MULTI_SELECT = 11;
+  FIELD_TYPE_MEMBER_REF = 12;
+  FIELD_TYPE_RATING = 13;
+  // Anything else, kept verbatim.
+  FIELD_TYPE_JSON = 14;
+}
+
+enum DatePrecision {
+  DATE_PRECISION_UNSPECIFIED = 0;
+  // Year, month and day.
+  DATE_PRECISION_DAY = 1;
+  // Month and day, no year (a birthday).
+  DATE_PRECISION_MONTH_DAY = 2;
+  // Year and month.
+  DATE_PRECISION_YEAR_MONTH = 3;
+  // Year only.
+  DATE_PRECISION_YEAR = 4;
+  // Month only.
+  DATE_PRECISION_MONTH = 5;
+}
+
+enum SubjectKind {
+  SUBJECT_KIND_UNSPECIFIED = 0;
+  SUBJECT_KIND_MEMBER = 1;
+  SUBJECT_KIND_GROUP = 2;
+  SUBJECT_KIND_STATE = 3;
+  SUBJECT_KIND_SYSTEM = 4;
+}
+
+message FieldOption {
+  string id = 1;
+  string label = 2;
+  string color = 3;
+  string sort_key = 4;
+}
+
+// One value of one field on one subject.
+message FieldValue {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+
+  string field_id = 10;
+  SubjectRef subject = 11;
+  // Must match the definition's type; a mismatch is a validation error (SPEC.md §9).
+  oneof value {
+    string text = 12;
+    RichText rich_text = 13;
+    double number = 14;
+    bool boolean = 15;
+    PartialDate date = 16;
+    DateRange date_range = 17;
+    google.protobuf.Timestamp timestamp = 18;
+    string color = 19;
+    string url = 20;
+    // SELECT (exactly one) and MULTI_SELECT: FieldOption ids.
+    OptionIds option_ids = 21;
+    // MEMBER_REF: member ids.
+    MemberIds member_ids = 22;
+    google.protobuf.Value json = 23;
+  }
+  // Narrows the definition's audience for this one value.
+  Audience audience = 30;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+message OptionIds {
+  repeated string ids = 1;
+}
+
+message MemberIds {
+  repeated string ids = 1;
+}

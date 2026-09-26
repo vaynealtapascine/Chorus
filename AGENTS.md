@@ -24,6 +24,7 @@ of usage. Everything the next agent needs must therefore be **in the repo**, not
 | `docs/CLIENTS.md` | Android app, home-screen widget, web PWA specifics |
 | `docs/OPS.md` | Running on the owner's PC over Tailscale, backups |
 | `docs/HOME.md` | Chorus Home: one-click install on a home PC, home-wifi transport (D-071) |
+| `spec/` | PSDS, the open data format for plural systems (draft); its own decisions live in `spec/DESIGN_NOTES.md` |
 
 If two docs disagree: DECISIONS > DATA_MODEL/SYNC (for data) > SPEC > the rest. Fix the loser in the
 same commit and note it in the log.
