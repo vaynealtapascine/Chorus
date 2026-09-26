@@ -31,8 +31,12 @@ validator, converters, Chorus implementation — and then to stop**. Nothing goe
   can carry a comment); the spec's Markdown is CC BY-NC-SA 4.0; code under `crates/` stays MIT.
 - Updated 2026-09-26 after this file was first written: visibility classes carry permission
   `grants` (SPEC §4.8) — cover them in fixtures, the validator and the Chorus mapping (follower
-  ceilings → `front.notify` params etc., Appendix A.5). **Don't implement composite members,
-  `parts` or `for_group_id`** (DESIGN_NOTES D5): they are a proposal waiting for the owner.
+  ceilings → `front.notify` params etc., Appendix A.5). Composite members, blends and fronting
+  on behalf of a subsystem are now in the schema as a *proposal* (SPEC §5.3–5.4, DESIGN_NOTES D5):
+  the validator checks their invariants (5.4 items 6–8, composition cycles) and fixtures cover
+  them; Chorus has none of them, so its export never writes them and its import flattens them
+  with `composition_flattened` / `blend_flattened` warnings. Don't add them to Chorus's own data
+  model.
 - Pin every new dependency in `docs/DECISIONS.md` §Versions.
 
 ## Don't touch
