@@ -369,3 +369,20 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   transaction for SQLite to write back into the WAL). Only purge and restore still rebuild in
   place, on copies; if that ever matters, give them the swap path too.
 
+- 2026-09-26 claude-opus-5.5 — server — **Early answers reset connections (R35, `drain.rs`).**
+  `rest_fuzz` failed about half its runs on the owner's PC with os error 10053/10054 on a
+  different request each time. The R28 entry above called the "broken pipe" a harness trap; it
+  was a server behaviour real clients hit. Routes that answer before reading the body (401 from a
+  handler that authenticates first, 415 from `Json` on a wrong content type, 404, 429 from the
+  rate limiter) left the body unread. hyper drains only what has already arrived, then closes.
+  The rest of the body reaches a closed socket, the TCP stack answers with a reset, and
+  **Windows discards the answer the client had already received**: the client sees "connection
+  aborted" instead of a 401. Linux keeps the answer readable, which is why only the PC saw it.
+  - Fix: an outermost layer keeps a handle on each request body. When the handler has answered
+    and dropped a body it didn't finish, a background task reads and discards the rest (≤ 8 MiB,
+    ≤ 10 s). The connection then stays open for the next request.
+  - Tests: `tests/early_answer.rs` sends the body late over a raw socket and fails on the reset
+    the late part meets. `rest_fuzz` pools connections again, as browsers do, and no longer
+    excuses failed body writes. Without the layer both fail on Linux in every run.
+  - Ruled out: pooled-connection reuse (the fuzzer didn't pool) and TIME_WAIT churn (the
+    client closes first, so nothing collides on the server side).

@@ -552,12 +552,9 @@ async fn every_route_survives_what_callers_can_throw_at_it() {
             .await
             .unwrap()
     });
-    // no pooled connections: a server that answers an oversized body early closes that connection
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .pool_max_idle_per_host(0)
-        .build()
-        .unwrap();
+    // pooled keep-alive connections, as browsers use them: an answer that comes before the body
+    // (401, 413, 415) must still leave the connection usable (drain.rs, R35)
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().unwrap();
     let callers: Vec<Caller> = [Caller::Anonymous, Caller::Alice, Caller::Root, Caller::Bob]
         .into_iter()
         .chain(SCOPES.iter().map(|s| Caller::Token(s)))
@@ -595,7 +592,6 @@ async fn every_route_survives_what_callers_can_throw_at_it() {
                     req.path,
                     req.body.as_ref().map(|(b, _)| String::from_utf8_lossy(b).into_owned()).unwrap_or_default()
                 );
-                let oversized = req.body.as_ref().is_some_and(|(b, _)| b.len() > 1 << 20);
                 if let Some((bytes, ct)) = req.body {
                     rb = rb.header("content-type", ct).body(bytes);
                 }
@@ -613,10 +609,6 @@ async fn every_route_survives_what_callers_can_throw_at_it() {
                         while let Some(s) = src {
                             chain.push_str(&format!(" / {s}"));
                             src = s.source();
-                        }
-                        // refused before its body was read (too big, or no caller): it stopped reading
-                        if oversized && chain.contains("writing a body") {
-                            continue;
                         }
                         problems.push(format!("{}: the connection failed ({chain})", what()));
                         continue;

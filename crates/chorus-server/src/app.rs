@@ -207,7 +207,8 @@ pub fn router(state: AppState) -> Router {
             .layer(axum::middleware::map_response(web_app_headers));
         app = app.fallback_service(spa);
     }
-    app
+    // outermost, so it also sees the rate limiter's early answers
+    app.layer(axum::middleware::from_fn(crate::drain::layer))
 }
 
 /// The web app loads nothing from elsewhere: a strict policy keeps an injected script (or a

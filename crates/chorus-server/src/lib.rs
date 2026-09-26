@@ -11,6 +11,7 @@ pub mod backup;
 pub mod blobs;
 pub mod config;
 pub mod db;
+pub mod drain;
 pub mod export_job;
 pub mod exports;
 pub mod feeds;
