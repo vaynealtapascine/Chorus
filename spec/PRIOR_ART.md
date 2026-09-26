@@ -1,7 +1,7 @@
-# PSDS — prior art
+# PluralSpec — prior art
 
 What already exists for storing and moving plural-system data, what each gets right, and what
-PSDS takes or fixes. Surveyed 2026-09-26. Where a claim comes from someone else's research it
+PluralSpec takes or fixes. Surveyed 2026-09-26. Where a claim comes from someone else's research it
 says so.
 
 ## Summary
@@ -11,20 +11,20 @@ says so.
 | **PluralKit** datafile v2 | App export (Discord bot) | JSON | Switch events (ordered member list per timestamp) | Flat | None | Per-field public/private | Yes, widely imported |
 | **Simply Plural** export | App export (MongoDB dump) | JSON keyed by collection | Per-member intervals; custom fronts as a separate collection | Nested (`parent: "root"`) | Definitions + values embedded on members, numeric type ids | Privacy buckets, friends | Raw; the app shut down 2026-07-01 |
 | **PluralSpace** GDPR export | App export (Laravel/Postgres) | ZIP: `manifest.json` + `data.json` + `media/` | One row per member per interval; co-fronting = rows with equal times | Nested in the app, **flat in the export** | Definitions; value shape unverified | Numeric `visibility_level` (undocumented) | Regulatory dump, not a round-trip backup |
-| **OpenPlural v0.1** (now also "PluralPort") | Community interchange proposal | JSON only | Both periods and events | Nested + taxonomy | Definitions + values, `value: unknown` | Conservative bucket + raw source | Yes: the purpose |
+| **PluralPort v0.1** (formerly OpenPlural) | Community interchange proposal | JSON only | Both periods and events | Nested + taxonomy | Definitions + values, `value: unknown` | Conservative bucket + raw source | Yes: the purpose |
 | **Owner's `plural.proto`** (2024) | Sketch | proto3 | — | Subsystems nested inside members, with main/no-main typology | — | — | Did not compile (see below) |
 | **Chorus** | App (event-sourced) | Op log JSONL, SQLite, CSV | Switch ops folded into per-subject intervals with levels | Groups + nesting subsystems that can front | Typed definitions + values | Audience modes, buckets, per-field, follower ceilings | Own format + PluralKit import |
 
-**PluralSpec:** not found. No spec, repository, package or page by that name turned up (web,
-GitHub code/repos, npm, crates.io); the name only matches unrelated i18n pluralisation code.
-Pending a link from the owner, it is not covered here.
+**"PluralSpec"** was named by the owner as prior art, but no spec, repository, package or page by
+that name turned up (web, GitHub code and repositories, npm, crates.io; only an unrelated Go i18n
+type). The name was therefore adopted for this spec (DESIGN_NOTES D0).
 
 ---
 
 ## PluralKit
 
 Sources: [PluralKit API models](https://pluralkit.me/api/models/), [source](https://github.com/PluralKit/PluralKit),
-OpenPlural's [research notes](https://github.com/PluralSpace/openplural/blob/main/docs/apps/pluralkit.md).
+OpenPlural/PluralPort's [research notes](https://github.com/PluralSpace/openplural/blob/main/docs/apps/pluralkit.md).
 
 - **Datafile v2**: `{version: 2, id, uuid, name, description, tag, pronouns, avatar_url, banner,
   color, created, privacy, members[], groups[], switches[], accounts[], config}`.
@@ -43,7 +43,7 @@ privacy (`field_audience`); switch-out as an empty REPLACE; fronting order as po
 ## Simply Plural
 
 Sources: [API source](https://github.com/ApparyllisOrg/SimplyPluralApi), [discontinuation notice](https://apparyllis.com/simply-plural-will-be-discontinued/),
-OpenPlural's [research notes](https://github.com/PluralSpace/openplural/blob/main/docs/apps/simply-plural.md).
+OpenPlural/PluralPort's [research notes](https://github.com/PluralSpace/openplural/blob/main/docs/apps/simply-plural.md).
 
 - The export is the account's MongoDB collections: `members`, `frontStatuses` (custom fronts),
   `frontHistory`, `groups`, `customFields`, `notes`, `comments`, `polls`, `channels`,
@@ -57,13 +57,14 @@ OpenPlural's [research notes](https://github.com/PluralSpace/openplural/blob/mai
 Simply Plural stopped on 2026-07-01, so its exports are now a fixed, finite target: many people
 are holding one and looking for a home. That makes a lossless importer valuable.
 
-**Takes:** custom fronts as a separate kind of subject (PSDS `State`); per-subject intervals;
-date precision on fields; board messages and member notes as distinct post kinds; buckets.
+**Takes:** custom fronts as a separate kind of subject (PluralSpec `State`); per-subject intervals;
+date precision on fields; board messages and member notes as distinct post kinds; buckets (as
+custom visibility classes).
 
 ## PluralSpace
 
 Sources: [pluralspace.app](https://pluralspace.app/), [features](https://pluralspace.app/features),
-OpenPlural's [research notes](https://github.com/PluralSpace/openplural/blob/main/docs/apps/pluralspace.md)
+OpenPlural/PluralPort's [research notes](https://github.com/PluralSpace/openplural/blob/main/docs/apps/pluralspace.md)
 (built from two inspected GDPR exports and maintainer notes; the server is closed source).
 
 - ZIP with `manifest.json` (`format_version: "1.0"`, GDPR article citations), `data.json`
@@ -78,11 +79,11 @@ OpenPlural's [research notes](https://github.com/PluralSpace/openplural/blob/mai
 
 **Takes:** the ZIP container with a manifest in front; journals with a separate logical `date`;
 polls at system level.
-**What it shows PSDS must forbid:** identity by name (breaks on rename), denormalised copies that
-can disagree, dropping structure silently. PSDS requires ids for every reference and warnings for
+**What it shows PluralSpec must forbid:** identity by name (breaks on rename), denormalised copies that
+can disagree, dropping structure silently. PluralSpec requires ids for every reference and warnings for
 every loss.
 
-## OpenPlural v0.1
+## PluralPort v0.1 (formerly OpenPlural)
 
 Sources: [site](https://skylartaylor.github.io/openplural/), [repository](https://github.com/PluralSpace/openplural)
 (MIT; the PluralPort repository now says "PluralPort is the new name of the OpenPlural Spec").
@@ -98,25 +99,28 @@ Star, Lighthouse, OpenSelves, Ampersand and Tupperbox.
 - Every record may carry `source_refs`, namespaced `extensions`, and `privacy`.
 - An importer contract with an `ImportResult` (counts per module, warnings).
 
-This is the closest thing to a standard and PSDS should stay compatible with it (DESIGN_NOTES
-D1). What PSDS changes, and why:
+This is the closest thing to a standard, and PluralSpec is a superset of it (DESIGN_NOTES D1):
+every PluralPort file converts without loss. The table below lists what PluralSpec changes and
+why; these are the candidate proposals for PluralPort, to be sent only after the owner's review.
 
-| # | OpenPlural v0.1 | Problem | PSDS |
+| # | PluralPort v0.1 | Problem | PluralSpec |
 | --- | --- | --- | --- |
-| 1 | Descriptive tables, no normative language, no conformance levels | Two apps can both "follow the spec" and still not interoperate | RFC 2119 requirements, validation rules (SPEC §9.2), conformance classes (§11) |
+| 1 | Descriptive tables, no normative language, no conformance levels | Two apps can both "follow the spec" and still not interoperate | RFC 2119 requirements, validation rules (SPEC §10.2), conformance classes (§12) |
 | 2 | JSON only | No compact binary form for large histories; no schema that tools can generate code from | proto3 schema is the source of truth; canonical JSON and delimited binary are both encodings of it (§3) |
-| 3 | IDs are **file-local** | Re-importing a later export duplicates everything; no merge | Ids are stable UUIDs across exports; re-import merges (§2.2, §9.5) |
+| 3 | IDs are **file-local** | Re-importing a later export duplicates everything; no merge | Ids are stable UUIDs across exports; re-import merges (§2.2, §10.5) |
 | 4 | `front_periods` **and** `front_events`, no rule when both are present | Two sources of truth that can disagree | Spans are the truth; switches are annotations; a normative fold turns switch-only files into spans (§5) |
 | 5 | `front_role` mixes tiers (`co_conscious`) with ordering (`primary`) | Can't say "the primary co-conscious member", nor order co-fronters | `level` + `primary` + `position` are separate (§5.2) |
 | 6 | Custom fronts are a `member.is_custom_front` flag | They get counted, listed and authored as members | A separate `State` subject (§4.3) |
 | 7 | Groups (`parent_group_id`) **and** nested systems (`parent_system_id`) | Two ways to model a subsystem | One: `Group` with `kind: SUBSYSTEM`, which can front (§4.4) |
 | 8 | `CustomFieldValue.value: unknown` | Every importer re-invents type checks | A typed `oneof` per field type; select values point at option ids (§4.6) |
-| 9 | Text is "markdown if flagged", no mention syntax | Mentions and formatting don't survive, ids get lost in text | `RichText`: plain, PSDS markdown (with `psds:` mention links) or entity spans (§2.6) |
+| 9 | Text is "markdown if flagged", no mention syntax | Mentions and formatting don't survive, ids get lost in text | `RichText`: plain, PluralSpec markdown (with `pluralspec:` mention links) or entity spans (§2.6) |
 | 10 | `Note.member_id` means "subject", `author_member_ids` means "writers" (noted as an open question) | Board messages, notes and journals blur | `Post` with explicit authors / about / recipients and a kind (§6) |
-| 11 | Privacy rounds to one of five words; buckets only in raw `source` | Buckets are lost on every import | `Audience` with buckets and in-system member limits; a strictness order; import never widens (§4.7, §10) |
+| 11 | Privacy rounds to one of five fixed words; buckets only in raw `source` | Buckets and custom sharing tiers are lost on every import | Visibility classes the system defines, as records; audiences refer to them; a subset order so import never widens (§4.7, §11) |
 | 12 | Assets inline as base64 or by URL | Large files bloat JSON; URLs rot | Content-addressed blobs in a ZIP container; inline bytes only in single-document files (§8) |
 | 13 | No tombstones in core | A merge can't tell "deleted" from "not exported" | Common header with `deleted_at` and `archived_at` (§2.4) |
 | 14 | Chat messages have one author | Joint and segmented messages (Chorus) can't be represented | Several authors and per-range segments (§7) |
+| 15 | Only current state; edits and deletions leave no trace | No edit history, undo or audit after a move | Module `history`: standard change events for every record type, and custom events that later versions can upgrade (§9) |
+| 16 | Only members front (`FrontAssignment.member_id`) | A subsystem fronting as one, or a subsystem's own inner front, can't be recorded | Groups that `can_front` are subjects, and each subsystem can have an internal front (§5.3) |
 
 ## The owner's `plural.proto` (February 2024)
 
@@ -139,9 +143,9 @@ It does not compile: `avatar_url = 4` and `is_subsystem = 5` reuse field numbers
 ## Chorus
 
 Its own design (docs/ENTITIES.md, DATA_MODEL.md) is the most complete model surveyed for
-fronting and chat, and PSDS borrows its shapes: levels (front, co-con, present), primary +
+fronting and chat, and PluralSpec borrows its shapes: levels (front, co-con, present), primary +
 position, subjects that are members, groups or states, per-subject intervals derived from
 switches, multi-author messages with segments, plain text + entity spans, audience modes with
-buckets and per-field visibility. What Chorus keeps outside PSDS — accounts, devices, follows,
+buckets and per-field visibility. What Chorus keeps outside PluralSpec — accounts, devices, follows,
 notification ceilings, sessions, webhooks, the op log — is service state, not the system's data
 (SPEC §1.2).

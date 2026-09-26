@@ -1,50 +1,26 @@
-// PSDS v0.1 draft — assets, the archive (manifest + records) and the import report.
+// PluralSpec v0.1 draft — the file: manifest, single-document archive, and the import report.
 syntax = "proto3";
 
-package psds.v1;
+package pluralspec.v1;
 
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
-import "psds/v1/chat.proto";
-import "psds/v1/common.proto";
-import "psds/v1/content.proto";
-import "psds/v1/fields.proto";
-import "psds/v1/front.proto";
-import "psds/v1/system.proto";
-
-// A file: an avatar, a banner, an attachment, a custom emoji image.
-message Asset {
-  string id = 1;
-  google.protobuf.Timestamp created_at = 2;
-  google.protobuf.Timestamp updated_at = 3;
-  google.protobuf.Timestamp deleted_at = 4;
-
-  // Lowercase hex SHA-256 of the bytes. In a container, the bytes are at blobs/sha256/<hex>.
-  string sha256 = 10;
-  string mime_type = 11;
-  uint64 size_bytes = 12;
-  string file_name = 13;
-  uint32 width = 14;
-  uint32 height = 15;
-  uint32 duration_ms = 16;
-  string alt_text = 17;
-  bool spoiler = 18;
-  // Where the bytes can be fetched when they are not in the file (fragile; see SPEC.md §8).
-  string uri = 19;
-  // The bytes themselves: single-document JSON files only.
-  bytes data = 20;
-
-  repeated SourceRef source_refs = 900;
-  map<string, google.protobuf.Struct> ext = 901;
-}
+import "pluralspec/v1/asset.proto";
+import "pluralspec/v1/chat.proto";
+import "pluralspec/v1/common.proto";
+import "pluralspec/v1/content.proto";
+import "pluralspec/v1/fields.proto";
+import "pluralspec/v1/front.proto";
+import "pluralspec/v1/record.proto";
+import "pluralspec/v1/system.proto";
 
 // The manifest: first in every file, readable without the rest.
 message Manifest {
-  // The PSDS version the file follows, "0.1.0".
-  string psds_version = 1;
+  // The PluralSpec version the file follows, "0.1.0".
+  string pluralspec_version = 1;
   google.protobuf.Timestamp exported_at = 2;
   Producer producer = 3;
-  // The modules this file fills (SPEC.md §3.3): "core", "fronting", "fields", "posts", …
+  // The modules this file fills (SPEC.md §3.4): "core", "fronting", "fields", "posts", …
   repeated string modules = 4;
   ExportProfile profile = 5;
   // Records per type, e.g. {"member": 42}.
@@ -57,6 +33,12 @@ message Manifest {
   BodyEncoding body_encoding = 9;
   // SHA-256 of the body file in a container, lowercase hex.
   string body_sha256 = 10;
+  // How text positions are counted everywhere in the file. Unset means UTF-16 code units.
+  TextOffsetUnit text_offset_unit = 11;
+  // Module "history": what the events cover.
+  HistoryCoverage history = 12;
+  // profile = SHARED: the visibility classes the file was made for.
+  repeated string shared_for_class_ids = 13;
 
   map<string, google.protobuf.Struct> ext = 901;
 }
@@ -75,7 +57,7 @@ enum ExportProfile {
   EXPORT_PROFILE_UNSPECIFIED = 0;
   // Everything, including private data: a backup, or moving to another app.
   EXPORT_PROFILE_FULL = 1;
-  // Only what the chosen audience may see, for giving to someone else (SPEC.md §10.2).
+  // Only what the chosen visibility classes may see, for giving to someone else (SPEC.md §11.2).
   EXPORT_PROFILE_SHARED = 2;
 }
 
@@ -89,11 +71,19 @@ enum BodyEncoding {
   BODY_ENCODING_JSON_DOCUMENT = 3;
 }
 
+message HistoryCoverage {
+  // History starts here; unset means from the beginning of the system's data.
+  google.protobuf.Timestamp since = 1;
+  // Replaying every event from nothing (or from the state at `since`) gives exactly the records
+  // in this file (SPEC.md §9.6).
+  bool complete = 2;
+}
+
 message Warning {
   WarningLevel level = 1;
-  // Registered code (SPEC.md §9.3): "module_not_supported", "asset_uri_only", …
+  // Registered code (SPEC.md §10.3): "module_not_supported", "asset_uri_only", …
   string code = 2;
-  // The Record type it concerns ("member", "front_span"), if any.
+  // The record type it concerns ("member", "front_span"), if any.
   string record_type = 3;
   string record_id = 4;
   string message = 5;
@@ -110,43 +100,12 @@ enum WarningLevel {
   WARNING_LEVEL_ERROR = 3;
 }
 
-// One record of any type: a line of data.jsonl, or one delimited message of data.binpb.
-message Record {
-  oneof record {
-    System system = 1;
-    Member member = 2;
-    State state = 3;
-    Group group = 4;
-    GroupMembership group_membership = 5;
-    Label label = 6;
-    LabelAssignment label_assignment = 7;
-    Bucket bucket = 8;
-    FieldDefinition field_definition = 9;
-    FieldValue field_value = 10;
-    Asset asset = 11;
-
-    FrontSpan front_span = 20;
-    FrontSwitch front_switch = 21;
-    FrontComment front_comment = 22;
-
-    Post post = 30;
-    Reaction reaction = 31;
-    RelationshipType relationship_type = 32;
-    Relationship relationship = 33;
-    Contact contact = 34;
-    Poll poll = 35;
-    Vote vote = 36;
-
-    Channel channel = 40;
-    Message message = 41;
-    MessageRevision message_revision = 42;
-    CustomEmoji custom_emoji = 43;
-  }
-}
-
 // The single-document form: a manifest and every record, grouped by type. Same records as the
-// stream form; readers MUST accept both.
+// stream form (Record, record.proto); readers MUST accept both.
 message Archive {
+  reserved 17, 52;
+  reserved "buckets", "message_revisions";
+
   Manifest manifest = 1;
 
   repeated System systems = 10;
@@ -156,10 +115,10 @@ message Archive {
   repeated GroupMembership group_memberships = 14;
   repeated Label labels = 15;
   repeated LabelAssignment label_assignments = 16;
-  repeated Bucket buckets = 17;
   repeated FieldDefinition field_definitions = 18;
   repeated FieldValue field_values = 19;
   repeated Asset assets = 20;
+  repeated VisibilityClass visibility_classes = 21;
 
   repeated FrontSpan front_spans = 30;
   repeated FrontSwitch front_switches = 31;
@@ -175,11 +134,13 @@ message Archive {
 
   repeated Channel channels = 50;
   repeated Message messages = 51;
-  repeated MessageRevision message_revisions = 52;
   repeated CustomEmoji custom_emoji = 53;
+
+  // In replay order (SPEC.md §9.2).
+  repeated Event events = 60;
 }
 
-// What an importer reports after reading a file (SPEC.md §9.4).
+// What an importer reports after reading a file (SPEC.md §10.4).
 message ImportReport {
   google.protobuf.Timestamp started_at = 1;
   google.protobuf.Timestamp finished_at = 2;

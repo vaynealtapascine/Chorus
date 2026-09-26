@@ -1,0 +1,11 @@
+PluralSpec — an open data format for plural systems
+Copyright (c) 2026 Vayne Altapascine
+
+Everything in this directory (spec/) — the specification text, the Protocol Buffers schema
+under proto/, and the examples — is licensed under the Creative Commons
+Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0).
+
+  Summary:  https://creativecommons.org/licenses/by-nc-sa/4.0/
+  Legal code: https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode
+
+The rest of the Chorus repository is licensed separately under the MIT License (../LICENSE).

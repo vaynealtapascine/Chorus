@@ -1,198 +1,221 @@
-# PSDS — design notes and open decisions
+# PluralSpec — design notes and decisions
 
-The choices the 0.1 draft makes, the alternatives, and what is still open. Each has a status:
-**proposed** (in the draft, waiting for the owner), **open** (no default yet), or **settled**.
-When one is settled, record it here and, if it changes Chorus, as a `D-xxx` in
-`docs/DECISIONS.md`.
+The choices behind the draft, with a status each:
+**settled** (the owner decided; don't re-ask), **provisional** (settled for now, the owner will
+revisit), **proposed** (in the draft, waiting for the owner's review), **open**.
+Settled items that change Chorus also get a `D-xxx` in `docs/DECISIONS.md`.
+
+Owner answers of 2026-09-26 are quoted where they settle something.
 
 ---
 
-## D0 · Name — open
+## D0 · Name — settled: PluralSpec
 
-"PSDS" (Plural Systems Data Specification) is a working title. It shows up in the proto
-package (`psds.v1`), the `psds:` URI scheme, the `.psds` extension and the UUID namespace
-comment, so renaming is a search-and-replace now and a breaking change after 1.0. Wanted: short,
-unclaimed in the plural-app space, and not "OpenPlural"-adjacent unless it becomes OpenPlural
-(D1).
+> "PluralSpec then since i guess it's not taken."
 
-## D1 · Relationship to OpenPlural — proposed: compatible superset, offered upstream
+Checked 2026-09-26: no plural-community spec, repository, npm package or crate uses the name (a
+Go i18n library has an unrelated internal type `PluralSpec`). Package `pluralspec.v1`, URI scheme
+`pluralspec:`, files `.pluralspec` / `.pluralspec.json`, `ext` namespace `pluralspec`.
 
-OpenPlural v0.1 is a community effort with maintainers of several apps involved, and its own
-README asks for a JSON Schema, fixtures and conformance tests next. A competing standard would
-split a small community.
+## D1 · Relationship to PluralPort — settled: superset, changes offered as proposals
 
-Options:
+> "PluralPort superset, with changes submitted as proposals."
 
-1. **Superset** (the draft): PSDS stays a lossless target for every OpenPlural file (Appendix A.1),
-   exports to OpenPlural with warnings, and its fixes (PRIOR_ART table) are proposed upstream as
-   OpenPlural v0.2 issues. If OpenPlural adopts them, PSDS can become "OpenPlural's schema".
-2. **Adopt OpenPlural as is** and put Chorus-specific data in `extensions`: least work, but
-   inherits the two-sources-of-truth fronting, file-local ids and untyped values.
-3. **Independent spec**: freedom, at the cost of fragmentation.
+PluralPort is the new name of OpenPlural (PluralSpace/openplural; the PluralPort repository says
+so). PluralSpec reads every PluralPort v0.1 file without loss (SPEC Appendix A.1) and writes
+PluralPort with warnings. The fixes in PRIOR_ART.md go to PluralPort as proposals **only after
+the owner has reviewed the spec**; nothing is sent upstream before then.
 
-Recommendation: 1. The first concrete step is to open a discussion on the OpenPlural repository
-with the table in PRIOR_ART.md once the owner is happy with the draft.
+## D2 · Schema language: proto3, JSON first-class — settled (owner asked for ProtoBuf)
 
-## D2 · Schema language: proto3, with JSON as a first-class encoding — proposed
+proto3 is the source of truth; canonical JSON and delimited binary are its encodings (SPEC §3).
+The JSON quirks that matter, and how the spec handles them:
 
-The owner asked for ProtoBuf. What it buys: one schema that generates types for Rust (prost),
-Kotlin/Java, TypeScript (protobuf-es), Swift, Python and Go; a compact binary form for years of
-chat; well-defined evolution rules (field numbers). What it costs: proto3's JSON mapping has
-quirks that matter for a human-facing format:
+- printers emit `lowerCamelCase` unless told otherwise → the spec requires `snake_case` output
+  and camelCase acceptance (verified: `buf convert` reads snake_case, prints camelCase);
+- defaults are omitted (`position: 0` disappears) → readers treat absent as default;
+- enums print long names and strict parsers reject unknown ones → unknown values are non-fatal;
+- 64-bit integers print as strings → readers accept numbers too.
 
-- **Field names**: printers emit `lowerCamelCase` unless told to keep proto names. The spec
-  requires `snake_case` output (matching OpenPlural and PluralSpace) and camelCase acceptance.
-  Verified: `buf convert` round-trips `examples/small-system.json` (snake_case in) and prints
-  camelCase out.
-- **Defaults are omitted**: `position: 0`, `offset: 0` disappear from printed JSON. Harmless
-  for proto readers; hand-written readers must treat absent as default.
-- **Enums print long names** (`FRONT_LEVEL_CO_CONSCIOUS`) and strict parsers reject unknown
-  names. The spec makes unknown names non-fatal (§3.1), but it depends on consumers setting
-  "ignore unknown" options.
-- **64-bit integers print as strings.**
+Generated artifacts, from the same `.proto`: JSON Schema (for JSON-only apps), TypeScript
+(protobuf-es), Rust (prost + protox, no `protoc` needed), Kotlin (protobuf-kotlin-lite).
 
-Other general implementations, generated from the same `.proto`:
+## D3 · Stable ids — settled
 
-| Artifact | How | Status |
-| --- | --- | --- |
-| JSON Schema (for people who won't touch protobuf) | `protoc-gen-jsonschema` or buf's JSON Schema plugin, snake_case | to do |
-| TypeScript types + codec | `@bufbuild/protobuf` (protobuf-es) | to do |
-| Rust types | `prost` + `prost-build` or `protox` (pure Rust, no `protoc` binary) | to do (Chorus) |
-| Kotlin | `protobuf-kotlin-lite` | to do (Chorus Android) |
-| SQLite reference layout | one table per record type, `ext`/`source_refs` as JSON columns | optional appendix |
+> "Yes, they should stay persistent."
 
-Alternative considered: JSON Schema as the source of truth (OpenPlural's plan). Rejected as the
-*source* because it can't generate a binary form or strongly typed code across languages as well,
-but it should be *generated* for JSON-only apps.
+UUIDs that never change for a record; UUIDv5 derivation for sources without UUIDs, which also
+makes converting the same foreign export twice idempotent (SPEC §2.2).
 
-## D3 · Stable ids — proposed
+## D4 · Fronting truth: spans, with switches as annotations — provisional
 
-OpenPlural ids are file-local, so re-importing next month's export duplicates everything. PSDS
-ids are UUIDs that never change for a record, with UUIDv5 derivation for sources that lack UUIDs
-(§2.2), which also makes converting the same foreign export twice idempotent. Cost: producers
-must persist ids, which every app with a database already does.
+> "That's fine for now, but I will go over this more later."
 
-## D4 · Fronting truth: spans, with switches as annotations — proposed
+`FrontSpan` is the truth; `FrontSwitch` is an optional log; a normative fold turns switch-only
+files into spans (SPEC §5). Why spans: most apps store intervals; durations need no replay;
+independent co-fronting needs no ordering tricks. What only the switch log keeps: note-only
+switches and pure reorderings, which is why the log stays as an optional record. Note that with
+history (D11) a file can now also carry every change to spans and switches as events.
 
-The hardest call. Two shapes exist in the wild: switch events (PluralKit, and Chorus internally)
-and per-subject intervals (almost everyone else). OpenPlural carries both with no rule for
-conflicts.
+## D5 · Subsystem fronting — proposed (owner asked "Fields for subsystem fronting?")
 
-Draft: `FrontSpan` is the truth; `FrontSwitch` is optional history of how it was recorded; a
-normative fold (§5.4) turns switch-only files into spans.
+Before: a subsystem could only front as a unit (a span whose subject is the group, which needs
+`can_front`). Added in this draft:
 
-Why spans: they are what most apps store; they are directly analysable (duration = end − start,
-no replay); co-fronting with independent start and end times needs no ordering tricks.
-What is lost: a switch that changed nothing (a note-only switch) and pure reorderings exist only
-in the switch log, so the log is kept as an optional record type rather than dropped.
+- **`scope_group_id`** on `FrontSpan` and `FrontSwitch`: each span belongs to a *front* — the
+  system's (empty) or a subsystem's **internal front** (the subsystem's id). A subsystem can be
+  out as a unit in the system front while its own members take turns at its internal front, and
+  it can have internal front history while it isn't out at all.
+- The fold and the invariants run per front (SPEC §5.3–5.5).
+- Existing fields that describe subsystems: `Group.kind = SUBSYSTEM`, `can_front`,
+  `Subsystem.structure` (with / without a main member), `main_member_id`, and a subsystem `tag`.
 
-Alternative: switches as truth (Chorus's own model). Rejected for the interchange format because
-every interval-based app would have to synthesise events, and "who fronted when" would need the
-fold to read at all. Chorus keeps its op log internally and exports both (Appendix A.5).
+SPEC §5.3 has a table of the four situations this covers. For review: are there subsystem
+fronting situations it doesn't cover? Candidates we have not modelled: blends (members merged
+into one), and a member fronting "for" a subsystem without the subsystem itself being out.
 
-## D5 · Level, primary and position are separate — proposed
+## D6 · Custom fronts are their own record — settled
 
-OpenPlural's `front_role` mixes a tier (`co_conscious`) with rank (`primary`). PSDS splits:
-`level` (FRONTING, CO_CONSCIOUS, INFLUENCING, PRESENT), `primary` (bool), `position` (order).
-INFLUENCING is Ampersand's; PRESENT is Chorus's "present-transient". Open sub-question: are four
-levels enough? Candidates seen elsewhere (`background`, `muted`, `asleep`) look like *states*
-rather than levels and map to `State` subjects in the draft.
+> "Yes, own record."
 
-## D6 · Custom fronts are their own record — proposed
+`State` (SPEC §4.3).
 
-`State`, not a flagged member (§4.3), so they don't inflate member counts, can't author, and
-don't need member fields. Chorus already works this way.
+## D7 · Text positions — settled: declared unit, UTF-16 by default
 
-## D7 · Text: three forms, offsets in code points — proposed
+> "Maybe let's have a 'format option' to declare if UTF-8 or UTF-16, but interpret as UTF-16 if
+> unspecified."
 
-Most apps store markdown; Chorus stores plain text + entity spans. Forcing either loses
-something (spans can't express headings or lists; markdown can't carry a mention's id without a
-convention). So `RichText` is plain, PSDS markdown (with `psds:` links for mentions and emoji) or
-entities, and every reader can at least show the characters.
+`Manifest.text_offset_unit` = UTF16 (default) or UTF8, applying to every position in the file:
+entity spans, message segments, quote ranges (SPEC §2.6). Chorus writes UTF16 and needs no
+conversion. A third option (Unicode code points, native to Python and Swift) can be added later
+as a new enum value without breaking anything.
 
-Offsets: the draft counts **Unicode code points**, the language-neutral choice. Chorus, JavaScript,
-Kotlin and Telegram count **UTF-16 code units**, so Chorus converts at export and import. The
-other way round would make Rust, Python and Go convert. Open for the owner: code points (draft)
-or UTF-16?
+## D8 · Visibility classes are records — proposed (owner: "customizable … their own record")
 
-## D8 · Audience — proposed
+> "Visibilities classes should be customizable and so they should be their own record."
 
-Six ordered tiers (MEMBERS, PRIVATE, BUCKETS, FRIENDS, INSTANCE, PUBLIC), bucket lists, in-system
-member lists, and per-field overrides including sub-fields (`birthday.year`). The ordering gives
-a precise "round to stricter" rule (§4.7), and PluralKit's per-field privacy, Simply Plural's
-buckets and Chorus's modes all map without loss. Follower *ceilings* (Chorus's delay, fuzz,
-digest) are service behaviour and stay out.
+Replaces the fixed tiers and `Bucket` of the first draft:
 
-## D9 · Files: a ZIP container with a record stream — proposed
+- **`VisibilityClass`** record: `name`, `description`, `color`, `emoji`, `sort_key`, and a
+  `kind` that says who is in it — CUSTOM (contacts assigned via `Contact.class_ids`), FRIENDS,
+  INSTANCE, PUBLIC. Built-in kinds are records too, so a system can rename "Friends" to
+  "Followers" or colour "Public". `includes_class_ids` nests classes ("Partners" ⊂ "Close
+  friends").
+- **`Audience`** = `class_ids` (the system plus everyone in those classes) or `member_ids` (an
+  in-system limit), or empty for "only the system".
+- Narrowing when a target can't express a class uses the kinds' subset order (SPEC §4.7), so a
+  custom class is never widened to "friends".
+
+For review: whether classes should also carry *permissions* (PluralSpace's roles decide what a
+friend can do, not only see — e.g. "can see front history"). The draft expresses those as the
+audience of each record type, which covers seeing but not acting.
+
+## D9 · Files: a ZIP container with a record stream, optional age encryption — proposed
 
 `manifest.json` + `data.jsonl` or `data.binpb` + content-addressed `blobs/`, or a single JSON
-document for small files. The stream form lets a consumer import millions of messages without
-holding one giant JSON array in memory; the document form stays OpenPlural-like and easy to
-write by hand. Both carry the same records. Encryption is the whole file with age (§3.5), not a
-PSDS-specific scheme.
+document for small files (SPEC §3.3).
 
-## D10 · Closed enums vs open vocabularies — proposed, worth a second look
+> "What do you mean by age layer?"
 
-Enums where the set is closed and meaning matters for behaviour (levels, audience tiers, field
-types, switch kinds, post and channel kinds); strings with a registry where apps will keep
-inventing values (label kinds, warning codes, app ids). Risk: a new level or post kind needs a
-spec release, and old strict parsers drop it. Mitigation: unknown enum values are non-fatal and
-preserved in binary.
+**age** ([age-encryption.org](https://age-encryption.org/v1)) is a small, modern, widely reviewed
+format and tool for encrypting a whole file, with implementations in Go, Rust (rage), TypeScript
+(typage) and others. "An age layer" means: take the finished `.pluralspec` file and encrypt the
+whole thing with age, giving `system.pluralspec.age`, with either a passphrase or a public key.
+Decrypting gives back the ordinary file. PluralSpec would recommend it for FULL exports (which
+contain everything private) instead of inventing its own encryption or relying on ZIP's
+password protection, which is weak or unevenly supported. For review: keep age as the
+recommended encryption, or leave encryption out of the spec entirely?
 
-## D11 · Snapshots now, change logs later — proposed
+## D10 · Closed enums vs open vocabularies — proposed
 
-0.1 stores **state**: every record as it is now, plus tombstones. It does not standardise a
-sync protocol or an operation log. Chorus's op log could become a future `ops` module (a
-PSDS-shaped change feed), but only once a second app wants it.
+Enums where the set is closed and meaning drives behaviour (levels, class kinds, field types,
+switch kinds, post and channel kinds, change kinds); strings with a registry where apps keep
+inventing values (label kinds, warning codes, app ids, custom event types).
 
-## D12 · Merge rule: newest record wins — proposed
+## D11 · History from the start — proposed (owner: cover history now)
 
-Whole-record last-writer-wins by `updated_at` (§9.5), deliberately simple so every app can do it;
-apps with field-level merging may do better. Open: should a consumer that finds a *different*
-record with the same `source_refs` but a different id treat them as the same? The draft says yes
-(match by id, then by source ref).
+> "I would like to cover history as early as now, with custom events able to be converted
+> forwards into future spec versions."
+
+Module `history` (SPEC §9, `record.proto`):
+
+- **`Event`**: immutable; `at`, `created_at`, `type`, `actor_member_id`, `origin`, `targets`,
+  and a body.
+- **Standard events**: `<record type>.<change>` (`member.update`) with the whole record `after`
+  the change, the changed `fields`, and optionally `before`. Because `after` is a whole record,
+  every record type has history, including types added later, with no new event types. Message
+  and post edit history is `before`/`after` of `*.update` events (the first draft's
+  `MessageRevision` is gone).
+- **Custom events**: `<namespace>:<name>`, a payload `version`, a JSON `payload`, a readable
+  `summary`, and the standard `effects` they had. Consumers must keep custom events they don't
+  understand and apply their effects when replaying.
+- **Forward conversion**: apps register custom types they want standardised; when a later spec
+  version adds a standard form, it ships an *upgrade* (`from` type + version → `to` type + field
+  mapping), and consumers apply upgrades to older files, keeping the original under
+  `ext.pluralspec.upgraded_from` (SPEC §9.5).
+- Events merge by union on id and keep the producer's order; `manifest.history` says whether
+  replaying them reproduces the records.
+
+Deliberately not a sync protocol (SPEC §9.7): no clocks or causality between devices.
+
+## D12 · Merge rule: newest record wins — settled
+
+> "Yes."
+
+Whole-record last-writer-wins by `updated_at`, match by id then by source ref; events merge by
+union (SPEC §10.5).
 
 ## D13 · Chat scope — proposed
 
-A system's own channels and messages, including the messages it can read in shared channels
-(marked `shared`, with external authors as display names and optional contact links). Spaces,
-roles and channel permissions between accounts are server state and out of scope.
+A system's own channels and messages, plus what it can read in shared channels (marked
+`shared`, external authors as display names). Spaces, roles and permissions between accounts
+are server state and out of scope.
 
-## D14 · Licence and governance — open
+## D14 · Licence — settled: CC BY-NC-SA 4.0
 
-Suggested: schema and examples under MIT (like OpenPlural and Chorus), prose under CC BY 4.0;
-changes by pull request with a public changelog; app ids registered by PR. To decide together
-with D1.
+> "CC BY-SA-NC."
 
-## D15 · Where the spec lives — proposed: here for now, its own repository at 0.2
+The whole `spec/` directory (text, schema, examples) is under CC BY-NC-SA 4.0 (`spec/LICENSE`);
+the rest of the Chorus repository stays MIT. Consequences worth knowing before 1.0:
 
-It starts in `Chorus/spec/` so the Chorus implementation can move with it. Once named (D0) and
-discussed with OpenPlural (D1), it should move to its own repository so other apps don't have to
-depend on Chorus's.
+- The `.proto` files are copied into implementations and compiled into their code, so
+  **NonCommercial also applies to the schema**: an app that charges money (as Simply Plural's
+  paid tier did) could not use the schema files as they are. If that is not the intent, the
+  schema could be licensed separately (e.g. MIT) while the prose stays BY-NC-SA.
+- PluralPort is MIT. Proposals sent there are the owner's to license as the owner likes, but
+  text copied from this spec into PluralPort would need the owner's permission under MIT terms.
+
+## D15 · Where the spec lives — settled
+
+> "Leave in Chorus, then move to new repo once we completely pin it down."
 
 ---
 
 ## Readiness path
 
-| Stage | Done when | Status |
+Owner, 2026-09-26: work through step 4, then stop; the owner reviews the spec before anything
+goes to PluralPort.
+
+| Step | Done when | Status |
 | --- | --- | --- |
-| 0.1 draft | SPEC.md, `.proto` compiling and lint-clean (`buf build`, `buf lint` STANDARD), one example round-tripping JSON → binary → JSON | **done 2026-09-26** |
-| Decisions | D0–D15 settled by the owner | next |
-| 0.2 schema freeze candidate | fixes from review; generated JSON Schema; a fixture per mapped app (hand-written from the researched shapes) | |
-| Validator | CLI: checks V1–V10, prints an ImportReport-shaped result; runs in CI on the fixtures | |
-| Reference converters | PluralKit v2, Simply Plural, OpenPlural v0.1, PluralSpace → PSDS; PSDS → OpenPlural | |
-| Chorus implementation | export (FULL and SHARED profiles) and import (PSDS + OpenPlural) in Chorus, round-trip test against its own exports | |
-| Upstream | OpenPlural discussion opened with the PRIOR_ART table; second app implements | |
-| 1.0 | two independent implementations interoperate on the fixture suite | |
+| 0 · Draft | SPEC.md, `.proto` building and lint-clean (`buf build`, `buf lint` STANDARD), the example round-tripping JSON → binary → JSON | done 2026-09-26 (second revision: decisions D0–D15 applied) |
+| 1 · JSON Schema + fixtures | JSON Schema generated from the proto (snake_case); a fixture per source app: PluralKit datafile v2, Simply Plural export, PluralSpace GDPR export, PluralPort v0.1, each with its expected PluralSpec output | |
+| 2 · Validator | CLI checking V1–V12 (SPEC §10.2) and printing an ImportReport-shaped result; runs in CI on the fixtures | |
+| 3 · Converters | PluralKit v2, Simply Plural, PluralPort v0.1, PluralSpace → PluralSpec; PluralSpec → PluralPort | |
+| 4 · Chorus | export (FULL and SHARED, with history) and import (PluralSpec and, through the converters, the rest) | |
+| 5 · PluralPort proposals | after the owner's review | **on hold** |
+| 6 · 1.0 | two independent implementations interoperate on the fixtures | on hold |
 
-## Chorus implementation sketch (for when the decisions are in)
+## Chorus implementation sketch
 
-- A `chorus-psds` crate generating Rust types from `spec/proto` with `prost` + `protox` (no
-  `protoc` on the build machines), kept out of `chorus-core` so the core stays small.
-- Export: projections → PSDS records (Appendix A.5), `front_interval` → spans, `switch` →
-  switches; ids reused as is (Chorus ids are already UUIDv7); a new background export kind next
-  to the D-068 bundle.
-- Import: PSDS and OpenPlural → Chorus ops (member.create, front.switch, …) through the normal
-  ingestion path, so imports sync and are undoable like anything else; a switch log is preferred
-  for Chorus's timeline when present, else spans become switches (§5.5, keeping levels).
-- Fixtures under `fixtures/psds/` shared with the validator.
+- A `pluralspec` crate in the workspace (generated types via `prost` + `protox`, the validator,
+  the converters), kept out of `chorus-core` so the core stays small; a `pluralspec` binary for
+  the validator.
+- Export: projections → records (SPEC Appendix A.5), `front_interval` → spans, `switch` →
+  switches, op log → events; ids reused as they are (Chorus ids are UUIDv7); a new export kind
+  beside the D-068 bundle.
+- Import: PluralSpec (and converted formats) → Chorus ops through the normal ingestion path, so
+  imports sync and can be undone like anything else; events become ops where they map, custom
+  events stay in an archive table.
+- Fixtures under `fixtures/pluralspec/`, shared by the validator, the converters and Chorus's
+  round-trip test.

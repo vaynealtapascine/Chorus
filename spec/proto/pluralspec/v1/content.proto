@@ -1,13 +1,13 @@
-// PSDS v0.1 draft — optional modules: posts (notes, journals, board messages, microposts),
+// PluralSpec v0.1 draft — optional modules: posts (notes, journals, board messages, microposts),
 // reactions, relationships, contacts and polls.
 syntax = "proto3";
 
-package psds.v1;
+package pluralspec.v1;
 
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
-import "psds/v1/common.proto";
-import "psds/v1/front.proto";
+import "pluralspec/v1/common.proto";
+import "pluralspec/v1/front.proto";
 
 // Module "posts". Anything written that is not a chat message.
 message Post {
@@ -74,7 +74,7 @@ message Reaction {
   }
   // Empty for an anonymous reaction.
   string member_id = 12;
-  // A Unicode emoji, or psds:emoji/<id> for a custom one.
+  // A Unicode emoji, or pluralspec:emoji/<id> for a custom one.
   string emoji = 13;
 
   repeated SourceRef source_refs = 900;
@@ -138,8 +138,8 @@ message Contact {
   string display_name = 11;
   // Where to find them ("pluralkit" + "abcdef", "chorus" + "@stars@chorus.example").
   repeated Handle handles = 12;
-  // The buckets they are in.
-  repeated string bucket_ids = 13;
+  // The CUSTOM visibility classes they are in.
+  repeated string class_ids = 13;
   RichText note = 14;
 
   repeated SourceRef source_refs = 900;

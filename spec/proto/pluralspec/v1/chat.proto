@@ -1,14 +1,14 @@
-// PSDS v0.1 draft — optional module "chat": a system's channels and the messages its members
-// send in them. Spaces shared between several accounts are server-side and out of scope; a
-// system's export may still carry the channels and messages it can read, marked with
-// Channel.shared.
+// PluralSpec v0.1 draft — optional module "chat": a system's channels and the messages its
+// members send in them. Earlier versions of edited messages are history events (record.proto).
+// Spaces shared between several accounts are server-side and out of scope; a system's export
+// may still carry the channels and messages it can read, marked with Channel.shared.
 syntax = "proto3";
 
-package psds.v1;
+package pluralspec.v1;
 
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
-import "psds/v1/common.proto";
+import "pluralspec/v1/common.proto";
 
 message Channel {
   string id = 1;
@@ -63,8 +63,8 @@ message Message {
   // Who says it. Several authors speak it jointly. Empty for a system notice.
   repeated MessageAuthor authors = 12;
   RichText body = 13;
-  // Parts of the body said by other authors (see SPEC.md §7.3). Ranges count code points of
-  // the body's plain characters and do not overlap.
+  // Parts of the body said by other authors (see SPEC.md §7.3). Ranges are over the body's
+  // plain characters, in the file's text offset unit, and do not overlap.
   repeated Segment segments = 14;
   optional sint32 utc_offset_minutes = 15;
   string reply_to_message_id = 16;
@@ -128,21 +128,7 @@ message MessageSnapshot {
   google.protobuf.Timestamp sent_at = 5;
 }
 
-// An earlier version of an edited message (module "history").
-message MessageRevision {
-  string id = 1;
-  google.protobuf.Timestamp created_at = 2;
-
-  string message_id = 10;
-  RichText body = 11;
-  repeated Segment segments = 12;
-  string content_warning = 13;
-
-  repeated SourceRef source_refs = 900;
-  map<string, google.protobuf.Struct> ext = 901;
-}
-
-// An image emoji referred to as psds:emoji/<id>.
+// An image emoji referred to as pluralspec:emoji/<id>.
 message CustomEmoji {
   string id = 1;
   google.protobuf.Timestamp created_at = 2;

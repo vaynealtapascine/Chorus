@@ -1,12 +1,12 @@
-// PSDS v0.1 draft — core records: the system, its members, custom states, groups and
-// subsystems, labels, and sharing buckets.
+// PluralSpec v0.1 draft — core records: the system, its members, custom states, groups and
+// subsystems, labels, and visibility classes.
 syntax = "proto3";
 
-package psds.v1;
+package pluralspec.v1;
 
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
-import "psds/v1/common.proto";
+import "pluralspec/v1/common.proto";
 
 // A plural system, or a singlet using the same tools.
 message System {
@@ -250,19 +250,41 @@ message RecordRef {
   string id = 2;
 }
 
-// A named group of friends, used by Audience.tier = BUCKETS.
-message Bucket {
+// A visibility class: a named audience the system defines ("Close friends", "Partners",
+// "Everyone"), used by Audience.class_ids. The built-in kinds say who is in the class; CUSTOM
+// classes contain the contacts assigned to them (Contact.class_ids). Systems name, colour and
+// order all their classes, the built-in ones included.
+message VisibilityClass {
   string id = 1;
   google.protobuf.Timestamp created_at = 2;
   google.protobuf.Timestamp updated_at = 3;
   google.protobuf.Timestamp deleted_at = 4;
 
   string system_id = 10;
-  string name = 11;
-  RichText description = 12;
-  string color = 13;
-  string sort_key = 14;
+  VisibilityClassKind kind = 11;
+  string name = 12;
+  RichText description = 13;
+  string color = 14;
+  string emoji = 15;
+  // Order in pickers; also the order apps list classes from most to least private.
+  string sort_key = 16;
+  // Classes whose members are all in this one too ("Partners" inside "Close friends"): an app
+  // that shows one class may show everyone in the classes listed here. Must not form a cycle.
+  repeated string includes_class_ids = 17;
 
   repeated SourceRef source_refs = 900;
   map<string, google.protobuf.Struct> ext = 901;
+}
+
+enum VisibilityClassKind {
+  // Read as CUSTOM.
+  VISIBILITY_CLASS_KIND_UNSPECIFIED = 0;
+  // The contacts assigned to it (Simply Plural buckets, PluralSpace roles, Chorus buckets).
+  VISIBILITY_CLASS_KIND_CUSTOM = 1;
+  // Everyone the system has accepted as a friend or follower.
+  VISIBILITY_CLASS_KIND_FRIENDS = 2;
+  // Everyone signed in to the same server or instance.
+  VISIBILITY_CLASS_KIND_INSTANCE = 3;
+  // Anyone, signed in or not.
+  VISIBILITY_CLASS_KIND_PUBLIC = 4;
 }

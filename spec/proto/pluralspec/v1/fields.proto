@@ -1,11 +1,11 @@
-// PSDS v0.1 draft — custom fields: a definition set up once, values filled in per subject.
+// PluralSpec v0.1 draft — custom fields: a definition set up once, values filled in per subject.
 syntax = "proto3";
 
-package psds.v1;
+package pluralspec.v1;
 
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
-import "psds/v1/common.proto";
+import "pluralspec/v1/common.proto";
 
 message FieldDefinition {
   string id = 1;
@@ -91,7 +91,7 @@ message FieldValue {
 
   string field_id = 10;
   SubjectRef subject = 11;
-  // Must match the definition's type; a mismatch is a validation error (SPEC.md §9).
+  // Must match the definition's type; a mismatch is a validation error (SPEC.md §10.2).
   oneof value {
     string text = 12;
     RichText rich_text = 13;

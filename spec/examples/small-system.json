@@ -1,13 +1,32 @@
 {
   "manifest": {
-    "psds_version": "0.1.0",
+    "pluralspec_version": "0.1.0",
     "exported_at": "2026-09-26T09:00:00Z",
-    "producer": { "app": "Chorus", "app_id": "chorus", "app_version": "0.9.0" },
-    "modules": ["core", "fields", "fronting", "posts", "reactions", "chat", "assets"],
+    "producer": {
+      "app": "Chorus",
+      "app_id": "chorus",
+      "app_version": "0.9.0"
+    },
+    "modules": [
+      "core",
+      "fields",
+      "fronting",
+      "posts",
+      "reactions",
+      "chat",
+      "assets",
+      "history"
+    ],
     "profile": "EXPORT_PROFILE_FULL",
-    "system_ids": ["01923e6a-0000-7000-8000-000000000001"],
+    "system_ids": [
+      "01923e6a-0000-7000-8000-000000000001"
+    ],
     "body_encoding": "BODY_ENCODING_JSON_DOCUMENT",
-    "counts": { "system": "1", "member": "2", "front_span": "3" },
+    "counts": {
+      "system": "1",
+      "member": "2",
+      "front_span": "5"
+    },
     "warnings": [
       {
         "level": "WARNING_LEVEL_INFO",
@@ -16,7 +35,12 @@
         "message": "Chorus notification policies are kept in ext.chorus.",
         "count": "1"
       }
-    ]
+    ],
+    "text_offset_unit": "TEXT_OFFSET_UNIT_UTF16",
+    "history": {
+      "since": "2026-09-26T00:00:00Z",
+      "complete": false
+    }
   },
   "systems": [
     {
@@ -27,9 +51,20 @@
       "tag": "✦ Stars",
       "color": "#c0694e",
       "timezone": "Asia/Manila",
-      "description": { "markdown": "We are **the Stars**. Say hi to [@Kai](psds:member/01923e6a-0000-7000-8000-000000000010)." },
-      "terminology": { "member": { "singular": "headmate", "plural": "headmates" } },
-      "audience": { "tier": "AUDIENCE_TIER_FRIENDS" }
+      "description": {
+        "markdown": "We are **the Stars**. Say hi to [@Kai](pluralspec:member/01923e6a-0000-7000-8000-000000000010)."
+      },
+      "terminology": {
+        "member": {
+          "singular": "headmate",
+          "plural": "headmates"
+        }
+      },
+      "audience": {
+        "class_ids": [
+          "01923e6a-0000-7000-8000-0000000000c1"
+        ]
+      }
     }
   ],
   "members": [
@@ -40,15 +75,44 @@
       "name": "Kai",
       "pronouns": "they/them",
       "color": "#5b8def",
-      "birthday": { "month": 4, "day": 2 },
-      "proxy_tags": [{ "prefix": "k:" }],
-      "sigils": ["🌌"],
+      "birthday": {
+        "month": 4,
+        "day": 2
+      },
+      "proxy_tags": [
+        {
+          "prefix": "k:"
+        }
+      ],
+      "sigils": [
+        "🌌"
+      ],
       "sort_key": "a0",
       "avatar_asset_id": "01923e6a-0000-7000-8000-0000000000a1",
-      "audience": { "tier": "AUDIENCE_TIER_FRIENDS" },
-      "field_audience": { "birthday": { "tier": "AUDIENCE_TIER_PRIVATE" } },
-      "source_refs": [{ "app": "pluralkit", "collection": "members", "id": "kaiabc", "uuid": "5b2a8c1e-3f4d-4e5a-9b6c-7d8e9f0a1b2c" }],
-      "ext": { "chorus": { "notify_policy": { "announce": "everyone", "announce_leaving": false } } }
+      "audience": {
+        "class_ids": [
+          "01923e6a-0000-7000-8000-0000000000c1"
+        ]
+      },
+      "field_audience": {
+        "birthday": {}
+      },
+      "source_refs": [
+        {
+          "app": "pluralkit",
+          "collection": "members",
+          "id": "kaiabc",
+          "uuid": "5b2a8c1e-3f4d-4e5a-9b6c-7d8e9f0a1b2c"
+        }
+      ],
+      "ext": {
+        "chorus": {
+          "notify_policy": {
+            "announce": "everyone",
+            "announce_leaving": false
+          }
+        }
+      }
     },
     {
       "id": "01923e6a-0000-7000-8000-000000000011",
@@ -57,7 +121,9 @@
       "name": "Moss",
       "pronouns": "he/him, it/its",
       "age": "around 30",
-      "sigils": ["🌿"],
+      "sigils": [
+        "🌿"
+      ],
       "sort_key": "a1"
     }
   ],
@@ -76,14 +142,19 @@
       "kind": "GROUP_KIND_SUBSYSTEM",
       "name": "The Garden",
       "can_front": true,
-      "subsystem": { "structure": "SUBSYSTEM_STRUCTURE_WITH_MAIN", "main_member_id": "01923e6a-0000-7000-8000-000000000011" }
+      "subsystem": {
+        "structure": "SUBSYSTEM_STRUCTURE_WITH_MAIN",
+        "main_member_id": "01923e6a-0000-7000-8000-000000000011"
+      }
     }
   ],
   "group_memberships": [
     {
       "id": "01923e6a-0000-7000-8000-000000000031",
       "group_id": "01923e6a-0000-7000-8000-000000000030",
-      "subject": { "member_id": "01923e6a-0000-7000-8000-000000000011" }
+      "subject": {
+        "member_id": "01923e6a-0000-7000-8000-000000000011"
+      }
     }
   ],
   "labels": [
@@ -98,7 +169,10 @@
     {
       "id": "01923e6a-0000-7000-8000-000000000041",
       "label_id": "01923e6a-0000-7000-8000-000000000040",
-      "target": { "type": "member", "id": "01923e6a-0000-7000-8000-000000000011" }
+      "target": {
+        "type": "member",
+        "id": "01923e6a-0000-7000-8000-000000000011"
+      }
     }
   ],
   "field_definitions": [
@@ -108,8 +182,14 @@
       "name": "Favourite season",
       "type": "FIELD_TYPE_SELECT",
       "options": [
-        { "id": "spring", "label": "Spring" },
-        { "id": "autumn", "label": "Autumn" }
+        {
+          "id": "spring",
+          "label": "Spring"
+        },
+        {
+          "id": "autumn",
+          "label": "Autumn"
+        }
       ]
     }
   ],
@@ -117,8 +197,14 @@
     {
       "id": "01923e6a-0000-7000-8000-000000000051",
       "field_id": "01923e6a-0000-7000-8000-000000000050",
-      "subject": { "member_id": "01923e6a-0000-7000-8000-000000000010" },
-      "option_ids": { "ids": ["autumn"] }
+      "subject": {
+        "member_id": "01923e6a-0000-7000-8000-000000000010"
+      },
+      "option_ids": {
+        "ids": [
+          "autumn"
+        ]
+      }
     }
   ],
   "assets": [
@@ -136,7 +222,9 @@
     {
       "id": "01923e6a-0000-7000-8000-000000000060",
       "system_id": "01923e6a-0000-7000-8000-000000000001",
-      "subject": { "member_id": "01923e6a-0000-7000-8000-000000000010" },
+      "subject": {
+        "member_id": "01923e6a-0000-7000-8000-000000000010"
+      },
       "level": "FRONT_LEVEL_FRONTING",
       "primary": true,
       "position": 0,
@@ -147,7 +235,9 @@
     {
       "id": "01923e6a-0000-7000-8000-000000000061",
       "system_id": "01923e6a-0000-7000-8000-000000000001",
-      "subject": { "member_id": "01923e6a-0000-7000-8000-000000000011" },
+      "subject": {
+        "member_id": "01923e6a-0000-7000-8000-000000000011"
+      },
       "level": "FRONT_LEVEL_FRONTING",
       "position": 1,
       "started_at": "2026-09-26T07:00:00Z",
@@ -158,10 +248,32 @@
     {
       "id": "01923e6a-0000-7000-8000-000000000062",
       "system_id": "01923e6a-0000-7000-8000-000000000001",
-      "subject": { "state_id": "01923e6a-0000-7000-8000-000000000020" },
+      "subject": {
+        "state_id": "01923e6a-0000-7000-8000-000000000020"
+      },
       "level": "FRONT_LEVEL_CO_CONSCIOUS",
       "started_at": "2026-09-26T07:40:00Z",
       "ended_at": "2026-09-26T08:10:00Z"
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000063",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "subject": {
+        "group_id": "01923e6a-0000-7000-8000-000000000030"
+      },
+      "level": "FRONT_LEVEL_CO_CONSCIOUS",
+      "started_at": "2026-09-26T08:30:00Z"
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000064",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "scope_group_id": "01923e6a-0000-7000-8000-000000000030",
+      "subject": {
+        "member_id": "01923e6a-0000-7000-8000-000000000011"
+      },
+      "level": "FRONT_LEVEL_FRONTING",
+      "primary": true,
+      "started_at": "2026-09-26T08:30:00Z"
     }
   ],
   "front_switches": [
@@ -172,10 +284,23 @@
       "utc_offset_minutes": 480,
       "kind": "SWITCH_KIND_REPLACE",
       "entries": [
-        { "subject": { "member_id": "01923e6a-0000-7000-8000-000000000010" }, "level": "FRONT_LEVEL_FRONTING", "primary": true },
-        { "subject": { "member_id": "01923e6a-0000-7000-8000-000000000011" }, "level": "FRONT_LEVEL_FRONTING" }
+        {
+          "subject": {
+            "member_id": "01923e6a-0000-7000-8000-000000000010"
+          },
+          "level": "FRONT_LEVEL_FRONTING",
+          "primary": true
+        },
+        {
+          "subject": {
+            "member_id": "01923e6a-0000-7000-8000-000000000011"
+          },
+          "level": "FRONT_LEVEL_FRONTING"
+        }
       ],
-      "note": { "plain": "Morning walk" }
+      "note": {
+        "plain": "Morning walk"
+      }
     }
   ],
   "posts": [
@@ -184,19 +309,24 @@
       "created_at": "2026-09-26T08:45:00Z",
       "system_id": "01923e6a-0000-7000-8000-000000000001",
       "kind": "POST_KIND_ENTRY",
-      "author_member_ids": ["01923e6a-0000-7000-8000-000000000010"],
+      "author_member_ids": [
+        "01923e6a-0000-7000-8000-000000000010"
+      ],
       "title": "A quiet morning",
-      "body": { "markdown": "## Walk\n\nWe saw the heron again. ||It waited for us.||" },
-      "entry_date": { "year": 2026, "month": 9, "day": 26 },
+      "body": {
+        "markdown": "## Walk\n\nWe saw the heron again. ||It waited for us.||"
+      },
+      "entry_date": {
+        "year": 2026,
+        "month": 9,
+        "day": 26
+      },
       "mood": "calm",
-      "audience": { "tier": "AUDIENCE_TIER_BUCKETS", "bucket_ids": ["01923e6a-0000-7000-8000-000000000090"] }
-    }
-  ],
-  "buckets": [
-    {
-      "id": "01923e6a-0000-7000-8000-000000000090",
-      "system_id": "01923e6a-0000-7000-8000-000000000001",
-      "name": "Close friends"
+      "audience": {
+        "class_ids": [
+          "01923e6a-0000-7000-8000-000000000090"
+        ]
+      }
     }
   ],
   "channels": [
@@ -214,17 +344,35 @@
       "channel_id": "01923e6a-0000-7000-8000-0000000000b0",
       "kind": "MESSAGE_KIND_TEXT",
       "authors": [
-        { "member_id": "01923e6a-0000-7000-8000-000000000010" },
-        { "member_id": "01923e6a-0000-7000-8000-000000000011" }
+        {
+          "member_id": "01923e6a-0000-7000-8000-000000000010"
+        },
+        {
+          "member_id": "01923e6a-0000-7000-8000-000000000011"
+        }
       ],
       "body": {
         "entities": {
           "text": "Back home!\nI'll make tea.",
-          "spans": [{ "type": "SPAN_TYPE_BOLD", "offset": 0, "length": 9 }]
+          "spans": [
+            {
+              "type": "SPAN_TYPE_BOLD",
+              "offset": 0,
+              "length": 9
+            }
+          ]
         }
       },
       "segments": [
-        { "offset": 11, "length": 14, "authors": [{ "member_id": "01923e6a-0000-7000-8000-000000000011" }] }
+        {
+          "offset": 11,
+          "length": 14,
+          "authors": [
+            {
+              "member_id": "01923e6a-0000-7000-8000-000000000011"
+            }
+          ]
+        }
       ]
     }
   ],
@@ -234,6 +382,95 @@
       "message_id": "01923e6a-0000-7000-8000-0000000000b1",
       "member_id": "01923e6a-0000-7000-8000-000000000010",
       "emoji": "🍵"
+    }
+  ],
+  "visibility_classes": [
+    {
+      "id": "01923e6a-0000-7000-8000-0000000000c1",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "kind": "VISIBILITY_CLASS_KIND_FRIENDS",
+      "name": "Friends",
+      "sort_key": "b0"
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-000000000090",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "kind": "VISIBILITY_CLASS_KIND_CUSTOM",
+      "name": "Close friends",
+      "color": "#d98fa3",
+      "sort_key": "a0"
+    }
+  ],
+  "events": [
+    {
+      "id": "01923e6a-0000-7000-8000-0000000000e1",
+      "created_at": "2026-09-26T08:20:00Z",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "at": "2026-09-26T08:20:00Z",
+      "utc_offset_minutes": 480,
+      "type": "member.update",
+      "actor_member_id": "01923e6a-0000-7000-8000-000000000011",
+      "origin": "Pixel 9",
+      "targets": [
+        {
+          "type": "member",
+          "id": "01923e6a-0000-7000-8000-000000000011"
+        }
+      ],
+      "change": {
+        "kind": "CHANGE_KIND_UPDATE",
+        "fields": [
+          "pronouns"
+        ],
+        "after": {
+          "member": {
+            "id": "01923e6a-0000-7000-8000-000000000011",
+            "system_id": "01923e6a-0000-7000-8000-000000000001",
+            "name": "Moss",
+            "pronouns": "he/him, it/its",
+            "age": "around 30",
+            "sigils": [
+              "🌿"
+            ],
+            "sort_key": "a1"
+          }
+        },
+        "before": {
+          "member": {
+            "id": "01923e6a-0000-7000-8000-000000000011",
+            "system_id": "01923e6a-0000-7000-8000-000000000001",
+            "name": "Moss",
+            "pronouns": "he/him",
+            "age": "around 30",
+            "sigils": [
+              "🌿"
+            ],
+            "sort_key": "a1"
+          }
+        }
+      }
+    },
+    {
+      "id": "01923e6a-0000-7000-8000-0000000000e2",
+      "created_at": "2026-09-26T08:31:00Z",
+      "system_id": "01923e6a-0000-7000-8000-000000000001",
+      "at": "2026-09-26T08:31:00Z",
+      "type": "chorus:front.review_resolve",
+      "origin": "web",
+      "targets": [
+        {
+          "type": "front_switch",
+          "id": "01923e6a-0000-7000-8000-000000000070"
+        }
+      ],
+      "custom": {
+        "version": 1,
+        "summary": "Kept both of two switches made on different devices at 07:00",
+        "payload": {
+          "review_id": "01923e6a-0000-7000-8000-0000000000e3",
+          "resolution": "keep_both"
+        }
+      }
     }
   ]
 }

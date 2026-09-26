@@ -1,0 +1,123 @@
+// PluralSpec v0.1 draft — the record union, and history (module "history").
+//
+// History is a log of Events. A standard event is a change to one record (created, updated,
+// deleted, …) and carries the record as it was afterwards. A custom event is an app's own kind
+// of event, kept verbatim so it can be converted into a standard one when a later version of the
+// spec defines it (SPEC.md §9).
+syntax = "proto3";
+
+package pluralspec.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "pluralspec/v1/asset.proto";
+import "pluralspec/v1/chat.proto";
+import "pluralspec/v1/common.proto";
+import "pluralspec/v1/content.proto";
+import "pluralspec/v1/fields.proto";
+import "pluralspec/v1/front.proto";
+import "pluralspec/v1/system.proto";
+
+// One record of any type: a line of data.jsonl, or one delimited message of data.binpb.
+// The field name is the record's type name ("member", "front_span"), used by RecordRef.type,
+// pluralspec: URIs and warnings.
+message Record {
+  reserved 8, 42;
+  reserved "bucket", "message_revision";
+
+  oneof record {
+    System system = 1;
+    Member member = 2;
+    State state = 3;
+    Group group = 4;
+    GroupMembership group_membership = 5;
+    Label label = 6;
+    LabelAssignment label_assignment = 7;
+    FieldDefinition field_definition = 9;
+    FieldValue field_value = 10;
+    Asset asset = 11;
+    VisibilityClass visibility_class = 12;
+
+    FrontSpan front_span = 20;
+    FrontSwitch front_switch = 21;
+    FrontComment front_comment = 22;
+
+    Post post = 30;
+    Reaction reaction = 31;
+    RelationshipType relationship_type = 32;
+    Relationship relationship = 33;
+    Contact contact = 34;
+    Poll poll = 35;
+    Vote vote = 36;
+
+    Channel channel = 40;
+    Message message = 41;
+    CustomEmoji custom_emoji = 43;
+
+    Event event = 60;
+  }
+}
+
+// Something that happened to the system's data.
+message Event {
+  string id = 1;
+  // When the producing app stored it (may be later than `at`: made offline, or imported).
+  google.protobuf.Timestamp created_at = 2;
+
+  string system_id = 10;
+  // When it happened.
+  google.protobuf.Timestamp at = 11;
+  optional sint32 utc_offset_minutes = 12;
+  // Standard: "<record type>.<change>", e.g. "member.update", "message.delete".
+  // Custom: "<namespace>:<name>", e.g. "chorus:front.review_resolve".
+  string type = 13;
+  // The member who did it, if known.
+  string actor_member_id = 14;
+  // The device or client it came from, as an opaque label ("Pixel 9", "web").
+  string origin = 15;
+  // The records it touched.
+  repeated RecordRef targets = 16;
+  oneof body {
+    RecordChange change = 20;
+    CustomEvent custom = 21;
+  }
+  // An earlier event this one corrects or undoes.
+  string corrects_event_id = 22;
+
+  repeated SourceRef source_refs = 900;
+  map<string, google.protobuf.Struct> ext = 901;
+}
+
+message RecordChange {
+  ChangeKind kind = 1;
+  // The record after the change (for DELETE: its tombstone; for PURGE: only its id and type).
+  Record after = 2;
+  // UPDATE: the fields that changed, by proto field name ("name", "birthday", "body").
+  repeated string fields = 3;
+  // The record before the change, when the producer keeps it (for undo and audit).
+  Record before = 4;
+}
+
+enum ChangeKind {
+  CHANGE_KIND_UNSPECIFIED = 0;
+  CHANGE_KIND_CREATE = 1;
+  CHANGE_KIND_UPDATE = 2;
+  // Moved to trash (a tombstone; restorable).
+  CHANGE_KIND_DELETE = 3;
+  CHANGE_KIND_RESTORE = 4;
+  CHANGE_KIND_ARCHIVE = 5;
+  CHANGE_KIND_UNARCHIVE = 6;
+  // Erased for good: the event keeps that it happened, never the content.
+  CHANGE_KIND_PURGE = 7;
+}
+
+message CustomEvent {
+  // The version of this custom type's payload, chosen by whoever owns the namespace.
+  uint32 version = 1;
+  google.protobuf.Struct payload = 2;
+  // One line a person can read in a history view, in any app.
+  string summary = 3;
+  // What it did to standard records, when it did anything: a consumer that doesn't know the
+  // type applies these, so the data stays right even if the event itself is only archived.
+  repeated RecordChange effects = 4;
+}

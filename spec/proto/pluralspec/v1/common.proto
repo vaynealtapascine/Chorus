@@ -1,4 +1,4 @@
-// PSDS v0.1 draft — shared value types.
+// PluralSpec v0.1 draft — shared value types.
 //
 // Field-number convention used by every record in this package:
 //   1–9      common header (id, created_at, updated_at, deleted_at, archived_at)
@@ -7,11 +7,11 @@
 // Numbers are never reused; removed fields are `reserved`.
 //
 // `ext` (901) on every record is `map<string, google.protobuf.Struct>`: app- or spec-namespaced
-// data that has no PSDS field, keyed by a registered app id or a reverse-DNS name. "psds" is
-// reserved for the spec itself.
+// data that has no PluralSpec field, keyed by a registered app id or a reverse-DNS name.
+// "pluralspec" is reserved for the spec itself.
 syntax = "proto3";
 
-package psds.v1;
+package pluralspec.v1;
 
 // A reference to the same record in the app it came from. Several are allowed when a
 // record has travelled through more than one app.
@@ -45,8 +45,8 @@ message RichText {
   oneof body {
     // No formatting.
     string plain = 1;
-    // PSDS markdown: CommonMark + GFM tables, strikethrough and task lists, `||spoiler||`,
-    // and `psds:` links for mentions and custom emoji (SPEC.md §2.6).
+    // PluralSpec markdown: CommonMark + GFM tables, strikethrough and task lists,
+    // `||spoiler||`, and `pluralspec:` links for mentions and custom emoji (SPEC.md §2.6).
     string markdown = 2;
     // Plain text plus formatting spans (the Telegram / Chorus model).
     EntityText entities = 3;
@@ -58,12 +58,13 @@ message EntityText {
   repeated Span spans = 2;
 }
 
-// A formatting range over EntityText.text. Offsets and lengths count Unicode code points.
+// A formatting range over EntityText.text, in the file's text offset unit
+// (Manifest.text_offset_unit; UTF-16 code units unless it says otherwise).
 message Span {
   SpanType type = 1;
   uint32 offset = 2;
   uint32 length = 3;
-  // TEXT_LINK: the target. MENTION / CUSTOM_EMOJI: a psds: URI (psds:member/<id>, …).
+  // TEXT_LINK: the target. MENTION / CUSTOM_EMOJI: a pluralspec: URI (pluralspec:member/<id>).
   string url = 4;
   // PRE: the code language, if known.
   string language = 5;
@@ -86,30 +87,23 @@ enum SpanType {
   SPAN_TYPE_HEADING = 13;
 }
 
-// Who may see something. Missing or UNSPECIFIED means PRIVATE.
-// Strictness, most to least: MEMBERS, PRIVATE, BUCKETS, FRIENDS, INSTANCE, PUBLIC.
-message Audience {
-  AudienceTier tier = 1;
-  // tier = BUCKETS: the buckets (friend groups) allowed to see it.
-  repeated string bucket_ids = 2;
-  // tier = MEMBERS: the members of this system allowed to see it (a soft, in-system limit).
-  repeated string member_ids = 3;
+// How every text position in a file (spans, message segments, quotes) is counted.
+enum TextOffsetUnit {
+  // Read as UTF16.
+  TEXT_OFFSET_UNIT_UNSPECIFIED = 0;
+  // UTF-16 code units (JavaScript, Kotlin/Java, Telegram, Chorus).
+  TEXT_OFFSET_UNIT_UTF16 = 1;
+  // UTF-8 bytes (Rust, Go).
+  TEXT_OFFSET_UNIT_UTF8 = 2;
 }
 
-enum AudienceTier {
-  AUDIENCE_TIER_UNSPECIFIED = 0;
-  // Only chosen members of the system.
-  AUDIENCE_TIER_MEMBERS = 1;
-  // The system itself.
-  AUDIENCE_TIER_PRIVATE = 2;
-  // Chosen groups of friends.
-  AUDIENCE_TIER_BUCKETS = 3;
-  // Everyone the system has accepted as a friend or follower.
-  AUDIENCE_TIER_FRIENDS = 4;
-  // Everyone signed in to the same server or instance.
-  AUDIENCE_TIER_INSTANCE = 5;
-  // Anyone.
-  AUDIENCE_TIER_PUBLIC = 6;
+// Who may see something. Empty (no classes, no members) means only the system itself.
+message Audience {
+  // Visible to everyone in any of these VisibilityClass records.
+  repeated string class_ids = 1;
+  // A soft, in-system limit: only these members of the system. When set, class_ids MUST be
+  // empty (the thing is not shared outside the system at all).
+  repeated string member_ids = 2;
 }
 
 // A link shown on a profile.

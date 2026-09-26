@@ -1,15 +1,15 @@
-// PSDS v0.1 draft — fronting.
+// PluralSpec v0.1 draft — fronting.
 //
 // FrontSpan is the one source of truth for who was fronting when (SPEC.md §5). FrontSwitch is
 // an optional log of the moments someone recorded a change, with the note they gave; a file
-// that has only switches (PluralKit) is turned into spans by the fold in SPEC.md §5.4.
+// that has only switches (PluralKit) is turned into spans by the fold in SPEC.md §5.5.
 syntax = "proto3";
 
-package psds.v1;
+package pluralspec.v1;
 
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
-import "psds/v1/common.proto";
+import "pluralspec/v1/common.proto";
 
 enum FrontLevel {
   // Readers treat it as FRONTING.
@@ -26,6 +26,10 @@ enum FrontLevel {
 
 // One continuous stretch of one subject at one level. Co-fronting is several spans that
 // overlap in time. A change of level or of primary ends one span and starts another.
+//
+// Each span belongs to a front: the system's own (scope_group_id empty), or the internal front
+// of a subsystem (scope_group_id = that subsystem). A subsystem can front as a unit in the
+// system's front (subject.group_id) while its members take turns at its own front.
 message FrontSpan {
   string id = 1;
   google.protobuf.Timestamp created_at = 2;
@@ -51,6 +55,9 @@ message FrontSpan {
   string end_switch_id = 20;
   // The source's confidence in this span, 0–1, when it records one.
   optional double confidence = 21;
+  // Empty: the system's front. Otherwise the subsystem (a Group of kind SUBSYSTEM) whose
+  // internal front this span is part of.
+  string scope_group_id = 22;
 
   repeated SourceRef source_refs = 900;
   map<string, google.protobuf.Struct> ext = 901;
@@ -82,6 +89,8 @@ message FrontSwitch {
   RichText note = 15;
   // Who recorded it, if known.
   string recorded_by_member_id = 16;
+  // The front it changes: empty for the system's, or a subsystem's internal front.
+  string scope_group_id = 17;
 
   repeated SourceRef source_refs = 900;
   map<string, google.protobuf.Struct> ext = 901;
