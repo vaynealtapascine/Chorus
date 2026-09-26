@@ -157,7 +157,7 @@ Enums where the set is closed and meaning drives behaviour (levels, class kinds,
 switch kinds, post and channel kinds, change kinds); strings with a registry where apps keep
 inventing values (label kinds, warning codes, app ids, custom event types).
 
-## D11 · History from the start — proposed (owner: cover history now)
+## D11 · History from the start — settled
 
 > "I would like to cover history as early as now, with custom events able to be converted
 > forwards into future spec versions."
@@ -182,6 +182,8 @@ Module `history` (SPEC §9, `record.proto`):
   replaying them reproduces the records.
 
 Deliberately not a sync protocol (SPEC §9.7): no clocks or causality between devices.
+
+> [2026-09-27, on the proposal above] "Your proposal on D11 was sound."
 
 ## D12 · Merge rule: newest record wins — settled
 
