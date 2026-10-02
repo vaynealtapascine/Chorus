@@ -91,6 +91,7 @@ Pin here as they are adopted (tool/library → version → date → why).
 
 | Component | Version | Pinned | Notes |
 | --- | --- | --- | --- |
+| PluralSpec editor | marked 18.0.14, DOMPurify 3.4.16 (exact npm lockfile); Node ≥22 | 2026-10-02 | Standalone local tool in tools/pluralspec-editor; Markdown rendered with marked and sanitized with DOMPurify, all assets served locally. Node built-ins for HTTP/files/backups. |
 | Android targetSdk | 36 | 2026-09-23 | Matches Dun |
 | Android minSdk | 29 | 2026-09-23 | Android 10+; covers owner's Samsung and keeps Keystore/biometric APIs simple |
 | Rust | 1.98 (MSRV via `rust-version`), edition 2024, resolver 3 | 2026-09-23 | No `rust-toolchain.toml`: the machine's stable is 1.98.1 and pinning an exact toolchain would force a second download. |

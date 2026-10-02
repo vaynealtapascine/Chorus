@@ -56,6 +56,9 @@ def main():
 
     if shutil.which('node'):
         run(['node', 'scripts/gen-tokens.mjs', '--check'])
+        editor = os.path.join(ROOT, 'tools', 'pluralspec-editor')
+        if os.path.isdir(os.path.join(editor, 'node_modules')):
+            run(['npm', 'test'], cwd=editor)
     run([sys.executable, 'scripts/projection-check.py'])
     run([sys.executable, 'scripts/api-check.py'])
     run(['cargo', 'fmt', '--all', '--check'])

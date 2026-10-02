@@ -392,3 +392,18 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   error and leaves the previous projection intact. For the regression test, corrupt a typed
   column such as `device_at`: the op decoder deliberately defaults a malformed HLC string, so
   changing `hlc` would not exercise the read-error path.
+
+- 2026-10-02 gpt-6 — **PluralSpec local editor** (`tools/pluralspec-editor`). Its API is restricted
+  to existing text files beneath `spec/`, requires a per-run link key, rejects foreign origins
+  and unknown Host headers, and only accepts loopback/RFC1918 clients. No changes to Windows
+  services or firewall. Runtime links and pre-save byte-for-byte backups are gitignored under
+  `.pluralspec-editor/`; README documents restart and restore. Browser drafts retain the file
+  revision they started from, so recovering a draft cannot silently overwrite an external edit.
+  - Browser textareas normalize CRLF to LF. Compare normalized source in the UI and restore the
+    original file's newline convention on save; otherwise merely opening a Windows file looks
+    like an edit. The isolated browser smoke test used CRLF and confirmed it survives a save.
+  - Node 22's `fetch` normalizes/ignores a supplied Host header. The DNS-rebinding regression uses
+    `http.get` instead, so it actually exercises a foreign Host value.
+  - The existing search WIP causes two `web/src/lib/search.test.ts` failures (`after:150`,
+    `before:1500`). Verify this tool in a clean HEAD checkout with the tool copied in, rather
+    than changing or hiding that unrelated work. Shared build/dependency caches stay on F:.

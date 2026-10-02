@@ -14,7 +14,6 @@ Rules (short form):
 
 ## Now
 
-- **In progress:** M14.11 (gpt-6, 2026-10-02) owner-requested standalone PluralSpec LAN reader/editor; next: implement and verify tools/pluralspec-editor, launch on the home network. Parallel to the previously recorded search work; only spec tooling is in scope.
 - **In progress:** (owner, 2026-09-25) no release until the owner's UI redesign lands (Figma, from docs/FLOWS.md + ENTITIES.md); until then features + a robust core and messaging/channels. **Remote Claude**: batch R5 (`docs/handoff/opus-remote-5.md`): R35 (flaky rest_fuzz, fixed on the server) merged; R30–R34 (PluralSpec implementation) paused by the owner while the spec is still being worked on; the owner asked the remote for modular, out-of-the-way work instead. **Claude (local)**: op payload validation hardening + fuzzing, audits/merges. **gpt-6-sol**: Android (`docs/handoff/sol-batch-5.md`). Chorus Home paused until the designs.
 - **Owner:** deploy `main` to the PC service: `pwsh scripts/deploy.ps1 -Android` (the 2026-09-24 attempt failed on Java 8 from JAVA_HOME after copying only the web app; fixed in 63d1481/9bcc709, so rerun it). The server backs the database up to `backups/pre-migrate-<time>.db` and then applies migrations 0005 (an index) and 0006 (fills in reply/repost links). Behaviour changes to expect: API requests are rate limited (50 burst, 10/s per token; `security.rate_burst`/`rate_per_second` in chorus.toml), the web app is served with a strict CSP, an open restore window now closes by itself 7 days after a restore (`chorus-server reconcile-status` shows it), and blobs are no longer cacheable by shared caches. Phone: Battery Saver is off (2026-09-24); the owner is using the phone, so agree device time before adb work. Chrome notifications are allowed for chorus.vayne.garden: after the deploy, test Web Push from the People page opt-in.
 - **Next concrete step:** see Notes; existing owner, Claude, and Android work remains as recorded above.
@@ -176,7 +175,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 - [-] M14.9 R34 Chorus export/import + round-trip test — remote R5; M14.5–M14.9 paused by the owner (2026-09-26) until the spec is pinned down
 - [-] M14.10 Proposals to PluralPort — on hold until the owner reviews the spec
 
-- [~] M14.11 Local web reader/editor for spec/ with LAN access (owner request, 2026-10-02)
+- [x] M14.11 Local web reader/editor for spec/ with LAN access (owner request, 2026-10-02)
 
 ### Later (not v1)
 
@@ -324,3 +323,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-09-26 claude-opus-5.5 — merged remote R5 (6560d11): R35 `drain.rs` drains unread request bodies so early answers (401/404/413/415/429) no longer reset connections on Windows; `rest_fuzz` + `early_answer` passed 5/5 on the PC (was ~50% failing); verify.py prints UTF-8 when piped. R30–R34 paused by the owner
 - 2026-09-27 claude-opus-5.5 — M14 PluralSpec D11 (history events) settled by the owner
 - 2026-09-27 gpt-6 — A1 Astra-reviewed read-state and sync refactor: named read-state transitions, fail-fast rescan, session dispatch, per-call scope cache, focused regression and two-device scope test.
+- 2026-10-02 gpt-6 — M14.11 standalone PluralSpec reader/editor in `tools/pluralspec-editor`: warm quiet reading view, document/section navigation, source editor + live preview, phone Source/Preview, explicit saves to spec/, retained browser drafts, original-newline preservation, pre-save backups, and stale-revision protection. Running on LAN port 4783 (per-run full links in ignored `.pluralspec-editor/runtime.json`); no service/firewall changes. Six server tests and isolated browser save/draft/conflict/sanitizer checks pass; desktop/phone reviewed, both review fixes resolved; direction documented in tool README. Full `scripts/verify.py` passes with the tool in a clean HEAD checkout; the existing search WIP still fails two web date-filter tests, left untouched.

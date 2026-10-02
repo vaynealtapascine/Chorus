@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>PluralSpec — reader & editor</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/vendor/marked.js" defer></script>
+  <script src="/vendor/purify.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#document">Skip to document</a>
+  <header class="topbar">
+    <a class="brand" href="/" id="home">PluralSpec</a>
+    <span class="subtitle">Reader & editor</span>
+    <div class="top-actions">
+      <div class="modes" aria-label="Document mode">
+        <button id="read" aria-pressed="true">Read</button>
+        <button id="edit" aria-pressed="false">Edit</button>
+      </div>
+      <button id="save" class="primary" hidden disabled>Save changes</button>
+    </div>
+  </header>
+  <div class="workspace">
+    <aside class="sidebar" aria-label="Document navigation">
+      <label for="files">Document</label>
+      <select id="files" disabled><option>Loading…</option></select>
+      <div class="outline-header"><h2>On this page</h2><button id="outline-toggle" aria-expanded="false" aria-controls="outline">Show outline</button></div>
+      <nav id="outline" aria-label="Sections"></nav>
+      <p class="sidebar-note">Edits save to <code>spec/</code> on this PC. A backup is kept before each change.</p>
+    </aside>
+    <main id="document" tabindex="-1">
+      <div class="document-bar">
+        <span id="filepath">spec/SPEC.md</span>
+        <div class="document-actions">
+          <button id="download" hidden>Download draft</button>
+          <button id="reload">Reload file</button>
+        </div>
+      </div>
+      <div id="message" role="status" aria-live="polite">Loading specification…</div>
+      <div id="mobile-views" class="modes" hidden aria-label="Editor view">
+        <button id="source-tab" aria-pressed="true">Source</button>
+        <button id="preview-tab" aria-pressed="false">Preview</button>
+      </div>
+      <div class="panes">
+        <section class="source-pane" hidden aria-label="Source editor">
+          <label for="source" id="source-label">Markdown source</label>
+          <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="editor-hint" disabled></textarea>
+          <p id="editor-hint">Ctrl / ⌘ S to save. Unsaved drafts stay in this browser.</p>
+        </section>
+        <section class="reading-pane" aria-label="Document preview">
+          <article id="preview"></article>
+        </section>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
