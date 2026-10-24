@@ -1,7 +1,8 @@
 # Chorus — design
 
-**Soft & warm** (D-020). Chorus should feel like a lamp-lit room: warm paper in the day, deep warm
-ink at night, rounded shapes, member colours as gentle accents, generous space, quiet motion.
+**Quiet charcoal & teal** (D-079, owner's Figma redesign, 2026-10-24). Dark is the default;
+light and follow-device remain explicit choices. Rounded shapes, warm readable text, member colours
+as gentle accents, compact navigation and quiet motion. See `UI_REDESIGN.md` for source frames.
 Simple by default; everything else one tap away under **Advanced**.
 
 Principles:
@@ -26,16 +27,16 @@ a Kotlin `ChorusTheme` object (Android) — one source of truth (M3.1/M4.1).
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `bg` | `#FBF7F2` | app background |
+| `bg` | `#F7F6F2` | app background |
 | `surface` | `#FFFFFF` | cards, sheets |
-| `surface-2` | `#F4EDE4` | wells, composer, sidebars |
-| `surface-3` | `#EADFD2` | pressed/selected |
-| `line` | `#E4D8CA` | hairlines |
-| `ink` | `#2B2521` | primary text |
-| `ink-2` | `#6F6259` | secondary text |
-| `ink-3` | `#A09184` | tertiary, timestamps |
-| `accent` | `#C0694E` | default accent (terracotta), user-changeable |
-| `accent-soft` | `#F6E1D8` | accent backgrounds |
+| `surface-2` | `#EFEEE9` | wells, composer, sidebars |
+| `surface-3` | `#E4E7E2` | pressed/selected |
+| `line` | `#D8DAD4` | hairlines |
+| `ink` | `#202529` | primary text |
+| `ink-2` | `#565F60` | secondary text |
+| `ink-3` | `#626A68` | tertiary, timestamps |
+| `accent` | `#247D73` | teal accent |
+| `accent-soft` | `#E0EFEB` | accent backgrounds |
 | `ok` | `#5E8C61` | sage |
 | `warn` | `#C99A3B` | honey |
 | `danger` | `#B5524A` | brick (used sparingly) |
@@ -45,16 +46,16 @@ a Kotlin `ChorusTheme` object (Android) — one source of truth (M3.1/M4.1).
 
 | Token | Value |
 | --- | --- |
-| `bg` | `#1B1714` |
-| `surface` | `#231E1A` |
-| `surface-2` | `#2B2520` |
-| `surface-3` | `#362E28` |
-| `line` | `#3A322B` |
-| `ink` | `#F1E9E0` |
-| `ink-2` | `#BCAEA1` |
-| `ink-3` | `#85776B` |
-| `accent` | `#E08A6D` |
-| `accent-soft` | `#3E2A22` |
+| `bg` | `#15161A` |
+| `surface` | `#1E2026` |
+| `surface-2` | `#272A31` |
+| `surface-3` | `#30343C` |
+| `line` | `#34373F` |
+| `ink` | `#FBF3E5` |
+| `ink-2` | `#B1ACA1` |
+| `ink-3` | `#A39E92` |
+| `accent` | `#42A397` |
+| `accent-soft` | `#1D2F30` |
 
 Additional themes (Advanced): **Night sky** (deep blue-violet), **Paper journal** (cream + serif),
 **Material You** (Android dynamic colour), **High contrast**, and a custom theme editor (every
@@ -74,9 +75,8 @@ keep hue and as much chroma as possible:
 
 ### 1.4 Type
 
-- UI/body: **Figtree** (variable), fallback system-ui. Base 16 px web / 16 sp Android.
-- Display (profile names, journal titles, empty states): **Fraunces** (soft, SOFT axis 100, WONK
-  0), used sparingly.
+- UI/body: **Hanken Grotesk** (variable), fallback system-ui. Base 16 px web / 16 sp Android.
+- Display (profile names, journal titles, empty states): **Hanken Grotesk**, bold; the same family keeps product screens consistent.
 - Mono: **JetBrains Mono** for code entities.
 - Alternates (Advanced): Atkinson Hyperlegible, OpenDyslexic, system font.
 - Scale: 12 / 13 / 15 / 16 / 18 / 22 / 28 / 36. Line height 1.45 body, 1.2 headings.
@@ -84,7 +84,7 @@ keep hue and as much chroma as possible:
 
 ### 1.5 Shape, space, elevation
 
-- Radii: 8 (chips, inputs) · 14 (cards, messages in Bubbles) · 20 (sheets) · full (avatars,
+- Radii: 10 (chips, inputs) · 16 (cards, messages) · 22 (sheets/front containers) · full (avatars,
   pills). "Roundness" slider in Advanced scales all radii 0.5×–1.5×.
 - Spacing: 4-pt grid: 4, 8, 12, 16, 20, 24, 32, 48.
 - Density (Advanced): cozy (default) · compact (chat rows −25 %).
@@ -105,9 +105,9 @@ line illustration + one sentence + one action. No mascots.
 
 ## 2. Layout
 
-- **Android**: bottom navigation — **Home · Chat · Members · Journal · More**. Front card pinned at
-  top of Home; a small front pill in every top bar (tap → switcher).
-- **Web, wide (≥ 1024 px)**: left rail (spaces + nav) · list column (channels / members / feeds) ·
+- **Android**: bottom navigation — **Members · Fronting · Chat · Friends · More** (Journal is in More; person accounts lead with Journal). Containment-style front card at
+  the top of Fronting; switch action in the top bar. On expanded Android windows use a navigation rail.
+- **Web, wide (≥ 1024 px)**: persistent app navigation · list column (channels / members / feeds) ·
   main content · optional right panel (profile, thread, pins, members online). Front pill top-left.
 - **Web, narrow**: same as Android.
 - Keyboard (web): `Ctrl/⌘K` command palette (switch, jump to channel/member, actions), `Ctrl/⌘S`
@@ -172,7 +172,7 @@ Presets apply to the chat itself (per device) and to stage mode:
 
 **Basic** (one screen, ~12 rows):
 
-1. Appearance: theme (auto/light/dark), accent, text size.
+1. Appearance: theme (dark by default / light / follow device), accent, text size.
 2. Words: terminology (member/front/switch/subsystem).
 3. Switching: widget default mode, undo duration shown as "Undo for 10 s".
 4. Notifications: on/off per kind (switches of people I follow, mentions, DMs), quiet hours.

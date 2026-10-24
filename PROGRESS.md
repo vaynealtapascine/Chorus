@@ -14,6 +14,7 @@ Rules (short form):
 
 ## Now
 
+- **In progress:** UI1 — GPT-6-sol, 2026-10-24. Owner-requested desktop/Android redesign guided by Figma `389A1Z2QPTRpZw6d79Cz7k` (Flows). Next: apply the dark charcoal/teal visual system to shared tokens, navigation, fronting, members, chat and journal; preserve existing operations and privacy rules. Isolated worktree `F:/DunBuild/chorus-ui-redesign` keeps the owner's local-search WIP separate.
 - **In progress:** (owner, 2026-09-25) no release until the owner's UI redesign lands (Figma, from docs/FLOWS.md + ENTITIES.md); until then features + a robust core and messaging/channels. **Remote Claude**: batch R5 (`docs/handoff/opus-remote-5.md`): R35 (flaky rest_fuzz, fixed on the server) merged; R30–R34 (PluralSpec implementation) paused by the owner while the spec is still being worked on; the owner asked the remote for modular, out-of-the-way work instead. **Claude (local)**: op payload validation hardening + fuzzing, audits/merges. **gpt-6-sol**: Android (`docs/handoff/sol-batch-5.md`). Chorus Home paused until the designs.
 - **Owner:** deploy `main` to the PC service: `pwsh scripts/deploy.ps1 -Android` (the 2026-09-24 attempt failed on Java 8 from JAVA_HOME after copying only the web app; fixed in 63d1481/9bcc709, so rerun it). The server backs the database up to `backups/pre-migrate-<time>.db` and then applies migrations 0005 (an index) and 0006 (fills in reply/repost links). Behaviour changes to expect: API requests are rate limited (50 burst, 10/s per token; `security.rate_burst`/`rate_per_second` in chorus.toml), the web app is served with a strict CSP, an open restore window now closes by itself 7 days after a restore (`chorus-server reconcile-status` shows it), and blobs are no longer cacheable by shared caches. Phone: Battery Saver is off (2026-09-24); the owner is using the phone, so agree device time before adb work. Chrome notifications are allowed for chorus.vayne.garden: after the deploy, test Web Push from the People page opt-in.
 - **Next concrete step:** see Notes; existing owner, Claude, and Android work remains as recorded above.
@@ -24,6 +25,10 @@ Rules (short form):
 ## Board
 
 Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why in log)
+
+### UI — Owner's Figma redesign
+
+- [~] UI1 Desktop PWA and Android visual redesign from Chorus — Flows Copy; dark default (owner, 2026-10-24). Existing workflows only; multiple named fronts, polls and other new product features in the reference require separate work.
 
 ### S — Spec (Claude, 2026-09-23)
 
