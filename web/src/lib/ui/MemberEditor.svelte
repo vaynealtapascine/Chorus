@@ -485,7 +485,7 @@
   .primary {
     justify-self: start;
     background: var(--accent);
-    color: var(--surface);
+    color: var(--on-accent);
     border: 0;
     border-radius: var(--r-full);
     padding: var(--s-2) var(--s-5);

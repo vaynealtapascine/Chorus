@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,6 +24,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import garden.vayne.chorus.designsystem.HankenGrotesk
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -121,8 +125,15 @@ fun Home(chorus: Chorus, model: Model) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column {
                 FrontCard(model)
-                Text("Open switcher…", color = p.accent, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clickable { switcherOpen = true }.padding(vertical = 10.dp))
+                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Quick switch", color = p.ink2, fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    Button(onClick = { switcherOpen = true }) {
+                        ChorusIcon(AppIcon.Swap)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Switch")
+                    }
+                }
             }
         }
         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -264,12 +275,13 @@ private fun tiles(model: Model, query: String, folder: String?, pins: List<Strin
 fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier) {
     val p = LocalChorusPalette.current
     Box(
-        modifier.background(p.surface, CircleShape).border(1.dp, p.line, CircleShape).padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier.heightIn(min = 48.dp).background(p.surface, RoundedCornerShape(10.dp))
+            .border(1.dp, p.line, RoundedCornerShape(10.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         if (value.isEmpty()) Text(placeholder, color = p.ink3, fontSize = 15.sp)
         BasicTextField(
             value, onChange, singleLine = true,
-            textStyle = TextStyle(color = p.ink, fontSize = 15.sp),
+            textStyle = TextStyle(color = p.ink, fontSize = 15.sp, fontFamily = HankenGrotesk),
             cursorBrush = SolidColor(p.accent),
             modifier = Modifier.fillMaxWidth(),
         )
@@ -317,35 +329,53 @@ fun FrontCard(model: Model) {
     val p = LocalChorusPalette.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); now = System.currentTimeMillis() } }
-    val fronting = model.current.filter { it.level == "front" }.mapNotNull { model.subject(it.subjectType, it.subjectId) }
-    val others = model.current.filter { it.level != "front" }
-    Row(
-        Modifier.fillMaxWidth().padding(top = 8.dp).background(p.surface, RoundedCornerShape(20.dp))
-            .border(1.dp, p.line, RoundedCornerShape(20.dp)).padding(18.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.width((52 + 22 * (fronting.size.coerceAtMost(4) - 1).coerceAtLeast(0)).dp)) {
-            if (fronting.isEmpty()) Avatar("·", "#A09184", 52.dp)
-            fronting.take(4).forEachIndexed { i, s -> Avatar(s.glyph, s.color, 52.dp, Modifier.offset(x = (22 * i).dp), s.avatarBlob) }
+    val since = model.since?.let { ago(it, now) } ?: "just now"
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp).background(p.surface, RoundedCornerShape(22.dp)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            ChorusIcon(AppIcon.Front)
+            Spacer(Modifier.width(8.dp))
+            Text("Current front", color = p.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text("${model.current.size} here", color = p.ink3, fontSize = 12.sp)
         }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            val first = fronting.firstOrNull()
-            Text(
-                model.frontLabel(),
-                fontSize = 22.sp, fontWeight = FontWeight.Medium,
-                color = if (fronting.size == 1 && first != null) tonesOf(first.color).name else p.ink,
-                maxLines = 2, overflow = TextOverflow.Ellipsis,
-            )
-            val since = model.since?.let { "for ${ago(it, now)}".replace("for just now", "just now") }
-            Text(
-                listOfNotNull(if (fronting.isEmpty()) null else "here", since).joinToString(" · ").ifEmpty { "Tap someone below to switch" },
-                fontSize = 13.sp, color = p.ink2,
-            )
-            if (others.isNotEmpty()) {
-                val names = others.mapNotNull { e -> model.subject(e.subjectType, e.subjectId)?.let { "${it.name} (${if (e.level == "cocon") "co-con" else e.level})" } }
-                Text(names.joinToString(", "), fontSize = 12.sp, color = p.ink3, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.fillMaxWidth().border(1.dp, p.line, RoundedCornerShape(20.dp)).padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.fillMaxWidth().border(1.dp, p.accent.copy(alpha = .5f), RoundedCornerShape(18.dp)).padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.fillMaxWidth().background(p.accentSoft, RoundedCornerShape(16.dp))
+                    .border(1.dp, p.accent, RoundedCornerShape(16.dp)).padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Fronting", color = p.accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(since, color = p.ink3, fontSize = 12.sp)
+                    }
+                    val fronting = model.current.filter { it.level == "front" }
+                    if (fronting.isEmpty()) Text("No one fronting", color = p.ink2, modifier = Modifier.padding(8.dp))
+                    fronting.forEach { entry -> model.subject(entry.subjectType, entry.subjectId)?.let { member ->
+                        Row(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(12.dp)).padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Avatar(member.glyph, member.color, 40.dp, avatarBlob = member.avatarBlob)
+                            Column(Modifier.weight(1f)) {
+                                Text(member.name, color = p.ink, fontWeight = FontWeight.SemiBold)
+                                if (entry.isPrimary) Text("Primary", color = p.ink3, fontSize = 12.sp)
+                            }
+                            Text(since, color = p.ink3, fontSize = 12.sp)
+                        }
+                    } }
+                }
+                PresenceLine("Co-conscious", model.current.filter { it.level == "cocon" }.mapNotNull { model.subject(it.subjectType, it.subjectId)?.name })
             }
+            PresenceLine("Present", model.current.filter { it.level == "present" }.mapNotNull { model.subject(it.subjectType, it.subjectId)?.name })
         }
+    }
+}
+
+@Composable
+private fun PresenceLine(label: String, names: List<String>) {
+    val p = LocalChorusPalette.current
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = p.ink2, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.weight(1f))
+        Text(names.joinToString(" & ").ifEmpty { "No one" }, color = if (names.isEmpty()) p.ink3 else p.ink,
+            fontSize = 12.sp, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
     }
 }

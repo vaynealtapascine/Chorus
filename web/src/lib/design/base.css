@@ -1,4 +1,5 @@
 @import './tokens.css';
+@font-face { font-family: 'Hanken Grotesk'; src: url('/fonts/hanken-grotesk.ttf') format('truetype'); font-weight: 100 900; font-style: normal; font-display: swap; }
 
 *,
 *::before,
@@ -30,8 +31,8 @@ h3 {
 
 .display {
   font-family: var(--font-display);
-  font-variation-settings: 'SOFT' 100, 'WONK' 0;
-  font-weight: 560;
+  font-weight: 700;
+  letter-spacing: -.02em;
 }
 
 button {
@@ -52,3 +53,20 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+::selection { background: var(--accent-soft); color: var(--ink); }
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+input, textarea { caret-color: var(--accent); }
+input::placeholder, textarea::placeholder { color: var(--ink-3); opacity: 1; }
+a { text-underline-offset: .2em; }
+button, a, input, textarea, select, summary { -webkit-tap-highlight-color: transparent; }
+button:disabled { cursor: default; }
+time { font-variant-numeric: tabular-nums; }
+@media (hover: hover) { button:not(:disabled):hover { filter: brightness(1.08); } }
+.page-heading { display: flex; align-items: center; gap: var(--s-3); }
+.page-heading h1 { font-size: var(--fs-xl); }
+.page-heading p { margin: 4px 0 0; color: var(--ink-3); font-size: var(--fs-sm); }
+.icon-button { display: inline-grid; place-items: center; width: 48px; height: 48px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-2); cursor: pointer; }
+
+a { color: var(--accent); }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }

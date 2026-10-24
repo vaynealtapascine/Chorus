@@ -61,12 +61,14 @@
 
   let target = $state('role:everyone');
   let choices = $state<Record<string, Choice>>({});
-  $effect(() => {
-    // editing an existing override starts from what it says
+  const savedChoices = $derived.by(() => {
+    // Equal content stays equal when an unrelated message or read mark reprojects the account.
     const [type, id] = target.split(':');
     const found = overrides.find((o) => o.type === type && o.target === id);
-    choices = Object.fromEntries(PERMS.map((p) => [p.id, found?.deny.includes(p.id) ? 'deny' : found?.allow.includes(p.id) ? 'allow' : 'inherit']));
+    return JSON.stringify([channelId, target, Object.fromEntries(PERMS.map((p) =>
+      [p.id, found?.deny.includes(p.id) ? 'deny' : found?.allow.includes(p.id) ? 'allow' : 'inherit']))]);
   });
+  $effect(() => { choices = JSON.parse(savedChoices)[2]; });
   const outsider = $derived(target.startsWith('account:') && !(info?.accounts ?? []).some((a) => a.id === target.slice(8)));
 
   function save(type: string, id: string, allow: string[], deny: string[]) {

@@ -11,13 +11,14 @@
     onreply: () => void; onreact: (emoji: string, add: boolean) => void;
   } = $props();
   let expanded = $state(false);
+  let bodyExpanded = $state(false);
   const PALETTE = ['💜', '👍', '🥹', '🎉'];
   const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
   const lead = $derived(people.get(post.authors[0] ?? ''));
   const color = $derived(core.adaptColor(lead?.color ?? '#A09184', dark));
 </script>
 
-<article class="post" data-post-id={post.id} style="--author: {color.name}; --tint: {color.tint}">
+<article class="post" data-post-id={post.id} style="--author: {color.name}; --avatar-bg: {color.ring}; --avatar-ink: {color.avatar_ink}; --tint: {color.tint}">
   <div class="top">
     <span class="avatar" aria-hidden="true"><AvatarImage hash={lead?.avatar_blob} glyph={lead?.sigils[0] ?? name(post.authors[0] ?? '')[0]} name={name(post.authors[0] ?? '')} /></span>
     <div class="meta"><span class="authors">{#each post.authors as id, i (id)}{#if i} &amp; {/if}<a href="#/profile/{id}">{name(id)}</a>{/each}</span>
@@ -28,7 +29,8 @@
   {#if post.cw}<button class="cw" aria-expanded={expanded} onclick={() => (expanded = !expanded)}>Content warning: {post.cw} · {expanded ? 'Hide' : 'Show'}</button>{/if}
   {#if !post.cw || expanded}
     {#if post.title}<h3 class="display">{post.title}</h3>{/if}
-    {#if !(compactEntry && post.kind === 'entry')}<p class="body"><RichText text={post.text} entities={post.entities} /></p>{/if}
+    <div class="body" class:clamped={compactEntry && !bodyExpanded}><RichText text={post.text} entities={post.entities} /></div>
+    {#if compactEntry && (post.kind === 'entry' || post.text.length > 280)}<button class="expand" aria-expanded={bodyExpanded} onclick={() => (bodyExpanded = !bodyExpanded)}>{bodyExpanded ? 'Show less' : 'Show more'}</button>{/if}
     {#if post.mood || post.tags.length}<p class="tags">{#if post.mood}Mood: {post.mood}{/if}{#each post.tags as tag (tag)} <span>#{tag}</span>{/each}</p>{/if}
   {/if}
   <div class="actions">
@@ -42,14 +44,16 @@
 </article>
 
 <style>
-  .post { display: grid; gap: var(--s-3); padding: var(--s-4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); min-width: 0; }
+  .post { display: grid; gap: var(--s-3); padding: var(--s-4); background: var(--bg); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; min-width: 0; }
   .top { display: flex; align-items: center; gap: var(--s-3); }
-  .avatar { display: inline-grid; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; flex: none; }
+  .avatar { display: inline-grid; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; flex: none; background: var(--avatar-bg); color: var(--avatar-ink); place-items: center; font-weight: 700; }
   .meta { display: grid; min-width: 0; }
   .authors a { color: var(--author); text-decoration: none; font-weight: 600; }
   .when, .reply-ref, .tags, .visibility { color: var(--ink-3); font-size: var(--fs-xs); }
   .visibility { margin-left: auto; }
   h3, p { margin: 0; }
+  .clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+  .expand { border: 0; background: none; color: var(--accent); justify-self: start; padding: 8px 0; cursor: pointer; }
   .body { white-space: pre-wrap; overflow-wrap: anywhere; }
   .cw { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); padding: var(--s-2); text-align: left; cursor: pointer; }
   .actions { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }

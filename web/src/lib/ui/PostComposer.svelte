@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from './Icon.svelte';
   import { core } from '../core';
   import { buckets, members } from '../data';
   import { canWriteAs } from '../posts';
@@ -22,6 +23,7 @@
   let visibility = $state<'private' | 'buckets' | 'followers' | 'server'>('private');
   let bucketIds = $state<string[]>([]);
   let error = $state('');
+  const authorLabel = $derived(active.filter((m) => authors.includes(m.id)).map((m) => m.display_name ?? m.name).join(' & ') || 'Choose author');
 
   function toggle(id: string) {
     authors = authors.includes(id) ? authors.filter((x) => x !== id) : [...authors, id];
@@ -49,23 +51,24 @@
 </script>
 
 <form class="composer" onsubmit={send}>
-  <div class="head"><h2>{replyTo ? 'Write a reply' : 'Write a post'}</h2>
+  <div class="head">
+    <details class="author-picker"><summary>{authorLabel}</summary><fieldset><legend>Writing as</legend><div class="authors">{#each active as member (member.id)}<label class:on={authors.includes(member.id)}><input type="checkbox" checked={authors.includes(member.id)} onchange={() => toggle(member.id)} />{member.display_name ?? member.name}</label>{/each}</div></fieldset></details>
     <div class="seg"><button type="button" class:on={kind === 'note'} onclick={() => (kind = 'note')}>Note</button><button type="button" class:on={kind === 'entry'} onclick={() => (kind = 'entry')}>Entry</button></div>
   </div>
-  <fieldset><legend>Writing as</legend><div class="authors">{#each active as member (member.id)}<label class:on={authors.includes(member.id)}><input type="checkbox" checked={authors.includes(member.id)} onchange={() => toggle(member.id)} />{member.display_name ?? member.name}</label>{/each}</div></fieldset>
   {#if kind === 'entry'}<input bind:value={title} placeholder="Title (optional)" aria-label="Entry title" />{/if}
-  <textarea bind:value={body} rows={kind === 'entry' ? 9 : 4} placeholder={replyTo ? 'Reply…' : kind === 'entry' ? 'Write your entry…' : 'Write a note…'} aria-label="Post text"></textarea>
-  <div class="extras"><input bind:value={cw} placeholder="Content warning (optional)" aria-label="Content warning" /><input bind:value={mood} placeholder="Mood" aria-label="Mood" /><input bind:value={tags} placeholder="Tags, separated by commas" aria-label="Tags" />
-    <label>Visible to <select bind:value={visibility}><option value="private">Only this account</option>{#if availableBuckets.length}<option value="buckets">Selected buckets</option>{/if}<option value="followers">Followers</option><option value="server">Everyone on server</option></select></label></div>
+  <textarea bind:value={body} rows={kind === 'entry' ? 9 : 2} placeholder={replyTo ? 'Reply…' : kind === 'entry' ? 'Write your entry…' : "What's on your mind?"} aria-label="Post text"></textarea>
+  <div class="compose-footer">
+    <details class="extras"><summary><Icon name="plus" size={16} />Post options</summary><div class="extra-fields"><input bind:value={cw} placeholder="Content warning (optional)" aria-label="Content warning" /><input bind:value={mood} placeholder="Mood" aria-label="Mood" /><input bind:value={tags} placeholder="Tags, separated by commas" aria-label="Tags" /></div></details>
+    <label class="audience"><Icon name="lock" size={14} /><span class="sr-label">Visible to</span><select aria-label="Visible to" bind:value={visibility}><option value="private">Only our system</option>{#if availableBuckets.length}<option value="buckets">Selected buckets</option>{/if}<option value="followers">Followers</option><option value="server">Everyone on server</option></select></label>
+    <button class="primary" disabled={!authors.length || !body.trim() || (visibility === 'buckets' && !bucketIds.length)}>{replyTo ? 'Reply' : 'Post'}</button>
+  </div>
   {#if visibility === 'buckets'}<div class="authors" aria-label="Visible buckets">{#each availableBuckets as bucket (bucket.id)}<label class:on={bucketIds.includes(bucket.id)}><input type="checkbox" checked={bucketIds.includes(bucket.id)} onchange={() => toggleBucket(bucket.id)} />{bucket.name}</label>{/each}</div>{/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
-  <button class="primary" disabled={!authors.length || !body.trim() || (visibility === 'buckets' && !bucketIds.length)}>Post</button>
 </form>
 
 <style>
-  .composer { display: grid; gap: var(--s-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-4); }
+  .composer { display: grid; gap: var(--s-3); background: var(--bg); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: var(--s-4); }
   .head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); }
-  h2 { margin: 0; font-size: var(--fs-lg); }
   .seg { display: flex; background: var(--surface-2); border-radius: var(--r-full); padding: 2px; }
   .seg button { border: 0; background: none; color: var(--ink-2); padding: var(--s-1) var(--s-3); border-radius: var(--r-full); cursor: pointer; }
   .seg button.on { background: var(--surface); color: var(--ink); }
@@ -75,10 +78,21 @@
   .authors label.on { background: var(--accent-soft); }
   input:not([type='checkbox']), textarea, select { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); padding: var(--s-2); font: inherit; }
   textarea { width: 100%; resize: vertical; box-sizing: border-box; }
-  .extras { display: flex; flex-wrap: wrap; gap: var(--s-2); }
-  .extras label { color: var(--ink-3); display: flex; gap: var(--s-2); align-items: center; font-size: var(--fs-sm); }
+  .extras { margin-right: auto; position: relative; }
   .extras input { flex: 1 1 9rem; min-width: 0; }
-  .primary { justify-self: end; border: 0; border-radius: var(--r-sm); background: var(--accent); color: var(--bg); padding: var(--s-2) var(--s-4); cursor: pointer; }
+  .primary { justify-self: end; min-height: 40px; border: 0; border-radius: var(--r-sm); background: var(--accent); color: var(--on-accent); padding: var(--s-2) var(--s-4); cursor: pointer; }
   .primary:disabled { opacity: .5; cursor: default; }
   .error { color: var(--danger); margin: 0; }
+  .author-picker { min-width: 0; position: relative; flex: 1; }
+  .author-picker summary { cursor: pointer; color: var(--ink); font-size: var(--fs-sm); min-height: 40px; display: flex; align-items: center; font-weight: 600; }
+  .author-picker fieldset { position: absolute; z-index: 3; left: 0; top: 100%; width: min(420px, 75vw); background: var(--surface); padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
+  .author-picker legend { background: var(--surface); }
+  .authors label { min-height: 40px; }
+  textarea { border: 0; padding: 8px 0; background: transparent; min-height: 56px; }
+  .compose-footer { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .extras summary { cursor: pointer; display: flex; gap: 6px; align-items: center; color: var(--ink-3); font-size: var(--fs-xs); min-height: 40px; }
+  .extra-fields { display: grid; gap: 8px; position: absolute; left: 0; top: 100%; z-index: 3; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); width: min(280px, 75vw); }
+  .audience { display: flex; align-items: center; gap: 4px; color: var(--ink-3); min-width: 0; }
+  .audience select { padding: 6px; border: 0; border-radius: 999px; font-size: var(--fs-xs); max-width: 160px; }
+  .sr-label { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
 </style>

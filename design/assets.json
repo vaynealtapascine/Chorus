@@ -1,0 +1,1028 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-10-24T08:23:30.215599+00:00",
+  "scope": "UI1 shared foundation assets; no new generated illustrations.",
+  "reference": {
+    "title": "Chorus \u2014 Flows Copy",
+    "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+    "url": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy",
+    "frames": [
+      {
+        "nodeId": "3:321",
+        "label": "Fronting",
+        "url": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321"
+      },
+      {
+        "nodeId": "3:370",
+        "label": "Switcher",
+        "url": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-370"
+      },
+      {
+        "nodeId": "3:607",
+        "label": "Members",
+        "url": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-607"
+      },
+      {
+        "nodeId": "3:822",
+        "label": "Phone chat",
+        "url": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-822"
+      },
+      {
+        "nodeId": "2019:1557",
+        "label": "Desktop chat",
+        "url": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557"
+      },
+      {
+        "nodeId": "3:917",
+        "label": "Message actions",
+        "url": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-917"
+      },
+      {
+        "nodeId": "3:1141",
+        "label": "Profile",
+        "url": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-1141"
+      },
+      {
+        "nodeId": "2094:5066",
+        "label": "Desktop journal",
+        "url": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2094-5066"
+      },
+      {
+        "nodeId": "3:1730",
+        "label": "More",
+        "url": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-1730"
+      }
+    ]
+  },
+  "policy": {
+    "screenshots": "Reference and review screenshots are evidence only and must not be shipped as UI assets.",
+    "downloadedSvg": "Preserve downloaded originals; tint through client rendering.",
+    "rasterDerivatives": "Android icon PNGs are lossless 4x derivatives of the exact downloaded SVG. Each carries embedded origin metadata.",
+    "individualNodeIds": "Individual icon node IDs were not retained by the download tool; exact source frame URLs and asset download URLs are recorded."
+  },
+  "assets": [
+    {
+      "path": "web/public/icons/action-edit.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:917",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-917",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/d4ff52e7-2123-4b9a-aab6-7784d64dfae9/53f8f.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "43ad2ac9d3cfe1336ce6f634aff4c8ed9b770d7ab73ac3c0687385ed7c83fe36"
+    },
+    {
+      "path": "web/public/icons/action-pin.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:917",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-917",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/d4ff52e7-2123-4b9a-aab6-7784d64dfae9/7bab3.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "5658df7751356e1e6f147fedfcdb860f7d728fbc7c8f36836f93fbf66fb243e3"
+    },
+    {
+      "path": "web/public/icons/action-reply.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:917",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-917",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/d4ff52e7-2123-4b9a-aab6-7784d64dfae9/d87b4.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "1d09a848d020ec6d237d11fe12e302d8d2134457e0cf93b6c783d6552e9b483f"
+    },
+    {
+      "path": "web/public/icons/action-thread.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:917",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-917",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/d4ff52e7-2123-4b9a-aab6-7784d64dfae9/b5b00.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "09614cdf6abce3b7b0fe3a4859ac722637a13497c711f6ec1027519b458fe759"
+    },
+    {
+      "path": "web/public/icons/attach.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/09bf35d9-d00c-40f0-a5cb-75539331eac8/639ff.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "b0d5ff78e78fadcac43a7bb359f45ce4b85c437edcf931628ef86da47ad8ef9c"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_attach.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/09bf35d9-d00c-40f0-a5cb-75539331eac8/639ff.svg"
+      },
+      "derivedFrom": "web/public/icons/attach.svg",
+      "sourceSha256": "b0d5ff78e78fadcac43a7bb359f45ce4b85c437edcf931628ef86da47ad8ef9c",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        88,
+        88
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "dcc15102c894f26b28b7ded1b5395bbaf576608ce8a999b39e430db8127e9af9"
+    },
+    {
+      "path": "web/public/icons/chat.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/f391f.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "de9fa2ef04bec73bb41c16994b8d8682d219313a0a055f7fda0d6ac2f9c4b0e6"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_chat.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/f391f.svg"
+      },
+      "derivedFrom": "web/public/icons/chat.svg",
+      "sourceSha256": "de9fa2ef04bec73bb41c16994b8d8682d219313a0a055f7fda0d6ac2f9c4b0e6",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        88,
+        88
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "2bf993d377c7ea9ffdae1865646a4f38d22b5205d5fa2d42bc94ed69e392dfe1"
+    },
+    {
+      "path": "web/public/icons/chevron.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/d7d26.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "549d30d0dee19bdfb900a1b7c148ec54d62ea852a17786231d86f52afc5a4ddf"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_chevron.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/d7d26.svg"
+      },
+      "derivedFrom": "web/public/icons/chevron.svg",
+      "sourceSha256": "549d30d0dee19bdfb900a1b7c148ec54d62ea852a17786231d86f52afc5a4ddf",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        96,
+        96
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "2c81f7481716dedaafe293579cbf140696d11490ffe393e8a431c535cbfbaf1c"
+    },
+    {
+      "path": "web/public/icons/close.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/09bf35d9-d00c-40f0-a5cb-75539331eac8/46067.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "7483571fcdf56d5c3ac1bdad5fb8c654f2a90d55a9cba67e97e41e774d917fab"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_close.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/09bf35d9-d00c-40f0-a5cb-75539331eac8/46067.svg"
+      },
+      "derivedFrom": "web/public/icons/close.svg",
+      "sourceSha256": "7483571fcdf56d5c3ac1bdad5fb8c654f2a90d55a9cba67e97e41e774d917fab",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        96,
+        96
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "400e5833e72d64d5cf8e868bd47bace4730e9a12ce5c46d85c731d3fd97cb12f"
+    },
+    {
+      "path": "web/public/icons/copy.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:917",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-917",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/d4ff52e7-2123-4b9a-aab6-7784d64dfae9/cabcc.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "292386b584724651bbd25a07d971bfb9cf52f9874fc81445f48fa7eb790df6be"
+    },
+    {
+      "path": "web/public/icons/delete.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:917",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-917",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/d4ff52e7-2123-4b9a-aab6-7784d64dfae9/9ba17.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "dcb54764d03071b154def134f606317903d674063916d928ad2846cab2adbed5"
+    },
+    {
+      "path": "web/public/icons/edit.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/09bf35d9-d00c-40f0-a5cb-75539331eac8/c0260.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "03278707ef5f6f39bd18ac874605375868bc440f6fe1777abbed5b19d4358a29"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_edit.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/09bf35d9-d00c-40f0-a5cb-75539331eac8/c0260.svg"
+      },
+      "derivedFrom": "web/public/icons/edit.svg",
+      "sourceSha256": "03278707ef5f6f39bd18ac874605375868bc440f6fe1777abbed5b19d4358a29",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        88,
+        88
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "d900d958f86d80cb6436ce5be57c76a70a7636ac4fe20a51904800bea9d081fe"
+    },
+    {
+      "path": "web/public/icons/forward.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:917",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-917",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/d4ff52e7-2123-4b9a-aab6-7784d64dfae9/9f5e6.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "3fa1fbebc0053018e33f23803dba7b7d484de604f3374a11cb7c5fa907f29ca5"
+    },
+    {
+      "path": "web/public/icons/friends.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/6e265.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "81001f67cdf4e6c106c946375c9cb6676bff448c5a453de297e3a5dd15315a0b"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_friends.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/6e265.svg"
+      },
+      "derivedFrom": "web/public/icons/friends.svg",
+      "sourceSha256": "81001f67cdf4e6c106c946375c9cb6676bff448c5a453de297e3a5dd15315a0b",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        88,
+        88
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "afc411f277e621f7bbf00d2e887850a6f8b091edf291b70271c57eb9affccfa8"
+    },
+    {
+      "path": "web/public/icons/front.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/8a4bc.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "a0c18d74e369108000a41a89217fe124e3249e0ad1a758e23d80f5baff532c6d"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_front.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/8a4bc.svg"
+      },
+      "derivedFrom": "web/public/icons/front.svg",
+      "sourceSha256": "a0c18d74e369108000a41a89217fe124e3249e0ad1a758e23d80f5baff532c6d",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        88,
+        88
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "6922d7a9e80e54e0aa925afa7cc95766dadec8176e1aa3bc08ef6071b145ab2a"
+    },
+    {
+      "path": "web/public/icons/heart.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2094:5066",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2094-5066",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/a450c91c-b0c2-4727-a657-2093bea234d2/89635.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "b523f341617c96dc352d6b88188d1df0e64d536734439e9406e985990cf228a1"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_heart.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2094:5066",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2094-5066",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/a450c91c-b0c2-4727-a657-2093bea234d2/89635.svg"
+      },
+      "derivedFrom": "web/public/icons/heart.svg",
+      "sourceSha256": "b523f341617c96dc352d6b88188d1df0e64d536734439e9406e985990cf228a1",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        96,
+        96
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "244911322acf4171c0d16c131a8c5d738890b4ca1500fee4eec8d87327c2fe52"
+    },
+    {
+      "path": "web/public/icons/history.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/46e69.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "e3393dc3d53f7482196cf060f8b0630aed7a43874a9548b4aabd91c858b2834c"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_history.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/46e69.svg"
+      },
+      "derivedFrom": "web/public/icons/history.svg",
+      "sourceSha256": "e3393dc3d53f7482196cf060f8b0630aed7a43874a9548b4aabd91c858b2834c",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        88,
+        88
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "94b130400e508bfb66ad3b4995bd446d04c9554cefb44dd732a289db43f0e465"
+    },
+    {
+      "path": "web/public/icons/journal.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/7499c.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "be2ce0b30d6c332961fdeffecf1bfb9553da5c70212d213c39b2979fb66f45a0"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_journal.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/7499c.svg"
+      },
+      "derivedFrom": "web/public/icons/journal.svg",
+      "sourceSha256": "be2ce0b30d6c332961fdeffecf1bfb9553da5c70212d213c39b2979fb66f45a0",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        96,
+        96
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "21c8b52da70845975c43fd695796d35c392170ecb4d65c2c646e7a72d4f44b23"
+    },
+    {
+      "path": "web/public/icons/layers.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2094:5066",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2094-5066",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/a450c91c-b0c2-4727-a657-2093bea234d2/411c0.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "2e9acb49acb825df27e53a65bd1e6adfc14184545830526f44e82160108b9419"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_layers.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2094:5066",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2094-5066",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/a450c91c-b0c2-4727-a657-2093bea234d2/411c0.svg"
+      },
+      "derivedFrom": "web/public/icons/layers.svg",
+      "sourceSha256": "2e9acb49acb825df27e53a65bd1e6adfc14184545830526f44e82160108b9419",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        64,
+        64
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "41dde8c6e1a3849b675494ff68a678ad9273e12a61e92e72158770427669e77e"
+    },
+    {
+      "path": "web/public/icons/lock.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/09bf35d9-d00c-40f0-a5cb-75539331eac8/8dd9f.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "115ec0dc0f418bc802e384ea00eca26122a2fb4b4932eca372312fdf7f1c4073"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_lock.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/09bf35d9-d00c-40f0-a5cb-75539331eac8/8dd9f.svg"
+      },
+      "derivedFrom": "web/public/icons/lock.svg",
+      "sourceSha256": "115ec0dc0f418bc802e384ea00eca26122a2fb4b4932eca372312fdf7f1c4073",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        96,
+        96
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "0a9182b607f12ca2850f90ae1a497971022a8ec5bd17dfd3255613d67c77806e"
+    },
+    {
+      "path": "web/public/icons/members.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/d0799.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "069df97f25edcbc4d96ba037db3afd5cba5e77c64c8ee4bdac42a03b5b222be5"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_members.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/d0799.svg"
+      },
+      "derivedFrom": "web/public/icons/members.svg",
+      "sourceSha256": "069df97f25edcbc4d96ba037db3afd5cba5e77c64c8ee4bdac42a03b5b222be5",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        88,
+        88
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "4525b9e303139f7d774822ce58cbe0ea3c87fbbb00dc1efa3eb12acc7ee11e27"
+    },
+    {
+      "path": "web/public/icons/more.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/eae68.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "020dcc36d0ee6d9db7ed5ea07ce488f760a8568744ebb4f217f5b4375f7232ff"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_more.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/eae68.svg"
+      },
+      "derivedFrom": "web/public/icons/more.svg",
+      "sourceSha256": "020dcc36d0ee6d9db7ed5ea07ce488f760a8568744ebb4f217f5b4375f7232ff",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        88,
+        88
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "f801d8eb9c52d4d7583073a2ce47a36d0d0b6a3d4676b39db6a629f994ae8548"
+    },
+    {
+      "path": "web/public/icons/pin.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/09bf35d9-d00c-40f0-a5cb-75539331eac8/524b0.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "d5e972b7423797ba87e13d86f839a5a4a92b4827ec0d422ec110de7d3a637b96"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_pin.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/09bf35d9-d00c-40f0-a5cb-75539331eac8/524b0.svg"
+      },
+      "derivedFrom": "web/public/icons/pin.svg",
+      "sourceSha256": "d5e972b7423797ba87e13d86f839a5a4a92b4827ec0d422ec110de7d3a637b96",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        96,
+        96
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "d4ef70f41a9ce89d86cfe27e57386422428ce6111c0afff1078d510896b35495"
+    },
+    {
+      "path": "web/public/icons/plus.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/53a90.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "177f1cea4c64a9436ea3c01db73e6f657b18dc248b1dd03499fdcb05d8908de0"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_plus.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/53a90.svg"
+      },
+      "derivedFrom": "web/public/icons/plus.svg",
+      "sourceSha256": "177f1cea4c64a9436ea3c01db73e6f657b18dc248b1dd03499fdcb05d8908de0",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        96,
+        96
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "7732a13c571ced7fa102f67fe5f5ffcb8700eedfa0cb8c89dac6690be1deee2b"
+    },
+    {
+      "path": "web/public/icons/reply.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/305f2.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "73aa9b3b1e85dee14d8d19aa83cf4ee36cefc494ddcd93eaadc88b5f5ae2266e"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_reply.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/305f2.svg"
+      },
+      "derivedFrom": "web/public/icons/reply.svg",
+      "sourceSha256": "73aa9b3b1e85dee14d8d19aa83cf4ee36cefc494ddcd93eaadc88b5f5ae2266e",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        96,
+        96
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "849b253db891c3a9e8f31dc81b45f49899473af84d60aea1d5602f7b417d3a65"
+    },
+    {
+      "path": "web/public/icons/search.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/09bf35d9-d00c-40f0-a5cb-75539331eac8/824e5.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "dec53d6cb95499e03e76b72d285e67a25ecabf1d3c70d198e7cdd6021f9d08d4"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_search.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/09bf35d9-d00c-40f0-a5cb-75539331eac8/824e5.svg"
+      },
+      "derivedFrom": "web/public/icons/search.svg",
+      "sourceSha256": "dec53d6cb95499e03e76b72d285e67a25ecabf1d3c70d198e7cdd6021f9d08d4",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        96,
+        96
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "c11879d33703164c3ec2d54b33547cd23cba4a390dd32d5fadb9a67723c2b385"
+    },
+    {
+      "path": "web/public/icons/select.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:917",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-917",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/d4ff52e7-2123-4b9a-aab6-7784d64dfae9/31346.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "c984c9851729ad85a0547b64d5d95c478b217a3c072dd7cab3d6be1f002021cb"
+    },
+    {
+      "path": "web/public/icons/send.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2094:5066",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2094-5066",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/a450c91c-b0c2-4727-a657-2093bea234d2/78003.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "7af224c2e074baf1331ee2554af2044453c336343968676519c3772f8e9f0c73"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_send.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2094:5066",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2094-5066",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/a450c91c-b0c2-4727-a657-2093bea234d2/78003.svg"
+      },
+      "derivedFrom": "web/public/icons/send.svg",
+      "sourceSha256": "7af224c2e074baf1331ee2554af2044453c336343968676519c3772f8e9f0c73",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        96,
+        96
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "8ede8631157ddd1a0e3f329965f6b001b82f670f1604a221936f181d080e0826"
+    },
+    {
+      "path": "web/public/icons/settings.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:1730",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-1730",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/7ad42adb-b5b4-4649-be8f-8abf72292610/6142e.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "5d8fb774cbcd1a01276f07b43a09f0bb71892bd4e81fd70646f37f3f33f28a32"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_settings.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:1730",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-1730",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/7ad42adb-b5b4-4649-be8f-8abf72292610/6142e.svg"
+      },
+      "derivedFrom": "web/public/icons/settings.svg",
+      "sourceSha256": "5d8fb774cbcd1a01276f07b43a09f0bb71892bd4e81fd70646f37f3f33f28a32",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        88,
+        88
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "188998cf01b4d0288beca78b40c805236c32fd6970a94fe33aa482f020329537"
+    },
+    {
+      "path": "web/public/icons/smile.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:917",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-917",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/d4ff52e7-2123-4b9a-aab6-7784d64dfae9/37bdf.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "e41c2892e88ed19ba72d2b2e1aee75b4bc26bff5547c352ff43834c77db56f67"
+    },
+    {
+      "path": "web/public/icons/swap.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/629a0.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "62fc50703416dd8f966e6861fb8695f2678fd4f6b2cd96caf1395490987ad7cf"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_swap.png",
+      "kind": "icon",
+      "format": "png",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "3:321",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=3-321",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/5826a212-f4d3-4ca1-b70f-f6fc7533c47c/629a0.svg"
+      },
+      "derivedFrom": "web/public/icons/swap.svg",
+      "sourceSha256": "62fc50703416dd8f966e6861fb8695f2678fd4f6b2cd96caf1395490987ad7cf",
+      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
+      "dimensions": [
+        80,
+        80
+      ],
+      "density": "xxxhdpi",
+      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
+      "sha256": "cb5f590594ed0715cb586495c0b8ce957e5b77653ca0ed6972d40cc320a5ecf9"
+    },
+    {
+      "path": "web/public/fonts/hanken-grotesk.ttf",
+      "kind": "font",
+      "format": "variable-ttf",
+      "family": "Hanken Grotesk",
+      "source": {
+        "kind": "vendored-open-source",
+        "url": "https://github.com/google/fonts/tree/main/ofl/hankengrotesk",
+        "upstreamProject": "https://github.com/marcologous/hanken-grotesk"
+      },
+      "license": "OFL-1.1",
+      "licensePath": "web/public/fonts/OFL-HankenGrotesk.txt",
+      "transformation": "Same vendored binary on both clients.",
+      "sha256": "813b3f8fa0965405669a89b38e51bbefd95eef6b8e20d1cb2d8c10cce062662f"
+    },
+    {
+      "path": "android/designsystem/src/main/res/font/hanken_grotesk.ttf",
+      "kind": "font",
+      "format": "variable-ttf",
+      "family": "Hanken Grotesk",
+      "source": {
+        "kind": "vendored-open-source",
+        "url": "https://github.com/google/fonts/tree/main/ofl/hankengrotesk",
+        "upstreamProject": "https://github.com/marcologous/hanken-grotesk"
+      },
+      "license": "OFL-1.1",
+      "licensePath": "web/public/fonts/OFL-HankenGrotesk.txt",
+      "transformation": "Same vendored binary on both clients.",
+      "sha256": "813b3f8fa0965405669a89b38e51bbefd95eef6b8e20d1cb2d8c10cce062662f"
+    }
+  ]
+}

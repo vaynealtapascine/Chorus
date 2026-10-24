@@ -18,42 +18,45 @@ data class ChorusPalette(
     val ok: Color,
     val warn: Color,
     val danger: Color,
+    val onAccent: Color,
 )
 
 object Tokens {
     val Light = ChorusPalette(
-        bg = Color(0xFFFBF7F2),
+        bg = Color(0xFFF7F6F2),
         surface = Color(0xFFFFFFFF),
-        surface2 = Color(0xFFF4EDE4),
-        surface3 = Color(0xFFEADFD2),
-        line = Color(0xFFE4D8CA),
-        ink = Color(0xFF2B2521),
-        ink2 = Color(0xFF6F6259),
-        ink3 = Color(0xFFA09184),
-        accent = Color(0xFFC0694E),
-        accentSoft = Color(0xFFF6E1D8),
+        surface2 = Color(0xFFEFEEE9),
+        surface3 = Color(0xFFE4E7E2),
+        line = Color(0xFFD8DAD4),
+        ink = Color(0xFF202529),
+        ink2 = Color(0xFF565F60),
+        ink3 = Color(0xFF626A68),
+        accent = Color(0xFF247D73),
+        accentSoft = Color(0xFFE0EFEB),
         ok = Color(0xFF5E8C61),
         warn = Color(0xFFC99A3B),
         danger = Color(0xFFB5524A),
+        onAccent = Color(0xFFFFFFFF),
     )
     val Dark = ChorusPalette(
-        bg = Color(0xFF1B1714),
-        surface = Color(0xFF231E1A),
-        surface2 = Color(0xFF2B2520),
-        surface3 = Color(0xFF362E28),
-        line = Color(0xFF3A322B),
-        ink = Color(0xFFF1E9E0),
-        ink2 = Color(0xFFBCAEA1),
-        ink3 = Color(0xFF85776B),
-        accent = Color(0xFFE08A6D),
-        accentSoft = Color(0xFF3E2A22),
-        ok = Color(0xFF86B489),
+        bg = Color(0xFF15161A),
+        surface = Color(0xFF1E2026),
+        surface2 = Color(0xFF272A31),
+        surface3 = Color(0xFF30343C),
+        line = Color(0xFF34373F),
+        ink = Color(0xFFFBF3E5),
+        ink2 = Color(0xFFB1ACA1),
+        ink3 = Color(0xFFA39E92),
+        accent = Color(0xFF42A397),
+        accentSoft = Color(0xFF1D2F30),
+        ok = Color(0xFF86BFA5),
         warn = Color(0xFFE0B560),
-        danger = Color(0xFFE07C72),
+        danger = Color(0xFFE8776D),
+        onAccent = Color(0xFF101018),
     )
-    val radiusSm = 8.dp
-    val radiusMd = 14.dp
-    val radiusLg = 20.dp
+    val radiusSm = 10.dp
+    val radiusMd = 16.dp
+    val radiusLg = 22.dp
     val radiusFull = 999.dp
     val space1 = 4.dp
     val space2 = 8.dp

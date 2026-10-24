@@ -5,6 +5,7 @@
   import { sync, type Projection } from '../sync/client';
   import PkImport from './PkImport.svelte';
   import AvatarImage from './AvatarImage.svelte';
+  import Icon from './Icon.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
 
@@ -13,7 +14,7 @@
   let showGroups = $state(false);
   let importing = $state(false);
 
-  const all = $derived(members(projection).filter((m) => !m.deleted));
+  const all = $derived(members(projection).filter((m) => !m.deleted && (!projection.rows.member[m.id]?.fields.created_by_account_id || projection.rows.member[m.id].fields.created_by_account_id === sync.accountId)));
   const gs = $derived(groups(projection));
   const inGroup = $derived(membership(projection));
   const shown = $derived.by(() => {
@@ -51,7 +52,7 @@
 
 <section class="page">
   <div class="head">
-    <h1 class="display">Members</h1>
+    <div><h1 class="display">Members</h1><p class="member-count">{all.filter((m) => !m.archived).length} members</p></div>
     <button class="primary" onclick={addMember}>Add member</button>
   </div>
 
@@ -110,10 +111,10 @@
   <div class="grid">
     {#each shown as m (m.id)}
       {@const c = core.adaptColor(m.color, dark)}
-      <a class="member" href="#/members/{m.id}" style="--ring: {c.ring}; --tint: {c.tint}">
+      <a class="member" href="#/members/{m.id}" style="--ring: {c.ring}; --avatar-ink: {c.avatar_ink}; --tint: {c.tint}">
         <span class="avatar" aria-hidden="true"><AvatarImage hash={m.avatar_blob} glyph={m.sigils[0] ?? m.name[0]} name={m.name} /></span>
-        <span class="name" style="color: {c.name}">{m.display_name ?? m.name}</span>
-        {#if m.pronouns}<span class="pronouns">{m.pronouns}</span>{/if}
+        <span class="member-info"><span class="name">{m.display_name ?? m.name}</span><span class="pronouns">{[m.pronouns, ...gs.filter((g) => inGroup.get(g.id)?.has(m.id)).map((g) => g.name)].filter(Boolean).join(' · ')}</span></span>
+        {#if projection.fronts[sync.accountId]?.current.some((e) => e.subject_id === m.id)}<span class="front-badge">Here</span>{/if}<Icon name="chevron" size={16} />
       </a>
     {/each}
   </div>
@@ -211,7 +212,7 @@
   }
   .primary {
     background: var(--accent);
-    color: var(--surface);
+    color: var(--on-accent);
     border: 0;
     border-radius: var(--r-full);
     padding: var(--s-2) var(--s-4);
@@ -227,43 +228,14 @@
   .muted {
     color: var(--ink-3);
   }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-    gap: var(--s-3);
-  }
-  .member {
-    display: grid;
-    justify-items: center;
-    gap: var(--s-1);
-    padding: var(--s-3) var(--s-2);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    text-decoration: none;
-    transition: background var(--t-fast) var(--ease);
-  }
-  .member:hover {
-    background: var(--tint);
-  }
-  .avatar {
-    width: 48px;
-    height: 48px;
-    display: grid;
-    place-items: center;
-    font-size: 22px;
-    border-radius: 50%;
-    background: var(--surface-2);
-    box-shadow: 0 0 0 2px var(--ring);
-    margin-bottom: var(--s-1);
-  }
-  .name {
-    font-size: var(--fs-sm);
-    font-weight: 500;
-    text-align: center;
-  }
-  .pronouns {
-    font-size: var(--fs-xs);
-    color: var(--ink-3);
-  }
+  .member-count { margin: 4px 0 0; color: var(--ink-3); font-size: var(--fs-sm); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 10px; }
+  .member { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 80px; padding: 14px 16px; background: var(--surface); border-radius: 12px; text-decoration: none; color: var(--ink); transition: background var(--t-fast) var(--ease); }
+  .member:hover { background: var(--surface-2); }
+  .avatar { width: 44px; height: 44px; display: grid; place-items: center; flex: none; font-weight: 700; font-size: 20px; border-radius: 50%; overflow: hidden; background: var(--ring); color: var(--avatar-ink); border: 2px solid var(--ring); }
+  .member-info { display: grid; gap: 4px; flex: 1; min-width: 0; }
+  .name { font-size: var(--fs-md); font-weight: 700; overflow-wrap: anywhere; }
+  .pronouns { font-size: var(--fs-xs); color: var(--ink-3); overflow-wrap: anywhere; }
+  .front-badge { font-size: var(--fs-xs); color: var(--accent); }
+  .member :global(.icon) { color: var(--ink-3); }
 </style>

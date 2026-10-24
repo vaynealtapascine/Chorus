@@ -6,9 +6,10 @@
   ],
   "description": "already fine on dark: untouched",
   "expect": {
+    "avatar_ink": "#101018",
     "name": "#fff27a",
     "ring": "#fff27a",
-    "tint": "#423c27"
+    "tint": "#3e3d32"
   },
   "fn": "adapt_color"
 }

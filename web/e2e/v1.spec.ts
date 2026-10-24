@@ -39,6 +39,7 @@ test('onboarding by invite, members and a switch', async () => {
 });
 
 test('a switch reaches a second device', async () => {
+  await stars.page.getByText('Devices and data', { exact: true }).click();
   await stars.page.getByRole('button', { name: 'Link another device…' }).click();
   const link = await stars.page.locator('section[aria-label="Link another device"] code').innerText();
   const code = link.match(/\/i\/([A-Za-z0-9_-]+)/)?.[1];
@@ -104,7 +105,7 @@ test('an edited message keeps its history (SPEC §5.3)', async () => {
   await box.fill(hello);
   await box.press('Enter');
   const msg = friend.page.locator('.msg', { hasText: hello });
-  await msg.hover();
+  await msg.getByRole('button', { name: 'Message actions', exact: true }).click();
   await msg.getByTitle('Edit').click();
   await box.fill(fixed);
   await box.press('Enter');
@@ -140,7 +141,7 @@ test('a shared space between two accounts', async () => {
 test('reply privately: from the shared space into the DM, linking back (SPEC §5.3)', async () => {
   const welcome = `welcome to the club ${run}`;
   const msg = friend.page.locator('.msg', { hasText: welcome });
-  await msg.hover();
+  await msg.getByRole('button', { name: 'Message actions', exact: true }).click();
   await msg.getByTitle('Reply privately').click();
   // the DM opens with the reply ready
   await expect(friend.page.locator('nav[aria-label="Spaces"] a.dm.on, nav[aria-label="Spaces"] a.on', { hasText: 'Stars' })).toBeVisible();
@@ -219,7 +220,7 @@ test('slow mode holds a second message and it can be cancelled (D-076)', async (
 test('one internal channel shared with a follower (channel permissions)', async () => {
   const note = `news for Robin ${run}`;
   const inside = `inside only ${run}`;
-  await stars.page.setViewportSize({ width: 1000, height: 900 }); // the new-channel field is desktop-only
+  await stars.page.setViewportSize({ width: 1440, height: 900 }); // the new-channel field is desktop-only
   await go(stars.page, 'chat');
   await stars.page.locator('nav[aria-label="Spaces"] a', { hasText: 'Home' }).click();
   await stars.page.getByLabel('Message', { exact: true }).fill(inside);
@@ -233,6 +234,11 @@ test('one internal channel shared with a follower (channel permissions)', async 
   await stars.page.locator('details.perms summary').click();
   await stars.page.getByLabel('Permission target').selectOption({ label: 'Robin' });
   await stars.page.getByLabel('See it permission').selectOption('allow');
+  // A live projection update must not erase the unsaved permissions draft.
+  await go(desk.page, 'chat');
+  await desk.page.getByLabel('Message', { exact: true }).fill(`while editing permissions ${run}`);
+  await desk.page.getByLabel('Message', { exact: true }).press('Enter');
+  await expect(stars.page.getByLabel('See it permission')).toHaveValue('allow');
   await expect(stars.page.getByText('this shares just this channel with them')).toBeVisible();
   await stars.page.locator('details.perms').getByRole('button', { name: 'Save' }).click();
   await expect(stars.page.locator('details.perms li', { hasText: 'Robin' })).toContainText('can view');
@@ -250,7 +256,9 @@ test('a post with a reply and a reaction across accounts', async () => {
   const text = `tomatoes are in ${run}`;
   await go(stars.page, 'journal');
   await stars.page.getByLabel('Post text').fill(text);
+  await stars.page.getByText('Post options', { exact: true }).click();
   await stars.page.getByLabel('Tags').fill('garden');
+  await stars.page.getByText('Post options', { exact: true }).click();
   await stars.page.getByLabel('Visible to').selectOption('followers');
   await stars.page.getByRole('button', { name: 'Post', exact: true }).click();
   await expect(stars.page.locator('article.post', { hasText: text })).toBeVisible();
@@ -268,7 +276,7 @@ test('a post with a reply and a reaction across accounts', async () => {
   await expect(shared.getByRole('button', { name: 'Remove 💜 reaction' })).toBeVisible();
   await shared.getByRole('button', { name: 'Reply' }).click();
   await shared.getByLabel('Post text').fill(reply);
-  await shared.getByRole('button', { name: 'Post', exact: true }).click();
+  await shared.locator('form.composer').getByRole('button', { name: 'Reply', exact: true }).click();
   await expect(shared.getByLabel('Post text')).toBeHidden();
 
   // the author sees both through the post's thread

@@ -7,6 +7,7 @@
 
 <script lang="ts">
   import { core } from '../core';
+  import Icon from './Icon.svelte';
   import type { EmojiRow, MemberRow, MessageRow, SnapshotItem, TextRange, ThreadSummary } from '../data';
   import { segmentRich } from '../segments';
   import RichText from './RichText.svelte';
@@ -89,6 +90,17 @@
     return () => clearInterval(t);
   });
 
+  let actionMenu = $state<HTMLDivElement>();
+  let actionTrigger = $state<HTMLButtonElement>();
+  const menuId = $derived(`message-actions-${m.id}`);
+  function runAction(action: () => unknown) { actionMenu?.hidePopover(); action(); }
+  function placeActions() {
+    if (!actionMenu || !actionTrigger) return;
+    const r = actionTrigger.getBoundingClientRect();
+    const box = actionMenu.getBoundingClientRect();
+    actionMenu.style.left = `${Math.max(12, Math.min(r.left, innerWidth - box.width - 12))}px`;
+    actionMenu.style.top = `${Math.max(12, Math.min(r.bottom + 4, innerHeight - box.height - 12))}px`;
+  }
   const PALETTE = ['💜', '👍', '😂', '🥹', '🎉', '😢', '👀', '🔥'];
   let palette = $state(false);
   let cwExpanded = $state<boolean | null>(null);
@@ -141,7 +153,7 @@
     {#if thread}<button class="link" onclick={onthread}>Open thread · {thread.replyCount} {thread.replyCount === 1 ? 'reply' : 'replies'}</button>{/if}
   </div>
 {:else}
-  <div class="msg" class:cont class:pinned={m.pinned} class:selected data-message-id={m.id}>
+  <div class="msg" class:cont class:self={!!speaker && m.authors.includes(speaker)} class:pinned={m.pinned} class:selected data-message-id={m.id}>
     {#if replied}
       <div class="replybar">
         ↪ <span style="color: {color(replied.authors[0] ?? '').name}">{replied.authors.map(nameOf).join(' & ')}</span>
@@ -154,7 +166,7 @@
         {#if selecting}<button class="select-toggle" aria-label={selected ? 'Deselect message' : 'Select message'} aria-pressed={selected} onclick={onselect}>{selected ? '☑' : '□'}</button>{/if}
         <span class="avatars">
           {#each m.authors.slice(0, 3) as a (a)}
-            <span class="avatar" style="--ring: {color(a).ring}"><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></span>
+            <span class="avatar" style="--ring: {color(a).ring}; --avatar-ink: {color(a).avatar_ink}"><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></span>
           {/each}
         </span>
         <span class="who">
@@ -265,19 +277,20 @@
     {/if}
     <!-- a held message isn't sent yet: only Cancel, nothing covering it (narrow screens) -->
     {#if !heldUntil}
-    <div class="actions" role="toolbar" aria-label="Message actions">
-      <button onclick={() => (palette = !palette)} title="React" disabled={!speaker}>☺</button>
-      <button onclick={onreply} title="Reply">↩</button>
-      <button onclick={onreplyin} title="Reply in another channel">↪</button>
-      {#if onreplyprivately}<button onclick={onreplyprivately} title="Reply privately">✉</button>{/if}
-      <button onclick={quote} title="Quote (select text first to quote part)">❝</button>
-      <button onclick={() => onforward(selectedRange() ?? undefined)} title="Forward selection or message">↗</button>
-      <button onclick={onselect} title={selected ? 'Deselect message' : 'Select for bundle'} aria-label={selected ? 'Deselect message' : 'Select for bundle'}>{selected ? '☑' : '□'}</button>
-      <button onclick={onthread} title={thread ? 'Open thread' : 'Start thread'} aria-label={thread ? 'Open thread' : 'Start thread'}>☷</button>
-      <button onclick={onpin} title={m.pinned ? 'Unpin' : 'Pin'}>{m.pinned ? '⊘' : '📌'}</button>
+    <button class="action-trigger" bind:this={actionTrigger} popovertarget={menuId} aria-label="Message actions" title="Message actions"><Icon name="more" size={20} /></button>
+    <div class="actions" bind:this={actionMenu} id={menuId} popover="auto" ontoggle={(e) => { if (e.newState === 'open') placeActions(); }} role="group" aria-label="Message actions">
+      <button onclick={() => runAction(() => (palette = !palette))} title="React" disabled={!speaker}><Icon name="smile" size={20} />React</button>
+      <button onclick={() => runAction(onreply)} title="Reply"><Icon name="action-reply" size={20} />Reply</button>
+      <button onclick={() => runAction(onreplyin)} title="Reply in another channel"><Icon name="action-reply" size={20} />Reply in another channel</button>
+      {#if onreplyprivately}<button onclick={() => runAction(onreplyprivately)} title="Reply privately"><Icon name="chat" size={20} />Reply privately</button>{/if}
+      <button onclick={() => runAction(quote)} title="Quote (select text first to quote part)"><Icon name="copy" size={20} />Quote selection or message</button>
+      <button onclick={() => runAction(() => onforward(selectedRange() ?? undefined))} title="Forward selection or message"><Icon name="forward" size={20} />Forward</button>
+      <button onclick={() => runAction(onselect)} title={selected ? 'Deselect message' : 'Select for bundle'} aria-label={selected ? 'Deselect message' : 'Select for bundle'}><Icon name="select" size={20} />{selected ? 'Deselect' : 'Select for bundle'}</button>
+      <button onclick={() => runAction(onthread)} title={thread ? 'Open thread' : 'Start thread'} aria-label={thread ? 'Open thread' : 'Start thread'}><Icon name="action-thread" size={20} />{thread ? 'Open thread' : 'Start thread'}</button>
+      <button onclick={() => runAction(onpin)} title={m.pinned ? 'Unpin' : 'Pin'}><Icon name="action-pin" size={20} />{m.pinned ? 'Unpin' : 'Pin'}</button>
       {#if mine}
-        <button onclick={onedit} title="Edit">✎</button>
-        <button onclick={ondelete} title="Delete">🗑</button>
+        <button onclick={() => runAction(onedit)} title="Edit"><Icon name="action-edit" size={20} />Edit</button>
+        <button class="delete-action" onclick={() => runAction(ondelete)} title="Delete"><Icon name="delete" size={20} />Delete</button>
       {/if}
     </div>
     {/if}
@@ -288,12 +301,17 @@
   .cw-toggle { display: block; margin: var(--s-2) 0; padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); cursor: pointer; text-align: left; font: inherit; }
   .msg {
     position: relative;
-    padding: var(--s-3) var(--s-2) 2px;
-    border-radius: var(--r-sm);
+    padding: 12px;
+    border-radius: 16px;
+    background: var(--surface-2);
+    max-width: min(90%, 72ch);
+    align-self: flex-start;
+    min-width: 0;
   }
-  .msg.cont {
-    padding-top: 2px;
-  }
+  .msg.cont { padding-top: 8px; }
+  .msg.cont .body { padding-right: 36px; min-height: 36px; }
+  .msg.self { align-self: flex-end; background: var(--accent-soft); }
+  .head { flex-wrap: wrap; }
   .msg.selected { background: var(--accent-soft); }
   .select-toggle { background: none; border: 0; color: var(--accent); cursor: pointer; }
   blockquote span { display: block; font-size: var(--fs-xs); color: var(--ink-3); }
@@ -427,8 +445,8 @@
     place-items: center;
     font-size: 14px;
     border-radius: 50%;
-    background: var(--surface-2);
-    box-shadow: 0 0 0 2px var(--ring, var(--line)), 0 0 0 3px var(--surface);
+    background: var(--ring, var(--surface-2));
+    color: var(--avatar-ink, var(--ink));
   }
   .avatars .avatar + .avatar {
     margin-left: -8px;
@@ -496,33 +514,13 @@
     width: 34px;
     height: 34px;
   }
-  .actions {
-    position: absolute;
-    top: 2px;
-    right: var(--s-2);
-    display: none;
-    gap: 2px;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-sm);
-    padding: 2px;
-    box-shadow: var(--shadow-pop);
-  }
-  .msg:hover .actions,
-  .msg:focus-within .actions {
-    display: flex;
-  }
-  .actions button {
-    background: none;
-    border: 0;
-    cursor: pointer;
-    width: 28px;
-    height: 28px;
-    border-radius: 4px;
-    color: var(--ink-2);
-  }
-  .actions button:hover {
-    background: var(--surface-2);
-  }
+  .action-trigger { position: absolute; right: 2px; top: 2px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; }
+  .head { padding-right: 36px; }
+  .actions { position: fixed; inset: auto; margin: 0; width: 280px; max-width: calc(100vw - 24px); max-height: min(70dvh, 560px); overflow-y: auto; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-pop); padding: 6px; }
+  .actions:popover-open { display: grid; }
+  .actions button { display: flex; gap: 14px; align-items: center; background: none; border: 0; cursor: pointer; min-height: 48px; padding: 10px 12px; border-radius: 10px; color: var(--ink); text-align: left; font-size: var(--fs-md); }
+  .actions button :global(.icon) { color: var(--ink-3); }
+  .actions button:hover { background: var(--surface-2); }
+  .actions button.delete-action, .actions button.delete-action :global(.icon) { color: var(--danger); }
   .held { margin: 0; font-size: var(--fs-sm); color: var(--ink-3); }
 </style>

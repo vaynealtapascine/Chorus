@@ -3,7 +3,7 @@ package garden.vayne.chorus.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.isSystemInDarkTheme
+import garden.vayne.chorus.designsystem.LocalChorusDark
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -30,7 +30,7 @@ import org.json.JSONObject
 import uniffi.chorus_ffi.adaptColor
 
 /** A member colour adapted for the theme by the core (DESIGN.md §2): name ink, ring, tint. */
-data class Tones(val name: Color, val ring: Color, val tint: Color)
+data class Tones(val name: Color, val ring: Color, val tint: Color, val avatarInk: Color = Color.Black)
 
 private val toneCache = ConcurrentHashMap<Pair<String, Boolean>, Tones>()
 
@@ -40,12 +40,12 @@ private fun parse(hex: String): Color =
 fun tones(color: String, dark: Boolean): Tones = toneCache.getOrPut(color to dark) {
     runCatching {
         val j = JSONObject(adaptColor(color, dark, "subtle"))
-        Tones(parse(j.getString("name")), parse(j.getString("ring")), parse(j.getString("tint")))
+        Tones(parse(j.getString("name")), parse(j.getString("ring")), parse(j.getString("tint")), parse(j.optString("avatar_ink", "#101018")))
     }.getOrElse { Tones(parse(color), parse(color), Color.Transparent) }
 }
 
 @Composable
-fun tonesOf(color: String): Tones = tones(color, isSystemInDarkTheme())
+fun tonesOf(color: String): Tones = tones(color, LocalChorusDark.current)
 
 /** Circular avatar: sigil or initial on a soft disc, ringed in the member's colour. */
 @Composable
@@ -62,12 +62,12 @@ fun Avatar(glyph: String, color: String, size: Dp = 48.dp, modifier: Modifier = 
     }
     Box(
         modifier.size(size).then(if (ring) Modifier.border(2.dp, t.ring, CircleShape) else Modifier)
-            .background(p.surface2, CircleShape).clip(CircleShape),
+            .background(t.ring, CircleShape).clip(CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         val image = bitmap.value
         if (image != null) Image(image.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size))
-        else Text(glyph, fontSize = (size.value * 0.45f).sp, fontWeight = FontWeight.Medium, color = t.name)
+        else Text(glyph, fontSize = (size.value * 0.45f).sp, fontWeight = FontWeight.SemiBold, color = t.avatarInk)
     }
 }
 

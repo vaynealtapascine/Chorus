@@ -37,6 +37,8 @@ import garden.vayne.chorus.data.FollowList
 import garden.vayne.chorus.data.PeopleApi
 import garden.vayne.chorus.data.QuietHours
 import garden.vayne.chorus.data.QuietWindow
+import garden.vayne.chorus.designsystem.LocalChorusAppearance
+import garden.vayne.chorus.designsystem.ThemeMode
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import kotlinx.coroutines.launch
 import java.text.DateFormat
@@ -48,6 +50,7 @@ import java.util.Date
 @Composable
 internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> Unit = {}) {
     val p = LocalChorusPalette.current
+    val appearance = LocalChorusAppearance.current
     val actions = rememberCoroutineScope()
     val ctx = LocalContext.current
     val prefs = model.accountPrefs
@@ -117,6 +120,15 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
     val ceilingChoice = FollowPresets.choiceOf(prefs.followCeiling).let { if (it == "inherit") "gentle" else it }
     LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Text("Appearance", color = p.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                ThemeMode.entries.forEach { mode -> TextButton(onClick = { appearance.change(mode) }) {
+                    Text(mode.label, color = if (appearance.mode == mode) p.accent else p.ink2,
+                        fontWeight = if (appearance.mode == mode) FontWeight.Bold else FontWeight.Normal)
+                } }
+            }
+        }
         item {
             Text("Settings", color = p.ink, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(top = 12.dp))

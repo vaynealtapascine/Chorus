@@ -717,7 +717,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     val authors = message.authors.map { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
         .joinToString(" & ").ifEmpty { "Someone" }
     Column(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(12.dp))
-        .border(1.dp, p.line, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
+        .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -6,8 +6,9 @@
   ],
   "description": "darkened to 4.5:1",
   "expect": {
-    "name": "#7d7200",
-    "ring": "#9c901b",
+    "avatar_ink": "#101018",
+    "name": "#7b721b",
+    "ring": "#9b8f19",
     "tint": "#fffef2"
   },
   "fn": "adapt_color"

@@ -27,6 +27,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.ui.platform.LocalConfiguration
+import garden.vayne.chorus.ui.AppIcon
+import garden.vayne.chorus.ui.ChorusIcon
+import garden.vayne.chorus.ui.MoreScreen
+import garden.vayne.chorus.ui.Switcher
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -118,13 +129,14 @@ class MainActivity : ComponentActivity() {
         i?.takeIf { it.action == Intent.ACTION_VIEW }?.data?.toString()?.takeIf { "/i/" in it }
 }
 
-private enum class Tab(val label: String) { Home("Home"), Chat("Chat"), Journal("Journal"), People("People"), Members("Members"), History("History") }
+private enum class Tab(val label: String, val icon: AppIcon) { Home("Fronting", AppIcon.Front), Chat("Chat", AppIcon.Chat), Journal("Journal", AppIcon.Journal), People("Friends", AppIcon.Friends), Members("Members", AppIcon.Members), More("More", AppIcon.More), History("Front history", AppIcon.History) }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     onShareDismissed: () -> Unit, newEntryRequest: Long?, onNewEntryConsumed: () -> Unit) {
     val p = LocalChorusPalette.current
+    val expanded = LocalConfiguration.current.screenWidthDp >= 840
     val status by chorus.status.collectAsState()
     val model by chorus.model.collectAsState()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
@@ -140,6 +152,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var sharedChannel by remember { mutableStateOf<String?>(null) }
     var linking by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var quickSwitchOpen by rememberSaveable { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var insightsOpen by rememberSaveable { mutableStateOf(false) }
     var lastAccount by rememberSaveable { mutableStateOf<String?>(null) }
@@ -170,6 +183,10 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         else if (searchOpen) searchOpen = false else if (insightsOpen) insightsOpen = false else settingsOpen = false
     }
     if (linking && status != Status.NoDevice && status != Status.Loading) DeviceLink(chorus) { linking = false }
+    if (quickSwitchOpen && !model.isPerson) Switcher(chorus, model) { quickSwitchOpen = false }
+    BackHandler(!quickSwitchOpen && !settingsOpen && !searchOpen && !insightsOpen && !model.isPerson && (tab == Tab.Journal || tab == Tab.History)) {
+        tab = Tab.More
+    }
 
     when (status) {
         Status.Loading -> Box(Modifier.fillMaxSize().background(p.bg))
@@ -177,32 +194,30 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         Status.StorageError -> Box(Modifier.fillMaxSize().background(p.bg).padding(24.dp), contentAlignment = Alignment.Center) {
             Text("The local replica could not be opened or saved. Keep this app's data intact and check the device storage.", color = p.danger)
         }
-        else -> Column(Modifier.fillMaxSize().background(p.bg)) {
+        else -> Row(Modifier.fillMaxSize().background(p.bg)) {
             val person = model.isPerson
-            val activeTab = if (person && (tab == Tab.Home || tab == Tab.Members || tab == Tab.History))
-                Tab.Journal else tab
+            val activeTab = if (person && (tab == Tab.Home || tab == Tab.Members || tab == Tab.History)) Tab.Journal else tab
+            val destinations = if (person) listOf(Tab.Journal, Tab.Chat, Tab.People, Tab.More)
+                else listOf(Tab.Members, Tab.Home, Tab.Chat, Tab.People, Tab.More)
+            fun select(t: Tab) { tab = t; settingsOpen = false; searchOpen = false; insightsOpen = false }
+            if (expanded && !chatStageCapture) NavigationRail(containerColor = p.surface) {
+                destinations.forEach { t -> NavigationRailItem(selected = t == activeTab,
+                    onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = { Text(t.label) }) }
+            }
+            Column(Modifier.weight(1f)) {
             if (!chatStageCapture) Row(
-                Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
+                Modifier.fillMaxWidth().background(p.surface).statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Chorus", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = p.ink)
-                Spacer(Modifier.weight(1f))
-                Text("⌕", fontSize = 24.sp, color = p.accent,
-                    modifier = Modifier.clickable { searchOpen = !searchOpen; settingsOpen = false; insightsOpen = false }
-                        .padding(horizontal = 8.dp, vertical = 4.dp).semantics { contentDescription = "Search" })
-                Text(if (settingsOpen) "Close settings" else if (insightsOpen) "Close insights" else "Settings", fontSize = 12.sp, color = p.accent,
-                    modifier = Modifier.clickable { if (insightsOpen) insightsOpen = false else settingsOpen = !settingsOpen; searchOpen = false }
-                        .padding(horizontal = 10.dp, vertical = 6.dp))
-                Text("Link device", fontSize = 12.sp, color = p.accent,
-                    modifier = Modifier.clickable { linking = true }.padding(horizontal = 10.dp, vertical = 6.dp))
-                val (dot, label) = when (status) {
-                    Status.Live -> p.ok to "live"
-                    Status.Connecting -> p.warn to "connecting"
-                    else -> p.ink3 to "offline"
+                Column(Modifier.weight(1f)) {
+                    Text(if (searchOpen) "Search" else if (settingsOpen) "Settings" else if (insightsOpen) "Insights" else activeTab.label,
+                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.ink)
+                    Text(if (status == Status.Live) "Chorus · synced" else if (status == Status.Connecting) "Connecting…" else "Offline · saved on this device",
+                        fontSize = 12.sp, color = p.ink3)
                 }
-                Box(Modifier.size(8.dp).background(dot, CircleShape))
-                Spacer(Modifier.width(6.dp))
-                Text(label, fontSize = 12.sp, color = p.ink3)
+                IconButton(onClick = { searchOpen = !searchOpen; settingsOpen = false; insightsOpen = false }) { ChorusIcon(if (searchOpen) AppIcon.Close else AppIcon.Search, if (searchOpen) "Close search" else "Search") }
+                if (!person) IconButton(onClick = { quickSwitchOpen = true }) { ChorusIcon(AppIcon.Swap, "Open switcher") }
+                IconButton(onClick = { settingsOpen = !settingsOpen; searchOpen = false; insightsOpen = false }) { ChorusIcon(if (settingsOpen) AppIcon.Close else AppIcon.Settings, if (settingsOpen) "Close settings" else "Settings") }
             }
             Box(Modifier.weight(1f)) {
                 if (sharedDraft != null) ShareChooser(sharedDraft, model, chorus.device?.accountId,
@@ -253,28 +268,24 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal })
                     Tab.Members -> Members(chorus, model)
                     Tab.History -> History(chorus, model)
+                    Tab.More -> MoreScreen(person, onJournal = { tab = Tab.Journal }, onHistory = { tab = Tab.History },
+                        onInsights = { insightsOpen = true }, onSettings = { settingsOpen = true },
+                        onSearch = { searchOpen = true }, onLink = { linking = true })
                 }
             }
-            // the keyboard covers the tabs anyway; hiding them lets a screen's imePadding sit on it
-            if (sharedDraft == null && !settingsOpen && !searchOpen && !insightsOpen && !chatStageCapture && !WindowInsets.isImeVisible) Row(
-                Modifier.fillMaxWidth().background(p.surface).navigationBarsPadding().padding(vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+            // Give the composer the IME inset while typing; destinations return on dismiss.
+            if (!expanded && sharedDraft == null && !chatStageCapture && !WindowInsets.isImeVisible) NavigationBar(
+                containerColor = p.surface, tonalElevation = 0.dp,
             ) {
-                Tab.entries.filter { !person || (it != Tab.Home && it != Tab.Members && it != Tab.History) }.forEach { t ->
-                    Text(
-                        t.label,
-                        color = if (t == activeTab) p.accent else p.ink2,
-                        fontWeight = if (t == activeTab) FontWeight.SemiBold else FontWeight.Normal,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f).clickable { tab = t }.padding(horizontal = 1.dp, vertical = 12.dp)
-                            .semantics { contentDescription = t.label },
-                    )
-                }
+                destinations.forEach { t -> NavigationBarItem(
+                    selected = (t == activeTab || (t == Tab.More && activeTab !in destinations)) && !settingsOpen && !searchOpen && !insightsOpen,
+                    onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = { Text(t.label, maxLines = 1) },
+                    colors = NavigationBarItemDefaults.colors(selectedIconColor = p.accent, selectedTextColor = p.accent,
+                        indicatorColor = p.accentSoft, unselectedIconColor = p.ink3, unselectedTextColor = p.ink3),
+                ) }
             }
+            }
+
         }
     }
 }

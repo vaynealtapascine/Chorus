@@ -158,11 +158,11 @@ pub struct Theme {
 impl Theme {
     /// DESIGN.md §1.1 "Paper".
     pub fn paper() -> Theme {
-        Theme { dark: false, bg: hex("#FBF7F2"), surface: hex("#FFFFFF"), ink: hex("#2B2521") }
+        Theme { dark: false, bg: hex("#F7F6F2"), surface: hex("#FFFFFF"), ink: hex("#202529") }
     }
     /// DESIGN.md §1.2 "Ink".
     pub fn ink() -> Theme {
-        Theme { dark: true, bg: hex("#1B1714"), surface: hex("#231E1A"), ink: hex("#F1E9E0") }
+        Theme { dark: true, bg: hex("#15161A"), surface: hex("#1E2026"), ink: hex("#FBF3E5") }
     }
 }
 
@@ -178,6 +178,20 @@ pub struct MemberColors {
     pub ring: String,
     /// Soft wash for selected rows and own bubbles.
     pub tint: String,
+    /// Text on a solid avatar filled with `ring`: ≥ 4.5:1.
+    pub avatar_ink: String,
+}
+
+fn avatar_ink(background: &str) -> String {
+    let bg = hex(background);
+    let warm = hex("#101018");
+    if contrast(warm, bg) >= NAME_CONTRAST {
+        warm.hex()
+    } else if contrast(hex("#FFFFFF"), bg) >= NAME_CONTRAST {
+        "#ffffff".into()
+    } else {
+        "#000000".into()
+    }
 }
 
 pub const NAME_CONTRAST: f64 = 4.5;
@@ -187,14 +201,11 @@ pub const RING_CONTRAST: f64 = 3.0;
 pub fn adapt(color: &str, theme: Theme, intensity: Intensity) -> MemberColors {
     let Some(c) = Rgb::parse(color) else {
         let ink = theme.ink.hex();
-        return MemberColors { name: ink.clone(), ring: ink, tint: theme.surface.hex() };
+        return MemberColors { name: ink.clone(), avatar_ink: avatar_ink(&ink), ring: ink, tint: theme.surface.hex() };
     };
     if intensity == Intensity::Off {
-        return MemberColors {
-            name: theme.ink.hex(),
-            ring: with_contrast(c, &[theme.bg], RING_CONTRAST, theme.dark).hex(),
-            tint: theme.surface.hex(),
-        };
+        let ring = with_contrast(c, &[theme.bg], RING_CONTRAST, theme.dark).hex();
+        return MemberColors { name: theme.ink.hex(), avatar_ink: avatar_ink(&ring), ring, tint: theme.surface.hex() };
     }
     let name = with_contrast(c, &[theme.bg, theme.surface], NAME_CONTRAST, theme.dark);
     let ring = with_contrast(c, &[theme.bg], RING_CONTRAST, theme.dark);
@@ -205,7 +216,8 @@ pub fn adapt(color: &str, theme: Theme, intensity: Intensity) -> MemberColors {
         (_, true) => 0.14,
     };
     let tint = theme.surface.mix(c, t);
-    MemberColors { name: name.hex(), ring: ring.hex(), tint: tint.hex() }
+    let ring = ring.hex();
+    MemberColors { name: name.hex(), avatar_ink: avatar_ink(&ring), ring, tint: tint.hex() }
 }
 
 #[cfg(test)]
@@ -266,6 +278,8 @@ mod tests {
             prop_assert!(contrast(name, theme.bg)   >= NAME_CONTRAST, "{} → {}", hex, a.name);
             prop_assert!(contrast(name, theme.surface)   >= NAME_CONTRAST, "{} → {}", hex, a.name);
             prop_assert!(contrast(ring, theme.bg)   >= RING_CONTRAST, "{} → {}", hex, a.ring);
+            prop_assert!(contrast(Rgb::parse(&a.avatar_ink).unwrap(), ring) >= NAME_CONTRAST,
+                "avatar {} on {}", a.avatar_ink, a.ring);
         }
     }
 }

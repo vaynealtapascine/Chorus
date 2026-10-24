@@ -407,3 +407,24 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   - The existing search WIP causes two `web/src/lib/search.test.ts` failures (`after:150`,
     `before:1500`). Verify this tool in a clean HEAD checkout with the tool copied in, rather
     than changing or hiding that unrelated work. Shared build/dependency caches stay on F:.
+
+- 2026-10-24 GPT-6-sol — UI1 build/review — In isolated Windows worktrees, set CARGO_TARGET_DIR
+  and CHORUS_GRADLE_BUILD_DIR to F: as above, use Android Studio's JBR, and give the build
+  process the Windows SDK 10.0.22000.0 and MSVC 14.51.36231 LIB/INCLUDE paths if the shell
+  has no developer environment (`kernel32.lib` / `windows.h` failures). These were process-only
+  environment values; no system setting or service changed. Escape the SDK drive colon in
+  ignored `android/local.properties` (`C\:/...`) for Android lint.
+  - Build a local `web/src/lib/core/pkg`; a junction to another checkout makes Vite serve the
+    wasm through an external @fs path that can return HTML instead of wasm. Dependencies and
+    generated native/wasm bindings remain ignored.
+  - UI fonts/icons in public/ must be explicitly listed in the generated service-worker cache;
+    public assets are absent from Vite's bundle manifest. Navigation now falls back to the saved
+    app after 1.5 s if a home server's connection hangs.
+  - Web review uses the repo's Playwright workflow. Collaborative preview repeatedly produced
+    mismatched dimensions/tiled screenshots; captures at 1440×900 and 390×844 were made locally.
+    Android build checks run, but native device access is disabled and automatic approval
+    rejected the isolated emulator app launch as `blocked by policy`. No real phone or service
+    was changed. Native visual parity is still unverified.
+  - Channel permission drafts used to reset on unrelated projection updates. Their source is now
+    a content-stable selected-override snapshot; the browser check sends from a second device
+    while a permission change is unsaved and verifies the choice survives.

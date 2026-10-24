@@ -1,5 +1,4 @@
-import '@fontsource-variable/figtree';
-import '@fontsource-variable/fraunces/full.css';
+import './lib/appearance.svelte';
 import './lib/design/base.css';
 import { mount } from 'svelte';
 import App from './App.svelte';

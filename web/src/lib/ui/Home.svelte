@@ -8,12 +8,13 @@
   import LinkDevice from './LinkDevice.svelte';
   import type { FrontEntry, Member } from './types';
   import AvatarImage from './AvatarImage.svelte';
+  import Icon from './Icon.svelte';
 
   let { projection, dark, onswitch }: { projection: Projection; dark: boolean; onswitch: () => void } = $props();
 
   const members: Member[] = $derived(
     Object.entries(projection.rows.member ?? {})
-      .filter(([, r]) => r.exists && !r.fields.deleted_at && !r.fields.archived_at)
+      .filter(([, r]) => r.exists && !r.fields.deleted_at && !r.fields.archived_at && (!r.fields.created_by_account_id || r.fields.created_by_account_id === sync.accountId))
       .map(([id, r]) => ({
         id,
         name: String(r.fields.name ?? 'Unnamed'),
@@ -74,6 +75,7 @@
     </section>
   {:else}
   <Reviews {projection} />
+  <div class="front-actions"><a href="#/history"><Icon name="history" size={18} />Front history</a><button class="switch-button" onclick={onswitch}><Icon name="swap" size={18} />Switch</button></div>
   <button class="card-button" onclick={onswitch} aria-label="Change who's here">
     <FrontCard members={subjects} {front} {since} {dark} />
   </button>
@@ -98,7 +100,7 @@
       {#each members as m (m.id)}
         {@const c = core.adaptColor(m.color, dark)}
         {@const here = front.some((f) => f.id === m.id)}
-        <button class="member" class:here style="--ring: {c.ring}; --tint: {c.tint}" onclick={() => switchTo(m.id)}>
+        <button class="member" class:here style="--ring: {c.ring}; --avatar-ink: {c.avatar_ink}; --tint: {c.tint}" onclick={() => switchTo(m.id)}>
           <span class="avatar" aria-hidden="true"><AvatarImage hash={m.avatarBlob} glyph={m.sigil ?? m.name[0]} name={m.name} /></span>
           <span class="name" style="color: {c.name}">{m.name}</span>
         </button>
@@ -106,15 +108,20 @@
     </div>
   </section>
   {/if}
-  <LinkDevice />
+  <details class="device-tools"><summary>Devices and data</summary><LinkDevice />
   <section class="data-links" aria-label="Data">
     <h2>Data</h2>
     <a href="#/trash">Trash · deleted items</a>
     <a href="#/data">API tokens · overlays</a>
-  </section>
+  </section></details>
 </div>
 
 <style>
+  .front-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .front-actions a { display: flex; align-items: center; gap: 8px; color: var(--ink-2); text-decoration: none; font-size: var(--fs-sm); min-height: 48px; }
+  .switch-button { display: flex; align-items: center; gap: 8px; padding: 12px 20px; min-height: 48px; border: 0; border-radius: var(--r-full); background: var(--accent); color: var(--on-accent); font-weight: 700; cursor: pointer; }
+  .device-tools { margin-top: 16px; border-top: 1px solid var(--line); color: var(--ink-3); padding-block: 16px; }
+  .device-tools summary { cursor: pointer; font-size: var(--fs-sm); padding-block: 8px; }
   .home {
     display: grid;
     gap: var(--s-6);
@@ -147,6 +154,7 @@
     margin-bottom: var(--s-3);
   }
   .ghost {
+    min-height: 44px;
     background: none;
     border: 0;
     color: var(--accent);
@@ -178,7 +186,7 @@
   }
   .add button {
     background: var(--accent);
-    color: var(--surface);
+    color: var(--on-accent);
     border: 0;
     border-radius: var(--r-full);
     padding: 0 var(--s-4);
@@ -197,8 +205,8 @@
     justify-items: center;
     gap: var(--s-2);
     padding: var(--s-3) var(--s-2);
-    background: var(--surface);
-    border: 1px solid var(--line);
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: var(--r-md);
     cursor: pointer;
     transition: background var(--t-fast) var(--ease);
@@ -214,8 +222,8 @@
     place-items: center;
     font-size: 22px;
     border-radius: 50%;
-    background: var(--surface-2);
-    box-shadow: 0 0 0 2px var(--ring);
+    background: var(--ring);
+    color: var(--avatar-ink);
   }
   .name {
     font-size: var(--fs-sm);

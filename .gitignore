@@ -17,3 +17,7 @@ __pycache__/
 
 # local PluralSpec editor: private access links, logs and pre-save backups
 /.pluralspec-editor/
+
+# Local UI review captures and browser test output
+/.impeccable/review/
+/web/e2e/results/

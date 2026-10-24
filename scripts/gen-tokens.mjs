@@ -26,7 +26,7 @@ const colors = (o) => vars(o, '');
 
 const css = `${header}
 :root {
-${colors(t.color.light)}
+${colors(t.color.dark)}
 ${vars(t.radius, 'r-', 'px')}
 ${vars(t.space, 's-', 'px')}
 ${vars(t.size, 'fs-', 'px')}
@@ -38,17 +38,11 @@ ${vars(t.size, 'fs-', 'px')}
   --t-slow: ${t.motion.slow}ms;
   --ease: ${t.motion.ease};
   --shadow-pop: ${t.shadow.pop};
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-${colors(t.color.dark).replaceAll('  --', '    --')}
-    color-scheme: dark;
-  }
-}
-:root[data-theme='dark'] {
-${colors(t.color.dark)}
   color-scheme: dark;
+}
+:root[data-theme='light'] {
+${colors(t.color.light)}
+  color-scheme: light;
 }
 `;
 const cssPath = join(root, 'web/src/lib/design/tokens.css');

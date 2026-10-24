@@ -6,9 +6,10 @@
   ],
   "description": "lightened on dark",
   "expect": {
-    "name": "#6b84cf",
-    "ring": "#4b62aa",
-    "tint": "#21212e"
+    "avatar_ink": "#ffffff",
+    "name": "#6b85d0",
+    "ring": "#4a61a8",
+    "tint": "#1d2237"
   },
   "fn": "adapt_color"
 }

@@ -6,7 +6,8 @@
   ],
   "description": "names use ink",
   "expect": {
-    "name": "#2b2521",
+    "avatar_ink": "#101018",
+    "name": "#202529",
     "ring": "#c0694e",
     "tint": "#ffffff"
   },

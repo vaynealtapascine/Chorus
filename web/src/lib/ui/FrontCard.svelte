@@ -6,7 +6,6 @@
   let { members, front, since, dark }: { members: Member[]; front: FrontEntry[]; since: number; dark: boolean } =
     $props();
 
-  const levelLabel: Record<string, string> = { front: '', cocon: 'co-con', present: 'present' };
   let now = $state(Date.now());
   $effect(() => {
     void since; // a new switch restarts the clock, so durations never go negative
@@ -33,77 +32,45 @@
 </script>
 
 <section class="card" aria-label="Who's here">
-  <div class="avatars">
-    {#each shown as { f, m }, i (m.id)}
-      {@const c = core.adaptColor(m.color, dark)}
-      <span class="avatar" class:primary={f.primary} style="--ring: {c.ring}; z-index: {10 - i}" title={m.name}>
-        <AvatarImage hash={m.avatarBlob} glyph={m.sigil ?? m.name[0]} name={m.name} />
-      </span>
-    {/each}
-  </div>
-  <div class="text">
-    <p class="names display">{names || 'No one fronting'}</p>
-    <p class="meta">
-      {#each shown.filter((x) => x.f.level !== 'front') as { f, m } (m.id)}
-        {@const c = core.adaptColor(m.color, dark)}
-        <span class="badge"><span style="color: {c.name}">{m.name}</span> · {levelLabel[f.level]}</span>
-      {/each}
-      {#if shown.length}
-        <span class="since">since {sinceLabel} · {duration(now - since)}</span>
-      {:else}
-        <span class="since">Tap someone below to switch in</span>
-      {/if}
-    </p>
+  <div class="front-heading"><span class="front-dot"></span><strong>Current front</strong><span>{shown.length} here</span></div>
+  <div class="nearby layer">
+    <div class="conscious layer">
+      <div class="front layer">
+        <div class="layer-heading"><strong>Fronting</strong><span>{names ? `since ${sinceLabel}` : 'No one fronting'}</span></div>
+        {#each shown.filter((x) => x.f.level === 'front') as { f, m } (m.id)}
+          {@const c = core.adaptColor(m.color, dark)}
+          <div class="front-person" style="--ring: {c.ring}; --avatar-ink: {c.avatar_ink}; --name: {c.name}">
+            <span class="avatar"><AvatarImage hash={m.avatarBlob} glyph={m.sigil ?? m.name[0]} name={m.name} /></span>
+            <span class="person-name">{m.name}{#if f.primary}<span class="primary">Primary</span>{/if}</span>
+            <span class="duration">{duration(now - since)}</span>
+          </div>
+        {:else}<p class="empty">Tap to choose who's here.</p>{/each}
+      </div>
+      <div class="layer-footer"><span>Co-conscious</span><div class="chips">{#each shown.filter((x) => x.f.level === 'cocon') as { m } (m.id)}<span class="member-chip">{m.name}</span>{:else}<span class="none">No one</span>{/each}</div></div>
+    </div>
+    <div class="layer-footer"><span>Present</span><div class="chips">{#each shown.filter((x) => x.f.level === 'present') as { m } (m.id)}<span class="member-chip">{m.name}</span>{:else}<span class="none">No one</span>{/each}</div></div>
   </div>
 </section>
 
 <style>
-  .card {
-    display: flex;
-    align-items: center;
-    gap: var(--s-4);
-    padding: var(--s-5);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-  }
-  .avatars {
-    display: flex;
-  }
-  .avatar {
-    width: 44px;
-    height: 44px;
-    display: grid;
-    place-items: center;
-    font-size: 20px;
-    border-radius: 50%;
-    background: var(--surface-2);
-    box-shadow:
-      0 0 0 2px var(--ring),
-      0 0 0 4px var(--surface);
-    margin-left: -10px;
-  }
-  .avatar:first-child {
-    margin-left: 0;
-  }
-  .avatar.primary {
-    width: 56px;
-    height: 56px;
-    font-size: 26px;
-  }
-  .names {
-    margin: 0;
-    font-size: var(--fs-xl);
-  }
-  .meta {
-    margin: var(--s-1) 0 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s-1) var(--s-3);
-    color: var(--ink-2);
-    font-size: var(--fs-sm);
-  }
-  .since {
-    color: var(--ink-3);
-  }
+  .card { background: var(--surface); padding: 16px; border-radius: var(--r-lg); display: grid; gap: 16px; }
+  .front-heading { display: flex; align-items: center; gap: 8px; }
+  .front-heading > span:last-child { color: var(--ink-3); margin-left: auto; font-size: var(--fs-xs); }
+  .front-dot { width: 14px; height: 14px; border: 2px solid var(--accent); border-radius: 50%; box-shadow: inset 0 0 0 2px var(--surface); background: var(--accent); }
+  .layer { display: grid; gap: 10px; padding: 12px; border-radius: 20px; border: 1px dashed var(--line); }
+  .conscious { border-color: color-mix(in srgb, var(--accent) 65%, transparent); background: color-mix(in srgb, var(--accent) 3%, transparent); }
+  .front { border-style: solid; border-color: var(--accent); background: var(--accent-soft); border-radius: var(--r-md); padding: 10px; }
+  .layer-heading { display: flex; gap: 8px; align-items: baseline; padding: 0 2px 2px; color: var(--accent); font-size: var(--fs-xs); }
+  .layer-heading > span { color: var(--ink-3); }
+  .front-person { display: flex; align-items: center; gap: 10px; background: var(--surface); padding: 10px; border-radius: 12px; min-width: 0; }
+  .avatar { display: grid; place-items: center; width: 42px; height: 42px; flex: none; background: var(--ring); color: var(--avatar-ink); border: 2px solid var(--ring); border-radius: 50%; overflow: hidden; font-weight: 700; }
+  .person-name { display: grid; gap: 2px; font-size: var(--fs-md); font-weight: 600; overflow-wrap: anywhere; }
+  .primary { color: var(--ink-3); font-size: var(--fs-xs); font-weight: 400; }
+  .duration { margin-left: auto; color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .layer-footer { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; color: var(--ink-2); font-size: var(--fs-xs); }
+  .chips { display: flex; flex-wrap: wrap; justify-content: end; gap: 4px; }
+  .member-chip { padding: 4px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink); }
+  .none, .empty { color: var(--ink-3); font-size: var(--fs-xs); }
+  .empty { margin: 4px 0; }
+  @media (max-width: 420px) { .card { padding: 12px; } .layer { padding: 10px; } .front { padding: 8px; } }
 </style>

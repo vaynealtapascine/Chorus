@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { appearance, setTheme, type ThemeMode } from '../appearance.svelte';
   import { notifyPreset } from '../core/pkg/chorus_wasm.js';
   import { contentWarningsAutoExpand, readPerMember, segmentParsing, selfMember } from '../data';
   import { apiBase } from '../sync/device';
@@ -84,6 +85,11 @@
 <section class="settings">
   <h1 class="display">Settings</h1>
   <p class="muted">Changes save on this device and sync with your account.</p>
+  <section class="card">
+    <h2>Appearance</h2>
+    <label>Theme <select aria-label="Theme" value={appearance.mode} onchange={(e) => setTheme(e.currentTarget.value as ThemeMode)}><option value="dark">Dark</option><option value="light">Light</option><option value="system">Follow device</option></select></label>
+    <p class="muted">This device only.</p>
+  </section>
   <section class="card">
     <h2>Notifications</h2>
     <label><input type="checkbox" checked={kinds.mention !== false} onchange={(e) => chatKind('mention', e.currentTarget.checked)} /> Mentions</label>

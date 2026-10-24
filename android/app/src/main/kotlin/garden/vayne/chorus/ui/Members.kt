@@ -56,7 +56,7 @@ fun Members(chorus: Chorus, model: Model) {
         return
     }
 
-    val shown = model.members.filter { it.archived == archived }.let { list ->
+    val shown = model.members.filter { it.archived == archived && (it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId) }.let { list ->
         if (query.isBlank()) list
         else list.mapNotNull { m -> fuzzy(query, listOfNotNull(m.name, m.displayName, m.pronouns, *m.sigils.toTypedArray()).joinToString(" "))?.let { it to m } }
             .sortedBy { it.first }.map { it.second }
@@ -67,7 +67,7 @@ fun Members(chorus: Chorus, model: Model) {
                 SearchField(query, { query = it }, "Search ${model.members.size} members", Modifier.weight(1f))
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "Add", color = p.surface, fontWeight = FontWeight.SemiBold,
+                    "Add", color = p.onAccent, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clip(CircleShape).background(p.accent).clickable { editing = "" }.padding(horizontal = 18.dp, vertical = 10.dp),
                 )
             }
@@ -82,7 +82,7 @@ fun Members(chorus: Chorus, model: Model) {
         items(shown, key = { it.id }) { m ->
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.surface)
-                    .border(1.dp, p.line, RoundedCornerShape(14.dp)).clickable { editing = m.id }.padding(12.dp),
+                    .clickable { editing = m.id }.padding(horizontal = 12.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Avatar(m.glyph, m.color, 40.dp, avatarBlob = m.avatarBlob)
@@ -92,6 +92,10 @@ fun Members(chorus: Chorus, model: Model) {
                     val groups = model.membership.filter { m.id in it.value }.keys.mapNotNull { model.group(it)?.name }
                     val sub = listOfNotNull(m.pronouns, groups.joinToString(", ").ifEmpty { null }).joinToString(" · ")
                     if (sub.isNotEmpty()) Text(sub, color = p.ink3, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                model.current.find { it.subjectId == m.id && it.subjectType == "member" }?.let { entry ->
+                    Text(if (entry.level == "front") "Fronting" else if (entry.level == "cocon") "Co-conscious" else "Present",
+                        color = p.accent, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp))
                 }
             }
         }

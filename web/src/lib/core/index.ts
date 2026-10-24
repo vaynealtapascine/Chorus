@@ -50,6 +50,7 @@ export interface MemberColors {
   name: string;
   ring: string;
   tint: string;
+  avatar_ink: string;
 }
 
 let ready: Promise<void> | null = null;

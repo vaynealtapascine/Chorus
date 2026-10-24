@@ -13,6 +13,7 @@
   import AvatarImage from './AvatarImage.svelte';
   import EmojiImage from './EmojiImage.svelte';
   import SpaceRail from './SpaceRail.svelte';
+  import Icon from './Icon.svelte';
   import { authorCards, listSpaces, openDm, spaceTitle, type SpaceInfo } from '../spaces';
   import { carryReply, takeReply } from '../replyElsewhere';
   import ChannelPermissions from './ChannelPermissions.svelte';
@@ -23,6 +24,8 @@
 
   let { projection, dark, channelId, focusId }: { projection: Projection; dark: boolean; channelId?: string; focusId?: string } = $props();
 
+  let showInfo = $state(window.matchMedia('(min-width: 1280px)').matches);
+  const roomMembers = $derived(members(projection).filter((m) => !m.deleted && !m.archived));
   const ss = $derived(spaces(projection));
   const allChannels = $derived(channels(projection));
   // `#/chat/space:<id>` opens a space by id (a DM just created may not have its channel synced yet)
@@ -707,8 +710,9 @@
   });
 </script>
 
-<div class="chat">
+<div class="chat" class:with-info={showInfo}>
   <aside class="channels" aria-label="Channels">
+    <div class="channel-title">Chats <a class="icon-button" href="#/search" aria-label="Search messages"><Icon name="search" size={18} /></a></div>
     <SpaceRail spaces={ss} channels={allChannels} currentId={space?.id} {directory} me={sync.accountId} />
     {#each spaceChannels as c (c.id)}
       {@const n = c.id === current?.id ? 0 : unread(projection, c.id, sync.accountId)}
@@ -732,7 +736,8 @@
         <h1>{space?.kind === 'dm' ? spaceTitle(space, directory.get(space.id), sync.accountId) : `# ${current?.name ?? '…'}`}</h1>
       {/if}
       {#if current?.topic}<span class="topic">{current.topic}</span>{/if}
-      <a class="search-link" href="#/search">Search</a>
+      <a class="search-link icon-button" href="#/search" aria-label="Search messages"><Icon name="search" size={20} /></a>
+      <button class="icon-button info-toggle" aria-label="Chat info" aria-expanded={showInfo} onclick={() => (showInfo = !showInfo)}><Icon name="members" size={20} /></button>
       {#if space?.kind === 'internal'}
         <label class="view-as">Viewing as
           <select aria-label="Viewing as member" value={viewingAs ?? ''} onchange={(e) => (viewingAs = e.currentTarget.value || null)}>
@@ -743,7 +748,7 @@
           </select>
         </label>
       {/if}
-      <button class="pins" class:on={showPins} onclick={() => (showPins = !showPins)}>📌 {pinned.length}</button>
+      <button class="pins" aria-label="Pinned messages" class:on={showPins} onclick={() => (showPins = !showPins)}><Icon name="pin" size={16} /> {pinned.length}</button>
       {#if current}
         <details class="room-menu">
           <summary aria-label="Channel menu">⋯</summary>
@@ -1007,7 +1012,7 @@
     <div class="composer">
       {#if !editing}
         <input class="file-input" type="file" multiple bind:this={fileInput} onchange={(e) => { addFiles(e.currentTarget.files ?? []); e.currentTarget.value = ''; }} aria-label="Choose attachments" />
-        <button class="attach" onclick={() => fileInput?.click()} title="Attach files">＋</button>
+        <button class="attach" onclick={() => fileInput?.click()} title="Attach files" aria-label="Attach files"><Icon name="attach" size={22} /></button>
       {/if}
       {#if !editing}<div class="chip-wrap">
         <button class="chip" onclick={() => (picking = !picking)} title="Speaking as">
@@ -1054,7 +1059,7 @@
         {/if}
       </div>
       {#if !editing}<div class="chip-wrap">
-        <button class="chip" onclick={() => (emojiPicker = !emojiPicker)} title="Custom emoji" aria-label="Custom emoji">☺</button>
+        <button class="chip" onclick={() => (emojiPicker = !emojiPicker)} title="Custom emoji" aria-label="Custom emoji"><Icon name="smile" size={22} /></button>
         {#if emojiPicker}
           <div class="picker emoji-pick" role="listbox" aria-label="Custom emoji">
             {#each activeEmoji as e (e.id)}
@@ -1066,6 +1071,20 @@
       <button class="send" onclick={() => void send()} disabled={editing ? (editingParts ? !editingParts.some((part) => part.trim()) : !draft.trim()) : (!preview && !pending.length) || (!preview?.authors.length && !speaker) || (visibilityMode === 'members' && !visibleTo.length)}>{editing ? 'Save' : 'Send'}</button>
     </div>
   </section>
+  {#if showInfo}
+    <aside class="room-info" aria-label="Chat info">
+      <div class="info-heading"><strong>Chat info</strong><button class="icon-button" aria-label="Close chat info" onclick={() => (showInfo = false)}><Icon name="close" size={18} /></button></div>
+      <span class="room-symbol">{current?.name[0]?.toUpperCase() ?? '#'}</span>
+      <h2>{current?.name ?? 'Chat'}</h2>
+      <p class="info-kind">{space?.kind === 'internal' ? 'Internal · only your system' : space?.kind === 'dm' ? 'Direct message' : 'Shared space'}</p>
+      {#if current?.topic}<p class="info-topic">{current.topic}</p>{/if}
+      <div class="info-actions"><a href="#/search"><Icon name="search" size={20} />Search</a><button onclick={() => { showPins = !showPins; if (window.innerWidth < 1280) showInfo = false; }}><Icon name="pin" size={20} />Pinned · {pinned.length}</button></div>
+      {#if space?.kind === 'internal'}
+        <h3>Members</h3>
+        <div class="info-members">{#each roomMembers.slice(0, 30) as m (m.id)}{@const c = core.adaptColor(m.color, dark)}<a href="#/profile/{m.id}"><span class="info-avatar" style="--ring: {c.ring}; color: {c.name}"><AvatarImage hash={m.avatar_blob} glyph={m.sigils[0] ?? m.name[0]} name={m.name} /></span><span>{m.display_name ?? m.name}<small>{projection.fronts[sync.accountId]?.current.find((e) => e.subject_id === m.id)?.level ?? ''}</small></span></a>{/each}{#if roomMembers.length > 30}<a href="#/members">See all {roomMembers.length} members</a>{/if}</div>
+      {/if}
+    </aside>
+  {/if}
 </div>
 
 <style>
@@ -1090,21 +1109,24 @@
   .pending-file { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); font-size: var(--fs-sm); }
   .pending-file strong { max-width: 20ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pending-file input:not([type='checkbox']) { min-width: 10ch; flex: 1; }
+  .attach, .chip-wrap > .chip { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
   .pending-file button, .attach { border: 0; background: none; color: var(--accent); cursor: pointer; }
   .upload-error { color: var(--danger, #b33); font-size: var(--fs-sm); }
   .chat {
     display: grid;
-    grid-template-columns: 180px 1fr;
-    gap: var(--s-4);
-    height: calc(100dvh - 140px);
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: 0;
+    height: calc(100dvh - 76px);
+    min-width: 0;
   }
-  @media (max-width: 640px) {
+  @media (max-width: 1023px) {
     .chat {
       grid-template-columns: 1fr;
       grid-template-rows: auto 1fr;
-      height: calc(100dvh - 190px);
+      height: calc(100dvh - 144px - env(safe-area-inset-bottom));
     }
     /* `.chat .channels` so this beats the base rule below (same specificity would lose to it) */
+    .channel-title { display: none; }
     .chat .channels {
       display: flex;
       align-items: center;
@@ -1116,6 +1138,10 @@
     }
   }
   .channels {
+    padding: 12px;
+    overflow-y: auto;
+    border-right: 1px solid var(--line);
+    background: var(--surface);
     display: grid;
     align-content: start;
     gap: 2px;
@@ -1123,7 +1149,7 @@
   .channels a {
     color: var(--ink-2);
     text-decoration: none;
-    padding: var(--s-1) var(--s-3);
+    padding: 14px 12px;
     border-radius: var(--r-sm);
     white-space: nowrap;
   }
@@ -1156,15 +1182,16 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
+    background: var(--bg);
+    min-width: 0;
   }
   header {
     display: flex;
     gap: var(--s-3);
-    align-items: baseline;
-    padding: var(--s-3) var(--s-4);
+    align-items: center;
+    flex-wrap: wrap;
+    background: var(--surface);
+    padding: 10px 16px;
     border-bottom: 1px solid var(--line);
   }
   h1 {
@@ -1220,7 +1247,8 @@
   .list {
     flex: 1;
     overflow-y: auto;
-    padding: var(--s-2) var(--s-2);
+    padding: 20px 16px;
+    gap: 8px;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -1258,6 +1286,7 @@
     gap: var(--s-2);
     align-items: end;
     padding: var(--s-3);
+    background: var(--surface);
     border-top: 1px solid var(--line);
   }
   .older-load { justify-self: center; margin: var(--s-2) auto; }
@@ -1325,6 +1354,7 @@
   }
   .input {
     flex: 1;
+    min-width: 0;
     display: grid;
   }
   .as {
@@ -1345,7 +1375,7 @@
   }
   .send {
     background: var(--accent);
-    color: var(--surface);
+    color: var(--on-accent);
     border: 0;
     border-radius: var(--r-full);
     padding: var(--s-2) var(--s-4);
@@ -1355,4 +1385,21 @@
   .send:disabled {
     opacity: 0.5;
   }
+  .channel-title { display: flex; align-items: center; justify-content: space-between; padding-left: 10px; font-size: var(--fs-lg); font-weight: 700; }
+  .pins { display: flex; align-items: center; gap: 4px; min-height: 40px; }
+  .room-info { background: var(--surface); padding: 16px; border-left: 1px solid var(--line); min-width: 0; overflow-y: auto; text-align: center; }
+  .info-heading { display: flex; align-items: center; justify-content: space-between; font-size: var(--fs-sm); }
+  .room-symbol { display: grid; place-items: center; width: 72px; height: 72px; margin: 16px auto; background: var(--accent); color: var(--on-accent); font-size: 28px; border-radius: 50%; }
+  .room-info h2 { font-size: var(--fs-lg); overflow-wrap: anywhere; }
+  .info-kind, .info-topic { font-size: var(--fs-xs); color: var(--ink-3); overflow-wrap: anywhere; }
+  .info-actions { display: flex; gap: 8px; margin-block: 20px; }
+  .info-actions a, .info-actions button { display: flex; flex: 1; align-items: center; justify-content: center; flex-direction: column; gap: 6px; padding: 12px; border-radius: 12px; background: var(--surface-2); color: var(--accent); border: 0; font-size: var(--fs-xs); text-decoration: none; cursor: pointer; }
+  .room-info h3 { font-size: var(--fs-xs); color: var(--accent); text-align: left; border-top: 1px solid var(--line); padding-top: 16px; }
+  .info-members { display: grid; gap: 12px; padding-block: 16px; text-align: left; }
+  .info-members a { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-size: var(--fs-sm); min-height: 40px; }
+  .info-avatar { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--ring); overflow: hidden; }
+  .info-members small { display: block; color: var(--ink-3); }
+  @media (min-width: 1280px) { .chat.with-info { grid-template-columns: 260px minmax(0, 1fr) 260px; } }
+  @media (max-width: 1279px) { .room-info { position: fixed; inset: 76px 0 0 auto; width: min(340px, 100%); z-index: 8; box-shadow: var(--shadow-pop); } }
+  @media (max-width: 1023px) { .room-info { top: 72px; bottom: calc(72px + env(safe-area-inset-bottom)); } .channel-title { display: none; } .channels { border-right: 0; border-bottom: 1px solid var(--line); padding: 8px; } header { gap: 4px; } .view-as { max-width: 100%; } }
 </style>
