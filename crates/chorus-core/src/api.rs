@@ -132,6 +132,13 @@ pub fn fold_front(ops_json: &str) -> Result<String, String> {
     Ok(js(&front::fold(&fronts)))
 }
 
+/// Own-account named fronts only. Event/sync integration supplies the canonical input state;
+/// follower APIs must build their reveal-time view separately (NOTIFICATIONS §5).
+pub fn resolve_front_system(system_json: &str) -> Result<String, String> {
+    let system: crate::front_system::System = parse("front system", system_json)?;
+    Ok(js(&system.resolve()))
+}
+
 /// Front intervals and local UTC-offset transitions → daily totals. Callers clamp the requested
 /// window and supply the timezone schedule; core owns splitting and accounting on every client.
 pub fn front_daily(intervals_json: &str, now: i64, offsets_json: &str) -> Result<String, String> {

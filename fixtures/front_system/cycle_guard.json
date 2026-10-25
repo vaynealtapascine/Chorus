@@ -1,0 +1,97 @@
+{
+  "description": "A cycle ignores the newest source edge deterministically and retains each independent set.",
+  "fn": "resolve_front_system",
+  "args": [
+    {
+      "layers": {},
+      "fronts": {
+        "a": {
+          "id": "a",
+          "name": "a",
+          "own": [
+            {
+              "subject_type": "member",
+              "subject_id": "fox",
+              "layer_id": "quiet",
+              "is_primary": false
+            }
+          ],
+          "follow": {
+            "source": "b",
+            "clock": "000000000001-0000-00000001"
+          }
+        },
+        "b": {
+          "id": "b",
+          "name": "b",
+          "own": [
+            {
+              "subject_type": "member",
+              "subject_id": "moon",
+              "layer_id": "front",
+              "is_primary": false
+            }
+          ],
+          "follow": {
+            "source": "a",
+            "clock": "000000000002-0000-00000001"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "a": {
+      "id": "a",
+      "name": "a",
+      "deleted": false,
+      "own": [
+        {
+          "subject_type": "member",
+          "subject_id": "fox",
+          "layer_id": "quiet",
+          "is_primary": false
+        }
+      ],
+      "effective": [
+        {
+          "subject_type": "member",
+          "subject_id": "moon",
+          "layer_id": "front",
+          "is_primary": false
+        }
+      ],
+      "source": "b",
+      "state": "unavailable",
+      "issue": "source_unavailable",
+      "authorship": [],
+      "notifications": []
+    },
+    "b": {
+      "id": "b",
+      "name": "b",
+      "deleted": false,
+      "own": [
+        {
+          "subject_type": "member",
+          "subject_id": "moon",
+          "layer_id": "front",
+          "is_primary": false
+        }
+      ],
+      "effective": [
+        {
+          "subject_type": "member",
+          "subject_id": "moon",
+          "layer_id": "front",
+          "is_primary": false
+        }
+      ],
+      "source": "a",
+      "state": "unavailable",
+      "issue": "cycle",
+      "authorship": [],
+      "notifications": []
+    }
+  }
+}

@@ -703,6 +703,12 @@ Message-only extra modes: `{"mode":"members","member_ids":[…]}` (soft in-syste
 
 ### 4.2 Front entry JSON
 
+The following is the legacy front shape. D-080's named-front model is under implementation;
+its current-state JSON contract is documented in [FRONTS.md](FRONTS.md) and
+`fixtures/front_system/`. Named presence uses an independent `layer_id`; a layer definition's
+numeric display `level` is not a fronting/co-conscious/present semantic role. No named-front
+SQL migration or operation family has shipped yet.
+
 ```json
 {"subject_type": "member", "subject_id": "…", "level": "front", "is_primary": true}
 ```

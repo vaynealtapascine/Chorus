@@ -3,6 +3,24 @@
 Implementation brief for UI2, grounded in owner decision D-080 and the F3 Figma screens.
 This is an implementation plan; unfinished items remain on `PROGRESS.md`.
 
+## Current implementation
+
+Slice 1 lives in `crates/chorus-core/src/front_system.rs`. Its typed state and
+`api::resolve_front_system` JSON helper implement independent ordered presence, display-only layer
+levels, purpose selections, following chains, sticky overrides, Resume following and deterministic
+cycle handling. `fixtures/front_system/` records the JSON contract. Rust tests also cover 64
+independent layers and a 5,000-front chain without recursive calls.
+
+An unresolved source or cycle retains the saved independent set as a recovery/display fallback,
+with an explicit issue and no default authorship or notification candidates. An explicit manual
+override is usable even while its configured source is unavailable. UI consumers must keep the
+unavailable state visible instead of treating a fallback as a confirmed followed front.
+
+This helper is not wired into the operation catalogue, projections, storage, bindings or UI yet.
+The running clients still use the legacy single front. Slice 2 must supply canonical winning
+configuration, source-edge clocks and override controls from the append-only event history;
+mutating these state objects alone is not a persistence implementation.
+
 ## Settled behavior
 
 - Each front has its own ordered presence set. Body is the compatibility front for the existing

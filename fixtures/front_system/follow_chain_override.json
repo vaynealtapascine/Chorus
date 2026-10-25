@@ -1,0 +1,160 @@
+{
+  "description": "An override in the middle of a following chain retains own presence and feeds downstream fronts.",
+  "fn": "resolve_front_system",
+  "args": [
+    {
+      "layers": {
+        "quiet": {
+          "id": "quiet",
+          "name": "Fronting",
+          "level": 99
+        }
+      },
+      "fronts": {
+        "a": {
+          "id": "a",
+          "name": "a",
+          "own": [
+            {
+              "subject_type": "member",
+              "subject_id": "fox",
+              "layer_id": "quiet",
+              "is_primary": false
+            }
+          ]
+        },
+        "b": {
+          "id": "b",
+          "name": "b",
+          "own": [
+            {
+              "subject_type": "member",
+              "subject_id": "moon",
+              "layer_id": "front",
+              "is_primary": false
+            }
+          ],
+          "follow": {
+            "source": "a",
+            "clock": "000000000001-0000-00000001"
+          },
+          "overridden": true
+        },
+        "c": {
+          "id": "c",
+          "name": "c",
+          "own": [
+            {
+              "subject_type": "member",
+              "subject_id": "space",
+              "layer_id": "other",
+              "is_primary": false
+            }
+          ],
+          "follow": {
+            "source": "b",
+            "clock": "000000000002-0000-00000001"
+          },
+          "authorship_layers": [
+            "front"
+          ],
+          "notification_layers": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "a": {
+      "id": "a",
+      "name": "a",
+      "deleted": false,
+      "own": [
+        {
+          "subject_type": "member",
+          "subject_id": "fox",
+          "layer_id": "quiet",
+          "is_primary": false
+        }
+      ],
+      "effective": [
+        {
+          "subject_type": "member",
+          "subject_id": "fox",
+          "layer_id": "quiet",
+          "is_primary": false
+        }
+      ],
+      "source": null,
+      "state": "independent",
+      "issue": null,
+      "authorship": [],
+      "notifications": []
+    },
+    "b": {
+      "id": "b",
+      "name": "b",
+      "deleted": false,
+      "own": [
+        {
+          "subject_type": "member",
+          "subject_id": "moon",
+          "layer_id": "front",
+          "is_primary": false
+        }
+      ],
+      "effective": [
+        {
+          "subject_type": "member",
+          "subject_id": "moon",
+          "layer_id": "front",
+          "is_primary": false
+        }
+      ],
+      "source": "a",
+      "state": "overridden",
+      "issue": null,
+      "authorship": [
+        {
+          "subject_type": "member",
+          "subject_id": "moon",
+          "layer_id": "front",
+          "is_primary": false
+        }
+      ],
+      "notifications": []
+    },
+    "c": {
+      "id": "c",
+      "name": "c",
+      "deleted": false,
+      "own": [
+        {
+          "subject_type": "member",
+          "subject_id": "space",
+          "layer_id": "other",
+          "is_primary": false
+        }
+      ],
+      "effective": [
+        {
+          "subject_type": "member",
+          "subject_id": "moon",
+          "layer_id": "front",
+          "is_primary": false
+        }
+      ],
+      "source": "b",
+      "state": "following",
+      "issue": null,
+      "authorship": [
+        {
+          "subject_type": "member",
+          "subject_id": "moon",
+          "layer_id": "front",
+          "is_primary": false
+        }
+      ],
+      "notifications": []
+    }
+  }
+}
