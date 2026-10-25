@@ -432,3 +432,10 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
     CARGO_TARGET_DIR before `verify.py` rebuilds the workspace; never stop the owner's service.
     App-module JVM tests that call the real composer need the plain pinned JNA jar and the host
     `jna.library.path`, as core-bridge tests already do; the Android AAR has no Windows dispatcher.
+
+- 2026-10-25 — Android host-core test caching: setting `jna.library.path` does not make Gradle
+  track the Rust DLL's contents. A Rust-only change could leave both app/core-bridge unit tests
+  `UP-TO-DATE`, even though they load native code. Both test tasks now declare the platform host
+  library as a file input. Core-bridge also declares `fixtures/` as an input because its JSON
+  conformance cases are read directly from the repo, outside the JVM classpath. Keep those inputs
+  when moving build directories or adding fixture-driven native tests.

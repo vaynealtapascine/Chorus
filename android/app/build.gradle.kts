@@ -77,6 +77,13 @@ tasks.withType<Test>().configureEach {
     val cargoTarget = System.getenv("CARGO_TARGET_DIR")?.let { File(it) } ?: rootProject.file("../target")
     val profile = if (System.getenv("CHORUS_FFI_PROFILE") == "release") "release" else "debug"
     systemProperty("jna.library.path", cargoTarget.resolve(profile).absolutePath)
+    val hostLibrary = when {
+        System.getProperty("os.name").startsWith("Windows") -> "chorus_ffi.dll"
+        System.getProperty("os.name").startsWith("Mac") -> "libchorus_ffi.dylib"
+        else -> "libchorus_ffi.so"
+    }
+    inputs.file(cargoTarget.resolve("$profile/$hostLibrary"))
+        .withPropertyName("chorusCoreHostLibrary").withPathSensitivity(PathSensitivity.NONE)
 }
 
 kapt {
