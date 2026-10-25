@@ -114,6 +114,9 @@ custom order.
   original layers are defaults, with no semantic-role mapping for custom layers. Each front
   separately selects the layer IDs that drive default message authorship and switch notifications.
   Existing accounts retain their existing defaults until configured. See `docs/FRONTS.md`.
+- **Follower front access** (D-084): existing followers see Body only until the owner explicitly
+  grants additional fronts in their visibility settings. Front access, selected notification
+  layers and the existing privacy ceiling/delay rules all apply together.
 
 - **Front card** (home, everywhere at top on web): current entries in order, level badges, primary
   highlighted, "since 14:05 · 2h 13m".

@@ -80,6 +80,19 @@ Stored as JSON: defaults on the account, per-bucket (`bucket.ceiling`), per-foll
 (`follow.ceiling`). Effective value per field: follow override → most permissive among the
 follower's buckets → account default.
 
+**Named fronts (D-080, D-084):** front access is a separate limit from notification-layer
+selection. Existing followers remain limited to Body until the owner explicitly grants additional
+fronts in their visibility settings. Apply both the front grant and the front's selected layer
+IDs before the existing member, ceiling, delay and reveal rules. Follower preferences can only
+narrow that access. Custom layer IDs have independent meanings; do not translate them into
+front/co-conscious/present roles.
+
+The grant also covers front metadata. A visible front following an ungranted source must not
+expose that source's ID, name, configuration, raw history or cause chain. Follower history and
+statistics still derive from revealed follower records, never the owner's raw effective timeline.
+The named-front storage/wire extension lands with its implementation; the current follower
+pipeline still serves the legacy Body view.
+
 ```json
 {
   "switch_notifications": true,

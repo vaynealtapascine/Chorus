@@ -103,6 +103,8 @@ append, transport, widget and cold-start budgets still need checks at runtime in
   defaults select a front, defaulting to Body. Explicit sigils still override the default speaker.
 - Existing accounts retain their current behavior until configured. Person accounts continue to
   hide fronting controls. Existing notification privacy ceilings, delays and reveal rules apply.
+- Existing followers can access Body only until the owner explicitly allows additional fronts in
+  their visibility settings. Selecting notification layers does not grant front access (D-084).
 
 ## Model boundary
 
@@ -157,8 +159,7 @@ old op-log entries nor user-authored history may be rewritten.
    state or metadata through an unfiltered API or sync frame. Existing own-account Body read
    APIs/widgets must read canonical Body state after new-kind Body changes; leaving them on an
    old-kind-only timeline would report stale data. Never translate custom IDs into legacy roles.
-   Q19 asks whether additional fronts need explicit per-follower visibility grants; preserve
-   existing Body visibility while that answer is pending.
+   D-084 requires explicit additional-front grants per follower; preserve existing Body visibility.
 4. Web and Android: front selection, management, layer editing, following/override status, Resume
    following, switcher/history, per-channel authorship front and per-front purpose selections.
    Store channel front choice as a separate private account pref (`authorship_front:<channel id>`)
