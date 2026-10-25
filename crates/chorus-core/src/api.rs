@@ -141,18 +141,12 @@ pub fn resolve_front_system(system_json: &str) -> Result<String, String> {
 
 /// Own-account definitions, saved presence histories and current effective named fronts.
 /// This does not authorize reads or expose a follower view. Runtime integration is separate.
-/// `pause_on_history_edit` is explicit while the owner's follow/history policy is pending.
-pub fn fold_front_system(account_id: &str, ops_json: &str, pause_on_history_edit: bool) -> Result<String, String> {
+pub fn fold_front_system(account_id: &str, ops_json: &str) -> Result<String, String> {
     if !crate::id::is_valid_id(account_id) {
         return Err("bad account ID".into());
     }
     let ops = parse_ops(ops_json)?;
-    let policy = if pause_on_history_edit {
-        crate::front_history::HistoryEditEffect::PauseFollowing
-    } else {
-        crate::front_history::HistoryEditEffect::KeepFollowing
-    };
-    Ok(js(&crate::front_history::fold(account_id, &ops, policy)))
+    Ok(js(&crate::front_history::fold(account_id, &ops)))
 }
 
 /// Front intervals and local UTC-offset transitions → daily totals. Callers clamp the requested

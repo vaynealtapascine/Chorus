@@ -33,7 +33,7 @@ fn call(f: &str, a: &[Value]) -> Result<String, String> {
         "compose" => api::compose(&s(a, 0), &s(a, 1), &s(a, 2), &s(a, 3), &s(a, 4)),
         "fold_front" => api::fold_front(&s(a, 0)),
         "resolve_front_system" => api::resolve_front_system(&s(a, 0)),
-        "fold_front_system" => api::fold_front_system(&s(a, 0), &s(a, 1), a[2].as_bool().unwrap_or(false)),
+        "fold_front_system" => api::fold_front_system(&s(a, 0), &s(a, 1)),
         "project" => api::project(&s(a, 0)),
         "validate_op" => api::validate_op(&s(a, 0)).map(|k| json!(k).to_string()),
         "feed_parse" => api::feed_parse(&s(a, 0)),

@@ -44,7 +44,7 @@ Status: v1 spec, 2026-09-23. Decisions referenced as `D-xxx` live in [DECISIONS.
 | **Member** | A person inside an account. Systems have many; person accounts have one (D-003). The word is customizable (D-004). |
 | **Group** | A named set of members. Kind `subsystem` (tree, can front as a unit) or `group` (tag-like, flat or nested). A member can be in many. |
 | **Custom state** | A non-member front entry ("blurry", "dissociated", "unknown"), with colour and icon. |
-| **Front** | Who is present right now, as ordered entries with a **level**: `front`, `cocon` (co-conscious), `present` (present-transient). One entry may be **primary**. Subjects are members, groups (subsystem fronts) or custom states (D-011). |
+| **Front** | An independent named, ordered set of subjects and stable layer IDs. Subjects are members, groups or custom states; one entry may be primary. Layers have configurable names/display levels per system, with `front`, `cocon` and `present` as defaults. Custom layers have independent semantics. A front can optionally follow another front while retaining its saved own set (D-080). |
 | **Switch** | A recorded change to the front. Full-snapshot or delta (add/remove/update). |
 | **Space** | A container of channels. Each system has one `internal` space; `shared` spaces are shared between accounts; a `dm` space is a DM between two accounts. |
 | **Channel** | A text channel in a space. Kinds: `text`, `thread`, `member_dm` (a DM between two members inside one system). |
@@ -105,10 +105,20 @@ custom order.
 
 ### 4.3 Front and switching
 
+- **Named fronts** (D-080): independent ordered sets, with Body as the compatibility default.
+  A front may follow another front's effective set. Recording a manual presence change creates
+  an override that remains until **Resume following**. Settings edits/source changes do not
+  silently resume it. Correcting, undoing or restoring a past entry changes saved history only;
+  it neither pauses following nor resumes an existing override (D-083).
+- **Independent layers**: configure layer names and display levels/order per system; the three
+  original layers are defaults, with no semantic-role mapping for custom layers. Each front
+  separately selects the layer IDs that drive default message authorship and switch notifications.
+  Existing accounts retain their existing defaults until configured. See `docs/FRONTS.md`.
+
 - **Front card** (home, everywhere at top on web): current entries in order, level badges, primary
   highlighted, "since 14:05 · 2h 13m".
 - **Switcher** (full screen on Android, popover on web): search + recent + pinned + groups tree;
-  tap to toggle; each selected entry has a level (front/cocon/present), drag to order, star for
+  tap to toggle; each selected entry chooses a configured layer (front/cocon/present by default), drag to order, star for
   primary. Commit button: *Switch*. Optional note, time override ("switched at 13:40"), and
   notification choice for this switch (default/silent/notify now/extra delay).
 - **Quick actions**: "switch out" (empty front), "add co-fronter", "same as yesterday evening"
@@ -140,6 +150,11 @@ custom order.
   Thread preview under the parent: reply count, last repliers' avatars.
 
 ### 5.2 Composer and speakers
+
+- Each channel's account chooses the front used for default authorship; Body is the existing
+  default (D-080). The chosen front supplies its configured authorship-layer candidates. Explicit
+  speaker picks, representative-character prefixes and proxy tags still override that default.
+  The choice is private to the account, independent of other accounts in a shared channel.
 
 - **Speaker chip** left of the input: shows the current speaker(s); defaults to primary fronter
   (or channel's sticky speaker, or autoproxy latch). Tap → quick picker (fronters first, then

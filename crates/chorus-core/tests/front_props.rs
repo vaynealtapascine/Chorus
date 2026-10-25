@@ -121,7 +121,7 @@ proptest! {
     /// rather than asserting only that two copies of the new code agree.
     #[test]
     fn named_body_bridge_matches_legacy_history(ops in ops()) {
-        use chorus_core::front_history::{self,HistoryEditEffect};
+        use chorus_core::front_history;
         use chorus_core::front_system::Presence;
         use serde_json::json;
         let account = "0192f8c2-0000-7000-8000-0000000000a1";
@@ -140,7 +140,7 @@ proptest! {
                 "seq":o.seq,"seen_seq":o.seen_seq,"payload":payload})).unwrap()
         }).collect();
         let expected = fold(&ops);
-        let actual = front_history::fold(account,&raw,HistoryEditEffect::KeepFollowing);
+        let actual = front_history::fold(account,&raw);
         let empty = front_history::History::default();
         let actual_history = actual.histories.get(account).unwrap_or(&empty);
         let presence = |es:&[Entry]|es.iter().map(|e|Presence {

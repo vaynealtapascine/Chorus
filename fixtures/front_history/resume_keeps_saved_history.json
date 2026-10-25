@@ -78,8 +78,7 @@
         },
         "scope": "account:0192f8c2-0000-7000-8000-0000000000a1"
       }
-    ],
-    false
+    ]
   ],
   "description": "resume keeps saved history",
   "expect": {

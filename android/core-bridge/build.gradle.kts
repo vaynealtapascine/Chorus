@@ -23,6 +23,7 @@ dependencies {
     api("${libs.jna.get()}@aar")
     testImplementation(libs.junit)
     testImplementation(libs.jna) // plain jar for JVM unit tests
+    testImplementation(libs.orgjson)
 }
 
 // JVM unit tests load the host build of chorus-ffi (target/debug) through the same bindings.
@@ -30,4 +31,5 @@ tasks.withType<Test>().configureEach {
     val cargoTarget = System.getenv("CARGO_TARGET_DIR")?.let { File(it) } ?: rootProject.file("../target")
     val profile = if (System.getenv("CHORUS_FFI_PROFILE") == "release") "release" else "debug"
     systemProperty("jna.library.path", cargoTarget.resolve(profile).absolutePath)
+    systemProperty("chorus.fixtures", rootProject.file("../fixtures").absolutePath)
 }

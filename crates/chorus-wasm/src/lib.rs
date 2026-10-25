@@ -41,6 +41,17 @@ pub fn fold_front(ops_json: &str) -> Result<String, JsError> {
     wrap(api::fold_front(ops_json))
 }
 
+/// Own-account named-front state. Follower views require separate reveal-time filtering.
+#[wasm_bindgen(js_name = resolveFrontSystem)]
+pub fn resolve_front_system(system_json: &str) -> Result<String, JsError> {
+    wrap(api::resolve_front_system(system_json))
+}
+
+#[wasm_bindgen(js_name = foldFrontSystem)]
+pub fn fold_front_system(account_id: &str, ops_json: &str) -> Result<String, JsError> {
+    wrap(api::fold_front_system(account_id, ops_json))
+}
+
 /// The web supplies local-time UTC offset transitions; core owns the day split and totals.
 #[wasm_bindgen(js_name = frontDaily)]
 pub fn front_daily(intervals_json: &str, now: f64, offsets_json: &str) -> Result<String, JsError> {
@@ -70,6 +81,16 @@ pub fn feed_filter(ast_json: &str, items_json: &str, context_json: &str) -> Resu
 #[wasm_bindgen(js_name = defaultSpeaker)]
 pub fn default_speaker(context_json: &str) -> Result<String, JsError> {
     wrap(api::default_speaker(context_json))
+}
+
+#[wasm_bindgen(js_name = defaultSpeakerForFront)]
+pub fn default_speaker_for_front(
+    context_json: &str,
+    system_json: &str,
+    body_id: &str,
+    front_id: &str,
+) -> Result<String, JsError> {
+    wrap(api::default_speaker_for_front(context_json, system_json, body_id, front_id))
 }
 
 #[wasm_bindgen(js_name = readReaders)]

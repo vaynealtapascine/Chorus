@@ -20,8 +20,8 @@ Slice 2a lives in `crates/chorus-core/src/front_history.rs`. `api::fold_front_sy
 definitions and layer edits, new independent presence changes, legacy Body operations, history
 amends/retractions, own intervals/daily totals and per-front concurrent-switch reviews. It supplies canonical
 source-edge clocks and sticky control state to the resolver. JSON fixtures live in
-`fixtures/front_history/`. The history-edit/following policy is an explicit caller argument while
-Q18 is pending; both choices have tests and neither silently resumes an existing override.
+`fixtures/front_history/`. Past-history edits, undo and redo keep following active and do not
+resume an existing override (D-083). This is a shared-core rule, with no client policy switch.
 
 `speaker::default_speaker_for_front` / its JSON helper implement channel front selection (Body
 when absent), explicit authorship-layer candidates and normal member/latch/person defaults.
@@ -30,10 +30,18 @@ selection supplies the three original layer IDs to the existing speaker rule, re
 co-conscious/present fallback when no sendable member is fronting. Custom layers require explicit
 selection. A missing/deleted selected front supplies no automatic candidates.
 
-These helpers are not wired into the operation catalogue, incremental projections, storage,
-bindings or UI yet. The running clients still use the legacy single front. Effective/inherited
+The three JSON helpers are exported through wasm and UniFFI. The web has typed wrappers in
+`web/src/lib/core/fronts.ts` / `index.ts`; Rust, wasm and generated Kotlin all run the same nine
+front-system/history fixtures. Additional bridge tests verify that amend/undo/redo keep following
+through the real Rust implementation. Android libraries are generated for ARM64 and x86-64; Kotlin
+conformance uses the host DLL, without a device launch.
+
+These helpers are not wired into the operation catalogue, incremental projections, storage or UI
+yet. The running clients still use the legacy single front. Effective/inherited
 history and its statistics also remain pending: the new intervals describe **own presence only**.
 Do not apply the current follow source retrospectively to own history to infer effective history.
+The bulk fold is a conformance/history helper; client hot paths must consume the incremental
+projection when it is integrated, rather than re-folding the account on every render/keystroke.
 
 ## Event contract implemented in core (not yet enabled for ingestion)
 
@@ -86,6 +94,8 @@ append, transport, widget and cold-start budgets still need checks at runtime in
   ordered members and layer identifiers, including through a chain of following fronts.
 - Manual changes to a following front create an override. Source changes and ordinary settings
   edits do not clear it. Only **Resume following** clears the override while following is enabled.
+- Editing, undoing or restoring past history does not pause following or resume an existing
+  override (D-083). It changes the saved own history.
 - Layers are system-wide definitions with stable identifiers, editable names and configurable
   levels/order. Fronting, Co-conscious and Present are defaults. A custom layer has no implied
   fronting/co-conscious/present role. Renaming or reordering a layer never rewrites its history.
@@ -137,11 +147,18 @@ old op-log entries nor user-authored history may be rewritten.
    the compatibility defaults and arbitrary custom layer counts.
 2. Event/history fold and incremental projection: new operation catalogue, legacy Body bridge,
    backdates/amends/retracts, effective intervals/statistics, snapshots and conformance fixtures.
+   Effective history needs both corrected operation/record time and presence effective time;
+   do not substitute HLC physical time for corrected human time. Keep history-only corrections
+   separate from live override controls (D-083). Invalidate incompatible saved projections when
+   adding a new projection shape, including previously opaque named-front operations. Keep
+   current-state updates small and history reads separate from render/composer hot paths.
 3. Server storage/read paths and notifications: account ownership, migrations/rebuild, named-front
    privacy ceilings and reveal-time-only follower surfaces. New fronts must not publish their raw
    state or metadata through an unfiltered API or sync frame. Existing own-account Body read
    APIs/widgets must read canonical Body state after new-kind Body changes; leaving them on an
    old-kind-only timeline would report stale data. Never translate custom IDs into legacy roles.
+   Q19 asks whether additional fronts need explicit per-follower visibility grants; preserve
+   existing Body visibility while that answer is pending.
 4. Web and Android: front selection, management, layer editing, following/override status, Resume
    following, switcher/history, per-channel authorship front and per-front purpose selections.
    Store channel front choice as a separate private account pref (`authorship_front:<channel id>`)

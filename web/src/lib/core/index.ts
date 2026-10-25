@@ -1,6 +1,8 @@
 // Typed wrapper over the chorus-core wasm module (crates/chorus-wasm).
 // Build the module with `pwsh scripts/build-web-core.ps1`; it lands in ./pkg (git-ignored).
 import init, * as wasm from './pkg/chorus_wasm.js';
+import type { FoldedFrontSystem, FrontSystem, ResolvedFront } from './fronts';
+export type { FoldedFrontSystem, FrontSystem, ResolvedFront, NamedFront, FrontLayer, FrontPresence, FrontChange } from './fronts';
 
 export type Json = unknown;
 
@@ -53,6 +55,16 @@ export interface MemberColors {
   avatar_ink: string;
 }
 
+export interface SpeakerContext {
+  mode?: 'off' | 'front' | 'latch' | 'member';
+  member?: string | null;
+  self_member?: string | null;
+  fronting?: { member_id: string; is_primary: boolean; level: string }[];
+  eligible_fronting?: { member_id: string; is_primary: boolean; level?: string }[] | null;
+  last_authors?: string[];
+  members: string[];
+}
+
 let ready: Promise<void> | null = null;
 
 /** Load the wasm module once. In Node tests pass the bytes. */
@@ -70,14 +82,17 @@ export const core = {
       wasm.compose(src, JSON.stringify(speakers), JSON.stringify(options), JSON.stringify(defaults), JSON.stringify(names)),
     ),
   foldFront: (ops: Json[]): Json => JSON.parse(wasm.foldFront(JSON.stringify(ops))),
+  resolveFrontSystem: (system: FrontSystem): Record<string, ResolvedFront> =>
+    JSON.parse(wasm.resolveFrontSystem(JSON.stringify(system))),
+  foldFrontSystem: (accountId: string, ops: Json[]): FoldedFrontSystem =>
+    JSON.parse(wasm.foldFrontSystem(accountId, JSON.stringify(ops))),
   frontDaily: (intervals: Json, now: number, offsets: [number, number][]): Json =>
     JSON.parse(wasm.frontDaily(JSON.stringify(intervals), now, JSON.stringify(offsets))),
   feedParse: (q: string): Json => JSON.parse(wasm.feedParse(q)),
   /** Who the speaker chip shows before anyone picks (SPEC §5.2, D-074). */
-  defaultSpeaker: (context: {
-    mode: 'off' | 'front' | 'latch' | 'member'; member?: string | null; self_member?: string | null;
-    fronting: { member_id: string; is_primary: boolean; level: string }[]; last_authors: string[]; members: string[];
-  }): string[] => JSON.parse(wasm.defaultSpeaker(JSON.stringify(context))),
+  defaultSpeaker: (context: SpeakerContext): string[] => JSON.parse(wasm.defaultSpeaker(JSON.stringify(context))),
+  defaultSpeakerForFront: (context: SpeakerContext, system: FrontSystem, bodyId: string, frontId = ''): string[] =>
+    JSON.parse(wasm.defaultSpeakerForFront(JSON.stringify(context), JSON.stringify(system), bodyId, frontId)),
   /** Who a read marks: `''` (the account), then the members reading with it (SPEC §5.3). */
   readReaders: (perMember: boolean, fronting: { member_id: string; is_primary: boolean; level: string }[]): string[] =>
     JSON.parse(wasm.readReaders(perMember, JSON.stringify(fronting))),

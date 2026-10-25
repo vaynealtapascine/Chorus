@@ -7,4 +7,6 @@ All questions from the 2026-09-23 spec round are answered (D-045 to D-054). Q14 
 
 | # | Question | Default until answered |
 | --- | --- | --- |
-| Q18 | When editing or undoing a past entry in a front that is currently following, should following continue or pause until Resume following? Asked 2026-10-25. | No runtime behavior change while pending. The not-yet-integrated core history fold supports both choices through a required caller argument; no client default has been chosen. |
+| Q19 | Should existing followers remain limited to Body until the owner explicitly allows additional fronts in their visibility settings, or are each front's notification-layer selections sufficient? Asked 2026-10-25. | Preserve existing Body visibility. Named-front follower surfaces are not implemented/enabled yet; own-account state can proceed independently. |
+
+Q18 (past-history corrections while following) was answered 2026-10-25: keep following (D-083).

@@ -47,6 +47,17 @@ pub fn fold_front(ops_json: String) -> Result<String, CoreError> {
     wrap(api::fold_front(&ops_json))
 }
 
+/// Own-account named-front state. Follower views require separate reveal-time filtering.
+#[uniffi::export]
+pub fn resolve_front_system(system_json: String) -> Result<String, CoreError> {
+    wrap(api::resolve_front_system(&system_json))
+}
+
+#[uniffi::export]
+pub fn fold_front_system(account_id: String, ops_json: String) -> Result<String, CoreError> {
+    wrap(api::fold_front_system(&account_id, &ops_json))
+}
+
 /// Daily front totals over a caller-clamped window with local UTC-offset transitions.
 #[uniffi::export]
 pub fn front_daily(intervals_json: String, now: i64, offsets_json: String) -> Result<String, CoreError> {
@@ -75,6 +86,16 @@ pub fn feed_parse(query: String) -> Result<String, CoreError> {
 #[uniffi::export]
 pub fn default_speaker(context_json: String) -> Result<String, CoreError> {
     wrap(api::default_speaker(&context_json))
+}
+
+#[uniffi::export]
+pub fn default_speaker_for_front(
+    context_json: String,
+    system_json: String,
+    body_id: String,
+    front_id: String,
+) -> Result<String, CoreError> {
+    wrap(api::default_speaker_for_front(&context_json, &system_json, &body_id, &front_id))
 }
 
 /// Who a read marks (SPEC §5.3 "track reading per member"): fronting JSON

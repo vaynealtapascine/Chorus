@@ -357,17 +357,9 @@ pub struct FoldResult {
     pub reviews: BTreeMap<String, Vec<front::Review>>,
 }
 
-/// Required caller choice until the owner's past-history/following question is settled. This
-/// concerns amend/undo/redo only; a newly recorded presence change still creates an override.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HistoryEditEffect {
-    KeepFollowing,
-    PauseFollowing,
-}
-
 /// Fold a set of supported operations, retaining malformed/unknown operations in the caller's
 /// log rather than projecting them. Call Event::from_op when a validation error is needed.
-pub fn fold<'a>(account: &str, ops: impl IntoIterator<Item = &'a Op>, history_edits: HistoryEditEffect) -> FoldResult {
+pub fn fold<'a>(account: &str, ops: impl IntoIterator<Item = &'a Op>) -> FoldResult {
     let events: Vec<_> =
         crate::model::dedupe(ops).into_iter().filter_map(|o| Event::from_op(account, o).ok().flatten()).collect();
     let mut system = System::legacy(account, vec![]);
@@ -449,9 +441,9 @@ pub fn fold<'a>(account: &str, ops: impl IntoIterator<Item = &'a Op>, history_ed
                     .or_insert_with(|| Front::new(e.front_id.clone(), "Front".into()));
                 if matches!(change, Change::Resume) {
                     f.resume_following();
-                } else if change.is_presence() || history_edits == HistoryEditEffect::PauseFollowing {
-                    // With either policy, a history correction never implicitly resumes an
-                    // existing override. Only the explicit Resume command does that.
+                } else if change.is_presence() {
+                    // D-083: amend/undo/redo change saved history only. They neither pause
+                    // following nor resume an existing override.
                     f.overridden = f.follow.is_some();
                 }
                 changes.entry(e.front_id.clone()).or_default().push(e);
@@ -859,10 +851,6 @@ mod tests {
     const CHORUS: &str = "0192f8c2-0000-7000-8000-0000000000a2";
     const HEADSPACE: &str = "0192f8c2-0000-7000-8000-0000000000a3";
 
-    fn fold<'a>(account: &str, ops: impl IntoIterator<Item = &'a Op>) -> FoldResult {
-        super::fold(account, ops, HistoryEditEffect::PauseFollowing)
-    }
-
     fn op(i: u64, kind: &str, front: &str, payload: Value) -> Op {
         serde_json::from_value(json!({
             "id": crate::id::new_id(i, [i as u8; 10]), "kind":kind,
@@ -1095,7 +1083,7 @@ mod tests {
     }
 
     #[test]
-    fn history_edit_policy_is_explicit_and_neither_policy_resumes_an_override() {
+    fn past_history_corrections_keep_following_and_do_not_resume_overrides() {
         let old = switch(1, CHORUS, "old", "custom");
         let mut ops = vec![
             old.clone(),
@@ -1103,16 +1091,16 @@ mod tests {
             switch(3, BODY, "source", "front"),
             op(4, "front.change", CHORUS, json!({"action":"amend","target_op_id":old.id,"note":"Correction"})),
         ];
-        let keep = super::fold(BODY, &ops, HistoryEditEffect::KeepFollowing);
-        let pause = super::fold(BODY, &ops, HistoryEditEffect::PauseFollowing);
+        let keep = assert_permutations(&ops);
         assert_eq!(keep.resolved[CHORUS].state, front_system::FollowState::Following);
-        assert_eq!(pause.resolved[CHORUS].state, front_system::FollowState::Overridden);
-        assert_eq!(keep.histories, pause.histories);
-        ops.push(switch(5, CHORUS, "manual", "custom"));
-        ops.push(op(6, "front.change", CHORUS, json!({"action":"retract","target_op_id":old.id})));
-        for policy in [HistoryEditEffect::KeepFollowing, HistoryEditEffect::PauseFollowing] {
-            assert_eq!(super::fold(BODY, &ops, policy).resolved[CHORUS].state, front_system::FollowState::Overridden);
+        for (i, action) in [(5, "retract"), (6, "unretract")] {
+            ops.push(op(i, "front.change", CHORUS, json!({"action":action,"target_op_id":old.id})));
+            assert_eq!(assert_permutations(&ops).resolved[CHORUS].state, front_system::FollowState::Following);
         }
+        let manual = switch(7, CHORUS, "manual", "custom");
+        ops.push(manual.clone());
+        ops.push(op(8, "front.change", CHORUS, json!({"action":"retract","target_op_id":manual.id})));
+        assert_eq!(assert_permutations(&ops).resolved[CHORUS].state, front_system::FollowState::Overridden);
     }
 
     #[test]
