@@ -1,0 +1,53 @@
+{
+  "description": "Concatenated multi-character and complex Unicode sigils plus space select ordered joint senders.",
+  "fn": "compose",
+  "args": [
+    "::fox::🌙👩🏽‍🚀 hello",
+    [
+      {
+        "member_id": "fox",
+        "sigils": [
+          "::fox::"
+        ]
+      },
+      {
+        "member_id": "moon",
+        "sigils": [
+          "🌙"
+        ]
+      },
+      {
+        "member_id": "space",
+        "sigils": [
+          "👩🏽‍🚀"
+        ]
+      }
+    ],
+    {},
+    [],
+    {}
+  ],
+  "expect": {
+    "rich": {
+      "text": "hello",
+      "entities": []
+    },
+    "segments": [
+      {
+        "offset": 0,
+        "length": 5,
+        "authors": [
+          "fox",
+          "moon",
+          "space"
+        ]
+      }
+    ],
+    "authors": [
+      "fox",
+      "moon",
+      "space"
+    ],
+    "explicit": true
+  }
+}

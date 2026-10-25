@@ -147,6 +147,11 @@ custom order.
 - **Proxy tags** (PK-compatible): `k: hello`, `[hello]`, etc. Parsed on send; tags stripped.
 - **Sigils**: a leading run of known sigils followed by whitespace sets authors:
   `🌌🔖❤️‍🔥 we all agree` → three authors, in that order.
+  A sigil may be any configured representative character sequence, including several characters
+  or a compound emoji. Both `sigil SPACE message` and `sigil1sigil2…sigilN SPACE message` work
+  without a preselected sender. There is no fixed sender-count cap beyond normal message/op size
+  limits. Repeated matches name a member once, preserving first appearance; the longest configured
+  match wins for overlapping prefixes. Only the current account's sendable members are matched.
 - **Consecutive tags** for multi-author: `k: a: text` (each prefix-tag consumed left to right while
   it matches; suffix tags are only honoured for single-author messages).
 - **Joint by default** (D-045): one annotation at the start = everyone in it says the whole

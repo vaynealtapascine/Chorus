@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -66,8 +68,15 @@ dependencies {
     implementation(libs.androidx.sqlite)
     implementation(libs.work.runtime)
     testImplementation(libs.junit)
+    testImplementation(libs.jna) // host JNA for tests that exercise the real shared composer
     // the real org.json for JVM tests (Android's is a stub there)
     testImplementation(libs.orgjson)
+}
+
+tasks.withType<Test>().configureEach {
+    val cargoTarget = System.getenv("CARGO_TARGET_DIR")?.let { File(it) } ?: rootProject.file("../target")
+    val profile = if (System.getenv("CHORUS_FFI_PROFILE") == "release") "release" else "debug"
+    systemProperty("jna.library.path", cargoTarget.resolve(profile).absolutePath)
 }
 
 kapt {

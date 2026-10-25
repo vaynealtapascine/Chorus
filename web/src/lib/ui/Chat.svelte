@@ -7,6 +7,7 @@
   import { router } from '../router.svelte';
   import { snapshot } from '../selection';
   import { editedSegments, segmentMarkup } from '../segments';
+  import { canWriteAs } from '../posts';
   import { sync, type Projection } from '../sync/client';
   import { flushUploads, imageThumbnail, stageBlob } from '../sync/uploads';
   import Message from './Message.svelte';
@@ -88,16 +89,17 @@
     sync.create('pref.set', sync.accountScope, null, { device: '', key: autoproxyKey, value: member ? { mode, member } : { mode } });
   }
   // the speaker chip before anyone picks: one rule in core (SPEC §5.2)
+  const ownSenders = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
   const defaults = $derived(core.defaultSpeaker({
     mode: autoproxy.mode, member: autoproxy.member ?? null, self_member: self?.id ?? null,
     fronting: frontingMembers,
     last_authors: msgs.findLast((m) => m.account_id === sync.accountId && !m.deleted)?.authors ?? [],
-    members: members(projection).filter((m) => !m.deleted).map((m) => m.id),
+    members: ownSenders.map((m) => m.id),
   }));
   let chosen = $state<string | null>(null);
   const speaker = $derived(chosen ?? defaults[0] ?? null);
   const speakers = $derived(
-    [...people.values()].filter((m) => !m.deleted).map((m) => ({ member_id: m.id, sigils: m.sigils, proxy_tags: m.proxy_tags })),
+    ownSenders.map((m) => ({ member_id: m.id, sigils: m.sigils, proxy_tags: m.proxy_tags })),
   );
   const names = $derived({
     mentions: Object.fromEntries(
@@ -322,6 +324,10 @@
   }
 
   const preview: Composed | null = $derived(draft.trim() && !editing ? core.compose(draft, speakers, { segments: parseSegments }, chosen ? [chosen] : defaults, names) : null);
+  const messageAuthors = $derived(preview?.authors ?? (chosen ? [chosen] : defaults));
+  const canSend = $derived(!!current && (!!preview?.rich.text.trim() || pending.length > 0) &&
+    messageAuthors.length > 0 && messageAuthors.every((id) => canWriteAs(projection, id, sync.accountId)) &&
+    (visibilityMode !== 'members' || visibleTo.length > 0));
   const previewNames = $derived(
     preview ? preview.segments.map((s) => s.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')).join(' → ') : '',
   );
@@ -359,10 +365,8 @@
       draft = '';
       return;
     }
-    if (!preview && !pending.length) return;
-    if (visibilityMode === 'members' && !visibleTo.length) return;
-    const authors = preview?.authors ?? (chosen ? [chosen] : defaults);
-    if (!authors.length) return;
+    if (!canSend) return;
+    const authors = messageAuthors;
     const attachmentIds: string[] = [];
     try {
       for (const item of pending) {
@@ -1024,7 +1028,7 @@
         </button>
         {#if picking}
           <div class="picker" role="listbox">
-            {#each [...people.values()].filter((p) => !p.deleted && !p.archived) as p (p.id)}
+            {#each ownSenders as p (p.id)}
               <button onclick={() => { chosen = p.id; picking = false; }} style="color: {color(p.id).name}">{p.sigils[0] ?? ''} {p.name}</button>
             {/each}
           </div>
@@ -1068,7 +1072,7 @@
           </div>
         {/if}
       </div>{/if}
-      <button class="send" onclick={() => void send()} disabled={editing ? (editingParts ? !editingParts.some((part) => part.trim()) : !draft.trim()) : (!preview && !pending.length) || (!preview?.authors.length && !speaker) || (visibilityMode === 'members' && !visibleTo.length)}>{editing ? 'Save' : 'Send'}</button>
+      <button class="send" onclick={() => void send()} disabled={editing ? (editingParts ? !editingParts.some((part) => part.trim()) : !draft.trim()) : !canSend}>{editing ? 'Save' : 'Send'}</button>
     </div>
   </section>
   {#if showInfo}

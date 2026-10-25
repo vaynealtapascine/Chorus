@@ -87,7 +87,7 @@
     </div>
     {#if adding}
       <form class="add" onsubmit={addMember}>
-        <input bind:value={newSigil} placeholder="🌌" maxlength="8" aria-label="Sigil" class="sigil" />
+        <input bind:value={newSigil} placeholder="🌌" aria-label="Sigil" class="sigil" />
         <input bind:value={newName} placeholder="Name" aria-label="Name" required />
         <input type="color" bind:value={newColor} aria-label="Colour" />
         <button>Add</button>

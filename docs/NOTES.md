@@ -428,3 +428,7 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   - Channel permission drafts used to reset on unrelated projection updates. Their source is now
     a content-stable selected-override snapshot; the browser check sends from a second device
     while a permission change is unsaved and verifies the choice survives.
+  - Windows locks a running executable/DLL. Run the isolated test server from a copy outside
+    CARGO_TARGET_DIR before `verify.py` rebuilds the workspace; never stop the owner's service.
+    App-module JVM tests that call the real composer need the plain pinned JNA jar and the host
+    `jna.library.path`, as core-bridge tests already do; the Android AAR has no Windows dispatcher.

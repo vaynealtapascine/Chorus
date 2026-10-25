@@ -1,0 +1,541 @@
+{
+  "description": "Joint representative prefixes have no fixed sender count; 64 members survive composition in order.",
+  "fn": "compose",
+  "args": [
+    "〔0〕〔1〕〔2〕〔3〕〔4〕〔5〕〔6〕〔7〕〔8〕〔9〕〔10〕〔11〕〔12〕〔13〕〔14〕〔15〕〔16〕〔17〕〔18〕〔19〕〔20〕〔21〕〔22〕〔23〕〔24〕〔25〕〔26〕〔27〕〔28〕〔29〕〔30〕〔31〕〔32〕〔33〕〔34〕〔35〕〔36〕〔37〕〔38〕〔39〕〔40〕〔41〕〔42〕〔43〕〔44〕〔45〕〔46〕〔47〕〔48〕〔49〕〔50〕〔51〕〔52〕〔53〕〔54〕〔55〕〔56〕〔57〕〔58〕〔59〕〔60〕〔61〕〔62〕〔63〕 hello",
+    [
+      {
+        "member_id": "member-0",
+        "sigils": [
+          "〔0〕"
+        ]
+      },
+      {
+        "member_id": "member-1",
+        "sigils": [
+          "〔1〕"
+        ]
+      },
+      {
+        "member_id": "member-2",
+        "sigils": [
+          "〔2〕"
+        ]
+      },
+      {
+        "member_id": "member-3",
+        "sigils": [
+          "〔3〕"
+        ]
+      },
+      {
+        "member_id": "member-4",
+        "sigils": [
+          "〔4〕"
+        ]
+      },
+      {
+        "member_id": "member-5",
+        "sigils": [
+          "〔5〕"
+        ]
+      },
+      {
+        "member_id": "member-6",
+        "sigils": [
+          "〔6〕"
+        ]
+      },
+      {
+        "member_id": "member-7",
+        "sigils": [
+          "〔7〕"
+        ]
+      },
+      {
+        "member_id": "member-8",
+        "sigils": [
+          "〔8〕"
+        ]
+      },
+      {
+        "member_id": "member-9",
+        "sigils": [
+          "〔9〕"
+        ]
+      },
+      {
+        "member_id": "member-10",
+        "sigils": [
+          "〔10〕"
+        ]
+      },
+      {
+        "member_id": "member-11",
+        "sigils": [
+          "〔11〕"
+        ]
+      },
+      {
+        "member_id": "member-12",
+        "sigils": [
+          "〔12〕"
+        ]
+      },
+      {
+        "member_id": "member-13",
+        "sigils": [
+          "〔13〕"
+        ]
+      },
+      {
+        "member_id": "member-14",
+        "sigils": [
+          "〔14〕"
+        ]
+      },
+      {
+        "member_id": "member-15",
+        "sigils": [
+          "〔15〕"
+        ]
+      },
+      {
+        "member_id": "member-16",
+        "sigils": [
+          "〔16〕"
+        ]
+      },
+      {
+        "member_id": "member-17",
+        "sigils": [
+          "〔17〕"
+        ]
+      },
+      {
+        "member_id": "member-18",
+        "sigils": [
+          "〔18〕"
+        ]
+      },
+      {
+        "member_id": "member-19",
+        "sigils": [
+          "〔19〕"
+        ]
+      },
+      {
+        "member_id": "member-20",
+        "sigils": [
+          "〔20〕"
+        ]
+      },
+      {
+        "member_id": "member-21",
+        "sigils": [
+          "〔21〕"
+        ]
+      },
+      {
+        "member_id": "member-22",
+        "sigils": [
+          "〔22〕"
+        ]
+      },
+      {
+        "member_id": "member-23",
+        "sigils": [
+          "〔23〕"
+        ]
+      },
+      {
+        "member_id": "member-24",
+        "sigils": [
+          "〔24〕"
+        ]
+      },
+      {
+        "member_id": "member-25",
+        "sigils": [
+          "〔25〕"
+        ]
+      },
+      {
+        "member_id": "member-26",
+        "sigils": [
+          "〔26〕"
+        ]
+      },
+      {
+        "member_id": "member-27",
+        "sigils": [
+          "〔27〕"
+        ]
+      },
+      {
+        "member_id": "member-28",
+        "sigils": [
+          "〔28〕"
+        ]
+      },
+      {
+        "member_id": "member-29",
+        "sigils": [
+          "〔29〕"
+        ]
+      },
+      {
+        "member_id": "member-30",
+        "sigils": [
+          "〔30〕"
+        ]
+      },
+      {
+        "member_id": "member-31",
+        "sigils": [
+          "〔31〕"
+        ]
+      },
+      {
+        "member_id": "member-32",
+        "sigils": [
+          "〔32〕"
+        ]
+      },
+      {
+        "member_id": "member-33",
+        "sigils": [
+          "〔33〕"
+        ]
+      },
+      {
+        "member_id": "member-34",
+        "sigils": [
+          "〔34〕"
+        ]
+      },
+      {
+        "member_id": "member-35",
+        "sigils": [
+          "〔35〕"
+        ]
+      },
+      {
+        "member_id": "member-36",
+        "sigils": [
+          "〔36〕"
+        ]
+      },
+      {
+        "member_id": "member-37",
+        "sigils": [
+          "〔37〕"
+        ]
+      },
+      {
+        "member_id": "member-38",
+        "sigils": [
+          "〔38〕"
+        ]
+      },
+      {
+        "member_id": "member-39",
+        "sigils": [
+          "〔39〕"
+        ]
+      },
+      {
+        "member_id": "member-40",
+        "sigils": [
+          "〔40〕"
+        ]
+      },
+      {
+        "member_id": "member-41",
+        "sigils": [
+          "〔41〕"
+        ]
+      },
+      {
+        "member_id": "member-42",
+        "sigils": [
+          "〔42〕"
+        ]
+      },
+      {
+        "member_id": "member-43",
+        "sigils": [
+          "〔43〕"
+        ]
+      },
+      {
+        "member_id": "member-44",
+        "sigils": [
+          "〔44〕"
+        ]
+      },
+      {
+        "member_id": "member-45",
+        "sigils": [
+          "〔45〕"
+        ]
+      },
+      {
+        "member_id": "member-46",
+        "sigils": [
+          "〔46〕"
+        ]
+      },
+      {
+        "member_id": "member-47",
+        "sigils": [
+          "〔47〕"
+        ]
+      },
+      {
+        "member_id": "member-48",
+        "sigils": [
+          "〔48〕"
+        ]
+      },
+      {
+        "member_id": "member-49",
+        "sigils": [
+          "〔49〕"
+        ]
+      },
+      {
+        "member_id": "member-50",
+        "sigils": [
+          "〔50〕"
+        ]
+      },
+      {
+        "member_id": "member-51",
+        "sigils": [
+          "〔51〕"
+        ]
+      },
+      {
+        "member_id": "member-52",
+        "sigils": [
+          "〔52〕"
+        ]
+      },
+      {
+        "member_id": "member-53",
+        "sigils": [
+          "〔53〕"
+        ]
+      },
+      {
+        "member_id": "member-54",
+        "sigils": [
+          "〔54〕"
+        ]
+      },
+      {
+        "member_id": "member-55",
+        "sigils": [
+          "〔55〕"
+        ]
+      },
+      {
+        "member_id": "member-56",
+        "sigils": [
+          "〔56〕"
+        ]
+      },
+      {
+        "member_id": "member-57",
+        "sigils": [
+          "〔57〕"
+        ]
+      },
+      {
+        "member_id": "member-58",
+        "sigils": [
+          "〔58〕"
+        ]
+      },
+      {
+        "member_id": "member-59",
+        "sigils": [
+          "〔59〕"
+        ]
+      },
+      {
+        "member_id": "member-60",
+        "sigils": [
+          "〔60〕"
+        ]
+      },
+      {
+        "member_id": "member-61",
+        "sigils": [
+          "〔61〕"
+        ]
+      },
+      {
+        "member_id": "member-62",
+        "sigils": [
+          "〔62〕"
+        ]
+      },
+      {
+        "member_id": "member-63",
+        "sigils": [
+          "〔63〕"
+        ]
+      }
+    ],
+    {},
+    [],
+    {}
+  ],
+  "expect": {
+    "rich": {
+      "text": "hello",
+      "entities": []
+    },
+    "segments": [
+      {
+        "offset": 0,
+        "length": 5,
+        "authors": [
+          "member-0",
+          "member-1",
+          "member-2",
+          "member-3",
+          "member-4",
+          "member-5",
+          "member-6",
+          "member-7",
+          "member-8",
+          "member-9",
+          "member-10",
+          "member-11",
+          "member-12",
+          "member-13",
+          "member-14",
+          "member-15",
+          "member-16",
+          "member-17",
+          "member-18",
+          "member-19",
+          "member-20",
+          "member-21",
+          "member-22",
+          "member-23",
+          "member-24",
+          "member-25",
+          "member-26",
+          "member-27",
+          "member-28",
+          "member-29",
+          "member-30",
+          "member-31",
+          "member-32",
+          "member-33",
+          "member-34",
+          "member-35",
+          "member-36",
+          "member-37",
+          "member-38",
+          "member-39",
+          "member-40",
+          "member-41",
+          "member-42",
+          "member-43",
+          "member-44",
+          "member-45",
+          "member-46",
+          "member-47",
+          "member-48",
+          "member-49",
+          "member-50",
+          "member-51",
+          "member-52",
+          "member-53",
+          "member-54",
+          "member-55",
+          "member-56",
+          "member-57",
+          "member-58",
+          "member-59",
+          "member-60",
+          "member-61",
+          "member-62",
+          "member-63"
+        ]
+      }
+    ],
+    "authors": [
+      "member-0",
+      "member-1",
+      "member-2",
+      "member-3",
+      "member-4",
+      "member-5",
+      "member-6",
+      "member-7",
+      "member-8",
+      "member-9",
+      "member-10",
+      "member-11",
+      "member-12",
+      "member-13",
+      "member-14",
+      "member-15",
+      "member-16",
+      "member-17",
+      "member-18",
+      "member-19",
+      "member-20",
+      "member-21",
+      "member-22",
+      "member-23",
+      "member-24",
+      "member-25",
+      "member-26",
+      "member-27",
+      "member-28",
+      "member-29",
+      "member-30",
+      "member-31",
+      "member-32",
+      "member-33",
+      "member-34",
+      "member-35",
+      "member-36",
+      "member-37",
+      "member-38",
+      "member-39",
+      "member-40",
+      "member-41",
+      "member-42",
+      "member-43",
+      "member-44",
+      "member-45",
+      "member-46",
+      "member-47",
+      "member-48",
+      "member-49",
+      "member-50",
+      "member-51",
+      "member-52",
+      "member-53",
+      "member-54",
+      "member-55",
+      "member-56",
+      "member-57",
+      "member-58",
+      "member-59",
+      "member-60",
+      "member-61",
+      "member-62",
+      "member-63"
+    ],
+    "explicit": true
+  }
+}

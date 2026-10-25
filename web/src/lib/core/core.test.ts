@@ -27,6 +27,15 @@ describe('chorus-core in the browser build', () => {
     expect(c.segments.map((s) => s.authors)).toEqual([['sky'], ['mark']]);
   });
 
+  it('selects arbitrary joint senders from representative sequences followed by space', () => {
+    const speakers = Array.from({ length: 64 }, (_, i) => ({ member_id: `member-${i}`, sigils: [`〔${i}〕`] }));
+    const c = core.compose(`${speakers.map((s) => s.sigils[0]).join('')} hello`, speakers, {}, []);
+    expect(c.authors).toEqual(speakers.map((s) => s.member_id));
+    expect(c.rich.text).toBe('hello');
+    expect(c.segments).toEqual([{ offset: 0, length: 5, authors: c.authors }]);
+    expect(c.explicit).toBe(true);
+  });
+
   it('reports feed errors with a position', () => {
     expect(() => core.feedParse('kind:banana')).toThrow(/"pos":0/);
   });

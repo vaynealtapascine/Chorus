@@ -153,9 +153,11 @@ private fun MemberEditor(chorus: Chorus, m: Member?, onDone: () -> Unit) {
         OutlinedTextField(display, { display = it }, label = { Text("Display name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(pronouns, { pronouns = it }, label = { Text("Pronouns") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(sigil, { sigil = it.take(16) }, label = { Text("Sigil") }, singleLine = true, modifier = Modifier.weight(1f))
+            OutlinedTextField(sigil, { sigil = it }, label = { Text("Sigil") }, singleLine = true, modifier = Modifier.weight(1f))
             OutlinedTextField(color, { color = it.take(7) }, label = { Text("Colour") }, singleLine = true, modifier = Modifier.weight(1f))
         }
+        Text("Representative characters or emoji. Start a message with one or more members' sigils, then a space.",
+            color = p.ink2, fontSize = 13.sp)
         OutlinedTextField(description, { description = it }, label = { Text("Description") }, minLines = 3, modifier = Modifier.fillMaxWidth())
         error?.let { Text(it, color = p.danger) }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {

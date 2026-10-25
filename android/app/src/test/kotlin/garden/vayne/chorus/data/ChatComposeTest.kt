@@ -6,8 +6,44 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatComposeTest {
+    @Test
+    fun representativeSequencesSelectAnyNumberOfJointAuthorsWithoutADefault() {
+        val members = (0 until 64).map { index -> Member("m$index", "Member $index", null, null,
+            "#aabbcc", listOf("〔$index〕"), null, false, createdByAccountId = "ours") }
+        val many = withMembers(members)
+        val prefixes = members.joinToString("") { it.sigils.single() }
+        val payload = ChatCompose.payload(many, "channel", null, "$prefixes hello", "", "all", emptySet(),
+            "internal", accountId = "ours")
+        assertEquals("hello", payload.getString("text"))
+        assertEquals(members.map { it.id }, (0 until 64).map { payload.getJSONArray("authors").getString(it) })
+        assertEquals(members.map { it.id }, ChatCompose.preview(many, "$prefixes hello", null, "ours").authors)
+        assertEquals("hello", ChatCompose.preview(many, "〔0〕 hello", null, "ours").text)
+    }
+
+    @Test
+    fun foreignRepresentativeCharactersCannotSelectAnAuthor() {
+        val foreign = model.members.single().copy(id = "foreign", sigils = listOf("::foreign::"), createdByAccountId = "other")
+        val mixed = withMembers(model.members + foreign)
+        val preview = ChatCompose.preview(mixed, "::foreign:: hello", null, "ours")
+        assertTrue(preview.authors.isEmpty())
+        assertEquals("::foreign:: hello", preview.text)
+    }
+
+    @Test
+    fun explicitSigilsKeepMultiCharacterUnicodeAndSegmentPreferences() {
+        val members = model.members + model.members.single().copy(id = "moon", sigils = listOf("👩🏽‍🚀"))
+        val together = withMembers(members, AccountPrefs(segmentParsing = false))
+        val payload = ChatCompose.payload(together, "channel", null, "🌌👩🏽‍🚀 hi\n👩🏽‍🚀 still together", "", "all",
+            emptySet(), "internal")
+        assertEquals("hi\n👩🏽‍🚀 still together", payload.getString("text"))
+        assertEquals(2, payload.getJSONArray("authors").length())
+        assertEquals(1, payload.getJSONArray("segments").length())
+    }
+
     private val model = Model(listOf(Member("kai", "Kai", null, null, "#aabbcc", listOf("🌌"), null, false,
         proxyTags = listOf(ProxyTag("k:", "")))), emptyList(), emptyMap(), emptyList(), null, emptyList())
+    private fun withMembers(members: List<Member>, prefs: AccountPrefs = AccountPrefs()) =
+        Model(members, emptyList(), emptyMap(), emptyList(), null, emptyList(), accountPrefs = prefs)
     private val composed: (String, String, String, String, String) -> String = { draft, speakers, _, authors, _ ->
         assertTrue(speakers.contains("\"prefix\":\"k:\""))
         assertEquals("[\"kai\"]", authors)

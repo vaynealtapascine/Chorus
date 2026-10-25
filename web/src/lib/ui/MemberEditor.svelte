@@ -246,7 +246,7 @@
       <h2>Speaking</h2>
       <div class="fields">
         <label class="wide">
-          Sigils <span class="hint">emoji that start a message as {m.name}; space-separated</span>
+          Sigils <span class="hint">representative characters or emoji; separate alternatives with spaces. Start a message with one or more members' sigils, then a space.</span>
           <input
             value={sigilText}
             onchange={(e) => set({ sigils: text(e).split(/\s+/).filter(Boolean) })}

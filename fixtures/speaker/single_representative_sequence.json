@@ -1,0 +1,37 @@
+{
+  "description": "A multi-character representative sequence plus space selects its member without a default speaker.",
+  "fn": "compose",
+  "args": [
+    "::fox:: hello",
+    [
+      {
+        "member_id": "fox",
+        "sigils": [
+          "::fox::"
+        ]
+      }
+    ],
+    {},
+    [],
+    {}
+  ],
+  "expect": {
+    "rich": {
+      "text": "hello",
+      "entities": []
+    },
+    "segments": [
+      {
+        "offset": 0,
+        "length": 5,
+        "authors": [
+          "fox"
+        ]
+      }
+    ],
+    "authors": [
+      "fox"
+    ],
+    "explicit": true
+  }
+}

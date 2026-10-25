@@ -426,6 +426,20 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val author = model.active.find { it.id == selectedAuthor }
                 ?: defaultAuthorId?.let(model::member)
+            val senderAccount = chorus.device?.accountId.orEmpty()
+            val ownSenders = remember(model, senderAccount) { ChatCompose.members(model, senderAccount) }
+            val authorPreview by produceState<ChatCompose.Preview?>(null, draft, author?.id, model, senderAccount) {
+                value = null
+                value = withContext(Dispatchers.Default) {
+                    runCatching { ChatCompose.preview(model, draft, author?.id, senderAccount) }.getOrNull()
+                }
+            }
+            val currentPreview = authorPreview?.takeIf { it.source == draft }
+            if (draft.isNotBlank() && currentPreview != null) {
+                Text(if (currentPreview.authors.isEmpty()) "Choose a sender, or type their symbols followed by a space."
+                    else "As " + currentPreview.authors.joinToString(" & ") { model.member(it)?.shownName ?: "Someone" },
+                    color = p.ink2, fontSize = 13.sp)
+            }
             val target = messages.find { it.id == replyTo } ?: carriedReply?.takeIf { it.id == replyTo }
             if (target != null) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -493,7 +507,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                             item { ChatChip("Last speaker", setting.mode == "latch") { setSpeakerDefault("latch") } }
                             item { ChatChip("Ask me", setting.mode == "off") { setSpeakerDefault("off") } }
                             item { ChatChip("One member", setting.mode == "member") {
-                                (setting.memberId ?: author?.id ?: model.active.firstOrNull()?.id)?.let {
+                                (setting.memberId ?: author?.id ?: ownSenders.firstOrNull()?.id)?.let {
                                     setSpeakerDefault("member", it)
                                 }
                             } }
@@ -501,7 +515,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         if (setting.mode == "member") {
                             Text("Always speak as", color = p.ink2, fontSize = 12.sp)
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(model.active, key = { it.id }) { member ->
+                                items(ownSenders, key = { it.id }) { member ->
                                     ChatChip(member.shownName, member.id == setting.memberId) {
                                         setSpeakerDefault("member", member.id)
                                     }
@@ -521,13 +535,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     val tone = author?.let { tonesOf(it.color) }
                     Text(author?.glyph ?: "?", fontSize = 18.sp, color = tone?.name ?: p.ink2,
                         modifier = Modifier.size(40.dp).clip(CircleShape).background(tone?.tint ?: p.surface2)
-                            .clickable(enabled = model.active.isNotEmpty()) { authorsOpen = true }
+                            .clickable(enabled = ownSenders.isNotEmpty()) { authorsOpen = true }
                             .wrapContentSize(Alignment.Center)
                             .semantics { contentDescription = "Speaking as ${author?.shownName ?: "nobody yet"}" })
                     DropdownMenu(authorsOpen, { authorsOpen = false }) {
                         Text("Who's speaking", color = p.ink3, fontSize = 12.sp,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-                        for (member in model.active) {
+                        for (member in ownSenders) {
                             DropdownMenuItem(text = { Text(member.shownName) }, onClick = {
                                 selectedAuthor = member.id
                                 authorsOpen = false
@@ -537,7 +551,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 }
                 OutlinedTextField(draft, { draft = it },
                     placeholder = {
-                        Text(if (author == null) "Who's speaking? Tap ?" else "${author.shownName} in #${channel.name}", maxLines = 1)
+                        Text(if (author == null) "Message · symbols + space to choose senders" else "${author.shownName} in #${channel.name}", maxLines = 1)
                     },
                     modifier = Modifier.weight(1f), minLines = 1, maxLines = 4)
                 Text(if (moreOpen) "✕" else "⋯",
@@ -546,12 +560,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     modifier = Modifier.clickable { moreOpen = !moreOpen }.padding(8.dp)
                         .semantics { contentDescription = if (moreOpen) "Fewer options" else "Content warning and audience" })
                 val canSend = !busy && pendingPrivateReply == null && (draft.isNotBlank() || attachments.isNotEmpty()) &&
-                    author != null && (replyTo == null || target != null) &&
+                    currentPreview?.authors?.isNotEmpty() == true &&
+                    (currentPreview.text.isNotBlank() || attachments.isNotEmpty()) && (replyTo == null || target != null) &&
                     (audience != "members" || visibleTo.isNotEmpty())
                 Text(if (busy) "…" else "↑", color = if (canSend) p.bg else p.ink3, fontSize = 20.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.size(40.dp).clip(CircleShape).background(if (canSend) p.accent else p.surface2)
                         .clickable(enabled = canSend) {
-                            val speakerId = author?.id ?: return@clickable
+                            val speakerId = author?.id
                             busy = true
                             error = null
                             actions.launch {
@@ -559,7 +574,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                     val scope = "space:${space.id}"
                                     val attachmentIds = attachments.map { a -> sendAttachment(chorus, ctx, a, scope) }
                                     val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
-                                        audience, visibleTo.toSet(), space.kind, replyTo = target?.id, attachmentIds = attachmentIds)
+                                        audience, visibleTo.toSet(), space.kind, replyTo = target?.id, attachmentIds = attachmentIds,
+                                        accountId = senderAccount)
                                     followNext = true
                                     chorus.create("message.send", chorus.newId(), payload, scope = scope)
                                     if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
