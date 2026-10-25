@@ -23,6 +23,9 @@ describe('named-front conformance through the actual wasm bridge', () => {
       const args = data.args;
       let got: unknown;
       switch (data.fn) {
+        case 'fold_front':
+          got = core.foldFront(typeof args[0] === 'string' ? JSON.parse(args[0]) as unknown[] : args[0] as unknown[]);
+          break;
         case 'resolve_front_system':
           got = core.resolveFrontSystem(args[0] as FrontSystem);
           break;

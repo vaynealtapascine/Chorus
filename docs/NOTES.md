@@ -455,3 +455,10 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   - Cross-language JSON fixtures must use JS-safe timestamps. `i64::MIN` rounds through
     `JSON.stringify` into a floating-point exponent rejected by Rust's integer decoder; use the
     exact JS Date minimum as an offset-schedule sentinel. Native-only limit tests can use i64.
+
+- 2026-10-25 — Wire ordering positions are decoded as u64 and normalized to a portable u32
+  ceiling before converting to usize. A large JS-safe position previously decoded on 64-bit
+  native but failed on wasm32; adding it to a non-zero legacy layer start could also overflow.
+  Both legacy Add/Update and independent actions now retain their existing end-of-set/layer
+  behavior for oversized positions. Legacy layer offsets use saturating addition. Two shared
+  fixtures exercise the real 32-bit wasm and 64-bit native paths.

@@ -51,7 +51,7 @@ to effective change IDs, not raw own-history operation IDs. Statistics consume t
 independent front/layer IDs. Own statistics can use the same helper with own intervals.
 
 The five JSON helpers are exported through wasm and UniFFI. The web has typed wrappers in
-`web/src/lib/core/fronts.ts` / `index.ts`; the shared contract has fifteen front-system/history/
+`web/src/lib/core/fronts.ts` / `index.ts`; the shared contract has seventeen front-system/history/
 effective fixtures. Additional bridge tests verify that amend/undo/redo keep following
 through the real Rust implementation. Android libraries are generated for ARM64 and x86-64; Kotlin
 conformance uses the host DLL, without a device launch.
@@ -84,6 +84,9 @@ New presence entries use `{subject_type, subject_id, layer_id, is_primary}`. Swi
 own ordered set; Add inserts/moves a subject at an absolute optional position (default end);
 Remove removes it; Update changes its layer/primary/optional absolute position without otherwise
 moving it. No action infers a custom layer's meaning from its name or display level.
+Oversized positions retain end-of-set behavior after a portable wire normalization, so 32-bit
+wasm and 64-bit native builds accept the same operations. Legacy layer-relative positions follow
+the same rule without overflowing the layer's starting offset.
 
 Amend/retract/unretract targets are isolated to the named front, including when the target arrives
 late. The latest amendment bundle wins, matching the legacy timeline. Own presence is folded by

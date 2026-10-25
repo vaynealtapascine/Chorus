@@ -9,6 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import uniffi.chorus_ffi.defaultSpeakerForFront
 import uniffi.chorus_ffi.foldFrontSystem
+import uniffi.chorus_ffi.foldFront
 import uniffi.chorus_ffi.frontEffectiveHistory
 import uniffi.chorus_ffi.namedFrontDaily
 import uniffi.chorus_ffi.resolveFrontSystem
@@ -28,6 +29,7 @@ class FrontConformanceTest {
             val args = case.getJSONArray("args")
             fun arg(i: Int): String = args.get(i).let { if (it is String) it else it.toString() }
             val result = when (val function = case.getString("fn")) {
+                "fold_front" -> foldFront(arg(0))
                 "resolve_front_system" -> resolveFrontSystem(arg(0))
                 "fold_front_system" -> foldFrontSystem(arg(0), arg(1))
                 "front_effective_history" -> frontEffectiveHistory(arg(0), arg(1), arg(2))

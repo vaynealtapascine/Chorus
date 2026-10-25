@@ -100,7 +100,7 @@ pub struct SwitchPayload {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AddPayload {
     pub entry: Entry,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_position")]
     pub position: Option<usize>,
     #[serde(default)]
     pub based_on: Option<String>,
@@ -126,7 +126,7 @@ pub struct UpdatePayload {
     pub level: Option<Level>,
     #[serde(default)]
     pub is_primary: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_position")]
     pub position: Option<usize>,
     #[serde(default)]
     pub based_on: Option<String>,
@@ -135,6 +135,17 @@ pub struct UpdatePayload {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TargetPayload {
     pub target_op_id: String,
+}
+
+/// Wire positions describe an insertion point, never an allocation size. Normalize before the
+/// platform-width conversion so native and 32-bit wasm accept the same values. Every position
+/// beyond the actual set length still means its end, including this portable upper bound.
+pub(crate) fn wire_position(value: Option<u64>) -> Option<usize> {
+    value.map(|p| p.min(u64::from(u32::MAX)) as usize)
+}
+
+fn deserialize_position<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<usize>, D::Error> {
+    Option::<u64>::deserialize(d).map(wire_position)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -322,7 +333,7 @@ fn level_insert_index(front: &Front, level: Level, position: Option<usize>) -> u
     let start = front.iter().position(|e| e.level >= level).unwrap_or(front.len());
     let end = front.iter().position(|e| e.level > level).unwrap_or(front.len());
     match position {
-        Some(p) => (start + p).min(end),
+        Some(p) => start.saturating_add(p).min(end),
         None => end,
     }
 }
@@ -748,6 +759,26 @@ mod tests {
     }
     fn lvl(id: &str, l: Level) -> Entry {
         Entry { level: l, ..m(id) }
+    }
+
+    #[test]
+    fn large_wire_positions_are_portable_and_layer_offsets_cannot_overflow() {
+        let payload: AddPayload = serde_json::from_value(serde_json::json!({
+            "entry":{"subject_type":"member","subject_id":"later","level":"present"},
+            "position":u64::MAX,
+        }))
+        .unwrap();
+        assert_eq!(payload.position, Some(u32::MAX as usize));
+        let update: UpdatePayload = serde_json::from_value(serde_json::json!({
+            "subject_type":"member","subject_id":"existing","position":u64::MAX,
+        }))
+        .unwrap();
+        assert_eq!(update.position, payload.position);
+        let mut front = vec![m("front"), lvl("existing", Level::Present)];
+        apply(&mut front, &FrontAction::Add(AddPayload { position: Some(usize::MAX), ..payload }), None);
+        assert_eq!(front.iter().map(|e| e.subject_id.as_str()).collect::<Vec<_>>(), vec!["front", "existing", "later"]);
+        apply(&mut front, &FrontAction::Update(update), None);
+        assert_eq!(front.iter().map(|e| e.subject_id.as_str()).collect::<Vec<_>>(), vec!["front", "later", "existing"]);
     }
 
     fn fop(id: &str, at: i64, node: u32, action: FrontAction) -> FrontOp {

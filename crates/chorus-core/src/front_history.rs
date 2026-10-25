@@ -154,7 +154,7 @@ fn parse_change(mut fields: serde_json::Map<String, serde_json::Value>) -> Resul
         },
         "add" => Change::Add {
             entry: required(&mut fields, "entry")?,
-            position: optional(&mut fields, "position")?,
+            position: front::wire_position(optional(&mut fields, "position")?),
             based_on: optional(&mut fields, "based_on")?,
             notify: notification(&mut fields)?,
         },
@@ -169,7 +169,7 @@ fn parse_change(mut fields: serde_json::Map<String, serde_json::Value>) -> Resul
             subject_id: required(&mut fields, "subject_id")?,
             layer_id: optional(&mut fields, "layer_id")?,
             is_primary: optional(&mut fields, "is_primary")?,
-            position: optional(&mut fields, "position")?,
+            position: front::wire_position(optional(&mut fields, "position")?),
             based_on: optional(&mut fields, "based_on")?,
         },
         "resume" => Change::Resume,
