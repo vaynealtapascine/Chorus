@@ -223,7 +223,8 @@
               }
             ],
             "retracted": true,
-            "tz_offset_min": 0
+            "tz_offset_min": 0,
+            "recorded_at": 2000
           }
         ]
       }

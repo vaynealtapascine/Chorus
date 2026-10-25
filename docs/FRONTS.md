@@ -36,7 +36,7 @@ co-conscious/present fallback when no sendable member is fronting. Custom layers
 selection. A missing/deleted selected front supplies no automatic candidates.
 
 The three JSON helpers are exported through wasm and UniFFI. The web has typed wrappers in
-`web/src/lib/core/fronts.ts` / `index.ts`; Rust, wasm and generated Kotlin all run the same nine
+`web/src/lib/core/fronts.ts` / `index.ts`; Rust, wasm and generated Kotlin all run the same ten
 front-system/history fixtures. Additional bridge tests verify that amend/undo/redo keep following
 through the real Rust implementation. Android libraries are generated for ARM64 and x86-64; Kotlin
 conformance uses the host DLL, without a device launch.
@@ -74,6 +74,18 @@ late. The latest amendment bundle wins, matching the legacy timeline. Own presen
 amended human time, HLC and op ID; sticky following controls use write order, so backdating a new
 switch does not move it before an already configured follow source or a later Resume command.
 Review cards compare concurrent own-presence outcomes only within the same front.
+
+Presence changes may include `effective_at` (an integer timestamp) and `history_only` (a boolean).
+These fields apply only to Switch/Add/Remove/Update. New writers keep the envelope in auto time,
+so the server corrects the **record time**, and put an explicitly chosen presence time in
+`effective_at`. A missed entry inserted with `history_only: true` changes saved presence without
+pausing following or resuming an override. Amend/undo/redo always have that control behavior.
+
+History rows include `recorded_at` when it differs from the effective/amended time. Old
+`time_source: user` envelopes have no corrected creation time: the core uses HLC physical time
+bounded by server receipt as an estimate and marks `recorded_time_estimated: true`. This estimate
+must remain distinguishable from a corrected record time. A later server stamp can change an
+auto record time without moving the presence's explicit effective time.
 
 Legacy operations still affect Body only. Legacy Add/Update preserve unrelated custom entries
 and their relative order while retaining the old default-layer position/primary rules. A legacy

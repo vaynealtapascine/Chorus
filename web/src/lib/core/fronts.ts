@@ -52,7 +52,7 @@ export type FrontPresenceChange =
   | { action: 'add'; entry: FrontPresence; position?: number | null; based_on?: string | null; notify?: Notify }
   | ({ action: 'remove'; based_on?: string | null; notify?: Notify } & Subject)
   | ({ action: 'update'; layer_id?: string | null; is_primary?: boolean | null; position?: number | null; based_on?: string | null } & Subject);
-export type FrontChange = FrontPresenceChange
+export type FrontChange = (FrontPresenceChange & { effective_at?: number; history_only?: boolean })
   | { action: 'resume' }
   | { action: 'retract' | 'unretract'; target_op_id: string }
   | { action: 'amend'; target_op_id: string; occurred_at?: number | null; entries?: FrontPresence[] | null; note?: string | null };
@@ -61,6 +61,9 @@ export interface FrontHistoryRow {
   id: string;
   kind: FrontPresenceChange['action'];
   occurred_at: number;
+  recorded_at?: number;
+  recorded_time_estimated?: boolean;
+  history_only?: boolean;
   hlc: string;
   tz_offset_min: number;
   device_id: string;

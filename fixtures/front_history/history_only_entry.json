@@ -1,0 +1,449 @@
+{
+  "args": [
+    "0192f8c2-0000-7000-8000-0000000000a1",
+    [
+      {
+        "device_at": 1000,
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "hlc": "0000000003e8-0000-00000001",
+        "id": "0192f8c2-0000-7000-8000-000000000001",
+        "kind": "front.switch",
+        "payload": {
+          "entries": [
+            {
+              "is_primary": true,
+              "level": "front",
+              "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+              "subject_type": "member"
+            }
+          ]
+        },
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1"
+      },
+      {
+        "device_at": 2000,
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "hlc": "0000000007d0-0000-00000001",
+        "id": "0192f8c2-0000-7000-8000-000000000002",
+        "kind": "front.define",
+        "payload": {
+          "authorship_layers": [
+            "quiet"
+          ],
+          "follow_source": "0192f8c2-0000-7000-8000-0000000000a1",
+          "name": "Chorus"
+        },
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1"
+      },
+      {
+        "device_at": 3000,
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "hlc": "000000000bb8-0000-00000001",
+        "id": "0192f8c2-0000-7000-8000-000000000003",
+        "kind": "front.layer",
+        "payload": {
+          "layer_id": "quiet",
+          "level": -4,
+          "name": "Independent layer"
+        },
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1"
+      },
+      {
+        "device_at": 4000,
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "hlc": "000000000fa0-0000-00000001",
+        "id": "0192f8c2-0000-7000-8000-000000000004",
+        "kind": "front.change",
+        "payload": {
+          "action": "switch",
+          "entries": [
+            {
+              "layer_id": "quiet",
+              "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+              "subject_type": "member"
+            }
+          ],
+          "note": "My own set"
+        },
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1"
+      },
+      {
+        "device_at": 5000,
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "hlc": "000000001388-0000-00000001",
+        "id": "0192f8c2-0000-7000-8000-000000000005",
+        "kind": "front.change",
+        "payload": {
+          "action": "resume"
+        },
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1"
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000006",
+        "kind": "front.change",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "hlc": "000000001770-0000-00000001",
+        "device_at": 6000,
+        "payload": {
+          "action": "switch",
+          "entries": [
+            {
+              "subject_type": "member",
+              "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+              "layer_id": "quiet",
+              "is_primary": false
+            }
+          ],
+          "effective_at": 3500,
+          "history_only": true
+        }
+      }
+    ]
+  ],
+  "description": "A missed history-only entry has an independent effective/record time and does not pause following.",
+  "expect": {
+    "histories": {
+      "0192f8c2-0000-7000-8000-0000000000a1": {
+        "current": [
+          {
+            "is_primary": true,
+            "layer_id": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "intervals": [
+          {
+            "end_at": null,
+            "end_switch_id": null,
+            "front_id": "0192f8c2-0000-7000-8000-0000000000a1",
+            "id": "c272947d536a4e8316e4733b600ee500",
+            "is_primary": true,
+            "layer_id": "front",
+            "position": 0,
+            "start_at": 1000,
+            "start_switch_id": "0192f8c2-0000-7000-8000-000000000001",
+            "start_tz_offset_min": 0,
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "switches": [
+          {
+            "amended": false,
+            "based_on": null,
+            "change": {
+              "action": "switch",
+              "based_on": null,
+              "entries": [
+                {
+                  "is_primary": true,
+                  "layer_id": "front",
+                  "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                  "subject_type": "member"
+                }
+              ],
+              "note": null,
+              "notify": "default"
+            },
+            "device_id": "00000001",
+            "entries": [
+              {
+                "is_primary": true,
+                "layer_id": "front",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                "subject_type": "member"
+              }
+            ],
+            "hlc": "0000000003e8-0000-00000001",
+            "id": "0192f8c2-0000-7000-8000-000000000001",
+            "kind": "switch",
+            "note": null,
+            "notify": "default",
+            "occurred_at": 1000,
+            "resulting_front": [
+              {
+                "is_primary": true,
+                "layer_id": "front",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                "subject_type": "member"
+              }
+            ],
+            "retracted": false,
+            "tz_offset_min": 0
+          }
+        ]
+      },
+      "0192f8c2-0000-7000-8000-0000000000a2": {
+        "current": [
+          {
+            "is_primary": false,
+            "layer_id": "quiet",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+            "subject_type": "member"
+          }
+        ],
+        "intervals": [
+          {
+            "end_at": 4000,
+            "end_switch_id": "0192f8c2-0000-7000-8000-000000000004",
+            "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+            "id": "85c08f01965eaa00f5e183576ccd2967",
+            "is_primary": false,
+            "layer_id": "quiet",
+            "position": 0,
+            "start_at": 3500,
+            "start_switch_id": "0192f8c2-0000-7000-8000-000000000006",
+            "start_tz_offset_min": 0,
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          },
+          {
+            "end_at": null,
+            "end_switch_id": null,
+            "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+            "id": "5e22024e9e3aeb22dde3ca21c4914b26",
+            "is_primary": false,
+            "layer_id": "quiet",
+            "position": 0,
+            "start_at": 4000,
+            "start_switch_id": "0192f8c2-0000-7000-8000-000000000004",
+            "start_tz_offset_min": 0,
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+            "subject_type": "member"
+          }
+        ],
+        "switches": [
+          {
+            "amended": false,
+            "based_on": null,
+            "change": {
+              "action": "switch",
+              "based_on": null,
+              "entries": [
+                {
+                  "subject_type": "member",
+                  "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                  "layer_id": "quiet",
+                  "is_primary": false
+                }
+              ],
+              "note": null,
+              "notify": "default"
+            },
+            "device_id": "00000001",
+            "entries": [
+              {
+                "subject_type": "member",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                "layer_id": "quiet",
+                "is_primary": false
+              }
+            ],
+            "hlc": "000000001770-0000-00000001",
+            "id": "0192f8c2-0000-7000-8000-000000000006",
+            "kind": "switch",
+            "note": null,
+            "notify": "default",
+            "occurred_at": 3500,
+            "resulting_front": [
+              {
+                "subject_type": "member",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                "layer_id": "quiet",
+                "is_primary": false
+              }
+            ],
+            "retracted": false,
+            "tz_offset_min": 0,
+            "recorded_at": 6000,
+            "history_only": true
+          },
+          {
+            "amended": false,
+            "based_on": null,
+            "change": {
+              "action": "switch",
+              "based_on": null,
+              "entries": [
+                {
+                  "is_primary": false,
+                  "layer_id": "quiet",
+                  "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+                  "subject_type": "member"
+                }
+              ],
+              "note": "My own set",
+              "notify": "default"
+            },
+            "device_id": "00000001",
+            "entries": [
+              {
+                "is_primary": false,
+                "layer_id": "quiet",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+                "subject_type": "member"
+              }
+            ],
+            "hlc": "000000000fa0-0000-00000001",
+            "id": "0192f8c2-0000-7000-8000-000000000004",
+            "kind": "switch",
+            "note": "My own set",
+            "notify": "default",
+            "occurred_at": 4000,
+            "resulting_front": [
+              {
+                "is_primary": false,
+                "layer_id": "quiet",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+                "subject_type": "member"
+              }
+            ],
+            "retracted": false,
+            "tz_offset_min": 0
+          }
+        ]
+      }
+    },
+    "resolved": {
+      "0192f8c2-0000-7000-8000-0000000000a1": {
+        "authorship": [
+          {
+            "is_primary": true,
+            "layer_id": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "deleted": false,
+        "effective": [
+          {
+            "is_primary": true,
+            "layer_id": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "issue": null,
+        "name": "Body",
+        "notifications": [
+          {
+            "is_primary": true,
+            "layer_id": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "own": [
+          {
+            "is_primary": true,
+            "layer_id": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "source": null,
+        "state": "independent"
+      },
+      "0192f8c2-0000-7000-8000-0000000000a2": {
+        "authorship": [],
+        "deleted": false,
+        "effective": [
+          {
+            "is_primary": true,
+            "layer_id": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "issue": null,
+        "name": "Chorus",
+        "notifications": [],
+        "own": [
+          {
+            "is_primary": false,
+            "layer_id": "quiet",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+            "subject_type": "member"
+          }
+        ],
+        "source": "0192f8c2-0000-7000-8000-0000000000a1",
+        "state": "following"
+      }
+    },
+    "reviews": {},
+    "system": {
+      "fronts": {
+        "0192f8c2-0000-7000-8000-0000000000a1": {
+          "authorship_layers": null,
+          "deleted": false,
+          "follow": null,
+          "id": "0192f8c2-0000-7000-8000-0000000000a1",
+          "name": "Body",
+          "notification_layers": null,
+          "overridden": false,
+          "own": [
+            {
+              "is_primary": true,
+              "layer_id": "front",
+              "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+              "subject_type": "member"
+            }
+          ]
+        },
+        "0192f8c2-0000-7000-8000-0000000000a2": {
+          "authorship_layers": [
+            "quiet"
+          ],
+          "deleted": false,
+          "follow": {
+            "clock": "0000000007d0-0000-00000001",
+            "source": "0192f8c2-0000-7000-8000-0000000000a1"
+          },
+          "id": "0192f8c2-0000-7000-8000-0000000000a2",
+          "name": "Chorus",
+          "notification_layers": [],
+          "overridden": false,
+          "own": [
+            {
+              "is_primary": false,
+              "layer_id": "quiet",
+              "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+              "subject_type": "member"
+            }
+          ]
+        }
+      },
+      "layers": {
+        "cocon": {
+          "deleted": false,
+          "id": "cocon",
+          "level": 1,
+          "name": "Co-conscious"
+        },
+        "front": {
+          "deleted": false,
+          "id": "front",
+          "level": 0,
+          "name": "Fronting"
+        },
+        "present": {
+          "deleted": false,
+          "id": "present",
+          "level": 2,
+          "name": "Present"
+        },
+        "quiet": {
+          "deleted": false,
+          "id": "quiet",
+          "level": -4,
+          "name": "Independent layer"
+        }
+      }
+    }
+  },
+  "fn": "fold_front_system"
+}

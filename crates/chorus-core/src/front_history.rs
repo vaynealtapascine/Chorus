@@ -159,6 +159,12 @@ pub struct Event {
     pub front_id: String,
     pub hlc: Hlc,
     pub occurred_at: i64,
+    /// Corrected operation/record time, distinct from a backdated presence effective time.
+    pub recorded_at: i64,
+    /// Legacy `time_source:user` envelopes did not retain a corrected creation time. Their
+    /// HLC estimate is marked, and bounded by receipt when the server stamp is available.
+    pub recorded_time_estimated: bool,
+    pub history_only: bool,
     pub tz_offset_min: i32,
     pub device_id: String,
     pub seq: Option<i64>,
@@ -180,10 +186,17 @@ impl Event {
             return Ok(None);
         }
         let mut legacy = None;
+        let mut effective_at = None;
+        let mut history_only = false;
         let action = match o.kind.as_str() {
             "front.define" => Action::Define(serde_json::from_value(o.payload.clone()).map_err(|e| e.to_string())?),
             "front.layer" => Action::Layer(serde_json::from_value(o.payload.clone()).map_err(|e| e.to_string())?),
-            "front.change" => Action::Change(serde_json::from_value(o.payload.clone()).map_err(|e| e.to_string())?),
+            "front.change" => {
+                let (change, at, history) = change_payload(&o.payload)?;
+                effective_at = at;
+                history_only = history;
+                Action::Change(change)
+            }
             _ => match FrontOp::from_op(o) {
                 Ok(f) => {
                     let change = legacy_change(&f.action);
@@ -200,11 +213,20 @@ impl Event {
         } else {
             o.entity().ok_or("named-front operation needs entity_id")?.into()
         };
+        let recorded_time_estimated = o.time_source == crate::time::TimeSource::User;
+        let recorded_at = if recorded_time_estimated {
+            (o.hlc.pt.min(i64::MAX as u64) as i64).min(o.received_at.unwrap_or(i64::MAX))
+        } else {
+            o.time()
+        };
         Ok(Some(Self {
             id: o.id.clone(),
             front_id,
             hlc: o.hlc,
-            occurred_at: o.time(),
+            occurred_at: effective_at.unwrap_or(o.time()),
+            recorded_at,
+            recorded_time_estimated,
+            history_only,
             tz_offset_min: o.tz_offset_min,
             device_id: o.device_id.clone().unwrap_or_else(|| format!("{:08x}", o.hlc.node)),
             seq: o.seq,
@@ -213,6 +235,27 @@ impl Event {
             legacy,
         }))
     }
+}
+
+/// Presence timing/intent is orthogonal to the action's member/layer payload. New writers keep
+/// the envelope in auto time so the server corrects record time, and use effective_at for an
+/// explicitly chosen presence time. History editors can insert a missed entry without a live
+/// override. Amend/undo/redo always follow D-083 and cannot opt into live override controls.
+fn change_payload(value: &serde_json::Value) -> Result<(Change, Option<i64>, bool), String> {
+    let mut payload = value.clone();
+    let fields = payload.as_object_mut().ok_or("front.change payload must be an object")?;
+    let effective_at = fields
+        .remove("effective_at")
+        .map(|v| v.as_i64().ok_or("effective_at must be an integer timestamp"))
+        .transpose()?;
+    let history = fields.remove("history_only");
+    let history_only =
+        history.as_ref().map(|v| v.as_bool().ok_or("history_only must be a boolean")).transpose()?.unwrap_or(false);
+    let change: Change = serde_json::from_value(payload).map_err(|e| e.to_string())?;
+    if !change.is_presence() && (effective_at.is_some() || history.is_some()) {
+        return Err("effective_at and history_only apply only to switch/add/remove/update".into());
+    }
+    Ok((change, effective_at, history_only))
 }
 
 fn validate_action(action: &Action) -> Result<(), String> {
@@ -311,6 +354,12 @@ pub struct HistoryRow {
     pub id: String,
     pub kind: &'static str,
     pub occurred_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recorded_at: Option<i64>,
+    #[serde(skip_serializing_if = "is_false")]
+    pub recorded_time_estimated: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    pub history_only: bool,
     pub hlc: Hlc,
     pub tz_offset_min: i32,
     pub device_id: String,
@@ -322,6 +371,10 @@ pub struct HistoryRow {
     pub notify: Notify,
     pub retracted: bool,
     pub amended: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -441,7 +494,7 @@ pub fn fold<'a>(account: &str, ops: impl IntoIterator<Item = &'a Op>) -> FoldRes
                     .or_insert_with(|| Front::new(e.front_id.clone(), "Front".into()));
                 if matches!(change, Change::Resume) {
                     f.resume_following();
-                } else if change.is_presence() {
+                } else if change.is_presence() && !e.history_only {
                     // D-083: amend/undo/redo change saved history only. They neither pause
                     // following nor resume an existing override.
                     f.overridden = f.follow.is_some();
@@ -672,6 +725,9 @@ fn fold_own(front_id: &str, events: &[&Event]) -> History {
             id: e.id.clone(),
             kind: change.kind(),
             occurred_at: at,
+            recorded_at: (e.recorded_at != at).then_some(e.recorded_at),
+            recorded_time_estimated: e.recorded_time_estimated,
+            history_only: e.history_only,
             hlc: e.hlc,
             tz_offset_min: e.tz_offset_min,
             device_id: e.device_id.clone(),
@@ -906,8 +962,7 @@ mod tests {
     #[test]
     fn following_controls_use_write_order_even_when_a_switch_is_backdated() {
         let mut old_switch = switch(4, CHORUS, "override", "quiet");
-        old_switch.device_at = 500;
-        old_switch.time_source = crate::time::TimeSource::User;
+        old_switch.payload["effective_at"] = json!(500);
         let mut ops = vec![
             switch(1, BODY, "source", "front"),
             op(2, "front.define", CHORUS, json!({"name":"Chorus","follow_source":BODY})),
@@ -918,6 +973,8 @@ mod tests {
         ];
         let before = assert_permutations(&ops);
         assert_eq!(before.histories[CHORUS].switches[0].occurred_at, 500);
+        assert_eq!(before.histories[CHORUS].switches[0].recorded_at, Some(4000));
+        assert!(!before.histories[CHORUS].switches[0].recorded_time_estimated);
         assert_eq!(before.resolved[CHORUS].state, front_system::FollowState::Overridden);
         assert_eq!(before.resolved[HEADSPACE].effective[0].subject_id, "override");
         ops.push(op(7, "front.change", CHORUS, json!({"action":"resume"})));
@@ -1104,6 +1161,51 @@ mod tests {
     }
 
     #[test]
+    fn missed_entries_keep_following_and_corrected_record_time_is_separate() {
+        let mut missed = switch(4, CHORUS, "missed", "quiet");
+        missed.payload["effective_at"] = json!(500);
+        missed.payload["history_only"] = json!(true);
+        let mut ops = vec![
+            switch(1, BODY, "source", "front"),
+            op(2, "front.define", CHORUS, json!({"follow_source":BODY})),
+            missed.clone(),
+        ];
+        let pending = assert_permutations(&ops);
+        assert_eq!(pending.resolved[CHORUS].state, front_system::FollowState::Following);
+        assert_eq!(pending.resolved[CHORUS].effective[0].subject_id, "source");
+        assert_eq!(pending.histories[CHORUS].current[0].subject_id, "missed");
+        let row = &pending.histories[CHORUS].switches[0];
+        assert_eq!((row.occurred_at, row.recorded_at, row.history_only), (500, Some(4000), true));
+        missed.seq = Some(10);
+        missed.occurred_at = Some(4300);
+        missed.received_at = Some(4500);
+        ops.push(missed);
+        let confirmed = assert_permutations(&ops);
+        let row = &confirmed.histories[CHORUS].switches[0];
+        assert_eq!((row.occurred_at, row.recorded_at), (500, Some(4300)));
+        assert_eq!(confirmed.resolved[CHORUS], pending.resolved[CHORUS]);
+    }
+
+    #[test]
+    fn legacy_user_time_retains_an_explicit_bounded_record_time_estimate() {
+        let mut old = op(
+            4,
+            "front.switch",
+            BODY,
+            json!({"entries":[{"subject_type":"member","subject_id":"a","level":"front"}]}),
+        );
+        old.device_at = 500;
+        old.time_source = crate::time::TimeSource::User;
+        old.received_at = Some(3500);
+        let result = assert_permutations(&[old]);
+        let row = &result.histories[BODY].switches[0];
+        assert_eq!((row.occurred_at, row.recorded_at), (500, Some(3500)));
+        assert!(row.recorded_time_estimated);
+        let json = serde_json::to_value(row).unwrap();
+        assert_eq!(json["recorded_time_estimated"], true);
+    }
+
+    #[test]
     fn own_daily_totals_keep_fronts_and_independent_layers_separate_across_midnight() {
         let mut a = switch(1, CHORUS, "same-member", "quiet");
         a.device_at = 86_399_500;
@@ -1138,6 +1240,10 @@ mod tests {
             ("front.change", json!({"action":"switch","entries":[entry("a","")]})),
             ("front.change", json!({"action":"update","subject_type":"member","subject_id":"a","layer_id":""})),
             ("front.change", json!({"action":"unknown"})),
+            ("front.change", json!({"action":"switch","entries":[],"effective_at":null})),
+            ("front.change", json!({"action":"switch","entries":[],"history_only":"yes"})),
+            ("front.change", json!({"action":"resume","history_only":false})),
+            ("front.change", json!({"action":"amend","target_op_id":"a","effective_at":10})),
         ] {
             assert!(Event::from_op(BODY, &op(1, kind, CHORUS, payload)).is_err(), "{kind}");
         }
