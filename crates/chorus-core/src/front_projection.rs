@@ -261,7 +261,7 @@ mod tests {
                     4=>op(i,"front.change",front,json!({"action":"resume"})),
                     5=>op(i,"front.change",front,json!({"action":"amend","target_op_id":target,"occurred_at":i64::from(at)*1000})),
                     6=>op(i,"front.change",front,json!({"action":if flag{"retract"}else{"unretract"},"target_op_id":target})),
-                    7=>op(i,"front.define",front,json!({"deleted":flag,"authorship_layers":if flag{Some(vec!["quiet"])}else{None}})),
+                    7=>op(i,"front.define",front,json!({"deleted":flag,"authorship_layers":if flag{Some(vec!["quiet"])}else{None},"purpose_layers":{"reading":if flag{Some(vec!["quiet"])}else{None}}})),
                     8=>op(i,"front.layer",BODY,json!({"layer_id":"quiet","name":format!("Layer{member}"),"deleted":flag,"level":member})),
                     9=>op(i,"front.add",BODY,json!({"entry":{"subject_type":"member","subject_id":format!("m{member}"),"level":"present"}})),
                     _=>op(i,"front.change",front,json!({"action":"update","subject_type":"member","subject_id":format!("m{member}"),"is_primary":flag,"position":member})),

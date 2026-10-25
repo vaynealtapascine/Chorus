@@ -210,8 +210,8 @@ custom order.
 | Delete | Tombstone ("message deleted" placeholder, configurable to vanish). Always **restorable** from Trash (D-053). |
 | Pin | Per channel, pinned list panel. |
 | Reactions | Emoji or custom emoji, **reacted as a member** (defaults to current speaker). Hover shows who. |
-| Mentions | `@member`, `@group` (all members in group and its subgroups), `@account` in shared spaces, `@front` (who was fronting when the message was written). Resolved by core (`chorus_core::mentions`). Mention inbox per member. |
-| Read states | Per account; optionally **per member** (Advanced: "track reading per member") → "Kai hasn't seen this" dot: reading marks it for the account and each member fronting or co-con (`chorus_core::reading`); marks never leave the account. |
+| Mentions | `@member`, `@group` (all members in group and its subgroups), `@account` in shared spaces, `@front` (the channel's selected front and its independent mention-layer selection, at message time; legacy Body front/co-conscious default, D-085). Resolved by core (`chorus_core::mentions`). Mention inbox per member. |
+| Read states | Per account; optionally **per member** (Advanced: "track reading per member") → "Kai hasn't seen this" dot: reading marks it for the account and members selected by the channel's front and its independent reading-layer selection (legacy Body front/co-conscious default, D-085; `chorus_core::reading`); marks never leave the account. |
 | Attachments | Images (thumbnails, gallery, alt text), files; queued offline, upload resumable. |
 | Search | Full-text (FTS5), filters: `from:`, `in:`, `has:` (image, file, attachment, link), `before:`/`after:`, `is:pinned`, parsed by core so local and server search agree (`chorus_core::search`). |
 | Offline marker | Messages composed offline sort at original time, marked "sent offline · synced 14:32" (D-039). |

@@ -68,6 +68,15 @@ pub fn named_front_daily(intervals_json: String, now: i64, offsets_json: String)
     wrap(api::named_front_daily(&intervals_json, now, &offsets_json))
 }
 
+#[uniffi::export]
+pub fn read_readers_for_front(
+    per_member: bool,
+    candidates_json: String,
+    members_json: String,
+) -> Result<String, CoreError> {
+    wrap(api::read_readers_for_front(per_member, &candidates_json, &members_json))
+}
+
 /// Daily front totals over a caller-clamped window with local UTC-offset transitions.
 #[uniffi::export]
 pub fn front_daily(intervals_json: String, now: i64, offsets_json: String) -> Result<String, CoreError> {

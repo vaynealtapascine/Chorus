@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { core, loadCore, type FrontHistoryInterval, type FrontSystem, type SpeakerContext } from './index';
+import { core, loadCore, type FrontHistoryInterval, type FrontPresence, type FrontSystem, type SpeakerContext } from './index';
 
 interface Fixture { fn: string; args: unknown[]; expect: unknown }
 const fixtureRoot = new URL('../../../../fixtures/', import.meta.url);
@@ -37,6 +37,9 @@ describe('named-front conformance through the actual wasm bridge', () => {
           break;
         case 'named_front_daily':
           got = core.namedFrontDaily(args[0] as FrontHistoryInterval[], args[1] as number, args[2] as [number, number][]);
+          break;
+        case 'read_readers_for_front':
+          got = core.readReadersForFront(args[0] as boolean, args[1] as FrontPresence[], args[2] as string[]);
           break;
         case 'default_speaker_for_front':
           got = core.defaultSpeakerForFront(args[0] as SpeakerContext, args[1] as FrontSystem, args[2] as string, args[3] as string);

@@ -65,7 +65,12 @@
       "state": "unavailable",
       "issue": "source_unavailable",
       "authorship": [],
-      "notifications": []
+      "notifications": [],
+      "purpose_candidates": {
+        "mentions": [],
+        "reading": [],
+        "chat_alerts": []
+      }
     },
     "b": {
       "id": "b",
@@ -91,7 +96,12 @@
       "state": "unavailable",
       "issue": "cycle",
       "authorship": [],
-      "notifications": []
+      "notifications": [],
+      "purpose_candidates": {
+        "mentions": [],
+        "reading": [],
+        "chat_alerts": []
+      }
     }
   }
 }

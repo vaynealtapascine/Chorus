@@ -13,9 +13,9 @@ independent layers and a 5,000-front chain without recursive calls.
 
 The graph resolver uses dense indexes with canonical ID ordering. A separate single-start walk
 checks it over 512 generated graphs (cycles, missing/deleted sources and overrides). The release
-`front_system::tests::large_graph_budget` check resolves a 5,000-front chain in about 3.35 ms on
-the owner's PC (2026-10-25). The initial graph optimization reduced wasm to 293 KB gz; with
-effective history and its strict action decoder it is 296 KB gz, within 300 KB.
+`front_system::tests::large_graph_budget` check resolves a 5,000-front chain in about 7.1 ms on
+the owner's PC (2026-10-26, including D-085 purpose pools). The initial graph optimization reduced
+wasm to 293 KB gz; with histories and independent channel purposes it is 298 KB gz, within 300 KB.
 
 An unresolved source or cycle retains the saved independent set as a recovery/display fallback,
 with an explicit issue and no default authorship or notification candidates. An explicit manual
@@ -50,8 +50,8 @@ to effective change IDs, not raw own-history operation IDs. Statistics consume t
 `api::named_front_daily` splits at caller-supplied timezone transitions, clamps to now and keeps
 independent front/layer IDs. Own statistics can use the same helper with own intervals.
 
-The five JSON helpers are exported through wasm and UniFFI. The web has typed wrappers in
-`web/src/lib/core/fronts.ts` / `index.ts`; the shared contract has seventeen front-system/history/
+The six JSON helpers are exported through wasm and UniFFI. The web has typed wrappers in
+`web/src/lib/core/fronts.ts` / `index.ts`; the shared contract has twenty front-system/history/
 effective fixtures. Additional bridge tests verify that amend/undo/redo keep following
 through the real Rust implementation. Android libraries are generated for ARM64 and x86-64; Kotlin
 conformance uses the host DLL, without a device launch.
@@ -73,8 +73,9 @@ marks. The caller must establish that an appended op ID is new.
 
 A 512-case stepwise comparison checks append-or-rebuild against the full history fold. On the
 owner's PC (2026-10-25), release `front_projection::tests::current_and_live_append_budgets`
-projects 10,000 switches into current state in about 27 ms and appends 1,000 live switches in
-about 3.7 ms. These are pure core measurements; storage/transport and rendering remain separate
+projects 10,000 switches into current state in about 39.5 ms and appends 1,000 live switches in
+about 5.8 ms (2026-10-26, all four release checks run together). These are pure core measurements;
+storage/transport and rendering remain separate
 integration budgets. The index is not connected to the runtime projector or server yet.
 
 ## Event contract implemented in core (not yet enabled for ingestion)
@@ -83,7 +84,7 @@ All events are private to `account:<system id>`. Body's stable front ID is the a
 
 | Kind | Key and payload |
 | --- | --- |
-| `front.define` | `entity_id` = front ID; sparse `{name?, follow_source?, authorship_layers?, notification_layers?, deleted?}` |
+| `front.define` | `entity_id` = front ID; sparse `{name?, follow_source?, authorship_layers?, notification_layers?, purpose_layers?, deleted?}` |
 | `front.layer` | `{layer_id, name?, level?, deleted?}`; layer IDs are system-local, with string IDs `front`, `cocon`, `present` for the defaults |
 | `front.change` | `entity_id` = front ID; `{action: switch/add/remove/update/resume/retract/unretract/amend, ...}`; op ID identifies the history item |
 
@@ -92,6 +93,20 @@ Definitions and layers merge per field by HLC. Missing fields leave the existing
 null restores the legacy purpose default (including its original-layer authorship fallback).
 New fronts initially select `front` for authorship and
 no notification layers. Tombstones keep the own history and identifiers intact.
+
+D-085 adds `purpose_layers` to front definitions/state: a sparse map of purpose ID to selected
+layer IDs or null. `mentions`, `reading` and `chat_alerts` each default to the original
+front/co-conscious IDs when missing/null; `[]` selects nobody. Entries merge independently by
+purpose and HLC, so editing one never overwrites the others. Future purpose IDs are accepted but
+default to nobody; they do not acquire a role from their name. Authorship and switch alerts keep
+their existing `authorship_layers` / `notification_layers` fields, which cannot be duplicated as
+keys in this map. Each resolved front supplies `purpose_candidates`; following uses the source's
+presence with the destination front's selections. Unavailable/deleted fallbacks qualify for none.
+
+`reading::readers_for_front` / `api::read_readers_for_front` consume the selected reading pool
+without mapping any custom layer into a legacy role, filter to own member IDs, retain order and
+mark the account once. Channel consumers and historical mention/chat-alert resolution still need
+runtime integration; the shared selections alone do not complete D-085.
 
 New presence entries use `{subject_type, subject_id, layer_id, is_primary}`. Switch replaces the
 own ordered set; Add inserts/moves a subject at an absolute optional position (default end);
@@ -131,7 +146,7 @@ events remain unprojected. Ingestion must add catalogue and value/ownership vali
 with storage projection before clients emit these kinds. Do not enable the kinds alone.
 
 The explicit release-mode `front_history::tests::ten_thousand_own_switches` check folded 10,000
-pending switches over 500 member IDs in about 46 ms on the owner's PC (2026-10-25). Pending/single-
+pending switches over 500 member IDs in about 76 ms on the owner's PC (2026-10-26). Pending/single-
 device histories skip the concurrent-review pair scan. This checks a bulk own-history fold;
 append, transport, widget and cold-start budgets still need checks at runtime integration.
 
@@ -139,7 +154,7 @@ Effective history is checked against an independent time-slice reconstruction ov
 histories with reordered record/effective/write times, sparse definitions, cycles, deletions and
 history corrections. The separate release `front_effective::tests::ten_thousand_followed_switches`
 benchmark checks 10,000 followed switches against the 300 ms history-read ceiling. The bulk
-check took about 113 ms on the owner's PC (2026-10-25). The bulk history path can replay controls
+check took about 173 ms on the owner's PC (2026-10-26). The bulk history path can replay controls
 on out-of-order record times; do not use it for current-state updates or rendering.
 
 ## Settled behavior
@@ -157,6 +172,10 @@ on out-of-order record times; do not use it for current-state updates or renderi
   fronting/co-conscious/present role. Renaming or reordering a layer never rewrites its history.
 - Each front selects its authorship and switch-notification layers independently. Channel speaker
   defaults select a front, defaulting to Body. Explicit sigils still override the default speaker.
+- A channel's selected front also drives `@front` mentions, per-member read tracking and
+  fronting-dependent chat alerts. Those three purposes each have independent per-front layer
+  selections; legacy defaults use the original front/co-conscious IDs (D-085). Historical
+  mentions/alerts resolve the selected front and its purpose configuration at message time.
 - Existing accounts retain their current behavior until configured. Person accounts continue to
   hide fronting controls. Existing notification privacy ceilings, delays and reveal rules apply.
 - Existing followers can access Body only until the owner explicitly allows additional fronts in

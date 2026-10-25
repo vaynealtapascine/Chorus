@@ -29,6 +29,8 @@ pub struct Definition {
     pub authorship_layers: Option<Option<BTreeSet<String>>>,
     #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
     pub notification_layers: Option<Option<BTreeSet<String>>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub purpose_layers: BTreeMap<String, Option<BTreeSet<String>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deleted: Option<bool>,
 }
@@ -362,6 +364,17 @@ fn validate_action(action: &Action) -> Result<(), String> {
                     id(s)?;
                 }
             }
+            for (purpose, layers) in &p.purpose_layers {
+                id(purpose)?;
+                if matches!(purpose.as_str(), "authorship" | "notifications") {
+                    return Err("use authorship_layers/notification_layers for those purposes".into());
+                }
+                if let Some(layers) = layers {
+                    for layer in layers {
+                        id(layer)?;
+                    }
+                }
+            }
         }
         Action::Layer(p) => id(&p.layer_id)?,
         Action::Change(change) => match change {
@@ -606,6 +619,13 @@ pub(crate) fn apply_control(f: &mut Front, clocks: &mut Clocks, e: &Event) {
             {
                 f.notification_layers = layers.clone();
                 clocks.0.insert("notification_layers".into(), e.hlc);
+            }
+            for (purpose, layers) in &p.purpose_layers {
+                let key = format!("purpose:{purpose}");
+                if clocks.wins(&key, e.hlc) {
+                    f.purpose_layers.insert(purpose.clone(), layers.clone());
+                    clocks.0.insert(key, e.hlc);
+                }
             }
             if let Some(deleted) = p.deleted
                 && clocks.wins("deleted", e.hlc)
@@ -1286,6 +1306,47 @@ mod tests {
         let patch: Definition = serde_json::from_value(json!({"follow_source":null})).unwrap();
         assert_eq!(patch.follow_source, Some(None));
         assert_eq!(serde_json::to_value(patch).unwrap(), json!({"follow_source":null}));
+    }
+
+    #[test]
+    fn channel_purpose_selections_merge_independently_and_keep_legacy_defaults() {
+        let own = op(
+            1,
+            "front.change",
+            CHORUS,
+            json!({"action":"switch","entries":[
+            entry("quiet-member","quiet"),entry("other-member","other"),entry("legacy-member","front")]}),
+        );
+        let mut mentions =
+            op(2, "front.define", CHORUS, json!({"purpose_layers":{"mentions":["quiet"],"future":["other"]}}));
+        let mut reading =
+            op(3, "front.define", CHORUS, json!({"purpose_layers":{"reading":["other"],"chat_alerts":[]}}));
+        mentions.hlc = Hlc::new(2000, 0, 1);
+        reading.hlc = mentions.hlc;
+        let mut ops = vec![own, mentions, reading];
+        let got = assert_permutations(&ops);
+        let pools = &got.resolved[CHORUS].purpose_candidates;
+        assert_eq!(pools["mentions"][0].subject_id, "quiet-member");
+        assert_eq!(pools["reading"][0].subject_id, "other-member");
+        assert!(pools["chat_alerts"].is_empty());
+        assert_eq!(pools["future"][0].subject_id, "other-member");
+        assert_eq!(got.resolved[CHORUS].authorship[0].subject_id, "legacy-member");
+        ops.push(op(4, "front.define", CHORUS, json!({"purpose_layers":{"mentions":[],"reading":null,"future":null}})));
+        let reset = assert_permutations(&ops);
+        let pools = &reset.resolved[CHORUS].purpose_candidates;
+        assert!(pools["mentions"].is_empty());
+        assert_eq!(pools["reading"][0].subject_id, "legacy-member");
+        assert!(pools["chat_alerts"].is_empty());
+        assert!(pools["future"].is_empty(), "future purposes do not inherit a role by name");
+        assert_eq!(reset.system.fronts[CHORUS].purpose_layers["reading"], None);
+        for payload in [
+            json!({"purpose_layers":{"authorship":[]}}),
+            json!({"purpose_layers":{"":[]}}),
+            json!({"purpose_layers":{"mentions":[""]}}),
+            json!({"purpose_layers":null}),
+        ] {
+            assert!(Event::from_op(BODY, &op(5, "front.define", CHORUS, payload)).is_err());
+        }
     }
 
     #[test]

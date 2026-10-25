@@ -123,7 +123,33 @@
           "layer_id": "other",
           "is_primary": false
         }
-      ]
+      ],
+      "purpose_candidates": {
+        "mentions": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ],
+        "reading": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ],
+        "chat_alerts": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ]
+      }
     },
     "b": {
       "id": "b",
@@ -149,7 +175,33 @@
       "state": "independent",
       "issue": null,
       "authorship": [],
-      "notifications": []
+      "notifications": [],
+      "purpose_candidates": {
+        "mentions": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ],
+        "reading": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ],
+        "chat_alerts": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ]
+      }
     }
   }
 }

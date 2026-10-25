@@ -88,7 +88,12 @@
       "state": "independent",
       "issue": null,
       "authorship": [],
-      "notifications": []
+      "notifications": [],
+      "purpose_candidates": {
+        "mentions": [],
+        "reading": [],
+        "chat_alerts": []
+      }
     },
     "b": {
       "id": "b",
@@ -121,7 +126,33 @@
           "is_primary": false
         }
       ],
-      "notifications": []
+      "notifications": [],
+      "purpose_candidates": {
+        "mentions": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ],
+        "reading": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ],
+        "chat_alerts": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ]
+      }
     },
     "c": {
       "id": "c",
@@ -154,7 +185,33 @@
           "is_primary": false
         }
       ],
-      "notifications": []
+      "notifications": [],
+      "purpose_candidates": {
+        "mentions": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ],
+        "reading": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ],
+        "chat_alerts": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ]
+      }
     }
   }
 }

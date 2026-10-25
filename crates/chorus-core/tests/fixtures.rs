@@ -36,6 +36,7 @@ fn call(f: &str, a: &[Value]) -> Result<String, String> {
         "fold_front_system" => api::fold_front_system(&s(a, 0), &s(a, 1)),
         "front_effective_history" => api::front_effective_history(&s(a, 0), &s(a, 1), &s(a, 2)),
         "named_front_daily" => api::named_front_daily(&s(a, 0), a[1].as_i64().unwrap(), &s(a, 2)),
+        "read_readers_for_front" => api::read_readers_for_front(a[0].as_bool().unwrap(), &s(a, 1), &s(a, 2)),
         "project" => api::project(&s(a, 0)),
         "validate_op" => api::validate_op(&s(a, 0)).map(|k| json!(k).to_string()),
         "feed_parse" => api::feed_parse(&s(a, 0)),

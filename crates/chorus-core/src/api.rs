@@ -192,6 +192,13 @@ pub fn named_front_daily(intervals_json: &str, now: i64, offsets_json: &str) -> 
     Ok(js(&crate::front_history::own_daily(&split, now, at)))
 }
 
+/// Pass the resolved front's independent `reading` candidates and own member IDs (D-085).
+pub fn read_readers_for_front(per_member: bool, candidates_json: &str, members_json: &str) -> Result<String, String> {
+    let candidates: Vec<crate::front_system::Presence> = parse("reading candidates", candidates_json)?;
+    let members: Vec<String> = parse("own members", members_json)?;
+    Ok(js(&crate::reading::readers_for_front(per_member, &candidates, &members)))
+}
+
 /// Front intervals and local UTC-offset transitions → daily totals. Callers clamp the requested
 /// window and supply the timezone schedule; core owns splitting and accounting on every client.
 pub fn front_daily(intervals_json: &str, now: i64, offsets_json: &str) -> Result<String, String> {

@@ -12,6 +12,7 @@ import uniffi.chorus_ffi.foldFrontSystem
 import uniffi.chorus_ffi.foldFront
 import uniffi.chorus_ffi.frontEffectiveHistory
 import uniffi.chorus_ffi.namedFrontDaily
+import uniffi.chorus_ffi.readReadersForFront
 import uniffi.chorus_ffi.resolveFrontSystem
 
 /** Same checked-in JSON vectors as Rust/wasm, through generated Kotlin and the real host DLL. */
@@ -34,6 +35,7 @@ class FrontConformanceTest {
                 "fold_front_system" -> foldFrontSystem(arg(0), arg(1))
                 "front_effective_history" -> frontEffectiveHistory(arg(0), arg(1), arg(2))
                 "named_front_daily" -> namedFrontDaily(arg(0), args.getLong(1), arg(2))
+                "read_readers_for_front" -> readReadersForFront(args.getBoolean(0), arg(1), arg(2))
                 "default_speaker_for_front" -> defaultSpeakerForFront(arg(0), arg(1), arg(2), arg(3))
                 else -> error("Unsupported front fixture: $function")
             }

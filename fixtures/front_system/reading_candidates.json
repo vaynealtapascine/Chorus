@@ -1,0 +1,12 @@
+{
+  "description": "Read marks use selected custom-layer candidates in order, exclude foreign members and non-member subjects, and deduplicate without mapping a custom layer to a legacy role.",
+  "fn": "read_readers_for_front",
+  "args": [true, [
+    {"subject_type":"member","subject_id":"rin","layer_id":"custom"},
+    {"subject_type":"group","subject_id":"kai","layer_id":"custom"},
+    {"subject_type":"member","subject_id":"foreign","layer_id":"custom"},
+    {"subject_type":"member","subject_id":"kai","layer_id":"custom"},
+    {"subject_type":"member","subject_id":"rin","layer_id":"other"}
+  ], ["kai","rin"]],
+  "expect": ["", "rin", "kai"]
+}

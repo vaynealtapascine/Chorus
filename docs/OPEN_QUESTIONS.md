@@ -7,7 +7,7 @@ All questions from the 2026-09-23 spec round are answered (D-045 to D-054). Q14 
 
 | # | Question | Default until answered |
 | --- | --- | --- |
-| Q20 | With custom fronts/layers, should a channel's selected front also drive `@front` mentions, per-member read tracking and “only while fronting” chat alerts, with an independent layer selection for each purpose? | Keep those features on the existing Body/front+co-conscious rules (SPEC §5.3, NOTIFICATIONS §7). The channel's front selection currently affects authorship only (D-080). Do not infer custom-layer roles or reuse authorship/switch-alert selections for these other purposes without the owner's answer. |
 
 Q18 (past-history corrections while following) was answered 2026-10-25: keep following (D-083).
 Q19 (additional-front follower access) was answered 2026-10-25: explicit grants are required (D-084).
+Q20 (mentions, reading and chat availability) was answered 2026-10-25: separate per-front layer selections using the channel's selected front, preserving existing defaults (D-085).

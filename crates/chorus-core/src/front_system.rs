@@ -71,6 +71,10 @@ pub struct Front {
     /// with Some(empty), keeping it private until its notification layers are configured.
     #[serde(default = "default_notification_layers")]
     pub notification_layers: Option<BTreeSet<String>>,
+    /// Independent channel purposes (D-085). Missing/null keeps that purpose's legacy default;
+    /// an explicit empty selection selects nobody. Unknown future purposes default to nobody.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub purpose_layers: BTreeMap<String, Option<BTreeSet<String>>>,
     #[serde(default)]
     pub deleted: bool,
 }
@@ -93,6 +97,7 @@ impl Front {
             overridden: false,
             authorship_layers: default_authorship_layers(),
             notification_layers: default_notification_layers(),
+            purpose_layers: BTreeMap::new(),
             deleted: false,
         }
     }
@@ -265,6 +270,25 @@ impl System {
                     .filter(|e| eligible && f.notification_layers.as_ref().is_none_or(|ids| ids.contains(&e.layer_id)))
                     .cloned()
                     .collect();
+                let mut purpose_candidates = BTreeMap::new();
+                for purpose in CHANNEL_PURPOSES.into_iter().chain(f.purpose_layers.keys().map(String::as_str)) {
+                    if purpose_candidates.contains_key(purpose) {
+                        continue;
+                    }
+                    let layers = f.purpose_layers.get(purpose).and_then(Option::as_ref);
+                    let legacy = CHANNEL_PURPOSES.contains(&purpose);
+                    let selected = entries
+                        .iter()
+                        .filter(|e| {
+                            eligible
+                                && layers.map_or(legacy && matches!(e.layer_id.as_str(), "front" | "cocon"), |ids| {
+                                    ids.contains(&e.layer_id)
+                                })
+                        })
+                        .cloned()
+                        .collect();
+                    purpose_candidates.insert(purpose.into(), selected);
+                }
                 let mut own = f.own.clone();
                 normalize(&mut own);
                 (
@@ -280,6 +304,7 @@ impl System {
                         issue,
                         authorship,
                         notifications,
+                        purpose_candidates,
                     },
                 )
             })
@@ -303,6 +328,8 @@ pub enum FollowIssue {
     SourceUnavailable,
 }
 
+pub const CHANNEL_PURPOSES: [&str; 3] = ["mentions", "reading", "chat_alerts"];
+
 /// Own-account data only. Follower APIs must build their reveal-time view separately (D-016).
 /// An unavailable front retains a recovery/display fallback, with no default authorship or
 /// notification candidates. Consumers must keep its unavailable state visible.
@@ -318,6 +345,8 @@ pub struct ResolvedFront {
     pub issue: Option<FollowIssue>,
     pub authorship: Vec<Presence>,
     pub notifications: Vec<Presence>,
+    #[serde(default)]
+    pub purpose_candidates: BTreeMap<String, Vec<Presence>>,
 }
 
 #[cfg(test)]

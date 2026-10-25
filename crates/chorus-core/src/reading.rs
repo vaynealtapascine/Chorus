@@ -7,6 +7,7 @@
 //! account (SYNC §4.2).
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 use crate::speaker::Fronter;
 
@@ -22,6 +23,30 @@ pub fn readers(per_member: bool, fronting: &[Fronter]) -> Vec<String> {
         }
     }
     v
+}
+
+/// The resolver's independent `reading` pool, without translating custom layers into roles.
+/// Only the account's own members can acquire read marks. Preserve the selected front's order.
+pub fn readers_for_front(
+    per_member: bool,
+    candidates: &[crate::front_system::Presence],
+    members: &[String],
+) -> Vec<String> {
+    let mut out = vec![String::new()];
+    if !per_member {
+        return out;
+    }
+    let owned: BTreeSet<_> = members.iter().map(String::as_str).collect();
+    let mut seen = BTreeSet::from([""]);
+    for entry in candidates {
+        if entry.subject_type == crate::front::SubjectType::Member
+            && owned.contains(entry.subject_id.as_str())
+            && seen.insert(entry.subject_id.as_str())
+        {
+            out.push(entry.subject_id.clone());
+        }
+    }
+    out
 }
 
 /// Where a member has read up to in a channel: the marked message's time and id.
@@ -60,5 +85,27 @@ mod tests {
         assert_eq!(unseen_by(10, "m1", &marks), vec!["rin"]);
         assert_eq!(unseen_by(10, "m2", &marks), vec!["kai", "rin"], "same time, later id");
         assert!(unseen_by(4, "m", &marks).is_empty());
+    }
+
+    #[test]
+    fn selected_reading_candidates_keep_order_without_role_mapping_or_foreign_marks() {
+        let candidate = |id: &str, subject_type| crate::front_system::Presence {
+            subject_type,
+            subject_id: id.into(),
+            layer_id: "fully-custom".into(),
+            is_primary: false,
+        };
+        use crate::front::SubjectType::{Group, Member};
+        let candidates = vec![
+            candidate("rin", Member),
+            candidate("kai", Group),
+            candidate("foreign", Member),
+            candidate("kai", Member),
+            candidate("rin", Member),
+        ];
+        let owned = vec!["kai".into(), "rin".into()];
+        assert_eq!(readers_for_front(true, &candidates, &owned), vec!["", "rin", "kai"]);
+        assert_eq!(readers_for_front(false, &candidates, &owned), vec![""]);
+        assert_eq!(readers_for_front(true, &[], &owned), vec![""]);
     }
 }

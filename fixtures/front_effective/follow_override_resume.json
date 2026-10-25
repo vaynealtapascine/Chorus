@@ -398,7 +398,12 @@
       "state": "independent",
       "issue": null,
       "authorship": [],
-      "notifications": []
+      "notifications": [],
+      "purpose_candidates": {
+        "mentions": [],
+        "reading": [],
+        "chat_alerts": []
+      }
     }
   }
 }

@@ -1,0 +1,217 @@
+{
+  "description": "Mention, reading and chat-alert layer selections are independent of authorship/switch alerts and use each following front's own configuration. Explicit empty selects nobody, null keeps legacy defaults; future purposes are opt-in.",
+  "fn": "resolve_front_system",
+  "args": [
+    {
+      "layers": {
+        "quiet": {
+          "id": "quiet",
+          "name": "Present",
+          "level": -500
+        }
+      },
+      "fronts": {
+        "a": {
+          "id": "a",
+          "name": "a",
+          "own": [
+            {
+              "subject_type": "member",
+              "subject_id": "fox",
+              "layer_id": "quiet",
+              "is_primary": false
+            },
+            {
+              "subject_type": "member",
+              "subject_id": "moon",
+              "layer_id": "front",
+              "is_primary": false
+            }
+          ],
+          "authorship_layers": [
+            "quiet"
+          ],
+          "notification_layers": [
+            "front"
+          ],
+          "purpose_layers": {
+            "mentions": [
+              "quiet"
+            ],
+            "reading": [],
+            "chat_alerts": [
+              "front"
+            ],
+            "future": null
+          }
+        },
+        "b": {
+          "id": "b",
+          "name": "b",
+          "own": [
+            {
+              "subject_type": "member",
+              "subject_id": "space",
+              "layer_id": "other",
+              "is_primary": false
+            }
+          ],
+          "follow": {
+            "source": "a",
+            "clock": "000000000001-0000-00000001"
+          },
+          "purpose_layers": {
+            "mentions": [],
+            "reading": [
+              "quiet"
+            ],
+            "chat_alerts": null,
+            "future": [
+              "quiet"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "a": {
+      "id": "a",
+      "name": "a",
+      "deleted": false,
+      "own": [
+        {
+          "subject_type": "member",
+          "subject_id": "fox",
+          "layer_id": "quiet",
+          "is_primary": false
+        },
+        {
+          "subject_type": "member",
+          "subject_id": "moon",
+          "layer_id": "front",
+          "is_primary": false
+        }
+      ],
+      "effective": [
+        {
+          "subject_type": "member",
+          "subject_id": "fox",
+          "layer_id": "quiet",
+          "is_primary": false
+        },
+        {
+          "subject_type": "member",
+          "subject_id": "moon",
+          "layer_id": "front",
+          "is_primary": false
+        }
+      ],
+      "source": null,
+      "state": "independent",
+      "issue": null,
+      "authorship": [
+        {
+          "subject_type": "member",
+          "subject_id": "fox",
+          "layer_id": "quiet",
+          "is_primary": false
+        }
+      ],
+      "notifications": [
+        {
+          "subject_type": "member",
+          "subject_id": "moon",
+          "layer_id": "front",
+          "is_primary": false
+        }
+      ],
+      "purpose_candidates": {
+        "mentions": [
+          {
+            "subject_type": "member",
+            "subject_id": "fox",
+            "layer_id": "quiet",
+            "is_primary": false
+          }
+        ],
+        "reading": [],
+        "chat_alerts": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ],
+        "future": []
+      }
+    },
+    "b": {
+      "id": "b",
+      "name": "b",
+      "deleted": false,
+      "own": [
+        {
+          "subject_type": "member",
+          "subject_id": "space",
+          "layer_id": "other",
+          "is_primary": false
+        }
+      ],
+      "effective": [
+        {
+          "subject_type": "member",
+          "subject_id": "fox",
+          "layer_id": "quiet",
+          "is_primary": false
+        },
+        {
+          "subject_type": "member",
+          "subject_id": "moon",
+          "layer_id": "front",
+          "is_primary": false
+        }
+      ],
+      "source": "a",
+      "state": "following",
+      "issue": null,
+      "authorship": [
+        {
+          "subject_type": "member",
+          "subject_id": "moon",
+          "layer_id": "front",
+          "is_primary": false
+        }
+      ],
+      "notifications": [],
+      "purpose_candidates": {
+        "mentions": [],
+        "reading": [
+          {
+            "subject_type": "member",
+            "subject_id": "fox",
+            "layer_id": "quiet",
+            "is_primary": false
+          }
+        ],
+        "chat_alerts": [
+          {
+            "subject_type": "member",
+            "subject_id": "moon",
+            "layer_id": "front",
+            "is_primary": false
+          }
+        ],
+        "future": [
+          {
+            "subject_type": "member",
+            "subject_id": "fox",
+            "layer_id": "quiet",
+            "is_primary": false
+          }
+        ]
+      }
+    }
+  }
+}

@@ -100,6 +100,8 @@ export const core = {
   /** Who a read marks: `''` (the account), then the members reading with it (SPEC §5.3). */
   readReaders: (perMember: boolean, fronting: { member_id: string; is_primary: boolean; level: string }[]): string[] =>
     JSON.parse(wasm.readReaders(perMember, JSON.stringify(fronting))),
+  readReadersForFront: (perMember: boolean, candidates: import('./fronts').FrontPresence[], members: string[]): string[] =>
+    JSON.parse(wasm.readReadersForFront(perMember, JSON.stringify(candidates), JSON.stringify(members))),
   /** Members whose read mark is before the message `(at, id)`. */
   readUnseenBy: (at: number, id: string, marks: { member: string; at: number; id: string }[]): string[] =>
     JSON.parse(wasm.readUnseenBy(at, id, JSON.stringify(marks))),

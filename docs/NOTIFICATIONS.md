@@ -222,6 +222,13 @@ follower surface to its `surfaces` closure. A mutation that reveals one minute e
 
 Implemented (M8.4, `activity.rs`), for other accounts in shared spaces and DMs:
 
+D-085 extends the pending named-front integration: channel front selection also determines
+`@front` recipients and fronting-dependent chat alerts. Mention and chat-availability layer sets
+are separate per-front purposes, independent of authorship, reading and switch-alert selections.
+Resolve historical selections/configuration at the message's written time. Existing accounts
+retain Body's original front/co-conscious defaults until configured; custom layer names/levels
+never imply eligibility. Raw front/purpose metadata remains private to the owning account.
+
 - The recipient's `pref` key `notify_channel:<channel id>` = `all` / `mentions` / `none` sets the
   channel level. DMs default to `all`, other channels to `mentions`, and `all` adds a `message`
   kind for plain messages.

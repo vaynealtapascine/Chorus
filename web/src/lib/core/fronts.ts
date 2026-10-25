@@ -24,6 +24,8 @@ export interface NamedFront {
   authorship_layers: string[] | null;
   /** null preserves legacy input to ceilings; new fronts start with []. */
   notification_layers: string[] | null;
+  /** mentions / reading / chat_alerts are independent; null/missing preserves legacy defaults. */
+  purpose_layers?: Record<string, string[] | null>;
   deleted: boolean;
 }
 
@@ -43,6 +45,7 @@ export interface ResolvedFront {
   issue: 'cycle' | 'source_unavailable' | null;
   authorship: FrontPresence[];
   notifications: FrontPresence[];
+  purpose_candidates: Record<string, FrontPresence[]>;
 }
 
 type Notify = 'default' | 'silent' | 'now' | 'extra_delay';

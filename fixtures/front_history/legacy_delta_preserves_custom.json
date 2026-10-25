@@ -286,7 +286,33 @@
           }
         ],
         "source": null,
-        "state": "independent"
+        "state": "independent",
+        "purpose_candidates": {
+          "mentions": [
+            {
+              "is_primary": false,
+              "layer_id": "front",
+              "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+              "subject_type": "member"
+            }
+          ],
+          "reading": [
+            {
+              "is_primary": false,
+              "layer_id": "front",
+              "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+              "subject_type": "member"
+            }
+          ],
+          "chat_alerts": [
+            {
+              "is_primary": false,
+              "layer_id": "front",
+              "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+              "subject_type": "member"
+            }
+          ]
+        }
       }
     },
     "reviews": {},
