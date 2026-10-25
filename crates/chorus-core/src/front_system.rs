@@ -150,75 +150,88 @@ impl System {
     /// Resolve without recursion, including very deep chains. Missing/deleted sources and the
     /// deterministically ignored edge of a cycle use the front's retained own presence.
     pub fn resolve(&self) -> BTreeMap<String, ResolvedFront> {
-        let edges: BTreeMap<&str, &str> = self
-            .fronts
+        // Dense indexes avoid a separate tree allocation/monomorphization for every kind of
+        // graph bookkeeping. The input is already ID-sorted; binary search preserves that
+        // canonical order without a second lookup map (important to the wasm budget).
+        let fronts: Vec<_> = self.fronts.iter().collect();
+        let count = fronts.len();
+        let edges: Vec<Option<usize>> = fronts
             .iter()
-            .filter(|(_, f)| !f.deleted && !f.overridden)
-            .filter_map(|(id, f)| {
+            .map(|(_, f)| {
+                if f.deleted || f.overridden {
+                    return None;
+                }
                 let link = f.follow.as_ref()?;
-                self.fronts.get(&link.source).filter(|s| !s.deleted)?;
-                Some((id.as_str(), link.source.as_str()))
+                fronts
+                    .binary_search_by(|(id, _)| id.as_str().cmp(link.source.as_str()))
+                    .ok()
+                    .filter(|&i| !fronts[i].1.deleted)
             })
             .collect();
-        let mut cuts: BTreeSet<&str> = BTreeSet::new();
-        let mut done: BTreeSet<&str> = BTreeSet::new();
-        for start in self.fronts.keys().map(String::as_str) {
+        let mut cuts = vec![false; count];
+        let mut done = vec![false; count];
+        let mut seen_in = vec![0; count];
+        let mut positions = vec![0; count];
+        for start in 0..count {
             let mut path = vec![];
-            let mut positions = BTreeMap::new();
             let mut cursor = start;
-            while !done.contains(cursor) && !cuts.contains(cursor) {
-                let Some(&next) = edges.get(cursor) else { break };
-                if let Some(&at) = positions.get(cursor) {
-                    let ignored = path[at..].iter().copied().max_by_key(|id: &&str| {
-                        (self.fronts[*id].follow.as_ref().map(|f| f.clock).unwrap_or_default(), *id)
+            while !done[cursor] && !cuts[cursor] {
+                let Some(next) = edges[cursor] else { break };
+                if seen_in[cursor] == start + 1 {
+                    let ignored = path[positions[cursor]..].iter().copied().max_by_key(|&i: &usize| {
+                        (fronts[i].1.follow.as_ref().map(|f| f.clock).unwrap_or_default(), fronts[i].0)
                     });
-                    if let Some(id) = ignored {
-                        cuts.insert(id);
+                    if let Some(i) = ignored {
+                        cuts[i] = true;
                     }
                     break;
                 }
-                positions.insert(cursor, path.len());
+                seen_in[cursor] = start + 1;
+                positions[cursor] = path.len();
                 path.push(cursor);
                 cursor = next;
             }
-            done.extend(path);
+            for i in path {
+                done[i] = true;
+            }
         }
 
-        let mut effective: BTreeMap<&str, Vec<Presence>> = BTreeMap::new();
-        let mut settled: BTreeMap<&str, bool> = BTreeMap::new();
-        for start in self.fronts.keys().map(String::as_str) {
+        let mut effective: Vec<Option<Vec<Presence>>> = vec![None; count];
+        let mut settled = vec![false; count];
+        for start in 0..count {
             let mut path = vec![];
             let mut cursor = start;
-            while !effective.contains_key(cursor) {
-                if !cuts.contains(cursor)
-                    && let Some(&next) = edges.get(cursor)
+            while effective[cursor].is_none() {
+                if !cuts[cursor]
+                    && let Some(next) = edges[cursor]
                 {
                     path.push(cursor);
                     cursor = next;
                 } else {
-                    let mut own = self.fronts[cursor].own.clone();
+                    let f = fronts[cursor].1;
+                    let mut own = f.own.clone();
                     normalize(&mut own);
-                    effective.insert(cursor, own);
-                    let f = &self.fronts[cursor];
-                    settled.insert(cursor, !f.deleted && (f.follow.is_none() || f.overridden));
+                    effective[cursor] = Some(own);
+                    settled[cursor] = !f.deleted && (f.follow.is_none() || f.overridden);
                 }
             }
-            for id in path.into_iter().rev() {
-                let inherited = edges.get(id).and_then(|source| effective.get(source)).cloned().unwrap_or_default();
-                let available = edges.get(id).and_then(|source| settled.get(source)).copied().unwrap_or(false);
-                effective.insert(id, inherited);
-                settled.insert(id, available);
+            for i in path.into_iter().rev() {
+                if let Some(source) = edges[i] {
+                    effective[i] = effective[source].clone();
+                    settled[i] = settled[source];
+                }
             }
         }
 
-        self.fronts
-            .iter()
-            .map(|(id, f)| {
+        fronts
+            .into_iter()
+            .enumerate()
+            .map(|(i, (id, f))| {
                 let source = f.follow.as_ref().map(|link| link.source.clone());
-                let issue = if cuts.contains(id.as_str()) {
+                let issue = if cuts[i] {
                     Some(FollowIssue::Cycle)
                 } else if source.as_ref().is_some_and(|id| self.fronts.get(id).is_none_or(|s| s.deleted))
-                    || (f.follow.is_some() && !f.overridden && !settled.get(id.as_str()).copied().unwrap_or(false))
+                    || (f.follow.is_some() && !f.overridden && !settled[i])
                 {
                     Some(FollowIssue::SourceUnavailable)
                 } else {
@@ -233,7 +246,7 @@ impl System {
                 } else {
                     FollowState::Following
                 };
-                let entries = effective.remove(id.as_str()).unwrap_or_default();
+                let entries = effective[i].take().unwrap_or_default();
                 let eligible = state != FollowState::Unavailable && !f.deleted;
                 let authorship = entries
                     .iter()
@@ -310,6 +323,7 @@ pub struct ResolvedFront {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn entry(id: &str, layer: &str) -> Presence {
         Presence { subject_type: SubjectType::Member, subject_id: id.into(), layer_id: layer.into(), is_primary: false }
@@ -323,6 +337,72 @@ mod tests {
 
     fn system(fronts: Vec<Front>) -> System {
         System { fronts: fronts.into_iter().map(|f| (f.id.clone(), f)).collect(), ..Default::default() }
+    }
+
+    /// Deliberately slow single-start walk, independent of the dense graph's shared traversal
+    /// state. Re-derives the cycle cut for every start to check disjoint cycles and tail chains.
+    fn reference(s: &System, start: &str) -> (Vec<Presence>, bool, Option<String>) {
+        let mut seen = BTreeMap::new();
+        let mut path: Vec<&str> = vec![];
+        let mut cursor = start;
+        loop {
+            let f = &s.fronts[cursor];
+            if f.deleted || f.follow.is_none() || f.overridden {
+                let mut own = f.own.clone();
+                normalize(&mut own);
+                return (own, !f.deleted, None);
+            }
+            if let Some(&at) = seen.get(cursor) {
+                let cut =
+                    *path[at..].iter().max_by_key(|id| (s.fronts[**id].follow.as_ref().unwrap().clock, **id)).unwrap();
+                let mut own = s.fronts[cut].own.clone();
+                normalize(&mut own);
+                return (own, false, Some(cut.into()));
+            }
+            seen.insert(cursor, path.len());
+            path.push(cursor);
+            let source = &f.follow.as_ref().unwrap().source;
+            if s.fronts.get(source).is_none_or(|f| f.deleted) {
+                let mut own = f.own.clone();
+                normalize(&mut own);
+                return (own, false, None);
+            }
+            cursor = source;
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(512))]
+        #[test]
+        fn dense_graph_matches_independent_walks(nodes in prop::collection::vec((0u8..40,0u8..8,any::<bool>(),any::<bool>()),1..36)) {
+            let fronts = nodes.iter().enumerate().map(|(i,(source,clock,overridden,deleted))| {
+                let id = format!("f{i:02}");
+                let mut f = front(&id,vec![entry(&format!("m{i}"),"front")]);
+                if source%4!=0 {
+                    f.set_follow(Some(format!("f{:02}",usize::from(*source)%(nodes.len()+1))),Hlc::new(u64::from(*clock),0,1));
+                }
+                f.overridden = *overridden && f.follow.is_some();
+                f.deleted = *deleted;
+                f.notification_layers = Some(BTreeSet::from(["front".into()]));
+                f
+            }).collect();
+            let s = system(fronts);
+            let actual = s.resolve();
+            for (id,f) in &s.fronts {
+                let (entries,available,cut) = reference(&s,id);
+                let direct_missing = f.follow.as_ref().is_some_and(|link|s.fronts.get(&link.source).is_none_or(|f|f.deleted));
+                let issue = if cut.as_deref()==Some(id.as_str()) {Some(FollowIssue::Cycle)}
+                    else if direct_missing || (f.follow.is_some() && !f.overridden && !available) {Some(FollowIssue::SourceUnavailable)} else {None};
+                let state = if f.follow.is_none() {FollowState::Independent} else if f.overridden {FollowState::Overridden}
+                    else if issue.is_some() || f.deleted {FollowState::Unavailable} else {FollowState::Following};
+                prop_assert_eq!(&actual[id].effective,&entries);
+                prop_assert_eq!(actual[id].issue,issue);
+                prop_assert_eq!(actual[id].state,state);
+                let candidates = if available {entries} else {vec![]};
+                prop_assert_eq!(&actual[id].authorship,&candidates);
+                prop_assert_eq!(&actual[id].notifications,&candidates);
+            }
+        }
     }
 
     #[test]
@@ -467,5 +547,23 @@ mod tests {
         }
         let resolved = system(fronts).resolve();
         assert_eq!(resolved["4999"].effective, vec![entry("source", "custom")]);
+    }
+
+    #[test]
+    #[ignore = "release performance check"]
+    fn large_graph_budget() {
+        let mut fronts = vec![front("0", vec![entry("source", "custom")])];
+        for i in 1..5000 {
+            let mut f = front(&i.to_string(), vec![]);
+            f.set_follow(Some((i - 1).to_string()), Hlc::new(i, 0, 1));
+            fronts.push(f);
+        }
+        let s = system(fronts);
+        let start = std::time::Instant::now();
+        let resolved = s.resolve();
+        let elapsed = start.elapsed();
+        assert_eq!(resolved["4999"].effective, vec![entry("source", "custom")]);
+        eprintln!("resolve 5,000-front chain: {elapsed:?}");
+        assert!(elapsed < std::time::Duration::from_millis(150));
     }
 }

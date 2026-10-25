@@ -11,6 +11,11 @@ levels, purpose selections, following chains, sticky overrides, Resume following
 cycle handling. `fixtures/front_system/` records the JSON contract. Rust tests also cover 64
 independent layers and a 5,000-front chain without recursive calls.
 
+The graph resolver uses dense indexes with canonical ID ordering. A separate single-start walk
+checks it over 512 generated graphs (cycles, missing/deleted sources and overrides). The release
+`front_system::tests::large_graph_budget` check resolves a 5,000-front chain in about 3.35 ms on
+the owner's PC (2026-10-25); the wasm build is 293 KB gz after this optimization, within 300 KB.
+
 An unresolved source or cycle retains the saved independent set as a recovery/display fallback,
 with an explicit issue and no default authorship or notification candidates. An explicit manual
 override is usable even while its configured source is unavailable. UI consumers must keep the
