@@ -496,42 +496,24 @@ pub struct FoldResult {
 /// Fold a set of supported operations, retaining malformed/unknown operations in the caller's
 /// log rather than projecting them. Call Event::from_op when a validation error is needed.
 pub fn fold<'a>(account: &str, ops: impl IntoIterator<Item = &'a Op>) -> FoldResult {
-    let events = parse_events(account, ops);
+    fold_events(account, &parse_events(account, ops), true)
+}
+
+pub(crate) fn current_from_events(account: &str, events: &[Event]) -> crate::front_projection::Current {
+    let f = fold_events(account, events, false);
+    crate::front_projection::Current { system: f.system, resolved: f.resolved }
+}
+
+fn fold_events(account: &str, events: &[Event], collect_history: bool) -> FoldResult {
     let mut system = System::legacy(account, vec![]);
     let mut clocks: BTreeMap<String, Clocks> = BTreeMap::new();
     let mut layer_clocks: BTreeMap<String, Clocks> = BTreeMap::new();
     let mut changes: BTreeMap<String, Vec<&Event>> = BTreeMap::new();
     // dedupe gives canonical write order. Sparse definitions merge fieldwise; presence edits
     // and explicit Resume commands use this order only for their sticky control state.
-    for e in &events {
+    for e in events {
         match &e.action {
-            Action::Layer(p) => {
-                let layer = system.layers.entry(p.layer_id.clone()).or_insert_with(|| Layer {
-                    id: p.layer_id.clone(),
-                    name: p.layer_id.clone(),
-                    level: 0,
-                    deleted: false,
-                });
-                let clocks = layer_clocks.entry(p.layer_id.clone()).or_default();
-                if let Some(name) = &p.name
-                    && clocks.wins("name", e.hlc)
-                {
-                    layer.name = name.clone();
-                    clocks.0.insert("name".into(), e.hlc);
-                }
-                if let Some(level) = p.level
-                    && clocks.wins("level", e.hlc)
-                {
-                    layer.level = level;
-                    clocks.0.insert("level".into(), e.hlc);
-                }
-                if let Some(deleted) = p.deleted
-                    && clocks.wins("deleted", e.hlc)
-                {
-                    layer.deleted = deleted;
-                    clocks.0.insert("deleted".into(), e.hlc);
-                }
-            }
+            Action::Layer(p) => apply_layer(&mut system, layer_clocks.entry(p.layer_id.clone()).or_default(), p, e.hlc),
             _ => {
                 let f = system
                     .fronts
@@ -547,18 +529,49 @@ pub fn fold<'a>(account: &str, ops: impl IntoIterator<Item = &'a Op>) -> FoldRes
     let mut histories = BTreeMap::new();
     let mut reviews = BTreeMap::new();
     for (id, changes) in changes {
-        let history = fold_own(&id, &changes);
-        let review = own_reviews(&changes, &history, front::DEFAULT_REVIEW_WINDOW_MS);
-        if !review.is_empty() {
-            reviews.insert(id.clone(), review);
+        let history = fold_own_mode(&id, &changes, collect_history);
+        if collect_history {
+            let review = own_reviews(&changes, &history, front::DEFAULT_REVIEW_WINDOW_MS);
+            if !review.is_empty() {
+                reviews.insert(id.clone(), review);
+            }
         }
         if let Some(front) = system.fronts.get_mut(&id) {
             front.own = history.current.clone();
         }
-        histories.insert(id, history);
+        if collect_history {
+            histories.insert(id, history);
+        }
     }
     let resolved = system.resolve();
     FoldResult { system, resolved, histories, reviews }
+}
+
+pub(crate) fn apply_layer(system: &mut System, clocks: &mut Clocks, p: &LayerPatch, hlc: Hlc) {
+    let layer = system.layers.entry(p.layer_id.clone()).or_insert_with(|| Layer {
+        id: p.layer_id.clone(),
+        name: p.layer_id.clone(),
+        level: 0,
+        deleted: false,
+    });
+    if let Some(name) = &p.name
+        && clocks.wins("name", hlc)
+    {
+        layer.name = name.clone();
+        clocks.0.insert("name".into(), hlc);
+    }
+    if let Some(level) = p.level
+        && clocks.wins("level", hlc)
+    {
+        layer.level = level;
+        clocks.0.insert("level".into(), hlc);
+    }
+    if let Some(deleted) = p.deleted
+        && clocks.wins("deleted", hlc)
+    {
+        layer.deleted = deleted;
+        clocks.0.insert("deleted".into(), hlc);
+    }
 }
 
 pub(crate) fn parse_events<'a>(account: &str, ops: impl IntoIterator<Item = &'a Op>) -> Vec<Event> {
@@ -607,6 +620,26 @@ pub(crate) fn apply_control(f: &mut Front, clocks: &mut Clocks, e: &Event) {
             f.overridden = f.follow.is_some();
         }
         _ => {}
+    }
+}
+
+/// Apply a new, unamended presence action. Append callers guard against backdates and known
+/// targets first; the own-history fold uses the same action rule with its amendment bundle.
+pub(crate) fn apply_presence(entries: &mut Vec<Presence>, e: &Event) {
+    if let Action::Change(change) = &e.action {
+        apply_change(entries, e, change);
+    }
+}
+
+fn apply_change(entries: &mut Vec<Presence>, e: &Event, change: &Change) {
+    if let Some(action) = &e.legacy {
+        let amended = match change {
+            Change::Switch { entries, .. } => Some(entries),
+            _ => None,
+        };
+        apply_legacy(entries, action, amended);
+    } else {
+        apply(entries, change);
     }
 }
 
@@ -759,6 +792,10 @@ fn normalize_legacy_slots(entries: &mut Vec<Presence>) {
 }
 
 pub(crate) fn fold_own(front_id: &str, events: &[&Event]) -> History {
+    fold_own_mode(front_id, events, true)
+}
+
+fn fold_own_mode(front_id: &str, events: &[&Event], collect_history: bool) -> History {
     let mut retracted = BTreeMap::new();
     let mut amendments = BTreeMap::new();
     // events are in canonical HLC/id order; targets are looked up only within this front.
@@ -792,16 +829,39 @@ pub(crate) fn fold_own(front_id: &str, events: &[&Event]) -> History {
     let mut result = History::default();
     let mut open: BTreeMap<Subject, Interval> = BTreeMap::new();
     for (e, change, amend, at) in items {
-        let mut change = change.clone();
+        let mut amended_change = None;
         if let Some(Action::Change(Change::Amend { entries, note, .. })) = amend
-            && let Change::Switch { entries: es, note: n, .. } = &mut change
+            && matches!(change, Change::Switch { .. })
         {
-            if let Some(entries) = entries {
-                *es = entries.clone();
+            let mut next = change.clone();
+            if let Change::Switch { entries: es, note: n, .. } = &mut next {
+                if let Some(entries) = entries {
+                    *es = entries.clone();
+                }
+                if let Some(note) = note {
+                    *n = note.clone();
+                }
             }
-            if let Some(note) = note {
-                *n = note.clone();
+            amended_change = Some(next);
+        }
+        let change = amended_change.as_ref().unwrap_or(change);
+        let retracted = retracted.get(e.id.as_str()).copied().unwrap_or(false);
+        if !retracted {
+            apply_change(&mut result.current, e, change);
+            if collect_history {
+                transition_intervals(
+                    front_id,
+                    &result.current,
+                    at,
+                    &e.id,
+                    e.tz_offset_min,
+                    &mut open,
+                    &mut result.intervals,
+                );
             }
+        }
+        if !collect_history {
+            continue;
         }
         let base_note = match &change {
             Change::Switch { note, .. } => note.clone(),
@@ -811,7 +871,7 @@ pub(crate) fn fold_own(front_id: &str, events: &[&Event]) -> History {
             Some(Action::Change(Change::Amend { note: Some(note), .. })) => note.clone(),
             _ => base_note,
         };
-        let mut row = HistoryRow {
+        let row = HistoryRow {
             id: e.id.clone(),
             kind: change.kind(),
             occurred_at: at,
@@ -828,33 +888,12 @@ pub(crate) fn fold_own(front_id: &str, events: &[&Event]) -> History {
                 Change::Add { entry, .. } => vec![entry.clone()],
                 _ => vec![],
             },
-            resulting_front: vec![],
+            resulting_front: result.current.clone(),
             note,
             notify: change.notify(),
-            retracted: retracted.get(e.id.as_str()).copied().unwrap_or(false),
+            retracted,
             amended: amend.is_some(),
         };
-        if !row.retracted {
-            if let Some(action) = &e.legacy {
-                let amended = match &change {
-                    Change::Switch { entries, .. } => Some(entries),
-                    _ => None,
-                };
-                apply_legacy(&mut result.current, action, amended);
-            } else {
-                apply(&mut result.current, &change);
-            }
-            transition_intervals(
-                front_id,
-                &result.current,
-                at,
-                &e.id,
-                e.tz_offset_min,
-                &mut open,
-                &mut result.intervals,
-            );
-        }
-        row.resulting_front = result.current.clone();
         result.switches.push(row);
     }
     result.intervals.extend(open.into_values());

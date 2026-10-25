@@ -64,6 +64,19 @@ derived from revealed records under D-084.
 The bulk fold is a conformance/history helper; client hot paths must consume the incremental
 projection when it is integrated, rather than re-folding the account on every render/keystroke.
 
+`front_projection::Index` supplies a separate current-state fold and conservative append path
+for that integration. The current fold shares presence/configuration rules but omits history
+rows, intervals and review scans. Newest untargeted writes can append; backdates, same-clock
+writes, corrections and history controls rebuild. Rejected/removed operations always rebuild
+from the surviving set. Cached append guards retain late targets and both write/time high-water
+marks. The caller must establish that an appended op ID is new.
+
+A 512-case stepwise comparison checks append-or-rebuild against the full history fold. On the
+owner's PC (2026-10-25), release `front_projection::tests::current_and_live_append_budgets`
+projects 10,000 switches into current state in about 27 ms and appends 1,000 live switches in
+about 3.7 ms. These are pure core measurements; storage/transport and rendering remain separate
+integration budgets. The index is not connected to the runtime projector or server yet.
+
 ## Event contract implemented in core (not yet enabled for ingestion)
 
 All events are private to `account:<system id>`. Body's stable front ID is the account ID.
