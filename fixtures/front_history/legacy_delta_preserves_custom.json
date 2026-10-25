@@ -1,0 +1,342 @@
+{
+  "args": [
+    "0192f8c2-0000-7000-8000-0000000000a1",
+    [
+      {
+        "device_at": 1000,
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "hlc": "0000000003e8-0000-00000001",
+        "id": "0192f8c2-0000-7000-8000-000000000001",
+        "kind": "front.change",
+        "payload": {
+          "action": "switch",
+          "entries": [
+            {
+              "layer_id": "custom",
+              "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+              "subject_type": "member"
+            },
+            {
+              "layer_id": "front",
+              "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+              "subject_type": "member"
+            }
+          ]
+        },
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1"
+      },
+      {
+        "device_at": 2000,
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "hlc": "0000000007d0-0000-00000001",
+        "id": "0192f8c2-0000-7000-8000-000000000002",
+        "kind": "front.add",
+        "payload": {
+          "entry": {
+            "level": "present",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+            "subject_type": "member"
+          }
+        },
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1"
+      },
+      {
+        "device_at": 3000,
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "hlc": "000000000bb8-0000-00000001",
+        "id": "0192f8c2-0000-7000-8000-000000000003",
+        "kind": "front.change",
+        "payload": {
+          "action": "amend",
+          "note": "Recorded later",
+          "occurred_at": 1500,
+          "target_op_id": "0192f8c2-0000-7000-8000-000000000002"
+        },
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1"
+      },
+      {
+        "device_at": 4000,
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "hlc": "000000000fa0-0000-00000001",
+        "id": "0192f8c2-0000-7000-8000-000000000004",
+        "kind": "front.change",
+        "payload": {
+          "action": "retract",
+          "target_op_id": "0192f8c2-0000-7000-8000-000000000002"
+        },
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1"
+      }
+    ],
+    false
+  ],
+  "description": "legacy delta preserves custom",
+  "expect": {
+    "histories": {
+      "0192f8c2-0000-7000-8000-0000000000a1": {
+        "current": [
+          {
+            "is_primary": false,
+            "layer_id": "custom",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+            "subject_type": "member"
+          },
+          {
+            "is_primary": false,
+            "layer_id": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "intervals": [
+          {
+            "end_at": null,
+            "end_switch_id": null,
+            "front_id": "0192f8c2-0000-7000-8000-0000000000a1",
+            "id": "c005f65d0fc5c4b5a0de2f0f46358cac",
+            "is_primary": false,
+            "layer_id": "custom",
+            "position": 0,
+            "start_at": 1000,
+            "start_switch_id": "0192f8c2-0000-7000-8000-000000000001",
+            "start_tz_offset_min": 0,
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+            "subject_type": "member"
+          },
+          {
+            "end_at": null,
+            "end_switch_id": null,
+            "front_id": "0192f8c2-0000-7000-8000-0000000000a1",
+            "id": "c272947d536a4e8316e4733b600ee500",
+            "is_primary": false,
+            "layer_id": "front",
+            "position": 1,
+            "start_at": 1000,
+            "start_switch_id": "0192f8c2-0000-7000-8000-000000000001",
+            "start_tz_offset_min": 0,
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "switches": [
+          {
+            "amended": false,
+            "based_on": null,
+            "change": {
+              "action": "switch",
+              "based_on": null,
+              "entries": [
+                {
+                  "is_primary": false,
+                  "layer_id": "custom",
+                  "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+                  "subject_type": "member"
+                },
+                {
+                  "is_primary": false,
+                  "layer_id": "front",
+                  "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                  "subject_type": "member"
+                }
+              ],
+              "note": null,
+              "notify": "default"
+            },
+            "device_id": "00000001",
+            "entries": [
+              {
+                "is_primary": false,
+                "layer_id": "custom",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+                "subject_type": "member"
+              },
+              {
+                "is_primary": false,
+                "layer_id": "front",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                "subject_type": "member"
+              }
+            ],
+            "hlc": "0000000003e8-0000-00000001",
+            "id": "0192f8c2-0000-7000-8000-000000000001",
+            "kind": "switch",
+            "note": null,
+            "notify": "default",
+            "occurred_at": 1000,
+            "resulting_front": [
+              {
+                "is_primary": false,
+                "layer_id": "custom",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+                "subject_type": "member"
+              },
+              {
+                "is_primary": false,
+                "layer_id": "front",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                "subject_type": "member"
+              }
+            ],
+            "retracted": false,
+            "tz_offset_min": 0
+          },
+          {
+            "amended": true,
+            "based_on": null,
+            "change": {
+              "action": "add",
+              "based_on": null,
+              "entry": {
+                "is_primary": false,
+                "layer_id": "present",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+                "subject_type": "member"
+              },
+              "notify": "default",
+              "position": null
+            },
+            "device_id": "00000001",
+            "entries": [
+              {
+                "is_primary": false,
+                "layer_id": "present",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+                "subject_type": "member"
+              }
+            ],
+            "hlc": "0000000007d0-0000-00000001",
+            "id": "0192f8c2-0000-7000-8000-000000000002",
+            "kind": "add",
+            "note": "Recorded later",
+            "notify": "default",
+            "occurred_at": 1500,
+            "resulting_front": [
+              {
+                "is_primary": false,
+                "layer_id": "custom",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+                "subject_type": "member"
+              },
+              {
+                "is_primary": false,
+                "layer_id": "front",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                "subject_type": "member"
+              }
+            ],
+            "retracted": true,
+            "tz_offset_min": 0
+          }
+        ]
+      }
+    },
+    "resolved": {
+      "0192f8c2-0000-7000-8000-0000000000a1": {
+        "authorship": [
+          {
+            "is_primary": false,
+            "layer_id": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "deleted": false,
+        "effective": [
+          {
+            "is_primary": false,
+            "layer_id": "custom",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+            "subject_type": "member"
+          },
+          {
+            "is_primary": false,
+            "layer_id": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "issue": null,
+        "name": "Body",
+        "notifications": [
+          {
+            "is_primary": false,
+            "layer_id": "custom",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+            "subject_type": "member"
+          },
+          {
+            "is_primary": false,
+            "layer_id": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "own": [
+          {
+            "is_primary": false,
+            "layer_id": "custom",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+            "subject_type": "member"
+          },
+          {
+            "is_primary": false,
+            "layer_id": "front",
+            "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+            "subject_type": "member"
+          }
+        ],
+        "source": null,
+        "state": "independent"
+      }
+    },
+    "reviews": {},
+    "system": {
+      "fronts": {
+        "0192f8c2-0000-7000-8000-0000000000a1": {
+          "authorship_layers": null,
+          "deleted": false,
+          "follow": null,
+          "id": "0192f8c2-0000-7000-8000-0000000000a1",
+          "name": "Body",
+          "notification_layers": null,
+          "overridden": false,
+          "own": [
+            {
+              "is_primary": false,
+              "layer_id": "custom",
+              "subject_id": "0192f8c2-0000-7000-8000-0000000000b2",
+              "subject_type": "member"
+            },
+            {
+              "is_primary": false,
+              "layer_id": "front",
+              "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+              "subject_type": "member"
+            }
+          ]
+        }
+      },
+      "layers": {
+        "cocon": {
+          "deleted": false,
+          "id": "cocon",
+          "level": 1,
+          "name": "Co-conscious"
+        },
+        "front": {
+          "deleted": false,
+          "id": "front",
+          "level": 0,
+          "name": "Fronting"
+        },
+        "present": {
+          "deleted": false,
+          "id": "present",
+          "level": 2,
+          "name": "Present"
+        }
+      }
+    }
+  },
+  "fn": "fold_front_system"
+}

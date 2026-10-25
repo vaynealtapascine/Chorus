@@ -279,7 +279,7 @@ pub struct Fronter {
     pub member_id: String,
     #[serde(default)]
     pub is_primary: bool,
-    /// `front`, `cocon` or `present`.
+    /// Legacy layer ID (`front`, `cocon`, `present`); ignored in an explicit eligible pool.
     #[serde(default)]
     pub level: String,
 }
@@ -295,6 +295,11 @@ pub struct SpeakerContext {
     /// The account's current front, in fronting order.
     #[serde(default)]
     pub fronting: Vec<Fronter>,
+    /// Explicit per-front authorship candidates (D-080), already selected by layer IDs. Some,
+    /// including an empty list, uses independent order/primary only, with no legacy level
+    /// preference or fallback. None retains the existing Body behavior via `fronting`.
+    #[serde(default)]
+    pub eligible_fronting: Option<Vec<Fronter>>,
     /// A person account's own member (D-003): always the speaker.
     #[serde(default)]
     pub self_member: Option<String>,
@@ -329,10 +334,43 @@ pub fn default_speaker(c: &SpeakerContext) -> Vec<String> {
         }
         Autoproxy::Front => {}
     }
-    let fronting = c.fronting.iter().filter(|f| alive(&f.member_id));
+    let pool = c.eligible_fronting.as_ref().unwrap_or(&c.fronting);
+    let fronting = pool.iter().filter(|f| alive(&f.member_id));
     let primary = fronting.clone().find(|f| f.is_primary);
-    let first = fronting.clone().find(|f| f.level == "front").or_else(|| fronting.clone().next());
+    let first = if c.eligible_fronting.is_some() {
+        fronting.clone().next()
+    } else {
+        fronting.clone().find(|f| f.level == "front").or_else(|| fronting.clone().next())
+    };
     primary.or(first).map(|f| vec![f.member_id.clone()]).unwrap_or_default()
+}
+
+/// Channel-selected front (Body when absent), using that front's configured authorship layers.
+/// Only the supplied sendable members may speak. Explicit member/latch/person behavior remains
+/// the same; unavailable/deleted fronts provide no automatic candidates.
+pub fn default_speaker_for_front(
+    c: &SpeakerContext,
+    system: &crate::front_system::System,
+    body_id: &str,
+    front_id: Option<&str>,
+) -> Vec<String> {
+    let id = front_id.unwrap_or(body_id);
+    let resolved = system.resolve();
+    let candidates: Vec<_> = resolved
+        .get(id)
+        .into_iter()
+        .flat_map(|f| &f.authorship)
+        .filter(|e| e.subject_type == crate::front::SubjectType::Member)
+        .map(|e| Fronter { member_id: e.subject_id.clone(), is_primary: e.is_primary, level: e.layer_id.clone() })
+        .collect();
+    let mut c = c.clone();
+    if system.fronts.get(id).is_some_and(|f| f.authorship_layers.is_none()) {
+        c.fronting = candidates;
+        c.eligible_fronting = None;
+    } else {
+        c.eligible_fronting = Some(candidates);
+    }
+    default_speaker(&c)
 }
 
 #[cfg(test)]
@@ -490,5 +528,66 @@ mod tests {
         assert_eq!(who(&SpeakerContext { last_authors: vec![], ..latch }), vec!["june"]);
         let person = SpeakerContext { self_member: Some("self".into()), mode: Autoproxy::Off, ..base };
         assert_eq!(who(&person), vec!["self"], "a person always speaks as itself");
+    }
+
+    #[test]
+    fn independent_candidate_order_does_not_prefer_a_default_named_layer() {
+        let f =
+            |member: &str, layer: &str| Fronter { member_id: member.into(), level: layer.into(), is_primary: false };
+        let base = SpeakerContext {
+            fronting: vec![f("old", "front")],
+            eligible_fronting: Some(vec![f("custom", "quiet"), f("default", "front")]),
+            members: vec!["old".into(), "custom".into(), "default".into()],
+            ..Default::default()
+        };
+        assert_eq!(super::default_speaker(&base), vec!["custom"]);
+        assert!(super::default_speaker(&SpeakerContext { eligible_fronting: Some(vec![]), ..base.clone() }).is_empty());
+        let mut primary = base.clone();
+        primary.eligible_fronting.as_mut().unwrap()[1].is_primary = true;
+        assert_eq!(super::default_speaker(&primary), vec!["default"]);
+        let mut restricted = base;
+        restricted.members.retain(|m| m != "custom");
+        assert_eq!(super::default_speaker(&restricted), vec!["default"]);
+    }
+
+    #[test]
+    fn selected_front_uses_its_own_purposes_and_preserves_legacy_fallbacks() {
+        use crate::front::{Entry, Level, SubjectType};
+        use crate::front_system::{Front, Presence, System};
+        let p = |id: &str, layer: &str| Presence {
+            subject_type: SubjectType::Member,
+            subject_id: id.into(),
+            layer_id: layer.into(),
+            is_primary: false,
+        };
+        let mut system = System::legacy("body", vec![p("gone", "front"), p("co", "cocon"), p("present", "present")]);
+        let mut chorus = Front::new("chorus".into(), "Chorus".into());
+        chorus.authorship_layers = Some(std::collections::BTreeSet::from(["quiet".into(), "front".into()]));
+        chorus.set_presence(vec![p("custom", "quiet"), p("co", "front")]);
+        system.fronts.insert("chorus".into(), chorus);
+        let c = SpeakerContext { members: vec!["co".into(), "present".into(), "custom".into()], ..Default::default() };
+        assert_eq!(
+            default_speaker_for_front(&c, &system, "body", None),
+            vec!["co"],
+            "deleted front member still falls back as before"
+        );
+        assert_eq!(default_speaker_for_front(&c, &system, "body", Some("chorus")), vec!["custom"]);
+        system.fronts.get_mut("chorus").unwrap().deleted = true;
+        assert!(default_speaker_for_front(&c, &system, "body", Some("chorus")).is_empty());
+        assert!(default_speaker_for_front(&c, &system, "body", Some("missing")).is_empty());
+        let c = SpeakerContext { mode: Autoproxy::Member, member: Some("present".into()), ..c };
+        assert_eq!(default_speaker_for_front(&c, &system, "body", Some("missing")), vec!["present"]);
+        // The original unconfigured three-layer inputs retain precisely the original rule.
+        for level in [Level::Front, Level::Cocon, Level::Present] {
+            let entries =
+                [Entry { subject_type: SubjectType::Member, subject_id: "co".into(), level, is_primary: false }];
+            let system = System::legacy("body", entries.iter().map(|e| p(&e.subject_id, e.level.as_str())).collect());
+            let old = SpeakerContext {
+                fronting: vec![Fronter { member_id: "co".into(), level: level.as_str().into(), is_primary: false }],
+                members: c.members.clone(),
+                ..Default::default()
+            };
+            assert_eq!(default_speaker_for_front(&old, &system, "body", None), super::default_speaker(&old));
+        }
     }
 }

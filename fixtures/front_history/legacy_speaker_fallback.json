@@ -1,0 +1,72 @@
+{
+  "description": "legacy speaker fallback",
+  "fn": "default_speaker_for_front",
+  "args": [
+    {
+      "members": [
+        "co",
+        "custom",
+        "other"
+      ],
+      "mode": "front"
+    },
+    {
+      "layers": {},
+      "fronts": {
+        "body": {
+          "id": "body",
+          "name": "Body",
+          "own": [
+            {
+              "subject_type": "member",
+              "subject_id": "gone",
+              "layer_id": "front",
+              "is_primary": false
+            },
+            {
+              "subject_type": "member",
+              "subject_id": "custom",
+              "layer_id": "quiet",
+              "is_primary": false
+            },
+            {
+              "subject_type": "member",
+              "subject_id": "co",
+              "layer_id": "cocon",
+              "is_primary": false
+            }
+          ],
+          "authorship_layers": null,
+          "notification_layers": null
+        },
+        "chorus": {
+          "id": "chorus",
+          "name": "Chorus",
+          "own": [
+            {
+              "subject_type": "member",
+              "subject_id": "custom",
+              "layer_id": "quiet",
+              "is_primary": false
+            },
+            {
+              "subject_type": "member",
+              "subject_id": "other",
+              "layer_id": "front",
+              "is_primary": false
+            }
+          ],
+          "authorship_layers": [
+            "quiet",
+            "front"
+          ]
+        }
+      }
+    },
+    "body",
+    ""
+  ],
+  "expect": [
+    "co"
+  ]
+}

@@ -63,7 +63,8 @@ pub struct Front {
     pub follow: Option<FollowLink>,
     #[serde(default)]
     pub overridden: bool,
-    /// None preserves the legacy Body rule (the `front` layer). Some(empty) selects nobody.
+    /// None supplies the three original layer IDs to the legacy speaker rule (primary/front,
+    /// then its existing fallback). Some(empty) selects nobody; custom IDs require selection.
     #[serde(default = "default_authorship_layers")]
     pub authorship_layers: Option<BTreeSet<String>>,
     /// None preserves the legacy unfiltered input to follower ceilings. A new front starts
@@ -240,7 +241,9 @@ impl System {
                         eligible
                             && f.authorship_layers
                                 .as_ref()
-                                .map_or(e.layer_id == "front", |ids| ids.contains(&e.layer_id))
+                                .map_or(matches!(e.layer_id.as_str(), "front" | "cocon" | "present"), |ids| {
+                                    ids.contains(&e.layer_id)
+                                })
                     })
                     .cloned()
                     .collect();
@@ -429,7 +432,7 @@ mod tests {
         let entries = vec![entry("fox", "front"), entry("moon", "cocon"), entry("space", "present")];
         let mut s = System::legacy("body", entries.clone());
         let resolved = s.resolve();
-        assert_eq!(resolved["body"].authorship, vec![entry("fox", "front")]);
+        assert_eq!(resolved["body"].authorship, entries);
         assert_eq!(resolved["body"].notifications, entries);
         assert_eq!(s.ordered_layers().iter().map(|l| l.id.as_str()).collect::<Vec<_>>(), ["front", "cocon", "present"]);
         s.fronts.get_mut("body").unwrap().authorship_layers = Some(BTreeSet::new());

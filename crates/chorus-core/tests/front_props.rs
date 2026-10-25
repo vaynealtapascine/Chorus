@@ -116,6 +116,53 @@ proptest! {
         prop_assert_eq!(ids.len(), len);
     }
 
+    /// The named-front bridge retains existing Body history, including late controls, unusual
+    /// positions and primaries on legacy non-front layers. Compare against the original fold,
+    /// rather than asserting only that two copies of the new code agree.
+    #[test]
+    fn named_body_bridge_matches_legacy_history(ops in ops()) {
+        use chorus_core::front_history::{self,HistoryEditEffect};
+        use chorus_core::front_system::Presence;
+        use serde_json::json;
+        let account = "0192f8c2-0000-7000-8000-0000000000a1";
+        let raw:Vec<chorus_core::op::Op> = ops.iter().map(|o| {
+            let payload = match &o.action {
+                FrontAction::Switch(p) => serde_json::to_value(p),
+                FrontAction::Add(p) => serde_json::to_value(p),
+                FrontAction::Remove(p) => serde_json::to_value(p),
+                FrontAction::Update(p) => serde_json::to_value(p),
+                FrontAction::Retract(p) | FrontAction::Unretract(p) => serde_json::to_value(p),
+                FrontAction::Amend(p) => serde_json::to_value(p),
+            }.unwrap();
+            serde_json::from_value(json!({"id":o.id,"kind":format!("front.{}",o.action.kind()),
+                "scope":format!("account:{account}"),"entity_id":account,"hlc":o.hlc,
+                "device_at":o.occurred_at,"tz_offset_min":o.tz_offset_min,"device_id":o.device_id,
+                "seq":o.seq,"seen_seq":o.seen_seq,"payload":payload})).unwrap()
+        }).collect();
+        let expected = fold(&ops);
+        let actual = front_history::fold(account,&raw,HistoryEditEffect::KeepFollowing);
+        let empty = front_history::History::default();
+        let actual_history = actual.histories.get(account).unwrap_or(&empty);
+        let presence = |es:&[Entry]|es.iter().map(|e|Presence {
+            subject_type:e.subject_type,subject_id:e.subject_id.clone(),layer_id:e.level.as_str().into(),is_primary:e.is_primary,
+        }).collect::<Vec<_>>();
+        prop_assert_eq!(&actual_history.current,&presence(&expected.current));
+        prop_assert_eq!(actual_history.switches.len(),expected.switches.len());
+        for (actual,expected) in actual_history.switches.iter().zip(&expected.switches) {
+            prop_assert_eq!((&actual.id,actual.occurred_at,actual.retracted,actual.amended,&actual.note),
+                (&expected.id,expected.occurred_at,expected.retracted,expected.amended,&expected.note));
+            prop_assert_eq!(&actual.resulting_front,&presence(&expected.resulting_front));
+        }
+        prop_assert_eq!(actual_history.intervals.len(),expected.intervals.len());
+        for expected in &expected.intervals {
+            let actual = actual_history.intervals.iter().find(|iv|iv.subject_type==expected.subject_type && iv.subject_id==expected.subject_id && iv.start_switch_id==expected.start_switch_id).unwrap();
+            prop_assert_eq!((actual.start_at,actual.end_at,actual.is_primary,actual.position,actual.start_tz_offset_min,&actual.end_switch_id),
+                (expected.start_at,expected.end_at,expected.is_primary,expected.position,expected.start_tz_offset_min,&expected.end_switch_id));
+            prop_assert_eq!(&actual.layer_id,expected.level.as_str());
+        }
+        prop_assert_eq!(actual.reviews.get(account).cloned().unwrap_or_default(),reviews(&ops,&expected,DEFAULT_REVIEW_WINDOW_MS));
+    }
+
     /// Appending an op that sorts last (and that nothing amends or retracts) gives exactly what
     /// a full refold gives: the server's fast path for live switches (project.rs).
     #[test]

@@ -327,7 +327,7 @@ fn level_insert_index(front: &Front, level: Level, position: Option<usize>) -> u
     }
 }
 
-fn apply(front: &mut Front, action: &FrontAction, amended_entries: Option<&Vec<Entry>>) {
+pub(crate) fn apply(front: &mut Front, action: &FrontAction, amended_entries: Option<&Vec<Entry>>) {
     match action {
         FrontAction::Switch(p) => {
             *front = amended_entries.cloned().unwrap_or_else(|| p.entries.clone());
@@ -704,21 +704,36 @@ pub fn reviews(ops: &[FrontOp], folded: &FoldResult, window_ms: i64) -> Vec<Revi
 /// its row's `resulting_front`.
 pub fn review_of(a: (&FrontOp, &Front), b: (&FrontOp, &Front)) -> Option<Review> {
     let ((oa, fa), (ob, fb)) = (a, b);
-    let (sa, sb) = (oa.seq?, ob.seq?);
-    if oa.device_id == ob.device_id {
+    if fa == fb {
         return None;
     }
-    let concurrent = sa > ob.seen_seq && sb > oa.seen_seq;
-    if !concurrent || fa == fb {
+    concurrent_review(
+        ReviewCandidate { id: &oa.id, device_id: &oa.device_id, seq: oa.seq, seen_seq: oa.seen_seq },
+        ReviewCandidate { id: &ob.id, device_id: &ob.device_id, seq: ob.seq, seen_seq: ob.seen_seq },
+    )
+}
+
+/// Shared concurrency/identity rule; independent-layer histories compare their own outcomes
+/// before calling this, without translating custom layers into legacy roles.
+pub(crate) struct ReviewCandidate<'a> {
+    pub id: &'a str,
+    pub device_id: &'a str,
+    pub seq: Option<i64>,
+    pub seen_seq: i64,
+}
+
+pub(crate) fn concurrent_review(a: ReviewCandidate<'_>, b: ReviewCandidate<'_>) -> Option<Review> {
+    let (sa, sb) = (a.seq?, b.seq?);
+    if a.device_id == b.device_id || sa <= b.seen_seq || sb <= a.seen_seq {
         return None;
     }
-    let (x, y) = if oa.id < ob.id { (&oa.id, &ob.id) } else { (&ob.id, &oa.id) };
+    let (x, y) = if a.id < b.id { (a.id, b.id) } else { (b.id, a.id) };
     let mut h = Sha256::new();
     h.update(x);
     h.update(b"|");
     h.update(y);
     let d = h.finalize();
-    Some(Review { id: d[..16].iter().map(|b| format!("{b:02x}")).collect(), switch_a: x.clone(), switch_b: y.clone() })
+    Some(Review { id: d[..16].iter().map(|b| format!("{b:02x}")).collect(), switch_a: x.into(), switch_b: y.into() })
 }
 
 #[cfg(test)]

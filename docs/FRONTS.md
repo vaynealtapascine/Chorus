@@ -16,10 +16,67 @@ with an explicit issue and no default authorship or notification candidates. An 
 override is usable even while its configured source is unavailable. UI consumers must keep the
 unavailable state visible instead of treating a fallback as a confirmed followed front.
 
-This helper is not wired into the operation catalogue, projections, storage, bindings or UI yet.
-The running clients still use the legacy single front. Slice 2 must supply canonical winning
-configuration, source-edge clocks and override controls from the append-only event history;
-mutating these state objects alone is not a persistence implementation.
+Slice 2a lives in `crates/chorus-core/src/front_history.rs`. `api::fold_front_system` folds sparse
+definitions and layer edits, new independent presence changes, legacy Body operations, history
+amends/retractions, own intervals/daily totals and per-front concurrent-switch reviews. It supplies canonical
+source-edge clocks and sticky control state to the resolver. JSON fixtures live in
+`fixtures/front_history/`. The history-edit/following policy is an explicit caller argument while
+Q18 is pending; both choices have tests and neither silently resumes an existing override.
+
+`speaker::default_speaker_for_front` / its JSON helper implement channel front selection (Body
+when absent), explicit authorship-layer candidates and normal member/latch/person defaults.
+Configured candidates use primary/order without preferring any layer name. The null legacy
+selection supplies the three original layer IDs to the existing speaker rule, retaining its
+co-conscious/present fallback when no sendable member is fronting. Custom layers require explicit
+selection. A missing/deleted selected front supplies no automatic candidates.
+
+These helpers are not wired into the operation catalogue, incremental projections, storage,
+bindings or UI yet. The running clients still use the legacy single front. Effective/inherited
+history and its statistics also remain pending: the new intervals describe **own presence only**.
+Do not apply the current follow source retrospectively to own history to infer effective history.
+
+## Event contract implemented in core (not yet enabled for ingestion)
+
+All events are private to `account:<system id>`. Body's stable front ID is the account ID.
+
+| Kind | Key and payload |
+| --- | --- |
+| `front.define` | `entity_id` = front ID; sparse `{name?, follow_source?, authorship_layers?, notification_layers?, deleted?}` |
+| `front.layer` | `{layer_id, name?, level?, deleted?}`; layer IDs are system-local, with string IDs `front`, `cocon`, `present` for the defaults |
+| `front.change` | `entity_id` = front ID; `{action: switch/add/remove/update/resume/retract/unretract/amend, ...}`; op ID identifies the history item |
+
+Definitions and layers merge per field by HLC. Missing fields leave the existing value untouched.
+`follow_source: null` disables following. An explicit empty purpose selection selects nobody;
+null restores the legacy purpose default (including its original-layer authorship fallback).
+New fronts initially select `front` for authorship and
+no notification layers. Tombstones keep the own history and identifiers intact.
+
+New presence entries use `{subject_type, subject_id, layer_id, is_primary}`. Switch replaces the
+own ordered set; Add inserts/moves a subject at an absolute optional position (default end);
+Remove removes it; Update changes its layer/primary/optional absolute position without otherwise
+moving it. No action infers a custom layer's meaning from its name or display level.
+
+Amend/retract/unretract targets are isolated to the named front, including when the target arrives
+late. The latest amendment bundle wins, matching the legacy timeline. Own presence is folded by
+amended human time, HLC and op ID; sticky following controls use write order, so backdating a new
+switch does not move it before an already configured follow source or a later Resume command.
+Review cards compare concurrent own-presence outcomes only within the same front.
+
+Legacy operations still affect Body only. Legacy Add/Update preserve unrelated custom entries
+and their relative order while retaining the old default-layer position/primary rules. A legacy
+full switch remains an explicit Body replacement. Named fronts cannot overwrite one another.
+The randomized Body-bridge test compares complete outcomes, intervals, notes and reviews against
+the original fold over 512 generated histories. In particular, an update of an absent member is
+a complete no-op and must not clear the current primary member during the compatibility merge.
+
+The core parser ignores other account scopes, unknown versions and purged payloads; malformed
+events remain unprojected. Ingestion must add catalogue and value/ownership validation together
+with storage projection before clients emit these kinds. Do not enable the kinds alone.
+
+The explicit release-mode `front_history::tests::ten_thousand_own_switches` check folded 10,000
+pending switches over 500 member IDs in about 46 ms on the owner's PC (2026-10-25). Pending/single-
+device histories skip the concurrent-review pair scan. This checks a bulk own-history fold;
+append, transport, widget and cold-start budgets still need checks at runtime integration.
 
 ## Settled behavior
 
@@ -82,9 +139,13 @@ old op-log entries nor user-authored history may be rewritten.
    backdates/amends/retracts, effective intervals/statistics, snapshots and conformance fixtures.
 3. Server storage/read paths and notifications: account ownership, migrations/rebuild, named-front
    privacy ceilings and reveal-time-only follower surfaces. New fronts must not publish their raw
-   state or metadata through an unfiltered API or sync frame.
+   state or metadata through an unfiltered API or sync frame. Existing own-account Body read
+   APIs/widgets must read canonical Body state after new-kind Body changes; leaving them on an
+   old-kind-only timeline would report stale data. Never translate custom IDs into legacy roles.
 4. Web and Android: front selection, management, layer editing, following/override status, Resume
    following, switcher/history, per-channel authorship front and per-front purpose selections.
+   Store channel front choice as a separate private account pref (`authorship_front:<channel id>`)
+   so changing the existing `autoproxy:<channel id>` mode does not overwrite it, or vice versa.
 5. Cross-client tests and visual checks, then integration with the original checkout while
    preserving its unrelated local-search work.
 

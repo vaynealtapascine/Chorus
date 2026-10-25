@@ -139,6 +139,22 @@ pub fn resolve_front_system(system_json: &str) -> Result<String, String> {
     Ok(js(&system.resolve()))
 }
 
+/// Own-account definitions, saved presence histories and current effective named fronts.
+/// This does not authorize reads or expose a follower view. Runtime integration is separate.
+/// `pause_on_history_edit` is explicit while the owner's follow/history policy is pending.
+pub fn fold_front_system(account_id: &str, ops_json: &str, pause_on_history_edit: bool) -> Result<String, String> {
+    if !crate::id::is_valid_id(account_id) {
+        return Err("bad account ID".into());
+    }
+    let ops = parse_ops(ops_json)?;
+    let policy = if pause_on_history_edit {
+        crate::front_history::HistoryEditEffect::PauseFollowing
+    } else {
+        crate::front_history::HistoryEditEffect::KeepFollowing
+    };
+    Ok(js(&crate::front_history::fold(account_id, &ops, policy)))
+}
+
 /// Front intervals and local UTC-offset transitions → daily totals. Callers clamp the requested
 /// window and supply the timezone schedule; core owns splitting and accounting on every client.
 pub fn front_daily(intervals_json: &str, now: i64, offsets_json: &str) -> Result<String, String> {
@@ -258,6 +274,24 @@ pub fn feed_filter(ast_json: &str, items_json: &str, context_json: &str) -> Resu
 pub fn default_speaker(context_json: &str) -> Result<String, String> {
     let c: crate::speaker::SpeakerContext = parse("speaker context", context_json)?;
     Ok(js(&crate::speaker::default_speaker(&c)))
+}
+
+/// Per-channel front selection. An empty front_id uses Body; explicit missing/deleted choices
+/// do not silently select a different front. The account's sendable-member list is in context.
+pub fn default_speaker_for_front(
+    context_json: &str,
+    system_json: &str,
+    body_id: &str,
+    front_id: &str,
+) -> Result<String, String> {
+    let context: crate::speaker::SpeakerContext = parse("speaker context", context_json)?;
+    let system: crate::front_system::System = parse("front system", system_json)?;
+    Ok(js(&crate::speaker::default_speaker_for_front(
+        &context,
+        &system,
+        body_id,
+        if front_id.is_empty() { None } else { Some(front_id) },
+    )))
 }
 
 /// Who a read marks (SPEC §5.3): `[{member_id, is_primary, level}]` fronting → reader ids (JSON
