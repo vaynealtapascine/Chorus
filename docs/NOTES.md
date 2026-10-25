@@ -439,3 +439,19 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   library as a file input. Core-bridge also declares `fixtures/` as an input because its JSON
   conformance cases are read directly from the repo, outside the JVM classpath. Keep those inputs
   when moving build directories or adding fixture-driven native tests.
+
+- 2026-10-25 — Named-front history integration traps:
+  - Effective history needs separate record-time controls and effective-time presence. Replaying
+    all operations by only one of those times changes sticky override behavior. Batch equal-time
+    points and retain canonical write precedence when server correction reorders record times.
+  - Even during a manual override, the resolver reports whether the configured immediate source
+    is unavailable. The effective-history dependency watch must retain that source; a 512-case
+    time-slice comparison caught a stale issue boundary. The saved regression is checked in.
+  - Serde's derived internally tagged action decoder pushed the wasm export build to 306 KB gz.
+    Decoding its existing JSON object directly, with strict per-action fields and nullable-note
+    tests, brings the effective-history/statistics build to 296 KB gz (300 KB limit).
+    The generic `tagged!` adapter currently accepts extra fields on unit variants; `front.change`
+    requires strict Resume payloads, so its direct decoder also enforces that difference.
+  - Cross-language JSON fixtures must use JS-safe timestamps. `i64::MIN` rounds through
+    `JSON.stringify` into a floating-point exponent rejected by Rust's integer decoder; use the
+    exact JS Date minimum as an offset-schedule sentinel. Native-only limit tests can use i64.

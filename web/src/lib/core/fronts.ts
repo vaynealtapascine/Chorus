@@ -99,3 +99,33 @@ export interface FoldedFrontSystem {
   }>;
   reviews: Record<string, { id: string; switch_a: string; switch_b: string }[]>;
 }
+
+/** Own-account effective timeline. Never use these raw causes as a follower view. */
+export interface EffectiveFrontHistory {
+  changes: {
+    id: string;
+    front_id: string;
+    occurred_at: number;
+    tz_offset_min: number;
+    /** Unavailable/deleted recovery fallbacks are excluded. */
+    entries: FrontPresence[];
+    source: string | null;
+    state: ResolvedFront['state'];
+    issue: ResolvedFront['issue'];
+    deleted: boolean;
+    causes: { op_id: string; front_id: string; recorded_time_estimated: boolean }[];
+  }[];
+  /** start/end_switch_id refer to changes above, rather than raw own-operation IDs. */
+  intervals: FrontHistoryInterval[];
+  current: ResolvedFront | null;
+}
+
+export interface NamedFrontDailyRow {
+  front_id: string;
+  day: string;
+  subject_type: FrontPresence['subject_type'];
+  subject_id: string;
+  layer_id: string;
+  seconds: number;
+  as_primary_seconds: number;
+}

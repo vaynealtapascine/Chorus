@@ -1,11 +1,11 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { core, loadCore, type FrontSystem, type SpeakerContext } from './index';
+import { core, loadCore, type FrontHistoryInterval, type FrontSystem, type SpeakerContext } from './index';
 
 interface Fixture { fn: string; args: unknown[]; expect: unknown }
 const fixtureRoot = new URL('../../../../fixtures/', import.meta.url);
-const fixtures = ['front_system', 'front_history'].flatMap((area) => {
+const fixtures = ['front_system', 'front_history', 'front_effective'].flatMap((area) => {
   const directory = new URL(`${area}/`, fixtureRoot);
   return readdirSync(directory).filter((file) => file.endsWith('.json')).sort().map((file) => ({
     name: `${area}/${file}`,
@@ -28,6 +28,12 @@ describe('named-front conformance through the actual wasm bridge', () => {
           break;
         case 'fold_front_system':
           got = core.foldFrontSystem(args[0] as string, args[1] as unknown[]);
+          break;
+        case 'front_effective_history':
+          got = core.frontEffectiveHistory(args[0] as string, args[1] as string, args[2] as unknown[]);
+          break;
+        case 'named_front_daily':
+          got = core.namedFrontDaily(args[0] as FrontHistoryInterval[], args[1] as number, args[2] as [number, number][]);
           break;
         case 'default_speaker_for_front':
           got = core.defaultSpeakerForFront(args[0] as SpeakerContext, args[1] as FrontSystem, args[2] as string, args[3] as string);

@@ -51,7 +51,7 @@ pub struct LayerPatch {
 
 /// `front.change` always names the front in entity_id. The op ID identifies this history item;
 /// its targets must belong to this same front, even when a target arrives after its amendment.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Change {
     Switch {
@@ -108,6 +108,89 @@ pub enum Change {
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
         note: Option<Option<String>>,
     },
+}
+
+// Decode from the existing JSON value rather than serde's internally tagged content buffer.
+// This keeps the strict action schema while avoiding a large per-variant wasm visitor.
+impl<'de> Deserialize<'de> for Change {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let fields = serde_json::Map::<String, serde_json::Value>::deserialize(deserializer)?;
+        parse_change(fields).map_err(serde::de::Error::custom)
+    }
+}
+
+fn required<T: serde::de::DeserializeOwned>(
+    fields: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Result<T, String> {
+    serde_json::from_value(fields.remove(key).ok_or_else(|| format!("missing {key}"))?)
+        .map_err(|e| format!("{key}: {e}"))
+}
+
+fn optional<T: serde::de::DeserializeOwned>(
+    fields: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Result<Option<T>, String> {
+    fields
+        .remove(key)
+        .map(serde_json::from_value::<Option<T>>)
+        .transpose()
+        .map(Option::flatten)
+        .map_err(|e| format!("{key}: {e}"))
+}
+
+fn notification(fields: &mut serde_json::Map<String, serde_json::Value>) -> Result<Notify, String> {
+    if fields.contains_key("notify") { required(fields, "notify") } else { Ok(Notify::Default) }
+}
+
+fn parse_change(mut fields: serde_json::Map<String, serde_json::Value>) -> Result<Change, String> {
+    let action: String = required(&mut fields, "action")?;
+    let change = match action.as_str() {
+        "switch" => Change::Switch {
+            entries: required(&mut fields, "entries")?,
+            based_on: optional(&mut fields, "based_on")?,
+            note: optional(&mut fields, "note")?,
+            notify: notification(&mut fields)?,
+        },
+        "add" => Change::Add {
+            entry: required(&mut fields, "entry")?,
+            position: optional(&mut fields, "position")?,
+            based_on: optional(&mut fields, "based_on")?,
+            notify: notification(&mut fields)?,
+        },
+        "remove" => Change::Remove {
+            subject_type: required(&mut fields, "subject_type")?,
+            subject_id: required(&mut fields, "subject_id")?,
+            based_on: optional(&mut fields, "based_on")?,
+            notify: notification(&mut fields)?,
+        },
+        "update" => Change::Update {
+            subject_type: required(&mut fields, "subject_type")?,
+            subject_id: required(&mut fields, "subject_id")?,
+            layer_id: optional(&mut fields, "layer_id")?,
+            is_primary: optional(&mut fields, "is_primary")?,
+            position: optional(&mut fields, "position")?,
+            based_on: optional(&mut fields, "based_on")?,
+        },
+        "resume" => Change::Resume,
+        "retract" => Change::Retract { target_op_id: required(&mut fields, "target_op_id")? },
+        "unretract" => Change::Unretract { target_op_id: required(&mut fields, "target_op_id")? },
+        "amend" => Change::Amend {
+            target_op_id: required(&mut fields, "target_op_id")?,
+            occurred_at: optional(&mut fields, "occurred_at")?,
+            entries: optional(&mut fields, "entries")?,
+            note: fields
+                .remove("note")
+                .map(serde_json::from_value::<Option<String>>)
+                .transpose()
+                .map_err(|e| e.to_string())?,
+        },
+        _ => return Err(format!("unknown front action {action}")),
+    };
+    if let Some(field) = fields.keys().next() {
+        return Err(format!("unknown field {field} for {action}"));
+    }
+    Ok(change)
 }
 
 impl Change {
@@ -251,7 +334,7 @@ fn change_payload(value: &serde_json::Value) -> Result<(Change, Option<i64>, boo
     let history = fields.remove("history_only");
     let history_only =
         history.as_ref().map(|v| v.as_bool().ok_or("history_only must be a boolean")).transpose()?.unwrap_or(false);
-    let change: Change = serde_json::from_value(payload).map_err(|e| e.to_string())?;
+    let change = parse_change(std::mem::take(fields))?;
     if !change.is_presence() && (effective_at.is_some() || history.is_some()) {
         return Err("effective_at and history_only apply only to switch/add/remove/update".into());
     }
@@ -377,7 +460,7 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Interval {
     pub id: String,
     pub front_id: String,
@@ -413,8 +496,7 @@ pub struct FoldResult {
 /// Fold a set of supported operations, retaining malformed/unknown operations in the caller's
 /// log rather than projecting them. Call Event::from_op when a validation error is needed.
 pub fn fold<'a>(account: &str, ops: impl IntoIterator<Item = &'a Op>) -> FoldResult {
-    let events: Vec<_> =
-        crate::model::dedupe(ops).into_iter().filter_map(|o| Event::from_op(account, o).ok().flatten()).collect();
+    let events = parse_events(account, ops);
     let mut system = System::legacy(account, vec![]);
     let mut clocks: BTreeMap<String, Clocks> = BTreeMap::new();
     let mut layer_clocks: BTreeMap<String, Clocks> = BTreeMap::new();
@@ -450,56 +532,15 @@ pub fn fold<'a>(account: &str, ops: impl IntoIterator<Item = &'a Op>) -> FoldRes
                     clocks.0.insert("deleted".into(), e.hlc);
                 }
             }
-            Action::Define(p) => {
+            _ => {
                 let f = system
                     .fronts
                     .entry(e.front_id.clone())
                     .or_insert_with(|| Front::new(e.front_id.clone(), "Front".into()));
-                let clocks = clocks.entry(e.front_id.clone()).or_default();
-                if let Some(name) = &p.name
-                    && clocks.wins("name", e.hlc)
-                {
-                    f.name = name.clone();
-                    clocks.0.insert("name".into(), e.hlc);
+                apply_control(f, clocks.entry(e.front_id.clone()).or_default(), e);
+                if matches!(e.action, Action::Change(_)) {
+                    changes.entry(e.front_id.clone()).or_default().push(e);
                 }
-                if let Some(source) = &p.follow_source
-                    && clocks.wins("follow_source", e.hlc)
-                {
-                    f.set_follow(source.clone(), e.hlc);
-                    clocks.0.insert("follow_source".into(), e.hlc);
-                }
-                if let Some(layers) = &p.authorship_layers
-                    && clocks.wins("authorship_layers", e.hlc)
-                {
-                    f.authorship_layers = layers.clone();
-                    clocks.0.insert("authorship_layers".into(), e.hlc);
-                }
-                if let Some(layers) = &p.notification_layers
-                    && clocks.wins("notification_layers", e.hlc)
-                {
-                    f.notification_layers = layers.clone();
-                    clocks.0.insert("notification_layers".into(), e.hlc);
-                }
-                if let Some(deleted) = p.deleted
-                    && clocks.wins("deleted", e.hlc)
-                {
-                    f.deleted = deleted;
-                    clocks.0.insert("deleted".into(), e.hlc);
-                }
-            }
-            Action::Change(change) => {
-                let f = system
-                    .fronts
-                    .entry(e.front_id.clone())
-                    .or_insert_with(|| Front::new(e.front_id.clone(), "Front".into()));
-                if matches!(change, Change::Resume) {
-                    f.resume_following();
-                } else if change.is_presence() && !e.history_only {
-                    // D-083: amend/undo/redo change saved history only. They neither pause
-                    // following nor resume an existing override.
-                    f.overridden = f.follow.is_some();
-                }
-                changes.entry(e.front_id.clone()).or_default().push(e);
             }
         }
     }
@@ -518,6 +559,55 @@ pub fn fold<'a>(account: &str, ops: impl IntoIterator<Item = &'a Op>) -> FoldRes
     }
     let resolved = system.resolve();
     FoldResult { system, resolved, histories, reviews }
+}
+
+pub(crate) fn parse_events<'a>(account: &str, ops: impl IntoIterator<Item = &'a Op>) -> Vec<Event> {
+    crate::model::dedupe(ops).into_iter().filter_map(|o| Event::from_op(account, o).ok().flatten()).collect()
+}
+
+/// Apply one event's configuration/control effect in canonical HLC/id order. Presence is folded
+/// separately in human time. Effective history reuses this rule at each corrected record time.
+pub(crate) fn apply_control(f: &mut Front, clocks: &mut Clocks, e: &Event) {
+    match &e.action {
+        Action::Define(p) => {
+            if let Some(name) = &p.name
+                && clocks.wins("name", e.hlc)
+            {
+                f.name = name.clone();
+                clocks.0.insert("name".into(), e.hlc);
+            }
+            if let Some(source) = &p.follow_source
+                && clocks.wins("follow_source", e.hlc)
+            {
+                f.set_follow(source.clone(), e.hlc);
+                clocks.0.insert("follow_source".into(), e.hlc);
+            }
+            if let Some(layers) = &p.authorship_layers
+                && clocks.wins("authorship_layers", e.hlc)
+            {
+                f.authorship_layers = layers.clone();
+                clocks.0.insert("authorship_layers".into(), e.hlc);
+            }
+            if let Some(layers) = &p.notification_layers
+                && clocks.wins("notification_layers", e.hlc)
+            {
+                f.notification_layers = layers.clone();
+                clocks.0.insert("notification_layers".into(), e.hlc);
+            }
+            if let Some(deleted) = p.deleted
+                && clocks.wins("deleted", e.hlc)
+            {
+                f.deleted = deleted;
+                clocks.0.insert("deleted".into(), e.hlc);
+            }
+        }
+        Action::Change(Change::Resume) => f.resume_following(),
+        Action::Change(change) if change.is_presence() && !e.history_only => {
+            // D-083: history corrections neither pause following nor resume an override.
+            f.overridden = f.follow.is_some();
+        }
+        _ => {}
+    }
 }
 
 fn subject(e: &Presence) -> Subject {
@@ -668,7 +758,7 @@ fn normalize_legacy_slots(entries: &mut Vec<Presence>) {
     *entries = merged;
 }
 
-fn fold_own(front_id: &str, events: &[&Event]) -> History {
+pub(crate) fn fold_own(front_id: &str, events: &[&Event]) -> History {
     let mut retracted = BTreeMap::new();
     let mut amendments = BTreeMap::new();
     // events are in canonical HLC/id order; targets are looked up only within this front.
@@ -754,36 +844,15 @@ fn fold_own(front_id: &str, events: &[&Event]) -> History {
             } else {
                 apply(&mut result.current, &change);
             }
-            let next: BTreeMap<_, _> = result.current.iter().enumerate().map(|(i, e)| (subject(e), (i, e))).collect();
-            let close: Vec<_> = open
-                .iter()
-                .filter(|(s, iv)| {
-                    next.get(*s).is_none_or(|(_, e)| e.layer_id != iv.layer_id || e.is_primary != iv.is_primary)
-                })
-                .map(|(s, _)| s.clone())
-                .collect();
-            for s in close {
-                let mut iv = open.remove(&s).unwrap_or_else(|| unreachable!());
-                iv.end_at = Some(at);
-                iv.end_switch_id = Some(e.id.clone());
-                result.intervals.push(iv);
-            }
-            for (s, (position, entry)) in next {
-                open.entry(s).or_insert_with(|| Interval {
-                    id: interval_id(front_id, entry, &e.id),
-                    front_id: front_id.into(),
-                    subject_type: entry.subject_type,
-                    subject_id: entry.subject_id.clone(),
-                    layer_id: entry.layer_id.clone(),
-                    is_primary: entry.is_primary,
-                    position,
-                    start_at: at,
-                    end_at: None,
-                    start_switch_id: e.id.clone(),
-                    end_switch_id: None,
-                    start_tz_offset_min: e.tz_offset_min,
-                });
-            }
+            transition_intervals(
+                front_id,
+                &result.current,
+                at,
+                &e.id,
+                e.tz_offset_min,
+                &mut open,
+                &mut result.intervals,
+            );
         }
         row.resulting_front = result.current.clone();
         result.switches.push(row);
@@ -791,6 +860,47 @@ fn fold_own(front_id: &str, events: &[&Event]) -> History {
     result.intervals.extend(open.into_values());
     crate::sort::by(&mut result.intervals, |a, b| (a.start_at, &a.id).cmp(&(b.start_at, &b.id)));
     result
+}
+
+/// Order changes alone retain an interval; changing layer/primary closes it. Both own and
+/// effective histories use this transition, but effective history batches equal-time causes.
+pub(crate) fn transition_intervals(
+    front_id: &str,
+    entries: &[Presence],
+    at: i64,
+    change_id: &str,
+    tz_offset_min: i32,
+    open: &mut BTreeMap<Subject, Interval>,
+    intervals: &mut Vec<Interval>,
+) {
+    let next: BTreeMap<_, _> = entries.iter().enumerate().map(|(i, e)| (subject(e), (i, e))).collect();
+    let close: Vec<_> = open
+        .iter()
+        .filter(|(s, iv)| next.get(*s).is_none_or(|(_, e)| e.layer_id != iv.layer_id || e.is_primary != iv.is_primary))
+        .map(|(s, _)| s.clone())
+        .collect();
+    for s in close {
+        let mut iv = open.remove(&s).unwrap_or_else(|| unreachable!());
+        iv.end_at = Some(at);
+        iv.end_switch_id = Some(change_id.into());
+        intervals.push(iv);
+    }
+    for (s, (position, entry)) in next {
+        open.entry(s).or_insert_with(|| Interval {
+            id: interval_id(front_id, entry, change_id),
+            front_id: front_id.into(),
+            subject_type: entry.subject_type,
+            subject_id: entry.subject_id.clone(),
+            layer_id: entry.layer_id.clone(),
+            is_primary: entry.is_primary,
+            position,
+            start_at: at,
+            end_at: None,
+            start_switch_id: change_id.into(),
+            end_switch_id: None,
+            start_tz_offset_min: tz_offset_min,
+        });
+    }
 }
 
 fn interval_id(front_id: &str, entry: &Presence, op_id: &str) -> String {
@@ -1253,6 +1363,43 @@ mod tests {
         let mut future = switch(2, CHORUS, "future", "front");
         future.v = op::CURRENT_V + 1;
         assert_eq!(fold(BODY, [&future]), fold(BODY, []));
+    }
+
+    #[test]
+    fn action_decoder_retains_nullable_defaults_and_rejects_unexpected_fields() {
+        for payload in [
+            json!({"action":"switch","entries":[],"based_on":null,"note":null}),
+            json!({"action":"add","entry":entry("a","quiet"),"position":null,"notify":"silent"}),
+            json!({"action":"remove","subject_type":"group","subject_id":"a","notify":"extra_delay"}),
+            json!({"action":"update","subject_type":"state","subject_id":"a","position":0,"is_primary":false,"layer_id":null}),
+            json!({"action":"resume"}),
+            json!({"action":"retract","target_op_id":"a"}),
+            json!({"action":"unretract","target_op_id":"a"}),
+            json!({"action":"amend","target_op_id":"a"}),
+            json!({"action":"amend","target_op_id":"a","occurred_at":null,"entries":null,"note":null}),
+            json!({"action":"amend","target_op_id":"a","entries":[],"note":"new"}),
+        ] {
+            let change: Change = serde_json::from_value(payload.clone()).unwrap();
+            let serialized = serde_json::to_value(&change).unwrap();
+            assert_eq!(serde_json::from_value::<Change>(serialized).unwrap(), change);
+            let mut unknown = payload;
+            unknown["unexpected"] = json!(true);
+            assert!(serde_json::from_value::<Change>(unknown).is_err());
+        }
+        let missing: Change = serde_json::from_value(json!({"action":"amend","target_op_id":"a"})).unwrap();
+        let clear: Change = serde_json::from_value(json!({"action":"amend","target_op_id":"a","note":null})).unwrap();
+        assert!(matches!(missing, Change::Amend { note: None, .. }));
+        assert!(matches!(clear, Change::Amend { note: Some(None), .. }));
+        for bad in [
+            json!({"action":"switch","entries":[],"notify":null}),
+            json!({"action":"switch"}),
+            json!({"action":"resume","note":null}),
+            json!({"action":"add","entry":entry("a","quiet"),"position":-1}),
+            json!({"action":"update","subject_type":"member","subject_id":"a","is_primary":1}),
+            json!({"action":"amend","target_op_id":"a","note":false}),
+        ] {
+            assert!(serde_json::from_value::<Change>(bad).is_err());
+        }
     }
 
     #[test]

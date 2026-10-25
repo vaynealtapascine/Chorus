@@ -149,6 +149,49 @@ pub fn fold_front_system(account_id: &str, ops_json: &str) -> Result<String, Str
     Ok(js(&crate::front_history::fold(account_id, &ops)))
 }
 
+/// Own-account effective history only; follower views require separate reveal-time filtering.
+pub fn front_effective_history(account_id: &str, front_id: &str, ops_json: &str) -> Result<String, String> {
+    if !crate::id::is_valid_id(account_id) || !crate::id::is_valid_id(front_id) {
+        return Err("bad account or front ID".into());
+    }
+    let ops = parse_ops(ops_json)?;
+    Ok(js(&crate::front_effective::fold(account_id, front_id, &ops)))
+}
+
+/// Own or effective named-front intervals, already clamped to the requested window. Independent
+/// layer/front IDs remain in the totals. Split at supplied timezone changes before day counting.
+pub fn named_front_daily(intervals_json: &str, now: i64, offsets_json: &str) -> Result<String, String> {
+    let intervals: Vec<crate::front_history::Interval> = parse("named-front intervals", intervals_json)?;
+    let mut offsets: Vec<(i64, i32)> = parse("UTC offsets", offsets_json)?;
+    crate::sort::by_key(&mut offsets, |x| x.0);
+    let at = |t: i64| {
+        let idx = offsets.partition_point(|(start, _)| *start <= t);
+        offsets.get(idx.saturating_sub(1)).map_or(0, |(_, offset)| *offset)
+    };
+    let mut split = Vec::new();
+    for interval in intervals {
+        let end = interval.end_at.unwrap_or(now).min(now);
+        let mut start = interval.start_at;
+        let first = offsets.partition_point(|(t, _)| *t <= start);
+        let last = offsets.partition_point(|(t, _)| *t < end).max(first);
+        for &(transition, _) in &offsets[first..last] {
+            if transition <= start {
+                continue;
+            }
+            let mut piece = interval.clone();
+            piece.start_at = start;
+            piece.end_at = Some(transition);
+            split.push(piece);
+            start = transition;
+        }
+        let mut piece = interval;
+        piece.start_at = start;
+        piece.end_at = Some(end);
+        split.push(piece);
+    }
+    Ok(js(&crate::front_history::own_daily(&split, now, at)))
+}
+
 /// Front intervals and local UTC-offset transitions → daily totals. Callers clamp the requested
 /// window and supply the timezone schedule; core owns splitting and accounting on every client.
 pub fn front_daily(intervals_json: &str, now: i64, offsets_json: &str) -> Result<String, String> {

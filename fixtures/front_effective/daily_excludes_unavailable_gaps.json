@@ -1,0 +1,77 @@
+{
+  "description": "Daily effective totals count one second of independent own presence and two seconds of followed source presence; unavailable fallback gaps count nothing.",
+  "fn": "named_front_daily",
+  "args": [
+    [
+      {
+        "id": "1a9b63778baedcc7088a5fe14dada249",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "subject_type": "member",
+        "subject_id": "own",
+        "layer_id": "quiet",
+        "is_primary": false,
+        "position": 0,
+        "start_at": 1000,
+        "end_at": 2000,
+        "start_switch_id": "7e4cf20a822f5a45b4fb00a218c7bd4a",
+        "end_switch_id": "aa1e20e9c6c7fae2a1a62eb3a6d66a63",
+        "start_tz_offset_min": 0
+      },
+      {
+        "id": "67e595086c1d7ee098815e99f74271f4",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "subject_type": "member",
+        "subject_id": "source",
+        "layer_id": "quiet",
+        "is_primary": false,
+        "position": 0,
+        "start_at": 3000,
+        "end_at": 4000,
+        "start_switch_id": "34cf0f77651f95a97d8597ad1ca0c7a5",
+        "end_switch_id": "f6f83159aa2fd5f470ad58650553b64c",
+        "start_tz_offset_min": 0
+      },
+      {
+        "id": "20ee1bc00d3b5fe597f784e3a8806285",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "subject_type": "member",
+        "subject_id": "source",
+        "layer_id": "quiet",
+        "is_primary": false,
+        "position": 0,
+        "start_at": 5000,
+        "end_at": null,
+        "start_switch_id": "e4a9b2b635b93b0ff4912c74a83796e5",
+        "end_switch_id": null,
+        "start_tz_offset_min": 0
+      }
+    ],
+    6000,
+    [
+      [
+        -8640000000000000,
+        0
+      ]
+    ]
+  ],
+  "expect": [
+    {
+      "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+      "day": "1970-01-01",
+      "subject_type": "member",
+      "subject_id": "own",
+      "layer_id": "quiet",
+      "seconds": 1,
+      "as_primary_seconds": 0
+    },
+    {
+      "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+      "day": "1970-01-01",
+      "subject_type": "member",
+      "subject_id": "source",
+      "layer_id": "quiet",
+      "seconds": 2,
+      "as_primary_seconds": 0
+    }
+  ]
+}

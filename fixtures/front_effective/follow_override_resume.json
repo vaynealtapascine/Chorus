@@ -1,0 +1,404 @@
+{
+  "description": "Effective history follows the source only while enabled, preserves a manual override through source changes, and resumes the current source. Cause and interval IDs use canonical JSON tuples.",
+  "fn": "front_effective_history",
+  "args": [
+    "0192f8c2-0000-7000-8000-0000000000a1",
+    "0192f8c2-0000-7000-8000-0000000000a2",
+    [
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000001",
+        "kind": "front.change",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "hlc": "0000000003e8-0000-00000001",
+        "device_at": 1000,
+        "payload": {
+          "action": "switch",
+          "entries": [
+            {
+              "subject_type": "member",
+              "subject_id": "own",
+              "layer_id": "quiet",
+              "is_primary": false
+            }
+          ]
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000002",
+        "kind": "front.change",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "hlc": "0000000007d0-0000-00000001",
+        "device_at": 2000,
+        "payload": {
+          "action": "switch",
+          "entries": [
+            {
+              "subject_type": "member",
+              "subject_id": "a",
+              "layer_id": "quiet",
+              "is_primary": false
+            }
+          ]
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000003",
+        "kind": "front.define",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "hlc": "000000000bb8-0000-00000001",
+        "device_at": 3000,
+        "payload": {
+          "follow_source": "0192f8c2-0000-7000-8000-0000000000a1"
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000004",
+        "kind": "front.change",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "hlc": "000000000fa0-0000-00000001",
+        "device_at": 4000,
+        "payload": {
+          "action": "switch",
+          "entries": [
+            {
+              "subject_type": "member",
+              "subject_id": "b",
+              "layer_id": "quiet",
+              "is_primary": false
+            }
+          ]
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000005",
+        "kind": "front.change",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "hlc": "000000001388-0000-00000001",
+        "device_at": 5000,
+        "payload": {
+          "action": "switch",
+          "entries": [
+            {
+              "subject_type": "member",
+              "subject_id": "override",
+              "layer_id": "quiet",
+              "is_primary": false
+            }
+          ]
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000006",
+        "kind": "front.change",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "hlc": "000000001770-0000-00000001",
+        "device_at": 6000,
+        "payload": {
+          "action": "switch",
+          "entries": [
+            {
+              "subject_type": "member",
+              "subject_id": "c",
+              "layer_id": "quiet",
+              "is_primary": false
+            }
+          ]
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000007",
+        "kind": "front.change",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "hlc": "000000001b58-0000-00000001",
+        "device_at": 7000,
+        "payload": {
+          "action": "resume"
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000008",
+        "kind": "front.define",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "hlc": "000000001f40-0000-00000001",
+        "device_at": 8000,
+        "payload": {
+          "follow_source": null
+        }
+      }
+    ]
+  ],
+  "expect": {
+    "changes": [
+      {
+        "id": "7e4cf20a822f5a45b4fb00a218c7bd4a",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "occurred_at": 1000,
+        "tz_offset_min": 0,
+        "entries": [
+          {
+            "subject_type": "member",
+            "subject_id": "own",
+            "layer_id": "quiet",
+            "is_primary": false
+          }
+        ],
+        "source": null,
+        "state": "independent",
+        "issue": null,
+        "deleted": false,
+        "causes": [
+          {
+            "op_id": "0192f8c2-0000-7000-8000-000000000001",
+            "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+            "recorded_time_estimated": false
+          }
+        ]
+      },
+      {
+        "id": "5ceab3db336459efc84b739c06994c27",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "occurred_at": 3000,
+        "tz_offset_min": 0,
+        "entries": [
+          {
+            "subject_type": "member",
+            "subject_id": "a",
+            "layer_id": "quiet",
+            "is_primary": false
+          }
+        ],
+        "source": "0192f8c2-0000-7000-8000-0000000000a1",
+        "state": "following",
+        "issue": null,
+        "deleted": false,
+        "causes": [
+          {
+            "op_id": "0192f8c2-0000-7000-8000-000000000003",
+            "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+            "recorded_time_estimated": false
+          }
+        ]
+      },
+      {
+        "id": "532c2cb6ea8a9a6c72aebaa457477237",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "occurred_at": 4000,
+        "tz_offset_min": 0,
+        "entries": [
+          {
+            "subject_type": "member",
+            "subject_id": "b",
+            "layer_id": "quiet",
+            "is_primary": false
+          }
+        ],
+        "source": "0192f8c2-0000-7000-8000-0000000000a1",
+        "state": "following",
+        "issue": null,
+        "deleted": false,
+        "causes": [
+          {
+            "op_id": "0192f8c2-0000-7000-8000-000000000004",
+            "front_id": "0192f8c2-0000-7000-8000-0000000000a1",
+            "recorded_time_estimated": false
+          }
+        ]
+      },
+      {
+        "id": "fbfad3d7152509a95c398a0758910b02",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "occurred_at": 5000,
+        "tz_offset_min": 0,
+        "entries": [
+          {
+            "subject_type": "member",
+            "subject_id": "override",
+            "layer_id": "quiet",
+            "is_primary": false
+          }
+        ],
+        "source": "0192f8c2-0000-7000-8000-0000000000a1",
+        "state": "overridden",
+        "issue": null,
+        "deleted": false,
+        "causes": [
+          {
+            "op_id": "0192f8c2-0000-7000-8000-000000000005",
+            "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+            "recorded_time_estimated": false
+          }
+        ]
+      },
+      {
+        "id": "3c8a569d12f1d62e92b8ca6a7d9baba1",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "occurred_at": 7000,
+        "tz_offset_min": 0,
+        "entries": [
+          {
+            "subject_type": "member",
+            "subject_id": "c",
+            "layer_id": "quiet",
+            "is_primary": false
+          }
+        ],
+        "source": "0192f8c2-0000-7000-8000-0000000000a1",
+        "state": "following",
+        "issue": null,
+        "deleted": false,
+        "causes": [
+          {
+            "op_id": "0192f8c2-0000-7000-8000-000000000007",
+            "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+            "recorded_time_estimated": false
+          }
+        ]
+      },
+      {
+        "id": "40028e0967ebe7ac8f54053393dfbc8c",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "occurred_at": 8000,
+        "tz_offset_min": 0,
+        "entries": [
+          {
+            "subject_type": "member",
+            "subject_id": "override",
+            "layer_id": "quiet",
+            "is_primary": false
+          }
+        ],
+        "source": null,
+        "state": "independent",
+        "issue": null,
+        "deleted": false,
+        "causes": [
+          {
+            "op_id": "0192f8c2-0000-7000-8000-000000000008",
+            "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+            "recorded_time_estimated": false
+          }
+        ]
+      }
+    ],
+    "intervals": [
+      {
+        "id": "1a9b63778baedcc7088a5fe14dada249",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "subject_type": "member",
+        "subject_id": "own",
+        "layer_id": "quiet",
+        "is_primary": false,
+        "position": 0,
+        "start_at": 1000,
+        "end_at": 3000,
+        "start_switch_id": "7e4cf20a822f5a45b4fb00a218c7bd4a",
+        "end_switch_id": "5ceab3db336459efc84b739c06994c27",
+        "start_tz_offset_min": 0
+      },
+      {
+        "id": "3c22366e04b558c07d04b26ed7a85992",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "subject_type": "member",
+        "subject_id": "a",
+        "layer_id": "quiet",
+        "is_primary": false,
+        "position": 0,
+        "start_at": 3000,
+        "end_at": 4000,
+        "start_switch_id": "5ceab3db336459efc84b739c06994c27",
+        "end_switch_id": "532c2cb6ea8a9a6c72aebaa457477237",
+        "start_tz_offset_min": 0
+      },
+      {
+        "id": "2ec354a1141d78e894a74b86963fde25",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "subject_type": "member",
+        "subject_id": "b",
+        "layer_id": "quiet",
+        "is_primary": false,
+        "position": 0,
+        "start_at": 4000,
+        "end_at": 5000,
+        "start_switch_id": "532c2cb6ea8a9a6c72aebaa457477237",
+        "end_switch_id": "fbfad3d7152509a95c398a0758910b02",
+        "start_tz_offset_min": 0
+      },
+      {
+        "id": "311e29b4e4dbcad042fc3d505fcb9920",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "subject_type": "member",
+        "subject_id": "override",
+        "layer_id": "quiet",
+        "is_primary": false,
+        "position": 0,
+        "start_at": 5000,
+        "end_at": 7000,
+        "start_switch_id": "fbfad3d7152509a95c398a0758910b02",
+        "end_switch_id": "3c8a569d12f1d62e92b8ca6a7d9baba1",
+        "start_tz_offset_min": 0
+      },
+      {
+        "id": "ef2781a0960912ced62bc9e1249e6629",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "subject_type": "member",
+        "subject_id": "c",
+        "layer_id": "quiet",
+        "is_primary": false,
+        "position": 0,
+        "start_at": 7000,
+        "end_at": 8000,
+        "start_switch_id": "3c8a569d12f1d62e92b8ca6a7d9baba1",
+        "end_switch_id": "40028e0967ebe7ac8f54053393dfbc8c",
+        "start_tz_offset_min": 0
+      },
+      {
+        "id": "a2c227693b2af7392d9edeb3f55989d2",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "subject_type": "member",
+        "subject_id": "override",
+        "layer_id": "quiet",
+        "is_primary": false,
+        "position": 0,
+        "start_at": 8000,
+        "end_at": null,
+        "start_switch_id": "40028e0967ebe7ac8f54053393dfbc8c",
+        "end_switch_id": null,
+        "start_tz_offset_min": 0
+      }
+    ],
+    "current": {
+      "id": "0192f8c2-0000-7000-8000-0000000000a2",
+      "name": "Front",
+      "deleted": false,
+      "own": [
+        {
+          "subject_type": "member",
+          "subject_id": "override",
+          "layer_id": "quiet",
+          "is_primary": false
+        }
+      ],
+      "effective": [
+        {
+          "subject_type": "member",
+          "subject_id": "override",
+          "layer_id": "quiet",
+          "is_primary": false
+        }
+      ],
+      "source": null,
+      "state": "independent",
+      "issue": null,
+      "authorship": [],
+      "notifications": []
+    }
+  }
+}

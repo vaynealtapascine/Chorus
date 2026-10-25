@@ -8,6 +8,7 @@ pub mod color;
 pub mod emoji;
 pub mod feed;
 pub mod front;
+pub mod front_effective;
 pub mod front_history;
 pub mod front_system;
 pub mod hlc;

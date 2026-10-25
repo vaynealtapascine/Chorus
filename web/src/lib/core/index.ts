@@ -1,8 +1,8 @@
 // Typed wrapper over the chorus-core wasm module (crates/chorus-wasm).
 // Build the module with `pwsh scripts/build-web-core.ps1`; it lands in ./pkg (git-ignored).
 import init, * as wasm from './pkg/chorus_wasm.js';
-import type { FoldedFrontSystem, FrontSystem, ResolvedFront } from './fronts';
-export type { FoldedFrontSystem, FrontSystem, ResolvedFront, NamedFront, FrontLayer, FrontPresence, FrontChange } from './fronts';
+import type { EffectiveFrontHistory, FoldedFrontSystem, FrontHistoryInterval, FrontSystem, NamedFrontDailyRow, ResolvedFront } from './fronts';
+export type { EffectiveFrontHistory, FoldedFrontSystem, FrontHistoryInterval, FrontSystem, ResolvedFront, NamedFront, FrontLayer, FrontPresence, FrontChange, NamedFrontDailyRow } from './fronts';
 
 export type Json = unknown;
 
@@ -86,6 +86,10 @@ export const core = {
     JSON.parse(wasm.resolveFrontSystem(JSON.stringify(system))),
   foldFrontSystem: (accountId: string, ops: Json[]): FoldedFrontSystem =>
     JSON.parse(wasm.foldFrontSystem(accountId, JSON.stringify(ops))),
+  frontEffectiveHistory: (accountId: string, frontId: string, ops: Json[]): EffectiveFrontHistory =>
+    JSON.parse(wasm.frontEffectiveHistory(accountId, frontId, JSON.stringify(ops))),
+  namedFrontDaily: (intervals: FrontHistoryInterval[], now: number, offsets: [number, number][]): NamedFrontDailyRow[] =>
+    JSON.parse(wasm.namedFrontDaily(JSON.stringify(intervals), now, JSON.stringify(offsets))),
   frontDaily: (intervals: Json, now: number, offsets: [number, number][]): Json =>
     JSON.parse(wasm.frontDaily(JSON.stringify(intervals), now, JSON.stringify(offsets))),
   feedParse: (q: string): Json => JSON.parse(wasm.feedParse(q)),

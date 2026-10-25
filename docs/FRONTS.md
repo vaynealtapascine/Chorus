@@ -14,7 +14,8 @@ independent layers and a 5,000-front chain without recursive calls.
 The graph resolver uses dense indexes with canonical ID ordering. A separate single-start walk
 checks it over 512 generated graphs (cycles, missing/deleted sources and overrides). The release
 `front_system::tests::large_graph_budget` check resolves a 5,000-front chain in about 3.35 ms on
-the owner's PC (2026-10-25); the wasm build is 293 KB gz after this optimization, within 300 KB.
+the owner's PC (2026-10-25). The initial graph optimization reduced wasm to 293 KB gz; with
+effective history and its strict action decoder it is 296 KB gz, within 300 KB.
 
 An unresolved source or cycle retains the saved independent set as a recovery/display fallback,
 with an explicit issue and no default authorship or notification candidates. An explicit manual
@@ -35,16 +36,31 @@ selection supplies the three original layer IDs to the existing speaker rule, re
 co-conscious/present fallback when no sendable member is fronting. Custom layers require explicit
 selection. A missing/deleted selected front supplies no automatic candidates.
 
-The three JSON helpers are exported through wasm and UniFFI. The web has typed wrappers in
-`web/src/lib/core/fronts.ts` / `index.ts`; Rust, wasm and generated Kotlin all run the same ten
-front-system/history fixtures. Additional bridge tests verify that amend/undo/redo keep following
+Slice 2b lives in `crates/chorus-core/src/front_effective.rs`. `api::front_effective_history`
+derives one front's effective changes and intervals from the whole account log. Own presence
+uses corrected/amended effective time; definition, override and Resume controls use record time
+with canonical HLC/id precedence. Corrected record-time reordering replays that front's known
+controls in write order. Equal-time causes are batched before resolving, preventing artificial
+zero-length periods. Layer/name/purpose edits do not invent presence changes.
+
+Effective changes retain source, follow state, issue, tombstone, relevant cause IDs and legacy
+record-time quality. Their entries and intervals exclude unavailable/deleted recovery fallbacks.
+An override still records the immediate source's availability status. Interval start/end IDs refer
+to effective change IDs, not raw own-history operation IDs. Statistics consume these intervals;
+`api::named_front_daily` splits at caller-supplied timezone transitions, clamps to now and keeps
+independent front/layer IDs. Own statistics can use the same helper with own intervals.
+
+The five JSON helpers are exported through wasm and UniFFI. The web has typed wrappers in
+`web/src/lib/core/fronts.ts` / `index.ts`; the shared contract has fifteen front-system/history/
+effective fixtures. Additional bridge tests verify that amend/undo/redo keep following
 through the real Rust implementation. Android libraries are generated for ARM64 and x86-64; Kotlin
 conformance uses the host DLL, without a device launch.
 
 These helpers are not wired into the operation catalogue, incremental projections, storage or UI
-yet. The running clients still use the legacy single front. Effective/inherited
-history and its statistics also remain pending: the new intervals describe **own presence only**.
-Do not apply the current follow source retrospectively to own history to infer effective history.
+yet. The running clients still use the legacy single front. Own and effective histories are
+separate APIs: do not apply today's follow source retrospectively to own history, or feed an
+owner's raw effective history/causes into a follower response. Follower history/statistics must be
+derived from revealed records under D-084.
 The bulk fold is a conformance/history helper; client hot paths must consume the incremental
 projection when it is integrated, rather than re-folding the account on every render/keystroke.
 
@@ -102,6 +118,13 @@ The explicit release-mode `front_history::tests::ten_thousand_own_switches` chec
 pending switches over 500 member IDs in about 46 ms on the owner's PC (2026-10-25). Pending/single-
 device histories skip the concurrent-review pair scan. This checks a bulk own-history fold;
 append, transport, widget and cold-start budgets still need checks at runtime integration.
+
+Effective history is checked against an independent time-slice reconstruction over 512 generated
+histories with reordered record/effective/write times, sparse definitions, cycles, deletions and
+history corrections. The separate release `front_effective::tests::ten_thousand_followed_switches`
+benchmark checks 10,000 followed switches against the 300 ms history-read ceiling. The bulk
+check took about 113 ms on the owner's PC (2026-10-25). The bulk history path can replay controls
+on out-of-order record times; do not use it for current-state updates or rendering.
 
 ## Settled behavior
 

@@ -52,6 +52,16 @@ pub fn fold_front_system(account_id: &str, ops_json: &str) -> Result<String, JsE
     wrap(api::fold_front_system(account_id, ops_json))
 }
 
+#[wasm_bindgen(js_name = frontEffectiveHistory)]
+pub fn front_effective_history(account_id: &str, front_id: &str, ops_json: &str) -> Result<String, JsError> {
+    wrap(api::front_effective_history(account_id, front_id, ops_json))
+}
+
+#[wasm_bindgen(js_name = namedFrontDaily)]
+pub fn named_front_daily(intervals_json: &str, now: f64, offsets_json: &str) -> Result<String, JsError> {
+    wrap(api::named_front_daily(intervals_json, now as i64, offsets_json))
+}
+
 /// The web supplies local-time UTC offset transitions; core owns the day split and totals.
 #[wasm_bindgen(js_name = frontDaily)]
 pub fn front_daily(intervals_json: &str, now: f64, offsets_json: &str) -> Result<String, JsError> {

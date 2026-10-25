@@ -1,0 +1,171 @@
+{
+  "description": "A missed history-only entry has its own past effective period without pausing the later follow or introducing a live change at record time.",
+  "fn": "front_effective_history",
+  "args": [
+    "0192f8c2-0000-7000-8000-0000000000a1",
+    "0192f8c2-0000-7000-8000-0000000000a2",
+    [
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000001",
+        "kind": "front.change",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "hlc": "0000000003e8-0000-00000001",
+        "device_at": 1000,
+        "payload": {
+          "action": "switch",
+          "entries": [
+            {
+              "subject_type": "member",
+              "subject_id": "source",
+              "layer_id": "quiet",
+              "is_primary": false
+            }
+          ]
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000002",
+        "kind": "front.define",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "hlc": "0000000007d0-0000-00000001",
+        "device_at": 2000,
+        "payload": {
+          "follow_source": "0192f8c2-0000-7000-8000-0000000000a1"
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000003",
+        "kind": "front.change",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "hlc": "000000000bb8-0000-00000001",
+        "device_at": 3000,
+        "payload": {
+          "action": "switch",
+          "entries": [
+            {
+              "subject_type": "member",
+              "subject_id": "missed",
+              "layer_id": "quiet",
+              "is_primary": false
+            }
+          ],
+          "effective_at": 500,
+          "history_only": true
+        }
+      }
+    ]
+  ],
+  "expect": {
+    "changes": [
+      {
+        "id": "2dde3d20baab26d280903e3f0e527b6d",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "occurred_at": 500,
+        "tz_offset_min": 0,
+        "entries": [
+          {
+            "subject_type": "member",
+            "subject_id": "missed",
+            "layer_id": "quiet",
+            "is_primary": false
+          }
+        ],
+        "source": null,
+        "state": "independent",
+        "issue": null,
+        "deleted": false,
+        "causes": [
+          {
+            "op_id": "0192f8c2-0000-7000-8000-000000000003",
+            "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+            "recorded_time_estimated": false
+          }
+        ]
+      },
+      {
+        "id": "aa1e20e9c6c7fae2a1a62eb3a6d66a63",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "occurred_at": 2000,
+        "tz_offset_min": 0,
+        "entries": [
+          {
+            "subject_type": "member",
+            "subject_id": "source",
+            "layer_id": "quiet",
+            "is_primary": false
+          }
+        ],
+        "source": "0192f8c2-0000-7000-8000-0000000000a1",
+        "state": "following",
+        "issue": null,
+        "deleted": false,
+        "causes": [
+          {
+            "op_id": "0192f8c2-0000-7000-8000-000000000002",
+            "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+            "recorded_time_estimated": false
+          }
+        ]
+      }
+    ],
+    "intervals": [
+      {
+        "id": "6d4b6c1677dd9f78a4dd1d9f82793aff",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "subject_type": "member",
+        "subject_id": "missed",
+        "layer_id": "quiet",
+        "is_primary": false,
+        "position": 0,
+        "start_at": 500,
+        "end_at": 2000,
+        "start_switch_id": "2dde3d20baab26d280903e3f0e527b6d",
+        "end_switch_id": "aa1e20e9c6c7fae2a1a62eb3a6d66a63",
+        "start_tz_offset_min": 0
+      },
+      {
+        "id": "9319689d474b1b5edc769a9ef905d351",
+        "front_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "subject_type": "member",
+        "subject_id": "source",
+        "layer_id": "quiet",
+        "is_primary": false,
+        "position": 0,
+        "start_at": 2000,
+        "end_at": null,
+        "start_switch_id": "aa1e20e9c6c7fae2a1a62eb3a6d66a63",
+        "end_switch_id": null,
+        "start_tz_offset_min": 0
+      }
+    ],
+    "current": {
+      "id": "0192f8c2-0000-7000-8000-0000000000a2",
+      "name": "Front",
+      "deleted": false,
+      "own": [
+        {
+          "subject_type": "member",
+          "subject_id": "missed",
+          "layer_id": "quiet",
+          "is_primary": false
+        }
+      ],
+      "effective": [
+        {
+          "subject_type": "member",
+          "subject_id": "source",
+          "layer_id": "quiet",
+          "is_primary": false
+        }
+      ],
+      "source": "0192f8c2-0000-7000-8000-0000000000a1",
+      "state": "following",
+      "issue": null,
+      "authorship": [],
+      "notifications": []
+    }
+  }
+}

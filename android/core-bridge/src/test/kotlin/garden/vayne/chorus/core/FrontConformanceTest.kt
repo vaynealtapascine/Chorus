@@ -9,6 +9,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import uniffi.chorus_ffi.defaultSpeakerForFront
 import uniffi.chorus_ffi.foldFrontSystem
+import uniffi.chorus_ffi.frontEffectiveHistory
+import uniffi.chorus_ffi.namedFrontDaily
 import uniffi.chorus_ffi.resolveFrontSystem
 
 /** Same checked-in JSON vectors as Rust/wasm, through generated Kotlin and the real host DLL. */
@@ -17,7 +19,7 @@ class FrontConformanceTest {
 
     @Test
     fun namedFrontFixturesMatchTheSharedContract() {
-        val files = listOf("front_system", "front_history").flatMap { area ->
+        val files = listOf("front_system", "front_history", "front_effective").flatMap { area ->
             File(root, area).listFiles().orEmpty().filter { it.extension == "json" }.sortedBy { it.name }
         }
         assertTrue("No front conformance fixtures found at $root", files.isNotEmpty())
@@ -28,6 +30,8 @@ class FrontConformanceTest {
             val result = when (val function = case.getString("fn")) {
                 "resolve_front_system" -> resolveFrontSystem(arg(0))
                 "fold_front_system" -> foldFrontSystem(arg(0), arg(1))
+                "front_effective_history" -> frontEffectiveHistory(arg(0), arg(1), arg(2))
+                "named_front_daily" -> namedFrontDaily(arg(0), args.getLong(1), arg(2))
                 "default_speaker_for_front" -> defaultSpeakerForFront(arg(0), arg(1), arg(2), arg(3))
                 else -> error("Unsupported front fixture: $function")
             }

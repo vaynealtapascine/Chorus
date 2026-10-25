@@ -58,6 +58,16 @@ pub fn fold_front_system(account_id: String, ops_json: String) -> Result<String,
     wrap(api::fold_front_system(&account_id, &ops_json))
 }
 
+#[uniffi::export]
+pub fn front_effective_history(account_id: String, front_id: String, ops_json: String) -> Result<String, CoreError> {
+    wrap(api::front_effective_history(&account_id, &front_id, &ops_json))
+}
+
+#[uniffi::export]
+pub fn named_front_daily(intervals_json: String, now: i64, offsets_json: String) -> Result<String, CoreError> {
+    wrap(api::named_front_daily(&intervals_json, now, &offsets_json))
+}
+
 /// Daily front totals over a caller-clamped window with local UTC-offset transitions.
 #[uniffi::export]
 pub fn front_daily(intervals_json: String, now: i64, offsets_json: String) -> Result<String, CoreError> {
