@@ -525,3 +525,9 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   A browser fixture written through a separate socket using the app device's ID must reconnect
   the app afterwards: live fan-out deliberately skips that same device, whose normal writer
   already owns its local operations. The ordinary hash-only route helper does not reconnect.
+
+- 2026-10-26 — Legacy review-resolution SQL must constrain the target card by both review ID
+  and the operation's owning account scope. Account-scope write permission alone is insufficient
+  when a payload names a known card from another system. A regression test retains the other
+  system's open card unchanged, then verifies that its actual owner can resolve it. Named owner
+  history reads already derive resolutions only from their account's log.

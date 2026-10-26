@@ -538,4 +538,31 @@ mod tests {
         assert_eq!(explicit["items"][0]["layer_id"], "cocon");
         assert_eq!(explicit["items"][0]["level"], "cocon");
     }
+
+    #[test]
+    fn legacy_review_resolution_cannot_mutate_another_accounts_card() {
+        let conn = database();
+        let review = "0123456789abcdef0123456789abcdef";
+        conn.execute(
+            "INSERT INTO front_review (id,account_id,switch_a,switch_b,created_at) VALUES (?1,?2,'a','b',0)",
+            rusqlite::params![review, BODY],
+        )
+        .unwrap();
+        insert(&conn, op(1, OTHER, OTHER, "front.review_resolve", json!({"review_id":review,"resolution":"keep_a"})));
+        let open =
+            reviews(&conn, &Principal::owner(BODY), &ReviewQuery { open: Some(1), ..Default::default() }).unwrap();
+        assert_eq!(open["items"].as_array().unwrap().len(), 1);
+        assert!(open["items"][0]["resolution"].is_null());
+        let own = insert(
+            &conn,
+            op(2, BODY, BODY, "front.review_resolve", json!({"review_id":review,"resolution":"keep_both"})),
+        );
+        let resolved = reviews(&conn, &Principal::owner(BODY), &ReviewQuery::default()).unwrap();
+        assert_eq!(resolved["items"][0]["resolution"], "keep_both");
+        assert_eq!(resolved["items"][0]["resolved_at"], own.time());
+        assert_eq!(
+            reviews(&conn, &Principal::owner(BODY), &ReviewQuery { open: Some(1), ..Default::default() }).unwrap()["items"],
+            json!([])
+        );
+    }
 }

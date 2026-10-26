@@ -1252,8 +1252,8 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
         "front.review_resolve" => {
             exec(
                 conn,
-                "UPDATE front_review SET resolution = ?2, resolved_at = ?3 WHERE id = ?1",
-                params![p("review_id"), p("resolution"), o.time()],
+                "UPDATE front_review SET resolution = ?2, resolved_at = ?3 WHERE id = ?1 AND account_id = ?4",
+                params![p("review_id"), p("resolution"), o.time(), o.scope.strip_prefix("account:").unwrap_or("")],
             )?;
             Ok(())
         }
