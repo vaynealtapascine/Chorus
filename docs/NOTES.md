@@ -545,3 +545,15 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   `blocked by policy`. The rejected command did not run and was not retried or bypassed. Fresh
   Insights captures remain pending. Data tests/normal verify continue; no new Insights UI has
   been exposed. The earlier native emulator-launch policy block is also still unresolved.
+
+- 2026-10-26 — Insights UI was subsequently connected without restarting the blocked server.
+  The actual Svelte component can be compiled for SSR with the already-installed Svelte compiler
+  and Rolldown, supplied actual wasm replica operations from `web/src/lib/testing/insights-fixture.ts`,
+  and inspected as self-contained HTML via T3 `html_preview`. Existing CSS/tokens and the local
+  Hanken font were embedded. This establishes component layout/state evidence only, not hydrated
+  controls, live application/sync or Android rendering. The fixture's exact-layer totals and
+  own/effective differences also run as a normal `Insights.test.ts` test. Both policy blocks
+  remain unresolved; no retry/bypass or owner service/device change occurred.
+  Compose `produceState` retains its previous value while a new keyed coroutine starts. Insights
+  therefore keys the result's composition by a fresh remembered request identity, clearing old
+  front/layer/view charts and export actions in the same composition as the selection change.

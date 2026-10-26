@@ -38,8 +38,20 @@ Both clients separate **Front history** (effective/inherited transitions) from *
 Edit time, undo and redo apply to the selected front's saved history and keep following active;
 only a manual current change overrides following. Custom layer labels retain independent IDs.
 Show 200 log entries initially and load older rows on request. Android computes reads on its
-store worker; web shares its account fold across selected fronts. Statistics/profile/feed/search/
-review consumers and front/layer management are still being integrated; see FRONTS.md.
+store worker; web shares its account fold across selected fronts.
+
+Insights uses the same on-demand histories. Configured accounts choose a front, an independent
+time layer and Front history/Saved entries. Day/week/together charts measure only that layer;
+change counts cover the whole selected front across all layers. CSVs carry `front_id` and
+`history` (`own`/`effective`), plus `layer_id` for time charts. Deleted definitions remain
+selectable for retained history; empty canonical data never uses old Body intervals. Unconfigured
+accounts retain the previous front-only controls and CSV shape. Android clears old asynchronous
+results immediately when the scope changes. Web retains stable history snapshots across unrelated
+member/chat updates, so those updates do not recalculate timezone-aware totals.
+
+Profile/feed/search/review consumers and front/layer management are still being integrated;
+see FRONTS.md. Insights component fixtures have layout evidence in both themes and compact and
+desktop widths; hydrated/live application and native rendering still require verification.
 
 ## 2. Android
 

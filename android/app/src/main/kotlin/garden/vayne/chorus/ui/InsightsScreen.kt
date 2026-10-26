@@ -15,9 +15,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -30,8 +35,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import garden.vayne.chorus.data.Chorus
+import garden.vayne.chorus.data.NamedHistory
 import garden.vayne.chorus.data.InsightsData
 import garden.vayne.chorus.data.InsightsSnapshot
 import garden.vayne.chorus.data.Model
@@ -56,11 +65,34 @@ private data class InsightChart(val table: InsightTable, val bars: List<InsightB
 
 /** Offline, account-local chart data. No server request or new statistics copy. */
 @Composable
-internal fun InsightsScreen(model: Model, onClose: () -> Unit) {
+internal fun InsightsScreen(chorus: Chorus, model: Model, onClose: () -> Unit) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val actions = rememberCoroutineScope()
     var days by rememberSaveable { mutableStateOf(7) }
+    var selectedFront by rememberSaveable { mutableStateOf("") }
+    var layerId by rememberSaveable { mutableStateOf("front") }
+    var own by rememberSaveable { mutableStateOf(false) }
+    var retry by remember { mutableIntStateOf(0) }
+    val revision by chorus.frontHistoryRevision.collectAsState()
+    val definitions = model.namedFronts?.fronts
+    val configured = definitions != null
+    val front = selectedFront.takeIf { definitions?.containsKey(it) == true } ?: chorus.device?.accountId.orEmpty()
+    val frontName = definitions?.get(front)?.name ?: "Body"
+    val layerName = model.namedFronts?.layers?.find { it.id==layerId }?.name ?: layerId
+    val loadRequest = remember(revision,front,configured,retry) { Any() }
+    // A new scope starts empty in the same composition. produceState keys alone retain the
+    // previous value until their coroutine starts, briefly mislabelling old charts/exports.
+    val loaded by key(loadRequest) { produceState<Result<NamedHistory?>?>(null) {
+        value = if (configured) runCatching { chorus.frontHistory(front) } else Result.success(null)
+    }
+    }
+    val history = loaded?.getOrNull()?.takeIf { it.frontId==front }
+    val intervals = history?.let { if (own) it.ownIntervals else it.intervals }.orEmpty()
+    val layers = (model.namedFronts?.layers.orEmpty().map { it.id } + intervals.map { it.presence.layerId } + layerId).toSet()
+        .sortedWith(compareBy<String> { id -> model.namedFronts?.layers?.find { it.id==id }?.level ?: Int.MAX_VALUE }.thenBy { it })
+        .map { id -> val definition=model.namedFronts?.layers?.find { it.id==id }
+            id to ((definition?.name ?: id) + if (definition?.deleted==true) " (deleted)" else "") }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var table by remember { mutableStateOf<InsightTable?>(null) }
     var csvPending by remember { mutableStateOf("") }
@@ -77,9 +109,13 @@ internal fun InsightsScreen(model: Model, onClose: () -> Unit) {
         }
     }
     LaunchedEffect(Unit) { while (true) { delay(60_000); now = System.currentTimeMillis() } }
-    val calculation by produceState<Result<InsightsSnapshot>?>(null, model, days, now) {
-        value = null
-        value = withContext(Dispatchers.Default) { runCatching { InsightsData.snapshot(model, days, now) } }
+    val calculationRequest = remember(history,layerId,own,days,now,model.systemZone,
+        if (configured) null else model.frontIntervals,if (configured) null else model.switches) { Any() }
+    val calculation by key(calculationRequest) { produceState<Result<InsightsSnapshot>?>(null) {
+        if (!configured || history != null) value = withContext(Dispatchers.Default) {
+            runCatching { InsightsData.snapshot(model,days,now,history=history,layerId=layerId,own=own) }
+        }
+    }
     }
     BackHandler(table != null) { table = null }
     if (table != null) {
@@ -103,9 +139,22 @@ internal fun InsightsScreen(model: Model, onClose: () -> Unit) {
     val colors = remember(model.members) { model.members.associate { member ->
         member.id to runCatching { Color(android.graphics.Color.parseColor(member.color)) }.getOrDefault(Color(0xFFA09184))
     } }
-    val charts by produceState<List<InsightChart>>(emptyList(), data, names, days, model.systemZone) {
-        value = emptyList()
-        if (data != null) value = withContext(Dispatchers.Default) { charts(data, names, days, model.systemZone) }
+    val chartRequest = remember(data,names,days,model.systemZone,configured,front,layerId,own) { Any() }
+    val charts by key(chartRequest) { produceState<List<InsightChart>>(emptyList()) {
+        if (data != null) value = withContext(Dispatchers.Default) {
+            val legacy = charts(data,names,days,model.systemZone)
+            if (!configured) legacy else legacy.mapIndexed { index, chart ->
+                val title=listOf("Time by day","Time by week","Time together","Changes by day")[index]
+                val scopeHeaders=listOf("front_id","history") + if (index<3) listOf("layer_id") else emptyList()
+                val scope=listOf(front,if (own) "own" else "effective") + if (index<3) listOf(layerId) else emptyList()
+                val headers=chart.table.headers.map { if (index==3 && it=="switches") "changes" else it }
+                chart.copy(table=chart.table.copy(title=title,headers=scopeHeaders+headers,
+                    rows=chart.table.rows.map { row -> scope + row.mapIndexed { i, cell ->
+                        if (headers[i]=="hours") cell.removeSuffix(" h") else cell
+                    } }))
+            }
+        }
+    }
     }
     LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -116,13 +165,22 @@ internal fun InsightsScreen(model: Model, onClose: () -> Unit) {
                 TextButton(onClick = onClose) { Text("Close") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { days = 7 }) { Text(if (days == 7) "✓ 7 days" else "7 days") }
-                TextButton(onClick = { days = 28 }) { Text(if (days == 28) "✓ 28 days" else "28 days") }
+                TextButton(onClick={days=7},modifier=Modifier.semantics { selected=days==7 }) { Text("7 days",color=if (days==7) p.accent else p.ink2) }
+                TextButton(onClick={days=28},modifier=Modifier.semantics { selected=days==28 }) { Text("28 days",color=if (days==28) p.accent else p.ink2) }
             }
-            Text("Front history on this device. Simultaneous fronts add together.", color = p.ink2)
+            if (configured) {
+                InsightChoice("Front",front,definitions?.values.orEmpty().sortedBy { it.id }
+                    .map { it.id to (it.name + if (it.deleted) " (deleted)" else "") }) { selectedFront=it }
+                InsightChoice("Time layer",layerId,layers) { layerId=it }
+                InsightChoice("History",if (own) "own" else "effective",listOf("effective" to "Front history","own" to "Saved entries")) { own=it=="own" }
+                Text("$frontName · $layerName time. Change counts cover all layers of this front. Day and week bars show member-hours; simultaneous members add together.",color=p.ink2)
+            } else Text("Front history on this device. Simultaneous fronts add together.", color = p.ink2)
             if (exportError != null) Text(exportError.orEmpty(), color = p.danger)
         }
-        if (calculation?.isFailure == true) item {
+        if (loaded?.isFailure==true) item {
+            Text("Could not load saved history.",color=p.danger)
+            TextButton(onClick={retry++}) { Text("Try again") }
+        } else if (calculation?.isFailure == true) item {
             Text("Could not calculate insights: ${calculation?.exceptionOrNull()?.message.orEmpty()}", color = p.danger)
         } else if (data == null) item { Text("Preparing insights…", color = p.ink2) }
         for (chart in charts) item(key = chart.table.title) {
@@ -155,6 +213,21 @@ internal fun InsightsScreen(model: Model, onClose: () -> Unit) {
             }
         }
         item { Text("", modifier = Modifier.padding(bottom = 16.dp)) }
+    }
+}
+
+@Composable
+private fun InsightChoice(label: String, value: String, options: List<Pair<String,String>>, onValue: (String) -> Unit) {
+    val p=LocalChorusPalette.current
+    var expanded by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxWidth()) {
+        TextButton(onClick={expanded=true},modifier=Modifier.fillMaxWidth()) {
+            Text("$label: ${options.find { it.first==value }?.second ?: value}",color=p.ink,maxLines=2)
+        }
+        DropdownMenu(expanded=expanded,onDismissRequest={expanded=false}) {
+            options.forEach { (id,name) -> DropdownMenuItem(text={Text(name)},modifier=Modifier.semantics { selected=id==value },
+                onClick={onValue(id);expanded=false}) }
+        }
     }
 }
 

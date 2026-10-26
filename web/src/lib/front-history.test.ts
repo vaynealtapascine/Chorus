@@ -25,12 +25,14 @@ it('invalidates offline history for past corrections and removals while reusing 
     let p = JSON.parse(r.projection()) as Projection;
     r.projectionDelta();
     const read = () => cache.read(reader, p, body)!;
-    expect(read().effective.current?.state).toBe('following');
+    const initial = read();
+    expect(initial.effective.current?.state).toBe('following');
     expect(read().saved.switches).toHaveLength(0);
     expect(ownReads).toBe(1); expect(effectiveReads).toBe(1);
     const update = () => { p = applyDelta(p, JSON.parse(r.projectionDelta()) as Delta); };
     r.create(JSON.stringify({ kind: 'member.create', scope: `account:${body}`, entity_id: '0192f8c2-0000-7000-8000-0000000000b1', payload: { name: 'Renamed' } }), '{"now":4000}', new Uint8Array(10).fill(10));
     update(); read();
+    expect(read()).toBe(initial);
     expect(ownReads).toBe(1); expect(effectiveReads).toBe(1);
     const before = p.front_systems?.[body];
     const amend = JSON.parse(r.create(JSON.stringify({ kind: 'front.change', scope: `account:${body}`, entity_id: source, payload: { action: 'amend', target_op_id: ops[1].id, note: 'Past correction' } }), '{"now":5000}', new Uint8Array(10).fill(11))).op.id;

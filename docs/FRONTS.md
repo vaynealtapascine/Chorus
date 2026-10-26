@@ -129,7 +129,7 @@ this pipeline. A named Body can inherit from a private source, but neither its s
 nor a raw cause/op ID enters the follower payload, and its state is still revealed only when due.
 These are current-state integration slices, not completed named-front delivery: additional-front
 and custom-layer grants/reveals, named historical SQL/export paths, channel purpose consumers
-and both clients' management/statistics UI remain pending. Keep configuration UI behind that work.
+and both clients' management UI remain pending. Keep configuration UI behind that work.
 
 Slice 3b is `chorus-server/src/api_fronts.rs`: on-demand owner history for the selected front.
 Switches default to independently saved rows; intervals/daily default to effective history.
@@ -140,7 +140,7 @@ Daily reads clamp closed future intervals as well as open ones to now and the re
 days, using one explicit/latest offset (IANA/DST remains unsupported by this server API).
 Reviews fold per front and look up LWW resolutions from the own account log, including a
 resolution delivered before its switches. Deleted fronts keep history. Unconfigured defaults
-retain existing SQL shapes. Client history views are connected below; statistics/reviews and named history SQL/exports still need connecting;
+retain existing SQL shapes. Client history/Insights views are connected below; profile/feed/search/reviews and named history SQL/exports still need connecting;
 these owner reads must never feed follower history/statistics or current/composer hot paths.
 
 Slice 3c adds `frontSystemHistory` and `effectiveFrontHistory` to the device replica's wasm and
@@ -158,7 +158,7 @@ own names. Time edits and undo/redo target original saved IDs through `front.cha
 pass synthetic effective IDs to an editing operation. Existing unconfigured Body writes retain
 legacy kinds. The initial log is bounded to 200 entries with Show older; Android reads on its
 store dispatcher. Browser checks include offline edit/undo/redo across reload and confirm that
-following remains active. Statistics/profile/feed/search/review consumers still need canonical
+following remains active. Profile/feed/search/review consumers still need canonical
 history integration, and native visual rendering has not been verified. This slice exposes read
 selection and history corrections, not front/layer management or follower access settings.
 
@@ -171,7 +171,13 @@ ID, never a display level or a legacy alias. Week/pair adapters accept that same
 legacy calls keep their original `front` default. Empty/unavailable canonical histories do not
 fall back to stale legacy intervals. Actual wasm/JNI tests cover independent quiet/front IDs,
 wrong-front intervals, own/effective views, future ends, weekly/pair totals and change counts.
-These helpers are not wired into Insights controls yet; profile/feed/search/review and SQL/export
+Insights now selects a front, exact time layer and own/effective history on both clients, using
+these adapters and the shared on-demand history caches. Time-chart CSVs retain front/history/layer
+IDs; whole-front change counts omit layer scope and are labelled accordingly. Day/week totals
+explicitly explain member-hours. Actual-component SSR/wasm tests cover selected, empty, error and
+legacy states; static layout captures cover compact/desktop in both themes. Live/hydrated Insights
+and native rendering remain unverified under the recorded policy blocks. The scoped review and
+verification record is `docs/handoff/ui-insights-2026-10-26.md`. Profile/feed/search/review and SQL/export
 consumers also remain pending.
 
 Saved web UI projections now carry core's independent `ProjectionDigest {version, ops}`.

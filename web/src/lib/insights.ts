@@ -123,7 +123,7 @@ export function cofrontPairs(intervals: Interval[], from: number, now: number, l
     .sort((a, b) => b.seconds - a.seconds || a.a.localeCompare(b.a));
 }
 
-export function switchesPerDay(switches: SwitchRow[], from: number, now: number, timeZone?: string): SwitchDay[] {
+export function switchesPerDay(switches: readonly Pick<SwitchRow, 'occurred_at' | 'retracted'>[], from: number, now: number, timeZone?: string): SwitchDay[] {
   const count = new Map<string, number>();
   for (const row of switches) {
     if (row.retracted || row.occurred_at < from || row.occurred_at > now) continue;

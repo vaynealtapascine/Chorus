@@ -21,6 +21,7 @@ export class FrontHistoryCache {
   private reader: FrontHistoryReader | null = null;
   private own: FoldedFrontSystem | null = null;
   private effective = new Map<string, EffectiveFrontHistory>();
+  private snapshots = new Map<string, NamedHistory>();
 
   read(reader: FrontHistoryReader, projection: Projection, account: string, front = account): NamedHistory | null {
     const token = projection.front_systems?.[account];
@@ -30,18 +31,23 @@ export class FrontHistoryCache {
       this.reader = reader;
       this.own = null;
       this.effective.clear();
+      this.snapshots.clear();
     }
     if (!token?.system.fronts[front]) return null;
+    const cached = this.snapshots.get(front);
+    if (cached) return cached;
     this.own ??= JSON.parse(reader.frontSystemHistory(account)) as FoldedFrontSystem;
     let effective = this.effective.get(front);
     if (!effective) {
       effective = JSON.parse(reader.effectiveFrontHistory(account, front)) as EffectiveFrontHistory;
       this.effective.set(front, effective);
     }
-    return {
+    const snapshot = {
       saved: this.own.histories[front] ?? { switches: [], intervals: [], current: [] },
       effective,
       reviews: this.own.reviews[front] ?? [],
     };
+    this.snapshots.set(front, snapshot);
+    return snapshot;
   }
 }

@@ -249,7 +249,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     onOpenPost = { id ->
                         journalReplyPost = null; journalOpenPost = id; tab = Tab.Journal; searchOpen = false
                     })
-                else if (insightsOpen) InsightsScreen(model) { insightsOpen = false }
+                else if (insightsOpen) InsightsScreen(chorus, model) { insightsOpen = false }
                 else if (settingsOpen) SettingsScreen(chorus, model) { insightsOpen = true; settingsOpen = false }
                 else when (activeTab) {
                     Tab.Home -> Home(chorus, model)
