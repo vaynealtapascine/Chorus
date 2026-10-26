@@ -162,6 +162,18 @@ following remains active. Statistics/profile/feed/search/review consumers still 
 history integration, and native visual rendering has not been verified. This slice exposes read
 selection and history corrections, not front/layer management or follower access settings.
 
+The statistics adapters now accept a canonical selected-front history and an exact layer ID.
+Web `namedFrontDays` and Android `InsightsData.snapshot(history=..., layerId=..., own=...)`
+use the existing shared named daily helper with client timezone-transition schedules. Own and
+effective intervals stay separate; other fronts/layers are excluded, and closed future ends
+are clamped to now. Existing chart DTO fields named `level` retain the actual independent layer
+ID, never a display level or a legacy alias. Week/pair adapters accept that same selection;
+legacy calls keep their original `front` default. Empty/unavailable canonical histories do not
+fall back to stale legacy intervals. Actual wasm/JNI tests cover independent quiet/front IDs,
+wrong-front intervals, own/effective views, future ends, weekly/pair totals and change counts.
+These helpers are not wired into Insights controls yet; profile/feed/search/review and SQL/export
+consumers also remain pending.
+
 Saved web UI projections now carry core's independent `ProjectionDigest {version, ops}`.
 Compatibility is checked before the first cached display and again when adopting the indexed
 ops. Old unversioned, malformed and future-version caches rebuild without discarding operations;

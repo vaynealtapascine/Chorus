@@ -1,6 +1,7 @@
 import { core } from './core';
 import type { Interval } from './sync/client';
 import type { SwitchRow } from './front.svelte';
+import type { FrontHistoryInterval } from './core/fronts';
 
 export interface DailyTime { day: string; subject_type: string; subject_id: string; level: string; seconds: number; as_primary_seconds: number }
 export interface PairTime { a: string; b: string; seconds: number }
@@ -75,6 +76,18 @@ export function frontDaily(intervals: Interval[], from: number, now: number, tim
   return core.frontDaily(window, now, offsetSchedule(from, now, timeZone)) as DailyTime[];
 }
 
+/** Named statistics retain the selected front/layer IDs; a label or display level never
+ * assigns a legacy role. Core owns timezone splitting just as it does for legacy intervals. */
+export function namedFrontDays(intervals: FrontHistoryInterval[], front: string, layer: string,
+  from: number, now: number, timeZone?: string): DailyTime[] {
+  const window = intervals.filter((i) => i.front_id === front && i.layer_id === layer &&
+    (i.end_at ?? now) > from && i.start_at < now)
+    .map((i) => ({ ...i, start_at: Math.max(i.start_at, from), end_at: Math.min(i.end_at ?? now, now) }));
+  if (!window.length) return [];
+  return core.namedFrontDaily(window, now, offsetSchedule(from, now, timeZone))
+    .map((row) => ({ ...row, level: row.layer_id })); // Existing chart DTO field, still the exact ID.
+}
+
 export function weekOf(day: string): string {
   const d = new Date(`${day}T12:00:00`);
   const weekday = (d.getDay() + 6) % 7;
@@ -82,9 +95,9 @@ export function weekOf(day: string): string {
   return localDay(d.getTime());
 }
 
-export function frontWeeks(rows: DailyTime[]): DailyTime[] {
+export function frontWeeks(rows: DailyTime[], layer = 'front'): DailyTime[] {
   const total = new Map<string, DailyTime>();
-  for (const row of rows.filter((r) => r.subject_type === 'member' && r.level === 'front')) {
+  for (const row of rows.filter((r) => r.subject_type === 'member' && r.level === layer)) {
     const day = weekOf(row.day);
     const key = `${day}|${row.subject_id}`;
     const existing = total.get(key);
@@ -95,8 +108,8 @@ export function frontWeeks(rows: DailyTime[]): DailyTime[] {
 }
 
 /** Intersect front intervals; each pair's simultaneous time is counted once. */
-export function cofrontPairs(intervals: Interval[], from: number, now: number): PairTime[] {
-  const active = intervals.filter((i) => i.subject_type === 'member' && i.level === 'front' && (i.end_at ?? now) > from && i.start_at < now);
+export function cofrontPairs(intervals: Interval[], from: number, now: number, layer = 'front'): PairTime[] {
+  const active = intervals.filter((i) => i.subject_type === 'member' && i.level === layer && (i.end_at ?? now) > from && i.start_at < now);
   const totals = new Map<string, number>();
   for (let x = 0; x < active.length; x++) for (let y = x + 1; y < active.length; y++) {
     const a = active[x], b = active[y];

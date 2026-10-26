@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { core, loadCore } from './core';
-import { cofrontPairs, csv, frontWeeks, localDay, offsetSchedule, switchesPerDay, windowStart, type DailyTime } from './insights';
+import { cofrontPairs, csv, frontWeeks, localDay, namedFrontDays, offsetSchedule, switchesPerDay, windowStart, type DailyTime } from './insights';
+import type { FrontHistoryInterval } from './core/fronts';
 import type { Interval } from './sync/client';
 import type { SwitchRow } from './front.svelte';
 
@@ -11,6 +12,23 @@ beforeAll(async () => {
 });
 
 describe('insight calculations', () => {
+  it('keeps selected front/layer totals independent and clamps closed future intervals', () => {
+    const now = Date.parse('2026-10-26T12:00:00Z');
+    const interval = (id: string, member: string, layer: string, seconds: number, front = 'body'): FrontHistoryInterval => ({
+      id, front_id: front, subject_type: 'member', subject_id: member, layer_id: layer, is_primary: member === 'kai',
+      position: 0, start_at: now - seconds * 1000, end_at: now + 60_000,
+      start_switch_id: id, end_switch_id: null, start_tz_offset_min: 480,
+    });
+    const intervals = [interval('a', 'kai', 'quiet', 3600), interval('b', 'rin', 'quiet', 1800),
+      interval('c', 'kai', 'front', 7200), interval('d', 'foreign-front', 'quiet', 3600, 'chorus')];
+    const daily = namedFrontDays(intervals, 'body', 'quiet', now - 86_400_000, now, 'Asia/Manila');
+    expect(daily.map((r) => [r.subject_id, r.level, r.seconds])).toEqual([['kai', 'quiet', 3600], ['rin', 'quiet', 1800]]);
+    expect(frontWeeks(daily, 'quiet').map((r) => r.seconds)).toEqual([3600, 1800]);
+    expect(frontWeeks(daily)).toEqual([]); // Quiet never becomes the original front role.
+    const display = intervals.filter((i) => i.front_id === 'body').map((i) => ({ ...i, level: i.layer_id }));
+    expect(cofrontPairs(display, now - 86_400_000, now, 'quiet')).toEqual([{ a: 'kai', b: 'rin', seconds: 1800 }]);
+    expect(namedFrontDays(intervals, 'missing', 'quiet', 0, now, 'Asia/Manila')).toEqual([]);
+  });
   it('uses core to split front time across local midnight and offset transitions', () => {
     const start = Date.parse('2026-09-22T15:30:00Z');
     const end = start + 2 * 3_600_000;

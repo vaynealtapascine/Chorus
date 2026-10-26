@@ -8,6 +8,7 @@ import java.time.temporal.TemporalAdjusters
 import org.json.JSONArray
 import org.json.JSONObject
 import uniffi.chorus_ffi.frontDaily
+import uniffi.chorus_ffi.namedFrontDaily
 
 data class FrontDay(val day: String, val memberId: String, val seconds: Long, val primarySeconds: Long)
 data class FrontPair(val first: String, val second: String, val seconds: Long)
@@ -18,14 +19,21 @@ data class InsightsSnapshot(val daily: List<FrontDay>, val weekly: List<FrontDay
 /** Read-only charts over the own-account projection. Core does the timezone-aware day split. */
 object InsightsData {
     fun snapshot(model: Model, days: Int, now: Long = System.currentTimeMillis(),
-        core: (String, Long, String) -> String = ::frontDaily): InsightsSnapshot {
+        history: NamedHistory? = null, layerId: String = "front", own: Boolean = false,
+        core: (String, Long, String) -> String = if (history == null) ::frontDaily else ::namedFrontDaily): InsightsSnapshot {
         require(days in 1..366)
         val zone = runCatching { ZoneId.of(model.systemZone ?: ZoneId.systemDefault().id) }
             .getOrElse { ZoneId.systemDefault() }
         val from = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().minusDays(days.toLong() - 1)
             .atStartOfDay(zone).toInstant().toEpochMilli()
-        val candidates = model.frontIntervals.filter { (it.endAt ?: now) > from && it.startAt < now }
-        val intervals = JSONArray().apply { for (row in candidates) put(JSONObject()
+        val named = history?.let { h -> (if (own) h.ownIntervals else h.intervals)
+            .filter { it.frontId == h.frontId && (it.endAt ?: now) > from && it.startAt < now } }
+        val candidates = named?.map { i -> FrontInterval(i.id, i.presence.subjectType, i.presence.subjectId,
+            i.presence.layerId, i.presence.isPrimary, i.startAt, i.endAt) }
+            ?: model.frontIntervals.filter { (it.endAt ?: now) > from && it.startAt < now }
+        val intervals = if (named != null) JSONArray().apply { for (row in named) put(row.toJson()
+            .put("start_at", maxOf(row.startAt, from)).put("end_at", minOf(row.endAt ?: now, now))) }
+            else JSONArray().apply { for (row in candidates) put(JSONObject()
             .put("id", row.id).put("subject_type", row.subjectType).put("subject_id", row.subjectId)
             .put("level", row.level).put("is_primary", row.isPrimary)
             .put("start_at", maxOf(row.startAt, from)).put("end_at", minOf(row.endAt ?: now, now))) }
@@ -41,7 +49,8 @@ object InsightsData {
         val rows = JSONArray(core(intervals.toString(), now, offsets.toString()))
         val daily = (0 until rows.length()).mapNotNull { i ->
             val row = rows.getJSONObject(i)
-            if (row.optString("subject_type") != "member" || row.optString("level") != "front") null
+            val layer = row.optString(if (named == null) "level" else "layer_id")
+            if (row.optString("subject_type") != "member" || layer != layerId) null
             else FrontDay(row.getString("day"), row.getString("subject_id"), row.getLong("seconds"),
                 row.getLong("as_primary_seconds"))
         }
@@ -50,7 +59,7 @@ object InsightsData {
             week.toString() to day.memberId
         }.map { (key, group) -> FrontDay(key.first, key.second, group.sumOf { it.seconds },
             group.sumOf { it.primarySeconds }) }.sortedWith(compareBy<FrontDay> { it.day }.thenBy { it.memberId })
-        val active = candidates.filter { it.subjectType == "member" && it.level == "front" }
+        val active = candidates.filter { it.subjectType == "member" && it.level == layerId }
             .sortedBy { it.startAt }
         val pairTotals = HashMap<Pair<String, String>, Long>()
         for (i in active.indices) for (j in i + 1 until active.size) {
@@ -64,8 +73,11 @@ object InsightsData {
         }
         val pairs = pairTotals.map { (pair, ms) -> FrontPair(pair.first, pair.second, ms / 1000) }
             .sortedWith(compareByDescending<FrontPair> { it.seconds }.thenBy { it.first }.thenBy { it.second })
-        val switches = model.switches.asSequence().filter { !it.retracted && it.occurredAt in from..now }
-            .groupingBy { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate().toString() }
+        val changes = if (history == null) model.switches.filter { !it.retracted }.map { it.occurredAt }
+            else if (own) history.saved.filter { !it.retracted }.map { it.occurredAt }
+            else history.changes.map { it.occurredAt }
+        val switches = changes.asSequence().filter { it in from..now }
+            .groupingBy { Instant.ofEpochMilli(it).atZone(zone).toLocalDate().toString() }
             .eachCount().map { (day, count) -> SwitchDay(day, count) }.sortedBy { it.day }
         return InsightsSnapshot(daily, weekly, pairs, switches, from, now)
     }

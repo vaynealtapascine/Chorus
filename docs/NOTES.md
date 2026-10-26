@@ -531,3 +531,17 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   when a payload names a known card from another system. A regression test retains the other
   system's open card unchanged, then verifies that its actual owner can resolve it. Named owner
   history reads already derive resolutions only from their account's log.
+
+- 2026-10-26 — Named statistics must pass canonical `layer_id` intervals to `namedFrontDaily`,
+  not custom IDs in the legacy Level decoder. Existing chart DTO fields called `level` may
+  carry an actual independent ID internally; week/pair filters must receive that ID explicitly.
+  An empty canonical result must not fall back to old Body intervals. Empty web selections
+  also return before building a timezone schedule (a broad empty 1970–2026 request otherwise
+  spends seconds formatting hourly offsets with Intl). Both clients retain their legacy
+  defaults and the existing fixed chart window behavior until the named UI is connected.
+
+- 2026-10-26 — After History's verified browser run, automatic approval review rejected a later
+  attempt to restart the isolated F:/DunBuild/chorus-ui-runtime test server with only the reason
+  `blocked by policy`. The rejected command did not run and was not retried or bypassed. Fresh
+  Insights captures remain pending. Data tests/normal verify continue; no new Insights UI has
+  been exposed. The earlier native emulator-launch policy block is also still unresolved.
