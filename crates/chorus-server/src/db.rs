@@ -16,6 +16,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
     ("0007_post_search", include_str!("../migrations/0007_post_search.sql")),
     ("0008_export_job", include_str!("../migrations/0008_export_job.sql")),
     ("0009_without_rowid", include_str!("../migrations/0009_without_rowid.sql")),
+    ("0010_named_fronts", include_str!("../migrations/0010_named_fronts.sql")),
 ];
 
 pub fn open(path: &Path) -> anyhow::Result<Connection> {

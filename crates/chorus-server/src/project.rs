@@ -1406,6 +1406,12 @@ pub(crate) const DERIVED: &[&str] = &[
     "front_interval",
     "front_daily",
     "front_review",
+    "named_front_presence",
+    "named_front_purpose",
+    "named_front_purpose_config",
+    "named_front",
+    "front_layer",
+    "front_system_cache",
     "space",
     "space_member",
     "channel",
@@ -1914,6 +1920,9 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
     let t = std::time::Instant::now();
     rebuild_daily(&tx)?;
     time("(daily totals)", t.elapsed());
+    let t = std::time::Instant::now();
+    crate::fronts::backfill(&tx)?;
+    time("(named front current state)", t.elapsed());
     let t = std::time::Instant::now();
     tx.execute(
         "INSERT INTO message_fts(rowid, text, cw) SELECT rowid, text, coalesce(cw, '') FROM message WHERE deleted_at IS NULL",

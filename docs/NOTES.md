@@ -462,3 +462,11 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   Both legacy Add/Update and independent actions now retain their existing end-of-set/layer
   behavior for oversized positions. Legacy layer offsets use saturating addition. Two shared
   fixtures exercise the real 32-bit wasm and 64-bit native paths.
+
+- 2026-10-26 — A structurally valid derived front cache can still be stale when an older build
+  stored newer front kinds as opaque operations. Version checks alone do not detect that.
+  Migration 0010 records the latest applied front-op sequence per account; reads, startup and
+  the append path verify the relevant log prefix before reusing it. Unsupported/malformed ops
+  stay in the append-only log and are excluded from the core state. Restore tests now construct
+  the actual historical schema from the migration prefix: lowering a current database's schema
+  version leaves later additive tables in place and is not a faithful upgrade fixture.

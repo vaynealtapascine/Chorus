@@ -56,8 +56,9 @@ effective fixtures. Additional bridge tests verify that amend/undo/redo keep fol
 through the real Rust implementation. Android libraries are generated for ARM64 and x86-64; Kotlin
 conformance uses the host DLL, without a device launch.
 
-These helpers are not wired into the operation catalogue, incremental projections, storage or UI
-yet. The running clients still use the legacy single front. Own and effective histories are
+These helpers are not wired into the operation catalogue, runtime projections or UI
+yet. Additive server storage is implemented below; ingestion does not call it yet.
+The running clients still use the legacy single front. Own and effective histories are
 separate APIs: do not apply today's follow source retrospectively to own history, or feed an
 owner's raw effective history/causes into a follower response. Follower history/statistics must be
 derived from revealed records under D-084.
@@ -76,7 +77,23 @@ owner's PC (2026-10-25), release `front_projection::tests::current_and_live_appe
 projects 10,000 switches into current state in about 39.5 ms and appends 1,000 live switches in
 about 5.8 ms (2026-10-26, all four release checks run together). These are pure core measurements;
 storage/transport and rendering remain separate
-integration budgets. The index is not connected to the runtime projector or server yet.
+integration budgets. The runtime projector does not use the index yet.
+
+Slice 3a is `chorus-server/src/fronts.rs` and migration `0010_named_fronts.sql`. It stores
+account-scoped layer/front definitions, explicit purpose selections, ordered own/effective/
+candidate presence and a versioned derived current-state cache. Startup backfills supported
+named-front events already present in the log; full database rebuilds regenerate all these
+tables. A per-account applied-front sequence watermark detects otherwise valid caches that
+miss previously unprojected operations. Legacy-only accounts retain their existing path.
+
+The normal append helper shares the core index; backdates, corrections and late targets rebuild.
+Configuration, presence and cache writes participate in the caller's ingestion transaction.
+The cache is written last and is always replaceable from the append-only log. Tests cover
+transaction rollback, whole-database rebuild, account isolation, opaque newer/malformed events,
+source tombstones, overrides and sparse purpose edits. `v_named_front_current` contains only
+confirmed effective presence, excluding unavailable/deleted recovery fallbacks. These tables
+and helpers are private owner data, not a follower view. Historical named SQL tables, ingestion,
+canonical Body read/widget paths, follower reveals and client integration remain pending.
 
 ## Event contract implemented in core (not yet enabled for ingestion)
 

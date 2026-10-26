@@ -16,6 +16,7 @@ pub mod export_job;
 pub mod exports;
 pub mod feeds;
 pub mod follows;
+pub mod fronts;
 pub mod health;
 pub mod home;
 pub mod home_install;
@@ -76,6 +77,7 @@ pub fn open_and_migrate(cfg: &config::Config) -> anyhow::Result<Connection> {
         tracing::info!(backup = %dest.display(), "backed up before migrating");
     }
     db::migrate(&mut conn)?;
+    fronts::backfill(&conn)?;
     if db::meta(&conn, "instance_id")?.is_none() {
         let id = chorus_core::id::new_id(now_ms() as u64, rand::random());
         db::set_meta(&conn, "instance_id", &id)?;

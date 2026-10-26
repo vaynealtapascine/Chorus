@@ -706,8 +706,15 @@ Message-only extra modes: `{"mode":"members","member_ids":[…]}` (soft in-syste
 The following is the legacy front shape. D-080's named-front model is under implementation;
 its current-state JSON contract is documented in [FRONTS.md](FRONTS.md) and
 `fixtures/front_system/`. Named presence uses an independent `layer_id`; a layer definition's
-numeric display `level` is not a fronting/co-conscious/present semantic role. No named-front
-SQL migration or operation family has shipped yet.
+numeric display `level` is not a fronting/co-conscious/present semantic role. Migration 0010 adds
+rebuildable current-state tables: `front_layer`, `named_front`, `named_front_purpose_config`
+(null/legacy versus explicit selections), `named_front_purpose` (selected layer IDs),
+`named_front_presence` (ordered own/effective/purpose pools) and `front_system_cache` (versioned
+core state and append guards, with an applied-front sequence watermark). Every key includes
+`account_id`; `v_named_front_current` exposes confirmed effective presence, excluding deleted
+fronts and unavailable recovery fallbacks. This is own-account data, never a follower view.
+Startup/backfill and full rebuild regenerate it without rewriting the log. Historical named
+tables and ingestion of the new operation family are not enabled yet; see FRONTS.md.
 
 ```json
 {"subject_type": "member", "subject_id": "…", "level": "front", "is_primary": true}
