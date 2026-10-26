@@ -26,7 +26,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::front::{self, FrontOp};
@@ -34,6 +34,28 @@ use crate::hlc::Hlc;
 use crate::model::{self, Projection, Reads, Row};
 use crate::op::Op;
 use crate::sync::Digest;
+
+/// Bump for changes to projection shape, recognized operations or projection semantics. This
+/// versions a replaceable local UI cache; it is independent of the network sync digest.
+pub const PROJECTION_VERSION: u32 = 1;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectionDigest {
+    pub version: u32,
+    pub ops: Digest,
+}
+
+impl ProjectionDigest {
+    pub fn new(ops: Digest) -> Self {
+        Self { version: PROJECTION_VERSION, ops }
+    }
+
+    /// Old unversioned, malformed and future caches rebuild from the retained operations.
+    pub fn parse_current(json: &str) -> Option<Self> {
+        serde_json::from_str::<Self>(json).ok().filter(|d| d.version == PROJECTION_VERSION)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Key {
@@ -133,8 +155,8 @@ impl Projector {
     }
 
     /// Identifies the exact op copies the projection reflects (saved with a snapshot of it).
-    pub fn digest(&self) -> Digest {
-        self.digest
+    pub fn digest(&self) -> ProjectionDigest {
+        ProjectionDigest::new(self.digest)
     }
 
     /// Index one op for later updates without projecting it (opening from a snapshot). Call once
@@ -160,7 +182,7 @@ impl Projector {
     /// hasn't seen. If what was indexed, minus `fresh`, is exactly the snapshot's ops, continue
     /// from it (fresh ops' keys come as the next delta) and return true; otherwise project
     /// everything, and the next delta says `full`.
-    pub fn adopt(&mut self, snapshot: Option<Digest>, fresh: &BTreeSet<String>) -> bool {
+    pub fn adopt(&mut self, snapshot: Option<ProjectionDigest>, fresh: &BTreeSet<String>) -> bool {
         let mut d = self.digest;
         for id in fresh {
             if let Some(o) = self.ops.get(id) {
@@ -168,7 +190,7 @@ impl Projector {
             }
         }
         self.proj.opaque = self.opaque.len();
-        if snapshot == Some(d) {
+        if snapshot == Some(ProjectionDigest::new(d)) {
             self.partial = true;
             self.delivered_once = true;
             let dirty: BTreeSet<Key> =

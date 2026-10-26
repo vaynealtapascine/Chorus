@@ -15,6 +15,11 @@ pub fn core_version() -> String {
     api::version()
 }
 
+#[wasm_bindgen(js_name = projectionSnapshotCompatible)]
+pub fn projection_snapshot_compatible(digest_json: &str) -> bool {
+    api::projection_snapshot_compatible(digest_json)
+}
+
 #[wasm_bindgen(js_name = parseMarkup)]
 pub fn parse_markup(src: &str, names_json: &str) -> Result<String, JsError> {
     wrap(api::parse_markup(src, names_json))

@@ -95,6 +95,13 @@ confirmed effective presence, excluding unavailable/deleted recovery fallbacks. 
 and helpers are private owner data, not a follower view. Historical named SQL tables, ingestion,
 canonical Body read/widget paths, follower reveals and client integration remain pending.
 
+Saved web UI projections now carry core's independent `ProjectionDigest {version, ops}`.
+Compatibility is checked before the first cached display and again when adopting the indexed
+ops. Old unversioned, malformed and future-version caches rebuild without discarding operations;
+compatible caches keep the existing fast opening path. Bump `PROJECTION_VERSION` when the
+runtime named-front field/kinds are integrated, even if the saved op identities/stamps match.
+The network scope digest and server SQL cache version are separate contracts.
+
 ## Event contract implemented in core (not yet enabled for ingestion)
 
 All events are private to `account:<system id>`. Body's stable front ID is the account ID.

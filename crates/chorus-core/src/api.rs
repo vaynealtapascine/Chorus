@@ -435,6 +435,11 @@ pub fn echo_json(v: &str) -> Result<String, String> {
 /// JSON facade over [`crate::replica::Replica`].
 pub struct JsonReplica(pub crate::replica::Replica);
 
+/// Check before displaying a saved UI projection, including before its ops have been indexed.
+pub fn projection_snapshot_compatible(digest_json: &str) -> bool {
+    crate::projector::ProjectionDigest::parse_current(digest_json).is_some()
+}
+
 fn rand10(bytes: &[u8]) -> Result<[u8; 10], String> {
     bytes.get(..10).and_then(|b| b.try_into().ok()).ok_or_else(|| "need 10 random bytes".to_string())
 }
@@ -478,7 +483,7 @@ impl JsonReplica {
 
     /// `digest_json`: the saved snapshot's `projection_digest`, or empty for none.
     pub fn adopt(&mut self, digest_json: &str) -> Result<bool, String> {
-        let d = if digest_json.trim().is_empty() { None } else { Some(parse("digest", digest_json)?) };
+        let d = crate::projector::ProjectionDigest::parse_current(digest_json);
         Ok(self.0.adopt(d))
     }
 
@@ -635,6 +640,41 @@ impl JsonReplica {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshots_require_the_current_projection_schema_even_when_ops_match() {
+        let ops = js(&serde_json::json!([{
+            "id":"0192f8c2-0000-7000-8000-000000000001", "kind":"member.create",
+            "scope":"account:0192f8c2-0000-7000-8000-0000000000a1",
+            "entity_id":"0192f8c2-0000-7000-8000-0000000000b1",
+            "hlc":"0000000003e8-0000-00000001", "device_at":1000, "seq":1,
+            "payload":{"name":"Kai"}
+        }]));
+        let mut saved = JsonReplica::restore("dev", 1, "", &ops, "").unwrap();
+        let expected = saved.projection();
+        let digest = saved.projection_digest();
+        let token: Value = serde_json::from_str(&digest).unwrap();
+        let version = crate::projector::PROJECTION_VERSION;
+        let invalid = [
+            String::new(),
+            js(&token["ops"]), // old unversioned cache with exactly the same operations
+            js(&serde_json::json!({"version":0,"ops":token["ops"]})),
+            js(&serde_json::json!({"version":version+1,"ops":token["ops"]})),
+            js(&serde_json::json!({"version":version,"ops":token["ops"],"unknown":true})),
+            js(&serde_json::json!({"version":version,"ops":{"count":1,"xor":format!("aé{}","a".repeat(29))}})),
+            "{bad json".into(),
+        ];
+        for input in std::iter::once(&digest).chain(invalid.iter()) {
+            let compatible = input == &digest;
+            assert_eq!(projection_snapshot_compatible(input), compatible, "{input}");
+            let mut opened = JsonReplica::begin("dev", 1, "", "").unwrap();
+            opened.add_ops(&ops).unwrap();
+            assert!(opened.index_step(1));
+            assert_eq!(opened.adopt(input).unwrap(), compatible, "{input}");
+            assert_eq!(opened.0.projection_delta().full, !compatible);
+            assert_eq!(opened.projection(), expected);
+        }
+    }
 
     #[test]
     fn json_api_smoke() {

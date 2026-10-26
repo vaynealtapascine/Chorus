@@ -239,7 +239,7 @@ impl Replica {
     /// Continue from the snapshot the UI shows (made at `snapshot`, a
     /// [`Replica::projection_digest`]) if the ops match it; true if so. Otherwise the whole
     /// projection is computed and the next delta says `full`.
-    pub fn adopt(&mut self, snapshot: Option<crate::sync::Digest>) -> bool {
+    pub fn adopt(&mut self, snapshot: Option<crate::projector::ProjectionDigest>) -> bool {
         while !self.index_step(usize::MAX) {}
         self.indexing = None;
         // ops created or changed while opening: the snapshot can't include them
@@ -252,7 +252,7 @@ impl Replica {
     }
 
     /// Identifies the op copies the current projection reflects: save it with a snapshot.
-    pub fn projection_digest(&mut self) -> crate::sync::Digest {
+    pub fn projection_digest(&mut self) -> crate::projector::ProjectionDigest {
         self.refresh();
         self.projector.digest()
     }
@@ -621,7 +621,11 @@ mod tests {
             o.add_ops(ch.ops[2..].to_vec());
             assert!(!o.index_step(2));
             o.create(member("June", 40), &now(2000), [9; 10]).unwrap();
-            let snap = if stale { crate::sync::Digest::of(["something else"]) } else { digest };
+            let snap = if stale {
+                crate::projector::ProjectionDigest::new(crate::sync::Digest::of(["something else"]))
+            } else {
+                digest
+            };
             assert_eq!(o.adopt(Some(snap)), !stale);
             let d = o.projection_delta();
             assert_eq!(d.full, stale);

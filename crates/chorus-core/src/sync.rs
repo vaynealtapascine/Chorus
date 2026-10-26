@@ -73,7 +73,17 @@ mod hex16 {
             return Err(serde::de::Error::custom("digest must be 32 hex chars"));
         }
         for (i, o) in out.iter_mut().enumerate() {
-            *o = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).map_err(serde::de::Error::custom)?;
+            let hex = |b: u8| match b {
+                b'0'..=b'9' => Some(b - b'0'),
+                b'a'..=b'f' => Some(b - b'a' + 10),
+                b'A'..=b'F' => Some(b - b'A' + 10),
+                _ => None,
+            };
+            let bytes = s.as_bytes();
+            *o = hex(bytes[2 * i])
+                .zip(hex(bytes[2 * i + 1]))
+                .map(|(high, low)| high * 16 + low)
+                .ok_or_else(|| serde::de::Error::custom("digest must contain only hex digits"))?;
         }
         Ok(out)
     }

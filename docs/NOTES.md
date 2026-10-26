@@ -470,3 +470,11 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   stay in the append-only log and are excluded from the core state. Restore tests now construct
   the actual historical schema from the migration prefix: lowering a current database's schema
   version leaves later additive tables in place and is not a faithful upgrade fixture.
+
+- 2026-10-26 — The network digest cannot identify projection semantics: unchanged op IDs and
+  stamps can acquire new meaning after an app upgrade. UI snapshots now use a separate versioned
+  digest, checked before display as well as adoption. Bump `PROJECTION_VERSION` for recognized
+  kind or projection shape/behavior changes. Old caches rebuild from retained ops. While testing
+  malformed cached digests, a 32-byte string with a mixed ASCII/UTF-8 prefix panicked in the old
+  hex decoder's byte-indexed string slicing; decoding hex directly from bytes returns an error
+  without panicking and retains the existing wire format.

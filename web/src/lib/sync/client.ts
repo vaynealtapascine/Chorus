@@ -5,6 +5,7 @@ import type { SwitchRow } from '../front.svelte';
 import { loadHead, loadOps, save, saveSnapshot, type Changes, type DeviceRecord, type Snapshot } from './persist';
 import { renew } from './device';
 import { applyDelta, type Delta } from './delta';
+import { readSnapshot } from './snapshot';
 import { flushUploads, stageBlob } from './uploads';
 import { keepStorage, loadBlob } from './blobs';
 import { fillFiles, keepEverything } from './keep';
@@ -152,8 +153,9 @@ export class SyncClient {
     // (CLIENTS.md §4.3). Without a snapshot (first start) the app waits for the ops, as before.
     this.replica = WebReplica.begin(this.device.device_id, nodeOf(this.device.short_id), p.meta ? JSON.stringify(p.meta) : '', p.hlc);
     this.opening = true;
-    if (p.snapshot) {
-      this.cached = JSON.parse(p.snapshot.projection) as Projection;
+    this.cached = readSnapshot(p.snapshot);
+    const snapshot = this.cached ? p.snapshot : null;
+    if (this.cached) {
       performance.mark('chorus:projected');
     }
     addEventListener('online', () => this.reconnectNow());
@@ -165,8 +167,8 @@ export class SyncClient {
     });
     this.bus = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('chorus-sync');
     if (this.bus) this.bus.onmessage = (e) => this.onBus(e.data as BusMessage);
-    const opened = this.openOps(p.snapshot).catch((e) => console.error('opening the replica failed', e));
-    if (!p.snapshot) await opened;
+    const opened = this.openOps(snapshot).catch((e) => console.error('opening the replica failed', e));
+    if (!snapshot) await opened;
     this.emit();
   }
 

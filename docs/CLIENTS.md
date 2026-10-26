@@ -253,14 +253,20 @@ takes seconds in wasm, so the app opens from the last projection it showed:
 
 1. *Snapshot.* The client saves `kv.snapshot = {projection (JSON text), digest, at}` 10 s after
    the last change and whenever the page is hidden, chained after the op writes. `digest` is the
-   core's `projectionDigest()`: a `Digest` over each projected op's id and server stamp, kept
-   incrementally by the projector, so it names exactly the op copies the projection came from.
-2. *Open.* `start()` reads only the head (device, meta, hlc, snapshot), parses the snapshot and
-   mounts the app on it. The core replica starts empty (`WebReplica.begin`).
+   core's `projectionDigest()`: `{version, ops}`. `ops` is a `Digest` over each projected op's id
+   and server stamp, kept incrementally by the projector, so it names exactly the op copies the
+   projection came from. `version` identifies the projection shape and semantics, independently
+   of the network sync digest. Bump `projector::PROJECTION_VERSION` when adding recognized kinds
+   or changing projection behavior/shape; equal operations alone do not make an old UI cache valid.
+2. *Open.* `start()` reads only the head (device, meta, hlc, snapshot). Before parsing or showing
+   the saved projection, core's `projectionSnapshotCompatible` checks its versioned digest.
+   Unversioned, malformed or future-version caches rebuild from the retained ops; invalid JSON
+   or missing top-level projection sections also rebuild. A compatible snapshot mounts at once.
+   The core replica starts empty (`WebReplica.begin`).
 3. *Background, in slices.* Ops are read 5 000 at a time in id order (`loadOps`) into the core
    (`addOps`), then indexed 2 000 at a time (`indexStep`: each op's keys, as the projector needs
    for later updates; nothing is projected), yielding to the page between slices.
-4. *Adopt.* `adopt(digest)`: if the indexed ops — minus any created while opening — are exactly
+4. *Adopt.* `adopt(digest)`: if the projection version is current and the indexed ops — minus any created while opening — are exactly
    the snapshot's, the projector goes on from the snapshot, holding only keys recomputed from
    then on (a *partial* projection; `projection()` materialises it if anyone asks), and the
    ops created while opening arrive as the next delta. Otherwise (ops saved after the snapshot,
