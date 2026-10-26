@@ -515,3 +515,13 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   before aggregating days. The server still has no IANA timezone database: its API accepts one
   explicit/latest fixed UTC offset; web/native clients already supply transition schedules to
   core for their offline charts. Named SQL/export history remains a separate pending slice.
+
+- 2026-10-26 — Offline named history uses explicit replica read methods, with caching separate
+  from current-state projection. A history amendment can leave Current byte-for-byte equal;
+  invalidation must follow the front dependency delta/revision, not JSON equality of current
+  presence. Unrelated member/chat deltas must not trigger the full history fold. Both clients
+  test this boundary against actual Rust bindings. Named histories keep original independent
+  layer IDs and saved IDs; effective IDs must never become undo/amend targets.
+  A browser fixture written through a separate socket using the app device's ID must reconnect
+  the app afterwards: live fan-out deliberately skips that same device, whose normal writer
+  already owns its local operations. The ordinary hash-only route helper does not reconnect.

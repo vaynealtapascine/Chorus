@@ -6,6 +6,7 @@ import { loadHead, loadOps, save, saveSnapshot, type Changes, type DeviceRecord,
 import { renew } from './device';
 import { applyDelta, type Delta } from './delta';
 import { readSnapshot } from './snapshot';
+import { FrontHistoryCache, type NamedHistory } from '../front-history';
 import { flushUploads, stageBlob } from './uploads';
 import { keepStorage, loadBlob } from './blobs';
 import { fillFiles, keepEverything } from './keep';
@@ -110,6 +111,7 @@ export class SyncClient {
   private listeners = new Set<Listener>();
   private projectionListeners = new Set<ProjectionListener>();
   private cached: Projection | null = null;
+  private frontHistories = new FrontHistoryCache();
   private saving: Promise<void> = Promise.resolve();
   /** ops are still being read and indexed (opening from a snapshot); no sync until done */
   private opening = false;
@@ -361,6 +363,13 @@ export class SyncClient {
    * `revisions`, the same rule as `GET /messages/{id}/revisions`). */
   revisions(id: string): Revision[] {
     return this.replica ? (JSON.parse(this.replica.revisions(id)) as Revision[]) : [];
+  }
+
+  /** Explicit offline history read; never part of `projection()` or the composer path. */
+  frontHistory(frontId = this.accountId): NamedHistory | null {
+    const p = this.projection();
+    if (!p || !this.replica || this.opening) return null;
+    return this.frontHistories.read(this.replica, p, this.accountId, frontId);
   }
 
   projection(): Projection | null {

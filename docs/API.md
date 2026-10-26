@@ -246,8 +246,8 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   - Named responses add `front_id`, and switches/intervals/daily add `history`. Unconfigured
     accounts retain the original SQL response unless they explicitly request a front/history
     (or daily `tz`). These APIs are on-demand owner reads, never follower history/statistics;
-    follower records must pass the reveal rules. Client history views and named SQL/export history
-    integration remain pending.
+    follower records must pass the reveal rules. Native/web offline History views use the replica’s shared-core reads; statistics/reviews and
+    named SQL/export history integration remain pending.
 - **Other accounts:** `/accounts/{id}/view`, `/follows`, `/notifications`. The view is
   `{entries, since, revealed_at, time}`, plus `history: [{entries, time}]` and
   `stats: {days, members: [{name, share_pct}]}` when the ceiling has `share_history` or

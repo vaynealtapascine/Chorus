@@ -26,6 +26,7 @@
   import { appearance } from './lib/appearance.svelte';
   import Icon from './lib/ui/Icon.svelte';
   import AvatarImage from './lib/ui/AvatarImage.svelte';
+  import { frontView } from './lib/front-view';
 
   let switching = $state(false);
   addEventListener('keydown', (e: KeyboardEvent) => {
@@ -73,12 +74,21 @@
   const account = $derived(projection?.rows.account?.[sync.accountId]?.fields);
   const system = $derived(projection?.rows.system?.[sync.accountId]?.fields);
   const accountName = $derived(String(system?.name ?? account?.display_name ?? 'Your system'));
-  const current = $derived(projection?.fronts[sync.accountId]?.current ?? []);
+  const bodyFront = $derived(frontView(projection, sync.accountId));
+  const current = $derived(bodyFront.entries);
   const subjects = $derived(new Map([
     ...members(projection ?? { rows: {}, sets: {}, fronts: {}, opaque: 0 }).map((m) => [m.id, { name: m.display_name ?? m.name, color: m.color, glyph: m.sigils[0] ?? m.name[0], blob: m.avatar_blob }] as const),
     ...groups(projection ?? { rows: {}, sets: {}, fronts: {}, opaque: 0 }).map((g) => [g.id, { name: g.name, color: g.color ?? '#42A397', glyph: g.name[0], blob: g.avatar_blob }] as const),
   ]));
-  const frontNames = $derived(current.filter((e) => e.level === 'front').map((e) => subjects.get(e.subject_id)?.name).filter(Boolean).join(' & ') || 'No one fronting');
+  const frontNames = $derived.by(() => {
+    if (bodyFront.configured) {
+      if (bodyFront.deleted) return 'Deleted front';
+      if (bodyFront.state === 'unavailable') return 'Source unavailable';
+      const layers = projection?.front_systems?.[sync.accountId]?.system.layers;
+      return current.map((e) => `${subjects.get(e.subject_id)?.name ?? 'Someone'} (${layers?.[e.layer_id]?.name ?? e.layer_id})`).join(' & ') || 'No one recorded';
+    }
+    return current.filter((e) => e.layer_id === 'front').map((e) => subjects.get(e.subject_id)?.name).filter(Boolean).join(' & ') || 'No one fronting';
+  });
   const routeTitle = $derived(({ home: person ? 'Home' : 'Fronting', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', chat: 'Chat', people: 'Friends', history: 'Front history', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
 </script>
 
@@ -104,7 +114,7 @@
       </nav>
       {#if !person}
         <button class="front-summary" onclick={() => (switching = true)} aria-label="Open switcher">
-          <span class="front-summary-title"><Icon name="layers" size={16} />Fronting</span>
+          <span class="front-summary-title"><Icon name="layers" size={16} />{bodyFront.configured ? bodyFront.name : 'Fronting'}</span>
           <span class="front-stack">{#each current.slice(0, 4) as e (e.subject_id)}{@const m = subjects.get(e.subject_id)}{#if m}{@const c = core.adaptColor(m.color, dark)}<span class="mini-avatar" style="--member: {c.ring}; --member-ink: {c.avatar_ink}"><AvatarImage hash={m.blob} glyph={m.glyph} name={m.name} /></span>{/if}{/each}</span>
           <span class="front-summary-names">{frontNames}</span>
           <span class="shortcut">Switch · Ctrl/⌘ S</span>

@@ -71,6 +71,9 @@ class Chorus private constructor(private val ctx: Context) {
     val status: StateFlow<Status> = _status
     private val _model = MutableStateFlow(Model.Empty)
     val model: StateFlow<Model> = _model
+    private val _frontHistoryRevision = MutableStateFlow(0L)
+    val frontHistoryRevision: StateFlow<Long> = _frontHistoryRevision
+    private var frontHistories = NamedHistoryCache() // store thread only
     private val _keepEverything = MutableStateFlow(true)
     val keepEverything: StateFlow<Boolean> = _keepEverything
     private val _fileProgress = MutableStateFlow<OfflineFiles.Progress?>(null)
@@ -113,6 +116,7 @@ class Chorus private constructor(private val ctx: Context) {
     }
 
     private fun start() {
+        frontHistories = NamedHistoryCache()
         heldTimer?.cancel()
         heldTimer = null
         _heldMessages.value = emptyMap()
@@ -253,6 +257,16 @@ class Chorus private constructor(private val ctx: Context) {
         }
     }
 
+    /** Explicit offline history read, coalesced by the front dependency revision. */
+    suspend fun frontHistory(frontId: String? = null): NamedHistory? = withContext(dispatcher) {
+        val r = replica ?: return@withContext null
+        val account = device?.accountId ?: return@withContext null
+        val front = frontId ?: account
+        if (_model.value.namedFronts?.fronts?.containsKey(front) != true) return@withContext null
+        frontHistories.read(account, _frontHistoryRevision.value, front,
+            { r.frontSystemHistory(account) }, { r.effectiveFrontHistory(account, it) })
+    }
+
     /** Coalesced: at most one pending rebuild of the typed model. */
     private fun rebuild() {
         if (!rebuildPending.compareAndSet(false, true)) return
@@ -271,6 +285,11 @@ class Chorus private constructor(private val ctx: Context) {
             projectionCache = p
             val next = Model.parse(p, dev.accountId)
             _model.value = next
+            if (cached == null || d.optBoolean("full") ||
+                d.optJSONObject("front_systems")?.has(dev.accountId) == true ||
+                d.optJSONObject("fronts")?.has(dev.accountId) == true) {
+                _frontHistoryRevision.value += 1
+            }
             onModel?.invoke(next)
         }
     }

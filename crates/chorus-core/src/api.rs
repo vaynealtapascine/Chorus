@@ -557,6 +557,19 @@ impl JsonReplica {
         js(&self.0.revisions(entity))
     }
 
+    /// On-demand own-account histories from locally visible ops, including pending offline
+    /// edits and excluding rejected/removed copies. Cache by the account front dependency;
+    /// never call this full fold from current-state rendering or a composer.
+    pub fn front_system_history(&self, account_id: &str) -> String {
+        js(&crate::front_history::fold(account_id, self.0.store.visible()))
+    }
+
+    /// Effective history is distinct from saved entries. Its synthetic change IDs are not
+    /// amend/retract targets. Raw sources/causes are private owner data, never a follower view.
+    pub fn effective_front_history(&self, account_id: &str, front_id: &str) -> String {
+        js(&crate::front_effective::fold(account_id, front_id, self.0.store.visible()))
+    }
+
     /// Blobs to upload again after a reconcile (JSON array of hashes; SYNC.md §7.3).
     pub fn restoring_blobs(&self) -> String {
         js(&self.0.restoring_blobs())
@@ -640,6 +653,54 @@ impl JsonReplica {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn replica_history_reads_include_pending_edits_and_exclude_refused_or_removed_ops() {
+        use crate::sync::{AckError, ClientStore};
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../fixtures/front_runtime/channel_pools.json")).unwrap();
+        let account = "0192f8c2-0000-7000-8000-0000000000a1";
+        let mut replica = JsonReplica::restore("dev", 1, "", &js(&fixture["args"][0]), "").unwrap();
+        let created: Value = serde_json::from_str(
+            &replica
+                .create(
+                    &js(&serde_json::json!({
+                        "kind":"front.change","scope":format!("account:{account}"),"entity_id":account,
+                        "payload":{"action":"switch","entries":[]}
+                    })),
+                    r#"{"now":10000}"#,
+                    &[44; 10],
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        let id = created["op"]["id"].as_str().unwrap();
+        let read = |r: &JsonReplica| -> Value { serde_json::from_str(&r.front_system_history(account)).unwrap() };
+        assert_eq!(read(&replica)["resolved"][account]["state"], "overridden");
+        let history: Value = serde_json::from_str(&replica.effective_front_history(account, account)).unwrap();
+        assert_eq!(history["current"]["state"], "overridden");
+        replica.0.store.reject(
+            id,
+            AckError { code: "forbidden".into(), message: "refused".into(), retry: false, retry_after_ms: None },
+        );
+        assert_eq!(read(&replica)["resolved"][account]["state"], "following");
+        replica.absorb("[]", &js(&serde_json::json!([fixture["args"][0][1]["id"]]))).unwrap();
+        let visible: Vec<_> = replica.0.store.visible().cloned().collect();
+        assert_eq!(replica.front_system_history(account), js(&crate::front_history::fold(account, &visible)));
+        assert_eq!(
+            replica.effective_front_history(account, account),
+            js(&crate::front_effective::fold(account, account, &visible))
+        );
+        replica.projection();
+        replica.projection_delta();
+        let before = replica.projection_digest();
+        read(&replica);
+        replica.effective_front_history(account, account);
+        assert_eq!(replica.projection_digest(), before);
+        let delta: Value = serde_json::from_str(&replica.projection_delta()).unwrap();
+        assert!(delta.get("front_systems").is_none());
+        assert!(delta["rows"].as_object().unwrap().is_empty());
+    }
 
     #[test]
     fn snapshots_require_the_current_projection_schema_even_when_ops_match() {

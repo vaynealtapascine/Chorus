@@ -26,6 +26,8 @@ it('keeps runtime named-front deltas equal to the shared history fold across edi
     if (visible.length) {
       const folded = core.foldFrontSystem(body, visible);
       expect(client.front_systems?.[body]).toEqual({ system: folded.system, resolved: folded.resolved });
+      expect(JSON.parse(replica.frontSystemHistory(body))).toEqual(folded);
+      expect(JSON.parse(replica.effectiveFrontHistory(body, body))).toEqual(core.frontEffectiveHistory(body, body, visible));
     } else expect(client.front_systems).toBeUndefined();
   };
   const create = (kind: string, front: string, payload: unknown) => {

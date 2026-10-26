@@ -255,6 +255,16 @@ impl WebReplica {
         self.0.revisions(entity)
     }
 
+    #[wasm_bindgen(js_name = frontSystemHistory)]
+    pub fn front_system_history(&self, account_id: &str) -> String {
+        self.0.front_system_history(account_id)
+    }
+
+    #[wasm_bindgen(js_name = effectiveFrontHistory)]
+    pub fn effective_front_history(&self, account_id: &str, front_id: &str) -> String {
+        self.0.effective_front_history(account_id, front_id)
+    }
+
     /// After a `welcome` with `reconcile: true`: blobs (JSON array of hashes) named by the ops
     /// being restored; upload the ones this browser has (SYNC.md §7.3).
     #[wasm_bindgen(js_name = restoringBlobs)]

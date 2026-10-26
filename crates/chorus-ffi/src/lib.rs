@@ -257,6 +257,15 @@ impl CoreReplica {
         self.lock().revisions(&entity)
     }
 
+    /// On-demand owner history. Clients cache it by the account front revision, off hot paths.
+    pub fn front_system_history(&self, account_id: String) -> String {
+        self.lock().front_system_history(&account_id)
+    }
+
+    pub fn effective_front_history(&self, account_id: String, front_id: String) -> String {
+        self.lock().effective_front_history(&account_id, &front_id)
+    }
+
     /// After a `welcome` with `reconcile: true`: the blobs (hashes, JSON array) this device's
     /// restoring ops name. Upload the ones it has a copy of; the restored server lost newer files.
     pub fn restoring_blobs(&self) -> String {

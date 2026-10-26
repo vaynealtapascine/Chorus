@@ -84,6 +84,10 @@ tasks.withType<Test>().configureEach {
     }
     inputs.file(cargoTarget.resolve("$profile/$hostLibrary"))
         .withPropertyName("chorusCoreHostLibrary").withPathSensitivity(PathSensitivity.NONE)
+    val fixtures = rootProject.file("../fixtures")
+    systemProperty("chorus.fixtures", fixtures.absolutePath)
+    inputs.file(fixtures.resolve("front_runtime/channel_pools.json"))
+        .withPropertyName("chorusFrontRuntimeFixture").withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 kapt {

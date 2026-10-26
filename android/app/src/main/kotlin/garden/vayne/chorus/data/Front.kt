@@ -85,6 +85,13 @@ object Front {
         return true
     }
 
+    suspend fun amendTime(chorus: Chorus, opId: String, at: Long, frontId: String? = null) {
+        val target = frontId ?: chorus.device?.accountId?.takeIf { chorus.model.value.namedFronts != null }
+        val payload = JSONObject().put("target_op_id", opId).put("occurred_at", at)
+        if (target == null) chorus.create("front.amend", chorus.newId(), payload)
+        else chorus.create("front.change", target, payload.put("action", "amend"))
+    }
+
     fun dismiss(opId: String) {
         if (_undo.value?.opId == opId) _undo.value = null
     }

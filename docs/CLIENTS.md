@@ -25,6 +25,22 @@ chorus-core (UniFFI / wasm) ── ops ──▶ local op table + outbox
 - Paging for long lists (messages, timeline) from the local DB; beyond the local window, REST
   pages are fetched and cached.
 
+### 1.1 Named front history (D-080, D-083)
+
+History pages read the device's visible operations through `frontSystemHistory` and
+`effectiveFrontHistory` on the core replica (wasm/UniFFI). Pending offline work participates;
+refused or removed copies do not. These are explicit on-demand reads, outside current front,
+composer and Model.parse paths. Cache by the account front dependency revision, including a
+past edit that leaves today's current state equal; unrelated chat/member changes retain it.
+
+Both clients separate **Front history** (effective/inherited transitions) from **Saved entries**
+(original editable IDs). Existing/deleted fronts can be selected for historical inspection.
+Edit time, undo and redo apply to the selected front's saved history and keep following active;
+only a manual current change overrides following. Custom layer labels retain independent IDs.
+Show 200 log entries initially and load older rows on request. Android computes reads on its
+store worker; web shares its account fold across selected fronts. Statistics/profile/feed/search/
+review consumers and front/layer management are still being integrated; see FRONTS.md.
+
 ## 2. Android
 
 ### 2.1 Stack (pin exact versions in DECISIONS §Versions when adding)
@@ -114,6 +130,9 @@ member ring, cached by `(blob_hash, color)`.
   - Remove: `front.remove`.
   Tapping someone already in front in Replace mode makes them primary and removes others (same
   as switching to them).
+- Once Body is configured, the corresponding quick actions and undo use `front.change` with
+  the stable Body ID and independent `layer_id`; unconfigured accounts retain the legacy kinds
+  above.
 - The mode chip cycles Replace → Add → Remove on tap and resets to Replace 30 s after last use.
 - After a tap, the header shows "Switched to Kai · **Undo**" for 10 s. Undo → `front.retract`.
   Undo taps after 30 s are ignored (guard against stale widget UI when the clear update runs

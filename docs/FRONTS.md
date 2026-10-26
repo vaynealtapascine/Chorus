@@ -129,7 +129,7 @@ this pipeline. A named Body can inherit from a private source, but neither its s
 nor a raw cause/op ID enters the follower payload, and its state is still revealed only when due.
 These are current-state integration slices, not completed named-front delivery: additional-front
 and custom-layer grants/reveals, named historical SQL/export paths, channel purpose consumers
-and both clients' management/history UI remain pending. Keep configuration UI behind that work.
+and both clients' management/statistics UI remain pending. Keep configuration UI behind that work.
 
 Slice 3b is `chorus-server/src/api_fronts.rs`: on-demand owner history for the selected front.
 Switches default to independently saved rows; intervals/daily default to effective history.
@@ -140,8 +140,27 @@ Daily reads clamp closed future intervals as well as open ones to now and the re
 days, using one explicit/latest offset (IANA/DST remains unsupported by this server API).
 Reviews fold per front and look up LWW resolutions from the own account log, including a
 resolution delivered before its switches. Deleted fronts keep history. Unconfigured defaults
-retain existing SQL shapes. Client views and named history SQL/exports still need connecting;
+retain existing SQL shapes. Client history views are connected below; statistics/reviews and named history SQL/exports still need connecting;
 these owner reads must never feed follower history/statistics or current/composer hot paths.
+
+Slice 3c adds `frontSystemHistory` and `effectiveFrontHistory` to the device replica's wasm and
+UniFFI bindings. They read locally visible operations directly: pending work participates and
+refused/removed operations do not. These methods do not consume projection deltas or outbox
+changes. The full folds are explicit history reads, never part of current projection or typing.
+Web caches the own-account fold and per-front effective reads by the account's current dependency
+object; Android uses a front-only revision counter on its store worker. A past correction must
+invalidate that cache even when today's presence/configuration compares equal. Member/chat
+changes retain it. Restore/rejection/removal and actual wasm/JNI cache tests cover that boundary.
+
+Both History screens select an existing front (including deleted fronts with retained history),
+show effective changes by default and separate editable Saved entries. Custom layers display their
+own names. Time edits and undo/redo target original saved IDs through `front.change`; they never
+pass synthetic effective IDs to an editing operation. Existing unconfigured Body writes retain
+legacy kinds. The initial log is bounded to 200 entries with Show older; Android reads on its
+store dispatcher. Browser checks include offline edit/undo/redo across reload and confirm that
+following remains active. Statistics/profile/feed/search/review consumers still need canonical
+history integration, and native visual rendering has not been verified. This slice exposes read
+selection and history corrections, not front/layer management or follower access settings.
 
 Saved web UI projections now carry core's independent `ProjectionDigest {version, ops}`.
 Compatibility is checked before the first cached display and again when adopting the indexed
