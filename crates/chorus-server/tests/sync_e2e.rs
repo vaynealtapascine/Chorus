@@ -704,6 +704,81 @@ async fn rest_reads_cover_members_groups_fields_and_days() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn named_front_history_routes_select_private_own_and_effective_views() {
+    let s = start().await;
+    let sys = enrol(&s, auth::InviteKind::System, None, 101, "named_history").await;
+    let outsider = enrol(&s, auth::InviteKind::System, None, 102, "other_history").await;
+    let mut phone = Device::new(&sys, 101);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    let acct = phone.scope("account:");
+    let body = sys["account_id"].as_str().unwrap();
+    let source = new_id(1, [103; 10]);
+    let member = new_id(1, [104; 10]);
+    phone.create("member.create", &acct, &member, json!({"name":"Kai"})).await;
+    let source_switch = phone
+        .create(
+            "front.change",
+            &acct,
+            &source,
+            json!({"action":"switch","entries":[{"subject_type":"member","subject_id":member,"layer_id":"quiet"}]}),
+        )
+        .await;
+    phone.create("front.define", &acct, body, json!({"follow_source":source})).await;
+    phone.drain(Q).await;
+
+    let http = reqwest::Client::new();
+    let get = |path: String, session: String| {
+        let http = http.clone();
+        let url = format!("http://{}/api/v1{path}", s.base);
+        async move {
+            let r = http.get(url).bearer_auth(session).send().await.unwrap();
+            let status = r.status().as_u16();
+            let body = r.text().await.unwrap();
+            (status, serde_json::from_str::<Value>(&body).unwrap_or(json!({"body":body})))
+        }
+    };
+    let session = sys["session"].as_str().unwrap().to_owned();
+    let (status, own) = get(format!("/front/switches?front={source}&history=own&limit=1"), session.clone()).await;
+    assert_eq!(status, 200, "{own}");
+    assert_eq!(own["items"][0]["id"], source_switch);
+    assert_eq!(own["items"][0]["editable"], true);
+    let (status, effective) = get("/front/switches?history=effective&limit=1".into(), session.clone()).await;
+    assert_eq!(status, 200, "{effective}");
+    assert_eq!(effective["items"][0]["entries"][0]["subject_id"], member);
+    assert_eq!(effective["items"][0]["editable"], false);
+    let (status, intervals) =
+        get(format!("/front/intervals?front={body}&history=effective&layer_id=quiet"), session.clone()).await;
+    assert_eq!(status, 200, "{intervals}");
+    assert_eq!(intervals["items"][0]["layer_id"], "quiet");
+    assert!(intervals["items"][0].get("level").is_none());
+    let (status, days) =
+        get(format!("/front/daily?front={body}&history=effective&layer_id=quiet&tz=480"), session.clone()).await;
+    assert_eq!(status, 200, "{days}");
+    assert_eq!(days["front_id"], body);
+    assert_eq!(days["tz"], 480);
+    assert_eq!(get(format!("/front/reviews?front={source}&open=1"), session.clone()).await.0, 200);
+    assert_eq!(get("/front/switches?history=unknown".into(), session.clone()).await.0, 400);
+    assert_eq!(
+        get(format!("/front/intervals?front={source}"), outsider["session"].as_str().unwrap().into()).await.0,
+        400
+    );
+    let token: Value = http
+        .post(format!("http://{}/api/v1/tokens", s.base))
+        .bearer_auth(&session)
+        .json(&json!({"name":"members only","scopes":["read:members"]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(get(format!("/front/switches?front={source}"), token["token"].as_str().unwrap().into()).await.0, 403);
+    phone.disconnect();
+    s.state.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_write_token_logs_switches_by_name() {
     let s = start().await;
     let sys = enrol(&s, auth::InviteKind::System, None, 71, "stars").await;

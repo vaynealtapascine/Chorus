@@ -505,3 +505,13 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   Remove actions may repair an old foreign reference without re-authorizing that reference.
   Migration 0012 checks purpose-ID suffixes with BLOB byte length, preserving rows and cache,
   because SQLite length(TEXT) stops at NUL while JSON/Rust accept that opaque string.
+
+- 2026-10-26 — Owner history endpoints fold the complete account front log before applying time
+  filters: a late amendment outside the requested window must still correct the saved row.
+  Saved IDs are editable; effective transition IDs are synthetic and must not be passed to
+  amend/retract. Named review resolutions come from the account log with HLC/id precedence,
+  because the resolution may precede the switches and no legacy SQL review row may exist.
+  Named daily reads clip closed future ends as well as open ends to now, and clip intervals
+  before aggregating days. The server still has no IANA timezone database: its API accepts one
+  explicit/latest fixed UTC offset; web/native clients already supply transition schedules to
+  core for their offline charts. Named SQL/export history remains a separate pending slice.

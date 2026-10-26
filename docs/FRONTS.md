@@ -128,8 +128,20 @@ its original layer IDs and existing ceiling. Additional fronts/custom layers hav
 this pipeline. A named Body can inherit from a private source, but neither its source metadata
 nor a raw cause/op ID enters the follower payload, and its state is still revealed only when due.
 These are current-state integration slices, not completed named-front delivery: additional-front
-and custom-layer grants/reveals, named historical API/SQL/export paths, channel purpose consumers
+and custom-layer grants/reveals, named historical SQL/export paths, channel purpose consumers
 and both clients' management/history UI remain pending. Keep configuration UI behind that work.
+
+Slice 3b is `chorus-server/src/api_fronts.rs`: on-demand owner history for the selected front.
+Switches default to independently saved rows; intervals/daily default to effective history.
+Explicit `history=own|effective` keeps the views distinguishable. Effective change IDs are
+synthetic and not editable; raw own row IDs remain the amend/undo targets. Filtering happens
+after the complete shared fold. Custom layer IDs remain independent in intervals and totals.
+Daily reads clamp closed future intervals as well as open ones to now and the requested local
+days, using one explicit/latest offset (IANA/DST remains unsupported by this server API).
+Reviews fold per front and look up LWW resolutions from the own account log, including a
+resolution delivered before its switches. Deleted fronts keep history. Unconfigured defaults
+retain existing SQL shapes. Client views and named history SQL/exports still need connecting;
+these owner reads must never feed follower history/statistics or current/composer hot paths.
 
 Saved web UI projections now carry core's independent `ProjectionDigest {version, ops}`.
 Compatibility is checked before the first cached display and again when adopting the indexed

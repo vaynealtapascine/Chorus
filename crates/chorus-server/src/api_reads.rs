@@ -189,14 +189,42 @@ pub fn states(conn: &Connection, p: &Principal) -> Result<Value, DataError> {
     Ok(json!({"items": rows.collect::<Result<Vec<_>, _>>()?}))
 }
 
-fn day_ok(d: &str) -> bool {
+pub(crate) fn day_ok(d: &str) -> bool {
     let b = d.as_bytes();
     b.len() == 10 && b.iter().enumerate().all(|(i, c)| if i == 4 || i == 7 { *c == b'-' } else { c.is_ascii_digit() })
 }
 
+pub fn daily(
+    conn: &Connection,
+    p: &Principal,
+    from: Option<&str>,
+    to: Option<&str>,
+    level: Option<&str>,
+) -> Result<Value, DataError> {
+    crate::api_fronts::daily(
+        conn,
+        p,
+        &crate::api_fronts::DailyQuery {
+            from: from.map(str::to_owned),
+            to: to.map(str::to_owned),
+            level: level.map(str::to_owned),
+            ..Default::default()
+        },
+        crate::now_ms(),
+    )
+}
+
+pub fn reviews(conn: &Connection, p: &Principal, open_only: bool) -> Result<Value, DataError> {
+    crate::api_fronts::reviews(
+        conn,
+        p,
+        &crate::api_fronts::ReviewQuery { open: Some(u8::from(open_only)), ..Default::default() },
+    )
+}
+
 /// `GET /front/daily?from=YYYY-MM-DD&to=YYYY-MM-DD&level=`: seconds per subject per local day
 /// (`to` inclusive), from the same table the insights use.
-pub fn daily(
+pub(crate) fn legacy_daily(
     conn: &Connection,
     p: &Principal,
     from: Option<&str>,
@@ -230,7 +258,7 @@ pub fn daily(
 
 /// `GET /front/reviews?open=1`: switches recorded close together from different devices that
 /// someone should look at (SYNC.md reviews).
-pub fn reviews(conn: &Connection, p: &Principal, open_only: bool) -> Result<Value, DataError> {
+pub(crate) fn legacy_reviews(conn: &Connection, p: &Principal, open_only: bool) -> Result<Value, DataError> {
     need(p, "read:front")?;
     let mut st = conn.prepare_cached(
         "SELECT id, switch_a, switch_b, created_at, resolution, resolved_at FROM front_review

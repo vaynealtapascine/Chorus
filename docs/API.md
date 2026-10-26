@@ -138,10 +138,10 @@ GET  /fields                               field definitions
 GET  /states                               custom front states
 
 GET  /front                                current front (resolved names, levels, since)
-GET  /front/switches?from=&to=&limit=
-GET  /front/intervals?from=&to=&subject=&level=
-GET  /front/daily?from=YYYY-MM-DD&to=…&level=
-GET  /front/reviews?open=1
+GET  /front/switches?front=&history=own|effective&from=&to=&limit=
+GET  /front/intervals?front=&history=effective|own&from=&to=&subject=&layer_id=
+GET  /front/daily?front=&history=effective|own&from=YYYY-MM-DD&to=…&layer_id=&tz=
+GET  /front/reviews?front=&open=1
 
 GET  /spaces
 GET  /spaces/{id}/channels
@@ -226,8 +226,28 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
     private own-account `front_system: {system, resolved}`. Entries include `layer_id`; `level`
     is supplied only for the actual original front/cocon/present IDs. A custom layer never gets
     a legacy role from its name/display level. `since` is currently null on this new current-only
-    path. Named history/daily API integration is still pending; these old endpoints retain their
-    legacy tables until that slice lands. Management controls remain unexposed in the clients.
+    path. Management controls remain unexposed in the clients.
+  - History reads accept `front=<id>` (Body/account ID when omitted). Front IDs are scoped to the
+    caller's own account; missing fronts return 400, while deleted fronts retain their history.
+    `/front/switches` defaults to `history=own`: amended/retracted saved entries retain original
+    IDs and `editable: true`. `history=effective` returns inherited transitions, private source/
+    cause metadata and synthetic change IDs with `editable: false`; edit the saved cause instead.
+    The time range is applied after the complete fold, so a correction outside it still applies.
+  - `/front/intervals` and `/front/daily` default to effective history; `history=own` explicitly
+    selects independently saved presence. They accept `layer_id`; `level` remains a filtering alias
+    for the same stable ID. Conflicting aliases return 400. Returned `level` exists only for the
+    actual original three IDs; independent names/display levels never merge totals.
+  - Named daily totals clamp both open and closed intervals to now and the requested local days.
+    `tz` is one fixed offset in minutes east of UTC (−1440…1440); absent uses the selected history's
+    most recent offset. Dates are real Gregorian `YYYY-MM-DD` days in 0000…9999, `to` inclusive.
+    These reads do not yet resolve IANA timezone/DST schedules. `/front/reviews` selects a front's
+    own concurrent-switch reviews and resolves them from account-scoped ops, including a
+    resolution that arrived before its switches.
+  - Named responses add `front_id`, and switches/intervals/daily add `history`. Unconfigured
+    accounts retain the original SQL response unless they explicitly request a front/history
+    (or daily `tz`). These APIs are on-demand owner reads, never follower history/statistics;
+    follower records must pass the reveal rules. Client history views and named SQL/export history
+    integration remain pending.
 - **Other accounts:** `/accounts/{id}/view`, `/follows`, `/notifications`. The view is
   `{entries, since, revealed_at, time}`, plus `history: [{entries, time}]` and
   `stats: {days, members: [{name, share_pct}]}` when the ceiling has `share_history` or

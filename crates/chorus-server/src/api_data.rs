@@ -211,8 +211,42 @@ pub fn current_front(conn: &Connection, p: &Principal) -> Result<Value, DataErro
     Ok(json!({"front": front, "since": since}))
 }
 
-/// Switch log, newest first: `?from=&to=&limit=` (ms; limit ≤ 1000).
+/// Own Body switch history; named accounts use the shared fold. More selections are available
+/// through `api_fronts`, including effective changes that are not directly editable switches.
 pub fn switches(
+    conn: &Connection,
+    p: &Principal,
+    from: Option<i64>,
+    to: Option<i64>,
+    limit: Option<i64>,
+) -> Result<Value, DataError> {
+    crate::api_fronts::switches(conn, p, &crate::api_fronts::SwitchQuery { from, to, limit, ..Default::default() })
+}
+
+/// Body effective intervals, retaining the old response for unconfigured accounts.
+pub fn intervals(
+    conn: &Connection,
+    p: &Principal,
+    from: Option<i64>,
+    to: Option<i64>,
+    subject: Option<&str>,
+    level: Option<&str>,
+) -> Result<Value, DataError> {
+    crate::api_fronts::intervals(
+        conn,
+        p,
+        &crate::api_fronts::IntervalQuery {
+            from,
+            to,
+            subject: subject.map(str::to_owned),
+            level: level.map(str::to_owned),
+            ..Default::default()
+        },
+    )
+}
+
+/// Switch log, newest first: `?from=&to=&limit=` (ms; limit ≤ 1000).
+pub(crate) fn legacy_switches(
     conn: &Connection,
     p: &Principal,
     from: Option<i64>,
@@ -246,7 +280,7 @@ pub fn switches(
 
 /// Front intervals overlapping `[from, to)`: the table graphs are made from (DATA_MODEL §4).
 /// `subject` (a subject id) and `level` narrow it down.
-pub fn intervals(
+pub(crate) fn legacy_intervals(
     conn: &Connection,
     p: &Principal,
     from: Option<i64>,

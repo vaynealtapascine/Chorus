@@ -977,11 +977,6 @@ async fn tokens_revoke(
 
 #[derive(Deserialize, Default)]
 struct Range {
-    from: Option<i64>,
-    to: Option<i64>,
-    limit: Option<i64>,
-    subject: Option<String>,
-    level: Option<String>,
     /// EventSource can't send headers, so the stream (only) also takes `?token=`.
     token: Option<String>,
     /// Stream: which events (`front`, `message`; comma-separated). Default: all you may read.
@@ -1002,21 +997,21 @@ async fn front_now(
 async fn front_switches(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
-    axum::extract::Query(q): axum::extract::Query<Range>,
+    axum::extract::Query(q): axum::extract::Query<crate::api_fronts::SwitchQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
-    Ok(Json(crate::api_data::switches(&conn, &p, q.from, q.to, q.limit)?))
+    Ok(Json(crate::api_fronts::switches(&conn, &p, &q)?))
 }
 
 async fn front_intervals(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
-    axum::extract::Query(q): axum::extract::Query<Range>,
+    axum::extract::Query(q): axum::extract::Query<crate::api_fronts::IntervalQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
-    Ok(Json(crate::api_data::intervals(&conn, &p, q.from, q.to, q.subject.as_deref(), q.level.as_deref())?))
+    Ok(Json(crate::api_fronts::intervals(&conn, &p, &q)?))
 }
 
 async fn members_list(
@@ -1402,32 +1397,24 @@ async fn states_list(
     Ok(Json(crate::api_reads::states(&conn, &p)?))
 }
 
-#[derive(Deserialize, Default)]
-struct DayRange {
-    from: Option<String>,
-    to: Option<String>,
-    level: Option<String>,
-    open: Option<u8>,
-}
-
 async fn front_daily(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
-    axum::extract::Query(q): axum::extract::Query<DayRange>,
+    axum::extract::Query(q): axum::extract::Query<crate::api_fronts::DailyQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
-    Ok(Json(crate::api_reads::daily(&conn, &p, q.from.as_deref(), q.to.as_deref(), q.level.as_deref())?))
+    Ok(Json(crate::api_fronts::daily(&conn, &p, &q, now_ms())?))
 }
 
 async fn front_reviews(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
-    axum::extract::Query(q): axum::extract::Query<DayRange>,
+    axum::extract::Query(q): axum::extract::Query<crate::api_fronts::ReviewQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
-    Ok(Json(crate::api_reads::reviews(&conn, &p, q.open.unwrap_or(0) != 0)?))
+    Ok(Json(crate::api_fronts::reviews(&conn, &p, &q)?))
 }
 
 /// Server-sent events of the caller's own front (`stream` + `read:front`). The first event is the
