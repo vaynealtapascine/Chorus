@@ -18,6 +18,76 @@ use serde_json::{Value, json};
 
 const A: &str = "0192f8c2-0000-7000-8000-0000000000a1";
 
+#[test]
+fn named_history_controls_and_rejected_configuration_update_only_the_account_dependency() {
+    let t = 1_790_000_000_000;
+    let mut source = make(1, 29, 0, t, 1);
+    let mut body_follow = make(2, 27, 0, t + 1000, 1);
+    body_follow.entity_id = Some(A.into());
+    body_follow.payload = json!({"follow_source":source.entity_id});
+    let mut amend = make(3, 35, 0, t + 2000, 2);
+    amend.payload["target_op_id"] = json!(source.id);
+    let mut retract = make(4, 34, 0, t + 3000, 1);
+    retract.payload["target_op_id"] = json!(source.id);
+    let mut restore = retract.clone();
+    restore.id = new_id(t + 4000, [44; 10]);
+    restore.hlc = Hlc::new(t + 4000, 0, 1);
+    restore.payload["action"] = json!("unretract");
+    let unrelated = make(8, 0, 0, t, 1);
+    let mut ops = BTreeMap::new();
+    let mut projector = Projector::new();
+    let mut client = model::project(std::iter::empty()).canonical();
+    for o in [&unrelated, &source, &body_follow, &amend, &retract, &restore] {
+        ops.insert(o.id.clone(), o.clone());
+        projector.sync_ids([o.id.clone()], |id| ops.get(id));
+        let reference = model::project(ops.values()).canonical();
+        apply(&mut client, &projector.take_delta(), &reference);
+        assert_eq!(projector.projection().canonical(), reference);
+        assert_eq!(client, reference);
+    }
+    assert_eq!(client["front_systems"][A]["resolved"][A]["state"], "following");
+    // Correcting a stamped source can change its human-time position; it must not append.
+    source = stamped(&source, 500);
+    source.occurred_at = Some((t + 50_000) as i64);
+    ops.insert(source.id.clone(), source.clone());
+    projector.sync_ids([source.id.clone()], |id| ops.get(id));
+    assert_eq!(projector.projection().canonical(), model::project(ops.values()).canonical());
+    // Removing every named op removes the optional account field, leaving unrelated rows.
+    let gone: Vec<String> = ops.values().filter(|o| o.kind.starts_with("front.")).map(|o| o.id.clone()).collect();
+    for id in &gone {
+        ops.remove(id);
+    }
+    projector.sync_ids(gone, |id| ops.get(id));
+    let reference = model::project(ops.values()).canonical();
+    apply(&mut client, &projector.take_delta(), &reference);
+    assert_eq!(client, reference);
+    assert!(reference.get("front_systems").is_none());
+    assert!(reference["rows"]["member"].as_object().is_some_and(|r| !r.is_empty()));
+}
+
+#[test]
+#[ignore = "release-mode runtime budget; cargo test -p chorus-core --test projector_props --release -- --ignored --nocapture"]
+fn named_runtime_live_append_budget() {
+    let t = 1_790_000_000_000;
+    let saved: Vec<Op> = (0..10_000).map(|i| make(i, 29, (i % 3) as u8, t + i as u64 * 1000, 1)).collect();
+    let next: Vec<Op> = (10_000..11_000).map(|i| make(i, 29, (i % 3) as u8, t + i as u64 * 1000, 1)).collect();
+    let mut projector = Projector::new();
+    let cold = std::time::Instant::now();
+    projector.sync(&saved);
+    let cold = cold.elapsed();
+    projector.take_delta();
+    let start = std::time::Instant::now();
+    for o in &next {
+        projector.sync_ids([o.id.clone()], |id| (id == o.id).then_some(o));
+        let delta = projector.take_delta();
+        assert_eq!(delta.front_systems.len(), 1);
+    }
+    let live = start.elapsed();
+    eprintln!("10,000-op runtime load: {cold:?}; 1,000 local updates/deltas: {live:?}");
+    assert!(cold < std::time::Duration::from_secs(2));
+    assert!(live < std::time::Duration::from_millis(500));
+}
+
 fn ids(prefix: u8, n: u8) -> Vec<String> {
     (0..n).map(|i| new_id(1, [prefix, i, 0, 0, 0, 0, 0, 0, 0, 1])).collect()
 }
@@ -31,7 +101,11 @@ fn make(i: usize, pick: u8, x: u8, t: u64, node: u32) -> Op {
     let space = format!("space:{}", new_id(1, [9; 10]));
     let m = members[(x % 3) as usize].clone();
     let msg = msgs[(x % 3) as usize].clone();
-    let (kind, scope, entity, payload): (&str, &str, String, Value) = match pick % 27 {
+    let named = ids(13, 3);
+    let front_id = named[(x % 3) as usize].clone();
+    let layer = ["front", "cocon", "present", "quiet"][(x % 4) as usize];
+    let entry = json!({"subject_type":"member","subject_id":m,"layer_id":layer,"is_primary":x.is_multiple_of(2)});
+    let (kind, scope, entity, payload): (&str, &str, String, Value) = match pick % 37 {
         0 => ("member.create", &acct, m, json!({"name": format!("n{i}")})),
         1 => ("member.set", &acct, m, json!({"color": format!("#0000{:02x}", x)})),
         2 => (
@@ -133,6 +207,53 @@ fn make(i: usize, pick: u8, x: u8, t: u64, node: u32) -> Op {
             ids(12, 2)[(x % 2) as usize].clone(),
             json!({"target_type":"post","target_id":ids(12, 2)[(x % 2) as usize],"emoji":"💜","member_id":m}),
         ),
+        27 => (
+            "front.define",
+            &acct,
+            front_id,
+            match x % 4 {
+                0 => json!({"name":format!("Front {i}"),"follow_source":named[((x+1)%3) as usize]}),
+                1 => json!({"follow_source":null,"deleted":false}),
+                2 => {
+                    json!({"authorship_layers":[layer],"notification_layers":[layer],"purpose_layers":{"mentions":[layer],"reading":[]}})
+                }
+                _ => json!({"deleted":true,"purpose_layers":{"reading":null,"chat_alerts":[layer]}}),
+            },
+        ),
+        28 => (
+            "front.layer",
+            &acct,
+            A.into(),
+            json!({"layer_id":layer,"name":format!("Layer {x}"),"level":i32::from(x)-100,"deleted":x.is_multiple_of(3)}),
+        ),
+        29 => (
+            "front.change",
+            &acct,
+            front_id,
+            json!({"action":"switch","entries":[entry],"effective_at":t as i64-i64::from(x)}),
+        ),
+        30 => (
+            "front.change",
+            &acct,
+            front_id,
+            json!({"action":"add","entry":entry,"position":x,"history_only":x.is_multiple_of(2)}),
+        ),
+        31 => ("front.change", &acct, front_id, json!({"action":"remove","subject_type":"member","subject_id":m})),
+        32 => (
+            "front.change",
+            &acct,
+            front_id,
+            json!({"action":"update","subject_type":"member","subject_id":m,"layer_id":layer,"is_primary":true,"position":x}),
+        ),
+        33 => ("front.change", &acct, front_id, json!({"action":"resume"})),
+        34 => ("front.change", &acct, front_id, json!({"action":"retract","target_op_id":ids(14,3)[(x%3) as usize]})),
+        35 => (
+            "front.change",
+            &acct,
+            front_id,
+            json!({"action":"amend","target_op_id":ids(14,3)[(x%3) as usize],"entries":[entry],"occurred_at":t as i64-i64::from(x)}),
+        ),
+        36 => ("front.define", &acct, front_id, json!({"unknown":"remains opaque"})),
         _ => ("mystery.kind", &acct, m, json!({})),
     };
     Op {
@@ -194,8 +315,8 @@ fn apply(copy: &mut Value, d: &Delta, full: &Value) {
             }
         }
     }
-    for section in ["fronts", "reviews"] {
-        for (acct, v) in dj[section].as_object().unwrap() {
+    for section in ["fronts", "reviews", "front_systems"] {
+        for (acct, v) in dj[section].as_object().into_iter().flatten() {
             if copy[section].is_null() {
                 copy[section] = json!({});
             }
@@ -206,8 +327,10 @@ fn apply(copy: &mut Value, d: &Delta, full: &Value) {
             }
         }
     }
-    if copy.get("reviews").is_some_and(|r| r.as_object().is_some_and(|o| o.is_empty())) {
-        copy.as_object_mut().unwrap().remove("reviews");
+    for section in ["reviews", "front_systems"] {
+        if copy.get(section).is_some_and(|r| r.as_object().is_some_and(|o| o.is_empty())) {
+            copy.as_object_mut().unwrap().remove(section);
+        }
     }
     copy["opaque"] = json!(d.opaque);
 }

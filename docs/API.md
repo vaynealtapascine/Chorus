@@ -222,6 +222,12 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   - `/front`, `/front/switches`, `/front/intervals`;
   - `/front/daily?from=&to=&level=` (days are `YYYY-MM-DD`, `to` inclusive);
   - `/front/reviews?open=1`.
+  - Once named fronts are configured, `/front` reads canonical Body current state and adds the
+    private own-account `front_system: {system, resolved}`. Entries include `layer_id`; `level`
+    is supplied only for the actual original front/cocon/present IDs. A custom layer never gets
+    a legacy role from its name/display level. `since` is currently null on this new current-only
+    path. Named history/daily API integration is still pending; these old endpoints retain their
+    legacy tables until that slice lands. Management controls remain unexposed in the clients.
 - **Other accounts:** `/accounts/{id}/view`, `/follows`, `/notifications`. The view is
   `{entries, since, revealed_at, time}`, plus `history: [{entries, time}]` and
   `stats: {days, members: [{name, share_pct}]}` when the ceiling has `share_history` or

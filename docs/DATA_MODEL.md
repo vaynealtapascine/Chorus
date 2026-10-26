@@ -155,6 +155,9 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `front.retract` | `{target_op_id}` (undo) | TL |
 | `front.amend` | `{target_op_id, occurred_at?, entries?, note?}` edit a past switch | TL |
 | `front.review_resolve` | `{review_id, resolution}` | LWW-F |
+| `front.define` | sparse `{name?, follow_source?, authorship_layers?, notification_layers?, purpose_layers?, deleted?}`; entity is the named front | LWW-F, including each purpose separately |
+| `front.layer` | `{layer_id, name?, level?, deleted?}`; display level only, system-local string ID | LWW-F |
+| `front.change` | `{action, ...}`; independent presence, Resume or own-history controls, with optional `effective_at`/`history_only` on presence (FRONTS.md) | TL + write-ordered controls |
 | `space.create` / `space.set` / `space.delete` | | LWW-F |
 | `space.join` / `space.leave` / `space.set_role` | `{account_id, role}` | SET / LWW-F |
 | `channel.create` / `channel.set` / `channel.archive` / `channel.delete` / `channel.restore` | | LWW-F |
@@ -713,8 +716,11 @@ rebuildable current-state tables: `front_layer`, `named_front`, `named_front_pur
 core state and append guards, with an applied-front sequence watermark). Every key includes
 `account_id`; `v_named_front_current` exposes confirmed effective presence, excluding deleted
 fronts and unavailable recovery fallbacks. This is own-account data, never a follower view.
-Startup/backfill and full rebuild regenerate it without rewriting the log. Historical named
-tables and ingestion of the new operation family are not enabled yet; see FRONTS.md.
+Startup/backfill and full rebuild regenerate it without rewriting the log. Ingestion validates
+and updates this current state atomically; migration 0011 indexes the named-kind existence check
+for legacy-only accounts. Runtime projections expose an optional `front_systems` account map.
+Historical named SQL/API/export paths, follower grants and management UI remain pending; see
+FRONTS.md for the integration boundary.
 
 ```json
 {"subject_type": "member", "subject_id": "…", "level": "front", "is_primary": true}

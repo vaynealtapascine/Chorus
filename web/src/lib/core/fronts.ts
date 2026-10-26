@@ -34,6 +34,11 @@ export interface FrontSystem {
   fronts: Record<string, NamedFront>;
 }
 
+export interface CurrentFrontSystem {
+  system: FrontSystem;
+  resolved: Record<string, ResolvedFront>;
+}
+
 export interface ResolvedFront {
   id: string;
   name: string;

@@ -8,6 +8,16 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 class FrontTest {
+    @Test fun independentSwitchPayloadKeepsLayerIdsAndCreationTimeSeparate() {
+        val payload = Front.changePayload(listOf(Entry("member", "a", "quiet", true)), "  missed  ", "silent", 123, true)
+        assertEquals("switch", payload.getString("action"))
+        assertEquals("quiet", payload.getJSONArray("entries").getJSONObject(0).getString("layer_id"))
+        assertFalse(payload.getJSONArray("entries").getJSONObject(0).has("level"))
+        assertEquals(123L, payload.getLong("effective_at"))
+        assertEquals(true, payload.getBoolean("history_only"))
+        assertEquals("missed", payload.getString("note"))
+        assertEquals("silent", payload.getString("notify"))
+    }
     @Test fun switchPayloadCarriesLevelsPrimaryNoteAndNotification() {
         val payload = Front.switchPayload(
             listOf(Entry("member", "a", "front", true), Entry("group", "b", "cocon", false)),

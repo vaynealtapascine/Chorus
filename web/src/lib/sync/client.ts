@@ -10,6 +10,7 @@ import { flushUploads, stageBlob } from './uploads';
 import { keepStorage, loadBlob } from './blobs';
 import { fillFiles, keepEverything } from './keep';
 import type { Entity } from '../core';
+import type { CurrentFrontSystem } from '../core/fronts';
 
 /** An op the server refused (SYNC §7 "Sync issues"). */
 /** A browser tab's message window (DATA_MODEL §5: "keep last N days offline", default 90). */
@@ -40,6 +41,7 @@ export interface Projection {
   rows: Record<string, Record<string, { exists: boolean; fields: Record<string, unknown>; edits?: number }>>;
   sets: Record<string, Record<string, boolean>>;
   fronts: Record<string, { current: FrontEntry[]; switches: SwitchRow[]; intervals: Interval[] }>;
+  front_systems?: Record<string, CurrentFrontSystem>;
   reviews?: Record<string, { id: string; switch_a: string; switch_b: string }[]>;
   opaque: number;
 }

@@ -80,7 +80,7 @@ pub struct Front {
 }
 
 fn default_authorship_layers() -> Option<BTreeSet<String>> {
-    Some(BTreeSet::from(["front".into()]))
+    Some(crate::sort::set(["front".into()]))
 }
 
 fn default_notification_layers() -> Option<BTreeSet<String>> {
@@ -131,24 +131,24 @@ pub struct System {
 impl System {
     /// The account ID is also its stable compatibility Body-front ID.
     pub fn legacy(body_id: &str, entries: Vec<Presence>) -> Self {
-        let layers = [("front", "Fronting"), ("cocon", "Co-conscious"), ("present", "Present")]
-            .into_iter()
-            .enumerate()
-            .map(|(i, (id, name))| {
-                (id.into(), Layer { id: id.into(), name: name.into(), level: i as i32, deleted: false })
-            })
-            .collect();
+        let layers = crate::sort::map(
+            [("front", "Fronting"), ("cocon", "Co-conscious"), ("present", "Present")].into_iter().enumerate().map(
+                |(i, (id, name))| {
+                    (id.into(), Layer { id: id.into(), name: name.into(), level: i as i32, deleted: false })
+                },
+            ),
+        );
         let mut body = Front::new(body_id.into(), "Body".into());
         body.own = entries;
         normalize(&mut body.own);
         body.authorship_layers = None;
         body.notification_layers = None;
-        Self { layers, fronts: BTreeMap::from([(body_id.into(), body)]) }
+        Self { layers, fronts: crate::sort::map([(body_id.into(), body)]) }
     }
 
     pub fn ordered_layers(&self) -> Vec<&Layer> {
         let mut layers: Vec<_> = self.layers.values().collect();
-        layers.sort_by(|a, b| (a.level, &a.id).cmp(&(b.level, &b.id)));
+        crate::sort::by(&mut layers, |a, b| (a.level, &a.id).cmp(&(b.level, &b.id)));
         layers
     }
 
@@ -228,87 +228,84 @@ impl System {
             }
         }
 
-        fronts
-            .into_iter()
-            .enumerate()
-            .map(|(i, (id, f))| {
-                let source = f.follow.as_ref().map(|link| link.source.clone());
-                let issue = if cuts[i] {
-                    Some(FollowIssue::Cycle)
-                } else if source.as_ref().is_some_and(|id| self.fronts.get(id).is_none_or(|s| s.deleted))
-                    || (f.follow.is_some() && !f.overridden && !settled[i])
-                {
-                    Some(FollowIssue::SourceUnavailable)
-                } else {
-                    None
-                };
-                let state = if f.follow.is_none() {
-                    FollowState::Independent
-                } else if f.overridden {
-                    FollowState::Overridden
-                } else if issue.is_some() || f.deleted {
-                    FollowState::Unavailable
-                } else {
-                    FollowState::Following
-                };
-                let entries = effective[i].take().unwrap_or_default();
-                let eligible = state != FollowState::Unavailable && !f.deleted;
-                let authorship = entries
+        let resolved = fronts.into_iter().enumerate().map(|(i, (id, f))| {
+            let source = f.follow.as_ref().map(|link| link.source.clone());
+            let issue = if cuts[i] {
+                Some(FollowIssue::Cycle)
+            } else if source.as_ref().is_some_and(|id| self.fronts.get(id).is_none_or(|s| s.deleted))
+                || (f.follow.is_some() && !f.overridden && !settled[i])
+            {
+                Some(FollowIssue::SourceUnavailable)
+            } else {
+                None
+            };
+            let state = if f.follow.is_none() {
+                FollowState::Independent
+            } else if f.overridden {
+                FollowState::Overridden
+            } else if issue.is_some() || f.deleted {
+                FollowState::Unavailable
+            } else {
+                FollowState::Following
+            };
+            let entries = effective[i].take().unwrap_or_default();
+            let eligible = state != FollowState::Unavailable && !f.deleted;
+            let authorship = entries
+                .iter()
+                .filter(|e| {
+                    eligible
+                        && f.authorship_layers
+                            .as_ref()
+                            .map_or(matches!(e.layer_id.as_str(), "front" | "cocon" | "present"), |ids| {
+                                ids.contains(&e.layer_id)
+                            })
+                })
+                .cloned()
+                .collect();
+            let notifications = entries
+                .iter()
+                .filter(|e| eligible && f.notification_layers.as_ref().is_none_or(|ids| ids.contains(&e.layer_id)))
+                .cloned()
+                .collect();
+            let mut purpose_candidates = BTreeMap::new();
+            for purpose in CHANNEL_PURPOSES.into_iter().chain(f.purpose_layers.keys().map(String::as_str)) {
+                if purpose_candidates.contains_key(purpose) {
+                    continue;
+                }
+                let layers = f.purpose_layers.get(purpose).and_then(Option::as_ref);
+                let legacy = CHANNEL_PURPOSES.contains(&purpose);
+                let selected = entries
                     .iter()
                     .filter(|e| {
                         eligible
-                            && f.authorship_layers
-                                .as_ref()
-                                .map_or(matches!(e.layer_id.as_str(), "front" | "cocon" | "present"), |ids| {
-                                    ids.contains(&e.layer_id)
-                                })
+                            && layers.map_or(legacy && matches!(e.layer_id.as_str(), "front" | "cocon"), |ids| {
+                                ids.contains(&e.layer_id)
+                            })
                     })
                     .cloned()
                     .collect();
-                let notifications = entries
-                    .iter()
-                    .filter(|e| eligible && f.notification_layers.as_ref().is_none_or(|ids| ids.contains(&e.layer_id)))
-                    .cloned()
-                    .collect();
-                let mut purpose_candidates = BTreeMap::new();
-                for purpose in CHANNEL_PURPOSES.into_iter().chain(f.purpose_layers.keys().map(String::as_str)) {
-                    if purpose_candidates.contains_key(purpose) {
-                        continue;
-                    }
-                    let layers = f.purpose_layers.get(purpose).and_then(Option::as_ref);
-                    let legacy = CHANNEL_PURPOSES.contains(&purpose);
-                    let selected = entries
-                        .iter()
-                        .filter(|e| {
-                            eligible
-                                && layers.map_or(legacy && matches!(e.layer_id.as_str(), "front" | "cocon"), |ids| {
-                                    ids.contains(&e.layer_id)
-                                })
-                        })
-                        .cloned()
-                        .collect();
-                    purpose_candidates.insert(purpose.into(), selected);
-                }
-                let mut own = f.own.clone();
-                normalize(&mut own);
-                (
-                    id.clone(),
-                    ResolvedFront {
-                        id: id.clone(),
-                        name: f.name.clone(),
-                        deleted: f.deleted,
-                        own,
-                        effective: entries,
-                        source,
-                        state,
-                        issue,
-                        authorship,
-                        notifications,
-                        purpose_candidates,
-                    },
-                )
-            })
-            .collect()
+                purpose_candidates.insert(purpose.into(), selected);
+            }
+            let mut own = f.own.clone();
+            normalize(&mut own);
+            (
+                id.clone(),
+                ResolvedFront {
+                    id: id.clone(),
+                    name: f.name.clone(),
+                    deleted: f.deleted,
+                    own,
+                    effective: entries,
+                    source,
+                    state,
+                    issue,
+                    authorship,
+                    notifications,
+                    purpose_candidates,
+                },
+            )
+        });
+        crate::sort::map(resolved)
     }
 }
 

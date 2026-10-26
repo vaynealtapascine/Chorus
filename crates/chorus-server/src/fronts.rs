@@ -16,8 +16,78 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::oplog;
 
-// Bump whenever the stored current/append-guard contract changes. An old cache rebuilds from
-// the log; it is never a migration of user-authored data.
+pub fn write_denied(conn: &Connection, author: &str, op: &Op) -> anyhow::Result<Option<String>> {
+    if !op.kind.starts_with("front.") {
+        return Ok(None);
+    }
+    if op.scope != format!("account:{author}") {
+        return Ok(Some("front changes belong to the owning account".into()));
+    }
+    let Ok(Some(event)) = Event::from_op(author, op) else { return Ok(None) };
+    use chorus_core::front_history::{Action, Change};
+    let subjects: Vec<(chorus_core::front::SubjectType, &str)> = match &event.action {
+        Action::Change(Change::Switch { entries, .. } | Change::Amend { entries: Some(entries), .. }) => {
+            entries.iter().map(|e| (e.subject_type, e.subject_id.as_str())).collect()
+        }
+        Action::Change(Change::Add { entry, .. }) => vec![(entry.subject_type, &entry.subject_id)],
+        Action::Change(Change::Update { subject_type, subject_id, .. }) => {
+            vec![(*subject_type, subject_id)]
+        }
+        // Removing this account's saved reference never grants access to its subject, and
+        // must remain possible when an offline reference later resolves to a foreign owner.
+        Action::Change(Change::Remove { .. }) => vec![],
+        _ => vec![],
+    };
+    for (kind, id) in subjects {
+        if subject_owner(conn, kind, id)?.is_some_and(|owner| owner != author) {
+            return Ok(Some("front subjects belong to the owning account".into()));
+        }
+    }
+    Ok(None)
+}
+
+fn subject_owner(conn: &Connection, kind: chorus_core::front::SubjectType, id: &str) -> anyhow::Result<Option<String>> {
+    let table = match kind {
+        chorus_core::front::SubjectType::Member => "member",
+        chorus_core::front::SubjectType::Group => "member_group",
+        chorus_core::front::SubjectType::State => "custom_state",
+    };
+    Ok(conn
+        .prepare_cached(&format!("SELECT account_id FROM {table} WHERE id=?1"))?
+        .query_row([id], |r| r.get(0))
+        .optional()?)
+}
+
+/// Unknown/foreign subjects can be retained for late offline parents, but never resolve their
+/// names or become follower-visible through an account that does not own them.
+pub(crate) fn subject_is_owned(
+    conn: &Connection,
+    account: &str,
+    kind: chorus_core::front::SubjectType,
+    id: &str,
+) -> anyhow::Result<bool> {
+    Ok(subject_owner(conn, kind, id)?.as_deref() == Some(account))
+}
+
+pub(crate) fn has_current_reference(conn: &Connection, account: &str, kind: &str, id: &str) -> anyhow::Result<bool> {
+    Ok(conn.prepare_cached(
+        "SELECT EXISTS(SELECT 1 FROM front_interval WHERE account_id=?1 AND end_at IS NULL AND subject_type=?2 AND subject_id=?3
+         UNION ALL SELECT 1 FROM named_front_presence WHERE account_id=?1 AND kind='notifications' AND subject_type=?2 AND subject_id=?3)",
+    )?.query_row(params![account,kind,id],|r|r.get(0))?)
+}
+
+pub fn owned_presence(conn: &Connection, account: &str, entries: &[Presence]) -> anyhow::Result<Vec<Presence>> {
+    let mut own = Vec::new();
+    for entry in entries {
+        if subject_is_owned(conn, account, entry.subject_type, &entry.subject_id)? {
+            own.push(entry.clone());
+        }
+    }
+    Ok(own)
+}
+
+// Bump when the stored contract, recognized front kinds/versions or folding semantics change.
+// An old cache rebuilds from the log; it is never a migration of user-authored data.
 const CACHE_VERSION: i64 = 1;
 
 type Cached = (i64, i64, String, String);
@@ -70,8 +140,24 @@ pub fn account_ops(conn: &Connection, account: &str) -> anyhow::Result<Vec<Op>> 
 /// switches keep their existing path for unconfigured accounts, without scanning their log.
 pub fn after_op(conn: &Connection, op: &Op) -> anyhow::Result<()> {
     let Some(account) = op.scope.strip_prefix("account:") else { return Ok(()) };
-    let Ok(Some(_)) = Event::from_op(account, op) else { return Ok(()) };
     let row = cached(conn, account)?;
+    if !matches!(Event::from_op(account, op), Ok(Some(_))) {
+        // The watermark covers every applied front op, including opaque/malformed history
+        // and reviews. Advance it only after establishing that the preceding prefix is
+        // complete; otherwise an ignored event could conceal earlier unprojected valid ops.
+        if let Some(row) = row {
+            if let Some(seq) = op.seq
+                && row.1 == front_seq(conn, account, Some(seq))?
+                && decode(account, &row).is_some()
+            {
+                conn.prepare_cached("UPDATE front_system_cache SET last_front_seq=?2 WHERE account_id=?1")?
+                    .execute(params![account, front_seq(conn, account, None)?])?;
+            } else {
+                rebuild_account(conn, account)?;
+            }
+        }
+        return Ok(());
+    }
     if row.is_none() && !chorus_core::front_history::is_named_kind(&op.kind) {
         return Ok(());
     }
@@ -91,13 +177,26 @@ pub fn after_op(conn: &Connection, op: &Op) -> anyhow::Result<()> {
 /// Own-account read only. Callers authorize the account before reaching this function. Invalid
 /// derived caches and pre-upgrade opaque named-front operations are rebuilt, never discarded.
 pub fn current(conn: &Connection, account: &str) -> anyhow::Result<Option<Current>> {
-    if let Some(row) = cached(conn, account)?
+    let row = cached(conn, account)?;
+    if let Some(row) = &row
         && row.1 == front_seq(conn, account, None)?
-        && let Some(index) = decode(account, &row)
+        && let Some(index) = decode(account, row)
     {
         return Ok(Some(index.current));
     }
+    if row.is_none() && !has_named_ops(conn, account)? {
+        return Ok(None);
+    }
     rebuild_account(conn, account)
+}
+
+fn has_named_ops(conn: &Connection, account: &str) -> anyhow::Result<bool> {
+    Ok(conn
+        .prepare_cached(
+            "SELECT EXISTS(SELECT 1 FROM op WHERE scope=?1 AND status='applied'
+         AND kind IN ('front.define','front.layer','front.change'))",
+        )?
+        .query_row([format!("account:{account}")], |r| r.get(0))?)
 }
 
 /// A bulk rebuild calls this once per configured account after replaying the log, rather than
@@ -397,7 +496,7 @@ mod tests {
                     account,
                     CHORUS,
                     "front.define",
-                    json!({"purpose_layers":{"future:purpose":["quiet"],"reading":[]}}),
+                    json!({"purpose_layers":{"future:purpose":["quiet"],"\u{0}future":["quiet"],"reading":[]}}),
                 ),
                 true,
             ));
@@ -407,10 +506,42 @@ mod tests {
         let rows:Vec<(String,String)>=conn.prepare("SELECT account_id,subject_id FROM named_front_presence WHERE kind='purpose:future:purpose' ORDER BY account_id").unwrap()
             .query_map([],|r|Ok((r.get(0)?,r.get(1)?))).unwrap().collect::<Result<_,_>>().unwrap();
         assert_eq!(rows, vec![(BODY.into(), "first".into()), (OTHER.into(), "second".into())]);
+        let binary_key_rows: i64 = conn
+            .query_row("SELECT count(*) FROM named_front_presence WHERE kind=?1", ["purpose:\0future"], |r| r.get(0))
+            .unwrap();
+        assert_eq!(binary_key_rows, 2, "opaque purpose IDs retain their complete byte identity");
         let readers: i64 = conn
             .query_row("SELECT count(*) FROM named_front_presence WHERE kind='purpose:reading'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(readers, 0, "an explicit empty selection is not a legacy default");
+    }
+
+    #[test]
+    fn purpose_constraint_upgrade_keeps_existing_rows_cache_and_analysis_view() {
+        let mut conn = crate::db::open_memory().unwrap();
+        for (_, sql) in &crate::db::MIGRATIONS[..11] {
+            conn.execute_batch(sql).unwrap();
+        }
+        crate::db::set_meta(&conn, "schema_version", "11").unwrap();
+        let first = insert(
+            &conn,
+            op(1, BODY, CHORUS, "front.change", json!({"action":"switch","entries":[presence("own","quiet")]})),
+            true,
+        );
+        let before = cached(&conn, BODY).unwrap();
+        assert_eq!(crate::db::migrate(&mut conn).unwrap(), 1);
+        assert_eq!(cached(&conn, BODY).unwrap(), before);
+        assert_current(&conn, BODY, &[first]);
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM v_named_front_current", [], |r| r.get::<_, i64>(0)).unwrap(),
+            1
+        );
+        insert(&conn, op(2, BODY, CHORUS, "front.define", json!({"purpose_layers":{"\u{0}future":["quiet"]}})), true);
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM named_front_presence WHERE kind=?1", ["purpose:\0future"], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(conn.query_row("SELECT count(*) FROM op", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
     }
 
     #[test]
@@ -472,6 +603,29 @@ mod tests {
     }
 
     #[test]
+    fn ignored_front_events_advance_only_a_complete_prefix_and_match_a_rebuild() {
+        let conn = database();
+        let mut ops = vec![insert(&conn, op(1, BODY, CHORUS, "front.define", json!({"name":"Chorus"})), true)];
+        // A legacy shape that is accepted as a stored op but has no parseable front action.
+        ops.push(insert(&conn, op(2, BODY, BODY, "front.switch", json!({})), true));
+        let before = cached(&conn, BODY).unwrap();
+        rebuild_account(&conn, BODY).unwrap();
+        assert_eq!(cached(&conn, BODY).unwrap(), before);
+        // An opaque operation cannot move the watermark past an earlier unprojected valid one.
+        ops.push(insert(&conn, op(3, BODY, CHORUS, "front.define", json!({"name":"Arrived earlier"})), false));
+        let mut future = op(4, BODY, CHORUS, "front.define", json!({"name":"Future"}));
+        future.v = 2;
+        let future = insert(&conn, future, false);
+        crate::project::after_insert(&conn, &future).unwrap();
+        ops.push(future);
+        assert_current(&conn, BODY, &ops);
+        assert_eq!(current(&conn, BODY).unwrap().unwrap().system.fronts[CHORUS].name, "Arrived earlier");
+        let before = cached(&conn, BODY).unwrap();
+        rebuild_account(&conn, BODY).unwrap();
+        assert_eq!(cached(&conn, BODY).unwrap(), before);
+    }
+
+    #[test]
     fn whole_database_rebuild_reproduces_named_state_without_copying_bad_projections() {
         let mut conn = database();
         let ops = vec![
@@ -529,5 +683,128 @@ mod tests {
         assert_eq!(count, 1);
         let count: i64 = conn.query_row("SELECT count(*) FROM named_front_presence", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn live_ingestion_and_owner_reads_use_canonical_body_and_enforce_account_ownership() {
+        let mut conn = database();
+        for (account, handle) in [(BODY, "owner"), (OTHER, "other")] {
+            conn.execute(
+                "INSERT INTO account(id,kind,handle,created_at) VALUES(?1,'system',?2,0)",
+                params![account, handle],
+            )
+            .unwrap();
+            crate::ingest::grant(&conn, account, &format!("account:{account}")).unwrap();
+        }
+        let own = chorus_core::id::new_id(T, [51; 10]);
+        let foreign = chorus_core::id::new_id(T, [52; 10]);
+        for (account, member, name) in [(BODY, &own, "Own member"), (OTHER, &foreign, "Private other name")] {
+            crate::ingest::server_op(
+                &conn,
+                account,
+                "member.create",
+                &format!("account:{account}"),
+                Some(member),
+                json!({"name":name}),
+                T as i64,
+            )
+            .unwrap();
+        }
+        let scope = format!("account:{BODY}");
+        crate::ingest::server_op(
+            &conn,
+            BODY,
+            "front.change",
+            &scope,
+            Some(CHORUS),
+            json!({"action":"switch","entries":[presence(&own,"quiet")]}),
+            T as i64 + 1000,
+        )
+        .unwrap();
+        crate::ingest::server_op(
+            &conn,
+            BODY,
+            "front.define",
+            &scope,
+            Some(BODY),
+            json!({"follow_source":CHORUS}),
+            T as i64 + 2000,
+        )
+        .unwrap();
+        let view = crate::api_data::current_front(&conn, &crate::api_data::Principal::owner(BODY)).unwrap();
+        assert_eq!(view["front"][0]["subject_id"], own);
+        assert_eq!(view["front"][0]["layer_id"], "quiet");
+        assert_eq!(view["front"][0]["name"], "Own member");
+        assert!(view["front"][0].get("level").is_none());
+        let expected = current(&conn, BODY).unwrap();
+        let before: i64 = conn.query_row("SELECT count(*) FROM op", [], |r| r.get(0)).unwrap();
+        let (rejected, new) = crate::ingest::op_as(
+            &conn,
+            BODY,
+            "phone",
+            "front.change",
+            &scope,
+            Some(BODY),
+            json!({"action":"switch","entries":[presence(&foreign,"front")]}),
+            T as i64 + 3000,
+            None,
+        )
+        .unwrap();
+        assert!(new.is_none());
+        assert_eq!(rejected.error.unwrap().code, "forbidden");
+        assert_eq!(current(&conn, BODY).unwrap(), expected);
+        assert_eq!(conn.query_row("SELECT count(*) FROM op", [], |r| r.get::<_, i64>(0)).unwrap(), before);
+        // Even an accidental scope-access grant is not authority to change another account's front.
+        crate::ingest::grant(&conn, OTHER, &scope).unwrap();
+        let (rejected, new) = crate::ingest::op_as(
+            &conn,
+            OTHER,
+            "phone",
+            "front.define",
+            &scope,
+            Some(CHORUS),
+            json!({"name":"Forged"}),
+            T as i64 + 4000,
+            None,
+        )
+        .unwrap();
+        assert!(new.is_none());
+        assert_eq!(rejected.error.unwrap().code, "forbidden");
+        let other = crate::api_data::current_front(&conn, &crate::api_data::Principal::owner(OTHER)).unwrap();
+        assert!(!other.to_string().contains(CHORUS));
+        crate::project::rebuild(&mut conn).unwrap();
+        assert_eq!(current(&conn, BODY).unwrap(), expected);
+    }
+
+    #[test]
+    #[ignore = "release-mode SQL current/append budget; cargo test -p chorus-server --lib fronts::tests::current_storage_budgets --release -- --ignored --nocapture"]
+    fn current_storage_budgets() {
+        let conn = database();
+        let tx = conn.unchecked_transaction().unwrap();
+        for i in 1..=10_000 {
+            insert(&tx, op(i, BODY, BODY, "front.switch", json!({"entries":[]})), false);
+        }
+        tx.commit().unwrap();
+        let start = std::time::Instant::now();
+        for _ in 0..1000 {
+            assert!(current(&conn, BODY).unwrap().is_none());
+        }
+        let legacy = start.elapsed();
+        insert(&conn, op(10_001, BODY, CHORUS, "front.define", json!({"name":"Chorus"})), true);
+        let next: Vec<_> = (10_002..=11_001)
+            .map(|i| {
+                op(i, BODY, CHORUS, "front.change", json!({"action":"switch","entries":[presence("owned","front")]}))
+            })
+            .collect();
+        let tx = conn.unchecked_transaction().unwrap();
+        let start = std::time::Instant::now();
+        for o in next {
+            insert(&tx, o, true);
+        }
+        let live = start.elapsed();
+        tx.commit().unwrap();
+        eprintln!("1,000 legacy-only reads after 10,000 ops: {legacy:?}; 1,000 current SQL appends: {live:?}");
+        assert!(legacy < std::time::Duration::from_millis(100));
+        assert!(live < std::time::Duration::from_millis(500));
     }
 }

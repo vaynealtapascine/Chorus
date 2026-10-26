@@ -90,8 +90,11 @@ front/co-conscious/present roles.
 The grant also covers front metadata. A visible front following an ungranted source must not
 expose that source's ID, name, configuration, raw history or cause chain. Follower history and
 statistics still derive from revealed follower records, never the owner's raw effective timeline.
-The named-front storage/wire extension lands with its implementation; the current follower
-pipeline still serves the legacy Body view.
+The compatibility follower pipeline now reads configured Body's resolved notification pool,
+restricted to the original layer IDs and existing ceiling. A private followed source's metadata
+and raw cause/op IDs are omitted. Additional-front/custom-layer grants and their independent
+reveal records are still pending; this path does not grant either implicitly. The running
+clients do not expose those configuration controls yet.
 
 ```json
 {

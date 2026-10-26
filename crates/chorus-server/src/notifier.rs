@@ -61,6 +61,24 @@ fn json_col<T: for<'de> Deserialize<'de> + Default>(s: Option<String>) -> T {
 }
 
 fn current_front(conn: &Connection, account: &str) -> anyhow::Result<Vec<Entry>> {
+    if let Some(current) = crate::fronts::current(conn, account)? {
+        let body = &current.resolved[account];
+        // Additional fronts and independent custom-layer grants are handled by their separate
+        // reveal pipeline. This compatibility surface remains Body-only and can reveal only
+        // the original layer IDs allowed by the existing ceiling.
+        return Ok(crate::fronts::owned_presence(conn, account, &body.notifications)?
+            .into_iter()
+            .filter_map(|p| {
+                let level = match p.layer_id.as_str() {
+                    "front" => Level::Front,
+                    "cocon" => Level::Cocon,
+                    "present" => Level::Present,
+                    _ => return None,
+                };
+                Some(Entry { subject_type: p.subject_type, subject_id: p.subject_id, level, is_primary: p.is_primary })
+            })
+            .collect());
+    }
     let mut st = conn.prepare_cached(
         "SELECT subject_type, subject_id, level, is_primary FROM front_interval
          WHERE account_id = ?1 AND end_at IS NULL ORDER BY position",
@@ -73,13 +91,15 @@ fn current_front(conn: &Connection, account: &str) -> anyhow::Result<Vec<Entry>>
         let (t, id, level, primary) = r?;
         let subject_type = serde_json::from_value(json!(t))?;
         let level = serde_json::from_value(json!(level))?;
-        out.push(Entry { subject_type, subject_id: id, level, is_primary: primary });
+        if crate::fronts::subject_is_owned(conn, account, subject_type, &id)? {
+            out.push(Entry { subject_type, subject_id: id, level, is_primary: primary });
+        }
     }
     Ok(out)
 }
 
 struct Latest {
-    id: String,
+    id: Option<String>,
     occurred_at: i64,
     tz_offset_min: i32,
     notify: Notify,
@@ -93,7 +113,7 @@ fn latest_switch(conn: &Connection, account: &str) -> anyhow::Result<Option<Late
             [account],
             |r| {
                 Ok(Latest {
-                    id: r.get(0)?,
+                    id: Some(r.get(0)?),
                     occurred_at: r.get(1)?,
                     tz_offset_min: r.get(2)?,
                     notify: serde_json::from_value(json!(r.get::<_, String>(3)?)).unwrap_or_default(),
@@ -183,7 +203,7 @@ fn groups(conn: &Connection, account: &str) -> anyhow::Result<BTreeMap<String, B
     Ok(out)
 }
 
-fn names_for(conn: &Connection, seen: &[&Seen]) -> anyhow::Result<Names> {
+fn names_for(conn: &Connection, account: &str, seen: &[&Seen]) -> anyhow::Result<Names> {
     let mut out = BTreeMap::new();
     for s in seen {
         let Seen::Subject { subject_type, subject_id, .. } = s else { continue };
@@ -191,18 +211,18 @@ fn names_for(conn: &Connection, seen: &[&Seen]) -> anyhow::Result<Names> {
         let row: Option<NameRow> = match subject_type {
             SubjectType::Member => conn
                 .query_row(
-                    "SELECT name, display_name, color, json_extract(sigils, '$[0]') FROM member WHERE id = ?1",
-                    [subject_id],
+                    "SELECT name, display_name, color, json_extract(sigils, '$[0]') FROM member WHERE id = ?1 AND account_id=?2",
+                    params![subject_id,account],
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
                 )
                 .optional()?,
             SubjectType::Group => conn
-                .query_row("SELECT name, NULL, color, NULL FROM member_group WHERE id = ?1", [subject_id], |r| {
+                .query_row("SELECT name, NULL, color, NULL FROM member_group WHERE id = ?1 AND account_id=?2", params![subject_id,account], |r| {
                     Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
                 })
                 .optional()?,
             SubjectType::State => conn
-                .query_row("SELECT name, NULL, color, NULL FROM custom_state WHERE id = ?1", [subject_id], |r| {
+                .query_row("SELECT name, NULL, color, NULL FROM custom_state WHERE id = ?1 AND account_id=?2", params![subject_id,account], |r| {
                     Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
                 })
                 .optional()?,
@@ -258,12 +278,40 @@ fn draws() -> Draws {
 
 /// Queue follower notifications after a front change of `account` (inside the ingest tx).
 pub fn on_front_change(conn: &Connection, account: &str, now: i64) -> anyhow::Result<()> {
+    queue_front_change(conn, account, None, now)
+}
+
+pub fn on_front_op(conn: &Connection, account: &str, op: &chorus_core::op::Op, now: i64) -> anyhow::Result<()> {
+    queue_front_change(conn, account, Some(op), now)
+}
+
+fn queue_front_change(
+    conn: &Connection,
+    account: &str,
+    cause: Option<&chorus_core::op::Op>,
+    now: i64,
+) -> anyhow::Result<()> {
     let follows = active_follows(conn, account)?;
     if follows.is_empty() {
         return Ok(());
     }
     let front = current_front(conn, account)?;
-    let latest = latest_switch(conn, account)?;
+    let latest = if crate::fronts::current(conn, account)?.is_some() {
+        cause.and_then(|op| chorus_core::front_history::Event::from_op(account, op).ok().flatten()).map(|e| {
+            use chorus_core::front_history::{Action, Change};
+            let notify = match e.action {
+                Action::Change(
+                    Change::Switch { notify, .. } | Change::Add { notify, .. } | Change::Remove { notify, .. },
+                ) => notify,
+                _ => Notify::Default,
+            };
+            // No raw cause/source op ID crosses the follower boundary, even when Body follows
+            // a private front. Control changes use record time; presence keeps its human time.
+            Latest { id: None, occurred_at: e.occurred_at, tz_offset_min: e.tz_offset_min, notify }
+        })
+    } else {
+        latest_switch(conn, account)?
+    };
     let policies = policies(conn, account)?;
     let groups = groups(conn, account)?;
     for f in follows {
@@ -323,7 +371,7 @@ pub fn on_front_change(conn: &Connection, account: &str, now: i64) -> anyhow::Re
         let q = Queued {
             target_account_id: account.into(),
             follow_id: f.id.clone(),
-            names: names_for(conn, &all)?,
+            names: names_for(conn, account, &all)?,
             view: after,
             diff_arrived: arrived,
             diff_left: left,
@@ -338,7 +386,7 @@ pub fn on_front_change(conn: &Connection, account: &str, now: i64) -> anyhow::Re
         conn.execute(
             "INSERT INTO notification (id, recipient_account_id, kind, source_op_id, payload, created_at, due_at)
              VALUES (?1, ?2, 'switch', ?3, ?4, ?5, ?6)",
-            params![id, f.follower, latest.as_ref().map(|l| l.id.clone()), serde_json::to_string(&q)?, now, due],
+            params![id, f.follower, latest.as_ref().and_then(|l| l.id.clone()), serde_json::to_string(&q)?, now, due],
         )?;
     }
     Ok(())

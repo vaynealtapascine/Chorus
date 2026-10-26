@@ -46,7 +46,7 @@ describe('saved projections through the actual wasm core', () => {
     const token = JSON.parse(snapshot.digest);
     for (const digest of [
       JSON.stringify(token.ops),
-      JSON.stringify({ ...token, version: 0 }),
+      JSON.stringify({ ...token, version: token.version - 1 }),
       JSON.stringify({ ...token, version: token.version + 1 }),
       JSON.stringify({ ...token, unknown: true }),
       JSON.stringify({ ...token, ops: { count: 1, xor: `aé${'a'.repeat(29)}` } }),

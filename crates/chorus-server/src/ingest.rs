@@ -81,6 +81,9 @@ pub fn accept(
     if !allowed {
         return Ok((AckResult::err(o.id, "forbidden", format!("{} not writable", o.scope), false), None));
     }
+    if !preserved && let Some(why) = crate::fronts::write_denied(conn, &author, &o)? {
+        return Ok((AckResult::err(o.id, "forbidden", why, false), None));
+    }
     if !preserved && !crate::visibility::related_write_allowed(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", "message is private to another account".into(), false), None));
     }
@@ -197,7 +200,19 @@ fn store_and_project(conn: &Connection, o: &mut Op, suspect: bool, preserved: bo
         && o.kind.starts_with("front.")
         && let Some(account) = o.scope.strip_prefix("account:")
     {
-        crate::notifier::on_front_change(conn, account, now)?;
+        crate::notifier::on_front_op(conn, account, o, now)?;
+    }
+    // Offline parents may arrive after the front operation. Retain the reference throughout,
+    // but only schedule its reveal once the subject is known to belong to this account.
+    if !preserved
+        && matches!(o.kind.as_str(), "member.create" | "group.create" | "state.create")
+        && let Some(account) = o.scope.strip_prefix("account:")
+        && let Some(id) = o.entity()
+    {
+        let subject_type = o.kind.split_once('.').map(|(kind, _)| kind).unwrap_or_default();
+        if crate::fronts::has_current_reference(conn, account, subject_type, id)? {
+            crate::notifier::on_front_change(conn, account, now)?;
+        }
     }
     if !preserved {
         crate::activity::on_op(conn, o, now)?;

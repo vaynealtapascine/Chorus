@@ -7,7 +7,6 @@
 //! account (SYNC §4.2).
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
 
 use crate::speaker::Fronter;
 
@@ -36,8 +35,8 @@ pub fn readers_for_front(
     if !per_member {
         return out;
     }
-    let owned: BTreeSet<_> = members.iter().map(String::as_str).collect();
-    let mut seen = BTreeSet::from([""]);
+    let owned = crate::sort::set(members.iter().map(String::as_str));
+    let mut seen = crate::sort::set([""]);
     for entry in candidates {
         if entry.subject_type == crate::front::SubjectType::Member
             && owned.contains(entry.subject_id.as_str())

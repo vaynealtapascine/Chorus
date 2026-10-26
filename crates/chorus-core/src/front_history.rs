@@ -263,6 +263,69 @@ pub fn is_named_kind(kind: &str) -> bool {
     matches!(kind, "front.define" | "front.layer" | "front.change")
 }
 
+/// New-write constraints in addition to the stable fold decoder. Old/restored envelopes keep
+/// their original validity and estimated record-time provenance.
+pub(crate) fn validate_new(o: &Op) -> Result<(), op::OpError> {
+    let bad = |s: String| op::OpError::BadPayload(s);
+    let account = o.scope.strip_prefix("account:").unwrap_or_default();
+    let event = Event::from_op(account, o).map_err(bad)?.ok_or_else(|| bad("unsupported front event".into()))?;
+    if o.time_source != crate::time::TimeSource::Auto {
+        return Err(bad("use effective_at for presence time; the envelope records creation time".into()));
+    }
+    let id = |s: &str| {
+        if crate::id::is_valid_id(s) {
+            Ok(())
+        } else {
+            Err(bad("front subject/source/target IDs must be UUIDv7".into()))
+        }
+    };
+    let entries = |es: &[Presence]| es.iter().try_for_each(|e| id(&e.subject_id));
+    match &event.action {
+        Action::Define(p) => {
+            if p.name.as_ref().is_some_and(|n| n.trim().is_empty()) {
+                return Err(bad("front name must not be empty".into()));
+            }
+            if let Some(Some(source)) = &p.follow_source {
+                id(source)?;
+            }
+        }
+        Action::Layer(p) => {
+            if p.name.as_ref().is_some_and(|n| n.trim().is_empty()) {
+                return Err(bad("layer name must not be empty".into()));
+            }
+        }
+        Action::Change(change) => match change {
+            Change::Switch { entries: es, based_on, .. } => {
+                entries(es)?;
+                if let Some(base) = based_on {
+                    id(base)?;
+                }
+            }
+            Change::Add { entry, based_on, .. } => {
+                id(&entry.subject_id)?;
+                if let Some(base) = based_on {
+                    id(base)?;
+                }
+            }
+            Change::Remove { subject_id, based_on, .. } | Change::Update { subject_id, based_on, .. } => {
+                id(subject_id)?;
+                if let Some(base) = based_on {
+                    id(base)?;
+                }
+            }
+            Change::Retract { target_op_id } | Change::Unretract { target_op_id } => id(target_op_id)?,
+            Change::Amend { target_op_id, entries: es, .. } => {
+                id(target_op_id)?;
+                if let Some(es) = es {
+                    entries(es)?;
+                }
+            }
+            Change::Resume => {}
+        },
+    }
+    Ok(())
+}
+
 impl Event {
     /// Parse only this account's supported front operations. Unknown versions and purged payloads
     /// remain opaque. This parser is not an authorization check and never reads another scope.
@@ -932,7 +995,7 @@ pub(crate) fn transition_intervals(
     open: &mut BTreeMap<Subject, Interval>,
     intervals: &mut Vec<Interval>,
 ) {
-    let next: BTreeMap<_, _> = entries.iter().enumerate().map(|(i, e)| (subject(e), (i, e))).collect();
+    let next = crate::sort::map(entries.iter().enumerate().map(|(i, e)| (subject(e), (i, e))));
     let close: Vec<_> = open
         .iter()
         .filter(|(s, iv)| next.get(*s).is_none_or(|(_, e)| e.layer_id != iv.layer_id || e.is_primary != iv.is_primary))
@@ -973,15 +1036,16 @@ fn interval_id(front_id: &str, entry: &Presence, op_id: &str) -> String {
 }
 
 fn own_reviews(events: &[&Event], history: &History, window_ms: i64) -> Vec<front::Review> {
-    let by_id: BTreeMap<_, _> = events.iter().map(|e| (e.id.as_str(), *e)).collect();
-    let devices: BTreeSet<_> = history
-        .switches
-        .iter()
-        .filter(|r| !r.retracted)
-        .filter_map(|r| by_id.get(r.id.as_str()))
-        .filter(|e| e.seq.is_some())
-        .map(|e| e.device_id.as_str())
-        .collect();
+    let by_id = crate::sort::map(events.iter().map(|e| (e.id.as_str(), *e)));
+    let devices = crate::sort::set(
+        history
+            .switches
+            .iter()
+            .filter(|r| !r.retracted)
+            .filter_map(|r| by_id.get(r.id.as_str()))
+            .filter(|e| e.seq.is_some())
+            .map(|e| e.device_id.as_str()),
+    );
     if devices.len() < 2 {
         return vec![];
     }

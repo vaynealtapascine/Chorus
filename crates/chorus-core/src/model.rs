@@ -38,6 +38,9 @@ pub struct Projection {
     pub sets: BTreeMap<String, BTreeMap<String, bool>>,
     /// account id → folded front
     pub fronts: BTreeMap<String, front::FoldResult>,
+    /// Configured accounts only. Current named-front state; histories are read separately.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub front_systems: BTreeMap<String, crate::front_projection::Current>,
     /// account id → concurrent-switch review cards (SYNC.md §5.7); resolutions are in
     /// `rows.front_review`.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -129,14 +132,27 @@ fn str_field<'a>(o: &'a Op, k: &str) -> &'a str {
 
 /// Project a set of ops. Duplicates (same id) are collapsed first.
 pub fn project<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Projection {
-    let ops = dedupe(ops);
+    project_indexed(ops).0
+}
+
+pub(crate) type FrontSystems<'a> = BTreeMap<String, Vec<&'a Op>>;
+
+/// Also retain the current-state append guards for a live projector's first load.
+pub(crate) fn project_indexed<'a>(
+    ops: impl IntoIterator<Item = &'a Op>,
+) -> (Projection, BTreeMap<String, crate::front_projection::Index>) {
+    project_sorted(dedupe(ops))
+}
+
+fn project_sorted(ops: Vec<&Op>) -> (Projection, BTreeMap<String, crate::front_projection::Index>) {
     let mut p = Projection::default();
     let mut front_ops: BTreeMap<String, Vec<FrontOp>> = BTreeMap::new();
+    let mut front_systems = FrontSystems::new();
     // read.mark maxima and read.set, resolved after the loop
     let mut reads: Reads = BTreeMap::new();
 
     for o in ops {
-        apply_op(&mut p, o, &mut front_ops, &mut reads);
+        apply_op(&mut p, o, &mut front_ops, &mut front_systems, &mut reads);
     }
 
     for (acct, ops) in front_ops {
@@ -153,7 +169,15 @@ pub fn project<'a>(ops: impl IntoIterator<Item = &'a Op>) -> Projection {
         }
     }
     p.set_clocks.clear();
-    p
+    let mut indexes = BTreeMap::new();
+    for (account, ops) in front_systems {
+        if ops.iter().any(|o| crate::front_history::is_named_kind(&o.kind)) {
+            let index = crate::front_projection::Index::from_ops(&account, ops);
+            p.front_systems.insert(account.clone(), index.current.clone());
+            indexes.insert(account, index);
+        }
+    }
+    (p, indexes)
 }
 
 /// The effective read position for one read-state key: the furthest mark newer than the last
@@ -169,7 +193,13 @@ pub(crate) fn read_row(marks: Vec<ReadMark>, manual: Option<ReadMark>) -> Option
 
 /// Apply one op to a projection (the body of [`project`]; also used by the incremental
 /// [`crate::projector::Projector`], so both share exactly one definition of every op's effect).
-pub(crate) fn apply_op(p: &mut Projection, o: &Op, front_ops: &mut BTreeMap<String, Vec<FrontOp>>, reads: &mut Reads) {
+pub(crate) fn apply_op<'a>(
+    p: &mut Projection,
+    o: &'a Op,
+    front_ops: &mut BTreeMap<String, Vec<FrontOp>>,
+    front_systems: &mut FrontSystems<'a>,
+    reads: &mut Reads,
+) {
     let Ok(Known::Yes(spec)) = op::validate(o) else {
         p.opaque += 1;
         return;
@@ -239,6 +269,16 @@ pub(crate) fn apply_op(p: &mut Projection, o: &Op, front_ops: &mut BTreeMap<Stri
         Action::Front => {
             if let (Some(acct), Ok(f)) = (scope_account(o), FrontOp::from_op(o)) {
                 front_ops.entry(acct.to_string()).or_default().push(f);
+                front_systems.entry(acct.to_string()).or_default().push(o);
+            } else {
+                p.opaque += 1;
+            }
+        }
+        Action::NamedFront => {
+            if let Some(account) = scope_account(o)
+                && let Ok(Some(_)) = crate::front_history::Event::from_op(account, o)
+            {
+                front_systems.entry(account.into()).or_default().push(o);
             } else {
                 p.opaque += 1;
             }

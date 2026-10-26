@@ -138,6 +138,8 @@ pub enum Action {
     Revise,
     /// Front timeline ops.
     Front,
+    /// Independent front configuration and presence (D-080).
+    NamedFront,
     /// Kind-specific logic (read marks, reviews, pins, drafts, prefs…).
     Special,
     /// Server-only administrative ops.
@@ -286,6 +288,9 @@ pub static CATALOGUE: &[KindSpec] = &[
     k!("front.unretract", "switch", Account, Front),
     k!("front.amend", "switch", Account, Front),
     k!("front.review_resolve", "front_review", Account, Special),
+    k!("front.define", "named_front", Account, NamedFront),
+    k!("front.layer", "front_layer", Account, NamedFront),
+    k!("front.change", "named_front", Account, NamedFront),
     k!("space.create", "space", Space, Create, SPACE_FIELDS, &["kind"]),
     k!("space.set", "space", Space, Set, SPACE_FIELDS, &["kind"]),
     k!("space.delete", "space", Space, Delete),
@@ -458,7 +463,7 @@ pub fn validate(op: &Op) -> Result<Known, OpError> {
     }
     // Every op names the object it touches, except a few whose key lives in the payload.
     let entity_in_payload = matches!(spec.action, Action::SetAdd | Action::SetRemove | Action::Special)
-        || matches!(op.kind.as_str(), "front.retract" | "front.unretract" | "front.amend");
+        || matches!(op.kind.as_str(), "front.retract" | "front.unretract" | "front.amend" | "front.layer");
     if op.entity_id.is_none() && !entity_in_payload {
         return Err(OpError::MissingEntity);
     }
@@ -538,6 +543,7 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
         }
     }
     match op.kind.as_str() {
+        "front.define" | "front.layer" | "front.change" => crate::front_history::validate_new(op)?,
         "message.send" | "message.forward" | "message.edit" | "post.create" | "post.edit" => {
             typed("text", Value::is_string, "text")?;
             typed("entities", Value::is_array, "a list")?;
@@ -764,6 +770,44 @@ mod tests {
 
     fn acct() -> String {
         format!("account:{}", new_id(1, [3; 10]))
+    }
+
+    #[test]
+    fn named_front_new_writes_validate_independent_fields_ids_and_record_time() {
+        let account = acct();
+        let member = new_id(1, [4; 10]);
+        let good = op(
+            "front.change",
+            &account,
+            json!({"action":"switch",
+            "entries":[{"subject_type":"member","subject_id":member,"layer_id":"arbitrary custom layer"}],
+            "effective_at":1,"history_only":true}),
+        );
+        assert!(matches!(validate_new(&good), Ok(Known::Yes(_))));
+        for payload in [
+            json!({"action":"switch","entries":[{"subject_type":"member","subject_id":"foreign alias","layer_id":"front"}]}),
+            json!({"action":"resume","effective_at":1}),
+            json!({"action":"resume","entries":[]}),
+            json!({"action":"update","subject_type":"member","subject_id":member,"layer_id":""}),
+            json!({"action":"amend","target_op_id":"bad id"}),
+        ] {
+            let mut o = good.clone();
+            o.payload = payload;
+            assert!(validate_new(&o).is_err());
+        }
+        let mut user = good.clone();
+        user.time_source = TimeSource::User;
+        assert!(validate_new(&user).is_err());
+        assert!(matches!(validate(&user), Ok(Known::Yes(_))), "restored histories retain their envelope");
+        assert!(validate_new(&op("front.define", &account, json!({"follow_source":"bad id"}))).is_err());
+        assert!(
+            validate_new(&op("front.define", &account, json!({"purpose_layers":{"authorship":["front"]}}))).is_err()
+        );
+        let mut layer = op("front.layer", &account, json!({"layer_id":"quiet","level":-10}));
+        layer.entity_id = None;
+        assert!(matches!(validate_new(&layer), Ok(Known::Yes(_))));
+        layer.payload["name"] = json!("  ");
+        assert!(validate_new(&layer).is_err());
     }
 
     #[test]

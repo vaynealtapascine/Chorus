@@ -20,9 +20,15 @@ use crate::{ingest, oplog};
 
 /// Re-project everything `o` touches. Runs inside the ingest transaction.
 pub fn after_insert(conn: &Connection, o: &Op) -> anyhow::Result<()> {
-    let Ok(Known::Yes(spec)) = op::validate(o) else { return Ok(()) };
+    let Ok(Known::Yes(spec)) = op::validate(o) else {
+        if o.kind.starts_with("front.") && !REBUILDING.with(|r| r.get()) {
+            crate::fronts::after_op(conn, o)?;
+        }
+        return Ok(());
+    };
     match spec.action {
         Action::Front => front_op(conn, o),
+        Action::NamedFront => Ok(()), // current state below; bulk rebuild backfills once at the end
         Action::SetAdd | Action::SetRemove => element_set(conn, spec.table, o),
         Action::Special => special(conn, o),
         Action::Admin => Ok(()),
@@ -34,7 +40,11 @@ pub fn after_insert(conn: &Connection, o: &Op) -> anyhow::Result<()> {
                 _ => entity(conn, spec.table, o.entity().unwrap_or("")),
             }
         }
+    }?;
+    if o.kind.starts_with("front.") && !REBUILDING.with(|r| r.get()) {
+        crate::fronts::after_op(conn, o)?;
     }
+    Ok(())
 }
 
 /// Tables whose `.set` has no effect beyond its own fields (no derived rows, links or parents),

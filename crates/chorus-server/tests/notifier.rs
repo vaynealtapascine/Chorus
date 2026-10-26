@@ -117,6 +117,122 @@ fn world() -> (World, String, String, String) {
 }
 
 #[test]
+fn named_body_follows_a_private_source_through_the_existing_delayed_reveal_boundary() {
+    let (mut w, kai, june, _) = world();
+    let body = w.sys.clone();
+    let source = new_id(NOW as u64, [200; 10]);
+    let baseline = notifier::follower_view(&w.c, &w.friend, &body).unwrap();
+    w.push("front.define", &source, json!({"name":"Private source name"}), NOW);
+    w.push(
+        "front.change",
+        &source,
+        json!({"action":"switch","entries":[{
+            "subject_type":"member","subject_id":kai,"layer_id":"front"
+        }]}),
+        NOW + 1000,
+    );
+    assert_eq!(notifier::follower_view(&w.c, &w.friend, &body).unwrap(), baseline);
+    assert!(w.inbox().is_empty());
+    let caused = w.push("front.define", &body, json!({"follow_source":source}), NOW + 2000);
+    let own = chorus_server::api_data::current_front(&w.c, &chorus_server::api_data::Principal::owner(&body)).unwrap();
+    assert_eq!(own["front"][0]["subject_id"], kai);
+    assert_eq!(own["front_system"]["resolved"][&body]["source"], source);
+    let (due, source_op, payload): (i64, Option<String>, String) = w.c.query_row(
+        "SELECT due_at,source_op_id,payload FROM notification WHERE kind='switch' AND cancelled_at IS NULL ORDER BY created_at DESC LIMIT 1",
+        [],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
+    assert!(source_op.is_none());
+    for private in [&source, &caused.id, "Private source name"] {
+        assert!(!payload.contains(private), "the reveal payload must not carry a raw source/cause");
+    }
+    notifier::process_due(&w.c, due - 1).unwrap();
+    assert_eq!(notifier::follower_view(&w.c, &w.friend, &body).unwrap(), baseline);
+    notifier::process_due(&w.c, due).unwrap();
+    assert_eq!(w.view(), ["Kai"]);
+    let shown = notifier::follower_view(&w.c, &w.friend, &body).unwrap();
+    w.push("front.layer", &body, json!({"layer_id":"quiet","name":"Fronting","level":0}), due + 1000);
+    w.push(
+        "front.change",
+        &source,
+        json!({"action":"switch","entries":[{
+            "subject_type":"member","subject_id":june,"layer_id":"quiet"
+        }]}),
+        due + 2000,
+    );
+    assert_eq!(notifier::follower_view(&w.c, &w.friend, &body).unwrap(), shown);
+    let own = chorus_server::api_data::current_front(&w.c, &chorus_server::api_data::Principal::owner(&body)).unwrap();
+    assert_eq!(own["front"][0]["layer_id"], "quiet");
+    assert!(own["front"][0].get("level").is_none(), "a custom display name never aliases a legacy role");
+    let later: i64 =
+        w.c.query_row("SELECT max(due_at) FROM notification WHERE kind='switch' AND cancelled_at IS NULL", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    notifier::process_due(&w.c, later).unwrap();
+    assert!(w.view().is_empty(), "legacy Body grants do not grant a custom layer");
+    let follower = notifier::follower_view(&w.c, &w.friend, &body).unwrap().unwrap().to_string();
+    assert!(!follower.contains(&source));
+    assert!(!follower.contains("Private source name"));
+}
+
+#[test]
+fn an_offline_front_reference_cannot_reveal_a_member_later_created_by_another_account() {
+    let (mut w, _, _, _) = world();
+    let foreign = new_id(NOW as u64, [210; 10]);
+    w.switch(&[&foreign], NOW); // unknown offline parent is retained, but cannot yet be revealed
+    notifier::process_due(&w.c, NOW + SETTLE + DELAY).unwrap();
+    assert!(w.view().is_empty());
+    chorus_server::ingest::server_op(
+        &w.c,
+        &w.friend,
+        "member.create",
+        &format!("account:{}", w.friend),
+        Some(&foreign),
+        json!({"name":"Another account private name","sigils":["secret"]}),
+        NOW + 1000,
+    )
+    .unwrap();
+    notifier::on_front_change(&w.c, &w.sys, NOW + 2000).unwrap();
+    notifier::process_due(&w.c, NOW + SETTLE + DELAY + 2000).unwrap();
+    assert!(w.view().is_empty());
+    assert!(w.inbox().is_empty());
+    let own = chorus_server::api_data::current_front(&w.c, &chorus_server::api_data::Principal::owner(&w.sys)).unwrap();
+    assert!(!own.to_string().contains("Another account private name"));
+    let (ack, op) = ingest::op_as(
+        &w.c,
+        &w.sys,
+        "phone",
+        "front.switch",
+        &format!("account:{}", w.sys),
+        Some(&foreign),
+        json!({"entries":[{"subject_type":"member","subject_id":foreign,"level":"front"}]}),
+        NOW + 3000,
+        None,
+    )
+    .unwrap();
+    assert!(op.is_none());
+    assert_eq!(ack.error.unwrap().code, "forbidden");
+}
+
+#[test]
+fn a_late_own_member_parent_schedules_the_previously_unresolved_front() {
+    let (mut w, _, _, _) = world();
+    let member = new_id(NOW as u64, [211; 10]);
+    let before = notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap();
+    w.switch(&[&member], NOW);
+    assert_eq!(notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap(), before);
+    w.push("member.create", &member, json!({"name":"Arrived late"}), NOW + 1000);
+    let due: i64 =
+        w.c.query_row("SELECT max(due_at) FROM notification WHERE kind='switch' AND cancelled_at IS NULL", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    notifier::process_due(&w.c, due - 1).unwrap();
+    assert_eq!(notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap(), before);
+    notifier::process_due(&w.c, due).unwrap();
+    assert_eq!(w.view(), ["Arrived late"]);
+}
+
+#[test]
 fn two_devices_can_edit_different_account_prefs_without_clobbering() {
     let mut w = World::new();
     let sys = w.sys.clone();

@@ -2,10 +2,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { core, loadCore, type FrontHistoryInterval, type FrontPresence, type FrontSystem, type SpeakerContext } from './index';
+import { project } from './pkg/chorus_wasm.js';
 
 interface Fixture { fn: string; args: unknown[]; expect: unknown }
 const fixtureRoot = new URL('../../../../fixtures/', import.meta.url);
-const fixtures = ['front_system', 'front_history', 'front_effective'].flatMap((area) => {
+const fixtures = ['front_system', 'front_history', 'front_effective', 'front_runtime'].flatMap((area) => {
   const directory = new URL(`${area}/`, fixtureRoot);
   return readdirSync(directory).filter((file) => file.endsWith('.json')).sort().map((file) => ({
     name: `${area}/${file}`,
@@ -23,6 +24,9 @@ describe('named-front conformance through the actual wasm bridge', () => {
       const args = data.args;
       let got: unknown;
       switch (data.fn) {
+        case 'project':
+          got = JSON.parse(project(JSON.stringify(args[0])));
+          break;
         case 'fold_front':
           got = core.foldFront(typeof args[0] === 'string' ? JSON.parse(args[0]) as unknown[] : args[0] as unknown[]);
           break;

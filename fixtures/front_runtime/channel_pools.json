@@ -1,0 +1,218 @@
+{
+  "description": "Runtime current projection: Body follows an independent quiet layer, with separate purpose pools and no invented legacy role.",
+  "fn": "project",
+  "args": [
+    [
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000001",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "kind": "front.layer",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "hlc": "0000000003e8-0000-00000001",
+        "device_at": 1000,
+        "payload": {
+          "layer_id": "quiet",
+          "name": "Fronting",
+          "level": -5
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000002",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "kind": "front.change",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a2",
+        "hlc": "0000000007d0-0000-00000001",
+        "device_at": 2000,
+        "payload": {
+          "action": "switch",
+          "entries": [
+            {
+              "subject_type": "member",
+              "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+              "layer_id": "quiet",
+              "is_primary": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000003",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "kind": "front.define",
+        "entity_id": "0192f8c2-0000-7000-8000-0000000000a1",
+        "hlc": "000000000bb8-0000-00000001",
+        "device_at": 3000,
+        "payload": {
+          "follow_source": "0192f8c2-0000-7000-8000-0000000000a2",
+          "authorship_layers": [
+            "quiet"
+          ],
+          "purpose_layers": {
+            "mentions": [
+              "quiet"
+            ],
+            "reading": []
+          }
+        }
+      }
+    ]
+  ],
+  "expect": {
+    "rows": {},
+    "sets": {},
+    "fronts": {},
+    "front_systems": {
+      "0192f8c2-0000-7000-8000-0000000000a1": {
+        "system": {
+          "layers": {
+            "front": {
+              "id": "front",
+              "name": "Fronting",
+              "level": 0,
+              "deleted": false
+            },
+            "cocon": {
+              "id": "cocon",
+              "name": "Co-conscious",
+              "level": 1,
+              "deleted": false
+            },
+            "present": {
+              "id": "present",
+              "name": "Present",
+              "level": 2,
+              "deleted": false
+            },
+            "quiet": {
+              "id": "quiet",
+              "name": "Fronting",
+              "level": -5,
+              "deleted": false
+            }
+          },
+          "fronts": {
+            "0192f8c2-0000-7000-8000-0000000000a1": {
+              "id": "0192f8c2-0000-7000-8000-0000000000a1",
+              "name": "Body",
+              "own": [],
+              "follow": {
+                "source": "0192f8c2-0000-7000-8000-0000000000a2",
+                "clock": "000000000bb8-0000-00000001"
+              },
+              "overridden": false,
+              "authorship_layers": [
+                "quiet"
+              ],
+              "notification_layers": null,
+              "deleted": false,
+              "purpose_layers": {
+                "mentions": [
+                  "quiet"
+                ],
+                "reading": []
+              }
+            },
+            "0192f8c2-0000-7000-8000-0000000000a2": {
+              "id": "0192f8c2-0000-7000-8000-0000000000a2",
+              "name": "Front",
+              "own": [
+                {
+                  "subject_type": "member",
+                  "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                  "layer_id": "quiet",
+                  "is_primary": true
+                }
+              ],
+              "follow": null,
+              "overridden": false,
+              "authorship_layers": [
+                "front"
+              ],
+              "notification_layers": [],
+              "deleted": false
+            }
+          }
+        },
+        "resolved": {
+          "0192f8c2-0000-7000-8000-0000000000a1": {
+            "id": "0192f8c2-0000-7000-8000-0000000000a1",
+            "name": "Body",
+            "own": [],
+            "effective": [
+              {
+                "subject_type": "member",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                "layer_id": "quiet",
+                "is_primary": true
+              }
+            ],
+            "source": "0192f8c2-0000-7000-8000-0000000000a2",
+            "state": "following",
+            "issue": null,
+            "deleted": false,
+            "authorship": [
+              {
+                "subject_type": "member",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                "layer_id": "quiet",
+                "is_primary": true
+              }
+            ],
+            "notifications": [
+              {
+                "subject_type": "member",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                "layer_id": "quiet",
+                "is_primary": true
+              }
+            ],
+            "purpose_candidates": {
+              "mentions": [
+                {
+                  "subject_type": "member",
+                  "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                  "layer_id": "quiet",
+                  "is_primary": true
+                }
+              ],
+              "reading": [],
+              "chat_alerts": []
+            }
+          },
+          "0192f8c2-0000-7000-8000-0000000000a2": {
+            "id": "0192f8c2-0000-7000-8000-0000000000a2",
+            "name": "Front",
+            "own": [
+              {
+                "subject_type": "member",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                "layer_id": "quiet",
+                "is_primary": true
+              }
+            ],
+            "effective": [
+              {
+                "subject_type": "member",
+                "subject_id": "0192f8c2-0000-7000-8000-0000000000b1",
+                "layer_id": "quiet",
+                "is_primary": true
+              }
+            ],
+            "source": null,
+            "state": "independent",
+            "issue": null,
+            "deleted": false,
+            "authorship": [],
+            "notifications": [],
+            "purpose_candidates": {
+              "mentions": [],
+              "reading": [],
+              "chat_alerts": []
+            }
+          }
+        }
+      }
+    },
+    "opaque": 0
+  }
+}

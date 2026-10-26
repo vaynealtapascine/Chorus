@@ -478,3 +478,30 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   malformed cached digests, a 32-byte string with a mixed ASCII/UTF-8 prefix panicked in the old
   hex decoder's byte-indexed string slicing; decoding hex directly from bytes returns an error
   without panicking and retains the existing wire format.
+
+- 2026-10-26 — Named current projections use an account dependency key spanning legacy and new
+  front events. A live append candidate is valid only for one genuinely new identity; multiple
+  writes, corrected stamps, backdates, targets and rejection rebuild the surviving set. First
+  load retains the current fold's append guards. `front_systems` is optional for legacy-only
+  accounts, and deleting the final named event removes it from both native/web delta clients.
+  Its arrival bumps the UI projection schema to 2; the SQL current cache remains version 1
+  because its fold/wire contract is unchanged. Bump that SQL version too when recognition or
+  folding semantics change, even if the operation-sequence watermark still matches.
+
+- 2026-10-26 — Reuse `crate::sort::map` / `set` on wasm, including small default collections and
+  readers' sets. Direct BTree collection constructors in the new front helpers instantiated
+  additional standard-library sorting code. Reusing the existing helpers and sharing the
+  model's non-generic sorted projection body takes the runtime build from ~307 KB to 298.6 KB
+  gz while retaining native std collection/sort behavior. The 21 Rust/wasm/JNI fixtures and
+  shuffled reference/incremental checks cover the contract. Fat LTO barely reduced gzip size;
+  a temporary Binaryen 132 optimization experiment made gzip size larger. Neither a new build
+  dependency nor a profile change was retained.
+
+- 2026-10-26 — Advancing a current-cache watermark for an ignored/newer event must first verify
+  the preceding applied-front prefix. Otherwise an ignored event can conceal a valid event that
+  an older build never projected. The 512-case ingestion fuzzer caught this stale-cache case.
+  Unknown offline subject parents stay in the log; resolve names and follower candidates only
+  against the owning account. A later own parent refreshes reveals; a foreign parent cannot.
+  Remove actions may repair an old foreign reference without re-authorizing that reference.
+  Migration 0012 checks purpose-ID suffixes with BLOB byte length, preserving rows and cache,
+  because SQLite length(TEXT) stops at NUL while JSON/Rust accept that opaque string.

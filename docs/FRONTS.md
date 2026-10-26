@@ -15,7 +15,8 @@ The graph resolver uses dense indexes with canonical ID ordering. A separate sin
 checks it over 512 generated graphs (cycles, missing/deleted sources and overrides). The release
 `front_system::tests::large_graph_budget` check resolves a 5,000-front chain in about 7.1 ms on
 the owner's PC (2026-10-26, including D-085 purpose pools). The initial graph optimization reduced
-wasm to 293 KB gz; with histories and independent channel purposes it is 298 KB gz, within 300 KB.
+wasm to 293 KB gz. With histories, independent channel purposes, snapshot versioning and the
+runtime current projection, shared collection/sort helpers keep it about 298.6 KB gz (300 KB limit).
 
 An unresolved source or cycle retains the saved independent set as a recovery/display fallback,
 with an explicit issue and no default authorship or notification candidates. An explicit manual
@@ -56,9 +57,8 @@ effective fixtures. Additional bridge tests verify that amend/undo/redo keep fol
 through the real Rust implementation. Android libraries are generated for ARM64 and x86-64; Kotlin
 conformance uses the host DLL, without a device launch.
 
-These helpers are not wired into the operation catalogue, runtime projections or UI
-yet. Additive server storage is implemented below; ingestion does not call it yet.
-The running clients still use the legacy single front. Own and effective histories are
+The catalogue and runtime current projection are connected below. Front management and purpose
+controls are not exposed in either client yet. Own and effective histories are
 separate APIs: do not apply today's follow source retrospectively to own history, or feed an
 owner's raw effective history/causes into a follower response. Follower history/statistics must be
 derived from revealed records under D-084.
@@ -77,7 +77,18 @@ owner's PC (2026-10-25), release `front_projection::tests::current_and_live_appe
 projects 10,000 switches into current state in about 39.5 ms and appends 1,000 live switches in
 about 5.8 ms (2026-10-26, all four release checks run together). These are pure core measurements;
 storage/transport and rendering remain separate
-integration budgets. The runtime projector does not use the index yet.
+integration budgets.
+
+Slice 2c connects the index to `model::Projection.front_systems` and the incremental projector's
+account dependency key. The optional field is absent for legacy-only accounts; every supported
+legacy and named event participates in that account key. A genuinely new single event can
+append without loading the key's historical operations. Multiple changes, backdates, same-clock
+writes, server stamp corrections, targeted history controls and removals use the shared rebuild.
+First load retains the computed append guards rather than immediately discarding them.
+Reference, incremental, snapshot-adopted and delta-only clients are compared under shuffled
+mixed histories. The release runtime check loads 10,000 named switches in 174 ms and applies
+1,000 later local changes plus deltas in 43.5 ms (2026-10-26). A twenty-first shared fixture
+in `fixtures/front_runtime/` checks the Rust, wasm and host-JNI projection shape.
 
 Slice 3a is `chorus-server/src/fronts.rs` and migration `0010_named_fronts.sql`. It stores
 account-scoped layer/front definitions, explicit purpose selections, ordered own/effective/
@@ -92,17 +103,43 @@ The cache is written last and is always replaceable from the append-only log. Te
 transaction rollback, whole-database rebuild, account isolation, opaque newer/malformed events,
 source tombstones, overrides and sparse purpose edits. `v_named_front_current` contains only
 confirmed effective presence, excluding unavailable/deleted recovery fallbacks. These tables
-and helpers are private owner data, not a follower view. Historical named SQL tables, ingestion,
-canonical Body read/widget paths, follower reveals and client integration remain pending.
+and helpers are private owner data, not a follower view. Ingestion now calls this helper inside
+its savepoint; bulk rebuild still backfills once. Migration 0011 adds an index for testing whether
+an account has any named events, so legacy-only reads do not load the full switch log.
+Migration 0012 preserves existing presence rows/cache and checks opaque purpose-ID suffixes by
+byte length: SQLite text length stops at an embedded NUL, unlike Rust/JSON.
+
+New writes validate strict action/field shapes, UUID subject/source/target references and auto
+creation-time envelopes (human presence time goes in `effective_at`). Layers/purposes remain
+arbitrary nonempty string IDs. Front names and layer names cannot be blank on new writes.
+The server enforces the owning account even if another account accidentally has scope access;
+known foreign subjects are refused. Unknown offline parents stay in the log but cannot resolve
+another account's private names or become follower-visible through that reference.
+
+`GET /front` uses canonical Body current state once configured and adds the own-account
+`front_system`. Entries carry `layer_id`; the legacy `level` field is present only for the actual
+three original IDs. `since` is null until a named-history time index is connected; do not invent
+a timestamp from the old Body tables. Android reads the same current field and its quick actions
+and widget undo emit `front.change` for configured Body. The app retains typed configuration and
+resolved pools without reimplementing following. Web/native delta merging supports field removal.
+
+The compatibility follower pipeline consumes Body's resolved notification pool, restricted to
+its original layer IDs and existing ceiling. Additional fronts/custom layers have no grants in
+this pipeline. A named Body can inherit from a private source, but neither its source metadata
+nor a raw cause/op ID enters the follower payload, and its state is still revealed only when due.
+These are current-state integration slices, not completed named-front delivery: additional-front
+and custom-layer grants/reveals, named historical API/SQL/export paths, channel purpose consumers
+and both clients' management/history UI remain pending. Keep configuration UI behind that work.
 
 Saved web UI projections now carry core's independent `ProjectionDigest {version, ops}`.
 Compatibility is checked before the first cached display and again when adopting the indexed
 ops. Old unversioned, malformed and future-version caches rebuild without discarding operations;
-compatible caches keep the existing fast opening path. Bump `PROJECTION_VERSION` when the
-runtime named-front field/kinds are integrated, even if the saved op identities/stamps match.
+compatible caches keep the existing fast opening path. `PROJECTION_VERSION` is now 2 for the
+runtime named-front field/kinds. Bump it for later shape/recognition/semantic changes even if
+the saved op identities/stamps match.
 The network scope digest and server SQL cache version are separate contracts.
 
-## Event contract implemented in core (not yet enabled for ingestion)
+## Event contract
 
 All events are private to `account:<system id>`. Body's stable front ID is the account ID.
 
@@ -166,8 +203,9 @@ the original fold over 512 generated histories. In particular, an update of an a
 a complete no-op and must not clear the current primary member during the compatibility merge.
 
 The core parser ignores other account scopes, unknown versions and purged payloads; malformed
-events remain unprojected. Ingestion must add catalogue and value/ownership validation together
-with storage projection before clients emit these kinds. Do not enable the kinds alone.
+events remain unprojected. The catalogue, new-write validation and current-state storage now
+recognize these kinds. Do not expose management UI until named history, purpose consumers and
+follower grants/reveals are integrated as well.
 
 The explicit release-mode `front_history::tests::ten_thousand_own_switches` check folded 10,000
 pending switches over 500 member IDs in about 76 ms on the owner's PC (2026-10-26). Pending/single-

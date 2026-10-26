@@ -658,7 +658,7 @@ mod tests {
         let invalid = [
             String::new(),
             js(&token["ops"]), // old unversioned cache with exactly the same operations
-            js(&serde_json::json!({"version":0,"ops":token["ops"]})),
+            js(&serde_json::json!({"version":version-1,"ops":token["ops"]})),
             js(&serde_json::json!({"version":version+1,"ops":token["ops"]})),
             js(&serde_json::json!({"version":version,"ops":token["ops"],"unknown":true})),
             js(&serde_json::json!({"version":version,"ops":{"count":1,"xor":format!("aé{}","a".repeat(29))}})),

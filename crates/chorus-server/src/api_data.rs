@@ -149,19 +149,50 @@ pub fn revoke_token(conn: &Connection, p: &Principal, id: &str, now: i64) -> Res
 
 // ─── reads ───────────────────────────────────────────────────────────────────
 
-fn subject_name(conn: &Connection, t: &str, id: &str) -> rusqlite::Result<(Option<String>, Option<String>)> {
+fn subject_name(
+    conn: &Connection,
+    account: &str,
+    t: &str,
+    id: &str,
+) -> rusqlite::Result<(Option<String>, Option<String>)> {
     let sql = match t {
-        "member" => "SELECT COALESCE(display_name, name), color FROM member WHERE id = ?1",
-        "group" => "SELECT name, color FROM member_group WHERE id = ?1",
-        _ => "SELECT name, color FROM custom_state WHERE id = ?1",
+        "member" => "SELECT COALESCE(display_name, name), color FROM member WHERE id = ?1 AND account_id=?2",
+        "group" => "SELECT name, color FROM member_group WHERE id = ?1 AND account_id=?2",
+        _ => "SELECT name, color FROM custom_state WHERE id = ?1 AND account_id=?2",
     };
-    Ok(conn.query_row(sql, [id], |r| Ok((r.get(0)?, r.get(1)?))).optional()?.unwrap_or((None, None)))
+    Ok(conn.query_row(sql, params![id, account], |r| Ok((r.get(0)?, r.get(1)?))).optional()?.unwrap_or((None, None)))
 }
 
 /// Who is here now, with names: `{front: [{name, subject_type, subject_id, level, is_primary, since}], since}`.
 pub fn current_front(conn: &Connection, p: &Principal) -> Result<Value, DataError> {
     if !p.allows("read:front") {
         return Err(DataError::Scope("read:front"));
+    }
+    if let Some(current) = crate::fronts::current(conn, &p.account_id)? {
+        let body = &current.resolved[&p.account_id];
+        let entries = if body.deleted || body.state == chorus_core::front_system::FollowState::Unavailable {
+            vec![]
+        } else {
+            crate::fronts::owned_presence(conn, &p.account_id, &body.effective)?
+        };
+        let mut front = Vec::new();
+        for entry in entries {
+            let kind = match entry.subject_type {
+                chorus_core::front::SubjectType::Member => "member",
+                chorus_core::front::SubjectType::Group => "group",
+                chorus_core::front::SubjectType::State => "state",
+            };
+            let (name, color) = subject_name(conn, &p.account_id, kind, &entry.subject_id)?;
+            let mut row = json!({"name":name,"color":color,"subject_type":kind,"subject_id":entry.subject_id,
+                "layer_id":entry.layer_id,"is_primary":entry.is_primary,"since":null});
+            // The legacy field is supplied only for its actual original layer IDs. Custom
+            // layers never acquire one of these roles from their name or display level.
+            if matches!(entry.layer_id.as_str(), "front" | "cocon" | "present") {
+                row["level"] = json!(entry.layer_id);
+            }
+            front.push(row);
+        }
+        return Ok(json!({"front":front,"since":null,"front_system":current}));
     }
     let mut st = conn.prepare_cached(
         "SELECT subject_type, subject_id, level, is_primary, start_at FROM front_interval
@@ -173,7 +204,7 @@ pub fn current_front(conn: &Connection, p: &Principal) -> Result<Value, DataErro
     let mut front = Vec::new();
     let mut since: Option<i64> = None;
     for (t, id, level, primary, start) in rows {
-        let (name, color) = subject_name(conn, &t, &id)?;
+        let (name, color) = subject_name(conn, &p.account_id, &t, &id)?;
         since = Some(since.map_or(start, |s: i64| s.min(start)));
         front.push(json!({"name": name, "color": color, "subject_type": t, "subject_id": id, "level": level, "is_primary": primary, "since": start}));
     }

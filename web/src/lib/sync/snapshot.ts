@@ -12,6 +12,7 @@ export function readSnapshot(snapshot: Snapshot | null): Projection | null {
     if (!projectionSnapshotCompatible(snapshot.digest)) return null;
     const p: unknown = JSON.parse(snapshot.projection);
     if (!record(p) || !record(p.rows) || !record(p.sets) || !record(p.fronts) ||
+      (p.front_systems !== undefined && !record(p.front_systems)) ||
       typeof p.opaque !== 'number' || !Number.isSafeInteger(p.opaque) || p.opaque < 0) return null;
     return p as unknown as Projection;
   } catch {

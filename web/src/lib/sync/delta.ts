@@ -8,6 +8,7 @@ export interface Delta {
   rows: Record<string, Record<string, unknown | null>>;
   sets: Record<string, Record<string, boolean | null>>;
   fronts: Record<string, unknown | null>;
+  front_systems?: Record<string, unknown | null>;
   reviews: Record<string, unknown | null>;
   opaque: number;
   full: boolean;
@@ -92,6 +93,11 @@ export function applyDelta(p: Projection, d: Delta): Projection {
   if (Object.keys(d.rows).length) next.rows = patchAll(p.rows as never, d.rows as never) as Projection['rows'];
   if (Object.keys(d.sets).length) next.sets = patchAll(p.sets, d.sets);
   if (Object.keys(d.fronts).length) next.fronts = (patch(p.fronts as never, d.fronts as never) ?? {}) as Projection['fronts'];
+  if (d.front_systems && Object.keys(d.front_systems).length) {
+    const systems = patch(p.front_systems as never, d.front_systems as never) as Projection['front_systems'];
+    if (systems) next.front_systems = systems;
+    else delete next.front_systems;
+  }
   if (Object.keys(d.reviews).length) {
     const r = patch(p.reviews as never, d.reviews as never) as Projection['reviews'];
     if (r) next.reviews = r;

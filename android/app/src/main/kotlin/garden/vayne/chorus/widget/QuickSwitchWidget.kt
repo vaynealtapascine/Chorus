@@ -27,7 +27,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 
 /**
  * The quick-switch home-screen widget (CLIENTS.md §3), as plain RemoteViews (D-058). A tap writes
@@ -118,7 +117,7 @@ class QuickSwitchWidget : AppWidgetProvider() {
         if (System.currentTimeMillis() - last.at > WidgetState.UNDO_ACCEPT_MS) return
         val chorus = Chorus.get(ctx)
         chorus.awaitModel()
-        chorus.create("front.retract", chorus.newId(), JSONObject().put("target_op_id", last.opId))
+        Front.retract(chorus, last.opId)
         Front.dismiss(last.opId)
     }
 
@@ -186,7 +185,7 @@ class QuickSwitchWidget : AppWidgetProvider() {
                 return v
             }
 
-            val front = model.current.filter { it.level == "front" }
+            val front = model.current.filter { model.namedFronts != null || it.level == "front" }
             val since = model.since?.let { " · " + ago(it).replace("just now", "now") }.orEmpty()
             v.setTextViewText(R.id.w_front, if (front.isEmpty()) "No one fronting" else model.frontLabel() + since)
             val open = PendingIntent.getActivity(

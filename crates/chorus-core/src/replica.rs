@@ -5,8 +5,6 @@
 //! start, [`Replica::restore`] rebuilds it from what was persisted. All logic stays here, where
 //! the convergence simulator exercises it.
 
-use std::collections::BTreeSet;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -127,7 +125,7 @@ impl Replica {
     /// metadata last didn't know another tab's new ops (SYNC §6.1): without this a message
     /// written there and never sent was lost (R29).
     fn relist_unsent(&mut self) {
-        let listed: BTreeSet<&String> = self.store.local_order.iter().chain(&self.store.restoring).collect();
+        let listed = crate::sort::set(self.store.local_order.iter().chain(&self.store.restoring));
         let mut unsent: Vec<(crate::hlc::Hlc, String)> = self
             .store
             .ops

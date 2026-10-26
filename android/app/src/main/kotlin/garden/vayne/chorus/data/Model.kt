@@ -31,6 +31,8 @@ data class Group(val id: String, val name: String, val kind: String, val parentI
     val isSubsystem: Boolean get() = kind == "subsystem"
 }
 
+/** `level` retains its legacy DTO name; for configured fronts its value is the independent
+ * layer ID. New writes use `FrontPresence.toJson`, never a custom ID in a legacy level payload. */
 data class Entry(val subjectType: String, val subjectId: String, val level: String, val isPrimary: Boolean) {
     fun toJson(): JSONObject = JSONObject()
         .put("subject_type", subjectType).put("subject_id", subjectId).put("level", level).put("is_primary", isPrimary)
@@ -113,6 +115,7 @@ class Model(
     val lastAuthorsByChannel: Map<String, List<String>> = emptyMap(),
     val readMarks: Map<String, List<ReadMark>> = emptyMap(),
     val frontIntervals: List<FrontInterval> = emptyList(),
+    val namedFronts: NamedFronts? = null,
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -154,7 +157,7 @@ class Model(
     }
 
     fun frontLabel(entries: List<Entry> = current): String {
-        val names = entries.filter { it.level == "front" }.mapNotNull { subject(it.subjectType, it.subjectId)?.name }
+        val names = entries.filter { namedFronts != null || it.level == "front" }.mapNotNull { subject(it.subjectType, it.subjectId)?.name }
         return when (names.size) {
             0 -> "No one"
             1 -> names[0]
@@ -241,10 +244,11 @@ class Model(
                     if (t.length() == 0) target.remove(table)
                 }
             }
-            for (section in listOf("fronts", "reviews")) {
+            for (section in listOf("fronts", "reviews", "front_systems")) {
                 val changes = d.optJSONObject(section) ?: continue
                 val target = p.optJSONObject(section) ?: JSONObject().also { p.put(section, it) }
                 for (k in changes.keys()) if (changes.isNull(k)) target.remove(k) else target.put(k, changes.get(k))
+                if (section != "fronts" && target.length() == 0) p.remove(section)
             }
             p.put("opaque", d.optInt("opaque"))
         }
@@ -280,7 +284,9 @@ class Model(
                 }
             }
             val fold = p.optJSONObject("fronts")?.optJSONObject(accountId)
-            val current = entries(fold?.optJSONArray("current"))
+            val namedFronts = NamedFronts.parse(p.optJSONObject("front_systems")?.optJSONObject(accountId))
+            val current = namedFronts?.resolved?.get(accountId)?.confirmed?.map { it.displayEntry() }
+                ?: if (namedFronts != null) emptyList() else entries(fold?.optJSONArray("current"))
             var since: Long? = null
             val frontSpans = ArrayList<FrontSpan>()
             val frontIntervals = ArrayList<FrontInterval>()
@@ -389,12 +395,12 @@ class Model(
                 .sortedWith(compareBy<SavedStage> { it.name.lowercase() }.thenBy { it.id })
             val highlights = ProfileHighlights.fromProjection(p.optJSONObject("sets"))
             val systemZone = rows(p, "system").firstOrNull { it.first == accountId }?.second?.str("timezone")
-            return Model(members, groups, membership, current, since, switches, spaces, channels, chatMessages,
+            return Model(members, groups, membership, current, since.takeIf { namedFronts == null }, switches, spaces, channels, chatMessages,
                 followCeilings, posts, postReactions, memberLists, savedFeeds, highlights, frontSpans, systemZone,
                 messageCounts, LocalProfileFields.fromProjection(p), LocalRelationships.types(p),
                 LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages,
                 ChatSpeaker.preferences(p, accountId, channels), lastAuthorsByChannel,
-                ReadTracking.marks(p, accountId), frontIntervals)
+                ReadTracking.marks(p, accountId), frontIntervals, namedFronts)
         }
     }
 }

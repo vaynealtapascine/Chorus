@@ -37,7 +37,7 @@ use crate::sync::Digest;
 
 /// Bump for changes to projection shape, recognized operations or projection semantics. This
 /// versions a replaceable local UI cache; it is independent of the network sync digest.
-pub const PROJECTION_VERSION: u32 = 1;
+pub const PROJECTION_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -63,6 +63,7 @@ enum Key {
     Set(String, String),
     Read(String),
     Front(String),
+    FrontSystem(String),
 }
 
 /// Two copies of one op id differ only in the server's stamp (no allocation: this runs per op).
@@ -91,8 +92,9 @@ fn stamp_key(o: &Op) -> String {
 fn keys_of(o: &Op) -> (Vec<Key>, bool) {
     let mut p = Projection::default();
     let mut fronts: BTreeMap<String, Vec<FrontOp>> = BTreeMap::new();
+    let mut front_systems = model::FrontSystems::new();
     let mut reads: Reads = BTreeMap::new();
-    model::apply_op(&mut p, o, &mut fronts, &mut reads);
+    model::apply_op(&mut p, o, &mut fronts, &mut front_systems, &mut reads);
     let mut keys = Vec::new();
     for (table, rows) in &p.rows {
         for id in rows.keys() {
@@ -106,6 +108,7 @@ fn keys_of(o: &Op) -> (Vec<Key>, bool) {
     }
     keys.extend(reads.into_keys().map(Key::Read));
     keys.extend(fronts.into_keys().map(Key::Front));
+    keys.extend(front_systems.into_keys().map(Key::FrontSystem));
     (keys, p.opaque > 0)
 }
 
@@ -115,6 +118,8 @@ pub struct Delta {
     pub rows: BTreeMap<String, BTreeMap<String, Option<Row>>>,
     pub sets: BTreeMap<String, BTreeMap<String, Option<bool>>>,
     pub fronts: BTreeMap<String, Option<front::FoldResult>>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub front_systems: BTreeMap<String, Option<crate::front_projection::Current>>,
     pub reviews: BTreeMap<String, Option<Vec<front::Review>>>,
     pub opaque: usize,
     /// True when the caller should re-read the whole projection instead (first call).
@@ -135,6 +140,13 @@ pub struct Projector {
     digest: Digest,
     /// `proj` holds only keys recomputed since adopting a snapshot (module docs).
     partial: bool,
+    front_indexes: BTreeMap<String, crate::front_projection::Index>,
+    /// Valid named-event identities per account. Legacy-only hot paths do not scan all front
+    /// operations just to discover that the optional current projection is absent.
+    named_front_counts: BTreeMap<String, usize>,
+    /// One genuinely new front event since recompute can append. Replacements, removals or
+    /// multiple events need the full surviving account set and invalidate this candidate.
+    front_appends: BTreeMap<String, Option<String>>,
 }
 
 impl Projector {
@@ -170,6 +182,11 @@ impl Projector {
             self.opaque.insert(o.id.clone());
         }
         for k in &keys {
+            if let Key::FrontSystem(account) = k
+                && crate::front_history::is_named_kind(&o.kind)
+            {
+                *self.named_front_counts.entry(account.clone()).or_default() += 1;
+            }
             self.by_key.entry(k.clone()).or_default().insert((o.hlc, o.id.clone()));
         }
         self.op_keys.insert(o.id.clone(), keys);
@@ -212,7 +229,7 @@ impl Projector {
         if self.partial {
             let ops = model::dedupe(self.ops.values());
             let opaque = self.opaque.len();
-            self.proj = model::project(ops.iter().copied());
+            (self.proj, self.front_indexes) = model::project_indexed(ops.iter().copied());
             self.proj.opaque = opaque;
             self.partial = false;
         }
@@ -284,7 +301,7 @@ impl Projector {
     /// First load: the reference projection in one pass, plus the key index for later updates.
     fn load<'a>(&mut self, visible: impl IntoIterator<Item = &'a Op>) {
         let ops = model::dedupe(visible);
-        self.proj = model::project(ops.iter().copied());
+        (self.proj, self.front_indexes) = model::project_indexed(ops.iter().copied());
         for o in ops {
             self.index_op(o);
             // a reader that already saw an (empty) projection needs these as a delta
@@ -294,12 +311,22 @@ impl Projector {
     }
 
     fn insert_op(&mut self, o: Op, dirty: &mut BTreeSet<Key>) {
+        let new_identity = !self.ops.contains_key(&o.id);
         self.remove_op(&o.id, dirty);
         let (keys, opaque) = keys_of(&o);
         if opaque {
             self.opaque.insert(o.id.clone());
         }
         for k in &keys {
+            if let Key::FrontSystem(account) = k {
+                if crate::front_history::is_named_kind(&o.kind) {
+                    *self.named_front_counts.entry(account.clone()).or_default() += 1;
+                }
+                self.front_appends
+                    .entry(account.clone())
+                    .and_modify(|candidate| *candidate = None)
+                    .or_insert_with(|| new_identity.then(|| o.id.clone()));
+            }
             self.by_key.entry(k.clone()).or_default().insert((o.hlc, o.id.clone()));
             dirty.insert(k.clone());
         }
@@ -313,6 +340,17 @@ impl Projector {
         self.digest.remove(&stamp_key(&o));
         self.opaque.remove(id);
         for k in self.op_keys.remove(id).unwrap_or_default() {
+            if let Key::FrontSystem(account) = &k {
+                if crate::front_history::is_named_kind(&o.kind)
+                    && let Some(count) = self.named_front_counts.get_mut(account)
+                {
+                    *count -= 1;
+                    if *count == 0 {
+                        self.named_front_counts.remove(account);
+                    }
+                }
+                self.front_appends.insert(account.clone(), None);
+            }
             if let Some(set) = self.by_key.get_mut(&k) {
                 set.remove(&(o.hlc, o.id.clone()));
                 if set.is_empty() {
@@ -326,6 +364,10 @@ impl Projector {
     /// Recompute each key from its own ops, in reference order.
     fn recompute(&mut self, keys: &BTreeSet<Key>) {
         for key in keys {
+            if let Key::FrontSystem(account) = key {
+                self.recompute_front_system(account);
+                continue;
+            }
             let ids: Vec<&Op> = self
                 .by_key
                 .get(key)
@@ -333,9 +375,10 @@ impl Projector {
                 .unwrap_or_default();
             let mut p = Projection::default();
             let mut fronts: BTreeMap<String, Vec<FrontOp>> = BTreeMap::new();
+            let mut front_systems = model::FrontSystems::new();
             let mut reads: Reads = BTreeMap::new();
             for o in &ids {
-                model::apply_op(&mut p, o, &mut fronts, &mut reads);
+                model::apply_op(&mut p, o, &mut fronts, &mut front_systems, &mut reads);
             }
             match key {
                 Key::Row(table, id) => {
@@ -399,8 +442,35 @@ impl Projector {
                     }
                     self.proj.fronts.insert(acct.clone(), folded);
                 }
+                Key::FrontSystem(_) => unreachable!("handled before collecting historical ops"),
             }
         }
+    }
+
+    fn recompute_front_system(&mut self, account: &str) {
+        let candidate = self.front_appends.remove(account).flatten();
+        if !self.named_front_counts.contains_key(account) {
+            self.front_indexes.remove(account);
+            self.proj.front_systems.remove(account);
+            return;
+        }
+        if let Some(op) = candidate.as_ref().and_then(|id| self.ops.get(id))
+            && let Some(index) = self.front_indexes.get_mut(account)
+            && index.append(op)
+        {
+            self.proj.front_systems.insert(account.into(), index.current.clone());
+            return;
+        }
+        let ops: Vec<&Op> = self
+            .by_key
+            .get(&Key::FrontSystem(account.into()))
+            .into_iter()
+            .flatten()
+            .filter_map(|(_, id)| self.ops.get(id))
+            .collect();
+        let index = crate::front_projection::Index::from_ops(account, ops);
+        self.proj.front_systems.insert(account.into(), index.current.clone());
+        self.front_indexes.insert(account.into(), index);
     }
 
     /// What changed since the last call. The first call says `full` (read everything once).
@@ -429,6 +499,9 @@ impl Projector {
                 Key::Front(a) => {
                     d.fronts.insert(a.clone(), self.proj.fronts.get(&a).cloned());
                     d.reviews.insert(a.clone(), self.proj.reviews.get(&a).cloned());
+                }
+                Key::FrontSystem(a) => {
+                    d.front_systems.insert(a.clone(), self.proj.front_systems.get(&a).cloned());
                 }
             }
         }
