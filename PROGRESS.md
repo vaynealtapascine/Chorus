@@ -385,3 +385,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-10-27 claude-opus-5.5 — GPT-6-sol review fix #7: configured own-switch pings use canonical Body target liveness. Eight old/new target, undo-format and restore-before-settle cases pass after reproducing the legacy-row leak. Gate exit 0.
 
 - 2026-10-27 claude-opus-5.5 — GPT-6-sol review fix #8: named review Merge uses an existing history-only replacement at the historical effective time and retracts both saved originals. Six actual-wasm regressions preserve following/override/independent current presence, including legacy targets. Final gate exit 0; wasm 307010/307200 gz bytes. Next concrete step edited by hand; all eight findings fixed.
+- 2026-10-27 claude-opus-5.5 — Live web suite (29 Playwright tests, incl. fronts/polls/grants) passes in installed Chrome on the review-fixed branch; fixed journal poll popover and Body card label on the way (5bd... cherry-pick of integrate 15965d3).
