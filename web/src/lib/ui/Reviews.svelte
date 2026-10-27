@@ -3,7 +3,7 @@
   // this just asks which one was right. A configured account's cards come from the selected
   // front's own history fold (History screen only; never folded on Home's current path).
   import { groups, members } from '../data';
-  import type { FrontPresence } from '../core/fronts';
+  import { namedReviewMerge } from '../front-reviews';
   import type { NamedHistory } from '../front-history';
   import { sync, type Projection } from '../sync/client';
 
@@ -38,17 +38,19 @@
     resolve(r.id, which === 'a' ? 'keep_a' : 'keep_b');
   }
   function merge(r: { id: string; switch_a: string; switch_b: string }) {
+    if (named) {
+      const changes = namedReviewMerge(named.saved.switches, r);
+      if (!changes) return;
+      for (const payload of changes) sync.create('front.change', sync.accountScope, front ?? sync.accountId, payload);
+      resolve(r.id, 'merge');
+      return;
+    }
     const seen = new Set<string>();
     const entries = [...(byId.get(r.switch_a)?.entries ?? []), ...(byId.get(r.switch_b)?.entries ?? [])].filter((e) => {
       const k = `${e.subject_type}:${e.subject_id}`;
       return seen.has(k) ? false : (seen.add(k), true);
     });
-    if (named) {
-      const merged = entries.map(({ layer, ...e }) => ({ ...e, layer_id: layer }) as FrontPresence);
-      sync.create('front.change', sync.accountScope, front ?? sync.accountId, { action: 'switch', entries: merged });
-    } else {
-      sync.create('front.switch', sync.accountScope, sync.newId(), { entries: entries.map(({ layer, ...e }) => ({ ...e, level: layer })) });
-    }
+    sync.create('front.switch', sync.accountScope, sync.newId(), { entries: entries.map(({ layer, ...e }) => ({ ...e, level: layer })) });
     resolve(r.id, 'merge');
   }
 </script>
@@ -66,7 +68,7 @@
       <button onclick={() => resolve(r.id, 'keep_both')}>Keep both</button>
       <button onclick={() => keep(r, 'a')}>Keep first</button>
       <button onclick={() => keep(r, 'b')}>Keep second</button>
-      <button onclick={() => merge(r)}>Merge</button>
+      <button disabled={!!named && (!a || !b)} onclick={() => merge(r)}>Merge</button>
     </div>
   </aside>
 {/each}

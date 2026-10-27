@@ -417,3 +417,13 @@ Own-switch notifications check canonical Body saved-history liveness once config
 legacy targets and mixed legacy/new retract/unretract controls. A legacy `switch.retracted` row
 is no longer authoritative for those accounts. Undo before settling stays quiet; restoring before
 settling retains the pending ping. Unconfigured accounts keep the legacy SQL read.
+
+
+Named-front review Merge is a historical replacement using existing operations: append the union
+of both saved resulting sets as `front.change switch` with `effective_at` equal to the later
+reviewed effective time and `history_only: true`, then retract both original saved IDs and
+resolve the card. The originals remain in history/log. This preserves later saved presence and
+both following and an existing override (D-083); it creates no current-time manual switch.
+An amend can replace entries only on a switch, while reviews can include add/remove/update
+rows, so a history-only replacement handles all sides consistently without a new op. Missing or
+already-retracted sides cannot merge. Unconfigured legacy review behavior is unchanged.
