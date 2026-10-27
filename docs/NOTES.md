@@ -582,3 +582,10 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
 - 2026-10-27 GPT-6-sol — Rejecting null poll edits adds 3 gzipped wasm bytes: 307,010 /
   307,200 after the actual bindgen build and gzip level 9 gate. Keep null allowed on creation;
   check for the edit's key before ignoring a null definition. Two poll fixtures cover this.
+
+- 2026-10-27 Claude — Live browser checks are not policy-blocked for Claude sessions: from Git Bash,
+  after `cargo build -p chorus-server` and `npm run build`, run
+  `CHORUS_E2E_CHANNEL=chrome CARGO_TARGET_DIR='F:\DunBuild\chorus-target' bash scripts/e2e-web.sh --no-build`.
+  PowerShell's `bash` is WSL and cannot see the Windows build. Playwright's pinned Chromium (1194)
+  is absent, so use the installed Chrome channel. Each run uses a temporary data dir; nothing persists.
+
