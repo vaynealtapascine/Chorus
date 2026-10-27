@@ -119,6 +119,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
+import garden.vayne.chorus.data.ChatReaction
+import garden.vayne.chorus.data.ChatReactions
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.semantics.selected
 
 private data class StageRows(val channelId: String, val accountId: String, val spaceKind: String,
     val viewingAs: String?, val front: List<Entry>, val window: ChannelWindow)
@@ -203,6 +212,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         try {
             directory = Spaces.list(dev)
             connections = Spaces.connections(dev).filter { it.id != dev.accountId }
+        } catch (e: CancellationException) { throw e
         } catch (e: Exception) {
             error = e.message ?: "Could not load spaces."
         }
@@ -267,6 +277,17 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             finally { busy = false }
         }
     }
+    // add and remove carry the identical element (LWW element set), as the acting speaker
+    fun react(message: ChatMessage, emoji: String, on: Boolean) {
+        val member = replySpeakerId ?: run { error = "Choose who is speaking first."; return }
+        val home = space ?: return
+        actions.launch {
+            try {
+                chorus.create(if (on) "reaction.add" else "reaction.remove", message.id,
+                    ChatReactions.payload(message.id, emoji, member), scope = "space:${home.id}")
+            } catch (e: Exception) { error = e.message ?: "Could not save the reaction." }
+        }
+    }
     fun setChannelFront(frontId: String) {
         val id = channel?.id ?: return
         if (busy) return
@@ -321,6 +342,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     .put("message_id", latest.id).put("message_at", latest.occurredAt)
                     .put("reader_member_id", reader), scope = "space:${home.id}")
             }
+        } catch (e: CancellationException) { throw e
         } catch (e: Exception) { error = e.message ?: "Could not mark this channel read." }
     }
     val unseenByMessage by produceState<Map<String, List<String>>>(emptyMap(), messages, readMarks,
@@ -499,6 +521,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 else message.accountId != null && message.accountId != chorus.device?.accountId
                 ChatMessageCard(message, model, foreignAuthors, chorus, unseenByMessage[message.id].orEmpty(),
                     heldMessages[message.id], actingMemberId = replySpeakerId,
+                    reactions = model.messageReactions[message.id].orEmpty(),
+                    onReact = { emoji, on -> react(message, emoji, on) },
                     showSender = groupStart, showAvatar = groupEnd, onStage = { stageSelection = listOf(message.id); staging = true },
                     quote = messages.find { it.id == message.replyTo },
                     onReply = { replyTo = message.id; carriedReply = null },
@@ -864,6 +888,7 @@ private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
 private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
     chorus: Chorus, unseenBy: List<String>, held: HeldMessage?, actingMemberId: String?, onReply: () -> Unit,
     onReplyPrivately: (() -> Unit)?, onEdit: (() -> Unit)?,
+    reactions: List<ChatReaction> = emptyList(), onReact: ((String, Boolean) -> Unit)? = null,
     showSender: Boolean = true, showAvatar: Boolean = true, quote: ChatMessage? = null, onStage: () -> Unit) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
@@ -899,7 +924,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             }
             Spacer(Modifier.width(8.dp))
         }
-        Column(Modifier.weight(1f, fill = false).widthIn(min = 64.dp, max = 360.dp).heightIn(min = 48.dp)
+        Column(Modifier.weight(1f, fill = false).widthIn(min = 64.dp, max = 360.dp)
+            .then(if (reactions.isNotEmpty()) Modifier.width(IntrinsicSize.Max) else Modifier).heightIn(min = 48.dp)
             .background(if (own) p.accentSoft else p.surface2, RoundedCornerShape(
                 topStart = if (!own && !showSender) 6.dp else 16.dp, topEnd = if (own && !showSender) 6.dp else 16.dp,
                 bottomEnd = if (own && showAvatar) 6.dp else 16.dp, bottomStart = if (!own && showAvatar) 6.dp else 16.dp))
@@ -985,22 +1011,30 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 }
             }
         }
-        Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.then(if (reactions.isNotEmpty()) Modifier.fillMaxWidth() else Modifier.align(Alignment.End)),
+            horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (reactions.isNotEmpty()) ReactionChips(reactions, actingMemberId, Modifier.weight(1f),
+                { id -> model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone" }, onReact.takeIf { held == null })
             Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.occurredAt)), color = p.ink3, fontSize = 12.sp)
             if (held != null) ChatIcon(R.drawable.ic_history, "Message held for slow mode")
         }
         }
     }
     if (menuOpen) Dialog(onDismissRequest = { menuOpen = false }) {
-        Surface(shape = RoundedCornerShape(16.dp), color = p.surface, modifier = Modifier.widthIn(max = 380.dp).heightIn(max = 600.dp)) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
-                Row(Modifier.fillMaxWidth().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Message actions", color = p.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    ChatIconButton(R.drawable.ic_close, "Close message actions") { menuOpen = false }
-                }
-                Text(authors, color = tone?.name ?: p.ink2, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp))
-                Text(ChatPresentation.preview(message), color = p.ink2, maxLines = 3, fontSize = 14.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        var allEmoji by remember(message.id) { mutableStateOf(false) }
+        Column(Modifier.fillMaxWidth().heightIn(max = 680.dp).verticalScroll(rememberScrollState())
+            .semantics { contentDescription = "Message actions" },
+            horizontalAlignment = if (own) Alignment.End else Alignment.Start, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (held == null && onReact != null) ReactionPicker(reactions, actingMemberId, allEmoji, { allEmoji = !allEmoji }) { emoji, on ->
+                menuOpen = false; onReact(emoji, on)
+            }
+            Column(Modifier.widthIn(min = 120.dp, max = 300.dp).background(if (own) p.accentSoft else p.surface2, RoundedCornerShape(16.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text(ChatPresentation.preview(message), color = p.ink, maxLines = 4, fontSize = 15.sp)
+            }
+        Surface(shape = RoundedCornerShape(12.dp), color = p.surface, modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)) {
+            Column(Modifier.padding(vertical = 4.dp)) {
                 val seen = model.readMarks[message.channelId].orEmpty().filter { mark ->
                     mark.member.isNotEmpty() && !ReadTracking.needsMark(message.occurredAt, message.id, listOf(mark), mark.member)
                 }.mapNotNull { model.member(it.member) }
@@ -1021,6 +1055,68 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 if (onEdit != null && (message.cw == null || revealed)) ChatActionRow(R.drawable.ic_edit, "Edit") { menuOpen = false; onEdit() }
                 if (held == null) ChatActionRow(R.drawable.ic_layers, "Select in stage mode") { menuOpen = false; onStage() }
                 if (held == null && unseenBy.isNotEmpty()) ChatActionRow(R.drawable.ic_members, "Not seen by…") { showUnseen = !showUnseen; menuOpen = false }
+            }
+        }
+        }
+    }
+}
+
+/** F5.6: the quick reactions above a long-pressed message, and every other emoji behind the chevron. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ReactionPicker(reactions: List<ChatReaction>, member: String?, expanded: Boolean,
+    onExpand: () -> Unit, onPick: (String, Boolean) -> Unit) {
+    val p = LocalChorusPalette.current
+    @Composable fun EmojiButton(emoji: String) {
+        val chosen = ChatReactions.chosen(reactions, emoji, member)
+        Box(Modifier.size(44.dp).clip(CircleShape).background(if (chosen) p.accentSoft else Color.Transparent)
+            .clickable(enabled = member != null) { onPick(emoji, !chosen) }
+            .semantics { contentDescription = if (chosen) "Remove $emoji" else "React $emoji"; selected = chosen },
+            contentAlignment = Alignment.Center) { Text(emoji, fontSize = 24.sp) }
+    }
+    Surface(shape = RoundedCornerShape(24.dp), color = p.surface) {
+        Column(Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                for (emoji in ChatReactions.QUICK) EmojiButton(emoji)
+                Box(Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onExpand)
+                    .semantics { contentDescription = if (expanded) "Fewer reactions" else "More reactions" },
+                    contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(28.dp).background(p.surface2, CircleShape).rotate(if (expanded) 180f else 0f),
+                        contentAlignment = Alignment.Center) { ChatIcon(R.drawable.ic_down, tint = p.ink2) }
+                }
+            }
+            if (expanded) FlowRow(Modifier.width(308.dp)) { for (emoji in ChatReactions.MORE) EmojiButton(emoji) }
+            if (member == null) Text("Choose who is speaking to react.", color = p.ink3, fontSize = 12.sp,
+                modifier = Modifier.padding(8.dp))
+        }
+    }
+}
+
+/** "❤️ 2" under a message: tap adds or removes the acting member's reaction, hold shows who. */
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+@Composable
+private fun ReactionChips(reactions: List<ChatReaction>, member: String?, modifier: Modifier,
+    nameOf: (String) -> String, onToggle: ((String, Boolean) -> Unit)?) {
+    val p = LocalChorusPalette.current
+    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (r in reactions) {
+            val mine = member != null && member in r.memberIds
+            var who by remember(r.emoji) { mutableStateOf(false) }
+            val names = r.memberIds.joinToString(", ", transform = nameOf)
+            Box(Modifier.heightIn(min = 48.dp).combinedClickable(
+                onClickLabel = if (mine) "Remove your reaction" else "Add this reaction",
+                onClick = { if (onToggle != null && member != null) onToggle(r.emoji, !mine) else who = true },
+                onLongClick = { who = true }, onLongClickLabel = "Who reacted")
+                .semantics { contentDescription = "${r.emoji} ${r.memberIds.size}: $names"; selected = mine },
+                contentAlignment = Alignment.Center) {
+                Text("${r.emoji} ${r.memberIds.size}", color = if (mine) p.accent else p.ink2, fontSize = 13.sp,
+                    modifier = Modifier.background(if (mine) p.accentSoft else p.surface3, RoundedCornerShape(12.dp))
+                        .then(if (mine) Modifier.border(1.dp, p.accent, RoundedCornerShape(12.dp)) else Modifier)
+                        .padding(horizontal = 8.dp, vertical = 2.dp))
+                DropdownMenu(who, { who = false }) {
+                    Text("${r.emoji}  $names", color = p.ink, fontSize = 14.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                }
             }
         }
     }

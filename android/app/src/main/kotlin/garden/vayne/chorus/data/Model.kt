@@ -119,6 +119,8 @@ class Model(
     /** Polls on messages/posts, their published totals and this account's own votes (D-081). */
     val polls: PollState = PollState(),
     val typingNames: TypingNames = TypingNames(),
+    /** message id → reactions (DATA_MODEL `reaction` set). */
+    val messageReactions: Map<String, List<ChatReaction>> = emptyMap(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -403,7 +405,8 @@ class Model(
                 messageCounts, LocalProfileFields.fromProjection(p), LocalRelationships.types(p),
                 LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages,
                 ChatSpeaker.preferences(p, accountId, channels), lastAuthorsByChannel,
-                ReadTracking.marks(p, accountId), frontIntervals, namedFronts, Polls.fromProjection(p), typingNames)
+                ReadTracking.marks(p, accountId), frontIntervals, namedFronts, Polls.fromProjection(p), typingNames,
+                messageReactions = ChatReactions.fromProjection(p.optJSONObject("sets")))
         }
     }
 }
