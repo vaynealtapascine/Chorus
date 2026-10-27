@@ -93,6 +93,7 @@ internal fun SendAsSheet(model: Model, channelId: String, members: List<Member>,
 @Composable
 internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace, model: Model, messages: List<ChatMessage>,
     library: List<ChatMessage>, directory: SpaceInfo?, onSearch: () -> Unit, onClose: (() -> Unit)? = null,
+    notifyLevel: String = "mentions", onNotify: (String) -> Unit = {},
     onShowMessage: (String) -> Unit = {}, modifier: Modifier = Modifier) {
     val p = LocalChorusPalette.current
     val presence = ChatPresentation.presence(model, channel.id)
@@ -117,6 +118,8 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
             }
             Text(listOfNotNull(kind, count).joinToString(" · "), color = p.ink3, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
             Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (notifyLevel == "none") InfoAction(R.drawable.ic_bell, "Unmute") { onNotify(model.accountPrefs.defaultNotify(space.kind)) }
+                else InfoAction(R.drawable.ic_bell_off, "Mute") { onNotify("none") }
                 InfoAction(R.drawable.ic_search, "Search", onSearch)
             }
             channel.topic?.takeIf { it.isNotBlank() }?.let { topic ->

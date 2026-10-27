@@ -67,6 +67,7 @@ data class ChatMessage(
     val entities: String = "[]", val segments: List<ChatSegment> = emptyList(),
     /** A `message.forward`'s snapshot (D-048). */
     val forward: List<ForwardItem> = emptyList(),
+    val pinned: Boolean = false,
 )
 data class ChannelWindow(val messages: List<ChatMessage>, val hasOlder: Boolean)
 
@@ -121,6 +122,8 @@ class Model(
     /** Polls on messages/posts, their published totals and this account's own votes (D-081). */
     val polls: PollState = PollState(),
     val typingNames: TypingNames = TypingNames(),
+    /** channel id → its pinned messages, oldest first, wherever they are in history. */
+    val pinnedMessages: Map<String, List<ChatMessage>> = emptyMap(),
     /** message id → reactions (DATA_MODEL `reaction` set). */
     val messageReactions: Map<String, List<ChatReaction>> = emptyMap(),
 ) {
@@ -212,7 +215,7 @@ class Model(
                     val row = rows.getJSONObject(index)
                     ChatSegment(row.getInt("offset"), row.getInt("length"), strings(row.optJSONArray("authors")))
                 } } ?: emptyList(),
-                forward = ChatForward.parse(f.optJSONArray("forward_snapshot")))
+                forward = ChatForward.parse(f.optJSONArray("forward_snapshot")), pinned = f.present("pinned_at"))
         }
 
         /** Page backward through locally replicated messages without enlarging the chat model. */
@@ -370,6 +373,9 @@ class Model(
             val chatMessages = selected.mapValues { (_, values) -> values.map { (id, f) ->
                 chatMessage(id, f, attachments, (messageTable?.optJSONObject(id)?.optInt("edits") ?: 0) > 0)
             } }
+            val pinnedMessages = messageRows.filter { (_, f) -> f.present("pinned_at") }
+                .map { (id, f) -> chatMessage(id, f, attachments, (messageTable?.optJSONObject(id)?.optInt("edits") ?: 0) > 0) }
+                .sortedWith(compareBy<ChatMessage> { it.occurredAt }.thenBy { it.id }).groupBy { it.channelId }
             val followCeilings = rows(p, "follow").associate { (id, f) -> id to (f.optJSONObject("ceiling") ?: JSONObject()) }
             val postReactions = PostReactions.fromProjection(p.optJSONObject("sets"), members.associate { it.id to it.shownName })
             val posts = rows(p, "post").filter { (_, f) -> !f.present("deleted_at") }
@@ -409,7 +415,7 @@ class Model(
                 LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages,
                 ChatSpeaker.preferences(p, accountId, channels), lastAuthorsByChannel,
                 ReadTracking.marks(p, accountId), frontIntervals, namedFronts, Polls.fromProjection(p), typingNames,
-                messageReactions = ChatReactions.fromProjection(p.optJSONObject("sets")))
+                messageReactions = ChatReactions.fromProjection(p.optJSONObject("sets")), pinnedMessages = pinnedMessages)
         }
     }
 }

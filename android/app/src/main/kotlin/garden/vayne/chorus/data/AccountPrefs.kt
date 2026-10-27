@@ -4,7 +4,15 @@ import org.json.JSONObject
 
 /** Account settings are independent pref rows; pending rows use an empty account id (D-063). */
 data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCeiling: JSONObject = JSONObject(),
-    val cwAutoExpand: Boolean = false, val segmentParsing: Boolean = true, val readPerMember: Boolean = false, val shareTyping: Boolean = false) {
+    val cwAutoExpand: Boolean = false, val segmentParsing: Boolean = true, val readPerMember: Boolean = false, val shareTyping: Boolean = false,
+    /** channel id → `notify_channel:<id>` (all · mentions · none, NOTIFICATIONS §7). */
+    val notifyChannels: Map<String, String> = emptyMap()) {
+    /** A channel's chat notifications; DMs default to everything, other channels to mentions (as on web). */
+    fun channelNotify(channelId: String, spaceKind: String): String =
+        notifyChannels[channelId] ?: defaultNotify(spaceKind)
+
+    fun defaultNotify(spaceKind: String): String = if (spaceKind == "dm") "all" else "mentions"
+
     fun chatEnabled(key: String): Boolean = if (key == "own_switch" || key == "reply_as_mentioned")
         notifyChat.optBoolean(key, false) else notifyChat.optBoolean(key, true)
 
@@ -24,7 +32,21 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
             return AccountPrefs(value("notify_chat") as? JSONObject ?: JSONObject(),
                 value("follow_ceiling") as? JSONObject ?: legacy?.optJSONObject("follow_ceiling") ?: JSONObject(),
                 value("chat.cw_auto_expand") == true, value("chat.segment_parsing") != false,
-                value("chat.read_per_member") == true, value("share_typing") == true)
+                value("chat.read_per_member") == true, value("share_typing") == true, channelLevels(prefs, accountId))
+        }
+
+        /** Account-wide (no device) `notify_channel:` prefs; a pending local change wins. */
+        private fun channelLevels(prefs: JSONObject?, accountId: String): Map<String, String> {
+            val out = HashMap<String, String>()
+            for (k in prefs?.keys()?.asSequence().orEmpty()) {
+                val parts = k.split('|', limit = 3)
+                if (parts.size != 3 || parts[1].isNotEmpty() || (parts[0].isNotEmpty() && parts[0] != accountId)) continue
+                val channel = parts[2].takeIf { it.startsWith("notify_channel:") }?.removePrefix("notify_channel:") ?: continue
+                val row = prefs?.optJSONObject(k)?.takeIf { it.optBoolean("exists") } ?: continue
+                val level = row.optJSONObject("fields")?.opt("value") as? String ?: continue
+                if (parts[0].isEmpty() || channel !in out) out[channel] = level
+            }
+            return out
         }
 
         fun payload(key: String, value: Any): JSONObject = JSONObject().put("device", "")

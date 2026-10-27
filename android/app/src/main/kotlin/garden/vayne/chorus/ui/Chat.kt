@@ -123,6 +123,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import garden.vayne.chorus.data.ChatReaction
 import garden.vayne.chorus.data.ChatReactions
 import garden.vayne.chorus.data.ChatForward
+import garden.vayne.chorus.data.AccountPrefs
 import garden.vayne.chorus.data.ChatThreads
 import garden.vayne.chorus.data.ThreadSummary
 import androidx.compose.material3.Checkbox
@@ -194,6 +195,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var forwardConfirm by remember { mutableStateOf<ChatListRow?>(null) }
     var deleting by remember { mutableStateOf<ChatMessage?>(null) }
     var undoDelete by remember { mutableStateOf<ChatMessage?>(null) }
+    var notifyOpen by remember { mutableStateOf(false) }
     var busy by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var directory by remember { mutableStateOf<Map<String, SpaceInfo>>(emptyMap()) }
@@ -456,7 +458,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             val latest = visible.lastOrNull()
             val sender = latest?.authors?.joinToString(" & ") { id -> model.member(id)?.shownName ?: foreignAuthors[id]?.name
                 ?: directory[home.id]?.accounts?.find { it.id == latest.accountId }?.shownName ?: "Someone" }
-            ChatListRow(candidate, home, title, latest, unread, sender)
+            ChatListRow(candidate, home, title, latest, unread, sender,
+                muted = model.accountPrefs.channelNotify(candidate.id, home.kind) == "none")
         }
     }
     val openChat: (ChatListRow) -> Unit = { row ->
@@ -494,6 +497,24 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
     }
     LaunchedEffect(undoDelete) { if (undoDelete != null) { delay(8_000); undoDelete = null } }
+    // pins carry who pinned (the acting speaker), like web
+    fun pin(message: ChatMessage) {
+        val home = space ?: return
+        actions.launch {
+            try {
+                chorus.create(if (message.pinned) "message.unpin" else "message.pin", message.id, JSONObject(),
+                    scope = "space:${home.id}", memberId = replySpeakerId)
+            } catch (e: Exception) { error = e.message ?: "Could not change the pin." }
+        }
+    }
+    // a channel's notifications are an account pref the server reads (NOTIFICATIONS §7)
+    fun setNotify(level: String) {
+        val id = channel?.id ?: return
+        actions.launch {
+            try { chorus.create("pref.set", null, AccountPrefs.payload("notify_channel:$id", level)) }
+            catch (e: Exception) { error = e.message ?: "Could not save notifications for this chat." }
+        }
+    }
     // one thread per parent, whose id is the parent's, so every device opens the same one
     fun openThread(message: ChatMessage) {
         val home = space ?: return
@@ -518,7 +539,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (infoOpen && !expanded && channel != null && space != null) {
             BackHandler { infoOpen = false }
             ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; onSearch() },
-                { infoOpen = false }, onShowMessage = { infoOpen = false; jumpTo = it }, modifier = Modifier.weight(1f))
+                { infoOpen = false }, model.accountPrefs.channelNotify(channel.id, space.kind), ::setNotify,
+                onShowMessage = { infoOpen = false; jumpTo = it }, modifier = Modifier.weight(1f))
         } else if (expanded || conversationOpen) Column(Modifier.weight(1f).fillMaxHeight()) {
         Row(Modifier.fillMaxWidth().background(p.surface), verticalAlignment = Alignment.CenterVertically) {
             val inThread = channel?.kind == "thread"
@@ -538,6 +560,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 ChatIconButton(R.drawable.ic_more, "Conversation options") { headerMenu = true }
                 DropdownMenu(headerMenu, { headerMenu = false }) {
                     if (channel != null && !expanded) DropdownMenuItem(text = { Text("Chat info") }, onClick = { headerMenu = false; infoOpen = true })
+                    if (channel != null) DropdownMenuItem(text = { Text("Notifications…") }, onClick = { headerMenu = false; notifyOpen = true })
                     if (channel != null) DropdownMenuItem(text = { Text("Stage mode") }, onClick = { headerMenu = false; stageSelection = emptyList(); staging = true })
                     DropdownMenuItem(text = { Text("Message options") }, onClick = { headerMenu = false; moreOpen = !moreOpen })
                     if (space?.kind == "internal" && !model.isPerson) {
@@ -549,6 +572,27 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     if (canLeave) DropdownMenuItem(text = { Text("Leave space") }, onClick = { headerMenu = false; spaceAction = "leave" })
                 }
             }
+        }
+        // F5.2: the pinned banner; tapping shows the pin and steps to the next one
+        val pins = model.pinnedMessages[channel?.id].orEmpty().filter {
+            space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
+                accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
+        }
+        var pinStep by remember(channel?.id) { mutableStateOf(0) }
+        if (pins.isNotEmpty()) {
+            val shown = pins[pins.size - 1 - pinStep % pins.size]
+            Row(Modifier.fillMaxWidth().background(p.surface).clickable(onClickLabel = "Show pinned message") {
+                jumpTo = shown.id; pinStep = (pinStep + 1) % pins.size
+            }.heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.width(2.dp).height(32.dp).background(p.accent))
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                    Text(if (pins.size > 1) "Pinned message ${pinStep % pins.size + 1} of ${pins.size}" else "Pinned message",
+                        color = p.accent, fontSize = 12.sp)
+                    Text(ChatPresentation.preview(shown), color = p.ink2, fontSize = 13.sp, maxLines = 1)
+                }
+                ChatIcon(R.drawable.ic_pin, tint = p.ink3)
+            }
+            HorizontalDivider(color = p.line)
         }
         if (error != null) Text(error.orEmpty(), color = p.danger, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
         if (space == null) Text("No spaces yet. Start a chat with someone you follow.", color = p.ink2, modifier = Modifier.padding(24.dp))
@@ -624,6 +668,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     heldMessages[message.id], actingMemberId = replySpeakerId,
                     reactions = model.messageReactions[message.id].orEmpty(),
                     onForward = if (heldMessages[message.id] == null) ({ forwarding = message }) else null,
+                    onPin = if (heldMessages[message.id] == null) ({ pin(message) }) else null,
                     thread = threads[message.id],
                     onThread = if (channel.kind != "thread" && heldMessages[message.id] == null) ({ openThread(message) }) else null,
                     onDelete = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
@@ -892,6 +937,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (expanded && channel != null && space != null) {
             VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
             ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], onSearch,
+                notifyLevel = model.accountPrefs.channelNotify(channel.id, space.kind), onNotify = ::setNotify,
                 onShowMessage = { jumpTo = it }, modifier = Modifier.width(260.dp))
         }
     }
@@ -983,6 +1029,20 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             confirmButton = { TextButton(onClick = { deleting = null; delete(message) }) { Text("Delete", color = p.danger) } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } })
     }
+    if (notifyOpen && channel != null && space != null) {
+        val level = model.accountPrefs.channelNotify(channel.id, space.kind)
+        AlertDialog(onDismissRequest = { notifyOpen = false }, title = { Text("Notifications for ${channel.name}") }, text = {
+            Column {
+                for ((value, label) in listOf("all" to "All messages", "mentions" to "Mentions only", "none" to "Off (muted)")) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { setNotify(value); notifyOpen = false },
+                        verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.RadioButton(level == value, { setNotify(value); notifyOpen = false })
+                        Text(label, color = p.ink)
+                    }
+                }
+            }
+        }, confirmButton = { TextButton(onClick = { notifyOpen = false }) { Text("Done") } })
+    }
     if (spaceAction == "new") {
         AlertDialog(onDismissRequest = { spaceAction = "" }, title = { Text("Start a chat") },
             text = {
@@ -1062,7 +1122,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     chorus: Chorus, unseenBy: List<String>, held: HeldMessage?, actingMemberId: String?, onReply: () -> Unit,
     onReplyPrivately: (() -> Unit)?, onEdit: (() -> Unit)?,
     reactions: List<ChatReaction> = emptyList(), onReact: ((String, Boolean) -> Unit)? = null,
-    onForward: (() -> Unit)? = null, onDelete: (() -> Unit)? = null,
+    onForward: (() -> Unit)? = null, onDelete: (() -> Unit)? = null, onPin: (() -> Unit)? = null,
     thread: ThreadSummary? = null, onThread: (() -> Unit)? = null, interactive: Boolean = true,
     showSender: Boolean = true, showAvatar: Boolean = true, quote: ChatMessage? = null, onStage: () -> Unit) {
     val p = LocalChorusPalette.current
@@ -1214,6 +1274,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (reactions.isNotEmpty()) ReactionChips(reactions, actingMemberId, Modifier.weight(1f),
                 { id -> model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone" }, onReact.takeIf { held == null })
+            if (message.pinned) androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_pin), "Pinned",
+                Modifier.size(14.dp), tint = p.ink3)
             Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.occurredAt)), color = p.ink3, fontSize = 12.sp)
             if (held != null) ChatIcon(R.drawable.ic_history, "Message held for slow mode")
         }
@@ -1254,6 +1316,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                     val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("Message", message.text)); menuOpen = false
                 }
+                if (onPin != null) ChatActionRow(if (message.pinned) R.drawable.ic_unpin else R.drawable.ic_pin,
+                    if (message.pinned) "Unpin" else "Pin") { menuOpen = false; onPin() }
                 if (onForward != null) ChatActionRow(R.drawable.ic_forward, "Forward") { menuOpen = false; onForward() }
                 if (onEdit != null && (message.cw == null || revealed)) ChatActionRow(R.drawable.ic_edit, "Edit") { menuOpen = false; onEdit() }
                 if (held == null) ChatActionRow(R.drawable.ic_layers, "Select in stage mode") { menuOpen = false; onStage() }

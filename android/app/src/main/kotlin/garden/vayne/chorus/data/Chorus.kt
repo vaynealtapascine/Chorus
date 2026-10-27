@@ -174,12 +174,13 @@ class Chorus private constructor(private val ctx: Context) {
      * Create a local op; it is shown at once and synced when connected. Returns the op id.
      * Throws [uniffi.chorus_ffi.CoreException] when the core rejects it.
      */
-    suspend fun create(kind: String, entityId: String?, payload: JSONObject, scope: String = accountScope, userTime: Long? = null): String =
+    suspend fun create(kind: String, entityId: String?, payload: JSONObject, scope: String = accountScope, userTime: Long? = null,
+        memberId: String? = null): String =
         withContext(dispatcher) {
             check(_status.value != Status.StorageError) { "The local replica could not be saved." }
             val r = replica ?: error("not set up")
             val n = JSONObject().put("kind", kind).put("scope", scope).put("entity_id", entityId ?: JSONObject.NULL)
-                .put("payload", payload).put("member_id", JSONObject.NULL).put("user_time", userTime ?: JSONObject.NULL)
+                .put("payload", payload).put("member_id", memberId ?: JSONObject.NULL).put("user_time", userTime ?: JSONObject.NULL)
             val out = JSONObject(r.create(n.toString(), deviceNow(), bytes()))
             try {
                 store.save(r.takeChanges())

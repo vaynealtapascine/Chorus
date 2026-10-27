@@ -66,7 +66,7 @@ internal fun ChannelDisc(channel: ChatChannel, member: Member? = null, size: Dp 
 }
 
 internal data class ChatListRow(val channel: ChatChannel, val space: ChatSpace, val title: String,
-    val latest: ChatMessage?, val unread: Int, val sender: String? = null)
+    val latest: ChatMessage?, val unread: Int, val sender: String? = null, val muted: Boolean = false)
 
 @Composable
 internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: String?, reader: String?,
@@ -164,7 +164,10 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                         }
                         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             row.latest?.let { Text(ChatPresentation.listTimeLabel(it.occurredAt), color = p.ink3, fontSize = 12.sp) }
-                            if (row.unread > 0) ChatCount(row.unread, true)
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                if (row.muted) Icon(painterResource(R.drawable.ic_bell_off), "Muted", Modifier.size(16.dp), tint = p.ink3)
+                                if (row.unread > 0) ChatCount(row.unread, !row.muted)
+                            }
                         }
                     }
                     HorizontalDivider(Modifier.padding(start = 72.dp), color = p.line, thickness = .5.dp)
