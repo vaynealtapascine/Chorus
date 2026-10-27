@@ -1,6 +1,9 @@
 package garden.vayne.chorus.ui
 
 import android.graphics.Bitmap
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -104,6 +107,7 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
     var viewing by remember(channel.id) { mutableStateOf<ChatFileItem?>(null) }
     val media = remember(library) { ChatLibrary.media(library) }
     val files = remember(library) { ChatLibrary.files(library) }
+    val links = remember(library) { ChatLibrary.links(library) }
     Column(modifier.fillMaxHeight().background(p.surface).verticalScroll(rememberScrollState())) {
         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (onClose != null) ChatIconButton(R.drawable.ic_back, "Back to conversation", onClose)
@@ -131,7 +135,7 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                 }
             }
         }
-        InfoTabs(listOf("members" to "Members", "media" to "Media", "files" to "Files"), tab) { tab = it }
+        InfoTabs(listOf("members" to "Members", "media" to "Media", "files" to "Files", "links" to "Links"), tab) { tab = it }
         HorizontalDivider(color = p.line)
         when (tab) {
             "media" -> {
@@ -147,6 +151,11 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                 if (files.isEmpty()) InfoEmpty("No files shared here yet.")
                 for (item in files.take(shown)) FileRow(item, chorus, ChatLibrary.who(item.message, model))
                 if (files.size > shown) TextButton(onClick = { shown += 60 }, modifier = Modifier.padding(8.dp)) { Text("Show more") }
+            }
+            "links" -> {
+                if (links.isEmpty()) InfoEmpty("No links shared here yet.")
+                for (link in links.take(shown)) LinkRow(link, ChatLibrary.who(link.message, model))
+                if (links.size > shown) TextButton(onClick = { shown += 60 }, modifier = Modifier.padding(8.dp)) { Text("Show more") }
             }
             else -> Column(Modifier.padding(16.dp)) {
                 if (space.kind == "internal" && !model.isPerson) {
@@ -235,6 +244,34 @@ private fun FileRow(item: ChatFileItem, chorus: Chorus, who: String) {
             Text(listOf(ChatLibrary.size(a.size), who, DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(item.message.occurredAt)))
                 .joinToString(" · "), color = p.ink3, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (opening) Text("Opening…", color = p.ink3, fontSize = 12.sp)
+            if (openError != null) Text(openError.orEmpty(), color = p.danger, fontSize = 12.sp)
+        }
+    }
+}
+
+/** A shared link opens in the browser; one from behind a content warning asks first. */
+@Composable
+private fun LinkRow(link: ChatLink, who: String) {
+    val p = LocalChorusPalette.current
+    val ctx = LocalContext.current
+    var revealed by remember(link.message.id, link.url) { mutableStateOf(link.message.cw == null) }
+    var openError by remember(link.url) { mutableStateOf<String?>(null) }
+    Row(Modifier.fillMaxWidth().clickable(onClickLabel = if (revealed) "Open link" else "Show link") {
+        if (!revealed) revealed = true
+        else try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link.url))); openError = null }
+        catch (_: ActivityNotFoundException) { openError = "No app can open this link." }
+    }.heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(40.dp).background(p.surface2, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+            ChatIcon(if (revealed) R.drawable.ic_link else R.drawable.ic_lock, tint = p.accent)
+        }
+        Column(Modifier.weight(1f)) {
+            if (revealed) {
+                Text(ChatLibrary.domain(link.url), color = p.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text(link.url, color = p.accent, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            } else Text("Content warning: ${link.message.cw}", color = p.ink, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("$who · " + DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(link.message.occurredAt)),
+                color = p.ink3, fontSize = 12.sp, maxLines = 1)
             if (openError != null) Text(openError.orEmpty(), color = p.danger, fontSize = 12.sp)
         }
     }

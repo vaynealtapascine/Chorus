@@ -117,13 +117,16 @@ local/server search screen. No new operations or schema are introduced.
 
 ### Chat parity gaps
 
-- Android's current chat DTO has no pin, reaction, mute, forward or pending-ack fields. Do not
-  fabricate pinned banners, reaction counts, muted/pinned row icons or delivery/read ticks.
+- Android now has reactions (F5.6 quick row + emoji grid, "❤️ 2" chips), pins (F5.2 banner,
+  Pin/Unpin), per-chat mute (notify_channel prefs, bell-off rows), forward (snapshot like web,
+  one-time outward confirmation) and delete with Undo (2026-10-28). It still has no pending-ack
+  field: do not fabricate delivery/read ticks.
 - Voice recording and live typing presence are absent. The composer keeps an inactive Send
   affordance when empty; only the actual sync connection can supply a live status subtitle.
-- Channel rows contain thread parent IDs, but Android has no thread-specific reply composer
-  or create-thread action. Existing thread channels remain reachable in the list; no “also send”
-  checkbox or new thread behavior is implied.
+- Threads (F5.7): "Reply in thread"/"Open thread" opens or creates the parent's thread (id =
+  parent id, as on web); parents show last repliers and the count; thread channels are not
+  listed as chats. "Also send to <channel>" posts a second message replying to the parent in the
+  parent channel — an Android reading of the Figma, pending Q22.
 - Notes are ordinary existing channels, without a saved-notes type or tags navigation.
 - System/unsigned authorship is unsupported by ChatCompose; send-as must list real eligible
   own-account members only. The internal space name supplies system context where available;
@@ -154,8 +157,8 @@ Reply preview includes the actual names and a safe text excerpt with a 48 dp clo
 
 Additional gaps: the Android send composer already resolves `@front` through the core, so this
 pass completes that target only. It has no member/group names resolver or `@everyone` target;
-those suggestions are omitted. Chat-specific reaction/pin/forward/delete/thread handlers and
-permission projections are absent, so those menu actions are omitted. The model has no chat
+those suggestions are omitted. Reaction, pin, forward, delete and thread actions are
+offered without a permission projection; the server refuses what a member may not do. The model has no chat
 system-event items. Android uses the existing system file picker rather than a fabricated recent
 photo grid, and the emoji decoration does not imply an app-specific emoji picker. The smile and
 check vectors are locally authored geometry, recorded with the other assets.
@@ -177,7 +180,9 @@ conversation; compact widths open it from overflow. Person accounts hide system/
 There are no new network calls, data operations, notification rules or product semantics.
 
 Further parity limits: the model has no channel membership/role projection for a complete member
-count, no media/files/links collection tabs, and no live “reading now” signal. The info pane labels
+count, no live “reading now” signal. Chat info has Media, Files and Links
+tabs over every locally synced message the reader can see in the channel (not only the newest 100);
+content behind a spoiler or content warning stays covered until tapped. The info pane labels
 known own members without claiming channel membership, and omits those unsupported controls.
 Read markers contain the last-read message time, so catch-up says “read through” rather than
 inventing the time of a reading session. Mention badges count explicit member entities only;
