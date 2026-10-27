@@ -105,7 +105,7 @@
     </div>
   {/if}
   <div class="front-actions"><a href="#/history"><Icon name="history" size={18} />Front history</a>{#if !me}<a href="#/fronts"><Icon name="layers" size={18} />Fronts</a>{/if}<button class="switch-button" onclick={() => onswitch(selected?.id)}><Icon name="swap" size={18} />Switch</button></div>
-  <button class="card-button" onclick={() => onswitch(selected?.id)} aria-label={`Change who's in ${selected?.name ?? 'front'}`}>
+  <button class="card-button" onclick={() => onswitch(selected?.id)} aria-label={configured && selected && !selected.body ? `Change who's in ${selected.name}` : "Change who's here"}>
     <FrontCard members={subjects} {front} {since} {dark} {layers} title={configured ? selected?.name ?? 'Current front' : 'Current front'} />
   </button>
 

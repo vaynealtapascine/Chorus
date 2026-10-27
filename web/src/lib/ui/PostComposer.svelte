@@ -38,6 +38,7 @@
     bucketIds = bucketIds.includes(id) ? bucketIds.filter((x) => x !== id) : [...bucketIds, id];
   }
 
+  let optionsOpen = $state(false);
   function send(e: SubmitEvent) {
     e.preventDefault();
     if (!authors.length || !body.trim() || authors.some((id) => !canWriteAs(projection, id, sync.accountId)) || (visibility === 'buckets' && !bucketIds.length)) return;
@@ -55,6 +56,7 @@
       });
       title = body = cw = mood = tags = error = '';
       pollOn = pollMultiple = false;
+      optionsOpen = false; // the popover would otherwise cover the feed it just posted to
       pollOptions = ['', ''];
       onsent?.();
     } catch (cause) { error = cause instanceof Error ? cause.message : String(cause); }
@@ -69,7 +71,7 @@
   {#if kind === 'entry'}<input bind:value={title} placeholder="Title (optional)" aria-label="Entry title" />{/if}
   <textarea bind:value={body} rows={kind === 'entry' ? 9 : 2} placeholder={replyTo ? 'Reply…' : kind === 'entry' ? 'Write your entry…' : "What's on your mind?"} aria-label="Post text"></textarea>
   <div class="compose-footer">
-    <details class="extras"><summary><Icon name="plus" size={16} />Post options</summary><div class="extra-fields"><input bind:value={cw} placeholder="Content warning (optional)" aria-label="Content warning" /><input bind:value={mood} placeholder="Mood" aria-label="Mood" /><input bind:value={tags} placeholder="Tags, separated by commas" aria-label="Tags" />
+    <details class="extras" bind:open={optionsOpen}><summary><Icon name="plus" size={16} />Post options</summary><div class="extra-fields"><input bind:value={cw} placeholder="Content warning (optional)" aria-label="Content warning" /><input bind:value={mood} placeholder="Mood" aria-label="Mood" /><input bind:value={tags} placeholder="Tags, separated by commas" aria-label="Tags" />
       <label><input type="checkbox" bind:checked={pollOn} /> Add a poll</label>
       {#if pollOn}
         {#each pollOptions as _, i (i)}<input bind:value={pollOptions[i]} placeholder="Option {i + 1}" aria-label="Poll option {i + 1}" maxlength="200" />{/each}
