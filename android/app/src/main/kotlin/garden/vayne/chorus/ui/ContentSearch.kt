@@ -33,6 +33,7 @@ import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.MessageSearchApi
 import garden.vayne.chorus.data.PostSearchApi
 import garden.vayne.chorus.data.Model
+import androidx.compose.runtime.collectAsState
 import garden.vayne.chorus.data.SearchDocument
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import java.text.DateFormat
@@ -56,9 +57,11 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
     var remoteError by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     val currentSession by rememberUpdatedState(chorus.device?.session)
-    val index by produceState<LocalSearch?>(initialValue = null, model) {
+    val frontRevision by chorus.frontHistoryRevision.collectAsState()
+    val index by produceState<LocalSearch?>(initialValue = null, model, frontRevision) {
         value = null
-        value = withContext(Dispatchers.Default) { LocalSearch.fromModel(model) }
+        val saved = if (model.namedFronts != null) runCatching { chorus.frontHistory() }.getOrNull()?.saved else null
+        value = withContext(Dispatchers.Default) { LocalSearch.fromModel(model, saved) }
     }
     val messageIndex by produceState<CoreMessageSearch?>(initialValue = null, model) {
         value = null

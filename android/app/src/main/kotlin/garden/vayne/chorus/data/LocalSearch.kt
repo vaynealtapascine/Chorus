@@ -112,12 +112,15 @@ class LocalSearch private constructor(private val docs: List<SearchDocument>, pr
             ?: runCatching { Instant.parse(raw).toEpochMilli() }.getOrNull()
             ?: runCatching { LocalDate.parse(raw).atStartOfDay(zone).toInstant().toEpochMilli() }.getOrNull()
 
-        fun fromModel(model: Model): LocalSearch {
+        /** [saved] = Body's saved records once the account has named fronts (D-080); the legacy
+         *  switch log is never read for a configured account. */
+        fun fromModel(model: Model, saved: List<SwitchRow>? = null): LocalSearch {
             val names = model.members.associate { it.id to it.shownName } + model.groups.associate { it.id to it.name }
             val channels = model.channels.associate { it.id to it.name }
             val posts = model.posts.map { post -> SearchDocument(post.id, "Posts", post.occurredAt, post.text,
                 post.title, post.cw, post.authors, tags = post.tags) }
-            val switches = model.switches.filter { !it.retracted }.map { row ->
+            val rows = if (model.namedFronts != null) saved.orEmpty() else model.switches
+            val switches = rows.filter { !it.retracted }.map { row ->
                 val subjects = row.entries.map { names[it.subjectId] ?: "Someone" }
                 SearchDocument(row.id, "Switches", row.occurredAt,
                     listOf(subjects.joinToString(" & "), row.note).filterNotNull().joinToString(" · "))

@@ -36,6 +36,10 @@ import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.UploadWork
 import garden.vayne.chorus.data.JournalPost
 import garden.vayne.chorus.data.Model
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.produceState
+import garden.vayne.chorus.data.NamedHistory
+import garden.vayne.chorus.data.Entry
 import garden.vayne.chorus.data.PostCompose
 import garden.vayne.chorus.data.PostDetail
 import garden.vayne.chorus.data.PostReaction
@@ -246,11 +250,17 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         return
     }
 
-    val events = (model.posts.map { JournalEvent(it.id, it.occurredAt, it, null) } +
-        model.switches.map { JournalEvent(it.id, it.occurredAt, null,
-            if (it.retracted) "Undone switch" else "Front: " +
-                (it.resultingFront.filter { e -> e.level == "front" }.mapNotNull { e -> model.subject(e.subjectType, e.subjectId)?.name }
-                    .joinToString(" & ").ifBlank { "no one" })) })
+    // a configured account reads Body's effective changes (exact Fronting layer ID), never the stale log
+    val frontRevision by chorus.frontHistoryRevision.collectAsState()
+    val named by produceState<NamedHistory?>(null, frontRevision, model.namedFronts != null) {
+        value = if (model.namedFronts != null) runCatching { chorus.frontHistory() }.getOrNull() else null
+    }
+    fun fronting(entries: List<Entry>) = "Front: " + entries.filter { e -> e.level == "front" }
+        .mapNotNull { e -> model.subject(e.subjectType, e.subjectId)?.name }.joinToString(" & ").ifBlank { "no one" }
+    val switchEvents = if (model.namedFronts != null)
+        named?.changes.orEmpty().map { JournalEvent(it.id, it.occurredAt, null, fronting(it.entries.map { e -> e.displayEntry() })) }
+    else model.switches.map { JournalEvent(it.id, it.occurredAt, null, if (it.retracted) "Undone switch" else fronting(it.resultingFront)) }
+    val events = (model.posts.map { JournalEvent(it.id, it.occurredAt, it, null) } + switchEvents)
         .sortedWith(compareByDescending<JournalEvent> { it.at }.thenByDescending { it.id })
     LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {

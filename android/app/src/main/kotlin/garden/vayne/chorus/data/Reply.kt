@@ -40,7 +40,10 @@ object Reply {
      * active member (a person account's self member); `null` when nobody clearly fits.
      */
     fun speaker(model: Model): Member? {
-        val fronting = model.current.filter { it.subjectType == "member" && it.level == "front" }
+        // a configured account uses Body's authorship pool; a custom layer gains no fronting role
+        val body = model.namedFronts?.let { n -> n.resolved[n.bodyId]?.takeIf { !it.deleted } }
+        val fronting = if (model.namedFronts != null) body?.authorship.orEmpty().filter { it.subjectType == "member" }.map { it.displayEntry() }
+            else model.current.filter { it.subjectType == "member" && it.level == "front" }
         val id = (fronting.firstOrNull { it.isPrimary } ?: fronting.firstOrNull())?.subjectId
         return id?.let { model.member(it) } ?: model.active.singleOrNull()
     }
