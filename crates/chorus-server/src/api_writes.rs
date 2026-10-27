@@ -4,7 +4,6 @@
 //! signed-in session calls it), so devices, followers, the stream and webhooks see it exactly like a
 //! switch from the app.
 
-use chorus_core::op::Op;
 use rusqlite::Connection;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -112,7 +111,7 @@ pub fn entries(conn: &Connection, account: &str, input: &[EntryIn]) -> Result<Ve
 }
 
 /// Record a switch for the caller's account. Returns the accepted op (for the fan-out).
-pub fn switch(conn: &Connection, p: &Principal, input: &SwitchIn, now: i64) -> Result<Op, DataError> {
+pub fn switch(conn: &Connection, p: &Principal, input: &SwitchIn, now: i64) -> Result<ingest::Accepted, DataError> {
     if !p.allows("write:front") {
         return Err(DataError::Scope("write:front"));
     }

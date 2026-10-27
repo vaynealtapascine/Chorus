@@ -315,7 +315,7 @@ async fn cross_account_replies_require_a_readable_parent_and_reach_its_author() 
     let (ack, reply) = ingest::accept(&conn, &session, make(3, "server"), now, false).unwrap();
     assert!(ack.error.is_none(), "{:?}", ack.error);
     let reply = reply.unwrap();
-    let reply_id = reply.entity_id.unwrap();
+    let reply_id = reply.op.entity_id.unwrap();
     let owner_replies = posts::replies(&conn, ALICE, "server", 1).unwrap();
     assert!(owner_replies.iter().any(|p| p["id"] == reply_id));
     let follower_replies = posts::replies(&conn, BOB, "server", 1).unwrap();

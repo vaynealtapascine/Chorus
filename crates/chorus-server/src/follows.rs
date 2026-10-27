@@ -8,7 +8,6 @@
 //! their follows through this module and, later, follower views.
 
 use chorus_core::notify::Prefs;
-use chorus_core::op::Op;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
@@ -68,7 +67,7 @@ pub fn request(
     follower: &str,
     target_ref: &str,
     now: i64,
-) -> Result<(String, Option<Op>), FollowError> {
+) -> Result<(String, Option<ingest::Accepted>), FollowError> {
     let target = find_account(conn, target_ref)?;
     if target == follower {
         return Err(FollowError::SelfFollow);
@@ -98,7 +97,13 @@ pub fn request(
 }
 
 /// The follower's own notification preferences for this follow (NOTIFICATIONS.md §4).
-pub fn set_prefs(conn: &Connection, follower: &str, id: &str, prefs: Value, now: i64) -> Result<Op, FollowError> {
+pub fn set_prefs(
+    conn: &Connection,
+    follower: &str,
+    id: &str,
+    prefs: Value,
+    now: i64,
+) -> Result<ingest::Accepted, FollowError> {
     let r = row(conn, id)?;
     if r.follower != follower {
         return Err(FollowError::NotFollower);
@@ -119,7 +124,7 @@ pub fn set_prefs(conn: &Connection, follower: &str, id: &str, prefs: Value, now:
 }
 
 /// Unfollow (the follower) — the target ends follows with its own `follow.end` op.
-pub fn end(conn: &Connection, account: &str, id: &str, now: i64) -> Result<Option<Op>, FollowError> {
+pub fn end(conn: &Connection, account: &str, id: &str, now: i64) -> Result<Option<ingest::Accepted>, FollowError> {
     let r = row(conn, id)?;
     if r.follower != account && r.target != account {
         return Err(FollowError::NotFound);

@@ -9,7 +9,6 @@
 //! server for the account, attributed to the token's pseudo-device (like `POST /front/switch`).
 
 use chorus_core::front::SubjectType;
-use chorus_core::op::Op;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -349,7 +348,7 @@ pub fn send(
     channel: &str,
     input: &MessageIn,
     now: i64,
-) -> Result<Option<Op>, DataError> {
+) -> Result<Option<ingest::Accepted>, DataError> {
     if !p.allows("write:messages") {
         return Err(DataError::Scope("write:messages"));
     }
@@ -409,6 +408,7 @@ pub fn send(
 mod tests {
     use super::*;
     use chorus_core::hlc::Hlc;
+    use chorus_core::op::Op;
 
     const BODY: &str = "0192f8c2-0000-7000-8000-0000000000a1";
     const T: u64 = 1_790_000_000_000;

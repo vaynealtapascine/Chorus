@@ -2068,7 +2068,7 @@ fn push(
     let mut conn = s.db();
     let t = conn.transaction()?;
     let mut results = Vec::with_capacity(ops.len());
-    let mut fresh: Vec<Op> = Vec::new();
+    let mut fresh: Vec<ingest::Accepted> = Vec::new();
     for o in ops {
         let (r, new) = ingest::accept(&t, sess, o, now, restore)?;
         results.push(r);
@@ -2122,8 +2122,15 @@ fn emit_live_events(s: &AppState, conn: &Connection, fresh: &[Op]) {
 
 /// Send freshly accepted ops to every connected device that reads their scope (and tell devices
 /// whose scopes changed). Call it while still holding the db lock so per-connection order matches
-/// seq order. `skip` is the device that pushed them (it already has them).
-pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Option<&str>) -> anyhow::Result<()> {
+/// seq order. `skip` is the pushing device: it retains its inputs, but still needs derived ops.
+pub(crate) fn fan_out(
+    s: &AppState,
+    conn: &Connection,
+    accepted: &[ingest::Accepted],
+    skip: Option<&str>,
+) -> anyhow::Result<()> {
+    let fresh: Vec<Op> = accepted.iter().flat_map(|a| std::iter::once(&a.op).chain(&a.derived)).cloned().collect();
+    let fresh = fresh.as_slice();
     emit_live_events(s, conn, fresh);
     match crate::webhooks::deliveries_for(conn, fresh, now_ms()) {
         Ok(ds) => ds.into_iter().for_each(|d| {
@@ -2168,13 +2175,12 @@ pub(crate) fn fan_out(s: &AppState, conn: &Connection, fresh: &[Op], skip: Optio
             p.scopes = now_scopes.clone();
             send(&p.tx, Frame::Scope { add, remove });
         }
-        if skip == Some(device.as_str()) {
-            continue;
-        }
         let mut by_scope: BTreeMap<&str, Vec<Op>> = BTreeMap::new();
-        for o in
-            deliver.values().filter(|o| p.scopes.contains(&o.scope) && !chorus_core::sync::outside_window(o, p.window))
-        {
+        for o in deliver.values().filter(|o| {
+            (skip != Some(device.as_str()) || o.device_id.as_deref() != skip)
+                && p.scopes.contains(&o.scope)
+                && !chorus_core::sync::outside_window(o, p.window)
+        }) {
             if crate::visibility::op_visible_to(conn, &p.account, o)? {
                 by_scope.entry(o.scope.as_str()).or_default().push(o.clone());
             }

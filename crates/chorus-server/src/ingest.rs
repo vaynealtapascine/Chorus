@@ -10,6 +10,21 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::{db, oplog, project};
 
+/// One accepted input and all server-derived operations stored in the same transaction.
+/// Fan out the whole bundle only after commit; the pushing device also needs derived ops.
+#[derive(Clone, Debug)]
+pub struct Accepted {
+    pub op: Op,
+    pub derived: Vec<Op>,
+}
+
+impl std::ops::Deref for Accepted {
+    type Target = Op;
+    fn deref(&self) -> &Op {
+        &self.op
+    }
+}
+
 /// Who is pushing, and their connection's clock sample.
 #[derive(Clone, Debug)]
 pub struct Session {
@@ -64,7 +79,7 @@ pub fn accept(
     mut o: Op,
     now: i64,
     restore: bool,
-) -> anyhow::Result<(AckResult, Option<Op>)> {
+) -> anyhow::Result<(AckResult, Option<Accepted>)> {
     if let Some(existing) = oplog::by_id(conn, &o.id)? {
         return Ok((AckResult::ok(&existing), None));
     }
@@ -190,9 +205,9 @@ pub fn accept(
     // whole pushed batch, and the device would resend it forever, its outbox stuck behind one op.
     conn.execute_batch("SAVEPOINT accept_op")?;
     match store_and_project(conn, &mut o, suspect, preserved, now) {
-        Ok(()) => {
+        Ok(derived) => {
             conn.execute_batch("RELEASE accept_op")?;
-            Ok((AckResult::ok(&o), Some(o)))
+            Ok((AckResult::ok(&o), Some(Accepted { op: o, derived })))
         }
         Err(e) if !is_transient(&e) => {
             conn.execute_batch("ROLLBACK TO accept_op; RELEASE accept_op")?;
@@ -206,7 +221,13 @@ pub fn accept(
     }
 }
 
-fn store_and_project(conn: &Connection, o: &mut Op, suspect: bool, preserved: bool, now: i64) -> anyhow::Result<()> {
+fn store_and_project(
+    conn: &Connection,
+    o: &mut Op,
+    suspect: bool,
+    preserved: bool,
+    now: i64,
+) -> anyhow::Result<Vec<Op>> {
     let seq = oplog::insert(conn, o, suspect, preserved)?;
     o.seq = Some(seq);
     project::after_insert(conn, o)?;
@@ -231,9 +252,9 @@ fn store_and_project(conn: &Connection, o: &mut Op, suspect: bool, preserved: bo
     }
     if !preserved {
         crate::activity::on_op(conn, o, now)?;
-        crate::polls::after_op(conn, o, now)?;
+        return Ok(crate::polls::after_op(conn, o, now)?.into_iter().collect());
     }
-    Ok(())
+    Ok(Vec::new())
 }
 
 /// A message or attachment belongs to the account that created it: another account can't
@@ -328,7 +349,7 @@ pub fn server_op(
     entity: Option<&str>,
     payload: serde_json::Value,
     now: i64,
-) -> anyhow::Result<Op> {
+) -> anyhow::Result<Accepted> {
     match op_as(conn, account, SERVER_DEVICE, kind, scope, entity, payload, now, None)? {
         (_, Some(o)) => Ok(o),
         (r, None) => anyhow::bail!("server op {kind} rejected: {:?}", r.error),
@@ -349,9 +370,28 @@ pub fn op_as(
     payload: serde_json::Value,
     now: i64,
     user_time: Option<i64>,
-) -> anyhow::Result<(AckResult, Option<Op>)> {
+) -> anyhow::Result<(AckResult, Option<Accepted>)> {
+    let o = make_op(conn, kind, scope, entity, payload, now, user_time)?;
+    let s = Session {
+        account_id: account.into(),
+        device_id: device.into(),
+        sample: ClockSample { server_time: now, mono: None, boot_id: None, offset_ms: 0 },
+    };
+    accept(conn, &s, o, now, false)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn make_op(
+    conn: &Connection,
+    kind: &str,
+    scope: &str,
+    entity: Option<&str>,
+    payload: serde_json::Value,
+    now: i64,
+    user_time: Option<i64>,
+) -> anyhow::Result<Op> {
     let hlc = server_hlc(conn, now)?;
-    let o = Op {
+    Ok(Op {
         id: chorus_core::id::new_id(now as u64, rand::random()),
         kind: kind.into(),
         v: op::CURRENT_V,
@@ -371,11 +411,29 @@ pub fn op_as(
         device_id: None,
         occurred_at: None,
         received_at: None,
-    };
-    let s = Session {
-        account_id: account.into(),
-        device_id: device.into(),
-        sample: ClockSample { server_time: now, mono: None, boot_id: None, offset_ms: 0 },
-    };
-    accept(conn, &s, o, now, false)
+    })
+}
+
+/// Counts computed from authoritative parent/vote rows only. No client path calls this.
+/// Scope and attribution come from that parent, even if its author has since lost access.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn poll_tally(
+    conn: &Connection,
+    account: &str,
+    kind: &str,
+    scope: &str,
+    entity: &str,
+    payload: serde_json::Value,
+    now: i64,
+) -> anyhow::Result<Op> {
+    anyhow::ensure!(matches!(kind, "message.poll_tally" | "post.poll_tally"));
+    let mut o = make_op(conn, kind, scope, Some(entity), payload, now, None)?;
+    op::validate_new(&o)?;
+    o.account_id = Some(account.into());
+    o.device_id = Some(SERVER_DEVICE.into());
+    o.occurred_at = Some(now);
+    o.received_at = Some(now);
+    o.seq = Some(oplog::insert(conn, &o, false, false)?);
+    project::after_insert(conn, &o)?;
+    Ok(o)
 }

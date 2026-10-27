@@ -12,7 +12,6 @@
 //!   pronouns, sigils and avatar of members who wrote a message everyone in the space can read
 //!   (`visibility` unset). Anything else about them stays in their account (SYNC.md §4.3).
 
-use chorus_core::op::Op;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
@@ -68,7 +67,7 @@ fn op(
     entity: &str,
     payload: Value,
     now: i64,
-) -> anyhow::Result<Op> {
+) -> anyhow::Result<ingest::Accepted> {
     match ingest::op_as(
         conn,
         account,
@@ -107,7 +106,7 @@ pub fn create(
     name: Option<&str>,
     accounts: &[String],
     now: i64,
-) -> Result<(String, Vec<Op>), SpaceError> {
+) -> Result<(String, Vec<ingest::Accepted>), SpaceError> {
     let mut accounts = accounts.to_vec();
     accounts.sort();
     accounts.dedup();
@@ -171,7 +170,13 @@ fn present(conn: &Connection, space: &str, account: &str) -> rusqlite::Result<bo
 }
 
 /// Bring more connected accounts into a shared space (its owner only).
-pub fn add(conn: &Connection, me: &str, space: &str, accounts: &[String], now: i64) -> Result<Vec<Op>, SpaceError> {
+pub fn add(
+    conn: &Connection,
+    me: &str,
+    space: &str,
+    accounts: &[String],
+    now: i64,
+) -> Result<Vec<ingest::Accepted>, SpaceError> {
     let (kind, owner) = space_row(conn, space)?;
     if !present(conn, space, me)? {
         return Err(SpaceError::NotFound); // outsiders don't learn it exists
@@ -193,7 +198,7 @@ pub fn add(conn: &Connection, me: &str, space: &str, accounts: &[String], now: i
 }
 
 /// Leave a shared space or DM. The owner of a shared space can't (they would strand it).
-pub fn leave(conn: &Connection, me: &str, space: &str, now: i64) -> Result<Vec<Op>, SpaceError> {
+pub fn leave(conn: &Connection, me: &str, space: &str, now: i64) -> Result<Vec<ingest::Accepted>, SpaceError> {
     let (kind, owner) = space_row(conn, space)?;
     if !present(conn, space, me)? {
         return Err(SpaceError::NotFound);

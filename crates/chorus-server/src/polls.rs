@@ -89,19 +89,19 @@ pub fn vote_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Op
 }
 
 /// After a live op is accepted: recompute and publish the totals it may have changed.
-pub fn after_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
+pub fn after_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<Option<Op>> {
     let id = match o.kind.as_str() {
         "poll.vote" | "message.delete" | "message.restore" | "post.delete" | "post.restore" | "post.set_visibility" => {
             o.entity().unwrap_or_default()
         }
-        _ => return Ok(()),
+        _ => return Ok(None),
     };
     publish(conn, id, now)
 }
 
 /// Append a tally op for `id` when its totals differ from the latest one published.
-pub fn publish(conn: &Connection, id: &str, now: i64) -> anyhow::Result<()> {
-    let Some(parent) = parent(conn, id)? else { return Ok(()) };
+pub fn publish(conn: &Connection, id: &str, now: i64) -> anyhow::Result<Option<Op>> {
+    let Some(parent) = parent(conn, id)? else { return Ok(None) };
     let votes: Vec<(String, String)> = conn
         .prepare_cached("SELECT account_id, choices FROM poll_vote WHERE poll_id = ?1")?
         .query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -128,23 +128,8 @@ pub fn publish(conn: &Connection, id: &str, now: i64) -> anyhow::Result<()> {
         && serde_json::from_str::<Value>(&counts).ok().as_ref() == payload.get("counts")
         && Some(voters as u64) == payload["voters"].as_u64()
     {
-        return Ok(());
+        return Ok(None);
     }
     let kind = if parent.channel.is_some() { "message.poll_tally" } else { "post.poll_tally" };
-    let (ack, _) = crate::ingest::op_as(
-        conn,
-        &parent.author,
-        crate::ingest::SERVER_DEVICE,
-        kind,
-        &parent.scope,
-        Some(id),
-        payload,
-        now,
-        None,
-    )?;
-    if let Some(e) = ack.error {
-        // e.g. the author has left the space: the last published totals stay
-        tracing::warn!(poll = id, code = %e.code, "poll totals not published: {}", e.message);
-    }
-    Ok(())
+    Ok(Some(crate::ingest::poll_tally(conn, &parent.author, kind, &parent.scope, id, payload, now)?))
 }

@@ -72,7 +72,7 @@ impl World {
         };
         let (r, new) = ingest::accept(&self.c, &s, o, at, false).unwrap();
         assert!(r.error.is_none(), "{kind}: {:?}", r.error);
-        new.unwrap()
+        new.unwrap().op
     }
 
     fn member(&mut self, name: &str, policy: Value) -> String {

@@ -51,7 +51,8 @@ a server-authored tally op **in the parent's scope**: `message.poll_tally` in th
 `post.poll_tally` in the author's account for posts (op kinds have one fixed scope kind). `entity_id` = parent ID, payload
 `{channel_id?, counts: {"a": 3, "b": 1}, voters: 4}` (`voters` = members with a non-empty vote).
 The op carries `account_id` = the parent's author and `device_id` = the server device, like other
-`server_op`s, but clients may never push it (ingest refuses tallies from any device but the server). Projection
+`server_op`s. A private derived append bypasses the parent author's current write permissions,
+so totals continue after the author leaves a space or loses channel access. Clients may never push it (ingest refuses tallies from any device but the server). Projection
 keeps one `poll_tally` row per parent, LWW by HLC; the latest tally is the total. Tally ops carry
 no member or account IDs.
 
@@ -62,6 +63,12 @@ account exports (`ops.jsonl` contains only authored ops, as today) and from Plur
 rebuild replays them; the latest still wins.
 
 Followers reading another account's post through REST views get the latest tally in the post row.
+Live ingest returns the original op plus all derived ops as one accepted bundle. WebSocket push
+fans it out after transaction commit, including derived ops to the pushing device. REST writes
+(`op_as` / `server_op`, including messages) retain the same bundle through fan-out after the
+savepoint commits. Catch-up reads the same committed log. There is no HTTP sync push/pull
+fallback implemented in this server; the socket is the sole device-ingest path.
+
 Message tallies follow the message's channel visibility because they carry `channel_id` and use
 the same space-scope delivery filter as the message.
 
@@ -102,12 +109,11 @@ the same space-scope delivery filter as the message.
    readable by the voter's account, choices valid for the poll; a parent not yet on the server is
    held with a 30 s `unknown_parent` retry) and `after_op`/`publish`, which recomputes totals after
    a vote, parent delete/restore or `post.set_visibility` and appends a tally op only when they
-   changed (via `ingest::op_as` as the parent's author). Exports use `exports::AUTHORED_OPS`, which
+   changed (through a private derived append, attributed to the parent's author). Exports use `exports::AUTHORED_OPS`, which
    leaves tallies out. Post REST rows carry `poll` and `poll_tally`. `tests/polls.rs` covers
    counting, edits/withdrawal, refusals, held votes, audience changes, exports and that no voter
    member/account reaches another account's scopes or views. Known limits: a channel permission
-   change or ended follow is reflected at the next vote/parent change; if the parent's author can
-   no longer write its scope (left the space) the last published totals stay; importing an export
+   change or ended follow is reflected at the next vote/parent change; importing an export
    publishes totals at the next vote. Core conformance fixtures are in `fixtures/poll/`.
 3. Web **done (2026-10-27)**: `web/src/lib/polls.ts` (read poll/tally/own vote, toggle, `poll.vote`,
    composer payload), `PollCard.svelte` on chat messages (via `Message`'s `extra` snippet) and

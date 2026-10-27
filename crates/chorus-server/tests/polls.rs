@@ -232,3 +232,59 @@ fn post_polls_follow_the_post_audience_and_stay_out_of_exports() {
     w.ok(&a, "post.set_visibility", &scope, &post, json!({"visibility": {"mode": "private"}}));
     assert_eq!(w.tally(&post)["voters"], 0);
 }
+
+#[test]
+fn tallies_outlive_the_parent_authors_scope_access() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let kai = w.member(&a, 40, "Kai");
+    let june = w.member(&b, 41, "June");
+    let msg = new_id(NOW as u64, [80; 10]);
+    w.ok(&a, "message.send", &space, &msg, json!({"channel_id":GENERAL,"authors":[kai],"text":"Dinner?","poll":serde_json::from_str::<Value>(POLL).unwrap()}));
+    w.voted(&b, &msg, &june, json!(["a"]));
+    // The author's access can disappear while other readers still vote.
+    w.c.execute("DELETE FROM scope_access WHERE account_id=?1 AND scope=?2", params![a, space]).unwrap();
+    w.voted(&b, &msg, &june, json!(["b"]));
+    assert_eq!(w.tally(&msg), json!({"counts":{"a":0,"b":1},"voters":1}));
+    let tally = chorus_server::oplog::for_entity(&w.c, &msg)
+        .unwrap()
+        .into_iter()
+        .rfind(|o| o.kind == "message.poll_tally")
+        .unwrap();
+    assert_eq!(tally.account_id.as_deref(), Some(a.as_str()));
+    assert_eq!(tally.scope, space);
+    assert_eq!(tally.payload["channel_id"], GENERAL);
+    assert_eq!(w.push(&b, "message.poll_tally", &space, &msg, tally.payload.clone()).unwrap().code, "forbidden");
+}
+
+#[test]
+fn server_writes_retain_tallies_and_projection_failures_roll_back_the_whole_bundle() {
+    let mut w = W::new();
+    let a = w.a.clone();
+    let scope = format!("account:{a}");
+    let kai = w.member(&a, 40, "Kai");
+    let post = new_id(NOW as u64, [81; 10]);
+    w.ok(
+        &a,
+        "post.create",
+        &scope,
+        &post,
+        json!({"kind":"note","authors":[kai],"text":"Dinner?","poll":serde_json::from_str::<Value>(POLL).unwrap()}),
+    );
+    w.voted(&a, &post, &kai, json!(["a"]));
+    let before = chorus_server::oplog::count(&w.c).unwrap();
+    // Failure of a derived projection refuses the input and leaves neither log nor vote changed.
+    w.c.execute_batch(
+        "CREATE TRIGGER fail_tally BEFORE UPDATE ON poll_tally BEGIN SELECT RAISE(ABORT, 'test tally failure'); END",
+    )
+    .unwrap();
+    assert_eq!(w.vote(&a, &post, &kai, json!(["b"])).unwrap().code, "unprocessable");
+    assert_eq!(chorus_server::oplog::count(&w.c).unwrap(), before);
+    assert_eq!(w.tally(&post)["counts"]["a"], 1);
+    w.c.execute_batch("DROP TRIGGER fail_tally").unwrap();
+    let accepted = ingest::server_op(&w.c, &a, "post.delete", &scope, Some(&post), json!({}), NOW + 100_000).unwrap();
+    assert_eq!(accepted.derived.len(), 1);
+    assert_eq!(accepted.derived[0].kind, "post.poll_tally");
+    assert_eq!(accepted.derived[0].payload["voters"], 0);
+    assert!(accepted.seq < accepted.derived[0].seq);
+}

@@ -2390,3 +2390,44 @@ async fn shared_space_catch_up_budget() {
     );
     assert!(took <= Duration::from_secs(10), "SPEC §9: reconnect ≤ 10 s");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn poll_tallies_reach_live_devices_including_the_voter() {
+    let s = start().await;
+    let a = enrol(&s, auth::InviteKind::System, None, 101, "polls").await;
+    let acct = a["account_id"].as_str().unwrap();
+    let b = enrol(&s, auth::InviteKind::Device, Some(acct), 102, "").await;
+    let mut voter = Device::new(&a, 101);
+    let mut reader = Device::new(&b, 102);
+    voter.connect(&s).await;
+    voter.drain(Q).await;
+    reader.connect(&s).await;
+    reader.drain(Q).await;
+    let account = format!("account:{acct}");
+    let space = voter.scope("space:");
+    let channel = voter.store.confirmed().find(|o| o.kind == "channel.create").unwrap().entity_id.clone().unwrap();
+    let member = new_id(1, [103; 10]);
+    voter.create("member.create", &account, &member, json!({"name":"Voter"})).await;
+    voter.drain(Q).await;
+    let poll = json!({"options":[{"id":"a","text":"Soup"},{"id":"b","text":"Rice"}]});
+    for (kind, scope, payload) in [
+        ("message.send", &space, json!({"channel_id":channel,"authors":[member],"text":"Dinner?","poll":poll})),
+        ("post.create", &account, json!({"kind":"note","authors":[member],"text":"Dinner?","poll":poll})),
+    ] {
+        let id = new_id(2, rand::random());
+        voter.create(kind, scope, &id, payload).await;
+        voter.drain(Q).await;
+        reader.drain(Q).await;
+        voter.create("poll.vote", &account, &id, json!({"member_id":member,"choices":["a"]})).await;
+        voter.drain(Q).await;
+        reader.drain(Q).await;
+        for device in [&voter, &reader] {
+            let projection = model::project(device.store.confirmed());
+            assert_eq!(
+                projection.row("poll_tally", &id).map(|r| &r.fields["voters"]),
+                Some(&json!(1)),
+                "live {kind} tally, without reconnect/pull"
+            );
+        }
+    }
+}

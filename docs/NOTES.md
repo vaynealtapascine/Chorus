@@ -571,3 +571,10 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   code must be small: prefer `Option`/static messages over `format!`, and keep server-only logic
   (e.g. `poll::tally`, `check_tally`) out of paths the wasm exports reach. A real feature that
   needs more must either find savings or ask the owner about the budget (Claude).
+
+- 2026-10-27 GPT-6-sol — Ingest returns an `Accepted` bundle: its `op` is the input and
+  `derived` contains server writes made inside its savepoint. Retain the whole bundle until
+  post-commit fan-out, including REST helper returns; dropping it loses live derived updates.
+  The pusher skips only ops it already owns, not derived server ops. Tally generation alone
+  uses the private derived append; normal server/API writes still pass all author permissions.
+  HTTP sync push/pull fallback is specified but not implemented in the current router.

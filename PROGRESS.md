@@ -378,3 +378,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`.
 - 2026-10-27 claude-opus-5.5 — UI3 slice 3 Android: Polls.kt + Model.polls, PollCard/PollDraftFields in chat and journal; PollsTest. verify --quick --offline --android passes. UI3 functionally complete; fixture + live checks remain.
 
 - 2026-10-27 claude-opus-5.5 — UI3 poll conformance implemented by GPT-6-sol: 50 JSON vectors and test-only Rust adapters cover definitions, immutable edits, vote validation/withdrawal, counts-only tallies and LWW projection; POLLS/SYNC/next step updated. Required chorus-verify.ps1 gate exits 0; no production or Android code changed.
+- 2026-10-27 claude-opus-5.5 — GPT-6-sol review fixes #1/#2: derived tally bundles reach live clients including the voter; totals survive author access loss; rollback and live socket regressions pass. Gate exit 0, wasm 307007 gz bytes.
