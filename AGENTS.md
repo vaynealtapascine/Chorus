@@ -23,6 +23,7 @@ of usage. Everything the next agent needs must therefore be **in the repo**, not
 | `docs/DESIGN.md` | Visual system, screen inventory, Basic vs Advanced settings |
 | `docs/CLIENTS.md` | Android app, home-screen widget, web PWA specifics |
 | `docs/OPS.md` | Running on the owner's PC over Tailscale, backups |
+| `docs/POLLS.md` | Polls (UI3): poll definition, account-scoped votes, server-derived tallies (D-081, D-086) |
 | `docs/HOME.md` | Chorus Home: one-click install on a home PC, home-wifi transport (D-071) |
 | `spec/` | PSDS, the open data format for plural systems (draft); its own decisions live in `spec/DESIGN_NOTES.md` |
 
