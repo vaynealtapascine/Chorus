@@ -125,6 +125,7 @@ import garden.vayne.chorus.data.ChatReactions
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.semantics.selected
@@ -150,6 +151,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var conversationOpen by rememberSaveable { mutableStateOf(false) }
     var switchOpen by remember { mutableStateOf(false) }
     var headerMenu by remember { mutableStateOf(false) }
+    // a message to bring into view (from chat info), consumed by the list
+    var jumpTo by remember { mutableStateOf<String?>(null) }
     val expanded = LocalConfiguration.current.screenWidthDp >= 840
     LaunchedEffect(requestedSpace, requestedChannel, searchHit?.id, sharedDraft?.id) {
         if (requestedSpace != null || requestedChannel != null || searchHit != null || sharedDraft != null) conversationOpen = true
@@ -315,6 +318,15 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
             accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
     }
+    // chat info tabs read every locally synced message the reader can see, not only the newest 100
+    val library by produceState(messages, channel?.id, space?.kind, viewingAs, model.chatMessages[channel?.id],
+        model.current, infoOpen, expanded) {
+        val c = channel; val s = space
+        value = messages
+        if (c != null && s != null && (infoOpen || expanded)) {
+            value = chorus.stageWindow(c.id, 10_000, s.kind, model.current, viewingAs).messages
+        }
+    }
     val readMarks = model.readMarks[channel?.id].orEmpty()
     val readerId = viewingAs ?: channel?.id?.let { ReadTracking.readersFor(model, it, model.accountPrefs.readPerMember).firstOrNull() }
     val readerName = readerId?.let(model::member)?.shownName
@@ -429,7 +441,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             openChat, { spaceAction = "new" },
             { switchOpen = true }, onSearch, if (expanded) Modifier.width(240.dp) else Modifier.weight(1f), readerId = readerId)
         if (expanded) VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
-        if (expanded || conversationOpen) Column(Modifier.weight(1f).fillMaxHeight()) {
+        if (infoOpen && !expanded && channel != null && space != null) {
+            BackHandler { infoOpen = false }
+            ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; onSearch() },
+                { infoOpen = false }, onShowMessage = { infoOpen = false; jumpTo = it }, modifier = Modifier.weight(1f))
+        } else if (expanded || conversationOpen) Column(Modifier.weight(1f).fillMaxHeight()) {
         Row(Modifier.fillMaxWidth().background(p.surface), verticalAlignment = Alignment.CenterVertically) {
             if (!expanded) ChatIconButton(R.drawable.ic_back, "Back to chats") { conversationOpen = false }
             channel?.let { ChannelDisc(it, size = 36.dp) }
@@ -497,6 +513,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             } else if (newest != null && (listState.firstVisibleItemIndex <= 2 || followNext)) listState.animateScrollToItem(0)
             positioned = true
             followNext = false
+        }
+        // after the opening position, so coming back from chat info lands on the chosen message
+        LaunchedEffect(jumpTo, positioned) {
+            val id = jumpTo?.takeIf { positioned } ?: return@LaunchedEffect
+            val at = messages.asReversed().indexOfFirst { it.id == id }
+            if (at >= 0) listState.animateScrollToItem(at)
+            jumpTo = null
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), state = listState, reverseLayout = true,
@@ -751,12 +774,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
         if (expanded && channel != null && space != null) {
             VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
-            ChatInfoPane(channel, space, model, messages, directory[space.id], onSearch, modifier = Modifier.width(220.dp))
-        }
-    }
-    if (infoOpen && !expanded && channel != null && space != null) Dialog(onDismissRequest = { infoOpen = false }) {
-        Surface(shape = RoundedCornerShape(16.dp), color = p.surface, modifier = Modifier.heightIn(max = 680.dp)) {
-            ChatInfoPane(channel, space, model, messages, directory[space.id], { infoOpen = false; onSearch() }, { infoOpen = false })
+            ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], onSearch,
+                onShowMessage = { jumpTo = it }, modifier = Modifier.width(260.dp))
         }
     }
     if (readerOpen) AlertDialog(onDismissRequest = { readerOpen = false }, title = { Text("Read as…") }, text = {
@@ -983,7 +1002,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
         if (message.cw == null || revealed) {
             Text(message.text, color = p.ink, fontSize = 16.sp)
             for (attachment in message.attachments) {
-                ChatAttachmentView(attachment, chorus)
+                ChatAttachmentView(attachment, chorus, authors, message.occurredAt)
             }
             // Same resolved acting speaker as the composer: explicit selection or channel default.
             PollCard(chorus, model, message.id, garden.vayne.chorus.data.Polls.chatMember(model, actingMemberId))
@@ -1123,7 +1142,7 @@ private fun ReactionChips(reactions: List<ChatReaction>, member: String?, modifi
 }
 
 @Composable
-internal fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
+internal fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus, who: String = "", at: Long = 0L) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val device = chorus.device
@@ -1132,57 +1151,41 @@ internal fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
     var opening by remember(attachment.id) { mutableStateOf(false) }
     var openError by remember(attachment.id) { mutableStateOf<String?>(null) }
     var opened by rememberSaveable(attachment.id) { mutableStateOf(false) }
+    var viewing by remember(attachment.id) { mutableStateOf(false) }
     if (attachment.spoiler && !opened) {
         Text("Spoiler attachment · Reveal", color = p.accent, fontSize = 13.sp,
-            modifier = Modifier.clickable { opened = true })
+            modifier = Modifier.clickable { opened = true }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
+        return
+    }
+    // photos sit in the bubble (F5.2); the original opens full screen
+    if (image) {
+        val hash = attachment.thumbHash ?: attachment.blobHash
+        val bitmap by produceState<android.graphics.Bitmap?>(null, hash, device?.session) {
+            value = withContext(Dispatchers.IO) { Blobs.image(ctx.applicationContext, hash, device) }
+        }
+        val shown = bitmap
+        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.surface3)
+            .clickable(onClickLabel = "Open photo") { viewing = true }
+            .semantics { contentDescription = attachment.altText.ifBlank { attachment.filename } },
+            contentAlignment = Alignment.Center) {
+            if (shown == null) Text("Loading image, or unavailable offline.", color = p.ink3, fontSize = 12.sp,
+                modifier = Modifier.padding(24.dp))
+            else Image(shown.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxWidth().aspectRatio((shown.width.toFloat() / shown.height.coerceAtLeast(1)).coerceIn(1f, 2.5f)))
+        }
+        if (attachment.altText.isNotBlank()) Text(attachment.altText, color = p.ink3, fontSize = 12.sp)
+        if (attachment.spoiler) Text("Hide image", color = p.accent, fontSize = 12.sp,
+            modifier = Modifier.clickable { opened = false }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
+        if (viewing) MediaViewer(attachment, chorus, who, at, null, onClose = { viewing = false })
         return
     }
     Text("Attachment: ${attachment.filename}", color = p.ink2, fontSize = 13.sp)
     if (attachment.altText.isNotBlank()) Text(attachment.altText, color = p.ink3, fontSize = 12.sp)
-    if (image) {
-        if (!opened) {
-            Text(if (attachment.spoiler) "Reveal image spoiler" else "View image", color = p.accent,
-                modifier = Modifier.clickable { opened = true }.padding(vertical = 4.dp))
-        } else {
-            val hash = attachment.thumbHash ?: attachment.blobHash
-            val bitmap by produceState<android.graphics.Bitmap?>(null, hash, device?.session) {
-                value = withContext(Dispatchers.IO) { Blobs.image(ctx.applicationContext, hash, device) }
-            }
-            if (bitmap == null) {
-                Text("Loading image, or unavailable offline.", color = p.ink3, fontSize = 12.sp)
-            } else {
-                Image(bitmap!!.asImageBitmap(), contentDescription = attachment.altText.ifBlank { attachment.filename },
-                    contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().height(200.dp))
-            }
-            Text("Hide image", color = p.accent, fontSize = 12.sp, modifier = Modifier.clickable { opened = false })
-        }
-    }
     TextButton(enabled = !opening, onClick = {
         opening = true
         openError = null
         scope.launch {
-            val file = withContext(Dispatchers.IO) {
-                Blobs.file(ctx.applicationContext, attachment.blobHash, device)
-            }
-            if (file == null) {
-                openError = "File unavailable offline or download failed."
-            } else {
-                try {
-                    val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(uri, attachment.mime.ifBlank { "application/octet-stream" })
-                        clipData = ClipData.newUri(ctx.contentResolver, attachment.filename, uri)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    ctx.startActivity(Intent.createChooser(intent, "Open ${attachment.filename}"))
-                } catch (_: ActivityNotFoundException) {
-                    openError = "No app can open this file type."
-                } catch (_: SecurityException) {
-                    openError = "Could not share this file."
-                } catch (_: IllegalArgumentException) {
-                    openError = "Could not share this file."
-                }
-            }
+            openError = openAttachment(ctx, chorus, attachment)
             opening = false
         }
     }) { Text(if (opening) "Opening…" else "Open file") }
@@ -1191,6 +1194,24 @@ internal fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus) {
         Text("Hide attachment", color = p.accent, fontSize = 12.sp,
             modifier = Modifier.clickable { opened = false })
     }
+}
+
+/** Fetch (or reuse) an attachment and hand it to another app: an error to show, or null once it opened. */
+internal suspend fun openAttachment(ctx: android.content.Context, chorus: Chorus, attachment: ChatAttachment): String? {
+    val file = withContext(Dispatchers.IO) { Blobs.file(ctx.applicationContext, attachment.blobHash, chorus.device) }
+        ?: return "File unavailable offline or download failed."
+    return try {
+        val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, attachment.mime.ifBlank { "application/octet-stream" })
+            clipData = ClipData.newUri(ctx.contentResolver, attachment.filename, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        ctx.startActivity(Intent.createChooser(intent, "Open ${attachment.filename}"))
+        null
+    } catch (_: ActivityNotFoundException) { "No app can open this file type."
+    } catch (_: SecurityException) { "Could not share this file."
+    } catch (_: IllegalArgumentException) { "Could not share this file." }
 }
 
 /** A file picked for the next message: named and described, not yet copied. */

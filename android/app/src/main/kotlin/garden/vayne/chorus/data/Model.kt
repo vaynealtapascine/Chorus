@@ -53,7 +53,7 @@ data class Subject(val type: String, val id: String, val name: String, val color
 
 data class ChatSpace(val id: String, val kind: String, val name: String)
 data class ChatChannel(val id: String, val spaceId: String, val kind: String, val name: String,
-    val parentMessageId: String?, val memberIds: List<String> = emptyList())
+    val parentMessageId: String?, val memberIds: List<String> = emptyList(), val topic: String? = null)
 data class ChatAttachment(
     val id: String, val blobHash: String, val thumbHash: String?, val filename: String,
     val mime: String, val size: Long, val altText: String, val spoiler: Boolean,
@@ -326,7 +326,7 @@ class Model(
                 .sortedWith(compareBy<ChatSpace> { if (it.kind == "internal") 0 else if (it.kind == "shared") 1 else 2 }.thenBy { it.name })
             val channels = rows(p, "channel").filter { (_, f) -> !f.present("deleted_at") && !f.present("archived_at") }
                 .map { (id, f) -> ChatChannel(id, f.str("space_id") ?: "", f.str("kind") ?: "text",
-                    f.str("name") ?: "Channel", f.str("parent_message_id"), strings(f.optJSONArray("member_ids"))) }
+                    f.str("name") ?: "Channel", f.str("parent_message_id"), strings(f.optJSONArray("member_ids")), f.str("topic")) }
                 .filter { channel -> spaces.any { it.id == channel.spaceId } }
                 .sortedBy { it.name }
             val channelIds = channels.map { it.id }.toSet()
