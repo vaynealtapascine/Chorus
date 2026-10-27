@@ -313,30 +313,6 @@ fn own_switch(conn: &Connection, o: &Op, author: &str, now: i64) -> anyhow::Resu
     Ok(())
 }
 
-/// A `front.change` is live unless its latest retract/unretract (by HLC, then ID) retracts it.
-fn named_change_live(conn: &Connection, account: &str, id: &str) -> anyhow::Result<bool> {
-    let scope = format!("account:{account}");
-    let exists: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM op WHERE id = ?1 AND scope = ?2 AND kind = 'front.change' AND status = 'applied')",
-        params![id, scope],
-        |r| r.get(0),
-    )?;
-    if !exists {
-        return Ok(false);
-    }
-    let last: Option<String> = conn
-        .query_row(
-            "SELECT json_extract(payload, '$.action') FROM op WHERE scope = ?1 AND kind = 'front.change'
-               AND status = 'applied' AND json_extract(payload, '$.target_op_id') = ?2
-               AND json_extract(payload, '$.action') IN ('retract', 'unretract')
-             ORDER BY hlc DESC, id DESC LIMIT 1",
-            params![scope, id],
-            |r| r.get(0),
-        )
-        .optional()?;
-    Ok(last.as_deref() != Some("retract"))
-}
-
 fn subject_name(conn: &Connection, kind: chorus_core::front::SubjectType, id: &str) -> anyhow::Result<String> {
     use chorus_core::front::SubjectType;
     let sql = match kind {
@@ -410,11 +386,23 @@ fn legacy_front_text(conn: &Connection, account: &str) -> anyhow::Result<String>
 /// Title and text for a settled own switch, or `None` if it was undone.
 fn own_switch_text(conn: &Connection, account: &str, p: &Value) -> anyhow::Result<Option<(String, String)>> {
     let switch = p.get("switch_id").and_then(Value::as_str).unwrap_or_default();
-    let live: Option<bool> =
-        conn.query_row("SELECT retracted = 0 FROM switch WHERE id = ?1", [switch], |r| r.get(0)).optional()?;
-    let live = match live {
-        Some(live) => live,
-        None => named_change_live(conn, account, switch)?,
+    let current = crate::fronts::current(conn, account)?;
+    let live = if current.is_some() {
+        // D-083 controls are canonical for both legacy and named Body targets. Neither the
+        // legacy switch row nor a scan of only new-kind retracts can answer this alone.
+        let ops = crate::fronts::account_ops(conn, account)?;
+        chorus_core::front_history::fold(account, &ops)
+            .histories
+            .get(account)
+            .is_some_and(|h| h.switches.iter().any(|s| s.id == switch && !s.retracted))
+    } else {
+        conn.query_row(
+            "SELECT retracted = 0 FROM switch WHERE id = ?1 AND account_id = ?2",
+            params![switch, account],
+            |r| r.get(0),
+        )
+        .optional()?
+        .unwrap_or(false)
     };
     if !live {
         return Ok(None);
@@ -423,7 +411,7 @@ fn own_switch_text(conn: &Connection, account: &str, p: &Value) -> anyhow::Resul
         Some(d) => conn.query_row("SELECT name FROM device WHERE id = ?1", [d], |r| r.get(0)).optional()?,
         None => None,
     };
-    let text = match crate::fronts::current(conn, account)? {
+    let text = match current {
         Some(current) => named_front_text(conn, account, &current)?,
         None => legacy_front_text(conn, account)?,
     };

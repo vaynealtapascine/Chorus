@@ -411,3 +411,9 @@ old op-log entries nor user-authored history may be rewritten.
   than its allowed reveal. Test REST, sync, SSE, history, statistics and notification delivery.
 - Check send/switch and initial-load budgets with representative history; use the same fixtures
   through wasm and UniFFI. Run `scripts/verify.py` before each commit.
+
+
+Own-switch notifications check canonical Body saved-history liveness once configured, including
+legacy targets and mixed legacy/new retract/unretract controls. A legacy `switch.retracted` row
+is no longer authoritative for those accounts. Undo before settling stays quiet; restoring before
+settling retains the pending ping. Unconfigured accounts keep the legacy SQL read.

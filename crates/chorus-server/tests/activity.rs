@@ -643,3 +643,45 @@ fn channel_front_purposes_drive_front_mentions_and_fronting_alerts() {
     send(&mut w, &general, "@front alert", id());
     assert_eq!(w.inbox(&a).first(), Some(&("mention".to_string(), "@front alert".to_string())));
 }
+
+#[test]
+fn configured_own_switch_liveness_uses_canonical_body_for_old_and_new_targets() {
+    for legacy_target in [true, false] {
+        for legacy_undo in [false, true] {
+            for restored in [false, true] {
+                let mut w = W::new();
+                let a = w.a.clone();
+                let acct = format!("account:{a}");
+                let kai = new_id(NOW as u64, [40; 10]);
+                w.push(&a, "member.create", &acct, &kai, json!({"name":"Kai"}));
+                w.push(&a, "front.layer", &acct, &a, json!({"layer_id":"quiet","name":"Quiet","level":5}));
+                w.push(&a, "pref.set", &acct, &a, json!({"device":"","key":"notify_chat","value":{"own_switch":true}}));
+                if legacy_target {
+                    w.push(
+                        &a,
+                        "front.switch",
+                        &acct,
+                        &a,
+                        json!({"entries":[{"subject_type":"member","subject_id":kai,"level":"front"}]}),
+                    );
+                } else {
+                    w.push(&a,"front.change",&acct,&a,json!({"action":"switch","entries":[{"subject_type":"member","subject_id":kai,"layer_id":"front"}]}));
+                }
+                let target = w.last_op.clone();
+                if legacy_undo {
+                    w.push(&a, "front.retract", &acct, &new_id(NOW as u64, [73; 10]), json!({"target_op_id":target}));
+                } else {
+                    w.push(&a, "front.change", &acct, &a, json!({"action":"retract","target_op_id":target}));
+                }
+                if restored {
+                    w.push(&a, "front.change", &acct, &a, json!({"action":"unretract","target_op_id":target}));
+                }
+                assert_eq!(
+                    w.inbox(&a).len(),
+                    usize::from(restored),
+                    "legacy target={legacy_target}, legacy undo={legacy_undo}, restored={restored}"
+                );
+            }
+        }
+    }
+}
