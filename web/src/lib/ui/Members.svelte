@@ -3,6 +3,7 @@
   import { fuzzy, groupPath, groups, members, membership } from '../data';
   import { router } from '../router.svelte';
   import { sync, type Projection } from '../sync/client';
+  import { bodyPresence } from '../front-view';
   import PkImport from './PkImport.svelte';
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
@@ -15,6 +16,7 @@
   let importing = $state(false);
 
   const all = $derived(members(projection).filter((m) => !m.deleted && (!projection.rows.member[m.id]?.fields.created_by_account_id || projection.rows.member[m.id].fields.created_by_account_id === sync.accountId)));
+  const here = $derived(new Set(bodyPresence(projection, sync.accountId).map((e) => e.subject_id)));
   const gs = $derived(groups(projection));
   const inGroup = $derived(membership(projection));
   const shown = $derived.by(() => {
@@ -114,7 +116,7 @@
       <a class="member" href="#/members/{m.id}" style="--ring: {c.ring}; --avatar-ink: {c.avatar_ink}; --tint: {c.tint}">
         <span class="avatar" aria-hidden="true"><AvatarImage hash={m.avatar_blob} glyph={m.sigils[0] ?? m.name[0]} name={m.name} /></span>
         <span class="member-info"><span class="name">{m.display_name ?? m.name}</span><span class="pronouns">{[m.pronouns, ...gs.filter((g) => inGroup.get(g.id)?.has(m.id)).map((g) => g.name)].filter(Boolean).join(' · ')}</span></span>
-        {#if projection.fronts[sync.accountId]?.current.some((e) => e.subject_id === m.id)}<span class="front-badge">Here</span>{/if}<Icon name="chevron" size={16} />
+        {#if here.has(m.id)}<span class="front-badge">Here</span>{/if}<Icon name="chevron" size={16} />
       </a>
     {/each}
   </div>

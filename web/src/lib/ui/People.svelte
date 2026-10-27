@@ -8,6 +8,7 @@
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
   import { sync, type Projection } from '../sync/client';
+  import { bodyAuthors } from '../front-view';
   import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
   import AvatarImage from './AvatarImage.svelte';
   import AttachmentView from './AttachmentView.svelte';
@@ -307,7 +308,7 @@
   const name = (p: Person) => p.display_name ?? (p.handle ? `@${p.handle}` : 'Someone');
   const postAuthors = (p: SharedPost, fallback: Person) =>
     p.author_cards.map((a) => a.display_name ?? a.name ?? 'Someone').join(' & ') || name(fallback);
-  const reactMember = $derived(selfMember(projection)?.id ?? projection.fronts[sync.accountId]?.current.find((e) => e.subject_type === 'member' && e.level === 'front')?.subject_id);
+  const reactMember = $derived(selfMember(projection)?.id ?? bodyAuthors(projection, sync.accountId)[0]);
   function reactPost(post: SharedPost) {
     if (!reactMember) return;
     const selected = post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember);

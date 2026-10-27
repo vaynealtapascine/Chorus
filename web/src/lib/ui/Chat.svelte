@@ -10,6 +10,7 @@
   import { canWriteAs } from '../posts';
   import { channelFrontChoices, channelFrontId, channelFrontKey, channelReaders, channelSpeaker } from '../channel-front';
   import { sync, type Projection } from '../sync/client';
+  import { bodyPresence, frontLayers } from '../front-view';
   import { flushUploads, imageThumbnail, stageBlob } from '../sync/uploads';
   import Message from './Message.svelte';
   import AvatarImage from './AvatarImage.svelte';
@@ -69,7 +70,8 @@
   const cwAutoExpand = $derived(contentWarningsAutoExpand(projection, sync.accountId));
 
   // who speaks by default: the primary fronter, else the first one fronting (SPEC §5.2)
-  const fronting = $derived(projection.fronts[sync.accountId]?.current ?? []);
+  const fronting = $derived(bodyPresence(projection, sync.accountId));
+  const layerNames = $derived(new Map(frontLayers(projection, sync.accountId).map((l) => [l.id, l.name])));
   const frontingMembers = $derived(fronting.filter((e) => e.subject_type === 'member')
     .map((e) => ({ member_id: e.subject_id, is_primary: !!e.is_primary, level: e.level })));
   // a person account always speaks as its self member (D-003)
@@ -1101,7 +1103,7 @@
       <div class="info-actions"><a href="#/search"><Icon name="search" size={20} />Search</a><button onclick={() => { showPins = !showPins; if (window.innerWidth < 1280) showInfo = false; }}><Icon name="pin" size={20} />Pinned · {pinned.length}</button></div>
       {#if space?.kind === 'internal'}
         <h3>Members</h3>
-        <div class="info-members">{#each roomMembers.slice(0, 30) as m (m.id)}{@const c = core.adaptColor(m.color, dark)}<a href="#/profile/{m.id}"><span class="info-avatar" style="--ring: {c.ring}; color: {c.name}"><AvatarImage hash={m.avatar_blob} glyph={m.sigils[0] ?? m.name[0]} name={m.name} /></span><span>{m.display_name ?? m.name}<small>{projection.fronts[sync.accountId]?.current.find((e) => e.subject_id === m.id)?.level ?? ''}</small></span></a>{/each}{#if roomMembers.length > 30}<a href="#/members">See all {roomMembers.length} members</a>{/if}</div>
+        <div class="info-members">{#each roomMembers.slice(0, 30) as m (m.id)}{@const c = core.adaptColor(m.color, dark)}<a href="#/profile/{m.id}"><span class="info-avatar" style="--ring: {c.ring}; color: {c.name}"><AvatarImage hash={m.avatar_blob} glyph={m.sigils[0] ?? m.name[0]} name={m.name} /></span><span>{m.display_name ?? m.name}<small>{layerNames.get(fronting.find((e) => e.subject_id === m.id)?.level ?? '') ?? ''}</small></span></a>{/each}{#if roomMembers.length > 30}<a href="#/members">See all {roomMembers.length} members</a>{/if}</div>
       {/if}
     </aside>
   {/if}

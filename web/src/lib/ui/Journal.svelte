@@ -2,6 +2,7 @@
   import { channels, groups, members, reactions, type MemberRow } from '../data';
   import { canWriteAs, postReaction, posts, type PostRow } from '../posts';
   import { sync, type Projection } from '../sync/client';
+  import { bodyAuthors } from '../front-view';
   import PostCard from './PostCard.svelte';
   import PostComposer from './PostComposer.svelte';
   import PostReplies from './PostReplies.svelte';
@@ -23,7 +24,7 @@
     ...pinned.map((pin) => ({ kind: 'pin' as const, id: pin.id, at: pin.at, pin })),
   ].sort((a, b) => b.at - a.at || b.id.localeCompare(a.id)));
   const active = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
-  const frontSpeaker = $derived((projection.fronts[sync.accountId]?.current ?? []).find((e) => e.subject_type === 'member' && e.level === 'front')?.subject_id);
+  const frontSpeaker = $derived(bodyAuthors(projection, sync.accountId)[0]);
   let actingAs = $state('');
   const speaker = $derived(actingAs || frontSpeaker || active[0]?.id || null);
   let replyTo = $state<PostRow | null>(null);

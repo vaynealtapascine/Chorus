@@ -66,3 +66,21 @@ export function frontList(p: Projection | null, account: string, includeDeleted 
     })
     .sort((a, b) => Number(b.body) - Number(a.body) || a.name.localeCompare(b.name));
 }
+
+export interface BodyEntry { subject_type: string; subject_id: string; level: string; is_primary: boolean }
+
+/** Body's current presence in the legacy entry shape (`level` holds the layer ID). Configured
+ * accounts read canonical Body state, so `front.change` writes are never missed; custom layers
+ * keep their own IDs and so acquire no fronting/co-conscious role. Display and view filters only. */
+export function bodyPresence(p: Projection | null, account: string): BodyEntry[] {
+  if (!p?.front_systems?.[account]) return p?.fronts[account]?.current ?? [];
+  return frontView(p, account).entries.map(({ layer_id, ...e }) => ({ ...e, level: layer_id }));
+}
+
+/** Body's default authors: the configured authorship pool, else legacy fronting members. */
+export function bodyAuthors(p: Projection | null, account: string): string[] {
+  const named = p?.front_systems?.[account];
+  if (!named) return (p?.fronts[account]?.current ?? []).filter((e) => e.subject_type === 'member' && e.level === 'front').map((e) => e.subject_id);
+  const body = named.resolved[account];
+  return !body || body.deleted ? [] : body.authorship.filter((e) => e.subject_type === 'member').map((e) => e.subject_id);
+}

@@ -10,6 +10,7 @@
   import { activeViewers, memberVisible } from '../hidden';
   import { segmentRich } from '../segments';
   import { sync, type Projection } from '../sync/client';
+  import { bodyPresence } from '../front-view';
   import RichText from './RichText.svelte';
   import AttachmentView from './AttachmentView.svelte';
   import AvatarImage from './AvatarImage.svelte';
@@ -60,7 +61,7 @@
 
   const channel = $derived(channels(projection).find((c) => c.id === channelId));
   const space = $derived(spaces(projection).find((s) => s.id === channel?.space_id));
-  const activeMembers = $derived(activeViewers(projection.fronts[sync.accountId]?.current ?? []));
+  const activeMembers = $derived(activeViewers(bodyPresence(projection, sync.accountId)));
   const list = $derived(messages(projection, channelId).filter((m) => !m.deleted && memberVisible(m, space?.kind, activeMembers, viewingAs)));
   const byId = $derived(new Map(list.map((m) => [m.id, m])));
   const people = $derived(new Map(members(projection).map((m) => [m.id, m])));

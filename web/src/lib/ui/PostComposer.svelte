@@ -4,11 +4,12 @@
   import { buckets, members } from '../data';
   import { canWriteAs } from '../posts';
   import { sync, type Projection } from '../sync/client';
+  import { bodyAuthors } from '../front-view';
 
   let { projection, initialAuthors = [], replyTo, defaultVisibility = 'private', onsent }: { projection: Projection; initialAuthors?: string[]; replyTo?: string; defaultVisibility?: 'private' | 'followers' | 'server'; onsent?: () => void } = $props();
   const active = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
   const availableBuckets = $derived(buckets(projection));
-  const frontAuthors = () => (projection.fronts[sync.accountId]?.current ?? []).filter((e) => e.subject_type === 'member' && e.level === 'front').map((e) => e.subject_id);
+  const frontAuthors = () => bodyAuthors(projection, sync.accountId);
   let authors = $state<string[]>([]);
   let initialized = $state(false);
   $effect(() => {

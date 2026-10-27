@@ -7,6 +7,7 @@
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
   import { sync, type Projection } from '../sync/client';
+  import { bodyPresence } from '../front-view';
 
   let { projection }: { projection: Projection } = $props();
   let query = $state('');
@@ -47,7 +48,7 @@
   const ch = $derived(new Map(channels(projection).map((c) => [c.id, c])));
   const space = $derived(new Map(spaces(projection).map((s) => [s.id, s])));
   const people = $derived(new Map(members(projection).map((m) => [m.id, m])));
-  const active = $derived(activeViewers(projection.fronts[sync.accountId]?.current ?? []));
+  const active = $derived(activeViewers(bodyPresence(projection, sync.accountId)));
   const shown = $derived(all.filter((h) => memberVisible(h, space.get(ch.get(h.channel_id)?.space_id ?? '')?.kind, active, viewingAs)));
 
   onMount(() => {
