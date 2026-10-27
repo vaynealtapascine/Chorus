@@ -298,9 +298,9 @@ fn special(p: &mut Projection, o: &Op, payload: &Map<String, Value>, reads: &mut
             set_fields(p, "field_value", &id, o.hlc, &one("value", v)).exists = true;
         }
         "front.review_resolve" => {
-            let id = str_field(o, "review_id").to_string();
-            let v = payload.get("resolution").cloned().unwrap_or(Value::Null);
-            set_fields(p, "front_review", &id, o.hlc, &one("resolution", v));
+            if let Some((id, resolution)) = front::review_resolution(o) {
+                set_fields(p, "front_review", id, o.hlc, &one("resolution", Value::String(resolution.into())));
+            }
         }
         "space.set_role" => {
             let id = format!("{entity}|{}", str_field(o, "account_id"));

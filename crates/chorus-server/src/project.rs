@@ -1108,11 +1108,7 @@ fn append_front(conn: &Connection, o: &Op) -> anyhow::Result<bool> {
         let Some(other) = oplog::by_id(conn, &id)?.and_then(|op| FrontOp::from_op(&op).ok()) else { continue };
         let other_front: front::Front = serde_json::from_str(&f)?;
         if let Some(r) = front::review_of((&other, &other_front), (&fo, &a.row.resulting_front)) {
-            exec(
-                conn,
-                "INSERT OR IGNORE INTO front_review (id, account_id, switch_a, switch_b, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![r.id, account, r.switch_a, r.switch_b, now],
-            )?;
+            insert_review(conn, account, &r, now)?;
         }
     }
     Ok(true)
@@ -1166,11 +1162,45 @@ pub fn account_front(conn: &Connection, scope: &str) -> anyhow::Result<()> {
     }
     let now = crate::now_ms();
     for r in front::reviews(&ops, &folded, front::DEFAULT_REVIEW_WINDOW_MS) {
-        exec(
-            conn,
-            "INSERT OR IGNORE INTO front_review (id, account_id, switch_a, switch_b, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![r.id, account, r.switch_a, r.switch_b, now],
-        )?;
+        insert_review(conn, account, &r, now)?;
+    }
+    Ok(())
+}
+
+fn insert_review(conn: &Connection, account: &str, review: &front::Review, created_at: i64) -> anyhow::Result<()> {
+    let inserted = conn.execute(
+        "INSERT OR IGNORE INTO front_review (id,account_id,switch_a,switch_b,created_at) VALUES (?1,?2,?3,?4,?5)",
+        params![review.id, account, review.switch_a, review.switch_b, created_at],
+    )?;
+    if inserted != 0 {
+        project_review_resolution(conn, account, &review.id)?;
+    }
+    Ok(())
+}
+
+fn project_review_resolution(conn: &Connection, account: &str, review: &str) -> anyhow::Result<()> {
+    let choices = oplog::review_choices(conn, account, review, REPLAYED_UPTO.with(std::cell::Cell::get))?;
+    let best = front::review_resolutions(account, &choices).get(review).copied();
+    let resolution = best.and_then(front::review_resolution).map(|(_, r)| r);
+    let mut clocks = chorus_core::lww::Clocks::default();
+    if let Some(op) = best {
+        clocks.0.insert("resolution".into(), op.hlc);
+    }
+    conn.execute(
+        "UPDATE front_review SET resolution=?3,resolved_at=?4,clocks=?5 WHERE id=?1 AND account_id=?2",
+        params![review, account, resolution, best.map(Op::time), clocks.to_json().to_string()],
+    )?;
+    Ok(())
+}
+
+/// One-time forward repair of derived cards. No operation or authored switch is changed.
+pub(crate) fn repair_review_resolutions(conn: &Connection) -> anyhow::Result<()> {
+    let cards: Vec<(String, String)> = conn
+        .prepare("SELECT id,account_id FROM front_review")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    for (id, account) in cards {
+        project_review_resolution(conn, &account, &id)?;
     }
     Ok(())
 }
@@ -1250,11 +1280,9 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
             Ok(())
         }
         "front.review_resolve" => {
-            exec(
-                conn,
-                "UPDATE front_review SET resolution = ?2, resolved_at = ?3 WHERE id = ?1 AND account_id = ?4",
-                params![p("review_id"), p("resolution"), o.time(), o.scope.strip_prefix("account:").unwrap_or("")],
-            )?;
+            if let Some(account) = account_of(&o.scope) {
+                project_review_resolution(conn, account, &p("review_id"))?;
+            }
             Ok(())
         }
         "read.mark" | "read.set" => read_state(conn, o),

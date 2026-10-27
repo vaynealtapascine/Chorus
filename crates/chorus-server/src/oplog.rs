@@ -139,6 +139,16 @@ pub fn for_scope_kinds(conn: &Connection, scope: &str, kind_prefix: &str) -> any
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// Narrow indexed candidates for a review card; a rebuild must see only its replayed prefix.
+pub(crate) fn review_choices(conn: &Connection, account: &str, review: &str, upto: i64) -> anyhow::Result<Vec<Op>> {
+    let mut st = conn.prepare_cached(&format!(
+        "SELECT {COLS} FROM op WHERE scope=?1 AND kind='front.review_resolve' AND status='applied'
+         AND json_extract(payload,'$.review_id')=?2 AND seq<=?3"
+    ))?;
+    let rows = st.query_map(params![format!("account:{account}"), review, upto], from_row)?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 pub fn max_seq(conn: &Connection, scope: &str) -> anyhow::Result<i64> {
     Ok(conn.query_row("SELECT coalesce(max(seq), 0) FROM op WHERE scope = ?1", [scope], |r| r.get(0))?)
 }

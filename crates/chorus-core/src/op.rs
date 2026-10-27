@@ -543,6 +543,13 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
         }
     }
     match op.kind.as_str() {
+        "front.review_resolve" => {
+            nonempty("review_id")?;
+            if p["review_id"].as_str().is_some_and(|id| id.trim().is_empty()) {
+                return bad("review_id is required");
+            }
+            one_of("resolution", crate::front::REVIEW_RESOLUTIONS, true)?;
+        }
         "front.define" | "front.layer" | "front.change" => crate::front_history::validate_new(op)?,
         "message.send" | "message.forward" | "message.edit" | "post.create" | "post.edit" => {
             typed("text", Value::is_string, "text")?;

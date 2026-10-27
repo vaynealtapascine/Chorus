@@ -557,3 +557,6 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   Compose `produceState` retains its previous value while a new keyed coroutine starts. Insights
   therefore keys the result's composition by a fresh remembered request identity, clearing old
   front/layer/view charts and export actions in the same composition as the selection change.
+
+- 2026-10-27 Claude — F: filled to 0 bytes mid-build (`rustc-LLVM ERROR: IO failure on output stream: no space on device`). `chorus-target\debug\incremental.kache-auto` (~10 GB) is Chorus's regenerable incremental cache and is safe to delete; `F:\DunBuild\target` (~63 GB) is not obviously Chorus's, so it was left for the owner. Building with `CARGO_INCREMENTAL=0` keeps the cache from regrowing. A process-only SDK/MSVC environment script lives at `F:\DunBuild\chorus-env.ps1` (dot-source it).
+  The full debug profile still refilled F: (LNK1318 PDB errors); `cargo clean --profile dev` freed 20 GB and `CARGO_PROFILE_DEV_DEBUG=line-tables-only` + `CARGO_PROFILE_TEST_DEBUG=line-tables-only` keep test PDBs small. After a chorus-core change, run `scripts/build-web-core.ps1` before `verify.py --quick`: web tests otherwise run the previous wasm and fail new fixtures.

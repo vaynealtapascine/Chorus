@@ -154,7 +154,7 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `front.update` | `{subject_type, subject_id, level?, is_primary?, position?}` | TL |
 | `front.retract` | `{target_op_id}` (undo) | TL |
 | `front.amend` | `{target_op_id, occurred_at?, entries?, note?}` edit a past switch | TL |
-| `front.review_resolve` | `{review_id, resolution}` | LWW-F |
+| `front.review_resolve` | `{review_id, resolution}`; `resolution` ∈ `keep_both`/`keep_a`/`keep_b`/`merge` | LWW-F per account in canonical (HLC, id) order — the smaller id wins an equal clock. A choice may arrive before its card and is applied when the card appears; unknown values or versions stay in the log but never close a card |
 | `front.define` | sparse `{name?, follow_source?, authorship_layers?, notification_layers?, purpose_layers?, deleted?}`; entity is the named front | LWW-F, including each purpose separately |
 | `front.layer` | `{layer_id, name?, level?, deleted?}`; display level only, system-local string ID | LWW-F |
 | `front.change` | `{action, ...}`; independent presence, Resume or own-history controls, with optional `effective_at`/`history_only` on presence (FRONTS.md) | TL + write-ordered controls |

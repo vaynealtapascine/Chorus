@@ -1,7 +1,7 @@
 //! On-demand, own-account named history. Never use these raw causes or intervals for followers.
 //! Current-state reads and message composition must keep using the incremental current index.
 
-use chorus_core::{front_effective, front_history, op::Op};
+use chorus_core::{front, front_effective, front_history, op::Op};
 use rusqlite::Connection;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -242,18 +242,7 @@ pub fn reviews(conn: &Connection, p: &Principal, q: &ReviewQuery) -> Result<Valu
     };
     let folded = front_history::fold(&p.account_id, &log.ops);
     let by_id: std::collections::HashMap<_, _> = log.ops.iter().map(|o| (o.id.as_str(), o)).collect();
-    let mut resolutions = std::collections::HashMap::<&str, &Op>::new();
-    for op in &log.ops {
-        if op.v == 1
-            && op.kind == "front.review_resolve"
-            && let Some(id) = op.payload["review_id"].as_str()
-        {
-            let previous = resolutions.entry(id).or_insert(op);
-            if (op.hlc, &op.id) > (previous.hlc, &previous.id) {
-                *previous = op;
-            }
-        }
-    }
+    let resolutions = front::review_resolutions(&p.account_id, &log.ops);
     let mut items = Vec::new();
     for review in folded.reviews.get(&log.front).into_iter().flatten() {
         // Resolve from the authoritative account log, including a resolution received before
@@ -564,5 +553,109 @@ mod tests {
             reviews(&conn, &Principal::owner(BODY), &ReviewQuery { open: Some(1), ..Default::default() }).unwrap()["items"],
             json!([])
         );
+    }
+
+    #[test]
+    fn legacy_and_named_review_choices_survive_early_delivery_equal_clocks_and_rebuild() {
+        let mut conn = database();
+        let a = op(
+            1,
+            BODY,
+            BODY,
+            "front.switch",
+            json!({"entries":[{"subject_type":"member","subject_id":"a","level":"front"}]}),
+        );
+        let mut b = op(
+            2,
+            BODY,
+            BODY,
+            "front.switch",
+            json!({"entries":[{"subject_type":"member","subject_id":"b","level":"front"}]}),
+        );
+        b.device_id = Some("device2".into());
+        let reference = [a.clone(), b.clone()]
+            .into_iter()
+            .enumerate()
+            .map(|(i, mut o)| {
+                o.seq = Some(i as i64 + 1);
+                front::FrontOp::from_op(&o).unwrap()
+            })
+            .collect::<Vec<_>>();
+        let review = front::reviews(&reference, &front::fold(&reference), front::DEFAULT_REVIEW_WINDOW_MS)[0].clone();
+        let choice = insert(
+            &conn,
+            op(4, BODY, BODY, "front.review_resolve", json!({"review_id":review.id,"resolution":"keep_both"})),
+        );
+        insert(&conn, a);
+        insert(&conn, b);
+        let principal = Principal::owner(BODY);
+        assert_eq!(reviews(&conn, &principal, &ReviewQuery::default()).unwrap()["items"][0]["resolution"], "keep_both");
+        insert(&conn, op(3, BODY, BODY, "front.review_resolve", json!({"review_id":review.id,"resolution":"keep_b"})));
+        let mut tied = op(0, BODY, BODY, "front.review_resolve", json!({"review_id":review.id,"resolution":"keep_a"}));
+        tied.hlc = choice.hlc;
+        let tied = insert(&conn, tied); // Canonical smaller ID wins the same-clock tie.
+        let inspect = |conn: &Connection| {
+            for front in [None, Some(BODY.into())] {
+                let data = reviews(conn, &principal, &ReviewQuery { front, ..Default::default() }).unwrap();
+                assert_eq!(data["items"][0]["id"], review.id);
+                assert_eq!(data["items"][0]["resolution"], "keep_a");
+                assert_eq!(data["items"][0]["resolved_at"], tied.time());
+            }
+            assert_eq!(
+                reviews(conn, &principal, &ReviewQuery { open: Some(1), ..Default::default() }).unwrap()["items"],
+                json!([])
+            );
+            let clock: String =
+                conn.query_row("SELECT clocks FROM front_review WHERE id=?1", [&review.id], |r| r.get(0)).unwrap();
+            assert_eq!(serde_json::from_str::<Value>(&clock).unwrap()["resolution"], choice.hlc.to_string());
+        };
+        inspect(&conn);
+        crate::project::rebuild(&mut conn).unwrap();
+        inspect(&conn);
+        let plan: String = conn.query_row(
+            "EXPLAIN QUERY PLAN SELECT id FROM op WHERE scope=?1 AND kind='front.review_resolve' AND status='applied'
+             AND json_extract(payload,'$.review_id')=?2 AND seq<=?3",
+            rusqlite::params![format!("account:{BODY}"),review.id,i64::MAX],|r|r.get(3)).unwrap();
+        assert!(plan.contains("op_front_review_choice"), "{plan}");
+    }
+
+    #[test]
+    fn review_choice_migration_repairs_derived_rows_without_changing_operations() {
+        let mut conn = crate::db::open_memory().unwrap();
+        for (_, sql) in crate::db::MIGRATIONS.iter().take(crate::db::MIGRATIONS.len() - 1) {
+            conn.execute_batch(sql).unwrap();
+        }
+        crate::db::set_meta(&conn, "schema_version", &(crate::db::MIGRATIONS.len() - 1).to_string()).unwrap();
+        let review = "card";
+        let winner = op(2, BODY, BODY, "front.review_resolve", json!({"review_id":review,"resolution":"keep_a"}));
+        let mut future = op(5, BODY, BODY, "front.review_resolve", json!({"review_id":review,"resolution":"keep_b"}));
+        future.v = 2;
+        for choice in [
+            winner.clone(),
+            op(1, BODY, BODY, "front.review_resolve", json!({"review_id":review,"resolution":"keep_b"})),
+            op(3, OTHER, OTHER, "front.review_resolve", json!({"review_id":review,"resolution":"merge"})),
+            op(4, BODY, BODY, "front.review_resolve", json!({"review_id":review,"resolution":"unknown_legacy_value"})),
+            future,
+        ] {
+            crate::oplog::insert(&conn, &choice, false, false).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO front_review(id,account_id,switch_a,switch_b,created_at,resolution,resolved_at)
+            VALUES (?1,?2,'a','b',0,'keep_b',0)",
+            rusqlite::params![review, BODY],
+        )
+        .unwrap();
+        let before = crate::oplog::for_scope_kinds(&conn, &format!("account:{BODY}"), "front.").unwrap();
+        assert_eq!(crate::db::migrate(&mut conn).unwrap(), 1);
+        let row: (String, i64, String) = conn
+            .query_row("SELECT resolution,resolved_at,clocks FROM front_review WHERE id=?1", [review], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(row.0, "keep_a");
+        assert_eq!(row.1, winner.time());
+        assert_eq!(serde_json::from_str::<Value>(&row.2).unwrap()["resolution"], winner.hlc.to_string());
+        assert_eq!(crate::oplog::for_scope_kinds(&conn, &format!("account:{BODY}"), "front.").unwrap(), before);
+        assert_eq!(crate::db::migrate(&mut conn).unwrap(), 0);
     }
 }

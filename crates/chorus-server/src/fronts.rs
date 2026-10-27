@@ -529,7 +529,7 @@ mod tests {
             true,
         );
         let before = cached(&conn, BODY).unwrap();
-        assert_eq!(crate::db::migrate(&mut conn).unwrap(), 1);
+        assert_eq!(crate::db::migrate(&mut conn).unwrap(), crate::db::MIGRATIONS.len() - 11);
         assert_eq!(cached(&conn, BODY).unwrap(), before);
         assert_current(&conn, BODY, &[first]);
         assert_eq!(

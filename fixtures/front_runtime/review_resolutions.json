@@ -1,0 +1,83 @@
+{
+  "description": "Review choices retain canonical equal-clock order; unknown and future choices cannot close or overwrite a card.",
+  "fn": "project",
+  "args": [
+    [
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000002",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "kind": "front.review_resolve",
+        "v": 1,
+        "hlc": "0000000007d0-0000-00000001",
+        "device_at": 2000,
+        "payload": {
+          "review_id": "card",
+          "resolution": "keep_b"
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000003",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "kind": "front.review_resolve",
+        "v": 1,
+        "hlc": "0000000003e8-0000-00000001",
+        "device_at": 1000,
+        "payload": {
+          "review_id": "card",
+          "resolution": "merge"
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000001",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "kind": "front.review_resolve",
+        "v": 1,
+        "hlc": "0000000007d0-0000-00000001",
+        "device_at": 2000,
+        "payload": {
+          "review_id": "card",
+          "resolution": "keep_a"
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000004",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "kind": "front.review_resolve",
+        "v": 1,
+        "hlc": "000000000bb8-0000-00000001",
+        "device_at": 3000,
+        "payload": {
+          "review_id": "card",
+          "resolution": "future_choice"
+        }
+      },
+      {
+        "id": "0192f8c2-0000-7000-8000-000000000005",
+        "scope": "account:0192f8c2-0000-7000-8000-0000000000a1",
+        "kind": "front.review_resolve",
+        "v": 2,
+        "hlc": "000000000fa0-0000-00000001",
+        "device_at": 4000,
+        "payload": {
+          "review_id": "card",
+          "resolution": "keep_both"
+        }
+      }
+    ]
+  ],
+  "expect": {
+    "rows": {
+      "front_review": {
+        "card": {
+          "exists": false,
+          "fields": {
+            "resolution": "keep_a"
+          }
+        }
+      }
+    },
+    "sets": {},
+    "fronts": {},
+    "opaque": 1
+  }
+}

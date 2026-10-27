@@ -19,6 +19,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
     ("0010_named_fronts", include_str!("../migrations/0010_named_fronts.sql")),
     ("0011_named_front_lookup", include_str!("../migrations/0011_named_front_lookup.sql")),
     ("0012_front_purpose_bytes", include_str!("../migrations/0012_front_purpose_bytes.sql")),
+    ("0013_front_review_resolution", include_str!("../migrations/0013_front_review_resolution.sql")),
 ];
 
 pub fn open(path: &Path) -> anyhow::Result<Connection> {
@@ -74,6 +75,9 @@ pub fn migrate(conn: &mut Connection) -> anyhow::Result<usize> {
     for (i, (name, sql)) in MIGRATIONS.iter().enumerate().skip(from) {
         let tx = conn.transaction()?;
         tx.execute_batch(sql).with_context(|| format!("migration {name}"))?;
+        if *name == "0013_front_review_resolution" {
+            crate::project::repair_review_resolutions(&tx)?;
+        }
         tx.execute(
             "INSERT INTO server_meta(key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",

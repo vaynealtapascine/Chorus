@@ -683,6 +683,41 @@ pub fn civil_date(days: i64) -> String {
 // ─── concurrent switch review ────────────────────────────────────────────────
 
 pub const DEFAULT_REVIEW_WINDOW_MS: i64 = 120_000;
+pub const REVIEW_RESOLUTIONS: &[&str] = &["keep_both", "keep_a", "keep_b", "merge"];
+
+/// Understood v1 resolutions only. Unknown/malformed historical choices remain in the log
+/// without closing a card that this version cannot interpret.
+pub fn review_resolution(op: &Op) -> Option<(&str, &str)> {
+    if op.kind != "front.review_resolve"
+        || op.v != 1
+        || !matches!(crate::op::validate(op), Ok(crate::op::Known::Yes(_)))
+    {
+        return None;
+    }
+    let id = op.payload["review_id"].as_str().filter(|id| !id.trim().is_empty())?;
+    let resolution = op.payload["resolution"].as_str().filter(|r| REVIEW_RESOLUTIONS.contains(r))?;
+    Some((id, resolution))
+}
+
+/// Account-local LWW choices, including choices received before their card. The reference
+/// model applies canonical (HLC, ID) order with a strict HLC register: the smallest ID wins
+/// an equal-clock tie. Keep that rule for metadata as well as the resolution value.
+pub fn review_resolutions<'a>(account: &str, ops: &'a [Op]) -> BTreeMap<&'a str, &'a Op> {
+    let scope = format!("account:{account}");
+    let mut out = BTreeMap::<&str, &Op>::new();
+    for op in crate::model::dedupe(ops) {
+        if op.scope != scope {
+            continue;
+        }
+        if let Some((id, _)) = review_resolution(op) {
+            let previous = out.entry(id).or_insert(op);
+            if op.hlc > previous.hlc {
+                *previous = op;
+            }
+        }
+    }
+    out
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Review {
@@ -750,6 +785,41 @@ pub(crate) fn concurrent_review(a: ReviewCandidate<'_>, b: ReviewCandidate<'_>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn review_choices_are_account_local_lww_and_ignore_unrecognized_history() {
+        use serde_json::json;
+        let account = "0192f8c2-0000-7000-8000-0000000000a1";
+        let make = |n: u8, clock: u64, resolution: &str| -> Op {
+            serde_json::from_value(json!({"id":crate::id::new_id(1000,[n;10]),
+                "scope":format!("account:{account}"),"kind":"front.review_resolve",
+                "hlc":Hlc::new(clock,0,1),"device_at":clock,"payload":{"review_id":"card","resolution":resolution}}))
+            .unwrap()
+        };
+        let low_id = make(1, 2000, "keep_a");
+        let mut invalid = make(4, 3000, "not_understood");
+        assert!(crate::op::validate_new(&invalid).is_err());
+        assert!(review_resolution(&invalid).is_none());
+        invalid.payload["resolution"] = json!(null);
+        assert!(review_resolution(&invalid).is_none());
+        let mut future = make(5, 4000, "keep_both");
+        future.v = 2;
+        let mut ops = vec![make(2, 2000, "keep_b"), make(3, 1000, "merge"), low_id.clone(), invalid, future];
+        for _ in 0..ops.len() {
+            let choices = review_resolutions(account, &ops);
+            assert_eq!(choices["card"].id, low_id.id);
+            assert_eq!(crate::model::project(&ops).row("front_review", "card").unwrap().fields["resolution"], "keep_a");
+            ops.rotate_left(1);
+        }
+        let mut foreign = make(6, 5000, "keep_both");
+        foreign.scope = "account:0192f8c2-0000-7000-8000-0000000000a2".into();
+        ops.push(foreign);
+        assert_eq!(review_resolutions(account, &ops)["card"].id, low_id.id);
+        let mut blank = make(7, 6000, "keep_both");
+        blank.payload["review_id"] = json!("  ");
+        assert!(review_resolution(&blank).is_none());
+        assert!(crate::op::validate_new(&low_id).is_ok());
+    }
 
     fn m(id: &str) -> Entry {
         Entry { subject_type: SubjectType::Member, subject_id: id.into(), level: Level::Front, is_primary: false }
