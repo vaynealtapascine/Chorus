@@ -111,6 +111,11 @@ pub fn accept(
             None,
         ));
     }
+    // Poll totals are derived by the server from account-private votes (D-086); a device that
+    // pushed one could publish made-up totals.
+    if matches!(o.kind.as_str(), "message.poll_tally" | "post.poll_tally") && s.device_id != SERVER_DEVICE {
+        return Ok((AckResult::err(o.id, "forbidden", "poll totals are computed by the server".into(), false), None));
+    }
     if !preserved && o.kind.ends_with(".restore") {
         let related = oplog::for_entity(conn, o.entity().unwrap_or_default())?;
         if !restore::allowed(&o.kind, &o.scope, o.entity().unwrap_or_default(), &author, related.iter()) {

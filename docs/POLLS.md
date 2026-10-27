@@ -45,13 +45,13 @@ voter's account scope, it reaches only that account's devices. The server valida
 A vote for a parent the server has not seen yet is held like other late-parent ops and validated
 when the parent arrives; it never counts before then.
 
-**Totals: `poll.tally`, server-derived (D-086).** After accepting or rejecting the effect of a
+**Totals: `message.poll_tally` / `post.poll_tally`, server-derived (D-086).** After accepting or rejecting the effect of a
 vote, or when the parent is deleted/restored, the server recomputes the poll's totals and appends
-a server-authored `poll.tally` op **in the parent's scope** (the space for messages, the author's
-account for posts). `entity_id` = parent ID, payload
+a server-authored tally op **in the parent's scope**: `message.poll_tally` in the space for messages,
+`post.poll_tally` in the author's account for posts (op kinds have one fixed scope kind). `entity_id` = parent ID, payload
 `{channel_id?, counts: {"a": 3, "b": 1}, voters: 4}` (`voters` = members with a non-empty vote).
 The op carries `account_id` = the parent's author and `device_id` = the server device, like other
-`server_op`s, but clients may never push it (ingest refuses `poll.tally` from devices). Projection
+`server_op`s, but clients may never push it (ingest refuses tallies from any device but the server). Projection
 keeps one `poll_tally` row per parent, LWW by HLC; the latest tally is the total. Tally ops carry
 no member or account IDs.
 
@@ -68,7 +68,7 @@ the same space-scope delivery filter as the message.
 ## Privacy
 
 - Nothing that leaves the voter's account names the voter: `poll.vote` stays account-scoped,
-  and `poll.tally` has counts only.
+  and tallies have counts only.
 - Small polls can reveal votes through arithmetic (one voter, one count); that is inherent to
   "totals immediately" (D-081) and is accepted.
 - Tallies are appended when the vote is accepted, so their timing is visible to readers, the same
@@ -90,10 +90,13 @@ the same space-scope delivery filter as the message.
 
 ## Slices
 
-1. Core: catalogue entries (`poll.vote` Account/Set-like LWW, `poll.tally` Space+Account derived),
-   payload validation (poll definition on parents, vote choices), projection rows `poll_vote`
-   (own) and `poll_tally`, conformance fixtures.
-2. Server: ingest validation (eligibility, late parents), tally recompute + `poll.tally` append,
+1. **Done (2026-10-27).** Core `chorus_core::poll` (definition, choice shape, `check_vote`, `tally`,
+   `tally_payload`, `check_tally`), catalogue `poll.vote` / `message.poll_tally` / `post.poll_tally`,
+   validation of new parents and votes (edits may not carry `poll`), reference-model rows
+   `poll_vote` (`<poll>|<member>`) and `poll_tally`, migration 0015 (`message.poll`, `post.poll`,
+   `poll_vote`, `poll_tally`), server projection, and ingest refusing device-pushed tallies.
+   Conformance fixtures are still to add with slice 2's server behaviour.
+2. Server: ingest validation (eligibility, late parents), tally recompute + tally op append,
    refuse client-pushed tallies, SQL tables/migration, post view rows, export exclusion, tests
    for identity leakage (REST, sync, SSE, exports).
 3. Web, then Android: composer disclosure, poll card, voting, tests.

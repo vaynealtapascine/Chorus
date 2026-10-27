@@ -357,6 +357,12 @@ async fn a_friend_follows_a_system() {
         .await;
     phone.drain(Q).await;
     assert!(phone.store.rejected.iter().any(|(op, _)| *op == forged));
+    // nor publish made-up poll totals: tallies are derived by the server (D-086)
+    let tally = phone
+        .create("post.poll_tally", &acct_scope, &new_id(9, [8; 10]), json!({"counts": {"a": 99}, "voters": 99}))
+        .await;
+    phone.drain(Q).await;
+    assert!(phone.store.rejected.iter().any(|(op, _)| *op == tally));
 
     // unfollow
     let r = http.delete(url(&format!("/follows/{id}"))).bearer_auth(tok(&friend)).send().await.unwrap();

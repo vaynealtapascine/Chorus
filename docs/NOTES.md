@@ -565,3 +565,9 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   line and sets the **Owner:** line to the agent's name, which erases the owner's standing
   instructions (deploy steps). After running it, restore those lines from `git show HEAD:PROGRESS.md`
   (Claude, 2026-10-27).
+
+- The wasm core is at the SPEC §9 limit: 307,007 of 307,200 gzipped bytes after UI3 slice 1
+  (2026-10-27). `lto = "fat"` in `[profile.wasm]` saves ~160 bytes over thin LTO. New shared-core
+  code must be small: prefer `Option`/static messages over `format!`, and keep server-only logic
+  (e.g. `poll::tally`, `check_tally`) out of paths the wasm exports reach. A real feature that
+  needs more must either find savings or ask the owner about the budget (Claude).

@@ -1225,6 +1225,28 @@ fn special(conn: &Connection, o: &Op) -> anyhow::Result<()> {
         "field.set_value" => {
             lww_keyed(conn, o, "field_value", &[("member_id", p("member_id")), ("field_id", p("field_id"))], "value")
         }
+        "poll.vote" => {
+            let key = [
+                ("poll_id", o.entity().unwrap_or("").to_string()),
+                ("account_id", o.account_id.clone().unwrap_or_default()),
+                ("member_id", p("member_id")),
+            ];
+            lww_keyed(conn, o, "poll_vote", &key, "choices")
+        }
+        "message.poll_tally" | "post.poll_tally" => {
+            let key = [("poll_id", o.entity().unwrap_or("").to_string())];
+            if !newer_than_stored(conn, "poll_tally", &key, o)? {
+                return Ok(());
+            }
+            let names = ["poll_id", "counts", "voters", "hlc"].map(String::from);
+            let values = [
+                Sql::Text(key[0].1.clone()),
+                Sql::Text(o.payload.get("counts").cloned().unwrap_or_else(|| serde_json::json!({})).to_string()),
+                Sql::Integer(o.payload.get("voters").and_then(Value::as_i64).unwrap_or(0)),
+                Sql::Text(o.hlc.to_string()),
+            ];
+            upsert(conn, "poll_tally", &["poll_id"], &names, &values)
+        }
         "pref.set" => lww_keyed(
             conn,
             o,
@@ -1440,6 +1462,8 @@ pub(crate) const DERIVED: &[&str] = &[
     "custom_state",
     "field_def",
     "field_value",
+    "poll_vote",
+    "poll_tally",
     "switch",
     "front_interval",
     "front_daily",

@@ -30,6 +30,12 @@ HANDLED = {
     ('channel', 'target_id'): 'channel_permission rows',
     ('channel', 'allow'): 'channel_permission rows',
     ('channel', 'deny'): 'channel_permission rows',
+    ('message', 'counts'): 'poll_tally (message.poll_tally, project.rs)',
+    ('message', 'voters'): 'poll_tally',
+    ('message', 'channel_id'): 'message.poll_tally delivery filter only; the message row has it already',
+    ('post', 'counts'): 'poll_tally (post.poll_tally, project.rs)',
+    ('post', 'voters'): 'poll_tally',
+    ('post', 'channel_id'): 'never set for posts',
 }
 
 

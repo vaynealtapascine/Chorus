@@ -148,6 +148,7 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `state.create` / `state.set` / `state.delete` | custom front states | LWW-F |
 | `field.define` / `field.set_def` / `field.delete_def` | custom field definitions | LWW-F |
 | `field.set_value` | `{member_id, field_id, value}` | LWW-F per (member, field) |
+| `poll.vote` | `{member_id, choices:[option_id]}` — entity = the poll's parent post/message; in the **voter's** `account:` scope; `[]` withdraws (D-081, D-086, POLLS.md) | LWW per (poll, member) |
 | `front.switch` | `{entries:[{subject_type, subject_id, level, is_primary}], based_on, note, notify}` full snapshot, array order = fronting order | TL |
 | `front.add` | `{entry, position?}` | TL |
 | `front.remove` | `{subject_type, subject_id}` | TL |
@@ -163,7 +164,7 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `channel.create` / `channel.set` / `channel.archive` / `channel.delete` / `channel.restore` | | LWW-F |
 | `channel.set_permission` | `{target_type: role or account, target_id, allow:[…], deny:[…]}` | LWW-F per (channel, target) |
 | `space.set_roles` | custom roles for shared spaces `{roles:[{id,name,color,perms}]}` | LWW-F |
-| `message.send` | `{channel_id, authors:[member_id], text, entities, segments?:[{offset,length,authors}], reply_to?, quote?, forward?, cw?, visibility?, attachments?:[attachment_id], sent_offline:bool}`; segment offsets/lengths are UTF-16. `quote` is a single `{message_id,offset,length,text}` or a bundle `{items:[snapshot]}` (D-048). | APP |
+| `message.send` | `{channel_id, authors:[member_id], text, entities, segments?:[{offset,length,authors}], reply_to?, quote?, forward?, cw?, visibility?, attachments?:[attachment_id], sent_offline:bool, poll?:{question?, options:[{id,text}], multiple}}`; segment offsets/lengths are UTF-16. `poll` is fixed at creation (edits may not carry it; POLLS.md). `quote` is a single `{message_id,offset,length,text}` or a bundle `{items:[snapshot]}` (D-048). | APP |
 | `message.edit` | `{message_id, text, entities, segments?, cw?}` → new revision; supply updated segments when editing text so attribution and offsets stay aligned (D-045) | APP (latest HLC shown) |
 | `message.delete` / `message.restore` | `{message_id}` — restore clears `deleted_at` with a newer HLC | LWW-F |
 | `message.forward` | `{channel_id, authors, text, entities, forward_of_id, forward_snapshot:[{message_id, channel_name?, authors, text, entities, offset?, length?, occurred_at}]}` → a new message with source snapshots captured by the sending client (D-048) | APP |
@@ -176,7 +177,8 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `read.mark` | `{channel_id, reader_member_id?, message_id}` | max-by-message-order |
 | `attachment.create` | `{blob_hash, filename, mime, size, width?, height?, duration_ms?, alt_text?}` | APP |
 | `attachment.set` | `{alt_text?, is_spoiler?}` | LWW-F |
-| `post.create` | `{kind: note or entry, authors, title?, text, entities, mood?, tags?, cw?, visibility, reply_to?, quote?, repost_of?, attachments?}` | APP |
+| `post.create` | `{kind: note or entry, authors, title?, text, entities, mood?, tags?, cw?, visibility, reply_to?, quote?, repost_of?, attachments?, poll?}` | APP |
+| `message.poll_tally` / `post.poll_tally` | `{channel_id?, counts:{option_id: n}, voters}` — server-derived only, in the parent's scope; never pushed by devices; no voter identities (D-086) | LWW per poll |
 | `post.edit` / `post.delete` / `post.set_visibility` | | APP / LWW-F |
 | `draft.set` / `draft.delete` | composer drafts (per channel or post), synced | LWW-F |
 | `highlight.add` / `highlight.remove` / `highlight.reorder` | `{profile_member_id, post_id, sort_key}` | SET + LWW-F |

@@ -297,6 +297,12 @@ fn special(p: &mut Projection, o: &Op, payload: &Map<String, Value>, reads: &mut
             let v = payload.get("value").cloned().unwrap_or(Value::Null);
             set_fields(p, "field_value", &id, o.hlc, &one("value", v)).exists = true;
         }
+        // one vote per (poll, member), keyed `<poll>|<member>`; the payload is `{member_id, choices}`
+        "poll.vote" => {
+            let id = format!("{entity}|{}", str_field(o, "member_id"));
+            set_fields(p, "poll_vote", &id, o.hlc, payload).exists = true;
+        }
+        "message.poll_tally" | "post.poll_tally" => set_fields(p, "poll_tally", entity, o.hlc, payload).exists = true,
         "front.review_resolve" => {
             if let Some((id, resolution)) = front::review_resolution(o) {
                 set_fields(p, "front_review", id, o.hlc, &one("resolution", Value::String(resolution.into())));

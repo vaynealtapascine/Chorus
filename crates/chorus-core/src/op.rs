@@ -332,6 +332,10 @@ pub static CATALOGUE: &[KindSpec] = &[
     k!("highlight.add", "highlight", Account, SetAdd),
     k!("highlight.remove", "highlight", Account, SetRemove),
     k!("highlight.reorder", "highlight", Account, Special),
+    // polls (D-081, D-086): a vote is private to the voter's account; tallies are server-derived
+    k!("poll.vote", "poll_vote", Account, Special),
+    k!("message.poll_tally", "poll_tally", Space, Special),
+    k!("post.poll_tally", "poll_tally", Account, Special),
     k!("reltype.set", "relationship_type", Account, Set, RELTYPE_FIELDS),
     k!("reltype.delete", "relationship_type", Account, Delete),
     k!("relationship.set", "relationship", Account, Set, REL_FIELDS),
@@ -556,6 +560,23 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
             typed("entities", Value::is_array, "a list")?;
             typed("tags", strings, "a list of tags")?;
             ranges(p)?;
+            if let Some(poll) = p.get("poll").filter(|v| !v.is_null()) {
+                if op.kind.ends_with(".edit") {
+                    return bad("a poll cannot be changed after it is created");
+                }
+                if crate::poll::definition(poll).is_none() {
+                    return bad(crate::poll::POLL_RULE);
+                }
+            }
+        }
+        "poll.vote" => {
+            if op.entity_id.is_none() {
+                return Err(OpError::MissingEntity);
+            }
+            nonempty("member_id")?;
+            if crate::poll::choices(p.get("choices").unwrap_or(&Value::Null)).is_none() {
+                return bad("choices must be a list of different option ids");
+            }
         }
         "field.define" | "field.set_def" => one_of("type", FIELD_TYPES, false)?,
         "space.set_role" => {
@@ -661,6 +682,8 @@ pub const FIELD_RULES: &[(&str, &str, &[Rule])] = {
         ("post", "tags", &[Json, NotNull]),
         ("post", "visibility", &[Json, NotNull]),
         ("post", "sent_offline", &[Bool, NotNull]),
+        ("message", "poll", &[Json]),
+        ("post", "poll", &[Json]),
         ("relationship", "visibility", &[Json, NotNull]),
         ("relationship_type", "is_symmetric", &[Bool, NotNull]),
         ("space", "kind", &[OneOf(&["internal", "shared", "dm"])]),
@@ -777,6 +800,43 @@ mod tests {
 
     fn acct() -> String {
         format!("account:{}", new_id(1, [3; 10]))
+    }
+
+    #[test]
+    fn polls_validate_their_definition_votes_and_tallies() {
+        let space = format!("space:{}", new_id(1, [5; 10]));
+        let poll = json!({"options": [{"id": "a", "text": "Soup"}, {"id": "b", "text": "Rice"}]});
+        let send = |poll: Value| {
+            op("message.send", &space, json!({"channel_id": "c", "authors": ["m"], "text": "?", "poll": poll}))
+        };
+        assert!(validate_new(&send(poll.clone())).is_ok());
+        assert!(validate_new(&send(json!({"options": []}))).is_err());
+        let edit = op("message.edit", &space, json!({"text": "?", "poll": poll}));
+        assert!(validate_new(&edit).is_err(), "options are fixed at creation");
+        let vote = |choices: Value| op("poll.vote", &acct(), json!({"member_id": "m", "choices": choices}));
+        assert!(validate_new(&vote(json!(["a"]))).is_ok());
+        assert!(validate_new(&vote(json!([]))).is_ok(), "withdraw");
+        assert!(validate_new(&vote(json!(["a", "a"]))).is_err());
+        assert!(
+            validate_new(&op("poll.vote", &space, json!({"member_id": "m", "choices": []}))).is_err(),
+            "votes are account-scoped"
+        );
+        let tally = json!({"channel_id": "c", "counts": {"a": 1, "b": 0}, "voters": 1});
+        assert!(validate_new(&op("message.poll_tally", &space, tally.clone())).is_ok());
+        assert!(validate_new(&op("post.poll_tally", &acct(), tally.clone())).is_ok());
+        // one editable vote per (poll, member); the latest tally is the total
+        let mut v1 = vote(json!(["a"]));
+        let mut v2 = vote(json!(["b"]));
+        v2.id = new_id(1_790_000_000_001, [9; 10]);
+        v2.hlc = Hlc::new(2, 0, 1);
+        let mut t = op("message.poll_tally", &space, tally);
+        t.entity_id = v1.entity_id.clone();
+        t.id = new_id(1_790_000_000_002, [8; 10]);
+        v1.account_id = Some("x".into());
+        let p = crate::model::project([&v2, &v1, &t]);
+        let row = &p.rows["poll_vote"][&format!("{}|m", v1.entity_id.as_deref().unwrap())];
+        assert_eq!(row.fields["choices"], json!(["b"]));
+        assert_eq!(p.rows["poll_tally"][v1.entity_id.as_deref().unwrap()].fields["voters"], json!(1));
     }
 
     #[test]

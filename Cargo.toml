@@ -27,3 +27,5 @@ strip = true
 inherits = "release"
 opt-level = "z"
 panic = "abort"
+# whole-program LTO: the size budget is tight and only the web build pays the extra link time
+lto = "fat"
