@@ -35,6 +35,12 @@ data class NamedFronts(
     /** Body's stable front ID: the account ID. */
     val bodyId: String = "",
 ) {
+    /** Live layers, inner to outer (display level, then ID). */
+    val liveLayers: List<FrontLayer> get() = layers.filter { !it.deleted }
+
+    /** Confirmed presence of one front as display entries; empty when unknown/unavailable. */
+    fun entries(frontId: String): List<Entry> = resolved[frontId]?.confirmed?.map { it.displayEntry() }.orEmpty()
+
     /** Live fronts a channel can select, Body first. */
     val channelChoices: List<NamedFront> get() = fronts.values.filter { !it.deleted }
         .sortedWith(compareBy<NamedFront> { it.id != bodyId }.thenBy { it.name.lowercase() }.thenBy { it.id })

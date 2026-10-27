@@ -25,6 +25,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import garden.vayne.chorus.data.Entry
 import androidx.compose.material3.MaterialTheme
 import garden.vayne.chorus.designsystem.HankenGrotesk
 import androidx.compose.runtime.Composable
@@ -81,7 +86,7 @@ private sealed interface Tile {
 }
 
 @Composable
-fun Home(chorus: Chorus, model: Model) {
+fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val accountId = chorus.device?.accountId
@@ -96,8 +101,13 @@ fun Home(chorus: Chorus, model: Model) {
     val undo by Front.undo.collectAsState()
     val actions = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
+    // named fronts (D-080): pick which front this screen shows and switches; Body by default
+    val named = model.namedFronts
+    var selectedFront by remember(accountId) { mutableStateOf<String?>(null) }
+    val frontId = selectedFront?.takeIf { id -> named?.fronts?.get(id)?.deleted == false } ?: named?.bodyId
+    val shownEntries = if (named != null && frontId != null) named.entries(frontId) else model.current
     var switcherOpen by remember { mutableStateOf(false) }
-    if (switcherOpen) Switcher(chorus, model) { switcherOpen = false }
+    if (switcherOpen) Switcher(chorus, model, frontId) { switcherOpen = false }
 
     // the mode resets to Replace 30 s after last use (CLIENTS.md §3.2)
     LaunchedEffect(modeUsed) {
@@ -113,7 +123,7 @@ fun Home(chorus: Chorus, model: Model) {
     }
     BackHandler(enabled = folder != null) { folder = folder?.let { model.group(it)?.parentId } }
 
-    val here = model.current.map { it.subjectType to it.subjectId }.toSet()
+    val here = shownEntries.map { it.subjectType to it.subjectId }.toSet()
     val tiles: List<Tile> = remember(model, query, folder, pins, accountId) { tiles(model, query, folder, pins, accountId) }
 
     LazyVerticalGrid(
@@ -124,10 +134,36 @@ fun Home(chorus: Chorus, model: Model) {
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column {
-                FrontCard(model)
+                val choices = named?.channelChoices.orEmpty()
+                if (choices.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    choices.forEach { f ->
+                        val count = named?.entries(f.id)?.size ?: 0
+                        FilterChip(f.id == frontId, onClick = { selectedFront = f.id },
+                            label = { Text(if (count > 0) "${f.name.ifBlank { "Body" }} · $count" else f.name.ifBlank { "Body" }) })
+                    }
+                }
+                val resolved = frontId?.let { named?.resolved?.get(it) }
+                if (resolved != null && resolved.state != "independent") {
+                    val source = resolved.source?.let { named?.fronts?.get(it)?.name } ?: "its source"
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp).background(p.surface, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(when (resolved.state) {
+                            "following" -> "Follows $source"
+                            "overridden" -> "Changed by hand · not following $source"
+                            else -> if (resolved.issue == "cycle") "Following loops back on itself" else "Its source is unavailable"
+                        }, color = p.ink2, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        if (resolved.state == "overridden") TextButton(onClick = {
+                            actions.launch { try { Front.resume(chorus, resolved.id); error = null } catch (e: Exception) { error = e.message } }
+                        }) { Text("Resume following") }
+                    }
+                }
+                FrontCard(model, shownEntries, title = frontId?.let { named?.fronts?.get(it)?.name?.ifBlank { null } } ?: "Current front",
+                    sinceAt = if (named != null) null else model.since)
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Quick switch", color = p.ink2, fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    if (!model.isPerson) TextButton(onClick = onFronts) { Text("Fronts") }
                     Button(onClick = { switcherOpen = true }) {
                         ChorusIcon(AppIcon.Swap)
                         Spacer(Modifier.width(8.dp))
@@ -225,7 +261,7 @@ fun Home(chorus: Chorus, model: Model) {
                     }
                     actions.launch {
                         try {
-                            Front.tap(chorus, t.s, mode)
+                            Front.tap(chorus, t.s, mode, if (named != null) frontId else null)
                             modeUsed = System.currentTimeMillis()
                             query = ""
                             error = null
@@ -323,50 +359,75 @@ private fun FolderTile(f: Tile.Folder, onTap: () -> Unit) {
     }
 }
 
-/** Who is here now (DESIGN.md §4.1). */
+/** The three original layers, inner to outer, for an unconfigured account. */
+private val LEGACY_LAYERS = listOf("front" to "Fronting", "cocon" to "Co-conscious", "present" to "Present")
+
+/** Who is here now (DESIGN.md §4.1). The innermost layer lists people; outer layers nest around it
+ * in display order (D-080). */
 @Composable
-fun FrontCard(model: Model) {
+fun FrontCard(
+    model: Model,
+    entries: List<Entry> = model.current,
+    title: String = "Current front",
+    layers: List<Pair<String, String>> = model.namedFronts?.liveLayers?.map { it.id to it.name } ?: LEGACY_LAYERS,
+    sinceAt: Long? = model.since,
+) {
     val p = LocalChorusPalette.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); now = System.currentTimeMillis() } }
-    val since = model.since?.let { ago(it, now) } ?: "just now"
+    val since = sinceAt?.let { ago(it, now) }
+    val names = { layer: String -> entries.filter { it.level == layer }.mapNotNull { model.subject(it.subjectType, it.subjectId)?.name } }
     Column(Modifier.fillMaxWidth().padding(top = 8.dp).background(p.surface, RoundedCornerShape(22.dp)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
             ChorusIcon(AppIcon.Front)
             Spacer(Modifier.width(8.dp))
-            Text("Current front", color = p.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("${model.current.size} here", color = p.ink3, fontSize = 12.sp)
+            Text(title, color = p.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text("${entries.size} here", color = p.ink3, fontSize = 12.sp)
         }
-        Column(Modifier.fillMaxWidth().border(1.dp, p.line, RoundedCornerShape(20.dp)).padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Column(Modifier.fillMaxWidth().border(1.dp, p.accent.copy(alpha = .5f), RoundedCornerShape(18.dp)).padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Column(Modifier.fillMaxWidth().background(p.accentSoft, RoundedCornerShape(16.dp))
-                    .border(1.dp, p.accent, RoundedCornerShape(16.dp)).padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Fronting", color = p.accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text(since, color = p.ink3, fontSize = 12.sp)
-                    }
-                    val fronting = model.current.filter { it.level == "front" }
-                    if (fronting.isEmpty()) Text("No one fronting", color = p.ink2, modifier = Modifier.padding(8.dp))
-                    fronting.forEach { entry -> model.subject(entry.subjectType, entry.subjectId)?.let { member ->
-                        Row(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(12.dp)).padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Avatar(member.glyph, member.color, 40.dp, avatarBlob = member.avatarBlob)
-                            Column(Modifier.weight(1f)) {
-                                Text(member.name, color = p.ink, fontWeight = FontWeight.SemiBold)
-                                if (entry.isPrimary) Text("Primary", color = p.ink3, fontSize = 12.sp)
-                            }
-                            Text(since, color = p.ink3, fontSize = 12.sp)
-                        }
-                    } }
-                }
-                PresenceLine("Co-conscious", model.current.filter { it.level == "cocon" }.mapNotNull { model.subject(it.subjectType, it.subjectId)?.name })
+        LayerRing(model, entries, layers, layers.lastIndex, since, names)
+        val unlisted = entries.filter { e -> layers.none { it.first == e.level } }
+            .mapNotNull { model.subject(it.subjectType, it.subjectId)?.name }
+        if (unlisted.isNotEmpty()) PresenceLine("Other", unlisted)
+    }
+}
+
+@Composable
+private fun LayerRing(
+    model: Model, entries: List<Entry>, layers: List<Pair<String, String>>, i: Int, since: String?,
+    names: (String) -> List<String>,
+) {
+    val p = LocalChorusPalette.current
+    if (i <= 0) {
+        val (id, label) = layers.firstOrNull() ?: ("front" to "Fronting")
+        Column(Modifier.fillMaxWidth().background(p.accentSoft, RoundedCornerShape(16.dp))
+            .border(1.dp, p.accent, RoundedCornerShape(16.dp)).padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(label, color = p.accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                if (since != null) Text(since, color = p.ink3, fontSize = 12.sp)
             }
-            PresenceLine("Present", model.current.filter { it.level == "present" }.mapNotNull { model.subject(it.subjectType, it.subjectId)?.name })
+            val inner = entries.filter { it.level == id }
+            if (inner.isEmpty()) Text("No one in $label", color = p.ink2, modifier = Modifier.padding(8.dp))
+            inner.forEach { entry -> model.subject(entry.subjectType, entry.subjectId)?.let { member ->
+                Row(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(12.dp)).padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Avatar(member.glyph, member.color, 40.dp, avatarBlob = member.avatarBlob)
+                    Column(Modifier.weight(1f)) {
+                        Text(member.name, color = p.ink, fontWeight = FontWeight.SemiBold)
+                        if (entry.isPrimary) Text("Primary", color = p.ink3, fontSize = 12.sp)
+                    }
+                    if (since != null) Text(since, color = p.ink3, fontSize = 12.sp)
+                }
+            } }
         }
+        return
+    }
+    val edge = if (i == 1) p.accent.copy(alpha = .5f) else p.line
+    Column(Modifier.fillMaxWidth().border(1.dp, edge, RoundedCornerShape(18.dp + (2 * i).dp)).padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LayerRing(model, entries, layers, i - 1, since, names)
+        PresenceLine(layers[i].second, names(layers[i].first))
     }
 }
 

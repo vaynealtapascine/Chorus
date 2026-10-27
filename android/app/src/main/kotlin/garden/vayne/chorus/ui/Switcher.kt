@@ -44,10 +44,19 @@ import kotlinx.coroutines.launch
 /** Full switch editor. A fresh sheet snapshots the current front so live deltas do not erase edits. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Switcher(chorus: Chorus, model: Model, onClose: () -> Unit) {
+fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, onClose: () -> Unit) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
-    val selected = remember { mutableStateListOf<Entry>().also { it.addAll(model.current) } }
+    // D-080: a configured account switches one named front, through its own independent layers
+    val named = model.namedFronts
+    val target = frontId ?: named?.bodyId
+    val layers = named?.liveLayers?.map { it.id to it.name }?.ifEmpty { null }
+        ?: listOf("front" to "Front", "cocon" to "Co-con", "present" to "Present")
+    val inner = layers.first().first
+    val layerName = { id: String -> layers.firstOrNull { it.first == id }?.second ?: id }
+    val selected = remember { mutableStateListOf<Entry>().also {
+        it.addAll(if (named != null && target != null) named.entries(target) else model.current)
+    } }
     var query by remember { mutableStateOf("") }
     var groupId by remember { mutableStateOf<String?>(null) }
     var note by remember { mutableStateOf("") }
@@ -68,25 +77,26 @@ fun Switcher(chorus: Chorus, model: Model, onClose: () -> Unit) {
     }
 
     fun repairPrimary() {
-        if (selected.any { it.isPrimary && it.level == "front" }) return
-        val first = selected.indexOfFirst { it.level == "front" }
+        if (selected.any { it.isPrimary && it.level == inner }) return
+        val first = selected.indexOfFirst { it.level == inner }
         if (first >= 0) selected[first] = selected[first].copy(isPrimary = true)
     }
 
     fun toggle(s: Subject) {
         val existing = selected.indexOfFirst { it.subjectType == s.type && it.subjectId == s.id }
         if (existing >= 0) { selected.removeAt(existing); repairPrimary() }
-        else selected.add(Entry(s.type, s.id, "front", selected.none { it.level == "front" }))
+        else selected.add(Entry(s.type, s.id, inner, selected.none { it.level == inner }))
     }
 
     fun commit(entries: List<Entry>) {
         val at = if (whenText.isBlank()) null else parseSwitchTime(whenText)
         if (whenText.isNotBlank() && at == null) { error = "Use YYYY-MM-DD HH:MM for the time."; return }
         busy = true
-        val names = entries.filter { it.level == "front" }.mapNotNull { model.subject(it.subjectType, it.subjectId)?.name }
+        val names = entries.filter { it.level == inner }.mapNotNull { model.subject(it.subjectType, it.subjectId)?.name }
         actions.launch {
             try {
-                Front.switch(chorus, entries, if (names.isEmpty()) "Switched out" else "Switched to ${names.joinToString(" & ")}", at, note, notify)
+                Front.switch(chorus, entries, if (names.isEmpty()) "Switched out" else "Switched to ${names.joinToString(" & ")}", at, note, notify,
+                    frontId = if (named != null) target else null)
                 onClose()
             } catch (e: Exception) { error = e.message; busy = false }
         }
@@ -94,18 +104,20 @@ fun Switcher(chorus: Chorus, model: Model, onClose: () -> Unit) {
 
     ModalBottomSheet(onDismissRequest = onClose) {
         Column(Modifier.fillMaxWidth().heightIn(max = 700.dp).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Who's here?", fontWeight = FontWeight.SemiBold, color = p.ink)
+            val frontName = target?.takeIf { it != named?.bodyId }?.let { named?.fronts?.get(it)?.name }
+            Text(if (frontName != null) "Who's in $frontName?" else "Who's here?", fontWeight = FontWeight.SemiBold, color = p.ink)
             selected.forEachIndexed { index, e ->
                 val s = model.subject(e.subjectType, e.subjectId)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(s?.name ?: "Unknown", modifier = Modifier.weight(1f), color = p.ink)
                     TextButton(onClick = {
-                        val next = when (e.level) { "front" -> "cocon"; "cocon" -> "present"; else -> "front" }
-                        selected[index] = e.copy(level = next, isPrimary = next == "front" && e.isPrimary)
+                        val ids = layers.map { it.first }
+                        val next = ids[(ids.indexOf(e.level) + 1).mod(ids.size)]
+                        selected[index] = e.copy(level = next, isPrimary = next == inner && e.isPrimary)
                         repairPrimary()
-                    }) { Text(when (e.level) { "cocon" -> "Co-con"; "present" -> "Present"; else -> "Front" }) }
+                    }) { Text(layerName(e.level)) }
                     TextButton(onClick = {
-                        selected.indices.forEach { n -> selected[n] = selected[n].copy(isPrimary = n == index, level = if (n == index) "front" else selected[n].level) }
+                        selected.indices.forEach { n -> selected[n] = selected[n].copy(isPrimary = n == index, level = if (n == index) inner else selected[n].level) }
                     }) { Text(if (e.isPrimary) "★" else "☆") }
                     TextButton(onClick = { selected.removeAt(index); repairPrimary() }) { Text("×") }
                 }

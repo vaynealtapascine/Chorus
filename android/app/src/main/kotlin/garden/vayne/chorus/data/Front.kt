@@ -22,7 +22,8 @@ object Front {
 
     /** Apply a tap on `subject` in `mode`. Returns the label for the undo row. */
     suspend fun tap(chorus: Chorus, s: Subject, mode: Mode, frontId: String? = null): String {
-        val entry = Entry(s.type, s.id, "front", mode == Mode.Replace)
+        val inner = chorus.model.value.namedFronts?.liveLayers?.firstOrNull()?.id ?: "front"
+        val entry = Entry(s.type, s.id, inner, mode == Mode.Replace)
         val (kind, payload, label) = when (mode) {
             Mode.Replace -> Triple("front.switch", JSONObject().put("entries", JSONArray().put(entry.toJson())), "Switched to ${s.name}")
             Mode.Add -> Triple("front.add", JSONObject().put("entry", entry.toJson()), "Added ${s.name}")
@@ -94,5 +95,20 @@ object Front {
 
     fun dismiss(opId: String) {
         if (_undo.value?.opId == opId) _undo.value = null
+    }
+
+    /** Sparse named-front definition edit (D-080); missing fields stay as they are. */
+    suspend fun define(chorus: Chorus, frontId: String, patch: JSONObject) {
+        chorus.create("front.define", frontId, patch)
+    }
+
+    /** System-wide layer edit, keyed by `layer_id`; the op's entity is the account. */
+    suspend fun layer(chorus: Chorus, layerId: String, patch: JSONObject) {
+        val account = checkNotNull(chorus.device?.accountId) { "Not signed in." }
+        chorus.create("front.layer", account, JSONObject(patch.toString()).put("layer_id", layerId))
+    }
+
+    suspend fun resume(chorus: Chorus, frontId: String) {
+        chorus.create("front.change", frontId, JSONObject().put("action", "resume"))
     }
 }

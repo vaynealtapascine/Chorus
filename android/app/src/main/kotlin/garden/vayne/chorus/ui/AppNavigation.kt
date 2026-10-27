@@ -31,10 +31,11 @@ fun ChorusIcon(icon: AppIcon, description: String? = null, modifier: Modifier = 
 
 @Composable
 fun MoreScreen(person: Boolean, onJournal: () -> Unit, onHistory: () -> Unit,
-    onInsights: () -> Unit, onSettings: () -> Unit, onSearch: () -> Unit, onLink: () -> Unit) {
+    onInsights: () -> Unit, onFronts: () -> Unit, onSettings: () -> Unit, onSearch: () -> Unit, onLink: () -> Unit) {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { DestinationRow("Journal", "Entries, notes and member journals", AppIcon.Journal, onJournal) }
         if (!person) {
+            item { DestinationRow("Fronts and layers", "Separate fronts, following and who counts for what", AppIcon.Front, onFronts) }
             item { DestinationRow("Front history", "Look back, amend or log a switch", AppIcon.History, onHistory) }
             item { DestinationRow("Fronting insights", "History, patterns and exports", AppIcon.Layers, onInsights) }
         }

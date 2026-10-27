@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import garden.vayne.chorus.ui.AppIcon
 import garden.vayne.chorus.ui.ChorusIcon
 import garden.vayne.chorus.ui.MoreScreen
+import garden.vayne.chorus.ui.FrontsScreen
 import garden.vayne.chorus.ui.Switcher
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -155,6 +156,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var quickSwitchOpen by rememberSaveable { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var insightsOpen by rememberSaveable { mutableStateOf(false) }
+    var frontsOpen by rememberSaveable { mutableStateOf(false) }
     var lastAccount by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(chorus.device?.accountId, status) {
         if (status == Status.Loading) return@LaunchedEffect
@@ -166,7 +168,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             journalReplyPost = null; journalOpenPost = null
             chatShare = null; journalShare = null; journalNewEntry = null; sharedChannel = null
             onShareDismissed()
-            searchOpen = false; settingsOpen = false; insightsOpen = false
+            searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
         }
         lastAccount = account
     }
@@ -174,17 +176,17 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         if (newEntryRequest == null || status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
         journalNewEntry = newEntryRequest
         journalReplyPost = null; journalOpenPost = null
-        searchOpen = false; settingsOpen = false; insightsOpen = false
+        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
         tab = Tab.Journal
         onNewEntryConsumed()
     }
-    BackHandler(sharedDraft != null || settingsOpen || searchOpen || insightsOpen) {
+    BackHandler(sharedDraft != null || settingsOpen || searchOpen || insightsOpen || frontsOpen) {
         if (sharedDraft != null) onShareDismissed()
-        else if (searchOpen) searchOpen = false else if (insightsOpen) insightsOpen = false else settingsOpen = false
+        else if (searchOpen) searchOpen = false else if (insightsOpen) insightsOpen = false else if (frontsOpen) frontsOpen = false else settingsOpen = false
     }
     if (linking && status != Status.NoDevice && status != Status.Loading) DeviceLink(chorus) { linking = false }
     if (quickSwitchOpen && !model.isPerson) Switcher(chorus, model) { quickSwitchOpen = false }
-    BackHandler(!quickSwitchOpen && !settingsOpen && !searchOpen && !insightsOpen && !model.isPerson && (tab == Tab.Journal || tab == Tab.History)) {
+    BackHandler(!quickSwitchOpen && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen && !model.isPerson && (tab == Tab.Journal || tab == Tab.History)) {
         tab = Tab.More
     }
 
@@ -199,7 +201,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             val activeTab = if (person && (tab == Tab.Home || tab == Tab.Members || tab == Tab.History)) Tab.Journal else tab
             val destinations = if (person) listOf(Tab.Journal, Tab.Chat, Tab.People, Tab.More)
                 else listOf(Tab.Members, Tab.Home, Tab.Chat, Tab.People, Tab.More)
-            fun select(t: Tab) { tab = t; settingsOpen = false; searchOpen = false; insightsOpen = false }
+            fun select(t: Tab) { tab = t; settingsOpen = false; searchOpen = false; insightsOpen = false; frontsOpen = false }
             if (expanded && !chatStageCapture) NavigationRail(containerColor = p.surface) {
                 destinations.forEach { t -> NavigationRailItem(selected = t == activeTab,
                     onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = { Text(t.label) }) }
@@ -210,14 +212,14 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(if (searchOpen) "Search" else if (settingsOpen) "Settings" else if (insightsOpen) "Insights" else activeTab.label,
+                    Text(if (searchOpen) "Search" else if (settingsOpen) "Settings" else if (insightsOpen) "Insights" else if (frontsOpen) "Fronts" else activeTab.label,
                         fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.ink)
                     Text(if (status == Status.Live) "Chorus · synced" else if (status == Status.Connecting) "Connecting…" else "Offline · saved on this device",
                         fontSize = 12.sp, color = p.ink3)
                 }
-                IconButton(onClick = { searchOpen = !searchOpen; settingsOpen = false; insightsOpen = false }) { ChorusIcon(if (searchOpen) AppIcon.Close else AppIcon.Search, if (searchOpen) "Close search" else "Search") }
+                IconButton(onClick = { searchOpen = !searchOpen; settingsOpen = false; insightsOpen = false; frontsOpen = false }) { ChorusIcon(if (searchOpen) AppIcon.Close else AppIcon.Search, if (searchOpen) "Close search" else "Search") }
                 if (!person) IconButton(onClick = { quickSwitchOpen = true }) { ChorusIcon(AppIcon.Swap, "Open switcher") }
-                IconButton(onClick = { settingsOpen = !settingsOpen; searchOpen = false; insightsOpen = false }) { ChorusIcon(if (settingsOpen) AppIcon.Close else AppIcon.Settings, if (settingsOpen) "Close settings" else "Settings") }
+                IconButton(onClick = { settingsOpen = !settingsOpen; searchOpen = false; insightsOpen = false; frontsOpen = false }) { ChorusIcon(if (settingsOpen) AppIcon.Close else AppIcon.Settings, if (settingsOpen) "Close settings" else "Settings") }
             }
             Box(Modifier.weight(1f)) {
                 if (sharedDraft != null) ShareChooser(sharedDraft, model, chorus.device?.accountId,
@@ -226,7 +228,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         journalShare = sharedDraft
                         journalReplyPost = null; journalOpenPost = null
                         tab = Tab.Journal
-                        searchOpen = false; settingsOpen = false; insightsOpen = false
+                        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
                         onShareDismissed()
                     },
                     onChannel = { selected ->
@@ -234,7 +236,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         sharedChannel = selected.id
                         chatSpace = selected.spaceId; chatChannel = selected.id; chatSearchHit = null
                         tab = Tab.Chat
-                        searchOpen = false; settingsOpen = false; insightsOpen = false
+                        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
                         onShareDismissed()
                     })
                 else if (searchOpen) ContentSearch(chorus, model, status == Status.Live,
@@ -250,9 +252,10 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         journalReplyPost = null; journalOpenPost = id; tab = Tab.Journal; searchOpen = false
                     })
                 else if (insightsOpen) InsightsScreen(chorus, model) { insightsOpen = false }
+                else if (frontsOpen && !model.isPerson) FrontsScreen(chorus, model) { frontsOpen = false }
                 else if (settingsOpen) SettingsScreen(chorus, model) { insightsOpen = true; settingsOpen = false }
                 else when (activeTab) {
-                    Tab.Home -> Home(chorus, model)
+                    Tab.Home -> Home(chorus, model, onFronts = { frontsOpen = true })
                     Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
                         onStageCapture = { chatStageCapture = it }, onDismissSearchHit = { chatSearchHit = null },
                         sharedDraft = chatShare, sharedChannel = sharedChannel,
@@ -269,7 +272,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     Tab.Members -> Members(chorus, model)
                     Tab.History -> History(chorus, model)
                     Tab.More -> MoreScreen(person, onJournal = { tab = Tab.Journal }, onHistory = { tab = Tab.History },
-                        onInsights = { insightsOpen = true }, onSettings = { settingsOpen = true },
+                        onInsights = { insightsOpen = true }, onFronts = { frontsOpen = true }, onSettings = { settingsOpen = true },
                         onSearch = { searchOpen = true }, onLink = { linking = true })
                 }
             }
@@ -278,7 +281,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 containerColor = p.surface, tonalElevation = 0.dp,
             ) {
                 destinations.forEach { t -> NavigationBarItem(
-                    selected = (t == activeTab || (t == Tab.More && activeTab !in destinations)) && !settingsOpen && !searchOpen && !insightsOpen,
+                    selected = (t == activeTab || (t == Tab.More && activeTab !in destinations)) && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen,
                     onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = { Text(t.label, maxLines = 1) },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = p.accent, selectedTextColor = p.accent,
                         indicatorColor = p.accentSoft, unselectedIconColor = p.ink3, unselectedTextColor = p.ink3),
