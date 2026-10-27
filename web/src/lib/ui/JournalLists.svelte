@@ -52,7 +52,7 @@
       <button onclick={() => { sync.create('list.delete', sync.accountScope, list.id, {}); selected = ''; }}>Delete list</button></div>
     <fieldset><legend>Members</legend><div class="members">{#each people as member (member.id)}<label><input type="checkbox" checked={selectedMembers.has(member.id)} onchange={() => toggle(member.id)} /> {member.display_name ?? member.name}</label>{/each}</div></fieldset>
     {#if replyTo}<p>Replying to a list post <button onclick={() => (replyTo = null)}>Cancel</button></p><PostComposer {projection} initialAuthors={speaker ? [speaker] : []} replyTo={replyTo.id} onsent={() => (replyTo = null)} />{/if}
-    <div class="timeline">{#each timeline as post (post.id)}<PostCard {projection} {post} people={byId} {dark} reactions={reacts.get(post.id) ?? new Map()} {speaker} onreply={() => (replyTo = post)} onreact={(emoji, add) => react(post, emoji, add)} /><PostReplies postId={post.id} />{:else}<p class="muted">No posts from these members yet.</p>{/each}</div>
+    <div class="timeline">{#each timeline as post (post.id)}<PostCard {projection} {post} people={byId} {dark} reactions={reacts.get(post.id) ?? new Map()} {speaker} onreply={() => (replyTo = post)} onreact={(emoji, add) => react(post, emoji, add)} /><PostReplies {projection} speaker={speaker} postId={post.id} />{:else}<p class="muted">No posts from these members yet.</p>{/each}</div>
   {:else}<p class="muted">Create a list to start collecting posts.</p>{/if}
 </section>
 

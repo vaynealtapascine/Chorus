@@ -12,6 +12,8 @@
   import PostCard from './PostCard.svelte';
   import PostComposer from './PostComposer.svelte';
   import PostReplies from './PostReplies.svelte';
+  import RemotePostPoll from './RemotePostPoll.svelte';
+  import type { PollTally } from '../polls';
   import RichText from './RichText.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
@@ -41,7 +43,7 @@
   // feeds other accounts share with this one, evaluated by the server over what we may read
   interface SharedFeed { id: string; name: string | null; description: string | null; query: string | null;
     owner: { handle: string | null; display_name: string | null }; shared: boolean }
-  interface SharedPost { id: string; kind: string; title: string | null; text: string; cw: string | null; occurred_at: number;
+  interface SharedPost { poll?: unknown; poll_tally?: PollTally | null; id: string; kind: string; title: string | null; text: string; cw: string | null; occurred_at: number;
     entities: Entity[]; attachments: AttachmentRow[]; author_cards: { name: string | null; display_name: string | null }[] }
   let sharedFeeds = $state<SharedFeed[]>([]);
   let openShared = $state<SharedFeed | null>(null);
@@ -150,8 +152,10 @@
         {#if filtersByFronting(openShared.query)}<p class="banner" role="note">{FRONTING_NOTE}, as far as your notifications from {owner(openShared)} have shown you.</p>{/if}
         {#each sharedItems as post (post.id)}
           <article class="message"><p class="muted">{byline(post)} · {new Date(post.occurred_at).toLocaleString()}</p>
-            {#if post.cw}<details><summary>Content warning: {post.cw}</summary>{#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>{#each post.attachments ?? [] as attachment (attachment.id)}<AttachmentView {attachment} />{/each}</details>
-            {:else}{#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>{#each post.attachments ?? [] as attachment (attachment.id)}<AttachmentView {attachment} />{/each}{/if}
+            {#if post.cw}<details><summary>Content warning: {post.cw}</summary>{#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
+                  <RemotePostPoll {projection} post={post} member={speaker} />{#each post.attachments ?? [] as attachment (attachment.id)}<AttachmentView {attachment} />{/each}</details>
+            {:else}{#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
+                  <RemotePostPoll {projection} post={post} member={speaker} />{#each post.attachments ?? [] as attachment (attachment.id)}<AttachmentView {attachment} />{/each}{/if}
           </article>
         {:else}<p class="muted">Nothing in this feed that you can read yet.</p>{/each}
         {#if sharedCursor}<button onclick={() => showShared(openShared!, true)}>Load more</button>{/if}
@@ -164,7 +168,7 @@
       {#each preview.rows as result (`${result.item.kind}:${result.id}`)}
         {#if result.post}
           <PostCard {projection} post={result.post} {people} {dark} reactions={reacts.get(result.post.id) ?? new Map()} {speaker} onreply={() => (replyTo = result.post ?? null)} onreact={(emoji, add) => react(result.post!, emoji, add)} />
-          <PostReplies postId={result.post.id} />
+          <PostReplies {projection} speaker={speaker} postId={result.post.id} />
         {:else if result.message}
           <article class="message"><p class="muted">#{result.channelName} · {new Date(result.occurred_at).toLocaleString()}</p>
             {#if result.message.cw}<details><summary>Content warning: {result.message.cw}</summary><p><RichText text={result.message.text} entities={result.message.entities} /></p>{#each result.message.attachments as attachment (attachment.id)}<AttachmentView {attachment} />{/each}</details>

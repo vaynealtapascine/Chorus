@@ -5,6 +5,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PeopleTest {
+    @Test fun keepsAudienceFilteredPollDefinitionAndCounts() {
+        val post = PeopleApi.sharedPosts(JSONObject("""{"items":[{"id":"foreign","kind":"note","text":"Dinner?","occurred_at":1,"author_cards":[],"poll":{"options":[{"id":"a","text":"Soup"},{"id":"b","text":"Rice"}],"multiple":true},"poll_tally":{"counts":{"a":2,"b":3},"voters":4}}]}""")).single()
+        assertEquals(listOf("Soup", "Rice"), post.poll?.options?.map { it.text })
+        assertEquals(true, post.poll?.multiple)
+        assertEquals(PollTally(mapOf("a" to 2L, "b" to 3L), 4), post.pollTally)
+    }
+
     @Test fun followDirectionsKeepRequestStatusAndAccountNames() {
         val list = PeopleApi.parse(JSONObject("""{"following":[{"id":"out","account":{"id":"a","handle":"alice","display_name":null},"status":"requested"}],"followers":[{"id":"in","account":{"id":"b","handle":"bob","display_name":"Bob"},"status":"active"}]}"""))
         assertEquals("@alice", list.following.single().account.shownName)

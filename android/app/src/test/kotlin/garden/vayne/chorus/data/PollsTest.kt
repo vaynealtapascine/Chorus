@@ -24,6 +24,16 @@ class PollsTest {
         assertNull(Polls.parse(JSONObject("""{"options":[{"id":"a","text":"x"}]}""")))
     }
 
+    @Test fun retainsOwnVotesWhenForeignParentsArriveOnlyThroughRest() {
+        val projection = JSONObject().put("rows", JSONObject().put("poll_vote", JSONObject()
+            .put("foreign|kai", row("""{"member_id":"kai","choices":["b"]}"""))
+            .put("foreign|rin", row("""{"member_id":"rin","choices":["a"]}"""))))
+        val state = Polls.fromProjection(projection)
+        assertTrue(state.polls.isEmpty())
+        assertEquals(listOf("b"), state.choices("foreign", "kai"))
+        assertTrue(state.choices("foreign", "other").isEmpty())
+    }
+
     @Test fun togglesAndBuildsDrafts() {
         val single = Poll(null, listOf(PollOption("a", "Soup"), PollOption("b", "Rice")), false)
         assertEquals(listOf("b"), Polls.toggled(single, listOf("a"), "b"))

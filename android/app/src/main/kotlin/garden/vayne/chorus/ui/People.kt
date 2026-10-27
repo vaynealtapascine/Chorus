@@ -207,7 +207,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                 }
                 sharedPosts[f.account.id]?.takeIf { it.isNotEmpty() }?.let { posts ->
                     Text("Shared posts", color = p.ink2, fontWeight = FontWeight.SemiBold)
-                    for (post in posts) SharedPostPreview(post, f.account.shownName, chorus,
+                    for (post in posts) SharedPostPreview(post, f.account.shownName, chorus, model,
                         reactMember?.id, !busy, onThread = { threadPostId = it.id },
                         onReply = { onReplyPost(it.id) }) { selected ->
                         val member = reactMember ?: return@SharedPostPreview
@@ -293,7 +293,8 @@ private fun FollowAdvanced(ceiling: JSONObject, enabled: Boolean, onChange: (Str
 }
 
 @Composable
-internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Chorus, reactMemberId: String? = null,
+internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Chorus, model: Model,
+    reactMemberId: String? = null,
     enabled: Boolean = true, onThread: ((SharedPost) -> Unit)? = null,
     onReply: ((SharedPost) -> Unit)? = null, onReact: (SharedPost) -> Unit = {}) {
     val p = LocalChorusPalette.current
@@ -309,6 +310,7 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
         if (post.cw == null || revealed) {
             if (post.title != null) Text(post.title, color = p.ink, fontWeight = FontWeight.SemiBold)
             Text(post.text, color = p.ink)
+            PollCard(chorus, model, post.id, reactMemberId ?: Reply.speaker(model)?.id, post.poll, post.pollTally)
             for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
             if (post.reactions.isNotEmpty()) Text(post.reactions.joinToString(" · ") { "${it.emoji} ${it.memberName}" }, color = p.ink2)
             if (onThread != null) TextButton(enabled = enabled, onClick = { onThread(post) }) { Text("Thread") }

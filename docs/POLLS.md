@@ -95,6 +95,12 @@ the same space-scope delivery filter as the message.
 - Offline: own votes apply locally at once; totals update when the next tally arrives. Show the
   local member's choice immediately even if the total has not caught up.
 
+REST follower views reuse the same poll card on People posts, shared feeds and replies (Android
+also on remote highlights). Definitions and counts come from the filtered REST row; selected
+choices always come from the follower's own `poll_vote` projection, even when no local parent
+exists. Votes still write only the follower's account scope. REST totals refresh when that view
+is reloaded; they do not subscribe to the foreign account's private op scope.
+
 ## Slices
 
 1. **Done (2026-10-27).** Core `chorus_core::poll` (definition, choice shape, `check_vote`, `tally`,

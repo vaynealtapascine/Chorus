@@ -9,7 +9,7 @@ export interface PollTally { counts: Record<string, number>; voters: number }
 
 export const MAX_OPTIONS = 20;
 
-function parse(v: unknown): Poll | null {
+export function parsePoll(v: unknown): Poll | null {
   if (!v || typeof v !== 'object') return null;
   const o = v as Record<string, unknown>;
   if (!Array.isArray(o.options)) return null;
@@ -21,7 +21,7 @@ function parse(v: unknown): Poll | null {
 
 /** The poll on a message or post, if it has one. */
 export function pollOf(p: Projection, parentId: string): Poll | null {
-  return parse((p.rows.message?.[parentId] ?? p.rows.post?.[parentId])?.fields.poll);
+  return parsePoll((p.rows.message?.[parentId] ?? p.rows.post?.[parentId])?.fields.poll);
 }
 
 /** The latest published totals, or null before the server has published any. */

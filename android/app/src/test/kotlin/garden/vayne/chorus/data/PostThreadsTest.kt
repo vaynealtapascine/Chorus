@@ -5,6 +5,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PostThreadsTest {
+    @Test fun keepsAudienceFilteredPollDefinitionAndCounts() {
+        val post = PostThreads.parse(JSONObject("""{"replies":[{"id":"foreign","kind":"note","text":"Dinner?","occurred_at":1,"author_cards":[],"poll":{"options":[{"id":"a","text":"Soup"},{"id":"b","text":"Rice"}],"multiple":true},"poll_tally":{"counts":{"a":2,"b":3},"voters":4}}]}""")).single()
+        assertEquals(listOf("Soup", "Rice"), post.poll?.options?.map { it.text })
+        assertEquals(true, post.poll?.multiple)
+        assertEquals(PollTally(mapOf("a" to 2L, "b" to 3L), 4), post.pollTally)
+    }
+
     @Test fun parsesReadableRepliesAndKeepsCwCollapsedInTheReadModel() {
         val replies = PostThreads.parse(JSONObject("""{"replies":[{"id":"remote","author_cards":[{"name":"June","display_name":null}],"text":"hidden body","title":"Hidden title","cw":"heavy topic","occurred_at":200},{"id":"plain","author_cards":[],"text":"hello","title":null,"cw":null,"occurred_at":300}]}"""))
         assertEquals(listOf("June"), replies[0].authorNames)

@@ -1,14 +1,14 @@
 <script lang="ts">
   // A poll on a message or post (D-081). Totals are the server's counts-only tally; the acting
   // member's own choice shows at once, before the next tally arrives.
-  import { ownChoices, tallyOf, toggled, vote, type Poll } from '../polls';
+  import { ownChoices, tallyOf, toggled, vote, type Poll, type PollTally } from '../polls';
   import type { Projection } from '../sync/client';
 
-  let { projection, parentId, poll, member }: {
-    projection: Projection; parentId: string; poll: Poll; member: string | null | undefined;
+  let { projection, parentId, poll, member, remoteTally = null }: {
+    projection: Projection; parentId: string; poll: Poll; member: string | null | undefined; remoteTally?: PollTally | null;
   } = $props();
 
-  const tally = $derived(tallyOf(projection, parentId));
+  const tally = $derived(tallyOf(projection, parentId) ?? remoteTally);
   const mine = $derived(ownChoices(projection, parentId, member));
   const most = $derived(Math.max(1, ...Object.values(tally?.counts ?? {})));
   const pick = (option: string) => { if (member) vote(parentId, member, toggled(poll, mine, option)); };

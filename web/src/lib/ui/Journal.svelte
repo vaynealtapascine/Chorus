@@ -53,7 +53,7 @@
     {#each timeline as item (`${item.kind}:${item.id}`)}
       {#if item.kind === 'post'}
         <PostCard {projection} post={item.post} {people} {dark} reactions={reacts.get(item.post.id) ?? new Map()} {speaker} compactEntry onreply={() => (replyTo = item.post)} onreact={(emoji, add) => react(item.post, emoji, add)} />
-        <PostReplies postId={item.post.id} />
+        <PostReplies {projection} speaker={speaker} postId={item.post.id} />
       {:else if item.kind === 'switch'}
         <div class="event"><span class="event-icon">◌</span><span>{item.sw.retracted ? 'Undone switch' : `Front: ${item.sw.fronting.map(frontName).join(' & ') || 'no one'}`}</span><time>{new Date(item.at).toLocaleString()}</time></div>
       {:else}

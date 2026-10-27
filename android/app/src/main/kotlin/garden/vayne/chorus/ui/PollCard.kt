@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.Poll
+import garden.vayne.chorus.data.PollTally
 import garden.vayne.chorus.data.Polls
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import kotlinx.coroutines.launch
@@ -41,11 +43,12 @@ import kotlinx.coroutines.launch
  * member's own choice shows at once. Votes go to this account's own scope.
  */
 @Composable
-fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?) {
-    val poll = model.polls.polls[parentId] ?: return
+fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?,
+    definition: Poll? = model.polls.polls[parentId], remoteTally: PollTally? = null) {
+    val poll = definition ?: return
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
-    val tally = model.polls.tallies[parentId]
+    val tally = model.polls.tallies[parentId] ?: remoteTally
     val mine = model.polls.choices(parentId, member)
     val most = (tally?.counts?.values?.maxOrNull() ?: 0L).coerceAtLeast(1L).toFloat()
     val bar = p.accent.copy(alpha = 0.16f)

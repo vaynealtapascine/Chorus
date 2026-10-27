@@ -3,11 +3,14 @@
   import type { AttachmentRow } from '../data';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
-  import { sync } from '../sync/client';
+  import { sync, type Projection } from '../sync/client';
   import AttachmentView from './AttachmentView.svelte';
+  import RemotePostPoll from './RemotePostPoll.svelte';
+  import type { PollTally } from '../polls';
   import RichText from './RichText.svelte';
 
   interface Reply {
+    poll?: unknown; poll_tally?: PollTally | null;
     id: string;
     text: string;
     title?: string | null;
@@ -17,7 +20,7 @@
     occurred_at: number;
     author_cards: { name?: string | null; display_name?: string | null }[];
   }
-  let { postId }: { postId: string } = $props();
+  let { postId, projection, speaker }: { postId: string; projection: Projection; speaker: string | null } = $props();
   let open = $state(false);
   let busy = $state(false);
   let error = $state('');
@@ -65,11 +68,13 @@
             <details><summary>Content warning: {reply.cw}</summary>
               {#if reply.title}<strong>{reply.title}</strong>{/if}
               <p><RichText text={reply.text} entities={reply.entities ?? []} /></p>
+              <RemotePostPoll {projection} post={reply} member={speaker} />
               {#each reply.attachments ?? [] as attachment (attachment.id)}<AttachmentView {attachment} />{/each}
             </details>
           {:else}
             {#if reply.title}<strong>{reply.title}</strong>{/if}
             <p><RichText text={reply.text} entities={reply.entities ?? []} /></p>
+              <RemotePostPoll {projection} post={reply} member={speaker} />
             {#each reply.attachments ?? [] as attachment (attachment.id)}<AttachmentView {attachment} />{/each}
           {/if}
         </article>

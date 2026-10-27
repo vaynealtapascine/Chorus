@@ -427,7 +427,7 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
         if (replies.isEmpty()) item {
             Text(if (remote == null && error == null) "Loading replies…" else "No replies yet.", color = p.ink2)
         }
-        items(replies, key = { it.id }) { reply -> ThreadReplyCard(reply) }
+        items(replies, key = { it.id }) { reply -> ThreadReplyCard(reply, chorus, model, reactMember?.id) }
         item { TextButton(onClick = onReply) { Text("Write a reply") } }
     }
 }
@@ -439,7 +439,7 @@ private fun ReactionNames(reactions: List<PostReaction>) {
 }
 
 @Composable
-private fun ThreadReplyCard(reply: ThreadReply) {
+private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, member: String?) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(reply.id) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
@@ -453,6 +453,7 @@ private fun ThreadReplyCard(reply: ThreadReply) {
         if (reply.cw == null || revealed) {
             if (reply.title != null) Text(reply.title, color = p.ink, fontWeight = FontWeight.SemiBold)
             Text(reply.text, color = p.ink)
+            PollCard(chorus, model, reply.id, member, reply.poll, reply.pollTally)
         }
     }
 }

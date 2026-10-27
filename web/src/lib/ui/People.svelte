@@ -12,6 +12,8 @@
   import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
   import AvatarImage from './AvatarImage.svelte';
   import AttachmentView from './AttachmentView.svelte';
+  import RemotePostPoll from './RemotePostPoll.svelte';
+  import type { PollTally } from '../polls';
   import RichText from './RichText.svelte';
   import PostComposer from './PostComposer.svelte';
   import type { Entity } from '../core';
@@ -37,6 +39,7 @@
     stats?: { days: number; members: { name: string; share_pct: number }[] };
   }
   interface SharedPost {
+    poll?: unknown; poll_tally?: PollTally | null;
     id: string; kind: 'note' | 'entry'; title: string | null; text: string; cw: string | null;
     occurred_at: number; author_cards: { id: string; name: string | null; display_name: string | null }[];
     entities: Entity[]; attachments: AttachmentRow[];
@@ -484,6 +487,7 @@
                 {#if post.cw}
                   <details><summary>Content warning: {post.cw}</summary>
                     {#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
+                  <RemotePostPoll {projection} post={post} member={reactMember} />
                     {#each post.attachments ?? [] as attachment (attachment.id)}
                       <AttachmentView {attachment} />
                     {/each}
@@ -493,6 +497,7 @@
                   </details>
                 {:else}
                   {#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
+                  <RemotePostPoll {projection} post={post} member={reactMember} />
                   {#each post.attachments ?? [] as attachment (attachment.id)}
                     <AttachmentView {attachment} />
                   {/each}

@@ -45,16 +45,17 @@ object Polls {
         return Poll(q, options, v.optBoolean("multiple"))
     }
 
+    fun tally(v: JSONObject?): PollTally? {
+        val counts = v?.optJSONObject("counts") ?: return null
+        return PollTally(counts.keys().asSequence().associateWith { counts.optLong(it) }, v.optLong("voters"))
+    }
+
     fun fromProjection(p: JSONObject): PollState {
         val polls = HashMap<String, Poll>()
         for (table in listOf("message", "post")) {
             for ((id, f) in rows(p, table)) parse(f.optJSONObject("poll"))?.let { polls[id] = it }
         }
-        if (polls.isEmpty()) return PollState()
-        val tallies = rows(p, "poll_tally").associate { (id, f) ->
-            val c = f.optJSONObject("counts") ?: JSONObject()
-            id to PollTally(c.keys().asSequence().associateWith { c.optLong(it) }, f.optLong("voters"))
-        }
+        val tallies = rows(p, "poll_tally").mapNotNull { (id, f) -> tally(f)?.let { id to it } }.toMap()
         val votes = rows(p, "poll_vote").associate { (id, f) ->
             val a = f.optJSONArray("choices") ?: JSONArray()
             id to List(a.length()) { a.getString(it) }

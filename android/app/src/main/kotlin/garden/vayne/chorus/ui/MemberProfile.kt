@@ -169,7 +169,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
                     TextButton(enabled = !highlightBusy, onClick = { setHighlight(post.id, false) }) { Text("Remove highlight") }
                 }
                 for (post in foreign) item(key = "remote-highlight:${post.id}") {
-                    SharedPostPreview(post, member.shownName, chorus)
+                    SharedPostPreview(post, member.shownName, chorus, model)
                     TextButton(enabled = !highlightBusy, onClick = { setHighlight(post.id, false) }) { Text("Remove highlight") }
                 }
             }

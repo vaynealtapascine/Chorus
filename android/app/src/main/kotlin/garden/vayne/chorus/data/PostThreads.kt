@@ -4,7 +4,7 @@ import org.json.JSONObject
 
 /** A post detail is always read through the server's current audience check. */
 data class ThreadReply(val id: String, val authorNames: List<String>, val text: String,
-    val title: String?, val cw: String?, val occurredAt: Long)
+    val title: String?, val cw: String?, val occurredAt: Long, val poll: Poll? = null, val pollTally: PollTally? = null)
 data class PostDetail(val replies: List<ThreadReply>, val reactions: List<PostReaction>)
 
 object PostThreads {
@@ -21,7 +21,7 @@ object PostThreads {
             ThreadReply(item.getString("id"), names, item.getString("text"),
                 item.optString("title").takeIf { item.has("title") && !item.isNull("title") && it.isNotBlank() },
                 item.optString("cw").takeIf { item.has("cw") && !item.isNull("cw") && it.isNotBlank() },
-                item.getLong("occurred_at"))
+                item.getLong("occurred_at"), Polls.parse(item.optJSONObject("poll")), Polls.tally(item.optJSONObject("poll_tally")))
         } }
     }
 
@@ -33,7 +33,7 @@ object PostThreads {
     /** Own-account replies still appear offline and while their op is waiting to sync. */
     fun ownReplies(model: Model, id: String): List<ThreadReply> = model.posts.filter { it.replyTo == id }.map { post ->
         ThreadReply(post.id, post.authors.mapNotNull { model.member(it)?.shownName }, post.text,
-            post.title, post.cw, post.occurredAt)
+            post.title, post.cw, post.occurredAt, model.polls.polls[post.id], model.polls.tallies[post.id])
     }
 
     fun merge(local: List<ThreadReply>, remote: List<ThreadReply>): List<ThreadReply> =
