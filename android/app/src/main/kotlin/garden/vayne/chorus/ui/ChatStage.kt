@@ -73,9 +73,9 @@ import org.json.JSONObject
 internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<ChatMessage>, model: Model,
     foreignAuthors: Map<String, ForeignAuthor>, capturing: Boolean,
     hasOlder: Boolean, loadingOlder: Boolean, onLoadOlder: () -> Unit, onCapture: (Boolean) -> Unit,
-    onClose: () -> Unit) {
+    onClose: () -> Unit, initialSelected: List<String> = emptyList()) {
     val hostPalette = LocalChorusPalette.current
-    var selected by rememberSaveable(channel.id) { mutableStateOf<List<String>>(emptyList()) }
+    var selected by rememberSaveable(channel.id) { mutableStateOf(initialSelected) }
     var unselected by rememberSaveable(channel.id) { mutableStateOf("context") }
     var advanced by rememberSaveable(channel.id) { mutableStateOf(false) }
     var redactNames by rememberSaveable(channel.id) { mutableStateOf(false) }

@@ -2,6 +2,15 @@ package garden.vayne.chorus.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.Surface
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.window.Dialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateListOf
@@ -161,6 +170,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var newSpaceName by rememberSaveable { mutableStateOf("") }
     var invitedAccounts by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var staging by rememberSaveable { mutableStateOf(false) }
+    var stageSelection by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     BackHandler(conversationOpen && !staging) { conversationOpen = false }
     var capturing by rememberSaveable { mutableStateOf(false) }
     var stageLimit by rememberSaveable { mutableStateOf(100) }
@@ -340,7 +350,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         ChatStage(chorus, channel, stageMessages, model, foreignAuthors, capturing,
             hasOlder = window?.hasOlder == true, loadingOlder = stageLoading,
             onLoadOlder = { stageLimit += 100 },
-            onCapture = { capturing = it }, onClose = { capturing = false; staging = false })
+            onCapture = { capturing = it }, onClose = { capturing = false; staging = false }, initialSelected = stageSelection)
         return
     }
 
@@ -372,7 +382,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (expanded) HorizontalDivider(Modifier.fillMaxHeight().width(1.dp), color = p.line)
         if (expanded || conversationOpen) Column(Modifier.weight(1f).fillMaxHeight()) {
         Row(Modifier.fillMaxWidth().background(p.surface), verticalAlignment = Alignment.CenterVertically) {
-            if (!expanded) TextButton(onClick = { conversationOpen = false }, modifier = Modifier.size(48.dp)) { Text("‹", fontSize = 28.sp) }
+            if (!expanded) ChatIconButton(R.drawable.ic_back, "Back to chats") { conversationOpen = false }
             channel?.let { ChannelDisc(it, size = 36.dp) }
             Column(Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 10.dp)) {
                 Text(channel?.name ?: "Chat", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1)
@@ -383,7 +393,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             Box {
                 ChatIconButton(R.drawable.ic_more, "Conversation options") { headerMenu = true }
                 DropdownMenu(headerMenu, { headerMenu = false }) {
-                    if (channel != null) DropdownMenuItem(text = { Text("Stage mode") }, onClick = { headerMenu = false; staging = true })
+                    if (channel != null) DropdownMenuItem(text = { Text("Stage mode") }, onClick = { headerMenu = false; stageSelection = emptyList(); staging = true })
                     DropdownMenuItem(text = { Text("Message options") }, onClick = { headerMenu = false; moreOpen = !moreOpen })
                     if (space?.kind == "internal") {
                         DropdownMenuItem(text = { Text("Read as everyone present") }, onClick = { headerMenu = false; viewingAs = null })
@@ -408,7 +418,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     TextButton(onClick = onDismissSearchHit) { Text("Dismiss", maxLines = 1) }
                 }
                 if (searchHit.cw != null) Text("Content warning: ${searchHit.cw} · ${if (revealed) "Hide" else "Show"}",
-                    color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
+                    color = p.accent, modifier = Modifier.clickable { revealed = !revealed }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
                 if (searchHit.cw == null || revealed) Text(searchHit.text, color = p.ink)
             }
         }
@@ -425,19 +435,33 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             if (newest != null && (listState.firstVisibleItemIndex <= 2 || followNext)) listState.animateScrollToItem(0)
             followNext = false
         }
-        LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), state = listState, reverseLayout = true,
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(messages.asReversed(), key = { it.id }) { message ->
+        LazyColumn(Modifier.weight(1f).padding(horizontal = 12.dp), state = listState, reverseLayout = true,
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            itemsIndexed(messages.asReversed(), key = { _, message -> message.id }) { index, message ->
+                val older = messages.getOrNull(messages.lastIndex - index - 1)
+                val newer = messages.getOrNull(messages.lastIndex - index + 1)
+                val groupStart = !ChatPresentation.grouped(older, message)
+                val groupEnd = !ChatPresentation.grouped(message, newer)
+                Column(Modifier.padding(top = if (groupStart) 8.dp else 0.dp)) {
+                if (older == null || ChatPresentation.day(older.occurredAt) != ChatPresentation.day(message.occurredAt)) {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                        Text(ChatPresentation.dateLabel(message.occurredAt), color = p.ink3, fontSize = 12.sp,
+                            modifier = Modifier.background(p.surface, RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 4.dp))
+                    }
+                }
                 val canPrivate = if (space.kind == "internal") replySpeakerId != null &&
                     message.authors.firstOrNull()?.let { it != replySpeakerId && model.member(it) != null } == true
                 else message.accountId != null && message.accountId != chorus.device?.accountId
                 ChatMessageCard(message, model, foreignAuthors, chorus, unseenByMessage[message.id].orEmpty(),
                     heldMessages[message.id], actingMemberId = replySpeakerId,
+                    showSender = groupStart, showAvatar = groupEnd, onStage = { stageSelection = listOf(message.id); staging = true },
+                    quote = messages.find { it.id == message.replyTo },
                     onReply = { replyTo = message.id; carriedReply = null },
                     onReplyPrivately = if (canPrivate) ({ replyPrivately(message) }) else null,
                     onEdit = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
                         heldMessages[message.id] == null)
                         ({ editingMessage = message }) else null)
+                }
             }
             if (messages.isEmpty()) item {
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
@@ -750,13 +774,15 @@ private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
     val p = LocalChorusPalette.current
     Text(label, color = if (selected) p.accent else p.ink2, fontSize = 14.sp,
         modifier = Modifier.background(if (selected) p.surface2 else p.surface, RoundedCornerShape(20.dp))
-            .clickable(onClick = action).padding(horizontal = 12.dp, vertical = 8.dp))
+            .clickable(onClick = action).heightIn(min = 48.dp).wrapContentSize(Alignment.Center).padding(horizontal = 12.dp, vertical = 8.dp))
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
     chorus: Chorus, unseenBy: List<String>, held: HeldMessage?, actingMemberId: String?, onReply: () -> Unit,
-    onReplyPrivately: (() -> Unit)?, onEdit: (() -> Unit)?) {
+    onReplyPrivately: (() -> Unit)?, onEdit: (() -> Unit)?,
+    showSender: Boolean = true, showAvatar: Boolean = true, quote: ChatMessage? = null, onStage: () -> Unit) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
@@ -771,23 +797,49 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     }
     val authors = message.authors.map { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
         .joinToString(" & ").ifEmpty { "Someone" }
-    Column(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(12.dp))
-        .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(authors, color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
-            Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(message.occurredAt)),
-                color = p.ink3, fontSize = 11.sp)
-            if (held == null && unseenBy.isNotEmpty()) {
-                val names = unseenBy.map { model.member(it)?.shownName ?: "Someone" }.joinToString(", ")
-                Text("●", color = p.accent, fontSize = 12.sp,
-                    modifier = Modifier.clickable { showUnseen = !showUnseen }
-                        .semantics { contentDescription = "Not seen by $names" })
+    val own = ChatPresentation.own(message, chorus.device?.accountId.orEmpty(), actingMemberId)
+    val member = message.authors.firstOrNull()?.let(model::member)
+    val tone = member?.let { tonesOf(it.color) }
+    val presence = ChatPresentation.presence(model, message.channelId).firstOrNull { it.subjectId == member?.id && it.subjectType == "member" }
+    val layer = ChatPresentation.layer(model, presence)
+    var menuOpen by remember(message.id) { mutableStateOf(false) }
+    val ctx = LocalContext.current
+    Row(Modifier.fillMaxWidth().padding(start = if (own) 36.dp else 0.dp),
+        horizontalArrangement = if (own) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.Bottom) {
+        if (!own) {
+            Box(Modifier.width(28.dp), contentAlignment = Alignment.BottomCenter) {
+                if (showAvatar) {
+                    if (member != null) ChatAvatar(member, 28.dp)
+                    else Box(Modifier.size(28.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
+                        Text(authors.take(1), color = p.ink2, fontSize = 12.sp)
+                    }
+                }
             }
-            if (held == null) Text("↩", color = p.accent, fontSize = 16.sp,
-                modifier = Modifier.clickable(onClick = onReply).padding(horizontal = 4.dp)
-                    .semantics { contentDescription = "Reply" })
+            Spacer(Modifier.width(8.dp))
+        }
+        Column(Modifier.weight(1f, fill = false).widthIn(min = 64.dp, max = 360.dp).heightIn(min = 48.dp)
+            .background(if (own) p.accentSoft else p.surface2, RoundedCornerShape(
+                topStart = if (!own && !showSender) 6.dp else 16.dp, topEnd = if (own && !showSender) 6.dp else 16.dp,
+                bottomEnd = if (own && showAvatar) 6.dp else 16.dp, bottomStart = if (!own && showAvatar) 6.dp else 16.dp))
+            .combinedClickable(onClick = { menuOpen = true }, onLongClick = { menuOpen = true }, onLongClickLabel = "Message actions")
+            .padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (showSender) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                modifier = Modifier.weight(1f, fill = false))
+            if (layer != null) Text(layer, color = p.ink3, fontSize = 12.sp)
+        }
+        if (message.replyTo != null) {
+            val quoted = quote?.authors?.firstOrNull()?.let(model::member)
+            val quoteColor = quoted?.let { tonesOf(it.color).name } ?: p.accent
+            Row(Modifier.fillMaxWidth().background(quoteColor.copy(alpha = .10f), RoundedCornerShape(6.dp))) {
+                Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(quoteColor))
+                Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    Text(quote?.authors?.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
+                        ?: "Reply", color = quoteColor, fontSize = 12.sp)
+                    Text(if (quote != null) ChatPresentation.preview(quote) else "Message unavailable in this view",
+                        color = p.ink3, fontSize = 12.sp, maxLines = 2)
+                }
+            }
         }
         if (held != null) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -803,7 +855,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                             } catch (e: Exception) { cancelError = e.message ?: "Could not cancel this message." }
                             finally { cancelBusy = false }
                         }
-                    }.padding(4.dp).semantics { contentDescription = "Cancel held message" })
+                    }.heightIn(min = 48.dp).wrapContentSize(Alignment.Center).semantics { contentDescription = "Cancel held message" })
             }
             if (cancelError != null) Text(cancelError.orEmpty(), color = p.danger, fontSize = 12.sp)
         }
@@ -811,20 +863,17 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             model.member(it)?.shownName ?: "Someone"
         }.joinToString(", "), color = p.ink3, fontSize = 12.sp)
         val tags = listOfNotNull(
-            "↪ reply".takeIf { message.replyTo != null },
+
             "Only this system".takeIf { message.visibilityMode == "system_only" },
             "Chosen members".takeIf { message.visibilityMode == "members" },
         )
         if (tags.isNotEmpty()) Text(tags.joinToString(" · "), color = p.ink3, fontSize = 12.sp)
-        if (held == null && onReplyPrivately != null) Text("Reply privately", color = p.accent, fontSize = 12.sp,
-            modifier = Modifier.clickable(onClick = onReplyPrivately).padding(vertical = 3.dp))
         if (message.cw != null) {
             Text("Content warning: ${message.cw} · ${if (revealed) "Hide" else "Show"}", color = p.accent,
-                modifier = Modifier.clickable { revealed = !revealed })
+                modifier = Modifier.clickable { revealed = !revealed }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
         }
         if (message.cw == null || revealed) {
             Text(message.text, color = p.ink, fontSize = 16.sp)
-            if (onEdit != null) TextButton(onClick = onEdit) { Text("Edit") }
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus)
             }
@@ -852,6 +901,44 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                         if (revisionRevealed) Text(revision.text, color = p.ink)
                     }
                 }
+            }
+        }
+        Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.occurredAt)), color = p.ink3, fontSize = 12.sp)
+            if (held != null) ChatIcon(R.drawable.ic_history, "Message held for slow mode")
+        }
+        }
+    }
+    if (menuOpen) Dialog(onDismissRequest = { menuOpen = false }) {
+        Surface(shape = RoundedCornerShape(16.dp), color = p.surface, modifier = Modifier.widthIn(max = 380.dp).heightIn(max = 600.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+                Row(Modifier.fillMaxWidth().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Message actions", color = p.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    ChatIconButton(R.drawable.ic_close, "Close message actions") { menuOpen = false }
+                }
+                Text(authors, color = tone?.name ?: p.ink2, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp))
+                Text(ChatPresentation.preview(message), color = p.ink2, maxLines = 3, fontSize = 14.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                val seen = model.readMarks[message.channelId].orEmpty().filter { mark ->
+                    mark.member.isNotEmpty() && !ReadTracking.needsMark(message.occurredAt, message.id, listOf(mark), mark.member)
+                }.mapNotNull { model.member(it.member) }
+                if (held == null && seen.isNotEmpty()) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (reader in seen.take(3)) ChatAvatar(reader, 24.dp)
+                        Text("Seen by " + seen.joinToString(", ") { it.shownName }, color = p.ink3, fontSize = 12.sp)
+                    }
+                }
+                HorizontalDivider(color = p.line)
+                if (held == null) ChatActionRow(R.drawable.ic_reply, "Reply") { menuOpen = false; onReply() }
+                if (held == null && onReplyPrivately != null) ChatActionRow(R.drawable.ic_lock, "Reply privately") { menuOpen = false; onReplyPrivately() }
+                if (message.cw == null || revealed) ChatActionRow(R.drawable.ic_journal, "Copy text") {
+                    val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Message", message.text)); menuOpen = false
+                }
+                if (onEdit != null && (message.cw == null || revealed)) ChatActionRow(R.drawable.ic_edit, "Edit") { menuOpen = false; onEdit() }
+                if (held == null) ChatActionRow(R.drawable.ic_layers, "Select in stage mode") { menuOpen = false; onStage() }
+                if (held == null && unseenBy.isNotEmpty()) ChatActionRow(R.drawable.ic_members, "Not seen by…") { showUnseen = !showUnseen; menuOpen = false }
             }
         }
     }

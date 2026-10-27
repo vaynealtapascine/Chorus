@@ -130,3 +130,14 @@ local/server search screen. No new operations or schema are introduced.
   the model has no separate system display-name field.
 - Native screenshot acceptance belongs to the parent agent, which will install and inspect the
   APK on SM-A566B. This implementation task does not install or change device settings.
+
+Conversation bubbles now group adjacent messages with the same ordered authors/account, audience,
+calendar day and five-minute window; CW, reply and segmented messages break groups. Incoming
+names use adapted member colour, with a 28 dp avatar on the final bubble; acting-speaker messages
+align right in teal wash. Dates are centred and times stay inside the bubble. Reply quotes use
+only messages already visible in this view and conceal warned bodies. Long press (or tap) opens
+a dimmed native dialog with existing reply/private reply/edit, platform copy, own-account read
+receipts and selection into stage mode. Polls, held-message cancellation and edit history retain
+their existing paths. Presence labels describe the current selected front, not historical presence.
+The back arrow is a locally authored geometric Android vector, matching the existing 24 dp icon
+stroke; no image-generation or new palette tokens were used.

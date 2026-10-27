@@ -589,3 +589,10 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   PowerShell's `bash` is WSL and cannot see the Windows build. Playwright's pinned Chromium (1194)
   is absent, so use the installed Chrome channel. Each run uses a temporary data dir; nothing persists.
 
+
+### 2026-10-27 — Git Bash path in Android chat implementation
+
+On this host bare `bash` resolves to `C:/Windows/system32/bash.exe` (WSL), which does
+not understand the supplied `/f/DunBuild/chorus-commit.sh` path. Invoke
+`C:/Program Files/Git/bin/bash.exe` explicitly for the owner's commit wrapper. This
+changes only the invoked process; no PATH or other system settings were changed.

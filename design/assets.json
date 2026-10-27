@@ -1023,6 +1023,16 @@
       "licensePath": "web/public/fonts/OFL-HankenGrotesk.txt",
       "transformation": "Same vendored binary on both clients.",
       "sha256": "813b3f8fa0965405669a89b38e51bbefd95eef6b8e20d1cb2d8c10cce062662f"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_back.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp back arrow, 2 dp rounded stroke; matches the existing F5 icon vocabulary."
+      },
+      "sha256": "95613ff8d5df33d962ff4d88ba9b35b44c4452031ee927e5008e85112d2d2dc0"
     }
   ]
 }
