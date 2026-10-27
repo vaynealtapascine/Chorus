@@ -20,6 +20,9 @@ pub(crate) fn readable_sql(viewer: &str) -> String {
     )
 }
 
+/// The first column after [`COLUMNS`] (search appends its score there).
+const SCORE: usize = 21;
+
 pub(crate) const COLUMNS: &str = "p.id,p.account_id,p.kind,p.title,p.text,p.entities,p.mood,p.tags,p.cw,
     p.reply_to_id,p.quote,p.repost_of_id,p.visibility,p.occurred_at,p.edited_at,
     COALESCE((SELECT json_group_array(member_id) FROM
@@ -41,7 +44,9 @@ pub(crate) const COLUMNS: &str = "p.id,p.account_id,p.kind,p.title,p.text,p.enti
        FROM (SELECT r.emoji,r.member_id,COALESCE(m.display_name,m.name) AS member_name
              FROM reaction r JOIN member m ON m.id=r.member_id
              WHERE r.target_type='post' AND r.target_id=p.id AND r.is_present
-             ORDER BY r.emoji,r.member_id)), '[]')";
+             ORDER BY r.emoji,r.member_id)), '[]'),
+    p.poll,
+    (SELECT json_object('counts',json(t.counts),'voters',t.voters) FROM poll_tally t WHERE t.poll_id=p.id)";
 
 #[derive(Default, Deserialize)]
 pub struct PostQuery {
@@ -77,6 +82,9 @@ pub(crate) fn row(r: &Row<'_>) -> rusqlite::Result<Value> {
         "author_cards": parsed(r.get(16)?),
         "attachments": parsed(r.get(17)?),
         "reactions": parsed(r.get(18)?),
+        // the poll and its counts-only totals; voters are never listed (D-081, D-086)
+        "poll": parsed(r.get(19)?),
+        "poll_tally": parsed(r.get(20)?),
     }))
 }
 
@@ -237,7 +245,7 @@ pub fn search(
             cursor.as_ref().map(|c| c.id.as_str()),
             (limit + 1) as i64,
         ],
-        |r| Ok((row(r)?, r.get::<_, f64>(19)?)),
+        |r| Ok((row(r)?, r.get::<_, f64>(SCORE)?)),
     );
     let rows = match rows {
         Ok(rows) => rows,

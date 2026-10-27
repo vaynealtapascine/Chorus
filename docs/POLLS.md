@@ -96,7 +96,15 @@ the same space-scope delivery filter as the message.
    `poll_vote` (`<poll>|<member>`) and `poll_tally`, migration 0015 (`message.poll`, `post.poll`,
    `poll_vote`, `poll_tally`), server projection, and ingest refusing device-pushed tallies.
    Conformance fixtures are still to add with slice 2's server behaviour.
-2. Server: ingest validation (eligibility, late parents), tally recompute + tally op append,
-   refuse client-pushed tallies, SQL tables/migration, post view rows, export exclusion, tests
-   for identity leakage (REST, sync, SSE, exports).
+2. **Done (2026-10-27).** `chorus-server/src/polls.rs`: `vote_denied` (own live member, parent
+   readable by the voter's account, choices valid for the poll; a parent not yet on the server is
+   held with a 30 s `unknown_parent` retry) and `after_op`/`publish`, which recomputes totals after
+   a vote, parent delete/restore or `post.set_visibility` and appends a tally op only when they
+   changed (via `ingest::op_as` as the parent's author). Exports use `exports::AUTHORED_OPS`, which
+   leaves tallies out. Post REST rows carry `poll` and `poll_tally`. `tests/polls.rs` covers
+   counting, edits/withdrawal, refusals, held votes, audience changes, exports and that no voter
+   member/account reaches another account's scopes or views. Known limits: a channel permission
+   change or ended follow is reflected at the next vote/parent change; if the parent's author can
+   no longer write its scope (left the space) the last published totals stay; importing an export
+   publishes totals at the next vote. Conformance fixture still to add.
 3. Web, then Android: composer disclosure, poll card, voting, tests.

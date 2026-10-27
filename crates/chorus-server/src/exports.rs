@@ -20,6 +20,11 @@ pub fn read_snapshot(path: &Path) -> anyhow::Result<Connection> {
     Ok(conn)
 }
 
+/// SQL predicate (`?1` = the account) for the ops an export contains: applied, authored by the
+/// account, and not derived by the server for it (poll totals, D-086).
+pub const AUTHORED_OPS: &str =
+    "account_id = ?1 AND status = 'applied' AND kind NOT IN ('message.poll_tally', 'post.poll_tally')";
+
 /// Applied operations authored by this account, in server sequence order. The op envelope is
 /// preserved so a later importer can replay it without inferring fields from projections.
 pub fn ops_jsonl(conn: &Connection, account: &str) -> anyhow::Result<Vec<u8>> {
@@ -36,7 +41,7 @@ pub fn write_ops_jsonl(
     out: &mut dyn std::io::Write,
     mut each: impl FnMut(u64) -> bool,
 ) -> anyhow::Result<u64> {
-    let mut st = conn.prepare("SELECT id FROM op WHERE account_id = ?1 AND status = 'applied' ORDER BY seq")?;
+    let mut st = conn.prepare(&format!("SELECT id FROM op WHERE {AUTHORED_OPS} ORDER BY seq"))?;
     let ids: Vec<String> = st.query_map([account], |r| r.get(0))?.collect::<Result<_, _>>()?;
     let mut n = 0u64;
     for id in ids {
@@ -368,7 +373,7 @@ pub fn sqlite_copy(source: &Connection, account: &str, work_dir: &Path) -> anyho
     copy_owned_rows(source, &target, "device", "account_id=?1", account)?;
     // push endpoints and keys are delivery credentials, not the account's data
     target.execute("UPDATE device SET push_endpoint = NULL, push_p256dh = NULL, push_auth = NULL", [])?;
-    copy_owned_rows(source, &target, "op", "account_id=?1 AND status='applied'", account)?;
+    copy_owned_rows(source, &target, "op", AUTHORED_OPS, account)?;
     project::rebuild(&mut target)?;
     for spec in CSV {
         let view = match spec.name {

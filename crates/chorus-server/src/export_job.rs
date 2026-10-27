@@ -287,7 +287,8 @@ fn valid_hash(h: &str) -> bool {
 /// Every blob the account's own applied ops point at, with the names it was sent under.
 fn own_blobs(conn: &Connection, account: &str) -> rusqlite::Result<BTreeMap<String, BTreeSet<String>>> {
     let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let mut st = conn.prepare("SELECT payload FROM op WHERE account_id = ?1 AND status = 'applied' ORDER BY seq")?;
+    let mut st =
+        conn.prepare(&format!("SELECT payload FROM op WHERE {} ORDER BY seq", crate::exports::AUTHORED_OPS))?;
     let rows = st.query_map([account], |r| r.get::<_, String>(0))?;
     for payload in rows {
         let Ok(v) = serde_json::from_str::<Value>(&payload?) else { continue };
@@ -360,12 +361,16 @@ pub fn build(
         reader
             .query_row("SELECT handle, kind FROM account WHERE id = ?1", [account], |r| Ok((r.get(0)?, r.get(1)?)))?;
     let name = format!("chorus-{}-{}.zip", handle.as_deref().unwrap_or("account"), ymd(now));
-    let op_count: u64 =
-        reader.query_row("SELECT count(*) FROM op WHERE account_id = ?1 AND status = 'applied'", [account], |r| {
-            r.get::<_, i64>(0)
-        })? as u64;
+    let op_count: u64 = reader.query_row(
+        &format!("SELECT count(*) FROM op WHERE {}", crate::exports::AUTHORED_OPS),
+        [account],
+        |r| r.get::<_, i64>(0),
+    )? as u64;
     let op_bytes: u64 = reader.query_row(
-        "SELECT coalesce(sum(length(payload)), 0) + count(*) * 400 FROM op WHERE account_id = ?1 AND status = 'applied'",
+        &format!(
+            "SELECT coalesce(sum(length(payload)), 0) + count(*) * 400 FROM op WHERE {}",
+            crate::exports::AUTHORED_OPS
+        ),
         [account],
         |r| r.get::<_, i64>(0),
     )? as u64;

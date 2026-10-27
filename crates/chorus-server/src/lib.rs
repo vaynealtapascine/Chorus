@@ -27,6 +27,7 @@ pub mod messages;
 pub mod notifier;
 pub mod oplog;
 pub mod perms;
+pub mod polls;
 pub mod posts;
 pub mod project;
 pub mod purge;

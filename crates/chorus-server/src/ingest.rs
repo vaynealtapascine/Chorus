@@ -111,6 +111,16 @@ pub fn accept(
             None,
         ));
     }
+    // a vote must be one of the author's members, on a poll its account can read (D-081)
+    if !preserved && let Some((why, early)) = crate::polls::vote_denied(conn, &author, &o)? {
+        // a poll the server hasn't seen yet: the device holds the vote and sends it again
+        let ack = if early {
+            AckResult::later(o.id, "unknown_parent", why, 30_000)
+        } else {
+            AckResult::err(o.id, "forbidden", why, false)
+        };
+        return Ok((ack, None));
+    }
     // Poll totals are derived by the server from account-private votes (D-086); a device that
     // pushed one could publish made-up totals.
     if matches!(o.kind.as_str(), "message.poll_tally" | "post.poll_tally") && s.device_id != SERVER_DEVICE {
@@ -221,6 +231,7 @@ fn store_and_project(conn: &Connection, o: &mut Op, suspect: bool, preserved: bo
     }
     if !preserved {
         crate::activity::on_op(conn, o, now)?;
+        crate::polls::after_op(conn, o, now)?;
     }
     Ok(())
 }
