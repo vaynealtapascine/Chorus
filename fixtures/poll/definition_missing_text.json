@@ -1,0 +1,18 @@
+{
+  "description": "Reject invalid poll definition: missing text",
+  "fn": "poll_definition",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        }
+      ]
+    }
+  ],
+  "expect": null
+}

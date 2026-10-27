@@ -1,0 +1,15 @@
+{
+  "description": "Reject invalid poll definition: one option",
+  "fn": "poll_definition",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a",
+          "text": "Soup"
+        }
+      ]
+    }
+  ],
+  "expect": null
+}

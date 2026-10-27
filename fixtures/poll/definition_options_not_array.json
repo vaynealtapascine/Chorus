@@ -1,0 +1,10 @@
+{
+  "description": "Reject invalid poll definition: options not array",
+  "fn": "poll_definition",
+  "args": [
+    {
+      "options": "a,b"
+    }
+  ],
+  "expect": null
+}

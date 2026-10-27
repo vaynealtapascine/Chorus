@@ -1,0 +1,25 @@
+{
+  "description": "Reject invalid poll definition: numeric question",
+  "fn": "poll_definition",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a",
+          "text": "Soup"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        },
+        {
+          "id": "c",
+          "text": "Tea"
+        }
+      ],
+      "multiple": false,
+      "question": 42
+    }
+  ],
+  "expect": null
+}

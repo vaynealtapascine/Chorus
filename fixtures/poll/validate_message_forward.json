@@ -1,0 +1,36 @@
+{
+  "description": "A parent may carry a valid poll at creation",
+  "fn": "validate_op",
+  "args": [
+    {
+      "id": "0192f8c2-0000-7000-8000-000000000001",
+      "kind": "message.forward",
+      "v": 1,
+      "scope": "space:0192f8c2-0000-7000-8000-0000000000a2",
+      "entity_id": "0192f8c2-0000-7000-8000-0000000000e1",
+      "hlc": "0000000003e8-0000-00000001",
+      "device_at": 1000,
+      "payload": {
+        "text": "Dinner?",
+        "poll": {
+          "options": [
+            {
+              "id": "a",
+              "text": "Soup"
+            },
+            {
+              "id": "b",
+              "text": "Rice"
+            },
+            {
+              "id": "c",
+              "text": "Tea"
+            }
+          ],
+          "multiple": true
+        }
+      }
+    }
+  ],
+  "expect": "known"
+}

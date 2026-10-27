@@ -95,7 +95,9 @@ the same space-scope delivery filter as the message.
    validation of new parents and votes (edits may not carry `poll`), reference-model rows
    `poll_vote` (`<poll>|<member>`) and `poll_tally`, migration 0015 (`message.poll`, `post.poll`,
    `poll_vote`, `poll_tally`), server projection, and ingest refusing device-pushed tallies.
-   Conformance fixtures are still to add with slice 2's server behaviour.
+   Conformance fixtures are done (2026-10-27): `fixtures/poll/` covers definitions, immutable
+   edits, vote validation, LWW vote/tally projection and counts-only tallies through the Rust
+   fixture runner (test-only adapters; no added wasm exports).
 2. **Done (2026-10-27).** `chorus-server/src/polls.rs`: `vote_denied` (own live member, parent
    readable by the voter's account, choices valid for the poll; a parent not yet on the server is
    held with a 30 s `unknown_parent` retry) and `after_op`/`publish`, which recomputes totals after
@@ -106,12 +108,14 @@ the same space-scope delivery filter as the message.
    member/account reaches another account's scopes or views. Known limits: a channel permission
    change or ended follow is reflected at the next vote/parent change; if the parent's author can
    no longer write its scope (left the space) the last published totals stay; importing an export
-   publishes totals at the next vote. Conformance fixture still to add.
+   publishes totals at the next vote. Core conformance fixtures are in `fixtures/poll/`.
 3. Web **done (2026-10-27)**: `web/src/lib/polls.ts` (read poll/tally/own vote, toggle, `poll.vote`,
    composer payload), `PollCard.svelte` on chat messages (via `Message`'s `extra` snippet) and
    post cards, "Add a poll" in the chat composer's options and the post composer's Post options.
    Votes act as the current speaker. Android **done (2026-10-27)**: `data/Polls.kt` (`Model.polls`),
    `ui/PollCard.kt` (card under chat messages and journal posts, `PollDraftFields` in the chat "⋯"
    options and the post composer); votes act as the account's default speaker (`Reply.speaker`) or the
-   post's react member. Remaining: a live browser/device check (blocked by policy so far) and a
-   cross-language conformance fixture.
+   post's react member. Cross-language conformance fixtures **done (2026-10-27)** in
+   `fixtures/poll/`; Rust consumes them because neither client reimplements poll validation,
+   tallying or projection (see that directory's README). Remaining: a live browser/device
+   check (blocked by policy so far).

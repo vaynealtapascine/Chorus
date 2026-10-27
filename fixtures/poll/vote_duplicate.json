@@ -1,0 +1,30 @@
+{
+  "description": "Poll vote validation: duplicate",
+  "fn": "poll_vote",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a",
+          "text": "Soup"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        },
+        {
+          "id": "c",
+          "text": "Tea"
+        }
+      ],
+      "multiple": true
+    },
+    [
+      "a",
+      "a"
+    ]
+  ],
+  "expect": {
+    "error": true
+  }
+}

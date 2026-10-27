@@ -1,0 +1,31 @@
+{
+  "description": "Valid poll definition: single",
+  "fn": "poll_definition",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a",
+          "text": "Soup"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        },
+        {
+          "id": "c",
+          "text": "Tea"
+        }
+      ],
+      "multiple": false
+    }
+  ],
+  "expect": {
+    "options": [
+      "a",
+      "b",
+      "c"
+    ],
+    "multiple": false
+  }
+}

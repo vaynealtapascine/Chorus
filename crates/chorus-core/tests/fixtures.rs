@@ -4,7 +4,8 @@
 //! { "description": "…", "fn": "parse_markup", "args": ["**hi**", ""], "expect": { … } }
 //! ```
 //!
-//! `fn` names a `chorus_core::api` function; `args` are its string/number/bool arguments;
+//! `fn` names a `chorus_core::api` function (or a test-only poll adapter below);
+//! `args` are its string/number/bool arguments;
 //! `expect` is the parsed JSON result, or `{"error": true}` when the call must fail. These files
 //! are the cross-language contract: any Kotlin/TypeScript reimplementation must pass them too.
 //!
@@ -12,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chorus_core::api;
+use chorus_core::{api, poll};
 use serde_json::{Value, json};
 
 fn root() -> PathBuf {
@@ -28,6 +29,25 @@ fn s(args: &[Value], i: usize) -> String {
 
 fn call(f: &str, a: &[Value]) -> Result<String, String> {
     match f {
+        // Poll helpers without bridge exports stay test-only: no wasm size cost. See
+        // fixtures/poll/README.md for the portable inputs and results.
+        "poll_definition" => {
+            Ok(json!(poll::definition(&a[0]).map(|p| { json!({"options": p.options, "multiple": p.multiple}) }))
+                .to_string())
+        }
+        "poll_vote" => {
+            let p = poll::definition(&a[0]).ok_or("invalid poll definition")?;
+            let choices = poll::choices(&a[1]).ok_or("invalid choices")?;
+            poll::check_vote(&p, &choices).map_err(str::to_string)?;
+            Ok(json!(choices).to_string())
+        }
+        "poll_tally" => {
+            let p = poll::definition(&a[0]).ok_or("invalid poll definition")?;
+            let votes: Vec<_> =
+                a[1].as_array().ok_or("votes must be an array")?.iter().filter_map(poll::choices).collect();
+            let t = poll::tally(&p, votes.iter().map(Vec::as_slice));
+            Ok(poll::tally_payload(&t, a[2].as_str()).to_string())
+        }
         "parse_markup" => api::parse_markup(&s(a, 0), &s(a, 1)),
         "to_markup" => api::to_markup(&s(a, 0)),
         "compose" => api::compose(&s(a, 0), &s(a, 1), &s(a, 2), &s(a, 3), &s(a, 4)),

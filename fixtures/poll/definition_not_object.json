@@ -1,0 +1,8 @@
+{
+  "description": "Reject invalid poll definition: not object",
+  "fn": "poll_definition",
+  "args": [
+    []
+  ],
+  "expect": null
+}

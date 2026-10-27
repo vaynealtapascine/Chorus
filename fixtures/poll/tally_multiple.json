@@ -1,0 +1,54 @@
+{
+  "description": "Counts-only tally: multiple; zeros retained, invalid votes wholly excluded",
+  "fn": "poll_tally",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a",
+          "text": "Soup"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        },
+        {
+          "id": "c",
+          "text": "Tea"
+        }
+      ],
+      "multiple": true
+    },
+    [
+      [
+        "a",
+        "b"
+      ],
+      [
+        "a"
+      ],
+      [],
+      [
+        "a",
+        "z"
+      ],
+      [
+        "a",
+        "a"
+      ],
+      [
+        ""
+      ]
+    ],
+    "ch"
+  ],
+  "expect": {
+    "channel_id": "ch",
+    "counts": {
+      "a": 2,
+      "b": 1,
+      "c": 0
+    },
+    "voters": 2
+  }
+}

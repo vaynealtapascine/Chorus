@@ -1,0 +1,32 @@
+{
+  "description": "Valid poll definition: null defaults",
+  "fn": "poll_definition",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a",
+          "text": "Soup"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        },
+        {
+          "id": "c",
+          "text": "Tea"
+        }
+      ],
+      "multiple": null,
+      "question": null
+    }
+  ],
+  "expect": {
+    "options": [
+      "a",
+      "b",
+      "c"
+    ],
+    "multiple": false
+  }
+}

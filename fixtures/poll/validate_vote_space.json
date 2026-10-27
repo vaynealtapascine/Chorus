@@ -1,0 +1,22 @@
+{
+  "description": "Votes are private account-scope ops, never space-scope ops",
+  "fn": "validate_op",
+  "args": [
+    {
+      "id": "0192f8c2-0000-7000-8000-000000000001",
+      "kind": "poll.vote",
+      "v": 1,
+      "scope": "space:0192f8c2-0000-7000-8000-0000000000a2",
+      "entity_id": "0192f8c2-0000-7000-8000-0000000000e1",
+      "hlc": "0000000003e8-0000-00000001",
+      "device_at": 1000,
+      "payload": {
+        "member_id": "0192f8c2-0000-7000-8000-0000000000b1",
+        "choices": []
+      }
+    }
+  ],
+  "expect": {
+    "error": true
+  }
+}

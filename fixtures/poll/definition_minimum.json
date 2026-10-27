@@ -1,0 +1,25 @@
+{
+  "description": "Valid poll definition: minimum",
+  "fn": "poll_definition",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a",
+          "text": "Soup"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "options": [
+      "a",
+      "b"
+    ],
+    "multiple": false
+  }
+}

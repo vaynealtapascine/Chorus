@@ -1,0 +1,8 @@
+{
+  "description": "Reject invalid poll definition: missing options",
+  "fn": "poll_definition",
+  "args": [
+    {}
+  ],
+  "expect": null
+}

@@ -1,0 +1,24 @@
+{
+  "description": "Reject invalid poll definition: long id",
+  "fn": "poll_definition",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "🌱🌱🌱🌱🌱🌱🌱🌱🌱🌱🌱🌱🌱🌱🌱🌱🌱",
+          "text": "Soup"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        },
+        {
+          "id": "c",
+          "text": "Tea"
+        }
+      ],
+      "multiple": false
+    }
+  ],
+  "expect": null
+}

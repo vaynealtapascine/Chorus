@@ -1,0 +1,32 @@
+{
+  "description": "Valid poll definition: multiple",
+  "fn": "poll_definition",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a",
+          "text": "Soup"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        },
+        {
+          "id": "c",
+          "text": "Tea"
+        }
+      ],
+      "multiple": true,
+      "question": "Dinner?"
+    }
+  ],
+  "expect": {
+    "options": [
+      "a",
+      "b",
+      "c"
+    ],
+    "multiple": true
+  }
+}

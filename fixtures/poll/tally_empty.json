@@ -1,0 +1,33 @@
+{
+  "description": "Counts-only tally: empty; zeros retained, invalid votes wholly excluded",
+  "fn": "poll_tally",
+  "args": [
+    {
+      "options": [
+        {
+          "id": "a",
+          "text": "Soup"
+        },
+        {
+          "id": "b",
+          "text": "Rice"
+        },
+        {
+          "id": "c",
+          "text": "Tea"
+        }
+      ],
+      "multiple": false
+    },
+    [],
+    null
+  ],
+  "expect": {
+    "counts": {
+      "a": 0,
+      "b": 0,
+      "c": 0
+    },
+    "voters": 0
+  }
+}
