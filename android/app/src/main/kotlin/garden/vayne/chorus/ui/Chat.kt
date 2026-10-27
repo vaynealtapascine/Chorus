@@ -1428,16 +1428,22 @@ internal fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus, who:
         if (viewing) MediaViewer(attachment, chorus, who, at, null, onClose = { viewing = false })
         return
     }
-    Text("Attachment: ${attachment.filename}", color = p.ink2, fontSize = 13.sp)
-    if (attachment.altText.isNotBlank()) Text(attachment.altText, color = p.ink3, fontSize = 12.sp)
-    TextButton(enabled = !opening, onClick = {
+    Row(Modifier.fillMaxWidth().background(p.surface3, RoundedCornerShape(10.dp)).clickable(enabled = !opening, onClickLabel = "Open file") {
         opening = true
         openError = null
         scope.launch {
             openError = openAttachment(ctx, chorus, attachment)
             opening = false
         }
-    }) { Text(if (opening) "Opening…" else "Open file") }
+    }.heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        ChatIcon(R.drawable.ic_file, tint = p.accent)
+        Column(Modifier.weight(1f)) {
+            Text(attachment.filename, color = p.ink, fontSize = 14.sp, maxLines = 1)
+            Text(if (opening) "Opening…" else garden.vayne.chorus.data.ChatLibrary.size(attachment.size), color = p.ink3, fontSize = 12.sp)
+        }
+    }
+    if (attachment.altText.isNotBlank()) Text(attachment.altText, color = p.ink3, fontSize = 12.sp)
     if (openError != null) Text(openError.orEmpty(), color = p.danger, fontSize = 12.sp)
     if (attachment.spoiler && !image) {
         Text("Hide attachment", color = p.accent, fontSize = 12.sp,

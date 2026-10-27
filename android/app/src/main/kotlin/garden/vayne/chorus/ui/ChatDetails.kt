@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.text.DateFormat
@@ -102,6 +103,7 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
     var shown by remember(channel.id, tab) { mutableStateOf(60) }
     var viewing by remember(channel.id) { mutableStateOf<ChatFileItem?>(null) }
     val media = remember(library) { ChatLibrary.media(library) }
+    val files = remember(library) { ChatLibrary.files(library) }
     Column(modifier.fillMaxHeight().background(p.surface).verticalScroll(rememberScrollState())) {
         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (onClose != null) ChatIconButton(R.drawable.ic_back, "Back to conversation", onClose)
@@ -129,7 +131,7 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                 }
             }
         }
-        InfoTabs(listOf("members" to "Members", "media" to "Media"), tab) { tab = it }
+        InfoTabs(listOf("members" to "Members", "media" to "Media", "files" to "Files"), tab) { tab = it }
         HorizontalDivider(color = p.line)
         when (tab) {
             "media" -> {
@@ -140,6 +142,11 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                     repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                 }
                 if (media.size > shown) TextButton(onClick = { shown += 60 }, modifier = Modifier.padding(8.dp)) { Text("Show more") }
+            }
+            "files" -> {
+                if (files.isEmpty()) InfoEmpty("No files shared here yet.")
+                for (item in files.take(shown)) FileRow(item, chorus, ChatLibrary.who(item.message, model))
+                if (files.size > shown) TextButton(onClick = { shown += 60 }, modifier = Modifier.padding(8.dp)) { Text("Show more") }
             }
             else -> Column(Modifier.padding(16.dp)) {
                 if (space.kind == "internal" && !model.isPerson) {
@@ -200,6 +207,35 @@ private fun InfoTabs(tabs: List<Pair<String, String>>, selected: String, onSelec
                         if (on) drawRect(p.accent, topLeft = Offset(0f, size.height + 10.dp.toPx()), size = Size(size.width, 2.dp.toPx()))
                     })
             }
+        }
+    }
+}
+
+/** One shared file: what, how big, from whom and when; covered ones ask before opening. */
+@Composable
+private fun FileRow(item: ChatFileItem, chorus: Chorus, who: String) {
+    val p = LocalChorusPalette.current
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val a = item.attachment
+    var revealed by remember(a.id) { mutableStateOf(!ChatLibrary.covered(item)) }
+    var opening by remember(a.id) { mutableStateOf(false) }
+    var openError by remember(a.id) { mutableStateOf<String?>(null) }
+    Row(Modifier.fillMaxWidth().clickable(enabled = !opening, onClickLabel = if (revealed) "Open file" else "Show file") {
+        if (!revealed) revealed = true
+        else { opening = true; openError = null; scope.launch { openError = openAttachment(ctx, chorus, a); opening = false } }
+    }.heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(40.dp).background(p.surface2, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+            ChatIcon(if (revealed) R.drawable.ic_file else R.drawable.ic_lock, tint = p.accent)
+        }
+        Column(Modifier.weight(1f)) {
+            Text(if (revealed) a.filename else item.message.cw?.let { "Content warning: $it" } ?: "Spoiler file",
+                color = p.ink, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(listOf(ChatLibrary.size(a.size), who, DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(item.message.occurredAt)))
+                .joinToString(" · "), color = p.ink3, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (opening) Text("Opening…", color = p.ink3, fontSize = 12.sp)
+            if (openError != null) Text(openError.orEmpty(), color = p.danger, fontSize = 12.sp)
         }
     }
 }
