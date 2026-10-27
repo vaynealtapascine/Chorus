@@ -13,6 +13,8 @@
   import { bodyPresence, frontLayers } from '../front-view';
   import { flushUploads, imageThumbnail, stageBlob } from '../sync/uploads';
   import Message from './Message.svelte';
+  import PollCard from './PollCard.svelte';
+  import { pollOf, pollPayload } from '../polls';
   import AvatarImage from './AvatarImage.svelte';
   import EmojiImage from './EmojiImage.svelte';
   import SpaceRail from './SpaceRail.svelte';
@@ -123,6 +125,11 @@
 
   let draft = $state('');
   let cw = $state('');
+  // an optional poll on the next message (Advanced, D-081)
+  let pollOn = $state(false);
+  let pollOptions = $state(['', '']);
+  let pollMultiple = $state(false);
+  let pollError = $state('');
   let visibilityMode = $state<'all' | 'members' | 'system_only'>('all');
   let visibleTo = $state<string[]>([]);
   let pending = $state<{ file: File; alt: string; spoiler: boolean }[]>([]);
@@ -376,6 +383,9 @@
       return;
     }
     if (!canSend) return;
+    const pollDraft = pollOn ? pollPayload(pollOptions, pollMultiple) : {};
+    pollError = pollDraft.error ?? '';
+    if (pollDraft.error) return;
     const authors = messageAuthors;
     const attachmentIds: string[] = [];
     try {
@@ -408,10 +418,14 @@
       ...(cw.trim() ? { cw: cw.trim() } : {}),
       ...(visibilityMode === 'members' ? { visibility: { mode: 'members', member_ids: visibleTo } } :
         visibilityMode === 'system_only' ? { visibility: { mode: 'system_only' } } : {}),
+      ...(pollDraft.poll ? { poll: pollDraft.poll } : {}),
       sent_offline: sync.status !== 'live',
     });
     draft = '';
     cw = '';
+    pollOn = false;
+    pollOptions = ['', ''];
+    pollMultiple = false;
     visibilityMode = 'all';
     visibleTo = [];
     pending = [];
@@ -724,6 +738,11 @@
   });
 </script>
 
+{#snippet pollFor(id: string)}
+  {@const poll = pollOf(projection, id)}
+  {#if poll}<PollCard {projection} parentId={id} {poll} member={speaker} />{/if}
+{/snippet}
+
 <div class="chat" class:with-info={showInfo}>
   <aside class="channels" aria-label="Channels">
     <div class="channel-title">Chats <a class="icon-button" href="#/search" aria-label="Search messages"><Icon name="search" size={18} /></a></div>
@@ -876,6 +895,7 @@
           heldUntil={held[m.id]?.until}
           oncancelheld={() => sync.cancelHeld(m.id)}
           onreact={(emoji, on) => react(m, emoji, on)}
+          extra={pollFor}
         />
       {:else}
         <p class="empty">Say hello — messages here are only for your system.</p>
@@ -970,6 +990,15 @@
           {/if}
         {/if}
         <label>Content warning <input aria-label="Content warning" bind:value={cw} placeholder="Optional label" /></label>
+        <details class="poll-draft" bind:open={pollOn}>
+          <summary>Add a poll</summary>
+          {#each pollOptions as _, i (i)}
+            <input aria-label="Poll option {i + 1}" bind:value={pollOptions[i]} placeholder="Option {i + 1}" maxlength="200" />
+          {/each}
+          {#if pollOptions.length < 20}<button type="button" onclick={() => (pollOptions = [...pollOptions, ''])}>Add option</button>{/if}
+          <label><input type="checkbox" bind:checked={pollMultiple} /> Allow more than one choice</label>
+          {#if pollError}<p class="error" role="alert">{pollError}</p>{/if}
+        </details>
         <label>Visibility
           <select aria-label="Message visibility" bind:value={visibilityMode}>
             <option value="all">Everyone in this space</option>

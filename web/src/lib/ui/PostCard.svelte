@@ -1,15 +1,21 @@
 <script lang="ts">
+  import PollCard from './PollCard.svelte';
+  import { pollOf } from '../polls';
+  import type { Projection } from '../sync/client';
   import { core } from '../core';
   import type { MemberRow } from '../data';
   import type { PostRow } from '../posts';
   import RichText from './RichText.svelte';
   import AvatarImage from './AvatarImage.svelte';
 
-  let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact }: {
+  let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection }: {
     post: PostRow; people: Map<string, MemberRow>; dark: boolean;
     reactions: Map<string, string[]>; speaker: string | null; compactEntry?: boolean;
     onreply: () => void; onreact: (emoji: string, add: boolean) => void;
+    /** Needed to show a poll (D-081); its totals and own votes live in the projection. */
+    projection?: Projection;
   } = $props();
+  const poll = $derived(projection ? pollOf(projection, post.id) : null);
   let expanded = $state(false);
   let bodyExpanded = $state(false);
   const PALETTE = ['💜', '👍', '🥹', '🎉'];
@@ -31,6 +37,7 @@
     {#if post.title}<h3 class="display">{post.title}</h3>{/if}
     <div class="body" class:clamped={compactEntry && !bodyExpanded}><RichText text={post.text} entities={post.entities} /></div>
     {#if compactEntry && (post.kind === 'entry' || post.text.length > 280)}<button class="expand" aria-expanded={bodyExpanded} onclick={() => (bodyExpanded = !bodyExpanded)}>{bodyExpanded ? 'Show less' : 'Show more'}</button>{/if}
+    {#if poll && projection}<PollCard {projection} parentId={post.id} {poll} member={speaker} />{/if}
     {#if post.mood || post.tags.length}<p class="tags">{#if post.mood}Mood: {post.mood}{/if}{#each post.tags as tag (tag)} <span>#{tag}</span>{/each}</p>{/if}
   {/if}
   <div class="actions">

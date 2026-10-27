@@ -343,8 +343,8 @@ stay visible before Send. Advanced chat and custom emoji tools remain collapsed 
 
 The message actions trigger opens a browser popover with text-labelled 48 px rows and downloaded
 icons. It is bounded to the viewport, scrolls when tall and reserves danger colour for Delete.
-Copy/quote/forward/reply/thread/pin/edit actions remain subject to existing permissions. Android retains its native menus and sheets. Poll creation/voting is pending
-D-081 work, not part of these message controls.
+Copy/quote/forward/reply/thread/pin/edit actions remain subject to existing permissions. Android retains its native menus and sheets. Poll creation sits in the composer
+options ("Add a poll") and voting on the poll card under the message (D-081, POLLS.md), not in these message controls.
 
 ### Journal and settings
 

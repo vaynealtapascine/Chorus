@@ -48,6 +48,7 @@
     cwAutoExpand,
     heldUntil,
     oncancelheld,
+    extra,
   }: {
     m: MessageRow;
     cont: boolean;
@@ -63,6 +64,8 @@
     /** Slow mode (D-076): this message waits to be sent until then (ms). */
     heldUntil?: number;
     oncancelheld?: () => void;
+    /** Rendered under the body with the message ID (a poll card, D-081). */
+    extra?: import('svelte').Snippet<[string]>;
     /** Members who haven't read this yet ("track reading per member"). */
     unseen?: string[];
     onquote: (q: Quote) => void;
@@ -223,6 +226,7 @@
       {#if m.attachments.length && !m.forward_snapshot?.some((f) => f.attachments?.length)}
         <div class="attachments">{#each m.attachments as a (a.id)}<AttachmentView attachment={a} />{/each}</div>
       {/if}
+      {@render extra?.(m.id)}
       {#if m.edited}<button class="edited" onclick={toggleHistory} aria-expanded={!!history}>(edited)</button>{/if}
       {#if history}
         <ol class="history" aria-label="Edit history">

@@ -107,4 +107,7 @@ the same space-scope delivery filter as the message.
    change or ended follow is reflected at the next vote/parent change; if the parent's author can
    no longer write its scope (left the space) the last published totals stay; importing an export
    publishes totals at the next vote. Conformance fixture still to add.
-3. Web, then Android: composer disclosure, poll card, voting, tests.
+3. Web **done (2026-10-27)**: `web/src/lib/polls.ts` (read poll/tally/own vote, toggle, `poll.vote`,
+   composer payload), `PollCard.svelte` on chat messages (via `Message`'s `extra` snippet) and
+   post cards, "Add a poll" in the chat composer's options and the post composer's Post options.
+   Votes act as the current speaker. Not yet checked in a live browser. Android: pending.

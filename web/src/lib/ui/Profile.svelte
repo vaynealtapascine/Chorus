@@ -68,14 +68,14 @@
       <span>{lastFront ? `Last fronted ${new Date(lastFront).toLocaleDateString()}` : 'No front recorded'}</span>
       <span>{messageCount} messages</span>
     </div>
-    {#if pinned}<section class="pinned"><h2>Pinned post</h2><PostCard post={pinned} {people} {dark} reactions={reacts.get(pinned.id) ?? new Map()} speaker={writeAs} onreply={() => (replying = pinned)} onreact={(emoji, add) => react(pinned, emoji, add)} />{#if own}<button onclick={() => pin(null)}>Unpin post</button>{/if}</section>{/if}
+    {#if pinned}<section class="pinned"><h2>Pinned post</h2><PostCard {projection} post={pinned} {people} {dark} reactions={reacts.get(pinned.id) ?? new Map()} speaker={writeAs} onreply={() => (replying = pinned)} onreact={(emoji, add) => react(pinned, emoji, add)} />{#if own}<button onclick={() => pin(null)}>Unpin post</button>{/if}</section>{/if}
     {#if writeAs}
       {#if replying}<p>Replying to a post <button onclick={() => (replying = null)}>Cancel</button></p>{/if}
       {#key replying?.id}<PostComposer {projection} initialAuthors={[writeAs]} replyTo={replying?.id} onsent={() => (replying = null)} />{/key}
     {/if}
     <nav aria-label="Profile sections"><button class:on={tab === 'posts'} onclick={() => (tab = 'posts')}>Posts</button><button class:on={tab === 'replies'} onclick={() => (tab = 'replies')}>Replies</button><button class:on={tab === 'highlights'} onclick={() => (tab = 'highlights')}>Highlights</button><button class:on={tab === 'relationships'} onclick={() => (tab = 'relationships')}>Relationships</button></nav>
     {#if tab === 'relationships'}<ProfileRelationships {projection} {id} {own} />
-    {:else}<div class="list">{#each shown as post (post.id)}<PostCard {post} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} speaker={writeAs} onreply={() => (replying = post)} onreact={(emoji, add) => react(post, emoji, add)} /><PostReplies postId={post.id} />{#if own}<div class="post-tools">{#if member.pinned_post_id !== post.id}<button onclick={() => pin(post.id)}>Pin to profile</button>{/if}<button onclick={() => highlight(post.id)}>{highlighted.has(post.id) ? 'Remove highlight' : 'Highlight post'}</button></div>{/if}{:else}<p class="empty">No {tab} yet.</p>{/each}</div>{/if}
+    {:else}<div class="list">{#each shown as post (post.id)}<PostCard {projection} {post} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} speaker={writeAs} onreply={() => (replying = post)} onreact={(emoji, add) => react(post, emoji, add)} /><PostReplies postId={post.id} />{#if own}<div class="post-tools">{#if member.pinned_post_id !== post.id}<button onclick={() => pin(post.id)}>Pin to profile</button>{/if}<button onclick={() => highlight(post.id)}>{highlighted.has(post.id) ? 'Remove highlight' : 'Highlight post'}</button></div>{/if}{:else}<p class="empty">No {tab} yet.</p>{/each}</div>{/if}
   {:else}<p>This member is unavailable.</p>{/if}
 </section>
 

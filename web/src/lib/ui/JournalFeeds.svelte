@@ -163,7 +163,7 @@
       {#if replyTo}<p>Replying to a feed post <button onclick={() => (replyTo = null)}>Cancel</button></p><PostComposer {projection} initialAuthors={speaker ? [speaker] : []} replyTo={replyTo.id} onsent={() => (replyTo = null)} />{/if}
       {#each preview.rows as result (`${result.item.kind}:${result.id}`)}
         {#if result.post}
-          <PostCard post={result.post} {people} {dark} reactions={reacts.get(result.post.id) ?? new Map()} {speaker} onreply={() => (replyTo = result.post ?? null)} onreact={(emoji, add) => react(result.post!, emoji, add)} />
+          <PostCard {projection} post={result.post} {people} {dark} reactions={reacts.get(result.post.id) ?? new Map()} {speaker} onreply={() => (replyTo = result.post ?? null)} onreact={(emoji, add) => react(result.post!, emoji, add)} />
           <PostReplies postId={result.post.id} />
         {:else if result.message}
           <article class="message"><p class="muted">#{result.channelName} · {new Date(result.occurred_at).toLocaleString()}</p>
