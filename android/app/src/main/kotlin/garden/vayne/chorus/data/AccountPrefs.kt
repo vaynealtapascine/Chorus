@@ -4,7 +4,7 @@ import org.json.JSONObject
 
 /** Account settings are independent pref rows; pending rows use an empty account id (D-063). */
 data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCeiling: JSONObject = JSONObject(),
-    val cwAutoExpand: Boolean = false, val segmentParsing: Boolean = true, val readPerMember: Boolean = false) {
+    val cwAutoExpand: Boolean = false, val segmentParsing: Boolean = true, val readPerMember: Boolean = false, val shareTyping: Boolean = false) {
     fun chatEnabled(key: String): Boolean = if (key == "own_switch" || key == "reply_as_mentioned")
         notifyChat.optBoolean(key, false) else notifyChat.optBoolean(key, true)
 
@@ -24,7 +24,7 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
             return AccountPrefs(value("notify_chat") as? JSONObject ?: JSONObject(),
                 value("follow_ceiling") as? JSONObject ?: legacy?.optJSONObject("follow_ceiling") ?: JSONObject(),
                 value("chat.cw_auto_expand") == true, value("chat.segment_parsing") != false,
-                value("chat.read_per_member") == true)
+                value("chat.read_per_member") == true, value("share_typing") == true)
         }
 
         fun payload(key: String, value: Any): JSONObject = JSONObject().put("device", "")

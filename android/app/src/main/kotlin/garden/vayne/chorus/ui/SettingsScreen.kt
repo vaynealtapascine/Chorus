@@ -242,6 +242,9 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Advanced", color = p.ink, fontWeight = FontWeight.SemiBold)
+                SettingToggle("Show when we're typing in shared chats", prefs.shareTyping, !busy) {
+                    save("share_typing", it)
+                }
                 if (!model.isPerson) {
                     SettingToggle("Ping my other devices when the front changes", prefs.chatEnabled("own_switch"), !busy) {
                         save("notify_chat", prefs.withChatKind("own_switch", it))

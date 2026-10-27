@@ -230,7 +230,7 @@ Reviews are computed by the server (it knows `seq`) and sync down as rows.
 - Auth: `hello` carries a session token; if expired, the server replies `auth_challenge` and the
   device signs `nonce‖device_id‖server_instance_id` with its key (API.md §2).
 - Fallback when WebSockets are blocked: `POST /api/v1/sync/push`, `GET /api/v1/sync/pull` long
-  poll with the same payloads.
+  poll with the same payloads. Typing is WebSocket-only: the HTTP fallback ignores typing and never queues it.
 
 ### 6.2 Frames
 
@@ -274,6 +274,12 @@ Reviews are computed by the server (it knows `seq`) and sync down as rows.
 // S→C when membership changes
 {"t":"scope","add":["space:…"],"remove":["space:…"]}
 
+// C→S: ephemeral composer activity; null = unsigned/account speaker
+{"t":"typing","channel":"…","member":null,"audience":"all","state":"start"}
+// audience: all | system (system-only OR chosen-member draft); state: start | stop
+// S→C: only other devices; until is server wall time in ms
+{"t":"typing","channel":"…","account":"…","member":null,"state":"start","until":1790000006000}
+
 // S→C before the server closes the socket
 {"t":"error","code":"unauthenticated"|"too_many_connections"|"rate_limited"|…,"message":"…"}
 ```
@@ -282,6 +288,29 @@ Socket limits (OPS.md §9): an account's 21st open socket closes its oldest
 (`too_many_connections`); a socket sending more than 200 frames at once or 50 a second sustained
 is closed (`rate_limited`). Both are configurable. The client simply reconnects with its usual
 backoff.
+
+Typing (D-087) is ephemeral transport, **never an op**. It is never stored in the op log,
+projections, exports, PluralSpec, notifications, SSE or webhooks. The server silently drops
+invalid typing: the account needs the channel's `view` permission and its space scope, and a
+non-null speaker must be a live member owned by that account. Recipients must still have `view`
+and scope access at delivery; the pushing device is excluded.
+
+Other devices of the same account receive typing in every space. Other accounts receive it only
+in non-internal spaces, with `audience: "all"` and the sender's account-level `pref.set`
+(`device: ""`) `share_typing: true`. The default is **false**. Even a guest allowed to view an
+internal channel never receives the internal system's typing. A system/chosen-member draft
+never announces activity outside the account. Advanced settings call the pref “Show when we're
+typing in shared chats”. Shared typing is an explicit chat-activity side channel, independent of
+follower front reveals (NOTIFICATIONS §5); it must not be inferred from front state.
+
+At most one `start` per device/channel per 2 seconds is accepted; additional starts are dropped.
+A start expires at server `now + 6000`; a stop clears it. Clients refresh while drafts change and
+stop on send, clear, channel/speaker/audience changes or disposal. They drop offline typing and
+clear received state on disconnect. No catch-up/replay. Disconnecting or replacing a socket
+relays stops for active channels. Where several devices type as the same account/member,
+stopping one preserves the latest remaining expiry. Clients expire entries locally with the
+welcome clock offset. Labels name only own or already-visible members; otherwise use the
+account display name (or “Someone”).
 
 ### 6.3 Session flow
 

@@ -596,3 +596,38 @@ On this host bare `bash` resolves to `C:/Windows/system32/bash.exe` (WSL), which
 not understand the supplied `/f/DunBuild/chorus-commit.sh` path. Invoke
 `C:/Program Files/Git/bin/bash.exe` explicitly for the owner's commit wrapper. This
 changes only the invoked process; no PATH or other system settings were changed.
+
+- 2026-10-27 GPT-6-sol — Typing (D-087) deliberately bypasses `chorus-core`'s Frame decoder:
+  server `app/typing.rs`, web `sync/typing.ts`, Android `data/Typing.kt`. No wasm/core changes.
+  `Peer` queues retain typed durable frames until the writer, alongside ephemeral typing JSON; only the latter's
+  direct socket relay is used, never the events/hooks pipeline. A short per-device/channel
+  start budget survives socket replacement/disconnect (2 s); same-identity presence from several
+  devices is aggregated without counting the receiving device's own activity. Clients use the
+  welcome server clock offset and clear/expire state in memory. Draft changes alone refresh
+  starts; unrelated projection changes must not keep idle drafts alive. Private thread replies
+  use audience `system`, as do chosen-member/system-only drafts.
+  Android UI handoff (the four chat UI files were intentionally untouched): collect
+  `chorus.typing: StateFlow<Map<String, List<TypingEntry>>>` alongside `chorus.model`, then call
+  `TypingText.label(model, typing[channelId].orEmpty()): String?` for the header subtitle.
+  `TypingEntry(account: String, member: String?, until: Long)` uses server milliseconds.
+  `chorus.sendTyping(channelId: String, member: String?, audience: String, start: Boolean)` is
+  non-suspending and throttled. Call with `start=true` on actual draft changes; send `false`
+  before send/clear/channel or speaker/audience changes and on disposal. Audience is `all`
+  for an ordinary draft, `system` for system-only/chosen-member drafts or a private thread.
+  Never schedule idle refreshes. Offline sends are dropped, not queued. Names use own members
+  or authorized author cards; hidden/unsigned speakers fall back to account display names.
+  The shared Cargo target can contain another worktree's `debug/chorus-server.exe` even when
+  this worktree's library/socket tests pass. For an isolated browser run, explicitly
+  `cargo build -p chorus-server` here and immediately copy that executable to a test-only
+  runtime path; don't hold the shared binary open. An old snapshot answered typing with
+  `bad frame: unknown variant typing`. The browser regression records typing/error frames only
+  (never hello/session frames), so this mismatch is visible in its attachment.
+  Verification: worktree-root `scripts/build-web-core.ps1` and
+  `python scripts/verify.py --quick --offline --android` pass; 109 web unit tests, 134 Android
+  unit tests plus lint. `typing.spec.ts` passes in installed Chrome against a verified snapshot
+  of this branch's server: other-device relay, self exclusion, expiry, send/clear/channel-switch
+  stops, and a second tab receiving through the browser sync leader. Mobile/desktop subtitle
+  captures were inspected; no Android device install/visual claim. Fresh worktrees need
+  generated UniFFI Kotlin bindings (the shared host DLL + uniffi-bindgen can generate them for
+  JVM tests without building/installing Android native libraries). Wasm remains 307,010 /
+  307,200 gzip-level-9 bytes; no shared-core changes or new dependencies.

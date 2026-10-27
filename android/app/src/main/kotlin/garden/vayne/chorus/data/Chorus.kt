@@ -53,7 +53,7 @@ data class MessageRevision(val rev: Int, val at: Long, val original: Boolean, va
 
 /**
  * The app's one sync client (CLIENTS.md §2.3): owns the core replica, the sync socket and the
- * on-disk store. All protocol logic is in chorus-core; this class only moves bytes and timers —
+ * on-disk store. Durable protocol logic is in chorus-core; ephemeral typing is decoded here —
  * the Android twin of web/src/lib/sync/client.ts.
  *
  * Threading: the replica is internally locked; persistence and model rebuilds run on one
@@ -73,6 +73,12 @@ class Chorus private constructor(private val ctx: Context) {
     val model: StateFlow<Model> = _model
     private val _frontHistoryRevision = MutableStateFlow(0L)
     val frontHistoryRevision: StateFlow<Long> = _frontHistoryRevision
+    private val _typing = MutableStateFlow<Map<String, List<TypingEntry>>>(emptyMap())
+    val typing: StateFlow<Map<String, List<TypingEntry>>> = _typing
+    private var typingExpiry: Job? = null
+    private var typingOffset = 0L
+    private val typingThrottle = TypingThrottle()
+    private var typingNames = TypingNames()
     private var frontHistories = NamedHistoryCache() // store thread only
     private val _keepEverything = MutableStateFlow(true)
     val keepEverything: StateFlow<Boolean> = _keepEverything
@@ -117,12 +123,15 @@ class Chorus private constructor(private val ctx: Context) {
 
     private fun start() {
         frontHistories = NamedHistoryCache()
+        clearTyping()
+        typingNames = TypingNames()
         heldTimer?.cancel()
         heldTimer = null
         _heldMessages.value = emptyMap()
         _keepEverything.value = store.get("setting:keep_everything") != "false"
         val dev = store.get("device")?.let { runCatching { DeviceRecord.fromJson(it) }.getOrNull() }
         device = dev
+        typingNames = TypingNames(dev?.accountId.orEmpty())
         Pins.trust(dev?.pin)
         if (dev == null) {
             _status.value = Status.NoDevice
@@ -226,6 +235,62 @@ class Chorus private constructor(private val ctx: Context) {
         }
     }
 
+    /** Call on draft changes; stop on send, clear, channel/speaker/audience change and disposal.
+     * audience is "system" for system-only or chosen-member drafts. Offline frames are dropped. */
+    fun sendTyping(channelId: String, member: String?, audience: String, start: Boolean) {
+        require(audience == "all" || audience == "system")
+        val socket = ws ?: return
+        if (_status.value != Status.Live) return
+        scope.launch {
+            if (ws !== socket || _status.value != Status.Live || !typingThrottle.allow(channelId, start, SystemClock.elapsedRealtime())) return@launch
+            socket.send(JSONObject().put("t", "typing").put("channel", channelId)
+                .put("member", member ?: JSONObject.NULL).put("audience", audience)
+                .put("state", if (start) "start" else "stop").toString())
+        }
+    }
+
+    private fun clearTyping() {
+        typingExpiry?.cancel()
+        typingExpiry = null
+        typingThrottle.clear()
+        _typing.value = emptyMap()
+    }
+
+    private fun receiveTyping(frame: JSONObject) {
+        val entry = typingEntry(frame) ?: return
+        val channel = frame.optString("channel").takeIf { it.isNotEmpty() } ?: return
+        _typing.value = TypingExpiry.receive(_typing.value, channel, entry,
+            frame.optString("state") == "start", System.currentTimeMillis() + typingOffset)
+        typingExpiry?.cancel()
+        typingExpiry = scope.launch {
+            while (true) {
+                val next = _typing.value.values.flatten().minOfOrNull { it.until } ?: break
+                delay((next - System.currentTimeMillis() - typingOffset).coerceAtLeast(1))
+                _typing.value = TypingExpiry.expire(_typing.value, System.currentTimeMillis() + typingOffset)
+            }
+        }
+    }
+
+    /** Name lookups use the same authorized directory/author-card reads as chat, never a typing member ID. */
+    private fun refreshTypingNames() {
+        val dev = device ?: return
+        scope.launch {
+            val names = withContext(Dispatchers.IO) {
+                runCatching {
+                    val spaces = Spaces.list(dev)
+                    val accounts = spaces.values.flatMap { it.accounts }.associate { it.id to it.shownName }
+                    val authors = spaces.keys.flatMap { space ->
+                        runCatching { Spaces.authorCards(dev, space).values.toList() }.getOrDefault(emptyList())
+                    }.associateBy { it.id }
+                    TypingNames(dev.accountId, accounts, authors)
+                }.getOrNull()
+            } ?: return@launch
+            if (device?.deviceId != dev.deviceId) return@launch
+            typingNames = names
+            rebuild()
+        }
+    }
+
     /** Cancel a locally held send while the server has not accepted it. */
     suspend fun cancelHeld(messageId: String): Boolean = withContext(dispatcher) {
         val held = _heldMessages.value[messageId] ?: return@withContext false
@@ -283,7 +348,7 @@ class Chorus private constructor(private val ctx: Context) {
                 cached.also { Model.applyDelta(it, d) }
             }
             projectionCache = p
-            val next = Model.parse(p, dev.accountId)
+            val next = Model.parse(p, dev.accountId, typingNames)
             _model.value = next
             if (cached == null || d.optBoolean("full") ||
                 d.optJSONObject("front_systems")?.has(dev.accountId) == true ||
@@ -405,10 +470,11 @@ class Chorus private constructor(private val ctx: Context) {
     suspend fun awaitModel(): Model = withContext(dispatcher) {
         val r = replica ?: return@withContext Model.Empty
         val dev = device ?: return@withContext Model.Empty
-        Model.parse(r.projection(), dev.accountId)
+        Model.parse(JSONObject(r.projection()), dev.accountId, typingNames)
     }
 
     private fun storageFailed(e: Exception) {
+        clearTyping()
         Log.e(TAG, "local replica unavailable", e)
         syncReady.value = false
         heldTimer?.cancel()
@@ -450,7 +516,7 @@ class Chorus private constructor(private val ctx: Context) {
         val socket = ws ?: return
         ws = null
         socket.close(1000, "background")
-        scope.launch { replica?.disconnect(); syncReady.value = false }
+        scope.launch { clearTyping(); replica?.disconnect(); syncReady.value = false }
         _status.value = Status.Offline
     }
 
@@ -491,6 +557,7 @@ class Chorus private constructor(private val ctx: Context) {
                     webSocket.close(1000, null)
                     scope.launch {
                         val renewed = renewSession()
+                        clearTyping()
                         r.disconnect()
                         main.post {
                             if (ws === webSocket) {
@@ -509,12 +576,16 @@ class Chorus private constructor(private val ctx: Context) {
                 scope.launch {
                     if (ws !== webSocket || _status.value == Status.StorageError) return@launch
                     val kind = frame.optString("t")
+                    if (kind == "typing") { receiveTyping(frame); return@launch }
                     val out = runCatching { JSONArray(r.onFrame(text, System.currentTimeMillis())) }
                         .onFailure { Log.w(TAG, "frame rejected by core", it) }
                         .getOrNull() ?: return@launch
                     changed(r) // durable before any dependent frame goes out
                     if (_status.value == Status.StorageError) return@launch
                     if (kind == "welcome") {
+                        clearTyping()
+                        typingOffset = frame.getLong("server_time") - System.currentTimeMillis()
+                        refreshTypingNames()
                         expectedScopes.clear()
                         caughtScopes.clear()
                         frame.optJSONArray("scopes")?.let { scopes ->
@@ -535,6 +606,7 @@ class Chorus private constructor(private val ctx: Context) {
                         }
                     }
                     if (kind == "scope") {
+                        refreshTypingNames()
                         frame.optJSONArray("remove")?.let { a -> for (i in 0 until a.length()) { expectedScopes.remove(a.getString(i)); caughtScopes.remove(a.getString(i)) } }
                         frame.optJSONArray("add")?.let { a -> for (i in 0 until a.length()) { expectedScopes.add(a.getString(i)); caughtScopes.remove(a.getString(i)) } }
                     }
@@ -569,7 +641,7 @@ class Chorus private constructor(private val ctx: Context) {
             ws = null
             scope.launch {
                 recheckDone?.completeExceptionally(IllegalStateException("Connection lost during full sync."))
-                replica?.disconnect(); syncReady.value = false
+                clearTyping(); replica?.disconnect(); syncReady.value = false
             }
             _status.value = Status.Offline
             if (!renewing && (foreground || workLeases > 0)) schedule()

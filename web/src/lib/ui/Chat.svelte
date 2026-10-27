@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { core, type Composed, type Entity } from '../core';
   import RichText from './RichText.svelte';
   import { channels, contentWarningsAutoExpand, customEmojis, lastRead, memberMarks, members, messageById, messagePage, pinnedMessages, reactions, readPerMember, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
@@ -9,6 +9,7 @@
   import { editedSegments, segmentMarkup } from '../segments';
   import { canWriteAs } from '../posts';
   import { channelFrontChoices, channelFrontId, channelFrontKey, channelReaders, channelSpeaker } from '../channel-front';
+  import { typingLabel, typingName } from '../sync/typing';
   import { sync, type Projection } from '../sync/client';
   import { bodyPresence, frontLayers } from '../front-view';
   import { flushUploads, imageThumbnail, stageBlob } from '../sync/uploads';
@@ -149,11 +150,18 @@
   let showPins = $state(false);
   // messages waiting out slow mode (D-076): not in the projection, so follow the sync client
   let held = $state(sync.heldUntil);
+  let typingRevision = $state(0);
+  const typingSubtitle = $derived.by(() => {
+    void typingRevision;
+    return typingLabel(sync.typing(current?.id ?? ''), (entry) =>
+      typingName(entry, people, directory.get(space?.id ?? '')?.accounts ?? []));
+  });
   // the sync client isn't reactive state: what the template shows of it is copied here on change
   let syncLive = $state(sync.status === 'live');
   let windowed = $state(sync.windowed);
   const unheld = sync.subscribe(() => {
     held = sync.heldUntil;
+    typingRevision++;
     syncLive = sync.status === 'live';
     windowed = sync.windowed;
   });
@@ -342,6 +350,31 @@
 
   const preview: Composed | null = $derived(draft.trim() && !editing ? core.compose(draft, speakers, { segments: parseSegments }, chosen ? [chosen] : defaults, names) : null);
   const messageAuthors = $derived(preview?.authors ?? (chosen ? [chosen] : defaults));
+  let typingDraft: { channel: string; member: string | null; audience: 'all' | 'system' } | null = null;
+  let lastTypingDraft = '';
+  function stopTyping() {
+    if (typingDraft) sync.sendTyping(typingDraft.channel, typingDraft.member, typingDraft.audience, false);
+    typingDraft = null;
+  }
+  $effect(() => {
+    const channel = current?.id;
+    const text = draft;
+    const member = messageAuthors[0] ?? speaker;
+    const audience = visibilityMode === 'all' && (!threadParent?.visibility || threadParent.visibility.mode === 'all') ? 'all' : 'system';
+    untrack(() => {
+      const change = JSON.stringify([channel, text, member, audience]);
+      if (change === lastTypingDraft) return;
+      lastTypingDraft = change;
+      const switched = typingDraft !== null && typingDraft.channel !== channel;
+      if (typingDraft && (typingDraft.channel !== channel || typingDraft.member !== member || typingDraft.audience !== audience || !text.trim())) stopTyping();
+      if (!switched && channel && text.trim()) {
+        typingDraft = { channel, member, audience };
+        sync.sendTyping(channel, member, audience, true);
+      }
+    });
+  });
+  onDestroy(stopTyping);
+
   const canSend = $derived(!!current && (!!preview?.rich.text.trim() || pending.length > 0) &&
     messageAuthors.length > 0 && messageAuthors.every((id) => canWriteAs(projection, id, sync.accountId)) &&
     (visibilityMode !== 'members' || visibleTo.length > 0));
@@ -406,6 +439,7 @@
       uploadError = `Could not queue the attachment: ${String(error)}`;
       return;
     }
+    stopTyping();
     sync.create('message.send', scope, sync.newId(), {
       channel_id: current.id,
       authors,
@@ -762,12 +796,15 @@
 
   <section class="room" aria-label={current ? `#${current.name}` : 'Chat'} ondragover={(e) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); }} ondrop={dropFiles}>
     <header>
-      {#if current?.kind === 'thread'}
+      <div class="room-heading">
+        {#if current?.kind === 'thread'}
         <a class="thread-back" href="#/chat/{parentChannel?.id ?? ''}">‹ #{parentChannel?.name ?? 'channel'}</a>
         <h1>Thread</h1>
       {:else}
         <h1>{space?.kind === 'dm' ? spaceTitle(space, directory.get(space.id), sync.accountId) : `# ${current?.name ?? '…'}`}</h1>
       {/if}
+        {#if typingSubtitle}<span class="typing-subtitle" role="status">{typingSubtitle}</span>{/if}
+      </div>
       {#if current?.topic}<span class="topic">{current.topic}</span>{/if}
       <a class="search-link icon-button" href="#/search" aria-label="Search messages"><Icon name="search" size={20} /></a>
       <button class="icon-button info-toggle" aria-label="Chat info" aria-expanded={showInfo} onclick={() => (showInfo = !showInfo)}><Icon name="members" size={20} /></button>
@@ -1252,6 +1289,8 @@
     color: var(--ink-3);
     font-size: var(--fs-sm);
   }
+  .room-heading { min-width: 0; display: flex; flex-direction: column; }
+  .typing-subtitle { color: var(--accent); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .thread-back { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
   .room-menu { position: relative; color: var(--ink-3); }
   .room-menu summary { cursor: pointer; list-style: none; }

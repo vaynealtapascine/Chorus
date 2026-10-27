@@ -201,7 +201,16 @@ Rules:
 6. Shared-space chat is a known side channel: a message authored as Kai reveals Kai is around at
    that time. The sharing screen says so plainly; systems can post with a "delay send" option
    (Advanced, per space) that holds outgoing messages for a random 0–N minutes.
-7. Read marks never leave the account (SYNC §4.2): with "track reading per member" on, a mark
+7. Typing indicators (D-087) are an explicit opt-in chat-activity side channel, never a
+   notification or follower-front surface. Internal spaces relay only to the same account's
+   other devices, including when a guest can view a channel. Shared/DM spaces relay across
+   accounts only with the sender's account-level `share_typing: true` (default **off**), draft
+   audience `all`, and current recipient channel/scope access. System-only and chosen-member
+   drafts stay own-account. Member names must come only from own/already-visible member data;
+   otherwise show the account display name. Nothing is persisted, exported, or sent over
+   SSE/webhooks; disconnect and 6-second expiry clear activity. This opt-in does not grant or
+   bypass any follower-front access, delay or reveal rule.
+8. Read marks never leave the account (SYNC §4.2): with "track reading per member" on, a mark
    names the member who read, and another account would learn who was fronting and when.
 
 Tests (M8): for random switch sequences and ceilings, assert that the sequence of follower-visible

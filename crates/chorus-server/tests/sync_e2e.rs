@@ -2431,3 +2431,51 @@ async fn poll_tallies_reach_live_devices_including_the_voter() {
         }
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn typing_uses_only_the_socket_and_disconnect_cleans_it_up() {
+    let s = start().await;
+    let a = enrol(&s, auth::InviteKind::System, None, 71, "typing").await;
+    let account = a["account_id"].as_str().unwrap();
+    let b = enrol(&s, auth::InviteKind::Device, Some(account), 72, "").await;
+    let mut phone = Device::new(&a, 71);
+    let mut desk = Device::new(&b, 72);
+    phone.connect(&s).await;
+    phone.drain(Q).await;
+    desk.connect(&s).await;
+    desk.drain(Q).await;
+    let (channel, before): (String, i64) = {
+        let c = s.state.db.lock().unwrap();
+        (
+            c.query_row(
+                "SELECT c.id FROM channel c JOIN space s ON s.id=c.space_id WHERE s.owner_account_id=?1",
+                [account],
+                |r| r.get(0),
+            )
+            .unwrap(),
+            c.query_row("SELECT count(*) FROM op", [], |r| r.get(0)).unwrap(),
+        )
+    };
+    let frame = json!({"t":"typing","channel":channel,"member":null,"audience":"all","state":"start"});
+    phone.ws.as_mut().unwrap().send(Message::Text(frame.to_string().into())).await.unwrap();
+    let incoming =
+        tokio::time::timeout(Duration::from_secs(3), desk.ws.as_mut().unwrap().next()).await.unwrap().unwrap().unwrap();
+    let start: Value = serde_json::from_str(incoming.to_text().unwrap()).unwrap();
+    assert_eq!(start["t"], "typing");
+    assert_eq!(start["account"], account);
+    assert_eq!(start["state"], "start");
+    let remaining = start["until"].as_i64().unwrap() - chorus_server::now_ms();
+    assert!(remaining > 4000 && remaining <= 6000);
+    phone.disconnect();
+    let incoming =
+        tokio::time::timeout(Duration::from_secs(3), desk.ws.as_mut().unwrap().next()).await.unwrap().unwrap().unwrap();
+    let stop: Value = serde_json::from_str(incoming.to_text().unwrap()).unwrap();
+    assert_eq!(stop["state"], "stop");
+    assert_eq!(stop["channel"], channel);
+    assert_eq!(
+        s.state.db.lock().unwrap().query_row("SELECT count(*) FROM op", [], |r| r.get::<_, i64>(0)).unwrap(),
+        before
+    );
+    desk.disconnect();
+    s.state.shutdown();
+}

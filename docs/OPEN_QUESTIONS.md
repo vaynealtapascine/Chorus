@@ -7,6 +7,7 @@ All questions from the 2026-09-23 spec round are answered (D-045 to D-054). Q14 
 
 | # | Question | Default until answered |
 | --- | --- | --- |
+| Q21 | Confirm the shared-space/DM typing indicator default: should other accounts see typing only after “Show when we're typing in shared chats” is enabled? (Owner request, 2026-10-27; D-087.) | **Off.** Same-account other devices still receive it; internal spaces never send it across accounts. |
 
 Q18 (past-history corrections while following) was answered 2026-10-25: keep following (D-083).
 Q19 (additional-front follower access) was answered 2026-10-25: explicit grants are required (D-084).

@@ -23,13 +23,24 @@ use crate::config::Config;
 use crate::follows::{self, FollowError};
 use crate::{blobs, db, ingest, now_ms, oplog};
 
+mod typing;
+
+/// Keep durable frames typed until the socket writer serializes them. Typing never enters core.
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+enum Outgoing {
+    Sync(Box<Frame>),
+    Typing(serde_json::Value),
+}
+
 /// A connected device.
 struct Peer {
     account: String,
     scopes: BTreeSet<String>,
     /// A windowed replica's window (SYNC §6.5), from its hello.
     window: Option<i64>,
-    tx: mpsc::UnboundedSender<Frame>,
+    typing: typing::DeviceTyping,
+    tx: mpsc::UnboundedSender<Outgoing>,
 }
 
 /// Open sync sockets, for the per-address and per-account limits (OPS.md §9).
@@ -47,6 +58,7 @@ pub struct Shared {
     pub cfg: Config,
     pub instance_id: String,
     peers: Mutex<HashMap<String, Peer>>,
+    typing_starts: Mutex<typing::Starts>,
     /// Live events for `/api/v1/stream`: (account id, event JSON).
     pub events: tokio::sync::broadcast::Sender<(String, serde_json::Value)>,
     /// Webhook deliveries (and their retries) for the delivery task (webhooks.rs).
@@ -81,6 +93,7 @@ impl Shared {
             cfg,
             instance_id,
             peers: Mutex::new(HashMap::new()),
+            typing_starts: Mutex::new(typing::Starts::default()),
             events,
             hooks,
             hook_rx: Mutex::new(Some(hook_rx)),
@@ -419,7 +432,9 @@ async fn device_revoke(
         return Err(ApiError(StatusCode::NOT_FOUND, "not_found", "no such device".into()));
     }
     auth::revoke_device(&conn, &id, now_ms())?;
-    s.peers.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+    let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
+    typing::disconnect(&conn, &mut peers, &id, now_ms());
+    peers.remove(&id);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1785,14 +1800,14 @@ impl Drop for Signed {
     }
 }
 
-fn send(tx: &mpsc::UnboundedSender<Frame>, f: Frame) {
-    let _ = tx.send(f);
+fn send(tx: &mpsc::UnboundedSender<Outgoing>, f: Frame) {
+    let _ = tx.send(Outgoing::Sync(Box::new(f)));
 }
 
 /// Catch-up for one scope, queued on `tx` (caller holds the db lock, so nothing can interleave).
 fn catch_up(
     conn: &Connection,
-    tx: &mpsc::UnboundedSender<Frame>,
+    tx: &mpsc::UnboundedSender<Outgoing>,
     account: &str,
     scope: &str,
     after: i64,
@@ -1859,7 +1874,7 @@ impl SocketSession {
     fn dispatch(
         &mut self,
         s: &AppState,
-        tx: &mpsc::UnboundedSender<Frame>,
+        tx: &mpsc::UnboundedSender<Outgoing>,
         frame: Frame,
     ) -> anyhow::Result<SocketStep> {
         // a device signed out from another one stops here, even mid-connection
@@ -1917,7 +1932,7 @@ async fn run_socket(s: AppState, socket: WebSocket, unsigned: Unsigned) {
     let mut budget = crate::ratelimit::Bucket::full(limits.frame_burst, std::time::Instant::now());
     let mut session = SocketSession::new(unsigned);
     let (mut sink, mut stream) = socket.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Frame>();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Outgoing>();
     let writer = tokio::spawn(async move {
         while let Some(f) = rx.recv().await {
             let Ok(text) = serde_json::to_string(&f) else { continue };
@@ -1959,6 +1974,26 @@ async fn run_socket(s: AppState, socket: WebSocket, unsigned: Unsigned) {
         }
         let Message::Text(text) = msg else { continue };
         let text = text.to_string();
+        if serde_json::from_str::<serde_json::Value>(&text).ok().is_some_and(|v| v["t"] == "typing") {
+            if let Some(sess) = &session.me {
+                let conn = s.db();
+                let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
+                if auth::device_active(&conn, &sess.device_id)
+                    && peers.get(&sess.device_id).is_some_and(|p| p.tx.same_channel(&tx))
+                    && let Ok(frame) = serde_json::from_str::<typing::Input>(&text)
+                {
+                    typing::receive(
+                        &conn,
+                        &mut peers,
+                        &sess.device_id,
+                        frame,
+                        now_ms(),
+                        &mut s.typing_starts.lock().unwrap_or_else(|e| e.into_inner()),
+                    );
+                }
+            }
+            continue;
+        }
         let frame: Frame = match serde_json::from_str(&text) {
             Ok(f) => f,
             Err(e) => {
@@ -1977,8 +2012,10 @@ async fn run_socket(s: AppState, socket: WebSocket, unsigned: Unsigned) {
     }
     if let Some(sess) = &session.me {
         // the device may have connected again meanwhile: leave its newer socket registered
+        let conn = s.db();
         let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
         if peers.get(&sess.device_id).is_some_and(|p| p.tx.same_channel(&tx)) {
+            typing::disconnect(&conn, &mut peers, &sess.device_id, now_ms());
             peers.remove(&sess.device_id);
         }
     }
@@ -2004,7 +2041,7 @@ struct HelloIn {
 
 fn hello(
     s: &AppState,
-    tx: &mpsc::UnboundedSender<Frame>,
+    tx: &mpsc::UnboundedSender<Outgoing>,
     token: &str,
     h: HelloIn,
 ) -> Result<ingest::Session, AuthError> {
@@ -2045,9 +2082,17 @@ fn hello(
         }
     }
     // registered while still holding the db lock: live ops can't overtake the catch-up
-    s.peers.lock().unwrap_or_else(|e| e.into_inner()).insert(
+    let mut peers = s.peers.lock().unwrap_or_else(|e| e.into_inner());
+    typing::disconnect(&conn, &mut peers, &who.device_id, now);
+    peers.insert(
         who.device_id.clone(),
-        Peer { account: who.account_id.clone(), scopes: scopes.into_iter().collect(), window, tx: tx.clone() },
+        Peer {
+            account: who.account_id.clone(),
+            scopes: scopes.into_iter().collect(),
+            window,
+            typing: typing::DeviceTyping::default(),
+            tx: tx.clone(),
+        },
     );
     Ok(ingest::Session {
         account_id: who.account_id,
@@ -2058,7 +2103,7 @@ fn hello(
 
 fn push(
     s: &AppState,
-    tx: &mpsc::UnboundedSender<Frame>,
+    tx: &mpsc::UnboundedSender<Outgoing>,
     sess: &ingest::Session,
     batch: String,
     ops: Vec<Op>,

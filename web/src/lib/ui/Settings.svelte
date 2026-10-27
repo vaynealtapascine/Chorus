@@ -123,6 +123,7 @@
   <details class="card">
     <summary>Advanced</summary>
     <div class="advanced">
+      <label><input type="checkbox" checked={pref('share_typing') === true} onchange={(e) => savePref('share_typing', e.currentTarget.checked)} /> Show when we're typing in shared chats</label>
       {#if isSystem}<label><input type="checkbox" checked={kinds.own_switch === true} onchange={(e) => chatKind('own_switch', e.currentTarget.checked)} /> Ping my other devices when the front changes</label>{/if}
       {#if isSystem}<label><input type="checkbox" checked={kinds.reply_as_mentioned === true} onchange={(e) => chatKind('reply_as_mentioned', e.currentTarget.checked)} /> Replies from a notification speak as the member it mentions</label>{/if}
       {#if isSystem}

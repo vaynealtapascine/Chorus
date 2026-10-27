@@ -1,5 +1,5 @@
 // The web sync client: owns the core replica, talks to /api/v1/sync, persists write-behind.
-// All protocol logic is in chorus-core (WebReplica); this file only moves bytes and timers.
+// Durable protocol logic is in chorus-core (WebReplica); ephemeral typing stays in TypeScript.
 import { WebReplica, newId } from '../core/pkg/chorus_wasm.js';
 import type { SwitchRow } from '../front.svelte';
 import { loadHead, loadOps, save, saveSnapshot, type Changes, type DeviceRecord, type Snapshot } from './persist';
@@ -11,6 +11,7 @@ import { flushUploads, stageBlob } from './uploads';
 import { keepStorage, loadBlob } from './blobs';
 import { fillFiles, keepEverything } from './keep';
 import type { Entity } from '../core';
+import { TypingState, TypingThrottle, type TypingEntry, type TypingFrame, type TypingInput } from './typing';
 import type { CurrentFrontSystem } from '../core/fronts';
 
 /** An op the server refused (SYNC §7 "Sync issues"). */
@@ -64,6 +65,8 @@ export interface Interval {
 /** Between the tabs of one browser (SYNC §6.1): `ops` a tab made, for the syncing tab to send;
  * `changed` what the syncing tab saved; its `status`, asked for with `hello`. */
 type BusMessage =
+  | { t: 'typing-send'; frame: TypingInput }
+  | { t: 'typing-receive'; frame: TypingFrame; offset: number }
   | { t: 'hello' }
   | { t: 'status'; status: Status }
   | { t: 'ops'; ops: { id: string }[] }
@@ -106,6 +109,10 @@ export class SyncClient {
   status: Status = 'offline';
   private replica: WebReplica | null = null;
   private ws: WebSocket | null = null;
+  private typingState = new TypingState();
+  private typingThrottle = new TypingThrottle();
+  private typingTimer: ReturnType<typeof setTimeout> | null = null;
+  private typingOffset = 0;
   private backoff = 1000;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<Listener>();
@@ -250,7 +257,13 @@ export class SyncClient {
 
   private onBus(m: BusMessage): void {
     if (!this.replica) return;
+    if (m.t === 'typing-receive' && !this.leader) {
+      this.typingOffset = m.offset;
+      this.receiveTyping(m.frame);
+      return;
+    }
     if (this.leader) {
+      if (m.t === 'typing-send') this.transmitTyping(m.frame);
       if (m.t === 'hello') this.bus?.postMessage({ t: 'status', status: this.status } satisfies BusMessage);
       if (m.t === 'ops' && m.ops.length) {
         this.sendAll(JSON.parse(this.replica.adoptLocal(JSON.stringify(m.ops), Date.now())) as unknown[]);
@@ -261,6 +274,7 @@ export class SyncClient {
     }
     if (m.t === 'status' && m.status !== this.status) {
       this.status = m.status;
+      if (m.status !== 'live') this.clearTyping();
       this.emit();
     }
     if (m.t === 'changed' && !this.opening) {
@@ -273,6 +287,7 @@ export class SyncClient {
 
   private setStatus(status: Status): void {
     this.status = status;
+    if (status !== 'live') this.clearTyping();
     if (this.leader) this.bus?.postMessage({ t: 'status', status } satisfies BusMessage);
     this.emit();
   }
@@ -541,6 +556,43 @@ export class SyncClient {
     }, Math.max(0, held[0].until - Date.now()) + 50);
   }
 
+  /** Live entries from other devices; subscribers are notified on frames and expiry. */
+  typing(channelId: string): TypingEntry[] {
+    return this.typingState.entries(channelId, Date.now() + this.typingOffset);
+  }
+
+  sendTyping(channel: string, member: string | null, audience: 'all' | 'system', start: boolean): void {
+    if (this.status !== 'live') return; // never queue or replay typing
+    const frame: TypingInput = { t: 'typing', channel, member, audience, state: start ? 'start' : 'stop' };
+    if (this.leader) this.transmitTyping(frame);
+    else this.bus?.postMessage({ t: 'typing-send', frame } satisfies BusMessage);
+  }
+
+  private transmitTyping(frame: TypingInput): void {
+    if (this.status !== 'live' || this.ws?.readyState !== WebSocket.OPEN) return;
+    if (this.typingThrottle.allow(frame.channel, frame.state === 'start', Date.now())) this.ws.send(JSON.stringify(frame));
+  }
+
+  private receiveTyping(frame: TypingFrame): void {
+    // Entries retain server timestamps; every tab shares the leader's clock offset.
+    this.typingState.receive(frame, Date.now() + this.typingOffset);
+    if (this.typingTimer) clearTimeout(this.typingTimer);
+    const expire = () => {
+      this.typingState.expire(Date.now() + this.typingOffset);
+      const next = this.typingState.nextExpiry;
+      this.typingTimer = next === undefined ? null : setTimeout(expire, Math.max(0, next - Date.now() - this.typingOffset));
+      this.emit();
+    };
+    expire();
+  }
+
+  private clearTyping(): void {
+    if (this.typingTimer) clearTimeout(this.typingTimer);
+    this.typingTimer = null;
+    this.typingState.clear();
+    this.typingThrottle.clear();
+  }
+
   private sendAll(frames: unknown[]): void {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
     for (const f of frames) this.ws.send(JSON.stringify(f));
@@ -563,7 +615,14 @@ export class SyncClient {
       this.changed(); // what the window dropped leaves storage too
     };
     ws.onmessage = async (ev) => {
+      if (this.ws !== ws) return;
       const frame = JSON.parse(ev.data as string);
+      if (frame.t === 'typing') {
+        this.receiveTyping(frame as TypingFrame);
+        // Same browser tabs are this device: only fan incoming other-device presence to them.
+        this.bus?.postMessage({ t: 'typing-receive', frame: frame as TypingFrame, offset: this.typingOffset } satisfies BusMessage);
+        return;
+      }
       if (frame.t === 'error' && frame.code === 'unauthenticated') {
         ws.close();
         try {
@@ -574,6 +633,7 @@ export class SyncClient {
         return;
       }
       if (frame.t === 'welcome') {
+        this.typingOffset = frame.server_time - Date.now();
         this.setStatus('live');
         this.backoff = 1000;
         void flushUploads(this.device);
@@ -588,6 +648,7 @@ export class SyncClient {
     ws.onclose = () => {
       if (this.ws !== ws) return;
       this.replica?.disconnect();
+      this.clearTyping();
       this.setStatus('offline');
       this.schedule();
     };

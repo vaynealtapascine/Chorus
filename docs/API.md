@@ -511,3 +511,18 @@ Everything else outside `/api/v1` is the web app (its files, and `index.html` fo
 
 `python scripts/api-check.py` (run by `verify.py`) fails when a route in `app.rs` isn't in this
 file; `--list` prints the router's routes.
+
+
+### Ephemeral typing on the sync WebSocket (D-087)
+
+`/api/v1/sync` accepts `{"t":"typing","channel":"<id>","member":null,"audience":"all","state":"start"}`
+after hello. `member` is an own live member ID or null; audience is `all` or `system` (also used
+for chosen-member drafts), state is `start` or `stop`. Relays contain `t`, `channel`, `account`,
+`member`, `state`, and `until` (server milliseconds; start = now + 6000). See SYNC §6 for validation,
+view/scope checks, the 2-second per-device/channel throttle and disconnect stops.
+
+Same-account other devices receive it. Cross-account delivery requires a non-internal space,
+`audience: "all"`, and account-level `share_typing: true` (pref.set with `device: ""`, default off).
+Internal typing stays own-account even when a channel has guests. Typing is never persisted,
+exported, sent through notifications, SSE or webhooks, or replayed. HTTP push/pull fallback
+ignores typing (the current router does not implement those fallback routes).

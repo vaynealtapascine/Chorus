@@ -118,6 +118,7 @@ class Model(
     val namedFronts: NamedFronts? = null,
     /** Polls on messages/posts, their published totals and this account's own votes (D-081). */
     val polls: PollState = PollState(),
+    val typingNames: TypingNames = TypingNames(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -255,7 +256,7 @@ class Model(
             p.put("opaque", d.optInt("opaque"))
         }
 
-        fun parse(p: JSONObject, accountId: String): Model {
+        fun parse(p: JSONObject, accountId: String, typingNames: TypingNames = TypingNames(accountId)): Model {
             val members = rows(p, "member")
                 .filter { (_, f) -> !f.present("deleted_at") }
                 .map { (id, f) ->
@@ -402,7 +403,7 @@ class Model(
                 messageCounts, LocalProfileFields.fromProjection(p), LocalRelationships.types(p),
                 LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages,
                 ChatSpeaker.preferences(p, accountId, channels), lastAuthorsByChannel,
-                ReadTracking.marks(p, accountId), frontIntervals, namedFronts, Polls.fromProjection(p))
+                ReadTracking.marks(p, accountId), frontIntervals, namedFronts, Polls.fromProjection(p), typingNames)
         }
     }
 }
