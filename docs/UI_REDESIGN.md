@@ -159,3 +159,38 @@ permission projections are absent, so those menu actions are omitted. The model 
 system-event items. Android uses the existing system file picker rather than a fabricated recent
 photo grid, and the emoji decoration does not imply an app-specific emoji picker. The smile and
 check vectors are locally authored geometry, recorded with the other assets.
+
+Catch-up snapshots the selected reader's existing read position when the conversation opens,
+keeps the divider while the existing core-driven read writer advances, and limits all labels to
+messages still visible in the local window. A Change control reuses the soft viewing-as setting;
+it does not write a new reader or change the core-selected reading pool. The opening unread
+position, explicit member-mention jump and latest-message jump use the same reversed message list.
+Folder chips sum visible unread messages, with yellow on the selected unread folder. Account-wide
+read tracking continues to use the empty reader key when per-member tracking is off. Row times
+use Today/time, Yesterday, weekday or a short date in the device's calendar zone. Poll previews
+obey CW before showing a question. Warning badges keep readable ink in both palettes.
+
+Chat info presents existing local data only: a large channel disc, Search, current own-member
+layer labels and caught-up positions for internal chats, or directory account membership for
+shared spaces. At 840 dp it is a third 220 dp column beside the 240 dp list and flexible
+conversation; compact widths open it from overflow. Person accounts hide system/member controls.
+There are no new network calls, data operations, notification rules or product semantics.
+
+Further parity limits: the model has no channel membership/role projection for a complete member
+count, no media/files/links collection tabs, and no live “reading now” signal. The info pane labels
+known own members without claiming channel membership, and omits those unsupported controls.
+Read markers contain the last-read message time, so catch-up says “read through” rather than
+inventing the time of a reading session. Mention badges count explicit member entities only;
+historical `@front` membership cannot be inferred from today's presence. Current-front badges
+are descriptive; configurable layers have no invented legacy ring meaning. All counts remain
+bounded to the existing up-to-100-message window. Acknowledge/delivery clocks and read ticks
+remain omitted; the existing held/slow-mode timer has its real clock icon.
+
+Validation: ChatPresentation has ten JVM tests covering folder classification, CW/poll preview
+privacy, own-speaker alignment, grouping boundaries, supported mention completion, independent
+layer labels/unavailable presence, reader/timestamp-tie snapshots, typed mention entities,
+calendar zones and subtitle/date labels. The repository gate runs Android lint and the complete
+existing JVM suite, including speaker parsing, polls, edits, visibility and stage coverage.
+No device screenshot acceptance is claimed. The parent owns installation and visual verification
+on SM-A566B (also check expanded width, light theme, larger text and keyboard insets). No install,
+deploy, push, merge or device/system setting changes were performed in this task.

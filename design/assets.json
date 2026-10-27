@@ -1053,6 +1053,36 @@
         "description": "24 dp check control, 2 dp rounded stroke; extends the existing chat icon vocabulary."
       },
       "sha256": "9906cffce0e80fe5ee3efc500c86c1cfd0c8f70002e7c6133299955f3df44762"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_down.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp down control, 2 dp rounded stroke; extends the existing chat icon vocabulary."
+      },
+      "sha256": "98647599c4b5df569d3875b52aefd1da61cdd804545da75bfdacadcf675da74b"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_globe.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp globe control, 2 dp rounded stroke; extends the existing chat icon vocabulary."
+      },
+      "sha256": "c42ad59e4977f4d7f90d6f18e5f3636008f55b490fa3497a78edf8b0c4158d13"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_poll.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp poll control, 2 dp rounded stroke; extends the existing chat icon vocabulary."
+      },
+      "sha256": "6772ba5ba4744d72a9e4ce7979308c3c1031b21b582c99b8176ff63462f4e051"
     }
   ]
 }

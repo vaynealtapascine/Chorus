@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.*
+import garden.vayne.chorus.designsystem.LocalChorusDark
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
 import java.text.DateFormat
@@ -65,12 +66,12 @@ internal fun ChannelDisc(channel: ChatChannel, member: Member? = null, size: Dp 
 }
 
 internal data class ChatListRow(val channel: ChatChannel, val space: ChatSpace, val title: String,
-    val latest: ChatMessage?, val unread: Int)
+    val latest: ChatMessage?, val unread: Int, val sender: String? = null)
 
 @Composable
 internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: String?, reader: String?,
     onOpen: (ChatListRow) -> Unit, onNew: (() -> Unit)?, onSwitch: () -> Unit,
-    onSearch: () -> Unit, modifier: Modifier = Modifier) {
+    onSearch: () -> Unit, modifier: Modifier = Modifier, readerId: String? = null) {
     val p = LocalChorusPalette.current
     var folder by rememberSaveable { mutableStateOf(ChatPresentation.Folder.All) }
     var menu by remember { mutableStateOf(false) }
@@ -88,7 +89,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                 ChatIconButton(R.drawable.ic_more, "Chat options") { menu = true }
                 DropdownMenu(menu, { menu = false }) {
                     if (onNew != null) DropdownMenuItem(text = { Text("New message") }, onClick = { menu = false; onNew() })
-                    DropdownMenuItem(text = { Text("Per-member read tracking is in Settings") }, onClick = { menu = false; showReader = true })
+                    if (!model.isPerson) DropdownMenuItem(text = { Text("Per-member read tracking is in Settings") }, onClick = { menu = false; showReader = true })
                 }
             }
         }
@@ -132,7 +133,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                 Tab(selected = folder == candidate, onClick = { folder = candidate }, text = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(candidate.label, fontSize = 13.sp, color = if (folder == candidate) p.ink else p.ink3)
-                        ChatCount(inFolder.size, inFolder.any { it.unread > 0 })
+                        ChatCount(inFolder.sumOf { it.unread }, folder == candidate && inFolder.any { it.unread > 0 })
                     }
                 })
             }
@@ -142,25 +143,27 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 88.dp)) {
                 items(filtered, key = { it.channel.id }) { row ->
                     val direct = row.channel.kind == "dm" && row.space.kind == "internal"
-                    val peer = if (direct) row.channel.memberIds.firstOrNull { it != ChatSpeaker.pick(model, row.channel.id) }?.let(model::member) else null
+                    val peer = if (direct) row.channel.memberIds.firstOrNull { it != (readerId ?: ChatSpeaker.pick(model, row.channel.id)) }?.let(model::member) else null
                     Row(Modifier.fillMaxWidth().background(if (selected == row.channel.id) p.accentSoft else p.bg)
                         .clickable { onOpen(row) }.padding(horizontal = 12.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         ChannelDisc(row.channel, peer)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                if (row.space.kind != "internal") ChatIcon(R.drawable.ic_friends)
+                                if (row.latest?.id in model.polls.polls) ChatIcon(R.drawable.ic_poll)
+                                else if (row.space.kind != "internal") ChatIcon(R.drawable.ic_globe)
                                 else if (row.channel.parentMessageId != null) ChatIcon(R.drawable.ic_reply)
                                 else if (!direct) Text("#", color = p.ink3, fontSize = 16.sp)
                                 Text(row.title, color = p.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
-                            val sender = row.latest?.authors?.mapNotNull(model::member)?.joinToString(" & ") { it.shownName }
-                            Text(listOfNotNull(sender?.takeIf { it.isNotBlank() }, ChatPresentation.preview(row.latest)).joinToString(": "),
+                            val sender = row.sender
+                            val preview = ChatPresentation.preview(row.latest, model.polls.polls[row.latest?.id])
+                            Text(listOfNotNull(sender?.takeIf { it.isNotBlank() }, preview).joinToString(": "),
                                 color = p.ink3, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            row.latest?.let { Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it.occurredAt)), color = p.ink3, fontSize = 12.sp) }
+                            row.latest?.let { Text(ChatPresentation.listTimeLabel(it.occurredAt), color = p.ink3, fontSize = 12.sp) }
                             if (row.unread > 0) ChatCount(row.unread, true)
                         }
                     }
@@ -185,7 +188,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
 @Composable
 internal fun ChatCount(count: Int, unread: Boolean) {
     val p = LocalChorusPalette.current
-    Text(count.toString(), color = if (unread) p.onAccent else p.ink2, fontSize = 12.sp,
+    Text(count.toString(), color = if (unread) { if (LocalChorusDark.current) p.onAccent else p.ink } else p.ink2, fontSize = 12.sp,
         modifier = Modifier.background(if (unread) p.warn else p.surface3, CircleShape).padding(horizontal = 6.dp, vertical = 1.dp))
 }
 
@@ -196,5 +199,18 @@ internal fun ChatActionRow(resource: Int, label: String, action: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         ChatIcon(resource)
         Text(label, color = p.ink, fontSize = 15.sp)
+    }
+}
+
+@Composable
+internal fun ChatJumpButton(symbol: String?, count: Int, label: String, onClick: () -> Unit) {
+    val p = LocalChorusPalette.current
+    Box {
+        FilledTonalIconButton(onClick = onClick, modifier = Modifier.size(48.dp).semantics { contentDescription = label },
+            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = p.surface2, contentColor = p.ink)) {
+            if (symbol != null) Text(symbol, color = p.ink, fontSize = 22.sp)
+            else ChatIcon(R.drawable.ic_down, tint = p.ink)
+        }
+        if (count > 0) Box(Modifier.align(Alignment.TopEnd)) { ChatCount(count, true) }
     }
 }

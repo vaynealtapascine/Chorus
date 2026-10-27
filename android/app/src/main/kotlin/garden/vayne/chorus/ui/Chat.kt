@@ -2,6 +2,8 @@ package garden.vayne.chorus.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.ui.text.style.TextAlign
+import garden.vayne.chorus.data.Status
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -33,6 +35,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.platform.LocalConfiguration
 import garden.vayne.chorus.data.ChatPresentation
 import garden.vayne.chorus.designsystem.R
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Box
@@ -132,6 +135,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     sharedChannel: String? = null, onShareConsumed: () -> Unit = {}, onSearch: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val heldMessages by chorus.heldMessages.collectAsState()
+    val syncStatus by chorus.status.collectAsState()
+    var infoOpen by rememberSaveable { mutableStateOf(false) }
+    var readerOpen by remember { mutableStateOf(false) }
     var conversationOpen by rememberSaveable { mutableStateOf(false) }
     var switchOpen by remember { mutableStateOf(false) }
     var headerMenu by remember { mutableStateOf(false) }
@@ -289,6 +295,18 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
     }
     val readMarks = model.readMarks[channel?.id].orEmpty()
+    val readerId = viewingAs ?: channel?.id?.let { ReadTracking.readersFor(model, it, model.accountPrefs.readPerMember).firstOrNull() }
+    val readerName = readerId?.let(model::member)?.shownName
+    val openingRead = remember(channel?.id, readerId, conversationOpen, expanded, model.accountPrefs.readPerMember) {
+        ChatPresentation.catchUp(messages, readMarks, if (model.accountPrefs.readPerMember) readerId.orEmpty() else "")
+    }
+    val catchUp = remember(openingRead, messages) { openingRead.copy(unreadIds = messages.filter { it.id in openingRead.unreadIds }.mapTo(linkedSetOf()) { it.id }) }
+    val unreadCount = if (!model.isPerson && model.accountPrefs.readPerMember && readerName != null) catchUp.unreadIds.size else 0
+    val firstUnread = catchUp.firstUnread.takeIf { unreadCount > 0 }
+    val unreadMentions = remember(messages, catchUp, readerId, model.accountPrefs.readPerMember) {
+        if (!model.accountPrefs.readPerMember || readerId.isNullOrEmpty()) emptyList() else messages.filter { it.id in catchUp.unreadIds && ChatPresentation.mentionsMember(it, readerId) }
+    }
+
     LaunchedEffect(channel?.id, space?.id, messages.lastOrNull()?.id, readMarks,
         model.current, model.accountPrefs.readPerMember, chorus.device?.accountId, staging,
         model.namedFronts, model.speakerDefaults[channel?.id], conversationOpen, expanded) {
@@ -320,6 +338,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         replyTo = null
         carriedReply = null
         speakerSettingsOpen = false
+        infoOpen = false
         staging = false
         capturing = false
         stageLimit = 100
@@ -361,22 +380,23 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         return
     }
 
-    val listRows = remember(model, viewingAs, chorus.device?.accountId, directory) {
+    val listRows = remember(model, viewingAs, chorus.device?.accountId, directory, foreignAuthors) {
         model.channels.mapNotNull { candidate ->
             val home = model.spaces.find { it.id == candidate.spaceId } ?: return@mapNotNull null
             val visible = model.chatMessages[candidate.id].orEmpty().filter {
                 memberVisible(it, home.kind, model.current, viewingAs) && accountVisible(it, home.kind, chorus.device?.accountId.orEmpty())
             }
-            val reader = viewingAs ?: ReadTracking.readersFor(model, candidate.id, model.accountPrefs.readPerMember).firstOrNull().orEmpty()
+            val reader = if (!model.accountPrefs.readPerMember) "" else viewingAs ?: ReadTracking.readersFor(model, candidate.id, true).firstOrNull().orEmpty()
             val marks = model.readMarks[candidate.id].orEmpty()
             val unread = visible.count { ReadTracking.needsMark(it.occurredAt, it.id, marks, reader) }
             val title = if (home.kind == "dm") directory[home.id]?.accounts?.firstOrNull { it.id != chorus.device?.accountId }?.shownName ?: home.name
                 else if (home.kind == "shared" && model.channels.count { it.spaceId == home.id } == 1) home.name else candidate.name
-            ChatListRow(candidate, home, title, visible.lastOrNull(), unread)
+            val latest = visible.lastOrNull()
+            val sender = latest?.authors?.joinToString(" & ") { id -> model.member(id)?.shownName ?: foreignAuthors[id]?.name
+                ?: directory[home.id]?.accounts?.find { it.id == latest.accountId }?.shownName ?: "Someone" }
+            ChatListRow(candidate, home, title, latest, unread, sender)
         }
     }
-    val readerId = viewingAs ?: channel?.id?.let { ReadTracking.readersFor(model, it, model.accountPrefs.readPerMember).firstOrNull() }
-    val readerName = readerId?.let(model::member)?.shownName
     val openChat: (ChatListRow) -> Unit = { row ->
         selectedSpace = row.space.id; selectedChannel = row.channel.id; conversationOpen = true
         replyTo = null; carriedReply = null; pendingPrivateReply = null; moreOpen = false
@@ -385,24 +405,26 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     Row(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         if (expanded || !conversationOpen) ChatListPane(model, listRows, if (expanded) channel?.id else null, readerName,
             openChat, { spaceAction = "new" },
-            { switchOpen = true }, onSearch, if (expanded) Modifier.width(240.dp) else Modifier.weight(1f))
-        if (expanded) HorizontalDivider(Modifier.fillMaxHeight().width(1.dp), color = p.line)
+            { switchOpen = true }, onSearch, if (expanded) Modifier.width(240.dp) else Modifier.weight(1f), readerId = readerId)
+        if (expanded) VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
         if (expanded || conversationOpen) Column(Modifier.weight(1f).fillMaxHeight()) {
         Row(Modifier.fillMaxWidth().background(p.surface), verticalAlignment = Alignment.CenterVertically) {
             if (!expanded) ChatIconButton(R.drawable.ic_back, "Back to chats") { conversationOpen = false }
             channel?.let { ChannelDisc(it, size = 36.dp) }
             Column(Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 10.dp)) {
                 Text(channel?.name ?: "Chat", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1)
-                Text(readerName?.let { "reading as $it" } ?: space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }.orEmpty(),
-                    color = p.ink3, fontSize = 12.sp, maxLines = 1)
+                Text(ChatPresentation.subtitle(syncStatus != Status.Live, readerName, unreadCount,
+                    space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }.orEmpty()),
+                    color = if (syncStatus != Status.Live) p.accent else p.ink3, fontSize = 12.sp, maxLines = 2)
             }
             ChatIconButton(R.drawable.ic_search, "Search messages", onSearch)
             Box {
                 ChatIconButton(R.drawable.ic_more, "Conversation options") { headerMenu = true }
                 DropdownMenu(headerMenu, { headerMenu = false }) {
+                    if (channel != null && !expanded) DropdownMenuItem(text = { Text("Chat info") }, onClick = { headerMenu = false; infoOpen = true })
                     if (channel != null) DropdownMenuItem(text = { Text("Stage mode") }, onClick = { headerMenu = false; stageSelection = emptyList(); staging = true })
                     DropdownMenuItem(text = { Text("Message options") }, onClick = { headerMenu = false; moreOpen = !moreOpen })
-                    if (space?.kind == "internal") {
+                    if (space?.kind == "internal" && !model.isPerson) {
                         DropdownMenuItem(text = { Text("Read as everyone present") }, onClick = { headerMenu = false; viewingAs = null })
                         for (member in model.active) DropdownMenuItem(text = { Text("Read as ${member.shownName}") }, onClick = { headerMenu = false; viewingAs = member.id })
                     }
@@ -432,24 +454,40 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (channel == null) {
             Text("No channels in this space yet.", color = p.ink2, modifier = Modifier.padding(24.dp))
         } else {
+        if (!model.isPerson && readerName != null && model.accountPrefs.readPerMember) Row(Modifier.fillMaxWidth().background(p.accentSoft).padding(start = 12.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            readerId?.let(model::member)?.let { ChatAvatar(it, 24.dp) }
+            Text("Reading as $readerName · " + (catchUp.mark?.let { "read through ${ChatPresentation.dateLabel(it.at).lowercase()}" }
+                ?: "no saved read position"), color = p.ink2, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = { readerOpen = true }) { Text("Change", fontSize = 12.sp) }
+        }
         if (pendingPrivateReply != null) Text("Opening private chat · Cancel", color = p.accent,
-            modifier = Modifier.clickable { pendingPrivateReply = null }.padding(horizontal = 16.dp))
+            modifier = Modifier.clickable { pendingPrivateReply = null }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart).padding(horizontal = 16.dp))
         // A reversed list keeps its place on the message that was newest, so a new one would land
         // just out of view: follow it while the reader is at (or near) the bottom, and after sending.
         val listState = rememberLazyListState()
         val newest = messages.lastOrNull()?.id
-        LaunchedEffect(newest) {
-            if (newest != null && (listState.firstVisibleItemIndex <= 2 || followNext)) listState.animateScrollToItem(0)
+        var positioned by remember(channel.id, readerId) { mutableStateOf(false) }
+        LaunchedEffect(newest, readerId) {
+            if (!positioned && readerName != null && firstUnread != null) {
+                val at = messages.asReversed().indexOfFirst { it.id == firstUnread }
+                if (at >= 0) listState.scrollToItem(at)
+            } else if (newest != null && (listState.firstVisibleItemIndex <= 2 || followNext)) listState.animateScrollToItem(0)
+            positioned = true
             followNext = false
         }
-        LazyColumn(Modifier.weight(1f).padding(horizontal = 12.dp), state = listState, reverseLayout = true,
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), state = listState, reverseLayout = true,
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             itemsIndexed(messages.asReversed(), key = { _, message -> message.id }) { index, message ->
                 val older = messages.getOrNull(messages.lastIndex - index - 1)
                 val newer = messages.getOrNull(messages.lastIndex - index + 1)
-                val groupStart = !ChatPresentation.grouped(older, message)
-                val groupEnd = !ChatPresentation.grouped(message, newer)
+                val groupStart = !ChatPresentation.grouped(older, message) || message.id == firstUnread
+                val groupEnd = !ChatPresentation.grouped(message, newer) || newer?.id == firstUnread
                 Column(Modifier.padding(top = if (groupStart) 8.dp else 0.dp)) {
+                if (readerName != null && message.id == firstUnread) Text("${unreadCount} unread for $readerName",
+                    color = p.accent, fontSize = 12.sp, textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).background(p.surface).padding(vertical = 6.dp))
                 if (older == null || ChatPresentation.day(older.occurredAt) != ChatPresentation.day(message.occurredAt)) {
                     Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
                         Text(ChatPresentation.dateLabel(message.occurredAt), color = p.ink3, fontSize = 12.sp,
@@ -473,6 +511,14 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             if (messages.isEmpty()) item {
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
             }
+        }
+        if (listState.firstVisibleItemIndex > 1 || unreadCount > 0) Column(
+            Modifier.align(Alignment.BottomEnd).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (unreadMentions.isNotEmpty()) ChatJumpButton("@", unreadMentions.size, "${unreadMentions.size} unread mentions for $readerName") {
+                actions.launch { val at = messages.asReversed().indexOfFirst { it.id == unreadMentions.last().id }; if (at >= 0) listState.animateScrollToItem(at) }
+            }
+            ChatJumpButton(null, unreadCount, if (unreadCount > 0) "Jump to latest message · $unreadCount unread" else "Jump to latest message") { actions.launch { listState.animateScrollToItem(0) } }
+        }
         }
         // Composer: one line (who's speaking, the text, options, send); options open above it
         Column(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 12.dp, vertical = 6.dp),
@@ -679,8 +725,23 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
         }
     }
+        if (expanded && channel != null && space != null) {
+            VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
+            ChatInfoPane(channel, space, model, messages, directory[space.id], onSearch, modifier = Modifier.width(220.dp))
+        }
     }
-    if (switchOpen) Switcher(chorus, model, channel?.id?.let { ChatSpeaker.frontOf(model, it) }) { switchOpen = false }
+    if (infoOpen && !expanded && channel != null && space != null) Dialog(onDismissRequest = { infoOpen = false }) {
+        Surface(shape = RoundedCornerShape(16.dp), color = p.surface, modifier = Modifier.heightIn(max = 680.dp)) {
+            ChatInfoPane(channel, space, model, messages, directory[space.id], { infoOpen = false; onSearch() }, { infoOpen = false })
+        }
+    }
+    if (readerOpen) AlertDialog(onDismissRequest = { readerOpen = false }, title = { Text("Read as…") }, text = {
+        Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+            TextButton(onClick = { viewingAs = null; readerOpen = false }) { Text("Everyone present") }
+            for (member in model.active) TextButton(onClick = { viewingAs = member.id; readerOpen = false }) { Text(member.shownName) }
+        }
+    }, confirmButton = { TextButton(onClick = { readerOpen = false }) { Text("Done") } })
+    if (switchOpen) Switcher(chorus, model, if (expanded) channel?.id?.let { ChatSpeaker.frontOf(model, it) } else model.namedFronts?.bodyId) { switchOpen = false }
     editingMessage?.let { original ->
         var editError by remember(original.id) { mutableStateOf<String?>(null) }
         var editBusy by remember(original.id) { mutableStateOf(false) }

@@ -22,6 +22,9 @@ class ChatPresentationTest {
     @Test fun warningPreviewNeverLeaksTheHiddenText() {
         assertEquals("Content warning: sensitive", ChatPresentation.preview(message.copy(cw = "sensitive")))
         assertEquals("No messages yet", ChatPresentation.preview(null))
+        val poll = Poll("Hidden question", emptyList(), false)
+        assertEquals("Content warning: sensitive", ChatPresentation.preview(message.copy(cw = "sensitive"), poll))
+        assertEquals("Poll · Hidden question", ChatPresentation.preview(message, poll))
     }
 
     @Test fun ownBubblesFollowTheActingMemberWithinTheAccount() {
@@ -56,6 +59,35 @@ class ChatPresentationTest {
         assertEquals("Steering", ChatPresentation.layer(model, legacy.copy(level = "independent")))
         assertNull(ChatPresentation.layer(model, legacy))
         assertTrue(ChatPresentation.presence(model, "channel").isEmpty())
+    }
+
+    @Test fun catchUpKeepsReaderIdentityAndTimestampTies() {
+        val rows = listOf(message, message.copy(id = "b"), message.copy(id = "c", occurredAt = 2_000))
+        val marks = listOf(ReadMark("fox", 1_000, "a"), ReadMark("another", 3_000, "z"))
+        val snapshot = ChatPresentation.catchUp(rows, marks, "fox")
+        assertEquals(linkedSetOf("b", "c"), snapshot.unreadIds)
+        assertEquals("b", snapshot.firstUnread)
+        assertEquals("fox", snapshot.mark?.member)
+        assertEquals(setOf("a", "b", "c"), ChatPresentation.catchUp(rows, marks, "not-marked").unreadIds)
+        assertNull(ChatPresentation.catchUp(emptyList(), marks, "fox").firstUnread)
+        val advanced = ChatPresentation.catchUp(rows, listOf(ReadMark("fox", 3_000, "z")), "fox")
+        assertTrue(advanced.unreadIds.isEmpty())
+        assertEquals(setOf("b", "c"), snapshot.unreadIds)
+        assertTrue(ChatPresentation.catchUp(rows, listOf(ReadMark("", 3_000, "z")), "").unreadIds.isEmpty())
+    }
+
+    @Test fun unreadMentionsNeedAnExplicitMemberEntity() {
+        val tagged = message.copy(entities = """[{"type":"mention","target_type":"member","target_id":"fox"}]""")
+        assertTrue(ChatPresentation.mentionsMember(tagged, "fox"))
+        assertFalse(ChatPresentation.mentionsMember(tagged, "someone-else"))
+        assertFalse(ChatPresentation.mentionsMember(message.copy(text = "@fox"), "fox"))
+        assertFalse(ChatPresentation.mentionsMember(message.copy(entities = """[{"type":"mention","target_type":"front"}]"""), "fox"))
+        assertFalse(ChatPresentation.mentionsMember(message.copy(entities = "invalid"), "fox"))
+    }
+
+    @Test fun listDatesUseTheProvidedCalendarZone() {
+        assertEquals("Yesterday", ChatPresentation.listTimeLabel(0, LocalDate.of(1970, 1, 2), zone))
+        assertEquals("Yesterday", ChatPresentation.listTimeLabel(0, LocalDate.of(1970, 1, 1), ZoneId.of("America/Los_Angeles")))
     }
 
     @Test fun labelsReflectOfflineStateAndCalendarDates() {

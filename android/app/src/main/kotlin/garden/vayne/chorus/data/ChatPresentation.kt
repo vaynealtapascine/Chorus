@@ -27,9 +27,10 @@ object ChatPresentation {
         else when (it.level) { "front" -> "fronting"; "cocon" -> "co-conscious"; "present" -> "nearby"; else -> null }
     }
 
-    fun preview(message: ChatMessage?): String = when {
+    fun preview(message: ChatMessage?, poll: Poll? = null): String = when {
         message == null -> "No messages yet"
         message.cw != null -> "Content warning: ${message.cw}"
+        poll != null -> "Poll" + (poll.question?.takeIf { it.isNotBlank() } ?: message.text.takeIf { it.isNotBlank() })?.let { " · " + it.replace('\n', ' ') }.orEmpty()
         message.text.isNotBlank() -> message.text.replace('\n', ' ')
         message.attachments.isNotEmpty() -> "Attachment · ${message.attachments.first().filename}"
         else -> "Message"
@@ -63,6 +64,35 @@ object ChatPresentation {
         val token = Regex("(^|\\s)@(\\w*)$").find(draft) ?: return null
         val prefix = token.groupValues[2]
         return if ("front".startsWith(prefix, ignoreCase = true)) draft.lastIndexOf('@') else null
+    }
+
+    data class CatchUp(val mark: ReadMark?, val unreadIds: Set<String>) {
+        val firstUnread: String? get() = unreadIds.firstOrNull()
+    }
+
+    /** Snapshot a loaded, visibility-filtered window before the existing read writer advances it. */
+    fun catchUp(messages: List<ChatMessage>, marks: List<ReadMark>, reader: String): CatchUp =
+        CatchUp(marks.firstOrNull { it.member == reader }, messages.filter {
+            ReadTracking.needsMark(it.occurredAt, it.id, marks, reader)
+        }.mapTo(linkedSetOf()) { it.id })
+
+    /** Only explicit member entities; a historical @front cannot be inferred from today's front. */
+    fun mentionsMember(message: ChatMessage, member: String): Boolean = runCatching {
+        val entities = org.json.JSONArray(message.entities)
+        (0 until entities.length()).any { index ->
+            val entity = entities.getJSONObject(index)
+            entity.optString("type") == "mention" && entity.optString("target_type") == "member" && entity.optString("target_id") == member
+        }
+    }.getOrDefault(false)
+
+    fun listTimeLabel(at: Long, today: LocalDate = LocalDate.now(), zone: ZoneId = ZoneId.systemDefault()): String {
+        val date = day(at, zone)
+        return when {
+            date == today -> Instant.ofEpochMilli(at).atZone(zone).format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT))
+            date == today.minusDays(1) -> "Yesterday"
+            date < today && date >= today.minusDays(6) -> date.format(DateTimeFormatter.ofPattern("EEE"))
+            else -> date.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.SHORT))
+        }
     }
 
     fun subtitle(offline: Boolean, reader: String?, unread: Int, context: String): String = when {
