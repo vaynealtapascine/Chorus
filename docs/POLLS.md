@@ -110,4 +110,8 @@ the same space-scope delivery filter as the message.
 3. Web **done (2026-10-27)**: `web/src/lib/polls.ts` (read poll/tally/own vote, toggle, `poll.vote`,
    composer payload), `PollCard.svelte` on chat messages (via `Message`'s `extra` snippet) and
    post cards, "Add a poll" in the chat composer's options and the post composer's Post options.
-   Votes act as the current speaker. Not yet checked in a live browser. Android: pending.
+   Votes act as the current speaker. Android **done (2026-10-27)**: `data/Polls.kt` (`Model.polls`),
+   `ui/PollCard.kt` (card under chat messages and journal posts, `PollDraftFields` in the chat "⋯"
+   options and the post composer); votes act as the account's default speaker (`Reply.speaker`) or the
+   post's react member. Remaining: a live browser/device check (blocked by policy so far) and a
+   cross-language conformance fixture.

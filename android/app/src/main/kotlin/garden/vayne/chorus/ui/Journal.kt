@@ -36,6 +36,7 @@ import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.UploadWork
 import garden.vayne.chorus.data.JournalPost
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.Polls
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.produceState
 import garden.vayne.chorus.data.NamedHistory
@@ -74,6 +75,9 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     var cw by rememberSaveable { mutableStateOf("") }
     var mood by rememberSaveable { mutableStateOf("") }
     var tags by rememberSaveable { mutableStateOf("") }
+    var pollOn by rememberSaveable { mutableStateOf(false) }
+    val pollOptions = remember { mutableStateListOf("", "") }
+    var pollMultiple by rememberSaveable { mutableStateOf(false) }
     var audience by rememberSaveable { mutableStateOf("private") }
     var busy by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
@@ -166,7 +170,10 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                             }
                             val payload = PostCompose.payload(model, dev.accountId, kind, writer.id, body,
                                 title, cw, audience, mood, tags, replyTo, attachmentIds = attachmentIds)
+                            if (pollOn) payload.put("poll", Polls.draft(pollOptions.toList(), pollMultiple).getOrThrow())
                             chorus.create("post.create", chorus.newId(), payload)
+                            pollOn = false; pollMultiple = false
+                            pollOptions.clear(); pollOptions.addAll(listOf("", ""))
                             if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
                             body = ""; title = ""; cw = ""; mood = ""; tags = ""; replyTo = null
                             attachments.clear()
@@ -232,6 +239,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 item { OutlinedTextField(cw, { cw = it }, label = { Text("Content warning (optional)") }, modifier = Modifier.fillMaxWidth()) }
                 item { OutlinedTextField(mood, { mood = it }, label = { Text("Mood (optional)") }, modifier = Modifier.fillMaxWidth()) }
                 item { OutlinedTextField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, modifier = Modifier.fillMaxWidth()) }
+                item { Column { PollDraftFields(pollOn, { pollOn = it }, pollOptions, pollMultiple) { pollMultiple = it } } }
                 if (error != null) item { Text(error.orEmpty(), color = p.danger) }
             }
         }
@@ -345,6 +353,7 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
             if (post.mood != null) Text(post.mood, color = p.ink2)
             if (post.tags.isNotEmpty()) Text(post.tags.joinToString(" ") { "#$it" }, color = p.ink2)
             for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
+            PollCard(chorus, model, post.id, reactMemberId ?: Reply.speaker(model)?.id)
             if (post.reactions.isNotEmpty()) ReactionNames(post.reactions)
             if (reactMemberId != null && onReact != null) {
                 val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == reactMemberId }

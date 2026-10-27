@@ -79,6 +79,7 @@ import garden.vayne.chorus.data.ChatEdit
 import garden.vayne.chorus.data.ChatSpace
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.Polls
 import garden.vayne.chorus.data.Entry
 import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.SpaceAccount
@@ -121,6 +122,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var selectedAuthor by rememberSaveable { mutableStateOf("") }
     var draft by rememberSaveable { mutableStateOf("") }
     var cw by rememberSaveable { mutableStateOf("") }
+    // an optional poll on the next message (D-081)
+    var pollOn by rememberSaveable { mutableStateOf(false) }
+    val pollOptions = remember { mutableStateListOf("", "") }
+    var pollMultiple by rememberSaveable { mutableStateOf(false) }
     var moreOpen by rememberSaveable { mutableStateOf(false) }
     var speakerSettingsOpen by rememberSaveable { mutableStateOf(false) }
     var followNext by remember { mutableStateOf(false) }
@@ -486,6 +491,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     modifier = Modifier.clickable { picker.launch("*/*") }.padding(vertical = 6.dp))
                 OutlinedTextField(cw, { cw = it }, placeholder = { Text("Content warning (optional)") },
                     modifier = Modifier.fillMaxWidth(), singleLine = true)
+                PollDraftFields(pollOn, { pollOn = it }, pollOptions, pollMultiple) { pollMultiple = it }
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     item { ChatChip("Everyone here", audience == "all") { audience = "all" } }
                     if (space.kind == "internal") item {
@@ -598,8 +604,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                     val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
                                         audience, visibleTo.toSet(), space.kind, replyTo = target?.id, attachmentIds = attachmentIds,
                                         accountId = senderAccount)
+                                    if (pollOn) payload.put("poll", Polls.draft(pollOptions.toList(), pollMultiple).getOrThrow())
                                     followNext = true
                                     chorus.create("message.send", chorus.newId(), payload, scope = scope)
+                                    pollOn = false; pollMultiple = false
+                                    pollOptions.clear(); pollOptions.addAll(listOf("", ""))
                                     if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
                                     attachments.clear()
                                     draft = ""
@@ -811,6 +820,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus)
             }
+            // votes as the account's default speaker (D-081); own members only
+            PollCard(chorus, model, message.id, garden.vayne.chorus.data.Reply.speaker(model)?.id)
             if (held == null && message.edited) {
                 TextButton(onClick = {
                     if (history != null) history = null else actions.launch {

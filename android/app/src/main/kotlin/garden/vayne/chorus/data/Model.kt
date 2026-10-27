@@ -116,6 +116,8 @@ class Model(
     val readMarks: Map<String, List<ReadMark>> = emptyMap(),
     val frontIntervals: List<FrontInterval> = emptyList(),
     val namedFronts: NamedFronts? = null,
+    /** Polls on messages/posts, their published totals and this account's own votes (D-081). */
+    val polls: PollState = PollState(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -400,7 +402,7 @@ class Model(
                 messageCounts, LocalProfileFields.fromProjection(p), LocalRelationships.types(p),
                 LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages,
                 ChatSpeaker.preferences(p, accountId, channels), lastAuthorsByChannel,
-                ReadTracking.marks(p, accountId), frontIntervals, namedFronts)
+                ReadTracking.marks(p, accountId), frontIntervals, namedFronts, Polls.fromProjection(p))
         }
     }
 }
