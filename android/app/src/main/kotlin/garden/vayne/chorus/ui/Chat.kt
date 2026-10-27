@@ -2,6 +2,11 @@ package garden.vayne.chorus.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Spacer
@@ -118,6 +123,7 @@ private data class PendingPrivateReply(val message: ChatMessage, val channelId: 
     val spaceId: String? = null, val speakerId: String? = null)
 
 /** Local chat view: internal channels, shared spaces and account DMs use the same projection. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     requestedChannel: String? = null, searchHit: SearchDocument? = null,
@@ -182,6 +188,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val attachments = remember { mutableStateListOf<PendingAttachment>() }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         for (uri in uris) attachments.add(PendingAttachment.of(ctx, uri))
+        if (uris.isNotEmpty()) moreOpen = false
     }
     LaunchedEffect(chorus.device?.session, model.spaces.map { it.id }, refresh) {
         directory = emptyMap()
@@ -377,7 +384,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
     Row(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         if (expanded || !conversationOpen) ChatListPane(model, listRows, if (expanded) channel?.id else null, readerName,
-            openChat, if (connections.isNotEmpty()) ({ spaceAction = "new" }) else null,
+            openChat, { spaceAction = "new" },
             { switchOpen = true }, onSearch, if (expanded) Modifier.width(240.dp) else Modifier.weight(1f))
         if (expanded) HorizontalDivider(Modifier.fillMaxHeight().width(1.dp), color = p.line)
         if (expanded || conversationOpen) Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -486,17 +493,27 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     else "As " + currentPreview.authors.joinToString(" & ") { model.member(it)?.shownName ?: "Someone" },
                     color = p.ink2, fontSize = 13.sp)
             }
+            val mentionStart = ChatPresentation.frontMentionStart(draft)
+            if (mentionStart != null) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
+                draft = draft.substring(0, mentionStart) + "@front "
+            }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("@front", color = p.accent, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text("Channel front when it arrives", color = p.ink3, fontSize = 12.sp)
+            }
             val target = messages.find { it.id == replyTo } ?: carriedReply?.takeIf { it.id == replyTo }
             if (target != null) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(if (carriedReply?.id == replyTo) "↪ Replying privately to a message" else "↪ Replying to a message",
-                        color = p.ink2, fontSize = 12.sp)
-                    Text("Cancel", color = p.accent, fontSize = 12.sp,
-                        modifier = Modifier.clickable { replyTo = null; carriedReply = null })
+                Row(Modifier.fillMaxWidth().background(p.surface2, RoundedCornerShape(10.dp)).padding(start = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ChatIcon(R.drawable.ic_reply, tint = p.accent)
+                    Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                        val name = target.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
+                        Text(if (carriedReply?.id == replyTo) "Private reply to $name" else "Reply to $name", color = p.accent, fontSize = 13.sp)
+                        Text(ChatPresentation.preview(target), color = p.ink3, fontSize = 13.sp, maxLines = 2)
+                    }
+                    ChatIconButton(R.drawable.ic_close, "Cancel reply") { replyTo = null; carriedReply = null }
                 }
             } else if (replyTo != null) {
-                Text("Reply target unavailable · Cancel", color = p.accent, fontSize = 12.sp,
-                    modifier = Modifier.clickable { replyTo = null; carriedReply = null })
+                TextButton(onClick = { replyTo = null; carriedReply = null }) { Text("Reply target unavailable · Cancel") }
             }
             val audienceLabel = when (audience) {
                 "members" -> "Chosen members (${visibleTo.size})"
@@ -506,19 +523,22 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             for ((i, a) in attachments.withIndex()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("📎 ${a.name}", color = p.ink, fontSize = 13.sp, maxLines = 1, modifier = Modifier.weight(1f))
+                    ChatIcon(R.drawable.ic_attach)
+                    Text(a.name, color = p.ink, fontSize = 13.sp, maxLines = 1, modifier = Modifier.weight(1f))
                     ChatChip(if (a.spoiler) "Spoiler ✓" else "Spoiler", a.spoiler) { attachments[i] = a.copy(spoiler = !a.spoiler) }
-                    Text("✕", color = p.ink2, modifier = Modifier.clickable { attachments.removeAt(i) }.padding(6.dp)
-                        .semantics { contentDescription = "Remove ${a.name}" })
+                    ChatIconButton(R.drawable.ic_close, "Remove ${a.name}") { attachments.removeAt(i) }
                 }
                 if (a.mime.startsWith("image/")) {
                     OutlinedTextField(a.alt, { attachments[i] = a.copy(alt = it) }, placeholder = { Text("Describe the image (alt text)") },
                         modifier = Modifier.fillMaxWidth(), singleLine = true)
                 }
             }
-            if (moreOpen) {
-                Text("📎 Attach images or files", color = p.accent, fontSize = 14.sp,
-                    modifier = Modifier.clickable { picker.launch("*/*") }.padding(vertical = 6.dp))
+            if (moreOpen) ModalBottomSheet(onDismissRequest = { moreOpen = false }, containerColor = p.surface) {
+              Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Add to message", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                Text("Attach images or files", color = p.accent, fontSize = 14.sp,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { picker.launch("*/*") }.wrapContentSize(Alignment.CenterStart))
                 OutlinedTextField(cw, { cw = it }, placeholder = { Text("Content warning (optional)") },
                     modifier = Modifier.fillMaxWidth(), singleLine = true)
                 PollDraftFields(pollOn, { pollOn = it }, pollOptions, pollMultiple) { pollMultiple = it }
@@ -546,7 +566,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 if (!model.isPerson) {
                     Text(if (speakerSettingsOpen) "Advanced · Hide speaker default" else "Advanced · Speaker default ›",
                         color = p.accent, fontSize = 13.sp,
-                        modifier = Modifier.clickable { speakerSettingsOpen = !speakerSettingsOpen }.padding(vertical = 4.dp))
+                        modifier = Modifier.clickable { speakerSettingsOpen = !speakerSettingsOpen }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
                     if (speakerSettingsOpen) {
                         val setting = model.speakerDefaults[channel.id] ?: SpeakerDefault()
                         val fronts = model.namedFronts?.channelChoices.orEmpty()
@@ -582,47 +602,43 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         }
                     }
                 }
-            } else if (audience != "all" || cw.isNotBlank()) {
-                Text(listOfNotNull(audienceLabel.takeIf { audience != "all" }, "CW: ${cw.trim()}".takeIf { cw.isNotBlank() })
+                TextButton(onClick = { moreOpen = false }, modifier = Modifier.align(Alignment.End)) { Text("Done") }
+              }
+            }
+            if (audience != "all" || cw.isNotBlank() || pollOn) {
+                Text(listOfNotNull(audienceLabel.takeIf { audience != "all" }, "CW: ${cw.trim()}".takeIf { cw.isNotBlank() }, "Poll".takeIf { pollOn })
                     .joinToString(" · "), color = p.ink2, fontSize = 12.sp)
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 var authorsOpen by remember { mutableStateOf(false) }
                 Box {
-                    val tone = author?.let { tonesOf(it.color) }
-                    Text(author?.glyph ?: "?", fontSize = 18.sp, color = tone?.name ?: p.ink2,
-                        modifier = Modifier.size(40.dp).clip(CircleShape).background(tone?.tint ?: p.surface2)
-                            .clickable(enabled = ownSenders.isNotEmpty()) { authorsOpen = true }
-                            .wrapContentSize(Alignment.Center)
-                            .semantics { contentDescription = "Speaking as ${author?.shownName ?: "nobody yet"}" })
-                    DropdownMenu(authorsOpen, { authorsOpen = false }) {
-                        Text("Who's speaking", color = p.ink3, fontSize = 12.sp,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-                        for (member in ownSenders) {
-                            DropdownMenuItem(text = { Text(member.shownName) }, onClick = {
-                                selectedAuthor = member.id
-                                authorsOpen = false
-                            })
-                        }
+                    Box(Modifier.size(48.dp).clickable(enabled = ownSenders.isNotEmpty() && !model.isPerson) { authorsOpen = true }
+                        .semantics { contentDescription = "Send message as ${author?.shownName ?: "choose a sender"}" }, contentAlignment = Alignment.Center) {
+                        if (author != null) ChatAvatar(author, 40.dp, "solid")
+                        else Box(Modifier.size(32.dp).background(p.surface2, CircleShape), contentAlignment = Alignment.Center) { Text("?", color = p.ink3) }
                     }
+                    if (authorsOpen) SendAsSheet(model, channel.id, ownSenders, author?.id,
+                        onChoose = { selectedAuthor = it; authorsOpen = false }, onDismiss = { authorsOpen = false })
                 }
-                OutlinedTextField(draft, { draft = it },
-                    placeholder = {
-                        Text(if (author == null) "Message · symbols + space to choose senders" else "${author.shownName} in #${channel.name}", maxLines = 1)
-                    },
-                    modifier = Modifier.weight(1f), minLines = 1, maxLines = 4)
-                Text(if (moreOpen) "✕" else "⋯",
-                    color = if (moreOpen || audience != "all" || cw.isNotBlank()) p.accent else p.ink2,
-                    fontSize = 20.sp,
-                    modifier = Modifier.clickable { moreOpen = !moreOpen }.padding(8.dp)
-                        .semantics { contentDescription = if (moreOpen) "Fewer options" else "Content warning and audience" })
+                BasicTextField(draft, { draft = it }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                    .background(p.surface2, RoundedCornerShape(24.dp)).semantics { contentDescription = "Message" },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.ink), maxLines = 4,
+                    cursorBrush = SolidColor(p.accent), decorationBox = { inner ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.padding(start = 12.dp, end = 8.dp)) { ChatIcon(R.drawable.ic_emoji) }
+                            Box(Modifier.weight(1f).padding(vertical = 12.dp)) {
+                                if (draft.isEmpty()) Text("Message", color = p.ink3, style = MaterialTheme.typography.bodyLarge)
+                                inner()
+                            }
+                            ChatIconButton(R.drawable.ic_attach, "Attachments, poll, content warning and audience") { moreOpen = true }
+                        }
+                    })
                 val canSend = !busy && pendingPrivateReply == null && (draft.isNotBlank() || attachments.isNotEmpty()) &&
-                    currentPreview?.authors?.isNotEmpty() == true &&
-                    (currentPreview.text.isNotBlank() || attachments.isNotEmpty()) && (replyTo == null || target != null) &&
+                    (if (draft.isBlank()) author != null && attachments.isNotEmpty()
+                        else currentPreview?.authors?.isNotEmpty() == true && (currentPreview.text.isNotBlank() || attachments.isNotEmpty())) && (replyTo == null || target != null) &&
                     (audience != "members" || visibleTo.isNotEmpty())
-                Text(if (busy) "…" else "↑", color = if (canSend) p.bg else p.ink3, fontSize = 20.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.size(40.dp).clip(CircleShape).background(if (canSend) p.accent else p.surface2)
+                Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(if (canSend) p.accent else p.surface2)
                         .clickable(enabled = canSend) {
                             val speakerId = author?.id
                             busy = true
@@ -656,7 +672,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                             }
                         }
                         .wrapContentSize(Alignment.Center)
-                        .semantics { contentDescription = "Send to $audienceLabel" })
+                        .semantics { contentDescription = if (busy) "Sending message" else "Send to $audienceLabel" },
+                    contentAlignment = Alignment.Center) { ChatIcon(R.drawable.ic_send, tint = if (canSend) p.onAccent else p.ink3) }
             }
         }
         }
@@ -712,8 +729,12 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         AlertDialog(onDismissRequest = { spaceAction = "" }, title = { Text("Start a chat") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Messages in a shared space show who is speaking as they are sent.")
-                    OutlinedTextField(newSpaceName, { newSpaceName = it.take(80) }, label = { Text("Shared space name") }, singleLine = true)
+                    Text("Choose a chat to write a message.")
+                    Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+                        for (row in listRows) TextButton(onClick = { openChat(row); spaceAction = "" }) { Text(row.title) }
+                    }
+                    if (connections.isNotEmpty()) Text("Messages in a shared space show who is speaking as they are sent.")
+                    if (connections.isNotEmpty()) OutlinedTextField(newSpaceName, { newSpaceName = it.take(80) }, label = { Text("Shared space name") }, singleLine = true)
                     for (account in connections) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             ChatChip("DM", false) {

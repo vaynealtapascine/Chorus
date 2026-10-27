@@ -1033,6 +1033,26 @@
         "description": "24 dp back arrow, 2 dp rounded stroke; matches the existing F5 icon vocabulary."
       },
       "sha256": "95613ff8d5df33d962ff4d88ba9b35b44c4452031ee927e5008e85112d2d2dc0"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_emoji.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp emoji control, 2 dp rounded stroke; extends the existing chat icon vocabulary."
+      },
+      "sha256": "f5ab657651dd457c58c8dacbdc6ac2b66a6df79abd4562e72ab185dba02d39b8"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_check.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp check control, 2 dp rounded stroke; extends the existing chat icon vocabulary."
+      },
+      "sha256": "9906cffce0e80fe5ee3efc500c86c1cfd0c8f70002e7c6133299955f3df44762"
     }
   ]
 }

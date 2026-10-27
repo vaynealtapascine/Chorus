@@ -58,6 +58,13 @@ object ChatPresentation {
             else -> date.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
         }
 
+    /** Complete only the target already resolved by ChatCompose's existing core names resolver. */
+    fun frontMentionStart(draft: String): Int? {
+        val token = Regex("(^|\\s)@(\\w*)$").find(draft) ?: return null
+        val prefix = token.groupValues[2]
+        return if ("front".startsWith(prefix, ignoreCase = true)) draft.lastIndexOf('@') else null
+    }
+
     fun subtitle(offline: Boolean, reader: String?, unread: Int, context: String): String = when {
         offline -> "Waiting for network…"
         reader != null -> "reading as $reader" + if (unread > 0) " · $unread unread" else ""

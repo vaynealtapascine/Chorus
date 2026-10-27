@@ -141,3 +141,21 @@ receipts and selection into stage mode. Polls, held-message cancellation and edi
 their existing paths. Presence labels describe the current selected front, not historical presence.
 The back arrow is a locally authored geometric Android vector, matching the existing 24 dp icon
 stroke; no image-generation or new palette tokens were used.
+
+The composer uses an inline attachment control, a decorative smile icon, and a round Send with
+an explicit disabled state when empty. The native send-as sheet lists current channel-front
+speakers first, then other own-account members, keeping pronouns, actual layer labels and the
+current selection. It reuses ChatSpeaker defaults and ChatCompose parsing; no system or unsigned
+message semantics were added. Configured front sections read the core-resolved authorship pool.
+The attachment/options sheet retains file picking, alt text, spoiler flags, CW, polls, audience,
+autoproxy and the channel front picker. The new-message FAB opens existing chats and the existing
+external DM/shared-space creation flow, including when no external connections are available.
+Reply preview includes the actual names and a safe text excerpt with a 48 dp close control.
+
+Additional gaps: the Android send composer already resolves `@front` through the core, so this
+pass completes that target only. It has no member/group names resolver or `@everyone` target;
+those suggestions are omitted. Chat-specific reaction/pin/forward/delete/thread handlers and
+permission projections are absent, so those menu actions are omitted. The model has no chat
+system-event items. Android uses the existing system file picker rather than a fabricated recent
+photo grid, and the emoji decoration does not imply an app-specific emoji picker. The smile and
+check vectors are locally authored geometry, recorded with the other assets.

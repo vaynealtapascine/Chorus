@@ -43,6 +43,21 @@ class ChatPresentationTest {
         assertFalse(ChatPresentation.grouped(message.copy(occurredAt = 86_399_000), next.copy(occurredAt = 86_401_000), zone))
     }
 
+    @Test fun mentionCompletionUsesOnlyExistingTargets() {
+        assertEquals(6, ChatPresentation.frontMentionStart("hello @fr"))
+        assertEquals(0, ChatPresentation.frontMentionStart("@"))
+        for (text in listOf("@everyone", "email@fr", "\\@fr", "@front ", "@member")) assertNull(ChatPresentation.frontMentionStart(text))
+    }
+
+    @Test fun configuredLayersDoNotInferLegacyMeaningOrFallbackPresence() {
+        val named = NamedFronts("{}", listOf(FrontLayer("independent", "Steering", 0, false)), emptyMap(), emptyMap(), "body")
+        val legacy = Entry("member", "fox", "front", true)
+        val model = Model(emptyList(), emptyList(), emptyMap(), listOf(legacy), null, emptyList(), namedFronts = named)
+        assertEquals("Steering", ChatPresentation.layer(model, legacy.copy(level = "independent")))
+        assertNull(ChatPresentation.layer(model, legacy))
+        assertTrue(ChatPresentation.presence(model, "channel").isEmpty())
+    }
+
     @Test fun labelsReflectOfflineStateAndCalendarDates() {
         assertEquals("Waiting for network…", ChatPresentation.subtitle(true, "Fox", 4, "Internal"))
         assertEquals("reading as Fox · 4 unread", ChatPresentation.subtitle(false, "Fox", 4, "Internal"))
