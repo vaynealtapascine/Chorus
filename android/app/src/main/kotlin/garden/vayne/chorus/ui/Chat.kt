@@ -123,6 +123,9 @@ import kotlin.coroutines.cancellation.CancellationException
 import garden.vayne.chorus.data.ChatReaction
 import garden.vayne.chorus.data.ChatReactions
 import garden.vayne.chorus.data.ChatForward
+import garden.vayne.chorus.data.ChatThreads
+import garden.vayne.chorus.data.ThreadSummary
+import androidx.compose.material3.Checkbox
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -172,6 +175,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var selectedAuthor by rememberSaveable { mutableStateOf("") }
     var draft by rememberSaveable { mutableStateOf("") }
     var cw by rememberSaveable { mutableStateOf("") }
+    // F5.7: a thread reply can also land in the parent channel, as a reply to the thread's parent
+    var alsoSend by rememberSaveable { mutableStateOf(false) }
     // an optional poll on the next message (D-081)
     var pollOn by rememberSaveable { mutableStateOf(false) }
     val pollOptions = remember { mutableStateListOf("", "") }
@@ -234,7 +239,24 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         catch (_: Exception) { /* Own members still have projection names; retry on next refresh. */ }
     }
     val channels = model.channels.filter { it.spaceId == space?.id }
-    val channel = channels.find { it.id == selectedChannel } ?: channels.firstOrNull()
+    val channel = channels.find { it.id == selectedChannel } ?: channels.firstOrNull { it.kind != "thread" }
+    val threads = remember(model) { ChatThreads.summaries(model) }
+    val threadParentChannel = remember(model, channel?.id) { channel?.takeIf { it.kind == "thread" }?.let { ChatThreads.parentChannel(model, it) } }
+    // the message a thread hangs from, as this reader may see it (older ones come from the replica)
+    val threadParent by produceState<ChatMessage?>(null, model, channel?.id, threadParentChannel?.id, viewingAs) {
+        val thread = channel?.takeIf { it.kind == "thread" }
+        val home = threadParentChannel
+        val s = space
+        value = null
+        if (thread == null || home == null || s == null) return@produceState
+        value = model.chatMessages[home.id].orEmpty().find {
+            it.id == thread.parentMessageId && memberVisible(it, s.kind, model.current, viewingAs) &&
+                accountVisible(it, s.kind, chorus.device?.accountId.orEmpty())
+        } ?: chorus.stageWindow(home.id, 10_000, s.kind, model.current, viewingAs).messages.find { it.id == thread.parentMessageId }
+    }
+    BackHandler(conversationOpen && channel?.kind == "thread" && threadParentChannel != null) {
+        threadParentChannel?.let { selectedChannel = it.id }
+    }
     LaunchedEffect(sharedDraft?.id, channel?.id, chorus.device?.accountId) {
         val incoming = sharedDraft ?: return@LaunchedEffect
         if (channel?.id != sharedChannel || chorus.device == null) return@LaunchedEffect
@@ -421,6 +443,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
 
     val listRows = remember(model, viewingAs, chorus.device?.accountId, directory, foreignAuthors) {
         model.channels.mapNotNull { candidate ->
+            if (candidate.kind == "thread") return@mapNotNull null // threads live under their parent
             val home = model.spaces.find { it.id == candidate.spaceId } ?: return@mapNotNull null
             val visible = model.chatMessages[candidate.id].orEmpty().filter {
                 memberVisible(it, home.kind, model.current, viewingAs) && accountVisible(it, home.kind, chorus.device?.accountId.orEmpty())
@@ -471,6 +494,22 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
     }
     LaunchedEffect(undoDelete) { if (undoDelete != null) { delay(8_000); undoDelete = null } }
+    // one thread per parent, whose id is the parent's, so every device opens the same one
+    fun openThread(message: ChatMessage) {
+        val home = space ?: return
+        val existing = model.channels.find { it.kind == "thread" && it.spaceId == home.id && it.parentMessageId == message.id }
+        if (existing != null) { selectedChannel = existing.id; conversationOpen = true; return }
+        if (busy) return
+        busy = true; error = null
+        actions.launch {
+            try {
+                chorus.create("channel.create", message.id, JSONObject().put("space_id", home.id).put("kind", "thread")
+                    .put("name", "Thread").put("parent_message_id", message.id), scope = "space:${home.id}")
+                selectedChannel = message.id; conversationOpen = true
+            } catch (e: Exception) { error = e.message ?: "Could not start a thread." }
+            finally { busy = false }
+        }
+    }
     Row(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         if (expanded || !conversationOpen) ChatListPane(model, listRows, if (expanded) channel?.id else null, readerName,
             openChat, { spaceAction = "new" },
@@ -482,11 +521,15 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 { infoOpen = false }, onShowMessage = { infoOpen = false; jumpTo = it }, modifier = Modifier.weight(1f))
         } else if (expanded || conversationOpen) Column(Modifier.weight(1f).fillMaxHeight()) {
         Row(Modifier.fillMaxWidth().background(p.surface), verticalAlignment = Alignment.CenterVertically) {
-            if (!expanded) ChatIconButton(R.drawable.ic_back, "Back to chats") { conversationOpen = false }
-            channel?.let { ChannelDisc(it, size = 36.dp) }
+            val inThread = channel?.kind == "thread"
+            if (inThread && threadParentChannel != null) ChatIconButton(R.drawable.ic_back, "Back to ${threadParentChannel.name}") {
+                selectedChannel = threadParentChannel.id
+            } else if (!expanded) ChatIconButton(R.drawable.ic_back, "Back to chats") { conversationOpen = false }
+            channel?.let { ChannelDisc(it, member = threadParent?.authors?.firstOrNull()?.let(model::member).takeIf { inThread }, size = 36.dp) }
             Column(Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 10.dp)) {
-                Text(channel?.name ?: "Chat", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1)
-                Text(ChatPresentation.subtitle(syncStatus != Status.Live, readerName, unreadCount,
+                Text(if (inThread) "Thread" else channel?.name ?: "Chat", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1)
+                Text(if (inThread && syncStatus == Status.Live) "in ${threadParentChannel?.name ?: "a channel"} · ${ChatThreads.repliesLabel(messages.size)}"
+                    else ChatPresentation.subtitle(syncStatus != Status.Live, readerName, unreadCount,
                     space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }.orEmpty()),
                     color = if (syncStatus != Status.Live) p.accent else p.ink3, fontSize = 12.sp, maxLines = 2)
             }
@@ -581,6 +624,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     heldMessages[message.id], actingMemberId = replySpeakerId,
                     reactions = model.messageReactions[message.id].orEmpty(),
                     onForward = if (heldMessages[message.id] == null) ({ forwarding = message }) else null,
+                    thread = threads[message.id],
+                    onThread = if (channel.kind != "thread" && heldMessages[message.id] == null) ({ openThread(message) }) else null,
                     onDelete = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
                         heldMessages[message.id] == null) ({ deleting = message }) else null,
                     onReact = { emoji, on -> react(message, emoji, on) },
@@ -593,7 +638,21 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         ({ editingMessage = message }) else null)
                 }
             }
-            if (messages.isEmpty()) item {
+            // F5.7: the parent heads the thread, then how many replies follow
+            if (channel.kind == "thread") item(key = "thread-parent") {
+                Column(Modifier.padding(top = 8.dp)) {
+                    val parent = threadParent
+                    if (parent != null) ChatMessageCard(parent, model, foreignAuthors, chorus, emptyList(), null,
+                        actingMemberId = replySpeakerId, onReply = {}, onReplyPrivately = null, onEdit = null,
+                        reactions = model.messageReactions[parent.id].orEmpty(), interactive = false, onStage = {})
+                    else Text("Original message unavailable in this view", color = p.ink3, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+                    Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                        Text(ChatThreads.repliesLabel(messages.size), color = p.ink3, fontSize = 12.sp,
+                            modifier = Modifier.background(p.surface, RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 4.dp))
+                    }
+                }
+            }
+            if (messages.isEmpty() && channel.kind != "thread") item {
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
             }
         }
@@ -746,6 +805,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 Text(listOfNotNull(audienceLabel.takeIf { audience != "all" }, "CW: ${cw.trim()}".takeIf { cw.isNotBlank() }, "Poll".takeIf { pollOn })
                     .joinToString(" · "), color = p.ink2, fontSize = 12.sp)
             }
+            if (channel.kind == "thread" && threadParentChannel != null && threadParent != null) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { alsoSend = !alsoSend },
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(alsoSend, { alsoSend = it })
+                    Text("Also send to ${threadParentChannel.name}", color = p.ink, fontSize = 14.sp)
+                }
+            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 var authorsOpen by remember { mutableStateOf(false) }
@@ -765,7 +831,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.padding(start = 12.dp, end = 8.dp)) { ChatIcon(R.drawable.ic_emoji) }
                             Box(Modifier.weight(1f).padding(vertical = 12.dp)) {
-                                if (draft.isEmpty()) Text("Message", color = p.ink3, style = MaterialTheme.typography.bodyLarge)
+                                if (draft.isEmpty()) Text(if (channel.kind == "thread") "Reply in thread" else "Message",
+                                    color = p.ink3, style = MaterialTheme.typography.bodyLarge)
                                 inner()
                             }
                             ChatIconButton(R.drawable.ic_attach, "Attachments, poll, content warning and audience") { moreOpen = true }
@@ -790,6 +857,12 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                     if (pollOn) payload.put("poll", Polls.draft(pollOptions.toList(), pollMultiple).getOrThrow())
                                     followNext = true
                                     chorus.create("message.send", chorus.newId(), payload, scope = scope)
+                                    val alsoTo = threadParentChannel?.takeIf { alsoSend && channel.kind == "thread" }
+                                    val parent = threadParent
+                                    if (alsoTo != null && parent != null) chorus.create("message.send", chorus.newId(),
+                                        ChatCompose.payload(model, alsoTo.id, speakerId, draft, cw, audience, visibleTo.toSet(), space.kind,
+                                            replyTo = parent.id, attachmentIds = attachmentIds, accountId = senderAccount), scope = scope)
+                                    alsoSend = false
                                     pollOn = false; pollMultiple = false
                                     pollOptions.clear(); pollOptions.addAll(listOf("", ""))
                                     if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
@@ -990,6 +1063,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     onReplyPrivately: (() -> Unit)?, onEdit: (() -> Unit)?,
     reactions: List<ChatReaction> = emptyList(), onReact: ((String, Boolean) -> Unit)? = null,
     onForward: (() -> Unit)? = null, onDelete: (() -> Unit)? = null,
+    thread: ThreadSummary? = null, onThread: (() -> Unit)? = null, interactive: Boolean = true,
     showSender: Boolean = true, showAvatar: Boolean = true, quote: ChatMessage? = null, onStage: () -> Unit) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
@@ -1030,7 +1104,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             .background(if (own) p.accentSoft else p.surface2, RoundedCornerShape(
                 topStart = if (!own && !showSender) 6.dp else 16.dp, topEnd = if (own && !showSender) 6.dp else 16.dp,
                 bottomEnd = if (own && showAvatar) 6.dp else 16.dp, bottomStart = if (!own && showAvatar) 6.dp else 16.dp))
-            .combinedClickable(onClick = { menuOpen = true }, onLongClick = { menuOpen = true }, onLongClickLabel = "Message actions")
+            .then(if (interactive) Modifier.combinedClickable(onClick = { menuOpen = true }, onLongClick = { menuOpen = true },
+                onLongClickLabel = "Message actions") else Modifier)
             .padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (showSender) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
@@ -1127,6 +1202,14 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 }
             }
         }
+        if (thread != null && thread.replies > 0) Row(Modifier.heightIn(min = 48.dp)
+            .then(if (onThread != null) Modifier.clickable(onClickLabel = "Open thread", onClick = onThread) else Modifier),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
+                for (id in thread.lastRepliers) model.member(id)?.let { ChatAvatar(it, 20.dp) }
+            }
+            Text(ChatThreads.repliesLabel(thread.replies), color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
         Row(Modifier.then(if (reactions.isNotEmpty()) Modifier.fillMaxWidth() else Modifier.align(Alignment.End)),
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (reactions.isNotEmpty()) ReactionChips(reactions, actingMemberId, Modifier.weight(1f),
@@ -1163,6 +1246,9 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 }
                 HorizontalDivider(color = p.line)
                 if (held == null) ChatActionRow(R.drawable.ic_reply, "Reply") { menuOpen = false; onReply() }
+                if (onThread != null) ChatActionRow(R.drawable.ic_thread, if (thread != null) "Open thread" else "Reply in thread") {
+                    menuOpen = false; onThread()
+                }
                 if (held == null && onReplyPrivately != null) ChatActionRow(R.drawable.ic_lock, "Reply privately") { menuOpen = false; onReplyPrivately() }
                 if (message.cw == null || revealed) ChatActionRow(R.drawable.ic_copy, "Copy text") {
                     val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager

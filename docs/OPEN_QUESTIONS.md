@@ -8,6 +8,7 @@ All questions from the 2026-09-23 spec round are answered (D-045 to D-054). Q14 
 | # | Question | Default until answered |
 | --- | --- | --- |
 | Q21 | Confirm the shared-space/DM typing indicator default: should other accounts see typing only after “Show when we're typing in shared chats” is enabled? (Owner request, 2026-10-27; D-087.) | **Off.** Same-account other devices still receive it; internal spaces never send it across accounts. |
+| Q22 | Figma F5.7 shows “Also send to General” under a thread's composer; the spec has no such option. Android implements it as: when ticked, the reply is posted in the thread *and* as a separate message in the parent channel, replying to the thread's parent. Keep, change (e.g. one message shown in both places), or drop? (2026-10-28, Android chat parity.) | **Two messages**, unticked each time; web unchanged until answered. |
 
 Q18 (past-history corrections while following) was answered 2026-10-25: keep following (D-083).
 Q19 (additional-front follower access) was answered 2026-10-25: explicit grants are required (D-084).
