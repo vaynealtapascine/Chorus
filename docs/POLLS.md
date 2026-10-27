@@ -28,7 +28,7 @@ forwards/imports, which copy it as-is):
 ```
 
 Options and `multiple` are fixed at creation. Edits to the parent (`post.edit`, `message.edit`)
-do not change the poll, so a vote always refers to the options the voter saw. Option IDs are
+reject any `poll` key, including null, so a vote always refers to the options the voter saw. Option IDs are
 short strings chosen by the client (`a`, `b`, ...), unique within the poll; text is 1–200 chars.
 
 **Votes: `poll.vote`, account-scoped.** `scope = account:<voter account>`, `entity_id` = the

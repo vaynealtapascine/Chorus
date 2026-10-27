@@ -560,11 +560,11 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
             typed("entities", Value::is_array, "a list")?;
             typed("tags", strings, "a list of tags")?;
             ranges(p)?;
-            if let Some(poll) = p.get("poll").filter(|v| !v.is_null()) {
+            if let Some(poll) = p.get("poll") {
                 if op.kind.ends_with(".edit") {
                     return bad("a poll cannot be changed after it is created");
                 }
-                if crate::poll::definition(poll).is_none() {
+                if !poll.is_null() && crate::poll::definition(poll).is_none() {
                     return bad(crate::poll::POLL_RULE);
                 }
             }

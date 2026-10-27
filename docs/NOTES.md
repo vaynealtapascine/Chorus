@@ -578,3 +578,7 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   The pusher skips only ops it already owns, not derived server ops. Tally generation alone
   uses the private derived append; normal server/API writes still pass all author permissions.
   HTTP sync push/pull fallback is specified but not implemented in the current router.
+
+- 2026-10-27 GPT-6-sol — Rejecting null poll edits adds 3 gzipped wasm bytes: 307,010 /
+  307,200 after the actual bindgen build and gzip level 9 gate. Keep null allowed on creation;
+  check for the edit's key before ignoring a null definition. Two poll fixtures cover this.
