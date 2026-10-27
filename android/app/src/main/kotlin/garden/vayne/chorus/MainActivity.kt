@@ -207,7 +207,9 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = { Text(t.label) }) }
             }
             Column(Modifier.weight(1f)) {
-            if (!chatStageCapture) Row(
+            val chatOwnChrome = activeTab == Tab.Chat && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
+            if (chatOwnChrome && !chatStageCapture) Box(Modifier.fillMaxWidth().background(p.surface).statusBarsPadding())
+            if (!chatStageCapture && !chatOwnChrome) Row(
                 Modifier.fillMaxWidth().background(p.surface).statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -259,7 +261,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
                         onStageCapture = { chatStageCapture = it }, onDismissSearchHit = { chatSearchHit = null },
                         sharedDraft = chatShare, sharedChannel = sharedChannel,
-                        onShareConsumed = { chatShare = null; sharedChannel = null })
+                        onShareConsumed = { chatShare = null; sharedChannel = null }, onSearch = { searchOpen = true })
                     Tab.Journal -> Journal(chorus, model, journalReplyPost,
                         onExternalReplyConsumed = { journalReplyPost = null },
                         externalOpenPost = journalOpenPost,

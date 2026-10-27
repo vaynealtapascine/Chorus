@@ -104,3 +104,29 @@ reader-visible totals must not expose voter identities through synced data.
 Implementation status and next steps belong in `PROGRESS.md`. Further behavior gaps require an
 owner question unless existing decisions/handoffs already settle them. Nothing is deployed or
 installed on the owner's phone by this task without the handoff's required device agreement.
+
+## Android F5 chat parity (2026-10-27)
+
+The supplied `F:/DunBuild/figma-chat/` captures are the visual authority for this pass.
+Phone chat opens on a foldered list and pushes a conversation; at 840 dp the list stays
+beside the conversation. Presence and send-as use the channel-selected front, preserving
+independent layer names and the core's authorship rules. Read badges count only messages in
+the current visible local chat window (up to 100), not an invented server total. List previews
+respect account/member visibility and conceal content-warning bodies. Search opens the existing
+local/server search screen. No new operations or schema are introduced.
+
+### Chat parity gaps
+
+- Android's current chat DTO has no pin, reaction, mute, forward or pending-ack fields. Do not
+  fabricate pinned banners, reaction counts, muted/pinned row icons or delivery/read ticks.
+- Voice recording and live typing presence are absent. The composer keeps an inactive Send
+  affordance when empty; only the actual sync connection can supply a live status subtitle.
+- Channel rows contain thread parent IDs, but Android has no thread-specific reply composer
+  or create-thread action. Existing thread channels remain reachable in the list; no “also send”
+  checkbox or new thread behavior is implied.
+- Notes are ordinary existing channels, without a saved-notes type or tags navigation.
+- System/unsigned authorship is unsupported by ChatCompose; send-as must list real eligible
+  own-account members only. The internal space name supplies system context where available;
+  the model has no separate system display-name field.
+- Native screenshot acceptance belongs to the parent agent, which will install and inspect the
+  APK on SM-A566B. This implementation task does not install or change device settings.

@@ -253,7 +253,8 @@ The shared spacing rhythm is a four-point scale from `spacing` in frontmatter. C
   hidden as required by D-003.
 - **Chat:** 260 px channel list and flexible conversation at wide widths. From 1280 px an open
   information panel occupies another 260 px column; below that it overlays from the right. Compact
-  channels form a horizontal strip. The conversation scrolls within its area, keeping the composer
+  web channels form a horizontal strip. Android opens a foldered chat list, then pushes the chosen
+  conversation; from 840 dp the list remains beside it. The conversation scrolls within its area, keeping the composer
   reachable above navigation/keyboard insets.
 - **Journal:** readable feed (up to 760 px), plus a 280 px context column from 1280 px. Below this,
   shortcuts remain reachable through the feed tabs and app navigation.

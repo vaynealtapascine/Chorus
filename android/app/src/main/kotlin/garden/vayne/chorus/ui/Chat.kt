@@ -14,6 +14,13 @@ import androidx.core.content.FileProvider
 import garden.vayne.chorus.data.Blobs
 import garden.vayne.chorus.data.UploadWork
 import org.json.JSONObject
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.platform.LocalConfiguration
+import garden.vayne.chorus.data.ChatPresentation
+import garden.vayne.chorus.designsystem.R
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.size
@@ -107,9 +114,18 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     requestedChannel: String? = null, searchHit: SearchDocument? = null,
     onStageCapture: (Boolean) -> Unit = {},
     onDismissSearchHit: () -> Unit = {}, sharedDraft: SharedDraft? = null,
-    sharedChannel: String? = null, onShareConsumed: () -> Unit = {}) {
+    sharedChannel: String? = null, onShareConsumed: () -> Unit = {}, onSearch: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val heldMessages by chorus.heldMessages.collectAsState()
+    var conversationOpen by rememberSaveable { mutableStateOf(false) }
+    var switchOpen by remember { mutableStateOf(false) }
+    var headerMenu by remember { mutableStateOf(false) }
+    val expanded = LocalConfiguration.current.screenWidthDp >= 840
+    LaunchedEffect(requestedSpace, requestedChannel, searchHit?.id, sharedDraft?.id) {
+        if (requestedSpace != null || requestedChannel != null || searchHit != null || sharedDraft != null) conversationOpen = true
+    }
+
+
     var selectedSpace by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(requestedSpace) {
         if (requestedSpace != null) selectedSpace = requestedSpace
@@ -145,6 +161,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var newSpaceName by rememberSaveable { mutableStateOf("") }
     var invitedAccounts by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var staging by rememberSaveable { mutableStateOf(false) }
+    BackHandler(conversationOpen && !staging) { conversationOpen = false }
     var capturing by rememberSaveable { mutableStateOf(false) }
     var stageLimit by rememberSaveable { mutableStateOf(100) }
     var stageWindow by remember { mutableStateOf<StageRows?>(null) }
@@ -209,12 +226,14 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     }
                     pendingPrivateReply = PendingPrivateReply(message, channelId = target, speakerId = speaker.id)
                     selectedChannel = target
+                    conversationOpen = true
                 } else {
                     val account = message.accountId?.takeIf { it != dev.accountId }
                         ?: throw IllegalArgumentException("This message is from your account.")
                     val targetSpace = Spaces.openDm(dev, account)
                     pendingPrivateReply = PendingPrivateReply(message, spaceId = targetSpace, speakerId = replySpeakerId)
                     selectedSpace = targetSpace
+                    conversationOpen = true
                     selectedChannel = ""
                     refresh++
                 }
@@ -255,11 +274,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val readMarks = model.readMarks[channel?.id].orEmpty()
     LaunchedEffect(channel?.id, space?.id, messages.lastOrNull()?.id, readMarks,
         model.current, model.accountPrefs.readPerMember, chorus.device?.accountId, staging,
-        model.namedFronts, model.speakerDefaults[channel?.id]) {
+        model.namedFronts, model.speakerDefaults[channel?.id], conversationOpen, expanded) {
         val latest = messages.lastOrNull() ?: return@LaunchedEffect
         val chosen = channel ?: return@LaunchedEffect
         val home = space ?: return@LaunchedEffect
-        if (staging || chorus.device == null) return@LaunchedEffect
+        if (staging || (!conversationOpen && !expanded) || chorus.device == null) return@LaunchedEffect
         try {
             for (reader in ReadTracking.readersFor(model, chosen.id, model.accountPrefs.readPerMember)) {
                 if (!ReadTracking.needsMark(latest.occurredAt, latest.id, readMarks, reader)) continue
@@ -325,73 +344,60 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         return
     }
 
-    Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Chat", color = p.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            if (channel != null) ChatChip("Stage", false) { staging = true }
-            if (connections.isNotEmpty()) ChatChip("New chat", false) { spaceAction = "new" }
-            val canLeave = space != null && space.kind != "internal" &&
-                directory[space.id]?.let { space.kind != "shared" || it.ownerAccountId != chorus.device?.accountId } == true
-            if (canLeave) ChatChip("Leave", false) { spaceAction = "leave" }
+    val listRows = remember(model, viewingAs, chorus.device?.accountId, directory) {
+        model.channels.mapNotNull { candidate ->
+            val home = model.spaces.find { it.id == candidate.spaceId } ?: return@mapNotNull null
+            val visible = model.chatMessages[candidate.id].orEmpty().filter {
+                memberVisible(it, home.kind, model.current, viewingAs) && accountVisible(it, home.kind, chorus.device?.accountId.orEmpty())
+            }
+            val reader = viewingAs ?: ReadTracking.readersFor(model, candidate.id, model.accountPrefs.readPerMember).firstOrNull().orEmpty()
+            val marks = model.readMarks[candidate.id].orEmpty()
+            val unread = visible.count { ReadTracking.needsMark(it.occurredAt, it.id, marks, reader) }
+            val title = if (home.kind == "dm") directory[home.id]?.accounts?.firstOrNull { it.id != chorus.device?.accountId }?.shownName ?: home.name
+                else if (home.kind == "shared" && model.channels.count { it.spaceId == home.id } == 1) home.name else candidate.name
+            ChatListRow(candidate, home, title, visible.lastOrNull(), unread)
         }
-        if (error != null) Text(error.orEmpty(), color = p.accent, fontSize = 12.sp,
-            modifier = Modifier.padding(horizontal = 16.dp))
-        if (space == null) {
-            Text("No spaces yet. Start a chat with someone you follow.",
-                color = p.ink2, modifier = Modifier.padding(24.dp))
-        } else {
-        // One header row: space picker, channels, and (internal spaces) whose view to show
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            var spacesOpen by remember { mutableStateOf(false) }
+    }
+    val readerId = viewingAs ?: channel?.id?.let { ReadTracking.readersFor(model, it, model.accountPrefs.readPerMember).firstOrNull() }
+    val readerName = readerId?.let(model::member)?.shownName
+    val openChat: (ChatListRow) -> Unit = { row ->
+        selectedSpace = row.space.id; selectedChannel = row.channel.id; conversationOpen = true
+        replyTo = null; carriedReply = null; pendingPrivateReply = null; moreOpen = false
+        audience = "all"; visibleTo = emptyList()
+    }
+    Row(Modifier.fillMaxSize().background(p.bg).imePadding()) {
+        if (expanded || !conversationOpen) ChatListPane(model, listRows, if (expanded) channel?.id else null, readerName,
+            openChat, if (connections.isNotEmpty()) ({ spaceAction = "new" }) else null,
+            { switchOpen = true }, onSearch, if (expanded) Modifier.width(240.dp) else Modifier.weight(1f))
+        if (expanded) HorizontalDivider(Modifier.fillMaxHeight().width(1.dp), color = p.line)
+        if (expanded || conversationOpen) Column(Modifier.weight(1f).fillMaxHeight()) {
+        Row(Modifier.fillMaxWidth().background(p.surface), verticalAlignment = Alignment.CenterVertically) {
+            if (!expanded) TextButton(onClick = { conversationOpen = false }, modifier = Modifier.size(48.dp)) { Text("‹", fontSize = 28.sp) }
+            channel?.let { ChannelDisc(it, size = 36.dp) }
+            Column(Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 10.dp)) {
+                Text(channel?.name ?: "Chat", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1)
+                Text(readerName?.let { "reading as $it" } ?: space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }.orEmpty(),
+                    color = p.ink3, fontSize = 12.sp, maxLines = 1)
+            }
+            ChatIconButton(R.drawable.ic_search, "Search messages", onSearch)
             Box {
-                ChatChip("${spaceLabel(space, directory[space.id], chorus.device?.accountId.orEmpty())} ▾", true) { spacesOpen = true }
-                DropdownMenu(spacesOpen, { spacesOpen = false }) {
-                    for (candidate in model.spaces) {
-                        DropdownMenuItem(text = { Text(spaceLabel(candidate, directory[candidate.id], chorus.device?.accountId.orEmpty())) }, onClick = {
-                            spacesOpen = false
-                            selectedSpace = candidate.id
-                            selectedChannel = ""
-                            viewingAs = null
-                            audience = "all"
-                            visibleTo = emptyList()
-                            replyTo = null
-                            carriedReply = null
-                            pendingPrivateReply = null
-                            moreOpen = false
-                        })
+                ChatIconButton(R.drawable.ic_more, "Conversation options") { headerMenu = true }
+                DropdownMenu(headerMenu, { headerMenu = false }) {
+                    if (channel != null) DropdownMenuItem(text = { Text("Stage mode") }, onClick = { headerMenu = false; staging = true })
+                    DropdownMenuItem(text = { Text("Message options") }, onClick = { headerMenu = false; moreOpen = !moreOpen })
+                    if (space?.kind == "internal") {
+                        DropdownMenuItem(text = { Text("Read as everyone present") }, onClick = { headerMenu = false; viewingAs = null })
+                        for (member in model.active) DropdownMenuItem(text = { Text("Read as ${member.shownName}") }, onClick = { headerMenu = false; viewingAs = member.id })
                     }
-                }
-            }
-            LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(channels, key = { it.id }) { candidate ->
-                    ChatChip("#${candidate.name}", candidate.id == channel?.id) {
-                        selectedChannel = candidate.id
-                        replyTo = null
-                        carriedReply = null
-                        pendingPrivateReply = null
-                        replyTo = null
-                    }
-                }
-            }
-            if (space.kind == "internal") {
-                var viewOpen by remember { mutableStateOf(false) }
-                Box {
-                    val viewer = model.active.find { it.id == viewingAs }?.shownName ?: "Present"
-                    Text("👁 $viewer", color = p.ink2, fontSize = 13.sp,
-                        modifier = Modifier.clickable { viewOpen = true }.padding(horizontal = 6.dp, vertical = 8.dp))
-                    DropdownMenu(viewOpen, { viewOpen = false }) {
-                        Text("Member visibility is a soft view setting. Whose view?", color = p.ink3, fontSize = 12.sp,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-                        DropdownMenuItem(text = { Text("Everyone present") }, onClick = { viewingAs = null; viewOpen = false })
-                        for (member in model.active) {
-                            DropdownMenuItem(text = { Text(member.shownName) }, onClick = { viewingAs = member.id; viewOpen = false })
-                        }
-                    }
+                    val canLeave = space != null && space.kind != "internal" && directory[space.id]?.let {
+                        space.kind != "shared" || it.ownerAccountId != chorus.device?.accountId } == true
+                    if (canLeave) DropdownMenuItem(text = { Text("Leave space") }, onClick = { headerMenu = false; spaceAction = "leave" })
                 }
             }
         }
+        if (error != null) Text(error.orEmpty(), color = p.danger, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+        if (space == null) Text("No spaces yet. Start a chat with someone you follow.", color = p.ink2, modifier = Modifier.padding(24.dp))
+        else {
         if (searchHit != null && searchHit.channelId == channel?.id) {
             var revealed by rememberSaveable(searchHit.id) { mutableStateOf(false) }
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
@@ -632,6 +638,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
         }
     }
+    }
+    if (switchOpen) Switcher(chorus, model, channel?.id?.let { ChatSpeaker.frontOf(model, it) }) { switchOpen = false }
     editingMessage?.let { original ->
         var editError by remember(original.id) { mutableStateOf<String?>(null) }
         var editBusy by remember(original.id) { mutableStateOf(false) }
@@ -688,7 +696,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                 val dev = chorus.device ?: return@ChatChip
                                 busy = true; error = null; spaceAction = ""
                                 actions.launch {
-                                    try { selectedSpace = Spaces.openDm(dev, account.id); selectedChannel = ""; refresh++ }
+                                    try { selectedSpace = Spaces.openDm(dev, account.id); selectedChannel = ""; conversationOpen = true; refresh++ }
                                     catch (e: Exception) { error = e.message ?: "Could not start the DM." }
                                     finally { busy = false }
                                 }
@@ -708,7 +716,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     actions.launch {
                         try {
                             selectedSpace = Spaces.createShared(dev, newSpaceName, invitedAccounts)
-                            selectedChannel = ""; newSpaceName = ""; invitedAccounts = emptyList(); refresh++
+                            selectedChannel = ""; conversationOpen = true; newSpaceName = ""; invitedAccounts = emptyList(); refresh++
                         } catch (e: Exception) { error = e.message ?: "Could not create the space." }
                         finally { busy = false }
                     }
