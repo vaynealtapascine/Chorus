@@ -11,6 +11,9 @@ use serde_json::{Value, json};
 
 use crate::{config::Config, db, ingest, now_ms};
 
+#[path = "seed_demo.rs"]
+pub mod demo;
+
 pub struct Counts {
     pub members: usize,
     pub switches: usize,

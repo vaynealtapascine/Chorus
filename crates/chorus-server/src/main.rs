@@ -92,6 +92,12 @@ enum Cmd {
         #[arg(long)]
         to: Option<PathBuf>,
     },
+    /// Figma chat demo for visual checks only. Never use the real server's data directory.
+    SeedDemo {
+        /// Required new, isolated data directory; refuses even an empty existing directory.
+        #[arg(long)]
+        to: PathBuf,
+    },
     /// Erase a message or an op for good (D-053): the op ids stay, their contents don't.
     /// Asks for confirmation unless --yes; logged to <data_dir>/purge.log.
     Purge {
@@ -332,6 +338,22 @@ fn main() -> anyhow::Result<()> {
                 result.account_id,
                 seed_cfg.server.data_dir.display()
             );
+        }
+        Cmd::SeedDemo { to } => {
+            let mut seed_cfg = cfg;
+            seed_cfg.server.data_dir = to;
+            let result = seed::demo::run(&seed_cfg)?;
+            println!("DEMO ONLY — never use this data on the real server.");
+            println!("seeded {} ops in {}", result.ops, seed_cfg.server.data_dir.display());
+            for (handle, account) in &result.accounts {
+                println!("account {handle}: {account}");
+            }
+            println!("Configure an isolated server with data_dir pointing to this directory, then run:");
+            println!("chorus-server --config <toml> invite --kind device --account {}", result.accounts[0].1);
+            println!("<toml> must be the isolated demo server's config (see docs/OPS.md).");
+            println!("Quiet room: notifications off. Amarynthe: 12 General messages after her read mark.");
+            println!("Account unread badges count other accounts only: see shared spaces and the Junipers DM.");
+            println!("Skipped: internal account unread badges (same-account messages are excluded by clients).");
         }
         Cmd::Purge { message, op, account, yes } => {
             use chorus_server::purge::{self, Target};

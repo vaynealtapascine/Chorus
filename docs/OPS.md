@@ -161,6 +161,88 @@ chorus-server migrate                   # run pending schema migrations (also au
 - Browser end-to-end suite (the v1 flows in three browsers): `bash scripts/e2e-web.sh` starts
   its own server on a temporary data directory; `web/e2e/README.md` also shows how to run it
   against a live server. CI runs it as the `e2e` job.
+- Parallel Windows worktrees normally keep the shared `CARGO_TARGET_DIR`, but should serialize their
+  gates: another build can hold/replace a test executable after Cargo's build lock is released.
+  If a test is **never executed** with `os error 32` (file in use), wait for overlapping Cargo
+  work to finish and rerun the gate. CLI tests also use the shared `debug/chorus-server.exe`:
+  another worktree can replace it mid-suite, causing tests to execute the wrong CLI (e.g.
+  `unrecognized subcommand 'seed-demo'`). Rebuild from the intended worktree once builds are
+  quiet, then rerun the gate. Both collisions occurred during the demo-seed gate on 2026-10-27.
+  When serialization isn't possible, give one worktree its own `CARGO_TARGET_DIR` with
+  `CARGO_PROFILE_DEV_DEBUG=line-tables-only`, `CARGO_PROFILE_TEST_DEBUG=line-tables-only` and
+  `CARGO_INCREMENTAL=0` to limit disk use.
+
+### Demo data for visual checks (never on the real server)
+
+`seed-demo` creates the fictional **The Lanterns**, **The Junipers**, and **Driftwood** systems
+for comparing Android/web chat with the owner's Figma screens. Use a separate config, port,
+data directory, and client login. Never point this command or demo server at the real server's
+directory (`C:/Users/pcuser/selfhost/chorus`), and never import this dataset into it.
+`--to` is mandatory and refuses any existing directory, including an empty one. A failed seed
+leaves its partial directory for inspection; choose another new destination to retry.
+
+Create `F:/DunBuild/chorus-demo/demo.toml` with the following contents (create its parent directory,
+but leave `data` absent):
+
+```toml
+[server]
+listen = "127.0.0.1:5265"
+public_url = "http://127.0.0.1:5265"
+data_dir = "F:/DunBuild/chorus-demo/data"
+# For the web UI, add web_dir = '<absolute path to this worktree>/web/dist' after building it.
+
+[backup]
+dir = "F:/DunBuild/chorus-demo/backups"
+```
+
+From the worktree root, using the freshly built binary (or substitute `chorus-server` if on PATH):
+
+```powershell
+$demoServer = Join-Path $env:CARGO_TARGET_DIR 'debug/chorus-server.exe'
+& $demoServer --config F:/DunBuild/chorus-demo/demo.toml seed-demo --to F:/DunBuild/chorus-demo/data
+```
+
+Output includes `account lanterns: <uuid>`, `account junipers: <uuid>`, and
+`account driftwood: <uuid>`, followed by the device-invite command for The Lanterns.
+Replace its `<toml>` placeholder with `F:/DunBuild/chorus-demo/demo.toml`:
+
+```powershell
+& $demoServer --config F:/DunBuild/chorus-demo/demo.toml invite --kind device --account <lanterns-uuid>
+& $demoServer --config F:/DunBuild/chorus-demo/demo.toml serve
+```
+
+Keep that foreground server running. In another terminal, forward its port to the connected phone:
+
+```powershell
+adb reverse tcp:5265 tcp:5265
+```
+
+Enrol a **debug Android build** with the printed device-invite URL, which starts with
+`http://127.0.0.1:5265/i/`. The debug network-security config already permits cleartext to
+`127.0.0.1`; the invite's `public_url` must therefore use that same address and port. Use a
+separate debug installation/login from the real account. For web, open the isolated server in
+a separate browser profile and use a fresh device invite (invites are single-use). No service,
+Caddy, Tailscale, or firewall changes are needed.
+
+The fixture includes the four coloured members and Body presence (started two hours ago),
+Day-to-day group, five internal text channels, a three-reply thread, member DM, pin, quote,
+two heart reactions, forward, single-choice Dinner plan poll with three votes and a server-derived
+2 Soup / 1 Rice / 0 Pasta tally, mutual follows, three shared spaces, and a Junipers DM.
+Quiet room uses the existing account notification preference `notify_channel:<id> = "none"`.
+Per-member reading is on; Amarynthe has twelve General messages after her read mark. The
+account has one unread foreign message in each shared space and the Junipers DM. Internal
+account unread badges are skipped: clients exclude same-account messages, even from another
+member. Opening a channel advances read marks. To reset visual checks, seed a new directory
+and start with fresh demo-only client data/a fresh browser profile; existing replicas retain
+their own read marks. Clear only the isolated demo installation's data, never the real client's.
+
+Names, content, entity IDs, authored-op IDs, choices and read positions are reproducible. Times
+move with the seed run: General spans yesterday and today in Asia/Manila, with today's messages
+within the last three hours. Normal server-generated tally UUIDs, notification IDs/draws and
+database metadata remain random; they do not change the content graph or counts. Every authored
+op is validated and projected by ordinary ingest, with only account/device/scope bootstrap done
+directly, like `seed`; no restore bypass or hand-written tally is used. Historical friend fronts
+are revealed by the normal notification scheduler before the command finishes.
 
 ## 9. Linux server (public VPS)
 
