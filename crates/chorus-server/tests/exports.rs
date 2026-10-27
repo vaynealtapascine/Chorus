@@ -221,10 +221,88 @@ fn cli_exports_each_format_for_only_the_requested_account() {
     let members = std::fs::read_to_string(root.join("csv/members.csv")).unwrap();
     assert!(members.contains("Alice"));
     assert!(!members.contains("Bob private secret"));
-    assert_eq!(std::fs::read_dir(root.join("csv")).unwrap().count(), 7);
+    assert_eq!(std::fs::read_dir(root.join("csv")).unwrap().count(), chorus_server::exports::CSV_NAMES.len());
     let copy = Connection::open(root.join("sqlite/account.sqlite")).unwrap();
     assert_eq!(copy.query_row("SELECT count(*) FROM account", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
     assert_eq!(copy.query_row("SELECT count(*) FROM v_member", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
     drop(copy);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+/// Named-front histories (D-080) export each front's own saved records and intervals with front
+/// and layer IDs; an unconfigured account gets header-only tables (DATA_MODEL §7.1).
+#[test]
+fn named_front_histories_export_as_csv_and_sqlite_tables() {
+    use chorus_server::{exports, ingest};
+    use serde_json::json;
+    let conn = seed();
+    let scope = format!("account:{ALICE}");
+    ingest::grant(&conn, ALICE, &scope).unwrap();
+    let header = |name: &str| String::from_utf8(exports::csv(&conn, ALICE, name).unwrap().unwrap()).unwrap();
+    assert_eq!(header("named_switches").lines().count(), 1, "unconfigured: header only");
+
+    let t0 = 1_790_000_000_000;
+    let kai = chorus_core::id::new_id(5, [5; 10]);
+    let work = chorus_core::id::new_id(6, [6; 10]);
+    ingest::server_op(&conn, ALICE, "member.create", &scope, Some(&kai), json!({"name": "Kai"}), t0).unwrap();
+    ingest::server_op(
+        &conn,
+        ALICE,
+        "front.layer",
+        &scope,
+        Some(ALICE),
+        json!({"layer_id": "quiet", "name": "Quiet", "level": 5}),
+        t0 + 1,
+    )
+    .unwrap();
+    ingest::server_op(&conn, ALICE, "front.define", &scope, Some(&work), json!({"name": "Work"}), t0 + 2).unwrap();
+    let entry = json!([{"subject_type": "member", "subject_id": kai, "layer_id": "quiet", "is_primary": true}]);
+    ingest::server_op(
+        &conn,
+        ALICE,
+        "front.change",
+        &scope,
+        Some(&work),
+        json!({"action": "switch", "entries": entry, "note": "a, \"quoted\" note"}),
+        t0 + 3_600_000,
+    )
+    .unwrap();
+    ingest::server_op(
+        &conn,
+        ALICE,
+        "front.change",
+        &scope,
+        Some(&work),
+        json!({"action": "switch", "entries": []}),
+        t0 + 7_200_000,
+    )
+    .unwrap();
+
+    let switches = header("named_switches");
+    assert!(
+        switches.starts_with("front_id,id,occurred_at,occurred_local,kind,entries,resulting_front,note,is_retracted")
+    );
+    assert_eq!(switches.lines().filter(|l| l.starts_with(&work)).count(), 2);
+    assert!(switches.contains("\"a, \"\"quoted\"\" note\""));
+    let intervals = header("named_front_intervals");
+    let row: Vec<&str> = intervals.lines().nth(1).unwrap().split(',').collect();
+    assert_eq!((row[0], row[2], row[3], row[4]), (work.as_str(), "member", kai.as_str(), "quiet"));
+    assert_eq!(row[11], "3600", "one closed hour");
+    assert!(!intervals.contains("Bob"));
+
+    let dir = std::env::temp_dir().join(format!("chorus-named-export-{}", std::process::id()));
+    let bytes = exports::sqlite_copy(&conn, ALICE, &dir).unwrap();
+    let file = dir.join("named.sqlite");
+    std::fs::write(&file, bytes).unwrap();
+    let copy = Connection::open(&file).unwrap();
+    let (n, layer, secs): (i64, String, i64) = copy
+        .query_row("SELECT count(*), max(layer_id), max(duration_s) FROM v_named_front_interval", [], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
+        .unwrap();
+    assert_eq!((n, layer.as_str(), secs), (1, "quiet", 3600));
+    let notes: i64 = copy.query_row("SELECT count(note) FROM v_named_switch", [], |r| r.get(0)).unwrap();
+    assert_eq!(notes, 1, "an absent note is NULL");
+    drop(copy);
+    let _ = std::fs::remove_dir_all(&dir);
 }

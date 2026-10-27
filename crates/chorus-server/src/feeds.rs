@@ -99,7 +99,7 @@ pub fn items(conn: &Connection, principal: &Principal, id: &str, q: &ItemsQuery)
     let Some((owner, ast)) = found else { return Ok(None) };
     let ast: Expr =
         serde_json::from_str(&ast).map_err(|_| DataError::Bad("this feed's filter can't be read".into()))?;
-    let mut fronts = Fronts { viewer, revealed: HashMap::new() };
+    let mut fronts = Fronts { viewer, revealed: HashMap::new(), named: None };
     let ctx = OwnerContext::load(conn, &owner, &ast, crate::now_ms())?;
     let limit = q.limit.unwrap_or(50).clamp(1, 100);
     let mut cursor = match &q.cursor {
@@ -178,11 +178,17 @@ fn uses_fronting(e: &Expr) -> bool {
     }
 }
 
+/// A member's Fronting-layer span: (member, start, end).
+type MemberSpan = (String, i64, Option<i64>);
+
 /// Who a reader may know was fronting, and when (D-069; see the module docs).
 struct Fronts<'a> {
     viewer: &'a str,
     /// Other accounts' states as revealed to the viewer, by account (loaded on first use).
     revealed: HashMap<String, Vec<(i64, BTreeSet<String>)>>,
+    /// The viewer's own Body Fronting-layer member intervals once it has named fronts (D-080):
+    /// `Some(None)` = unconfigured (legacy SQL). Folded once per evaluation, on first use.
+    named: Option<Option<Vec<MemberSpan>>>,
 }
 
 impl Fronts<'_> {
@@ -192,6 +198,30 @@ impl Fronts<'_> {
             return Ok(false);
         }
         if account == self.viewer {
+            if self.named.is_none() {
+                self.named = Some(match crate::fronts::current(conn, account)? {
+                    Some(_) => {
+                        let ops = crate::fronts::account_ops(conn, account)?;
+                        let history = chorus_core::front_effective::fold(account, account, &ops);
+                        Some(
+                            history
+                                .intervals
+                                .into_iter()
+                                .filter(|i| {
+                                    i.subject_type == chorus_core::front::SubjectType::Member && i.layer_id == "front"
+                                })
+                                .map(|i| (i.subject_id, i.start_at, i.end_at))
+                                .collect(),
+                        )
+                    }
+                    None => None,
+                });
+            }
+            if let Some(Some(named)) = &self.named {
+                return Ok(named
+                    .iter()
+                    .any(|(id, start, end)| *start <= at && end.is_none_or(|e| e > at) && authors.contains(id)));
+            }
             let mut st = conn.prepare_cached(
                 "SELECT EXISTS (SELECT 1 FROM front_interval, json_each(?1) a
                    WHERE subject_type = 'member' AND subject_id = a.value AND level = 'front'

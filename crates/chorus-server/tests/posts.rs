@@ -513,6 +513,64 @@ fn shared_feeds_evaluate_over_what_the_reader_can_read() {
 
 /// Journal reads for the REST API (api_journal.rs): a profile bundle, lists and a list timeline,
 /// own account only, with the scopes API.md names.
+/// A configured owner's `fronting:` reads Body's effective history on the exact Fronting layer
+/// (D-080), never the stale legacy table, and a custom layer is not fronting.
+#[test]
+fn an_owners_fronting_feed_reads_named_body_history() {
+    let c = seed();
+    let scope = format!("account:{ALICE}");
+    ingest::grant(&c, ALICE, &scope).unwrap();
+    let t0 = 1_790_000_000_000;
+    let kai = new_id(1, [40; 10]);
+    let rin = new_id(1, [41; 10]);
+    for (id, name) in [(&kai, "Kai"), (&rin, "Rin")] {
+        ingest::server_op(&c, ALICE, "member.create", &scope, Some(id), json!({"name": name}), t0).unwrap();
+    }
+    ingest::server_op(
+        &c,
+        ALICE,
+        "front.layer",
+        &scope,
+        Some(ALICE),
+        json!({"layer_id": "quiet", "name": "Quiet", "level": 5}),
+        t0 + 1,
+    )
+    .unwrap();
+    ingest::server_op(
+        &c,
+        ALICE,
+        "front.change",
+        &scope,
+        Some(ALICE),
+        json!({"action": "switch", "entries": [
+        {"subject_type": "member", "subject_id": kai, "layer_id": "front", "is_primary": true},
+        {"subject_type": "member", "subject_id": rin, "layer_id": "quiet", "is_primary": false}]}),
+        t0 + 2,
+    )
+    .unwrap();
+    // a stale legacy row claims Rin was fronting
+    c.execute(
+        "INSERT INTO front_interval(id,account_id,subject_type,subject_id,level,is_primary,position,start_at,start_switch_id,start_tz_offset_min)
+         VALUES ('stale',?1,'member',?2,'front',1,0,0,'stale',0)",
+        params![ALICE, rin],
+    )
+    .unwrap();
+    for (n, author) in [(10u8, &kai), (11, &rin)] {
+        let payload = json!({"kind": "note", "authors": [author], "text": format!("post {n}"), "entities": [],
+            "tags": [], "visibility": {"mode": "private"}});
+        ingest::server_op(&c, ALICE, "post.create", &scope, Some(&new_id(2, [n; 10])), payload, t0 + i64::from(n))
+            .unwrap();
+    }
+    let id = new_id(3, [9; 10]);
+    let ast: Value = serde_json::from_str(&chorus_core::api::feed_parse("fronting:true").unwrap()).unwrap();
+    let payload = json!({"name": "f", "query": "fronting:true", "query_ast": ast, "visibility": {"mode": "private"}});
+    ingest::server_op(&c, ALICE, "feed.set", &scope, Some(&id), payload, t0 + 50).unwrap();
+    let items =
+        chorus_server::feeds::items(&c, &api_data::Principal::owner(ALICE), &id, &Default::default()).unwrap().unwrap();
+    let texts: Vec<_> = items["items"].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap()).collect();
+    assert_eq!(texts, ["post 10"]);
+}
+
 #[test]
 fn profiles_and_lists_read_through_the_api() {
     let mut c = db::open_memory().unwrap();

@@ -722,8 +722,8 @@ fronts and unavailable recovery fallbacks. This is own-account data, never a fol
 Startup/backfill and full rebuild regenerate it without rewriting the log. Ingestion validates
 and updates this current state atomically; migration 0011 indexes the named-kind existence check
 for legacy-only accounts. Runtime projections expose an optional `front_systems` account map.
-Historical named SQL/API/export paths, follower grants and management UI remain pending; see
-FRONTS.md for the integration boundary.
+Named history has no materialized SQL table: owner APIs, feeds and exports (§7.1) fold the
+account's own ops on demand through the shared core. See FRONTS.md for the integration boundary.
 
 ```json
 {"subject_type": "member", "subject_id": "…", "level": "front", "is_primary": true}
@@ -831,8 +831,8 @@ Exports run as background jobs; the app shows progress and notifies when ready.
 
 `GET /api/v1/exports/ops.jsonl` contains applied ops **authored by the requesting account** in
 server sequence order, including its authored ops in shared spaces. It does not include another
-account's ops. `GET /api/v1/exports/csv/<name>` returns the seven tidy tables below. All seven
-filter on `account_id`; messages and posts omit rows with a deletion tombstone. CSV is UTF-8 with
+account's ops. `GET /api/v1/exports/csv/<name>` returns the nine tidy tables below. All nine
+are limited to the account; messages and posts omit rows with a deletion tombstone. CSV is UTF-8 with
 CRLF row endings, a header row, and RFC 4180 escaping. Time numbers are UTC milliseconds;
 `*_local` values are ISO wall times (switch/message/post time uses the stored offset; member and
 group creation uses the server's local timezone in CSV, or the reader's local timezone in the
@@ -847,13 +847,23 @@ SQLite views, because those rows have no stored offset).
 | `front_daily` | day, subject_type, subject_id, level, seconds, hours, as_primary_seconds |
 | `messages` | id, channel_id, occurred_at, occurred_local, text, cw, reply_to_id, revision_count, sent_offline |
 | `posts` | id, kind, title, text, mood, occurred_at, occurred_local, reply_to_id, revision_count |
+| `named_switches` | front_id, id, occurred_at, occurred_local, kind, entries, resulting_front, note, is_retracted, is_history_only, device_id |
+| `named_front_intervals` | front_id, id, subject_type, subject_id, layer_id, is_primary, position, start_at, end_at, start_local, end_local, duration_s |
+
+The two `named_*` tables (D-080) are folded from the account's own ops by the shared core rather
+than read from projection tables: each front's own saved records and intervals (deleted fronts
+included), keyed by front and exact layer ID. Effective/inherited history is derived from these
+and the follow settings, so it is not exported. `entries`/`resulting_front` are JSON presence
+lists with `layer_id`. An account without named fronts gets header-only files; its Body history
+stays in the legacy tables.
 
 `GET /api/v1/exports/account.sqlite` builds a fresh database from that account's record, devices
 and applied authored ops, then rebuilds projections. It includes `v_member`, `v_group`,
-`v_switch`, `v_front_interval`, `v_front_daily`, `v_message`, and `v_post` views with the CSV
+`v_switch`, `v_front_interval`, `v_front_daily`, `v_message`, and `v_post` views and `v_named_switch` /
+`v_named_front_interval` tables (integer-typed time/flag columns; empty values are NULL) with the CSV
 columns above. No full-server pages are copied into the file. The CLI uses
 `chorus-server export --account ID --kind full|csv|sqlite [--to DIR]`; `full` currently writes
-`ops.jsonl`, `csv` writes seven files, and `sqlite` writes `account.sqlite`. The full backup
+`ops.jsonl`, `csv` writes nine files, and `sqlite` writes `account.sqlite`. The full backup
 with files is the export bundle job (`POST /exports {kind:"full"}`, API.md §4, D-068):
 `README.txt`, `ops.jsonl`, `csv/`, `blobs/<sha256>` (files the account's own ops point at) and
 `manifest.json`, as a stored ZIP built in the background (`export_job`).

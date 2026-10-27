@@ -155,8 +155,122 @@ const CSV: &[CsvSpec] = &[
     },
 ];
 
-pub const CSV_NAMES: &[&str] =
-    &["members", "groups", "switches", "front_intervals", "front_daily", "messages", "posts"];
+pub const CSV_NAMES: &[&str] = &[
+    "members",
+    "groups",
+    "switches",
+    "front_intervals",
+    "front_daily",
+    "messages",
+    "posts",
+    "named_switches",
+    "named_front_intervals",
+];
+
+/// Named-front histories (D-080) are folded from the account's own ops by the shared core rather
+/// than read from projection tables. They hold each front's own saved records, including deleted
+/// fronts; effective (inherited) history is derived, so it is not exported. Header-only for an
+/// account without named fronts. `entries`/`resulting_front` are JSON presence lists.
+const NAMED_SWITCH_COLUMNS: &[&str] = &[
+    "front_id",
+    "id",
+    "occurred_at",
+    "occurred_local",
+    "kind",
+    "entries",
+    "resulting_front",
+    "note",
+    "is_retracted",
+    "is_history_only",
+    "device_id",
+];
+const NAMED_INTERVAL_COLUMNS: &[&str] = &[
+    "front_id",
+    "id",
+    "subject_type",
+    "subject_id",
+    "layer_id",
+    "is_primary",
+    "position",
+    "start_at",
+    "end_at",
+    "start_local",
+    "end_local",
+    "duration_s",
+];
+
+/// `ms` shifted by a UTC offset → "YYYY-MM-DDTHH:MM:SS", matching the SQL exports' local columns.
+fn local_iso(ms: i64, tz_offset_min: i32) -> String {
+    let t = ms + i64::from(tz_offset_min) * 60_000;
+    let secs = t.div_euclid(1000);
+    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    format!("{}T{:02}:{:02}:{:02}", chorus_core::front::civil_date(days), rem / 3600, rem / 60 % 60, rem % 60)
+}
+
+/// Column names and string cells (empty = NULL in the SQLite copy).
+type NamedTable = (&'static [&'static str], Vec<Vec<String>>);
+
+fn named_rows(conn: &Connection, account: &str, name: &str, now: i64) -> anyhow::Result<Option<NamedTable>> {
+    let columns = match name {
+        "named_switches" => NAMED_SWITCH_COLUMNS,
+        "named_front_intervals" => NAMED_INTERVAL_COLUMNS,
+        _ => return Ok(None),
+    };
+    if crate::fronts::current(conn, account)?.is_none() {
+        return Ok(Some((columns, Vec::new())));
+    }
+    let folded = chorus_core::front_history::fold(account, &crate::fronts::account_ops(conn, account)?);
+    let flag = |b: bool| if b { "1" } else { "0" }.to_string();
+    let mut rows = Vec::new();
+    for (front, history) in &folded.histories {
+        if name == "named_switches" {
+            for r in &history.switches {
+                rows.push(vec![
+                    front.clone(),
+                    r.id.clone(),
+                    r.occurred_at.to_string(),
+                    local_iso(r.occurred_at, r.tz_offset_min),
+                    r.kind.to_string(),
+                    json(&r.entries),
+                    json(&r.resulting_front),
+                    r.note.clone().unwrap_or_default(),
+                    flag(r.retracted),
+                    flag(r.history_only),
+                    r.device_id.clone(),
+                ]);
+            }
+        } else {
+            for i in &history.intervals {
+                let tz = i.start_tz_offset_min;
+                rows.push(vec![
+                    front.clone(),
+                    i.id.clone(),
+                    json(&i.subject_type).trim_matches('"').to_string(),
+                    i.subject_id.clone(),
+                    i.layer_id.clone(),
+                    flag(i.is_primary),
+                    i.position.to_string(),
+                    i.start_at.to_string(),
+                    i.end_at.map(|e| e.to_string()).unwrap_or_default(),
+                    local_iso(i.start_at, tz),
+                    i.end_at.map(|e| local_iso(e, tz)).unwrap_or_default(),
+                    ((i.end_at.unwrap_or(now) - i.start_at) / 1000).to_string(),
+                ]);
+            }
+        }
+    }
+    Ok(Some((columns, rows)))
+}
+
+fn json<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_string(value).expect("front history has JSON-safe fields")
+}
+
+/// Integer affinity for the numeric/flag columns of the SQLite copy's named tables.
+fn sql_column(name: &str) -> String {
+    let integer = name.ends_with("_at") || name.ends_with("_s") || name.starts_with("is_") || name == "position";
+    if integer { format!("{name} INTEGER") } else { format!("{name} TEXT") }
+}
 
 fn cell(v: ValueRef<'_>) -> String {
     match v {
@@ -195,6 +309,12 @@ fn csv_row(out: &mut Vec<u8>, fields: &[String]) {
 
 /// One documented, account-filtered tidy CSV. Unknown names return `None`.
 pub fn csv(conn: &Connection, account: &str, name: &str) -> anyhow::Result<Option<Vec<u8>>> {
+    if let Some((columns, rows)) = named_rows(conn, account, name, crate::now_ms())? {
+        let mut out = Vec::new();
+        csv_row(&mut out, &columns.iter().map(|s| (*s).to_string()).collect::<Vec<_>>());
+        rows.iter().for_each(|row| csv_row(&mut out, row));
+        return Ok(Some(out));
+    }
     let Some(spec) = CSV.iter().find(|s| s.name == name) else { return Ok(None) };
     let mut out = Vec::new();
     csv_row(&mut out, &spec.columns.iter().map(|s| (*s).to_string()).collect::<Vec<_>>());
@@ -263,6 +383,17 @@ pub fn sqlite_copy(source: &Connection, account: &str, work_dir: &Path) -> anyho
         };
         let query = spec.sql.replace("account_id=?1", "account_id=(SELECT id FROM account LIMIT 1)");
         target.execute_batch(&format!("CREATE VIEW {view} ({}) AS {query};", spec.columns.join(",")))?;
+    }
+    // named histories are folded, not projected: export them as plain tables of the same rows
+    for (name, table) in [("named_switches", "v_named_switch"), ("named_front_intervals", "v_named_front_interval")] {
+        let (columns, rows) = named_rows(&target, account, name, crate::now_ms())?.expect("named table");
+        let defs = columns.iter().map(|c| sql_column(c)).collect::<Vec<_>>().join(",");
+        target.execute_batch(&format!("CREATE TABLE {table} ({defs});"))?;
+        let marks = (1..=columns.len()).map(|i| format!("?{i}")).collect::<Vec<_>>().join(",");
+        let mut insert = target.prepare(&format!("INSERT INTO {table} VALUES ({marks})"))?;
+        for row in rows {
+            insert.execute(params_from_iter(row.into_iter().map(|v| (!v.is_empty()).then_some(v))))?;
+        }
     }
     target.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;")?;
     drop(target);

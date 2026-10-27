@@ -143,7 +143,7 @@ Daily reads clamp closed future intervals as well as open ones to now and the re
 days, using one explicit/latest offset (IANA/DST remains unsupported by this server API).
 Reviews fold per front and look up LWW resolutions from the own account log, including a
 resolution delivered before its switches. Deleted fronts keep history. Unconfigured defaults
-retain existing SQL shapes. Client history/Insights views are connected below, as are the web and Android profile/feed/search/review consumers; named history SQL/exports still need connecting;
+retain existing SQL shapes. Client history/Insights views are connected below, as are the web and Android profile/feed/search/review consumers, server feeds and exports;
 these owner reads must never feed follower history/statistics or current/composer hot paths.
 
 Slice 3c adds `frontSystemHistory` and `effectiveFrontHistory` to the device replica's wasm and
@@ -197,8 +197,10 @@ off Home's current path. Android's `model.current` was already canonical Body; i
 reply speaker now uses Body's authorship pool, and Journal switch items and local switch search read
 Body's effective changes / saved records through `Chorus.frontHistory` (refreshed by
 `frontHistoryRevision`), again showing nothing while loading. Android has no review cards or profile
-front statistics, and its saved feeds are evaluated by the server, so server feed `fronting:` and
-named history SQL/exports remain pending.
+front statistics, and its saved feeds are evaluated by the server. Server feed `fronting:` for the
+owner folds Body's effective history once per evaluation (exact `front` layer ID); followers keep
+their revealed states. Exports add `named_switches` / `named_front_intervals` (DATA_MODEL §7.1),
+folded from own ops: each front's saved records and own intervals, never inherited history.
 
 Server current readers: the REST message default author (`messages.rs` `default_author`) uses the
 authorship pool of the channel's selected front for a configured account (owned members only; an

@@ -246,8 +246,8 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   - Named responses add `front_id`, and switches/intervals/daily add `history`. Unconfigured
     accounts retain the original SQL response unless they explicitly request a front/history
     (or daily `tz`). These APIs are on-demand owner reads, never follower history/statistics;
-    follower records must pass the reveal rules. Native/web offline History views use the replica’s shared-core reads; statistics/reviews and
-    named SQL/export history integration remain pending.
+    follower records must pass the reveal rules. Native/web offline History, Insights and review cards use the replica’s shared-core reads;
+    exports add the folded `named_*` tables (DATA_MODEL §7.1).
 - **Other accounts:** `/accounts/{id}/view`, `/follows`, `/notifications`. The view is
   `{entries, since, revealed_at, time}`, plus `history: [{entries, time}]` and
   `stats: {days, members: [{name, share_pct}]}` when the ceiling has `share_history` or
@@ -325,7 +325,7 @@ POST /invites           (admin) {kind, expires_in_s, max_uses}  → {url, qr_svg
 **The export bundle (D-068, `export_job.rs`)** — the DATA_MODEL §7 full backup as a background
 job, for a device session or a token with `export`. `chorus-<handle>-<YYYYMMDD>.zip`, stored (no
 compression, ZIP64 when needed): `README.txt`, `ops.jsonl` (exactly the direct export below),
-`csv/<name>.csv` (the seven tables), `blobs/<sha256>` (every file the account's **own** ops point
+`csv/<name>.csv` (the nine tables), `blobs/<sha256>` (every file the account's **own** ops point
 at — attachments and their thumbnails, avatars, banners, custom emoji; never another account's,
 even one visible in a shared space), and `manifest.json` (format 1: account, times, server
 version, instance, `ops {count, sha256}`, `blobs [{hash, size, mime, filenames, file}]`,
@@ -339,7 +339,7 @@ a random key; the file is kept 24 h, or an hour after its first complete downloa
 export is also an in-app notification (`kind: "export_ready"`), not a push. PluralKit, CSV-only
 and SQLite jobs aren't served: those are the direct exports.
 
-**Direct exports (M10.3):** `GET /exports/ops.jsonl`, `GET /exports/csv/{name}` (seven names
+**Direct exports (M10.3):** `GET /exports/ops.jsonl`, `GET /exports/csv/{name}` (nine names
 in DATA_MODEL.md §7.1), and `GET /exports/account.sqlite` accept a device session or an API
 token with the `export` scope. Each contains only the principal account's authored data. They
 return attachment filenames. Files come only in the bundle above.

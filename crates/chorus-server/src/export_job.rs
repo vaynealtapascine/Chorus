@@ -4,7 +4,7 @@
 //! ```text
 //! README.txt       what this is
 //! ops.jsonl        exactly GET /exports/ops.jsonl (the account's authored ops, seq order)
-//! csv/<name>.csv   the seven tidy tables (DATA_MODEL §7.1)
+//! csv/<name>.csv   the nine tidy tables (DATA_MODEL §7.1)
 //! blobs/<sha256>   every file the account's own ops point at (checked against its hash)
 //! manifest.json    format 1: account, times, ops {count, sha256}, blobs [{hash, size, mime,
 //!                  filenames}], missing, damaged, csv names
