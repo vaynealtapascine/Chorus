@@ -638,3 +638,75 @@ fn shared_history_and_stats_only_contain_revealed_whole_days() {
     assert_eq!(s["members"], json!([{"name": "June", "share_pct": 80}, {"name": "Kai", "share_pct": 20}]));
     assert_eq!(s["days"], 30);
 }
+
+/// D-084: an additional front and a custom layer each need an explicit grant, then follow the
+/// same delayed reveal; revoking the grant withdraws the front at once.
+#[test]
+fn additional_fronts_and_custom_layers_reveal_only_with_explicit_grants() {
+    let (mut w, kai, june, _) = world();
+    let ash = w.member("Ash", json!({"announce": "everyone"}));
+    let follow: String = w.c.query_row("SELECT id FROM follow", [], |r| r.get(0)).unwrap();
+    let head = new_id(NOW as u64, [220; 10]);
+    let sys = w.sys.clone();
+    let entry = |m: &str, layer: &str| json!({"subject_type": "member", "subject_id": m, "layer_id": layer, "is_primary": false});
+    w.push("front.layer", &sys, json!({"layer_id": "quiet", "name": "Quiet", "level": 5}), NOW);
+    w.push("front.define", &head, json!({"name": "Headspace", "notification_layers": ["front", "quiet"]}), NOW + 100);
+    w.push("front.change", &head, json!({"action": "switch", "entries": [entry(&kai, "front")]}), NOW + 1000);
+    notifier::process_due(&w.c, NOW + 1000 + SETTLE + DELAY + 120_000).unwrap();
+    let v = notifier::follower_view(&w.c, &w.friend, &sys).unwrap().unwrap();
+    assert!(v.get("fronts").is_none(), "Body only until a front is granted");
+    assert!(w.inbox().is_empty(), "Headspace's notification layers alone grant nothing");
+
+    let base = json!({"delay": {"min_s": DELAY / 1000, "max_s": DELAY / 1000}, "time": {"mode": "exact"}, "levels": ["front"]});
+    let mut granted = base.clone();
+    granted["fronts"] = json!([head]);
+    let t = NOW + 600_000;
+    w.push("follow.set_ceiling", &follow, json!({"ceiling": granted}), t);
+    w.push("front.change", &head, json!({"action": "add", "entry": entry(&june, "front")}), t + 1000);
+    w.push("front.change", &head, json!({"action": "add", "entry": entry(&ash, "quiet")}), t + 1500);
+    let due: i64 = w.c.query_row(
+        "SELECT max(due_at) FROM notification WHERE kind='switch' AND cancelled_at IS NULL AND delivered_at IS NULL", [], |r| r.get(0)).unwrap();
+    notifier::process_due(&w.c, due - 1).unwrap();
+    let v = notifier::follower_view(&w.c, &w.friend, &sys).unwrap().unwrap();
+    assert_eq!(v["fronts"], json!([]), "nothing about the granted front before its reveal");
+    notifier::process_due(&w.c, due).unwrap();
+    let v = notifier::follower_view(&w.c, &w.friend, &sys).unwrap().unwrap();
+    assert_eq!(v["fronts"][0]["name"], "Headspace");
+    let mut names: Vec<&str> =
+        v["fronts"][0]["entries"].as_array().unwrap().iter().map(|e| e["name"].as_str().unwrap()).collect();
+    names.sort();
+    assert_eq!(names, ["June", "Kai"], "Ash's custom layer is not granted");
+    assert!(w.inbox()[0].starts_with("Headspace: "), "{:?}", w.inbox());
+    assert!(v["entries"].as_array().unwrap().is_empty(), "Body is unchanged");
+
+    let mut layered = granted.clone();
+    layered["layers"] = json!(["quiet"]);
+    w.push("follow.set_ceiling", &follow, json!({"ceiling": layered}), due + 1000);
+    w.push(
+        "front.change",
+        &head,
+        json!({"action": "remove", "subject_type": "member", "subject_id": june}),
+        due + 2000,
+    );
+    let due: i64 = w.c.query_row(
+        "SELECT max(due_at) FROM notification WHERE kind='switch' AND cancelled_at IS NULL AND delivered_at IS NULL", [], |r| r.get(0)).unwrap();
+    notifier::process_due(&w.c, due).unwrap();
+    let v = notifier::follower_view(&w.c, &w.friend, &sys).unwrap().unwrap();
+    let mut seen: Vec<(String, String)> = v["fronts"][0]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| (e["name"].as_str().unwrap().into(), e["level"].as_str().unwrap().into()))
+        .collect();
+    seen.sort();
+    assert_eq!(seen, [("Ash".to_string(), "quiet".to_string()), ("Kai".to_string(), "front".to_string())]);
+
+    // revoking the grant hides the front immediately and stops further reveals
+    w.push("follow.set_ceiling", &follow, json!({"ceiling": base}), due + 1000);
+    assert!(notifier::follower_view(&w.c, &w.friend, &sys).unwrap().unwrap().get("fronts").is_none());
+    w.push("front.change", &head, json!({"action": "add", "entry": entry(&june, "front")}), due + 2000);
+    notifier::process_due(&w.c, due + 10 * DELAY).unwrap();
+    let rows: i64 =
+        w.c.query_row("SELECT count(*) FROM follower_front_view WHERE front_id <> ''", [], |r| r.get(0)).unwrap();
+    assert_eq!(rows, 0, "a revoked front's revealed view is withdrawn");
+}

@@ -15,7 +15,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chorus_core::front::{Entry, Level, Notify, SubjectType};
+use chorus_core::front::{Notify, SubjectType};
+use chorus_core::front_projection::Current;
+use chorus_core::front_system::Presence;
 use chorus_core::notify::{
     self, Audience, Ceiling, Diff, Draws, MemberPolicy, Pending, Precision, Prefs, Route, RouteIn, ScheduleIn, Seen,
 };
@@ -54,30 +56,37 @@ struct Queued {
     state: String,
     text: Option<String>,
     displayed: Option<notify::Displayed>,
+    /// '' = Body; otherwise an additional front this follower was granted (D-084).
+    #[serde(default)]
+    front_id: String,
+    /// The granted front's name and custom layer names, snapshotted when queued like `names`.
+    #[serde(default)]
+    front_name: Option<String>,
+    #[serde(default)]
+    layer_names: BTreeMap<String, String>,
 }
 
 fn json_col<T: for<'de> Deserialize<'de> + Default>(s: Option<String>) -> T {
     s.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
 }
 
-fn current_front(conn: &Connection, account: &str) -> anyhow::Result<Vec<Entry>> {
-    if let Some(current) = crate::fronts::current(conn, account)? {
-        let body = &current.resolved[account];
-        // Additional fronts and independent custom-layer grants are handled by their separate
-        // reveal pipeline. This compatibility surface remains Body-only and can reveal only
-        // the original layer IDs allowed by the existing ceiling.
-        return Ok(crate::fronts::owned_presence(conn, account, &body.notifications)?
-            .into_iter()
-            .filter_map(|p| {
-                let level = match p.layer_id.as_str() {
-                    "front" => Level::Front,
-                    "cocon" => Level::Cocon,
-                    "present" => Level::Present,
-                    _ => return None,
-                };
-                Some(Entry { subject_type: p.subject_type, subject_id: p.subject_id, level, is_primary: p.is_primary })
-            })
-            .collect());
+/// What one follower view starts from: the front's resolved notification pool (own subjects
+/// only); `front` '' is Body. The ceiling then decides which original/custom layers pass
+/// (`notify::view_layers`). Unconfigured accounts keep the legacy Body timeline and have no
+/// additional fronts. A deleted or unknown front reveals nothing.
+fn front_presence(
+    conn: &Connection,
+    account: &str,
+    current: Option<&Current>,
+    front: &str,
+) -> anyhow::Result<Vec<Presence>> {
+    if let Some(current) = current {
+        let id = if front.is_empty() { account } else { front };
+        let Some(f) = current.resolved.get(id).filter(|f| !f.deleted) else { return Ok(Vec::new()) };
+        return crate::fronts::owned_presence(conn, account, &f.notifications);
+    }
+    if !front.is_empty() {
+        return Ok(Vec::new());
     }
     let mut st = conn.prepare_cached(
         "SELECT subject_type, subject_id, level, is_primary FROM front_interval
@@ -90,12 +99,26 @@ fn current_front(conn: &Connection, account: &str) -> anyhow::Result<Vec<Entry>>
     for r in rows {
         let (t, id, level, primary) = r?;
         let subject_type = serde_json::from_value(json!(t))?;
-        let level = serde_json::from_value(json!(level))?;
         if crate::fronts::subject_is_owned(conn, account, subject_type, &id)? {
-            out.push(Entry { subject_type, subject_id: id, level, is_primary: primary });
+            out.push(Presence { subject_type, subject_id: id, layer_id: level, is_primary: primary });
         }
     }
     Ok(out)
+}
+
+/// Fronts one follower may see: Body ('') and each granted additional front that still exists.
+fn granted_fronts(account: &str, current: Option<&Current>, ceiling: &Ceiling) -> Vec<(String, Option<String>)> {
+    let mut out = vec![(String::new(), None)];
+    let Some(current) = current else { return out };
+    for id in &ceiling.fronts {
+        if id != account
+            && let Some(f) = current.resolved.get(id).filter(|f| !f.deleted)
+            && !out.iter().any(|(x, _)| x == id)
+        {
+            out.push((id.clone(), Some(f.name.clone())));
+        }
+    }
+    out
 }
 
 struct Latest {
@@ -234,11 +257,12 @@ fn names_for(conn: &Connection, account: &str, seen: &[&Seen]) -> anyhow::Result
 }
 
 /// The revealed view for (follower, target): `(view, displayed_since)`.
-fn revealed(conn: &Connection, follower: &str, target: &str) -> anyhow::Result<(Vec<Seen>, Option<i64>)> {
+fn revealed(conn: &Connection, follower: &str, target: &str, front: &str) -> anyhow::Result<(Vec<Seen>, Option<i64>)> {
     let row: Option<(String, Option<i64>)> = conn
         .query_row(
-            "SELECT entries, displayed_since FROM follower_front_view WHERE follower_account_id = ?1 AND target_account_id = ?2",
-            params![follower, target],
+            "SELECT entries, displayed_since FROM follower_front_view
+             WHERE follower_account_id = ?1 AND target_account_id = ?2 AND front_id = ?3",
+            params![follower, target, front],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
@@ -252,14 +276,15 @@ fn revealed(conn: &Connection, follower: &str, target: &str) -> anyhow::Result<(
 }
 
 /// Pending (not yet revealed) rows for (follower, target), oldest first.
-fn pending(conn: &Connection, follower: &str, target: &str) -> anyhow::Result<Vec<(String, i64, Queued)>> {
+fn pending(conn: &Connection, follower: &str, target: &str, front: &str) -> anyhow::Result<Vec<(String, i64, Queued)>> {
     let mut st = conn.prepare_cached(
         "SELECT id, due_at, payload FROM notification
          WHERE recipient_account_id = ?1 AND kind = 'switch' AND delivered_at IS NULL AND cancelled_at IS NULL
            AND json_extract(payload, '$.target_account_id') = ?2 AND json_extract(payload, '$.state') = 'pending'
+           AND coalesce(json_extract(payload, '$.front_id'), '') = ?3
          ORDER BY due_at, id",
     )?;
-    let rows = st.query_map(params![follower, target], |r| {
+    let rows = st.query_map(params![follower, target, front], |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?))
     })?;
     let mut out = Vec::new();
@@ -295,8 +320,8 @@ fn queue_front_change(
     if follows.is_empty() {
         return Ok(());
     }
-    let front = current_front(conn, account)?;
-    let latest = if crate::fronts::current(conn, account)?.is_some() {
+    let current = crate::fronts::current(conn, account)?;
+    let latest = if current.is_some() {
         cause.and_then(|op| chorus_core::front_history::Event::from_op(account, op).ok().flatten()).map(|e| {
             use chorus_core::front_history::{Action, Change};
             let notify = match e.action {
@@ -314,30 +339,90 @@ fn queue_front_change(
     };
     let policies = policies(conn, account)?;
     let groups = groups(conn, account)?;
+    let mut presence: BTreeMap<String, Vec<Presence>> = BTreeMap::new();
     for f in follows {
         let (ceiling, buckets) = ceiling_for(conn, account, &f)?;
-        let audience = Audience { ceiling: &ceiling, follower_buckets: &buckets, policies: &policies };
-        let after = notify::view(&front, &audience);
-        let (shown, _) = revealed(conn, &f.follower, account)?;
-        let queued = pending(conn, &f.follower, account)?;
+        let granted = granted_fronts(account, current.as_ref(), &ceiling);
+        revoke_ungranted(conn, &f.follower, account, &granted, now)?;
+        for (front_id, front_name) in granted {
+            if !presence.contains_key(&front_id) {
+                let p = front_presence(conn, account, current.as_ref(), &front_id)?;
+                presence.insert(front_id.clone(), p);
+            }
+            let ctx = FrontCtx { id: front_id, name: front_name, current: current.as_ref() };
+            let audience = Audience { ceiling: &ceiling, follower_buckets: &buckets, policies: &policies };
+            queue_for_front(conn, account, &f, &audience, &groups, &presence[&ctx.id], &ctx, latest.as_ref(), now)?;
+        }
+    }
+    Ok(())
+}
+
+struct FrontCtx<'a> {
+    id: String,
+    name: Option<String>,
+    current: Option<&'a Current>,
+}
+
+/// A revoked grant (or a deleted front) stops revealing: its pending reveals are cancelled and its
+/// revealed view is withdrawn. The follower's revealed log keeps only Body's history.
+fn revoke_ungranted(
+    conn: &Connection,
+    follower: &str,
+    target: &str,
+    granted: &[(String, Option<String>)],
+    now: i64,
+) -> anyhow::Result<()> {
+    let keep: Vec<&str> = granted.iter().map(|(id, _)| id.as_str()).collect();
+    let keep = serde_json::to_string(&keep)?;
+    conn.execute(
+        "DELETE FROM follower_front_view WHERE follower_account_id = ?1 AND target_account_id = ?2
+         AND front_id NOT IN (SELECT value FROM json_each(?3))",
+        params![follower, target, keep],
+    )?;
+    conn.execute(
+        "UPDATE notification SET cancelled_at = ?4 WHERE recipient_account_id = ?1 AND kind = 'switch'
+         AND delivered_at IS NULL AND cancelled_at IS NULL AND json_extract(payload, '$.target_account_id') = ?2
+         AND coalesce(json_extract(payload, '$.front_id'), '') NOT IN (SELECT value FROM json_each(?3))",
+        params![follower, target, keep, now],
+    )?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn queue_for_front(
+    conn: &Connection,
+    account: &str,
+    f: &Follow,
+    audience: &Audience,
+    groups: &BTreeMap<String, BTreeSet<String>>,
+    front: &[Presence],
+    ctx: &FrontCtx,
+    latest: Option<&Latest>,
+    now: i64,
+) -> anyhow::Result<()> {
+    let (ceiling, policies) = (audience.ceiling, audience.policies);
+    {
+        let after = notify::view_layers(front, audience);
+        let (shown, _) = revealed(conn, &f.follower, account, &ctx.id)?;
+        let queued = pending(conn, &f.follower, account, &ctx.id)?;
         let base = queued.last().map(|(_, _, q)| q.view.clone()).unwrap_or_else(|| shown.clone());
         if after == base {
-            continue;
+            return Ok(());
         }
         if after == shown {
             // e.g. an undo: back to what the follower already knows — nothing left to tell
             for (id, _, _) in &queued {
                 conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
             }
-            continue;
+            return Ok(());
         }
         // collapse: the survivor replaces everything pending, so it is described relative to what
         // the follower actually knows; sequence: relative to the previous queued item
         let since = if ceiling.stacking == notify::Stacking::Collapse { &shown } else { &base };
-        let Diff { arrived, left } = notify::diff(since, &after, &audience, &f.prefs, &groups);
+        let Diff { arrived, left } = notify::diff(since, &after, audience, &f.prefs, groups);
         let d = draws();
         let (occurred_at, tz, how) =
-            latest.as_ref().map_or((now, 0, Notify::Default), |l| (l.occurred_at, l.tz_offset_min, l.notify));
+            latest.map_or((now, 0, Notify::Default), |l| (l.occurred_at, l.tz_offset_min, l.notify));
         let member_extra: Vec<_> = arrived
             .iter()
             .filter_map(|s| match s {
@@ -348,7 +433,7 @@ fn queue_front_change(
             })
             .collect();
         let due = notify::due_at(
-            &ceiling,
+            ceiling,
             &ScheduleIn {
                 occurred_at,
                 accepted_at: now,
@@ -368,6 +453,14 @@ fn queue_front_change(
             )?;
         }
         let all: Vec<&Seen> = after.iter().chain(left.iter()).collect();
+        let layer_names = all
+            .iter()
+            .filter(|s| !notify::ORIGINAL_LAYERS.contains(&s.level()))
+            .filter_map(|s| {
+                let l = ctx.current?.system.layers.get(s.level())?;
+                Some((l.id.clone(), l.name.clone()))
+            })
+            .collect();
         let q = Queued {
             target_account_id: account.into(),
             follow_id: f.id.clone(),
@@ -382,24 +475,31 @@ fn queue_front_change(
             state: "pending".into(),
             text: None,
             displayed: None,
+            front_id: ctx.id.clone(),
+            front_name: ctx.name.clone(),
+            layer_names,
         };
         conn.execute(
             "INSERT INTO notification (id, recipient_account_id, kind, source_op_id, payload, created_at, due_at)
              VALUES (?1, ?2, 'switch', ?3, ?4, ?5, ?6)",
-            params![id, f.follower, latest.as_ref().and_then(|l| l.id.clone()), serde_json::to_string(&q)?, now, due],
+            params![id, f.follower, latest.and_then(|l| l.id.clone()), serde_json::to_string(&q)?, now, due],
         )?;
     }
     Ok(())
 }
 
-fn level_phrase(level: Level, n: usize) -> &'static str {
+fn level_phrase(q: &Queued, level: &str, n: usize) -> String {
     match (level, n > 1) {
-        (Level::Front, false) => "is fronting",
-        (Level::Front, true) => "are fronting",
-        (Level::Cocon, false) => "is co-conscious",
-        (Level::Cocon, true) => "are co-conscious",
-        (Level::Present, false) => "is around",
-        (Level::Present, true) => "are around",
+        ("front", false) => "is fronting".into(),
+        ("front", true) => "are fronting".into(),
+        ("cocon", false) => "is co-conscious".into(),
+        ("cocon", true) => "are co-conscious".into(),
+        ("present", false) => "is around".into(),
+        ("present", true) => "are around".into(),
+        (custom, many) => {
+            let name = q.layer_names.get(custom).map_or("another layer", String::as_str);
+            format!("{} in {name}", if many { "are" } else { "is" })
+        }
     }
 }
 
@@ -420,25 +520,36 @@ fn describe(q: &Queued) -> String {
         Seen::Someone { .. } => "Someone".into(),
     };
     let mut parts = Vec::new();
-    for level in [Level::Front, Level::Cocon, Level::Present] {
+    let mut levels: Vec<&str> = notify::ORIGINAL_LAYERS.to_vec();
+    for s in &q.diff_arrived {
+        if !levels.contains(&s.level()) {
+            levels.push(s.level());
+        }
+    }
+    for level in levels {
         let who: Vec<String> = q.diff_arrived.iter().filter(|s| s.level() == level).map(name).collect();
         if !who.is_empty() {
-            parts.push(format!("{} {}", join_names(&who), level_phrase(level, who.len())));
+            parts.push(format!("{} {}", join_names(&who), level_phrase(q, level, who.len())));
         }
     }
     let gone: Vec<String> = q.diff_left.iter().map(name).collect();
     if !gone.is_empty() {
         parts.push(format!("{} left", join_names(&gone)));
     }
-    if parts.is_empty() {
-        let front: Vec<String> = q.view.iter().filter(|s| s.level() == Level::Front).map(name).collect();
-        return if front.is_empty() {
+    let text = if parts.is_empty() {
+        let front: Vec<String> = q.view.iter().filter(|s| s.level() == "front").map(name).collect();
+        if front.is_empty() {
             "No one is fronting".into()
         } else {
-            format!("{} {}", join_names(&front), level_phrase(Level::Front, front.len()))
-        };
+            format!("{} {}", join_names(&front), level_phrase(q, "front", front.len()))
+        }
+    } else {
+        parts.join(" · ")
+    };
+    match &q.front_name {
+        Some(front) if !q.front_id.is_empty() => format!("{front}: {text}"),
+        _ => text,
     }
-    parts.join(" · ")
 }
 
 fn sent_today(conn: &Connection, follower: &str, target: &str, now: i64) -> anyhow::Result<u32> {
@@ -493,9 +604,14 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
             conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
             continue;
         };
+        if !q.front_id.is_empty() && !ceiling.fronts.contains(&q.front_id) {
+            // the grant was revoked since this was queued (D-084): reveal nothing more
+            conn.execute("UPDATE notification SET cancelled_at = ?2 WHERE id = ?1", params![id, now])?;
+            continue;
+        }
         if q.state == "pending" {
             // §5: the follower view changes here and only here
-            let (_, prev_since) = revealed(conn, &follower, &q.target_account_id)?;
+            let (_, prev_since) = revealed(conn, &follower, &q.target_account_id, &q.front_id)?;
             let shown_since =
                 notify::displayed(q.occurred_at, now, ceiling.time, q.tz_offset_min, prev_since, q.draws.jitter);
             let shown: Vec<Shown> = q
@@ -521,21 +637,32 @@ pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Processed> {
                 })
                 .collect::<anyhow::Result<_>>()?;
             conn.execute(
-                "INSERT INTO follower_front_view (follower_account_id, target_account_id, entries, displayed_since, revealed_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
-                 ON CONFLICT (follower_account_id, target_account_id)
-                 DO UPDATE SET entries = excluded.entries, displayed_since = excluded.displayed_since, revealed_at = excluded.revealed_at",
-                params![follower, q.target_account_id, serde_json::to_string(&shown)?, shown_since.at, now],
+                "INSERT INTO follower_front_view
+                   (follower_account_id, target_account_id, front_id, front_name, entries, displayed_since, revealed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT (follower_account_id, target_account_id, front_id)
+                 DO UPDATE SET front_name = excluded.front_name, entries = excluded.entries,
+                   displayed_since = excluded.displayed_since, revealed_at = excluded.revealed_at",
+                params![
+                    follower,
+                    q.target_account_id,
+                    q.front_id,
+                    q.front_name,
+                    serde_json::to_string(&shown)?,
+                    shown_since.at,
+                    now
+                ],
             )?;
             // …and the history/stats log grows here and only here (§5 rule 4); avatars stay out,
             // since blob access follows the *current* view
             let logged: Vec<Shown> = shown.iter().cloned().map(|s| Shown { avatar_blob: None, ..s }).collect();
             conn.execute(
-                "INSERT INTO follower_front_log (follower_account_id, target_account_id, revealed_at, displayed, entries)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO follower_front_log (follower_account_id, target_account_id, front_id, revealed_at, displayed, entries)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     follower,
                     q.target_account_id,
+                    q.front_id,
                     now,
                     serde_json::to_string(&shown_since)?,
                     serde_json::to_string(&logged)?
@@ -611,7 +738,7 @@ fn digest_text(items: &[(String, Queued)]) -> String {
             let who: Vec<String> = q
                 .diff_arrived
                 .iter()
-                .filter(|s| s.level() == Level::Front)
+                .filter(|s| s.level() == "front")
                 .map(|s| match s {
                     Seen::Subject { subject_id, .. } => {
                         q.names.get(subject_id).map(|n| n.0.clone()).unwrap_or_else(|| "Someone".into())
@@ -763,7 +890,8 @@ pub fn follower_view_at(conn: &Connection, follower: &str, target: &str, now: i6
     }
     let row: Option<(String, Option<i64>, i64)> = conn
         .query_row(
-            "SELECT entries, displayed_since, revealed_at FROM follower_front_view WHERE follower_account_id = ?1 AND target_account_id = ?2",
+            "SELECT entries, displayed_since, revealed_at FROM follower_front_view
+             WHERE follower_account_id = ?1 AND target_account_id = ?2 AND front_id = ''",
             params![follower, target],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
@@ -776,7 +904,7 @@ pub fn follower_view_at(conn: &Connection, follower: &str, target: &str, now: i6
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
-    let (time, history, stats) = match follow {
+    let (time, history, stats, granted) = match follow {
         Some((id, ceiling)) => {
             let f = Follow {
                 id,
@@ -788,9 +916,9 @@ pub fn follower_view_at(conn: &Connection, follower: &str, target: &str, now: i6
             if !c.share_current_front {
                 return Ok(Some(json!({"entries": [], "since": null, "revealed_at": null, "shared": false})));
             }
-            (serde_json::to_value(c.time)?, c.share_history, c.share_stats)
+            (serde_json::to_value(c.time)?, c.share_history, c.share_stats, c.fronts)
         }
-        None => (json!({"mode": "hidden"}), false, false),
+        None => (json!({"mode": "hidden"}), false, false, Vec::new()),
     };
     let mut v = match row {
         Some((entries, since, revealed_at)) => {
@@ -799,6 +927,32 @@ pub fn follower_view_at(conn: &Connection, follower: &str, target: &str, now: i6
         }
         None => json!({"entries": [], "since": null, "revealed_at": null, "time": time}),
     };
+    // granted additional fronts (D-084): only what was revealed, under the name it was revealed
+    // with; history and statistics stay Body's
+    if !granted.is_empty() {
+        let mut st = conn.prepare_cached(
+            "SELECT front_id, front_name, entries, displayed_since, revealed_at FROM follower_front_view
+             WHERE follower_account_id = ?1 AND target_account_id = ?2 AND front_id <> ''
+               AND front_id IN (SELECT value FROM json_each(?3)) ORDER BY front_name, front_id",
+        )?;
+        let rows = st.query_map(params![follower, target, serde_json::to_string(&granted)?], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, Option<i64>>(3)?,
+                r.get::<_, i64>(4)?,
+            ))
+        })?;
+        let mut fronts = Vec::new();
+        for r in rows {
+            let (id, name, entries, since, revealed_at) = r?;
+            let entries: Vec<Shown> = serde_json::from_str(&entries).unwrap_or_default();
+            fronts
+                .push(json!({"id": id, "name": name, "entries": entries, "since": since, "revealed_at": revealed_at}));
+        }
+        v["fronts"] = Value::Array(fronts);
+    }
     if history || stats {
         let log = revealed_log(conn, follower, target)?;
         if history {
@@ -840,7 +994,7 @@ pub fn revealed_fronts(
     }
     let mut st = conn.prepare_cached(
         "SELECT revealed_at, displayed, entries FROM follower_front_log
-         WHERE follower_account_id = ?1 AND target_account_id = ?2 ORDER BY revealed_at, rowid",
+         WHERE follower_account_id = ?1 AND target_account_id = ?2 AND front_id = '' ORDER BY revealed_at, rowid",
     )?;
     let rows = st.query_map(params![follower, target], |r| {
         Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
@@ -856,7 +1010,7 @@ pub fn revealed_fronts(
         let fronting = entries
             .into_iter()
             .filter_map(|e| match e.seen {
-                Seen::Subject { subject_type: SubjectType::Member, subject_id, level: Level::Front, .. } => {
+                Seen::Subject { subject_type: SubjectType::Member, subject_id, level, .. } if level == "front" => {
                     Some(subject_id)
                 }
                 _ => None,
@@ -882,9 +1036,9 @@ const HISTORY_ITEMS: usize = 50;
 fn revealed_log(conn: &Connection, follower: &str, target: &str) -> anyhow::Result<Vec<Logged>> {
     let mut st = conn.prepare_cached(
         "SELECT displayed, entries FROM follower_front_log
-         WHERE follower_account_id = ?1 AND target_account_id = ?2
+         WHERE follower_account_id = ?1 AND target_account_id = ?2 AND front_id = ''
            AND revealed_at >= (SELECT max(revealed_at) FROM follower_front_log
-                               WHERE follower_account_id = ?1 AND target_account_id = ?2) - ?3
+                               WHERE follower_account_id = ?1 AND target_account_id = ?2 AND front_id = '') - ?3
          ORDER BY revealed_at, rowid",
     )?;
     let rows = st.query_map(params![follower, target, HISTORY_DAYS * 86_400_000], |r| {
@@ -933,7 +1087,7 @@ fn stats_of(log: &[Logged], now: i64) -> Value {
         let Some(start) = l.displayed.at else { continue };
         let end = log.get(i + 1).and_then(|n| n.displayed.at).unwrap_or(today).min(today);
         let d = (end - start).max(0);
-        let front: Vec<&Shown> = l.entries.iter().filter(|e| e.seen.level() == Level::Front).collect();
+        let front: Vec<&Shown> = l.entries.iter().filter(|e| e.seen.level() == "front").collect();
         if d == 0 || front.is_empty() {
             continue;
         }

@@ -251,7 +251,9 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
 - **Other accounts:** `/accounts/{id}/view`, `/follows`, `/notifications`. The view is
   `{entries, since, revealed_at, time}`, plus `history: [{entries, time}]` and
   `stats: {days, members: [{name, share_pct}]}` when the ceiling has `share_history` or
-  `share_stats` (NOTIFICATIONS §3).
+  `share_stats` (NOTIFICATIONS §3). When the ceiling grants additional fronts (D-084), the view
+  adds `fronts: [{id, name, entries, since, revealed_at}]` with only revealed states of those
+  fronts, under the name each had when revealed; `history`/`stats` stay Body's.
 - `/front/intervals` also takes `subject` (an id) and `level`.
 - **Shared spaces and DMs** (M6.2, `spaces.rs`, signed-in devices only):
   - `GET /spaces` returns your spaces with the accounts in each, plus spaces where a channel is

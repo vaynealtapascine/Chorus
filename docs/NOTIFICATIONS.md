@@ -112,9 +112,22 @@ clients do not expose those configuration controls yet.
   "quiet_hours": null,                     // {"from":"23:00","to":"08:00","tz":"system"}
   "share_current_front": true,             // follower view shows who is here now
   "share_history": false,                  // follower can browse (fuzzed) front history
-  "share_stats": false                     // front-time stats on profiles
+  "share_stats": false,                    // front-time stats on profiles
+  "fronts": [],                            // additional fronts this follower may see (D-084)
+  "layers": []                             // custom layer IDs this follower may see (D-084)
 }
 ```
+
+`fronts` and `layers` are grants (D-084): an existing follower sees **Body only** and the original
+three layers allowed by `levels`. A front's own notification-layer selection never grants access.
+A granted front gets its own view per (follower, account, front), fed by that front's resolved
+notification pool and passing the same ceiling, delay, fuzz, collapse and reveal rules as Body;
+its pings read "Front name: …". Custom-layer entries need a `layers` grant on Body and granted
+fronts alike, and ping only when the follower lists them in their prefs' `layers` (default none).
+Across buckets both merge as unions. Presets never overwrite them (clients keep them, like the
+sharing toggles). Revoking a grant hides the front at once, cancels its pending reveals and drops
+its revealed view at the next change. Follower history/statistics, shared-feed `fronting:` and
+avatar access stay Body-only.
 
 `share_history` and `share_stats` (implemented, M6.3) add `history` and `stats` to the follower
 view. Both are computed from `follower_front_log`, which gets a row only at reveal time, with the
@@ -174,7 +187,7 @@ feeds, API tokens, SSE stream, view sync.
 
 Rules:
 
-1. The server maintains `follower_front_view` per (follower, account). It is updated **only at
+1. The server maintains `follower_front_view` per (follower, account, granted front; '' = Body). It is updated **only at
    reveal time** — the `due_at` computed in §2.7 — whether or not a notification is delivered
    (muted, silent switch, prefs-filtered, digest). Silent switches still reveal on the default
    schedule; `silent` means "don't ping", not "rewrite history".

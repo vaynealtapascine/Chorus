@@ -12,6 +12,18 @@ use serde_json::{Map, Value};
 
 use crate::front::{Entry, Level, Notify, SubjectType};
 
+/// The three original layer IDs; every other layer ID is an independent custom layer (D-080).
+pub const ORIGINAL_LAYERS: [&str; 3] = ["front", "cocon", "present"];
+
+fn original(layer: &str) -> Option<Level> {
+    match layer {
+        "front" => Some(Level::Front),
+        "cocon" => Some(Level::Cocon),
+        "present" => Some(Level::Present),
+        _ => None,
+    }
+}
+
 const MIN: i64 = 60_000;
 const HOUR: i64 = 60 * MIN;
 const DAY: i64 = 24 * HOUR;
@@ -110,6 +122,21 @@ pub struct Ceiling {
     pub share_current_front: bool,
     pub share_history: bool,
     pub share_stats: bool,
+    /// Additional fronts (not Body) this follower may see (D-084). Body needs no grant; a
+    /// front's notification-layer selection alone grants nothing.
+    pub fronts: Vec<String>,
+    /// Custom layer IDs this follower may see. The original three stay governed by `levels`.
+    pub layers: Vec<String>,
+}
+
+impl Ceiling {
+    /// Whether entries in `layer` may be revealed at all.
+    pub fn allows_layer(&self, layer: &str) -> bool {
+        match original(layer) {
+            Some(level) => self.levels.contains(&level),
+            None => self.layers.iter().any(|l| l == layer),
+        }
+    }
 }
 
 impl Default for Ceiling {
@@ -131,6 +158,8 @@ impl Default for Ceiling {
             share_current_front: true,
             share_history: false,
             share_stats: false,
+            fronts: Vec::new(),
+            layers: Vec::new(),
         }
     }
 }
@@ -171,7 +200,7 @@ fn permissive(field: &str, a: &Value, b: &Value) -> Value {
         | "share_history"
         | "share_stats" => Value::Bool(t(a) || t(b)),
         "digest_only" => Value::Bool(t(a) && t(b)),
-        "levels" => {
+        "levels" | "fronts" | "layers" => {
             let mut s: BTreeSet<String> = BTreeSet::new();
             for v in [a, b] {
                 for l in v.as_array().into_iter().flatten() {
@@ -314,6 +343,9 @@ pub struct Prefs {
     pub quiet_hours: Option<QuietHours>,
     pub quiet_behaviour: QuietBehaviour,
     pub mute_until: Option<i64>,
+    /// Granted custom layers the follower wants pinged about (none by default); the original
+    /// three use `levels`.
+    pub layers: Vec<String>,
     /// The follower's UTC offset (minutes) for their own `quiet_hours` and `digest_time`, set by
     /// their client when it saves prefs. Without it, the switch's (system's) offset is used.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -332,6 +364,7 @@ impl Default for Prefs {
             quiet_hours: None,
             quiet_behaviour: QuietBehaviour::Hold,
             mute_until: None,
+            layers: Vec::new(),
             tz_offset_min: None,
         }
     }
@@ -339,27 +372,28 @@ impl Default for Prefs {
 
 // ─── the follower's view (§5) ────────────────────────────────────────────────
 
-/// One thing a follower may know is in front.
+/// One thing a follower may know is in front. `level` is a layer ID: the original three keep
+/// their legacy strings, so stored views stay readable; custom layers keep their own IDs.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(remote = "Self", rename_all = "snake_case")]
 pub enum Seen {
     Subject {
         subject_type: SubjectType,
         subject_id: String,
-        level: Level,
+        level: String,
         is_primary: bool,
     },
     /// A hidden subject shown as "someone" (ceiling `hidden_subjects: someone`).
     Someone {
-        level: Level,
+        level: String,
     },
 }
 crate::tagged!(Seen, "t");
 
 impl Seen {
-    pub fn level(&self) -> Level {
+    pub fn level(&self) -> &str {
         match self {
-            Seen::Subject { level, .. } | Seen::Someone { level } => *level,
+            Seen::Subject { level, .. } | Seen::Someone { level } => level,
         }
     }
 }
@@ -386,13 +420,27 @@ impl Audience<'_> {
 /// What a follower may know is in front (the reveal, independent of their own prefs).
 /// Empty when the ceiling shares nothing.
 pub fn view(front: &[Entry], a: &Audience) -> Vec<Seen> {
+    let layered: Vec<crate::front_system::Presence> = front
+        .iter()
+        .map(|e| crate::front_system::Presence {
+            subject_type: e.subject_type,
+            subject_id: e.subject_id.clone(),
+            layer_id: e.level.as_str().into(),
+            is_primary: e.is_primary,
+        })
+        .collect();
+    view_layers(&layered, a)
+}
+
+/// [`view`] over independent layer IDs: original layers pass `levels`, custom ones `layers`.
+pub fn view_layers(front: &[crate::front_system::Presence], a: &Audience) -> Vec<Seen> {
     let c = a.ceiling;
     if !c.switch_notifications && !c.share_current_front {
         return Vec::new();
     }
     let mut out: Vec<Seen> = Vec::new();
     for e in front {
-        if !c.levels.contains(&e.level) {
+        if !c.allows_layer(&e.layer_id) {
             continue;
         }
         let visible = e.subject_type != SubjectType::Member || a.member_visible(&e.subject_id);
@@ -400,11 +448,11 @@ pub fn view(front: &[Entry], a: &Audience) -> Vec<Seen> {
             out.push(Seen::Subject {
                 subject_type: e.subject_type,
                 subject_id: e.subject_id.clone(),
-                level: e.level,
+                level: e.layer_id.clone(),
                 is_primary: e.is_primary,
             });
         } else if c.hidden_subjects == HiddenSubjects::Someone {
-            let s = Seen::Someone { level: e.level };
+            let s = Seen::Someone { level: e.layer_id.clone() };
             if !out.contains(&s) {
                 out.push(s);
             }
@@ -436,7 +484,11 @@ fn id_of(s: &Seen) -> Option<&str> {
 
 /// `groups` maps a group id to its member ids, so prefs can name a subsystem.
 pub fn wanted(s: &Seen, prefs: &Prefs, groups: &BTreeMap<String, BTreeSet<String>>) -> bool {
-    if !prefs.levels.contains(&s.level()) {
+    let wants_layer = match original(s.level()) {
+        Some(level) => prefs.levels.contains(&level),
+        None => prefs.layers.iter().any(|l| l == s.level()),
+    };
+    if !wants_layer {
         return false;
     }
     let covers = |ids: &[String]| {
@@ -458,8 +510,10 @@ pub fn diff(
     groups: &BTreeMap<String, BTreeSet<String>>,
 ) -> Diff {
     let key = |s: &Seen| match s {
-        Seen::Subject { subject_type, subject_id, level, .. } => (Some((*subject_type, subject_id.clone())), *level),
-        Seen::Someone { level } => (None, *level),
+        Seen::Subject { subject_type, subject_id, level, .. } => {
+            (Some((*subject_type, subject_id.clone())), level.clone())
+        }
+        Seen::Someone { level } => (None, level.clone()),
     };
     let had: BTreeSet<_> = crate::sort::set(before.iter().map(key));
     let has: BTreeSet<_> = crate::sort::set(after.iter().map(key));
@@ -746,6 +800,49 @@ mod tests {
     }
 
     #[test]
+    fn custom_layers_and_front_grants_are_explicit_and_merge_as_unions() {
+        let p = |id: &str, layer: &str| crate::front_system::Presence {
+            subject_type: SubjectType::Member,
+            subject_id: id.into(),
+            layer_id: layer.into(),
+            is_primary: false,
+        };
+        let c = effective_ceiling(&json!({}), &[], &json!({}));
+        assert!(c.fronts.is_empty() && c.layers.is_empty(), "nothing beyond Body is granted by default");
+        let (buckets, policies) = (BTreeSet::new(), BTreeMap::new());
+        let front = [p("kai", "front"), p("rin", "quiet"), p("ash", "present")];
+        let shown = |c: &Ceiling| {
+            view_layers(&front, &Audience { ceiling: c, follower_buckets: &buckets, policies: &policies })
+        };
+        assert_eq!(shown(&c).iter().map(Seen::level).collect::<Vec<_>>(), vec!["front"]);
+        // a custom layer needs its own grant, even when every original level is shared
+        let c =
+            effective_ceiling(&json!({"levels": ["front", "cocon", "present"], "layers": ["quiet"]}), &[], &json!({}));
+        let levels: BTreeSet<_> = shown(&c).iter().map(|s| s.level().to_string()).collect();
+        assert_eq!(levels, BTreeSet::from(["front".into(), "present".into(), "quiet".into()]));
+        let a = json!({"fronts": ["head"], "layers": ["quiet"]});
+        let b = json!({"fronts": ["dream"]});
+        let c = effective_ceiling(&json!({}), &[&a, &b], &json!({}));
+        assert_eq!(c.fronts, vec!["dream", "head"]);
+        assert_eq!(c.layers, vec!["quiet"]);
+        // pings for a custom layer are opt-in; reveal is not
+        let quiet = Seen::Subject {
+            subject_type: SubjectType::Member,
+            subject_id: "rin".into(),
+            level: "quiet".into(),
+            is_primary: false,
+        };
+        let mut prefs = Prefs::default();
+        assert!(!wanted(&quiet, &prefs, &BTreeMap::new()));
+        prefs.layers = vec!["quiet".into()];
+        assert!(wanted(&quiet, &prefs, &BTreeMap::new()));
+        // stored legacy views keep their exact JSON
+        let legacy = json!({"t": "subject", "subject_type": "member", "subject_id": "kai", "level": "front", "is_primary": true});
+        let seen: Seen = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&seen).unwrap(), legacy);
+    }
+
+    #[test]
     fn presets_parse() {
         for p in ["close", "gentle", "private", "digest", "off"] {
             let c = effective_ceiling(&preset(p).unwrap(), &[], &json!({}));
@@ -774,10 +871,10 @@ mod tests {
                 Seen::Subject {
                     subject_type: SubjectType::Member,
                     subject_id: "kai".into(),
-                    level: Level::Front,
+                    level: "front".into(),
                     is_primary: false
                 },
-                Seen::Someone { level: Level::Front },
+                Seen::Someone { level: "front".into() },
             ]
         );
         let close: BTreeSet<String> = ["close".to_string()].into();

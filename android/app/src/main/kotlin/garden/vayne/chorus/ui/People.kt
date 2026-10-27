@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.FollowList
 import garden.vayne.chorus.data.FollowPresets
+import garden.vayne.chorus.data.NamedFronts
 import garden.vayne.chorus.data.FollowerView
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PeopleApi
@@ -168,6 +169,12 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                             FollowPresets.withSharing(model.followCeilings[f.id] ?: JSONObject(), key, enabled)))
                     }
                 }
+                FollowGrants(model.namedFronts, model.followCeilings[f.id] ?: JSONObject(), !busy) { key, id, on ->
+                    action {
+                        chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
+                            FollowPresets.withGrant(model.followCeilings[f.id] ?: JSONObject(), key, id, on)))
+                    }
+                }
                 Row {
                     TextButton(enabled = !busy, onClick = { action {
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
@@ -227,9 +234,33 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
     }
 }
 
+/** D-084: additional fronts and custom layers stay hidden until granted per follower. */
+@Composable
+private fun FollowGrants(named: NamedFronts?, ceiling: JSONObject, enabled: Boolean, onChange: (String, String, Boolean) -> Unit) {
+    val p = LocalChorusPalette.current
+    val fronts = named?.fronts?.values?.filter { !it.deleted && it.id != named.bodyId }?.sortedBy { it.name.lowercase() }.orEmpty()
+    val layers = named?.layers?.filter { !it.deleted && it.id !in setOf("front", "cocon", "present") }.orEmpty()
+    if (fronts.isEmpty() && layers.isEmpty()) return
+    var open by rememberSaveable { mutableStateOf(false) }
+    TextButton(onClick = { open = !open }) { Text(if (open) "Additional fronts and layers ▴" else "Additional fronts and layers ▾") }
+    if (!open) return
+    Text("They see Body only until you allow more. Delays and privacy rules still apply.", color = p.ink2)
+    for ((key, rows) in listOf("fronts" to fronts.map { it.id to it.name }, "layers" to layers.map { it.id to it.name })) {
+        val chosen = FollowPresets.granted(ceiling, key)
+        for ((id, name) in rows) {
+            TextButton(enabled = enabled, onClick = { onChange(key, id, id !in chosen) }) {
+                Text("${if (id in chosen) "✓" else "○"} $name")
+            }
+        }
+    }
+}
+
 @Composable
 private fun FollowerViewDetails(view: FollowerView) {
     val p = LocalChorusPalette.current
+    for ((name, names) in view.fronts) {
+        Text("$name: ${names.joinToString(" & ").ifBlank { "No one" }}", color = p.ink2)
+    }
     view.stats?.let { stats ->
         val shown = stats.members.filter { it.second > 0 }.joinToString(" · ") { "${it.first} ${it.second}%" }
         Text(if (shown.isEmpty()) "No complete days of shared fronting yet"

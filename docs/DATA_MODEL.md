@@ -652,11 +652,14 @@ CREATE INDEX notification_due ON notification(due_at) WHERE delivered_at IS NULL
 -- Follower-visible front state (NOTIFICATIONS.md §5). What a follower may know, and since when.
 CREATE TABLE follower_front_view (
   follower_account_id TEXT NOT NULL, target_account_id TEXT NOT NULL,
+  front_id TEXT NOT NULL DEFAULT '',               -- '' = Body; else a granted front (D-084, 0014)
+  front_name TEXT,                                 -- that front's name as revealed
   entries TEXT NOT NULL,                           -- privacy-filtered snapshot
   displayed_since INTEGER,                         -- fuzzed
   revealed_at INTEGER NOT NULL,                    -- when this state became visible to the follower
-  PRIMARY KEY (follower_account_id, target_account_id)
+  PRIMARY KEY (follower_account_id, target_account_id, front_id)
 );
+-- follower_front_log also carries front_id ('' = Body); history/stats read Body rows only.
 
 -- ─── custom emoji (server-wide, D-054) ───────────────────────────────
 CREATE TABLE custom_emoji (

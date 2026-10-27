@@ -14,7 +14,9 @@ data class SharedPost(val id: String, val kind: String, val title: String?, val 
     val attachments: List<ChatAttachment> = emptyList())
 data class SharedFront(val names: List<String>, val time: String)
 data class SharedStats(val days: Int, val members: List<Pair<String, Int>>)
-data class FollowerView(val frontNames: List<String>, val history: List<SharedFront>?, val stats: SharedStats?)
+/** [fronts]: additional fronts the followed account granted (D-084), as (name, revealed names). */
+data class FollowerView(val frontNames: List<String>, val history: List<SharedFront>?, val stats: SharedStats?,
+    val fronts: List<Pair<String, List<String>>> = emptyList())
 
 object PeopleApi {
     fun sharedPosts(j: JSONObject): List<SharedPost> {
@@ -76,7 +78,13 @@ object PeopleApi {
                         ?.let { it to member.optInt("share_pct") }
                 } })
         }
-        return FollowerView(names(j.optJSONArray("entries"), true), history, stats)
+        val fronts = j.optJSONArray("fronts")?.let { items -> (0 until items.length()).mapNotNull { i ->
+            items.optJSONObject(i)?.let { front ->
+                (front.optString("name").takeIf { front.has("name") && !front.isNull("name") && it.isNotBlank() }
+                    ?: "Another front") to names(front.optJSONArray("entries"), false)
+            }
+        } } ?: emptyList()
+        return FollowerView(names(j.optJSONArray("entries"), true), history, stats, fronts)
     }
 
     /** Keep time at the precision already chosen by the server; never render hidden clock data. */

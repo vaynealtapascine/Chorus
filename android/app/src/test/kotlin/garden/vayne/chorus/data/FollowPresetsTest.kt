@@ -47,4 +47,19 @@ class FollowPresetsTest {
         assertEquals(true, after.getBoolean("share_stats"))
         assertEquals("custom", FollowPresets.choiceOf(after, core))
     }
+
+    @Test fun frontAndLayerGrantsSurvivePresetChangesAndNeverChangeThePreset() {
+        var c = FollowPresets.withGrant(JSONObject(), "fronts", "head", true)
+        c = FollowPresets.withGrant(c, "layers", "quiet", true)
+        assertEquals("inherit", FollowPresets.choiceOf(c, core))
+        val off = FollowPresets.ceiling("off", c, core)
+        assertEquals("off", FollowPresets.choiceOf(off, core))
+        assertEquals(setOf("head"), FollowPresets.granted(off, "fronts"))
+        assertEquals(setOf("quiet"), FollowPresets.granted(off, "layers"))
+        val revoked = FollowPresets.withGrant(off, "fronts", "head", false)
+        assertEquals(false, revoked.has("fronts"))
+        val view = PeopleApi.followerView(JSONObject("""{"entries":[],"fronts":[{"id":"head","name":"Headspace",
+            "entries":[{"t":"subject","name":"Ash","level":"quiet"},{"t":"subject","name":"Kai","level":"front"}]}]}"""))
+        assertEquals(listOf("Headspace" to listOf("Ash", "Kai")), view.fronts)
+    }
 }

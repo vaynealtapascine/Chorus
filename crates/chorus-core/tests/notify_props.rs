@@ -65,7 +65,7 @@ proptest! {
         for s in &v {
             if let Seen::Subject { subject_id, level, .. } = s {
                 prop_assert!(!policies.contains_key(subject_id));
-                prop_assert!(ceiling.levels.contains(level));
+                prop_assert!(ceiling.allows_layer(level));
             }
         }
     }

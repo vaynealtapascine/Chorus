@@ -123,13 +123,16 @@ a timestamp from the old Body tables. Android reads the same current field and i
 and widget undo emit `front.change` for configured Body. The app retains typed configuration and
 resolved pools without reimplementing following. Web/native delta merging supports field removal.
 
-The compatibility follower pipeline consumes Body's resolved notification pool, restricted to
-its original layer IDs and existing ceiling. Additional fronts/custom layers have no grants in
-this pipeline. A named Body can inherit from a private source, but neither its source metadata
+The follower pipeline consumes each visible front's resolved notification pool. Body needs no
+grant; additional fronts need the follower ceiling's `fronts` grant and custom layers its `layers`
+grant (D-084, NOTIFICATIONS §3). `notify::Seen.level` is a layer ID string, so the original three
+keep their stored JSON while custom layers keep their own IDs; `view_layers` gates original IDs by
+`levels` and custom IDs by `layers`. Each granted front has its own revealed view and queue
+(migration 0014). Follower history/statistics remain Body-only. A named Body can inherit from a private source, but neither its source metadata
 nor a raw cause/op ID enters the follower payload, and its state is still revealed only when due.
-These are current-state integration slices, not completed named-front delivery: additional-front
-and custom-layer grants/reveals, named historical SQL/export paths, channel purpose consumers
-and both clients' management UI remain pending. Keep configuration UI behind that work.
+Grants/reveals and channel purpose consumers are integrated. Owners grant fronts and custom
+layers per follower under People → Additional fronts and layers (web and Android); followers see
+granted fronts beside Body.
 
 Slice 3b is `chorus-server/src/api_fronts.rs`: on-demand owner history for the selected front.
 Switches default to independently saved rows; intervals/daily default to effective history.

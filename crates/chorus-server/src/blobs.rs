@@ -131,6 +131,7 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
                 AND {}
            UNION ALL SELECT 1 FROM member m
               JOIN follower_front_view fv ON fv.target_account_id = m.account_id AND fv.follower_account_id = ?2
+                AND fv.front_id = ''
               JOIN follow f ON f.target_account_id = m.account_id AND f.follower_account_id = ?2 AND f.status = 'active'
               WHERE m.avatar_blob = ?1 AND m.deleted_at IS NULL
                 AND EXISTS (SELECT 1 FROM json_each(fv.entries) je

@@ -29,6 +29,8 @@
     since: number | null;
     time?: { mode?: string };
     shared?: boolean;
+    /** additional fronts they granted you (D-084), as revealed */
+    fronts?: { id: string; name: string | null; entries: ViewEntry[]; since: number | null }[];
     /** only when they share it: past revealed fronts, newest first */
     history?: { entries: { name: string }[]; time: When }[];
     stats?: { days: number; members: { name: string; share_pct: number }[] };
@@ -87,8 +89,18 @@
   let newBucket = $state('');
   let newBucketPreset = $state('gentle');
 
+  // sharing toggles and front/layer grants (D-084) are independent of the preset
+  const ORTHOGONAL = ['share_history', 'share_stats', 'fronts', 'layers'];
   const withoutSharing = (c: Record<string, unknown>) =>
-    Object.fromEntries(Object.entries(c).filter(([k]) => k !== 'share_history' && k !== 'share_stats'));
+    Object.fromEntries(Object.entries(c).filter(([k]) => !ORTHOGONAL.includes(k)));
+  const grantsOf = (c: Record<string, unknown>) =>
+    Object.fromEntries(Object.entries(c).filter(([k]) => (k === 'fronts' || k === 'layers') && Array.isArray(c[k]) && (c[k] as unknown[]).length));
+  // what the owner can grant: live additional fronts and live custom layers
+  const named = $derived(projection.front_systems?.[sync.accountId]?.system);
+  const grantableFronts = $derived(named ? Object.values(named.fronts).filter((f) => !f.deleted && f.id !== sync.accountId)
+    .sort((a, b) => a.name.localeCompare(b.name)) : []);
+  const grantableLayers = $derived(named ? Object.values(named.layers).filter((l) => !l.deleted && !['front', 'cocon', 'present'].includes(l.id))
+    .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name)) : []);
   function presetOf(ceiling: unknown): string {
     const raw = JSON.stringify(withoutSharing((ceiling ?? {}) as Record<string, unknown>));
     return PRESETS.find((p) => JSON.stringify(JSON.parse(presetJson[p.id])) === raw)?.id ?? (raw === '{}' ? 'gentle' : 'custom');
@@ -258,14 +270,29 @@
     }
   }
 
+  const followCeiling = (id: string) => (projection.rows.follow?.[id]?.fields.ceiling ?? {}) as Record<string, unknown>;
   function ceilingOf(id: string): string {
-    const c = projection.rows.follow?.[id]?.fields.ceiling;
-    const s = JSON.stringify(c ?? {});
-    return s === '{}' ? 'inherit' : presetOf(c);
+    const c = followCeiling(id);
+    return JSON.stringify(withoutSharing(c)) === '{}' ? 'inherit' : presetOf(c);
   }
 
   function setPreset(id: string, preset: string) {
-    sync.create('follow.set_ceiling', sync.accountScope, id, { ceiling: preset === 'inherit' ? {} : JSON.parse(presetJson[preset]) });
+    const base = preset === 'inherit' ? {} : JSON.parse(presetJson[preset]);
+    sync.create('follow.set_ceiling', sync.accountScope, id, { ceiling: { ...base, ...grantsOf(followCeiling(id)) } });
+  }
+
+  const granted = (id: string, key: 'fronts' | 'layers') => {
+    const v = followCeiling(id)[key];
+    return Array.isArray(v) ? (v as string[]) : [];
+  };
+  /** Grant or revoke one additional front / custom layer for one follower (D-084). */
+  function setGrant(id: string, key: 'fronts' | 'layers', value: string, on: boolean) {
+    const c = followCeiling(id);
+    const next = granted(id, key).filter((x) => x !== value);
+    if (on) next.push(value);
+    const ceiling = { ...c, [key]: next };
+    if (!next.length) delete (ceiling as Record<string, unknown>)[key];
+    sync.create('follow.set_ceiling', sync.accountScope, id, { ceiling });
   }
 
   function accept(id: string, preset: string) {
@@ -341,6 +368,28 @@
             {#each PRESETS as p (p.id)}<option value={p.id}>{p.label} — {p.hint}</option>{/each}
           </select>
         </label>
+        {#if grantableFronts.length || grantableLayers.length}
+          <details class="grants">
+            <summary>Additional fronts and layers</summary>
+            <p class="hint">They see Body only until you allow more. Delays and privacy rules still apply.</p>
+            {#if grantableFronts.length}
+              <div class="bucket-checks" aria-label={`Fronts ${name(f.account)} may see`}>
+                {#each grantableFronts as front (front.id)}
+                  <label><input type="checkbox" checked={granted(f.id, 'fronts').includes(front.id)}
+                    onchange={(e) => setGrant(f.id, 'fronts', front.id, e.currentTarget.checked)} /> {front.name}</label>
+                {/each}
+              </div>
+            {/if}
+            {#if grantableLayers.length}
+              <div class="bucket-checks" aria-label={`Layers ${name(f.account)} may see`}>
+                {#each grantableLayers as layer (layer.id)}
+                  <label><input type="checkbox" checked={granted(f.id, 'layers').includes(layer.id)}
+                    onchange={(e) => setGrant(f.id, 'layers', layer.id, e.currentTarget.checked)} /> {layer.name}</label>
+                {/each}
+              </div>
+            {/if}
+          </details>
+        {/if}
         {#if ownBuckets.length}
           <div class="bucket-checks" aria-label={`Buckets for ${name(f.account)}`}>
             {#each ownBuckets as bucket (bucket.id)}
@@ -403,6 +452,9 @@
               {/each}
             </span>
           {/if}
+          {#each views[f.account.id]?.fronts ?? [] as front (front.id)}
+            <span class="granted-front">{front.name ?? 'Another front'}: {front.entries.filter((e) => e.t === 'subject').map((e) => e.name).join(' & ') || 'No one'}</span>
+          {/each}
           {#if views[f.account.id]?.stats?.members.length}
             <span>Most often, last {views[f.account.id].stats!.days} days:
               {views[f.account.id].stats!.members.filter((m) => m.share_pct > 0).map((m) => `${m.name} ${m.share_pct}%`).join(' · ')}</span>

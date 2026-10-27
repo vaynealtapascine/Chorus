@@ -19,7 +19,9 @@
     { id: 'private', label: 'Private' },
   ];
   const presetValues = Object.fromEntries(presets.map((p) => [p.id, JSON.parse(notifyPreset(p.id))]));
-  const withoutSharing = (c: Record<string, unknown>) => Object.fromEntries(Object.entries(c).filter(([k]) => k !== 'share_history' && k !== 'share_stats'));
+  // sharing toggles and front/layer grants (D-084) are independent of the preset
+  const KEPT = ['share_history', 'share_stats', 'fronts', 'layers'];
+  const withoutSharing = (c: Record<string, unknown>) => Object.fromEntries(Object.entries(c).filter(([k]) => !KEPT.includes(k)));
   const preset = $derived(presets.find((p) => JSON.stringify(presetValues[p.id]) === JSON.stringify(withoutSharing(ceiling)))?.id ?? (Object.keys(ceiling).length ? 'custom' : 'gentle'));
 
   function savePref(key: string, value: unknown) {
@@ -29,7 +31,7 @@
     savePref('notify_chat', { ...kinds, [key]: enabled });
   }
   function sharing(id: string) {
-    savePref('follow_ceiling', { ...presetValues[id], ...Object.fromEntries(['share_history', 'share_stats'].filter((key) => key in ceiling).map((key) => [key, ceiling[key]])) });
+    savePref('follow_ceiling', { ...presetValues[id], ...Object.fromEntries(KEPT.filter((key) => key in ceiling).map((key) => [key, ceiling[key]])) });
   }
   function sharingDetail(key: 'share_history' | 'share_stats', enabled: boolean) {
     savePref('follow_ceiling', { ...ceiling, [key]: enabled });

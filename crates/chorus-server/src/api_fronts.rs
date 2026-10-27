@@ -622,10 +622,12 @@ mod tests {
     #[test]
     fn review_choice_migration_repairs_derived_rows_without_changing_operations() {
         let mut conn = crate::db::open_memory().unwrap();
-        for (_, sql) in crate::db::MIGRATIONS.iter().take(crate::db::MIGRATIONS.len() - 1) {
+        // everything before 0013, which repairs the derived cards
+        let upto = crate::db::MIGRATIONS.iter().position(|(n, _)| *n == "0013_front_review_resolution").unwrap();
+        for (_, sql) in crate::db::MIGRATIONS.iter().take(upto) {
             conn.execute_batch(sql).unwrap();
         }
-        crate::db::set_meta(&conn, "schema_version", &(crate::db::MIGRATIONS.len() - 1).to_string()).unwrap();
+        crate::db::set_meta(&conn, "schema_version", &upto.to_string()).unwrap();
         let review = "card";
         let winner = op(2, BODY, BODY, "front.review_resolve", json!({"review_id":review,"resolution":"keep_a"}));
         let mut future = op(5, BODY, BODY, "front.review_resolve", json!({"review_id":review,"resolution":"keep_b"}));
@@ -646,7 +648,7 @@ mod tests {
         )
         .unwrap();
         let before = crate::oplog::for_scope_kinds(&conn, &format!("account:{BODY}"), "front.").unwrap();
-        assert_eq!(crate::db::migrate(&mut conn).unwrap(), 1);
+        assert_eq!(crate::db::migrate(&mut conn).unwrap(), crate::db::MIGRATIONS.len() - upto);
         let row: (String, i64, String) = conn
             .query_row("SELECT resolution,resolved_at,clocks FROM front_review WHERE id=?1", [review], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?))
