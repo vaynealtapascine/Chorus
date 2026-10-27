@@ -126,8 +126,9 @@ is reloaded; they do not subscribe to the foreign account's private op scope.
    post cards, "Add a poll" in the chat composer's options and the post composer's Post options.
    Votes act as the current speaker. Android **done (2026-10-27)**: `data/Polls.kt` (`Model.polls`),
    `ui/PollCard.kt` (card under chat messages and journal posts, `PollDraftFields` in the chat "⋯"
-   options and the post composer); votes act as the account's default speaker (`Reply.speaker`) or the
-   post's react member. Cross-language conformance fixtures **done (2026-10-27)** in
+   options and the post composer); chat votes use the composer's resolved acting speaker
+   (selected author or channel-front default), matching web; post votes use the post's react
+   member/default speaker. Cross-language conformance fixtures **done (2026-10-27)** in
    `fixtures/poll/`; Rust consumes them because neither client reimplements poll validation,
    tallying or projection (see that directory's README). Remaining: a live browser/device
    check (blocked by policy so far).

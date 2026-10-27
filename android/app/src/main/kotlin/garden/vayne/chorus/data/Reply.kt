@@ -37,7 +37,7 @@ object Reply {
 
     /**
      * Who speaks: the primary fronting member, else the first fronting member, else the only
-     * active member (a person account's self member); `null` when nobody clearly fits.
+     * active member (legacy) or person self member (configured); `null` when nobody clearly fits.
      */
     fun speaker(model: Model): Member? {
         // a configured account uses Body's authorship pool; a custom layer gains no fronting role
@@ -45,7 +45,7 @@ object Reply {
         val fronting = if (model.namedFronts != null) body?.authorship.orEmpty().filter { it.subjectType == "member" }.map { it.displayEntry() }
             else model.current.filter { it.subjectType == "member" && it.level == "front" }
         val id = (fronting.firstOrNull { it.isPrimary } ?: fronting.firstOrNull())?.subjectId
-        return id?.let { model.member(it) } ?: model.active.singleOrNull()
+        return id?.let { model.member(it) } ?: model.active.singleOrNull()?.takeIf { model.namedFronts == null || it.isSelf }
     }
 
     /** The speaker for a reply: the mentioned member when the push named one still active. */

@@ -25,6 +25,10 @@ data class PollState(
 object Polls {
     const val MAX_OPTIONS = 20
 
+    /** The active acting member supplied by the chat composer, or no voter. */
+    fun chatMember(model: Model, actingMemberId: String?): String? =
+        actingMemberId?.takeIf { id -> model.active.any { it.id == id } }
+
     private fun rows(p: JSONObject, table: String): Sequence<Pair<String, JSONObject>> {
         val t = p.optJSONObject("rows")?.optJSONObject(table) ?: return emptySequence()
         return t.keys().asSequence().mapNotNull { id ->

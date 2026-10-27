@@ -347,7 +347,10 @@ Keep these concepts distinct in the shared core:
 | History | Own operations and effective changes; retain the cause of changes inherited from another front |
 
 Display level/order is not an authorship or notification role. Those purposes use explicit layer
-ID sets. An empty set means no layer is selected. A missing legacy setting keeps the old behavior.
+ID sets. An empty set means no layer is selected. A configured empty authorship pool must not fall back
+to the only active system member. Only a person account's self member keeps that fallback
+(D-003); unconfigured/legacy consumers keep their prior defaults. Server REST message authors
+and Android inline replies follow this rule. A missing legacy setting keeps the old behavior.
 Layer and front deletion are tombstones; historical entries retain their identifiers and names
 can still be resolved for deleted definitions. No presence data is silently removed.
 

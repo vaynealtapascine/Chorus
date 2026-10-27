@@ -290,7 +290,9 @@ fn member_id(conn: &Connection, account: &str, who: &str) -> Result<String, Data
 /// member of a person account. A configured account (D-080) uses the authorship pool of the
 /// channel's selected front instead of the legacy Body tables.
 fn default_author(conn: &Connection, account: &str, channel: &str) -> Result<String, DataError> {
-    let fronting: Option<String> = if let Some(current) = crate::fronts::current(conn, account)? {
+    let current = crate::fronts::current(conn, account)?;
+    let configured = current.is_some();
+    let fronting: Option<String> = if let Some(current) = current {
         let front = crate::fronts::channel_front(conn, account, channel)?;
         let pool = match current.resolved.get(&front).filter(|f| !f.deleted) {
             Some(f) => crate::fronts::owned_presence(conn, account, &f.authorship)?,
@@ -311,8 +313,11 @@ fn default_author(conn: &Connection, account: &str, channel: &str) -> Result<Str
         return Ok(m);
     }
     let own: Vec<String> = conn
-        .prepare("SELECT id FROM member WHERE account_id=?1 AND deleted_at IS NULL AND archived_at IS NULL")?
-        .query_map([account], |r| r.get(0))?
+        .prepare(
+            "SELECT id FROM member WHERE account_id=?1 AND deleted_at IS NULL AND archived_at IS NULL
+            AND (?2 = 0 OR (is_self AND EXISTS (SELECT 1 FROM account WHERE id=?1 AND kind='person')))",
+        )?
+        .query_map(params![account, configured], |r| r.get(0))?
         .collect::<Result<_, _>>()?;
     match own.as_slice() {
         [one] => Ok(one.clone()),
@@ -421,6 +426,21 @@ mod tests {
         .unwrap();
         o.seq = Some(crate::oplog::insert(conn, &o, false, false).unwrap());
         crate::fronts::after_op(conn, &o).unwrap();
+    }
+
+    #[test]
+    fn empty_configured_pool_falls_back_only_to_the_person_self_member() {
+        let mut conn = crate::db::open_memory().unwrap();
+        crate::db::migrate(&mut conn).unwrap();
+        conn.execute("INSERT INTO account(id,kind,created_at) VALUES (?1,'system',0)", [BODY]).unwrap();
+        conn.execute("INSERT INTO member(id,account_id,name,created_at) VALUES ('kai',?1,'Kai',0)", [BODY]).unwrap();
+        assert_eq!(default_author(&conn, BODY, "c").unwrap(), "kai", "legacy fallback");
+        front_op(&conn, 1, "front.define", json!({"authorship_layers":[]}));
+        assert!(matches!(default_author(&conn, BODY, "c"), Err(DataError::Bad(_))));
+        conn.execute("UPDATE account SET kind='person' WHERE id=?1", [BODY]).unwrap();
+        assert!(default_author(&conn, BODY, "c").is_err(), "a person must have a self member");
+        conn.execute("UPDATE member SET is_self=1 WHERE account_id=?1", [BODY]).unwrap();
+        assert_eq!(default_author(&conn, BODY, "c").unwrap(), "kai");
     }
 
     #[test]

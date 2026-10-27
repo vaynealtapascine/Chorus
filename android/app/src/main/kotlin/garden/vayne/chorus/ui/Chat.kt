@@ -426,7 +426,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     message.authors.firstOrNull()?.let { it != replySpeakerId && model.member(it) != null } == true
                 else message.accountId != null && message.accountId != chorus.device?.accountId
                 ChatMessageCard(message, model, foreignAuthors, chorus, unseenByMessage[message.id].orEmpty(),
-                    heldMessages[message.id],
+                    heldMessages[message.id], actingMemberId = replySpeakerId,
                     onReply = { replyTo = message.id; carriedReply = null },
                     onReplyPrivately = if (canPrivate) ({ replyPrivately(message) }) else null,
                     onEdit = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
@@ -747,7 +747,7 @@ private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
 
 @Composable
 private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
-    chorus: Chorus, unseenBy: List<String>, held: HeldMessage?, onReply: () -> Unit,
+    chorus: Chorus, unseenBy: List<String>, held: HeldMessage?, actingMemberId: String?, onReply: () -> Unit,
     onReplyPrivately: (() -> Unit)?, onEdit: (() -> Unit)?) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
@@ -820,8 +820,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus)
             }
-            // votes as the account's default speaker (D-081); own members only
-            PollCard(chorus, model, message.id, garden.vayne.chorus.data.Reply.speaker(model)?.id)
+            // Same resolved acting speaker as the composer: explicit selection or channel default.
+            PollCard(chorus, model, message.id, garden.vayne.chorus.data.Polls.chatMember(model, actingMemberId))
             if (held == null && message.edited) {
                 TextButton(onClick = {
                     if (history != null) history = null else actions.launch {

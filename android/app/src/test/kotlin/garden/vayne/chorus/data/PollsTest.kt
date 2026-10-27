@@ -9,6 +9,15 @@ import org.junit.Test
 class PollsTest {
     private fun row(fields: String) = JSONObject().put("exists", true).put("fields", JSONObject(fields))
 
+    @Test fun chatVotesAsItsComposerRatherThanTheBodyDefault() {
+        val members = listOf("body", "channel", "selected").map { Member(it, it, null, null, "#fff", emptyList(), null, false) }
+        val model = Model(members, emptyList(), emptyMap(), listOf(Entry("member", "body", "front", true)), null, emptyList())
+        assertEquals("selected", Polls.chatMember(model, "selected"))
+        assertEquals("channel", Polls.chatMember(model, "channel"))
+        assertNull(Polls.chatMember(model, null))
+        assertNull(Polls.chatMember(model, "missing"))
+    }
+
     @Test fun readsPollsTalliesAndOnlyOwnVotes() {
         val poll = """{"question":"Dinner?","options":[{"id":"a","text":"Soup"},{"id":"b","text":"Rice"}],"multiple":false}"""
         val p = JSONObject().put("rows", JSONObject()
