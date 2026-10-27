@@ -18,9 +18,15 @@
   const channelById = $derived(new Map(channels(projection).map((c) => [c.id, c.name])));
   const pinned = $derived(Object.entries(projection.rows.message ?? {}).filter(([, row]) => row.exists && row.fields.deleted_at == null && typeof row.fields.pinned_at === 'number')
     .map(([id, row]) => ({ id, at: row.fields.pinned_at as number, text: String(row.fields.text ?? ''), channelId: String(row.fields.channel_id ?? '') })));
+  // Body's changes on the Fronting layer (exact ID); a configured account reads canonical history
+  const configured = $derived(!!projection.front_systems?.[sync.accountId]);
+  const named = $derived.by(() => { projection.front_systems; return configured ? sync.frontHistory() : null; });
+  const switchRows = $derived(configured
+    ? (named?.effective.changes ?? []).map((c) => ({ id: c.id, occurred_at: c.occurred_at, retracted: false, fronting: c.entries.filter((e) => e.layer_id === 'front') }))
+    : (projection.fronts[sync.accountId]?.switches ?? []).map((sw) => ({ id: sw.id, occurred_at: sw.occurred_at, retracted: sw.retracted, fronting: sw.resulting_front.filter((e) => e.level === 'front') })));
   const timeline = $derived([
     ...entries.map((post) => ({ kind: 'post' as const, id: post.id, at: post.occurred_at, post })),
-    ...(projection.fronts[sync.accountId]?.switches ?? []).map((sw) => ({ kind: 'switch' as const, id: sw.id, at: sw.occurred_at, sw })),
+    ...switchRows.map((sw) => ({ kind: 'switch' as const, id: sw.id, at: sw.occurred_at, sw })),
     ...pinned.map((pin) => ({ kind: 'pin' as const, id: pin.id, at: pin.at, pin })),
   ].sort((a, b) => b.at - a.at || b.id.localeCompare(a.id)));
   const active = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
@@ -49,7 +55,7 @@
         <PostCard post={item.post} {people} {dark} reactions={reacts.get(item.post.id) ?? new Map()} {speaker} compactEntry onreply={() => (replyTo = item.post)} onreact={(emoji, add) => react(item.post, emoji, add)} />
         <PostReplies postId={item.post.id} />
       {:else if item.kind === 'switch'}
-        <div class="event"><span class="event-icon">◌</span><span>{item.sw.retracted ? 'Undone switch' : `Front: ${item.sw.resulting_front.filter((e) => e.level === 'front').map(frontName).join(' & ') || 'no one'}`}</span><time>{new Date(item.at).toLocaleString()}</time></div>
+        <div class="event"><span class="event-icon">◌</span><span>{item.sw.retracted ? 'Undone switch' : `Front: ${item.sw.fronting.map(frontName).join(' & ') || 'no one'}`}</span><time>{new Date(item.at).toLocaleString()}</time></div>
       {:else}
         <div class="event"><span class="event-icon">⌁</span><span>Pinned in #{channelById.get(item.pin.channelId) ?? 'channel'}: {item.pin.text.slice(0, 120)}</span><time>{new Date(item.at).toLocaleString()}</time></div>
       {/if}

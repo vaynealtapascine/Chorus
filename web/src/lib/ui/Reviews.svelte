@@ -1,46 +1,54 @@
 <script lang="ts">
   // Concurrent switches from two devices, close in time (SYNC.md §5.7). Nothing was dropped;
-  // this just asks which one was right.
+  // this just asks which one was right. A configured account's cards come from the selected
+  // front's own history fold (History screen only; never folded on Home's current path).
   import { groups, members } from '../data';
-  import type { Entry, SwitchRow } from '../front.svelte';
+  import type { FrontPresence } from '../core/fronts';
+  import type { NamedHistory } from '../front-history';
   import { sync, type Projection } from '../sync/client';
 
-  let { projection }: { projection: Projection } = $props();
+  let { projection, front, named = null }: { projection: Projection; front?: string; named?: NamedHistory | null } = $props();
 
-  const open = $derived(
-    (projection.reviews?.[sync.accountId] ?? []).filter(
-      (r) => !(projection.rows.front_review?.[r.id]?.fields?.resolution),
-    ),
-  );
-  const byId = $derived(new Map((projection.fronts[sync.accountId]?.switches ?? []).map((s) => [s.id, s as SwitchRow])));
+  type Who = { subject_type: string; subject_id: string; layer: string; is_primary: boolean };
+  type Side = { id: string; occurred_at: number; device_id: string; entries: Who[] };
+  const resolved = (id: string) => !!projection.rows.front_review?.[id]?.fields?.resolution;
+  const open = $derived((named ? named.reviews : projection.reviews?.[sync.accountId] ?? []).filter((r) => !resolved(r.id)));
+  const byId = $derived(new Map<string, Side>(named
+    ? named.saved.switches.map((s) => [s.id, { ...s, entries: s.resulting_front.map(({ layer_id, ...e }) => ({ ...e, layer: layer_id })) }])
+    : (projection.fronts[sync.accountId]?.switches ?? []).map((s) => [s.id, { ...s, entries: s.resulting_front.map(({ level, ...e }) => ({ ...e, layer: level })) }])));
   const names = $derived(
     new Map([
       ...members(projection).map((m) => [m.id, m.display_name ?? m.name] as const),
       ...groups(projection).map((g) => [g.id, g.name] as const),
     ]),
   );
-  const label = (s?: SwitchRow) =>
-    s ? s.resulting_front.filter((e: Entry) => e.level === 'front').map((e) => names.get(e.subject_id) ?? '?').join(' & ') || 'no one' : '?';
-  const time = (s?: SwitchRow) => (s ? new Date(s.occurred_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
-  const device = (s?: SwitchRow) => (s?.device_id === sync.device?.device_id ? 'this device' : 'another device');
+  // legacy cards name who was fronting; a custom layer has no fronting role, so list everyone
+  const label = (s?: Side) =>
+    s ? s.entries.filter((e) => named || e.layer === 'front').map((e) => names.get(e.subject_id) ?? '?').join(' & ') || 'no one' : '?';
+  const time = (s?: Side) => (s ? new Date(s.occurred_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+  const device = (s?: Side) => (s?.device_id === sync.device?.device_id ? 'this device' : 'another device');
 
   function resolve(id: string, resolution: string) {
     sync.create('front.review_resolve', sync.accountScope, null, { review_id: id, resolution });
   }
   function keep(r: { id: string; switch_a: string; switch_b: string }, which: 'a' | 'b') {
     const drop = which === 'a' ? r.switch_b : r.switch_a;
-    sync.create('front.retract', sync.accountScope, sync.newId(), { target_op_id: drop });
+    if (named) sync.create('front.change', sync.accountScope, front ?? sync.accountId, { action: 'retract', target_op_id: drop });
+    else sync.create('front.retract', sync.accountScope, sync.newId(), { target_op_id: drop });
     resolve(r.id, which === 'a' ? 'keep_a' : 'keep_b');
   }
   function merge(r: { id: string; switch_a: string; switch_b: string }) {
-    const a = byId.get(r.switch_a);
-    const b = byId.get(r.switch_b);
     const seen = new Set<string>();
-    const entries = [...(a?.resulting_front ?? []), ...(b?.resulting_front ?? [])].filter((e) => {
+    const entries = [...(byId.get(r.switch_a)?.entries ?? []), ...(byId.get(r.switch_b)?.entries ?? [])].filter((e) => {
       const k = `${e.subject_type}:${e.subject_id}`;
       return seen.has(k) ? false : (seen.add(k), true);
     });
-    sync.create('front.switch', sync.accountScope, sync.newId(), { entries });
+    if (named) {
+      const merged = entries.map(({ layer, ...e }) => ({ ...e, layer_id: layer }) as FrontPresence);
+      sync.create('front.change', sync.accountScope, front ?? sync.accountId, { action: 'switch', entries: merged });
+    } else {
+      sync.create('front.switch', sync.accountScope, sync.newId(), { entries: entries.map(({ layer, ...e }) => ({ ...e, level: layer })) });
+    }
     resolve(r.id, 'merge');
   }
 </script>

@@ -143,7 +143,7 @@ Daily reads clamp closed future intervals as well as open ones to now and the re
 days, using one explicit/latest offset (IANA/DST remains unsupported by this server API).
 Reviews fold per front and look up LWW resolutions from the own account log, including a
 resolution delivered before its switches. Deleted fronts keep history. Unconfigured defaults
-retain existing SQL shapes. Client history/Insights views are connected below; profile/feed/search/reviews and named history SQL/exports still need connecting;
+retain existing SQL shapes. Client history/Insights views are connected below, as are web profile/feed/search/review consumers; Android's and named history SQL/exports still need connecting;
 these owner reads must never feed follower history/statistics or current/composer hot paths.
 
 Slice 3c adds `frontSystemHistory` and `effectiveFrontHistory` to the device replica's wasm and
@@ -161,8 +161,8 @@ own names. Time edits and undo/redo target original saved IDs through `front.cha
 pass synthetic effective IDs to an editing operation. Existing unconfigured Body writes retain
 legacy kinds. The initial log is bounded to 200 entries with Show older; Android reads on its
 store dispatcher. Browser checks include offline edit/undo/redo across reload and confirm that
-following remains active. Profile/feed/search/review consumers still need canonical
-history integration, and native visual rendering has not been verified. This slice exposes read
+following remains active. Web consumers are connected (next section); Android's profile/feed/search/review
+consumers still need canonical history integration, and native visual rendering has not been verified. This slice exposes read
 selection and history corrections, not front/layer management or follower access settings.
 
 The statistics adapters now accept a canonical selected-front history and an exact layer ID.
@@ -180,8 +180,20 @@ IDs; whole-front change counts omit layer scope and are labelled accordingly. Da
 explicitly explain member-hours. Actual-component SSR/wasm tests cover selected, empty, error and
 legacy states; static layout captures cover compact/desktop in both themes. Live/hydrated Insights
 and native rendering remain unverified under the recorded policy blocks. The scoped review and
-verification record is `docs/handoff/ui-insights-2026-10-26.md`. Profile/feed/search/review and SQL/export
-consumers also remain pending.
+verification record is `docs/handoff/ui-insights-2026-10-26.md`.
+
+Web current and history consumers now read Body canonically once an account is configured.
+`front-view.ts` `bodyPresence` (display, Chat/Search/Stage viewer filters, Members' Here badge) and
+`bodyAuthors` (Body's authorship pool: journal, post composer, People reactions) replace legacy
+`projection.fronts[...].current` reads; custom layers keep their IDs, so the viewer filter's
+front/co-conscious rule never maps them into a role. Profile hours/last fronted, Journal switch
+items and feed `author_fronting` read Body's effective intervals/changes on the exact `front`
+layer ID; Journal search reads Body's saved records (with notes) and refreshes on a
+`front_systems` delta. A configured account whose history is still loading shows nothing rather
+than the stale legacy timeline. Named concurrent-switch review cards appear on the History screen
+for the selected front (the fold that already serves it) and resolve through `front.change`
+retract/switch plus `front.review_resolve`; Home shows legacy cards only, keeping the bulk fold
+off Home's current path. Android's equivalents and SQL/export consumers remain pending.
 
 Saved web UI projections now carry core's independent `ProjectionDigest {version, ops}`.
 Compatibility is checked before the first cached display and again when adopting the indexed

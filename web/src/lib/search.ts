@@ -1,6 +1,7 @@
 import { core, type SearchCandidate, type SearchQuery as CoreQuery } from './core';
 import type { Projection } from './sync/client';
 import type { Delta } from './sync/delta';
+import type { NamedHistory } from './front-history';
 
 export interface SearchHit {
   id: string;
@@ -208,7 +209,9 @@ export class JournalIndex {
   private switches: { hit: SwitchSearchHit; words: string[] }[] = [];
   private names = new Map<string, string>();
 
-  constructor(p: Projection, private account: string) { this.rebuild(p); }
+  /** `history` reads Body's saved own records once the account has named fronts (D-080); it is
+   * called only when the front state changes, never while typing. */
+  constructor(p: Projection, private account: string, private history?: () => NamedHistory | null) { this.rebuild(p); }
 
   rebuild(p: Projection): void {
     this.posts.clear();
@@ -222,7 +225,7 @@ export class JournalIndex {
     const renamed = Object.keys(d.rows.member ?? {}).length + Object.keys(d.rows.member_group ?? {}).length > 0;
     if (renamed) this.readNames(p);
     for (const id of Object.keys(d.rows.post ?? {})) this.updatePost(p, id);
-    if (renamed || this.account in (d.fronts ?? {})) this.readSwitches(p);
+    if (renamed || this.account in (d.fronts ?? {}) || this.account in (d.front_systems ?? {})) this.readSwitches(p);
   }
 
   private readNames(p: Projection): void {
@@ -248,7 +251,9 @@ export class JournalIndex {
   }
 
   private readSwitches(p: Projection): void {
-    const rows = (p.fronts[this.account]?.switches ?? []) as unknown as SwitchLike[];
+    const rows = (p.front_systems?.[this.account] && this.history
+      ? this.history()?.saved.switches ?? []
+      : p.fronts[this.account]?.switches ?? []) as unknown as SwitchLike[];
     this.switches = rows
       .filter((s) => !s.retracted)
       .map((s) => {

@@ -3,6 +3,7 @@
   import { groups, members } from '../data';
   import { LEVEL_LABEL } from '../front.svelte';
   import { sync, type Projection } from '../sync/client';
+  import Reviews from './Reviews.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
   let selected = $state('');
@@ -103,6 +104,7 @@
   {#if system}<p class="muted explanation">{savedView ? 'Edit this front’s saved records here. Past edits keep following active.' : 'Includes inherited changes. Open Saved entries to edit this front’s records.'}</p>{/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if loading}<p class="muted" role="status">Loading saved history…</p>{/if}
+  {#if system && named}<Reviews {projection} {front} {named} />{/if}
   <div class="timeline" aria-label="Who was present" aria-busy={loading}>
     {#each lanes as [subject, ivs] (subject)}
       {@const n = names.get(subject)}{@const c = core.adaptColor(n?.color ?? '#A09184', dark)}

@@ -16,7 +16,11 @@
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
   const feeds = $derived(savedFeeds(projection));
-  const candidates = $derived(feedCandidates(projection));
+  // a configured account's "was fronting" reads Body's canonical history (cached per front change)
+  // (empty while it loads: never the stale legacy timeline)
+  const configured = $derived(!!projection.front_systems?.[sync.accountId]);
+  const named = $derived.by(() => { projection.front_systems; return configured ? sync.frontHistory() : null; });
+  const candidates = $derived(feedCandidates(projection, Date.now(), configured ? named?.effective.intervals ?? [] : undefined));
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
   const reacts = $derived(reactions(projection));
   const speaker = $derived(members(projection).find((m) => canWriteAs(projection, m.id, sync.accountId))?.id ?? null);

@@ -147,6 +147,20 @@ describe('offline post and switch search', () => {
     expect(index.searchPosts(parseSearch('sighting')).map((h) => h.id)).toEqual(['p3']);
   });
 
+  it('reads Body saved records once configured and refreshes them on a front-system delta', () => {
+    let p = { ...journal(), front_systems: { me: {} } } as unknown as Projection;
+    let saved: { id: string; occurred_at: number; entries: { subject_id: string }[]; note: string | null; retracted: boolean }[] =
+      [{ id: 'n1', occurred_at: 5000, entries: [{ subject_id: 'kai' }], note: 'named note', retracted: false }];
+    const index = new JournalIndex(p, 'me', () => ({ saved: { switches: saved } }) as never);
+    expect(index.searchSwitches(parseSearch('storm'))).toEqual([]); // The stale legacy log is not read.
+    expect(index.searchSwitches(parseSearch('named')).map((h) => h.id)).toEqual(['n1']);
+    saved = [...saved, { id: 'n2', occurred_at: 6000, entries: [{ subject_id: 'rin' }], note: null, retracted: false }];
+    const d = { ...empty(), front_systems: { me: {} } } as Delta;
+    p = applyDelta(p, d);
+    index.apply(p, d);
+    expect(index.searchSwitches(parseSearch('rin')).map((h) => h.id)).toEqual(['n2']);
+  });
+
   it('searches 5 000 posts and 10 000 switches within the input budget', () => {
     const p = journal();
     const switches = p.fronts.me.switches as unknown as { id: string }[];

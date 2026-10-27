@@ -53,7 +53,7 @@
 
   onMount(() => {
     index = new SearchIndex(projection);
-    journal = new JournalIndex(projection, sync.accountId);
+    journal = new JournalIndex(projection, sync.accountId, () => sync.frontHistory());
     revision++;
     return sync.subscribeProjection((next, delta) => { index?.apply(next, delta); journal?.apply(next, delta); revision++; });
   });

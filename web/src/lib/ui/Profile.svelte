@@ -1,7 +1,7 @@
 <script lang="ts">
   import { channels, fieldDefs, fieldValues, members, messages, reactions, type MemberRow } from '../data';
   import { canWriteAs, highlightedPostIds, memberPosts, postReaction, posts, type PostRow } from '../posts';
-  import { frontDaily, windowStart } from '../insights';
+  import { frontDaily, namedFrontDays, windowStart } from '../insights';
   import { sync, type Projection } from '../sync/client';
   import PostCard from './PostCard.svelte';
   import PostComposer from './PostComposer.svelte';
@@ -27,12 +27,21 @@
   const shownValue = (value: unknown) => Array.isArray(value) ? value.join(', ') : typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value);
   const now = Date.now();
   const timeZone = $derived(typeof projection.rows.system?.[sync.accountId]?.fields.timezone === 'string' ? projection.rows.system[sync.accountId].fields.timezone as string : undefined);
-  const intervals = $derived(projection.fronts[sync.accountId]?.intervals ?? []);
-  const frontDays = $derived(frontDaily(intervals, windowStart(now, 28, timeZone), now, timeZone).filter((row) => row.subject_type === 'member' && row.subject_id === id && row.level === 'front'));
-  const monthHours = $derived((frontDays.reduce((total, row) => total + row.seconds, 0) / 3600).toFixed(1));
-  const weekStart = $derived(windowStart(now, 7, timeZone));
-  const weekHours = $derived((frontDaily(intervals, weekStart, now, timeZone).filter((row) => row.subject_type === 'member' && row.subject_id === id && row.level === 'front').reduce((total, row) => total + row.seconds, 0) / 3600).toFixed(1));
-  const lastFront = $derived(intervals.filter((row) => row.subject_type === 'member' && row.subject_id === id && row.level === 'front').reduce((latest, row) => Math.max(latest, row.end_at ?? now), 0));
+  // Body's Fronting layer by its exact ID; a configured account reads its canonical history
+  const configured = $derived(!!projection.front_systems?.[sync.accountId]);
+  const named = $derived.by(() => { projection.front_systems; return configured ? sync.frontHistory() : null; });
+  const intervals = $derived(configured
+    ? (named?.effective.intervals ?? []).filter((i) => i.layer_id === 'front').map((i) => ({ ...i, level: i.layer_id }))
+    : (projection.fronts[sync.accountId]?.intervals ?? []).filter((i) => i.level === 'front'));
+  const mine = $derived(intervals.filter((row) => row.subject_type === 'member' && row.subject_id === id));
+  const hours = (from: number) => ((configured
+    ? namedFrontDays(named?.effective.intervals ?? [], sync.accountId, 'front', from, now, timeZone)
+    : frontDaily(mine, from, now, timeZone)
+  ).filter((row) => row.subject_type === 'member' && row.subject_id === id && row.level === 'front')
+    .reduce((total, row) => total + row.seconds, 0) / 3600).toFixed(1);
+  const monthHours = $derived(hours(windowStart(now, 28, timeZone)));
+  const weekHours = $derived(hours(windowStart(now, 7, timeZone)));
+  const lastFront = $derived(mine.reduce((latest, row) => Math.max(latest, row.end_at ?? now), 0));
   const messageCount = $derived(channels(projection).reduce((count, channel) => count + messages(projection, channel.id).filter((message) => message.authors.includes(id) && !message.deleted).length, 0));
   function pin(postId: string | null) {
     if (own) sync.create('member.set', sync.accountScope, id, { pinned_post_id: postId });

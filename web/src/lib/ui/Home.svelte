@@ -87,7 +87,7 @@
       </div>
     </section>
   {:else}
-  <Reviews {projection} />
+  {#if !configured}<Reviews {projection} />{/if}
   {#if fronts.length > 1}
     <div class="front-tabs" role="tablist" aria-label="Fronts">
       {#each fronts as f (f.id)}

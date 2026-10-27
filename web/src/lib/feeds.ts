@@ -2,6 +2,7 @@ import { core, type Json } from './core';
 import { channels, groups, memberListItems, memberLists, members, membership, messages, type MessageRow } from './data';
 import { localDay } from './insights';
 import { posts, type PostRow } from './posts';
+import type { FrontHistoryInterval } from './core/fronts';
 import type { Projection } from './sync/client';
 
 export interface FeedRow { id: string; name: string; description?: string; query: string; query_ast: Json; visibility: { mode: string } }
@@ -82,9 +83,14 @@ function hasFor(attachments: { mime: string }[], text: string, entities: { type:
 }
 
 /** Candidate set is restricted to the local replica; server-shared feeds need a scoped endpoint. */
-export function feedCandidates(p: Projection, now = Date.now()): FeedCandidate[] {
+/** `named` = Body's effective intervals for an account with named fronts (D-080); the Fronting
+ * layer is matched by its exact ID, so a custom layer never counts as fronting. */
+export function feedCandidates(p: Projection, now = Date.now(), named?: readonly FrontHistoryInterval[]): FeedCandidate[] {
   const front = new Map<string, { start: number; end: number }[]>();
-  for (const record of Object.values(p.fronts)) for (const interval of record.intervals) {
+  const intervals = named
+    ? named.map((i) => ({ ...i, level: i.layer_id }))
+    : Object.values(p.fronts).flatMap((record) => record.intervals);
+  for (const interval of intervals) {
     if (interval.subject_type !== 'member' || interval.level !== 'front') continue;
     const rows = front.get(interval.subject_id) ?? [];
     rows.push({ start: interval.start_at, end: interval.end_at ?? now });
