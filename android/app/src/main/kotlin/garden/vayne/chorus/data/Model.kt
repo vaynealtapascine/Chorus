@@ -65,6 +65,8 @@ data class ChatMessage(
     val visibleMemberIds: Set<String>, val accountId: String?, val replyTo: String?,
     val attachments: List<ChatAttachment>, val edited: Boolean = false,
     val entities: String = "[]", val segments: List<ChatSegment> = emptyList(),
+    /** A `message.forward`'s snapshot (D-048). */
+    val forward: List<ForwardItem> = emptyList(),
 )
 data class ChannelWindow(val messages: List<ChatMessage>, val hasOlder: Boolean)
 
@@ -209,7 +211,8 @@ class Model(
                 f.optJSONArray("segments")?.let { rows -> (0 until rows.length()).map { index ->
                     val row = rows.getJSONObject(index)
                     ChatSegment(row.getInt("offset"), row.getInt("length"), strings(row.optJSONArray("authors")))
-                } } ?: emptyList())
+                } } ?: emptyList(),
+                forward = ChatForward.parse(f.optJSONArray("forward_snapshot")))
         }
 
         /** Page backward through locally replicated messages without enlarging the chat model. */

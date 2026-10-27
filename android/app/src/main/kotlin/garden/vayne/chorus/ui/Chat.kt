@@ -122,6 +122,7 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 import garden.vayne.chorus.data.ChatReaction
 import garden.vayne.chorus.data.ChatReactions
+import garden.vayne.chorus.data.ChatForward
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -184,6 +185,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var carriedReply by remember { mutableStateOf<ChatMessage?>(null) }
     var pendingPrivateReply by remember { mutableStateOf<PendingPrivateReply?>(null) }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var forwarding by remember { mutableStateOf<ChatMessage?>(null) }
+    var forwardConfirm by remember { mutableStateOf<ChatListRow?>(null) }
+    var deleting by remember { mutableStateOf<ChatMessage?>(null) }
+    var undoDelete by remember { mutableStateOf<ChatMessage?>(null) }
     var busy by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var directory by remember { mutableStateOf<Map<String, SpaceInfo>>(emptyMap()) }
@@ -436,6 +441,36 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         replyTo = null; carriedReply = null; pendingPrivateReply = null; moreOpen = false
         audience = "all"; visibleTo = emptyList()
     }
+    // a snapshot plus copies of its files in the target scope, then the reader follows it there
+    fun forward(message: ChatMessage, row: ChatListRow) {
+        val from = channel ?: return
+        val speaker = replySpeakerId ?: run { error = "Choose who is speaking first."; return }
+        if (busy) return
+        busy = true; error = null
+        actions.launch {
+            try {
+                val scope = "space:${row.space.id}"
+                val ids = message.attachments.map { a ->
+                    chorus.newId().also { id -> chorus.create("attachment.create", id, ChatForward.attachmentCopy(a), scope = scope) }
+                }
+                chorus.create("message.forward", chorus.newId(), ChatForward.payload(row.channel.id, speaker, message, from.name, ids), scope = scope)
+                forwarding = null; forwardConfirm = null
+                openChat(row)
+                followNext = true
+            } catch (e: Exception) { error = e.message ?: "Could not forward the message." }
+            finally { busy = false }
+        }
+    }
+    fun delete(message: ChatMessage, restore: Boolean = false) {
+        val home = space ?: return
+        actions.launch {
+            try {
+                chorus.create(if (restore) "message.restore" else "message.delete", message.id, JSONObject(), scope = "space:${home.id}")
+                undoDelete = if (restore) null else message
+            } catch (e: Exception) { error = e.message ?: if (restore) "Could not restore the message." else "Could not delete the message." }
+        }
+    }
+    LaunchedEffect(undoDelete) { if (undoDelete != null) { delay(8_000); undoDelete = null } }
     Row(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         if (expanded || !conversationOpen) ChatListPane(model, listRows, if (expanded) channel?.id else null, readerName,
             openChat, { spaceAction = "new" },
@@ -545,6 +580,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 ChatMessageCard(message, model, foreignAuthors, chorus, unseenByMessage[message.id].orEmpty(),
                     heldMessages[message.id], actingMemberId = replySpeakerId,
                     reactions = model.messageReactions[message.id].orEmpty(),
+                    onForward = if (heldMessages[message.id] == null) ({ forwarding = message }) else null,
+                    onDelete = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
+                        heldMessages[message.id] == null) ({ deleting = message }) else null,
                     onReact = { emoji, on -> react(message, emoji, on) },
                     showSender = groupStart, showAvatar = groupEnd, onStage = { stageSelection = listOf(message.id); staging = true },
                     quote = messages.find { it.id == message.replyTo },
@@ -566,6 +604,12 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             }
             ChatJumpButton(null, unreadCount, if (unreadCount > 0) "Jump to latest message · $unreadCount unread" else "Jump to latest message") { actions.launch { listState.animateScrollToItem(0) } }
         }
+        }
+        undoDelete?.let { gone ->
+            Row(Modifier.fillMaxWidth().background(p.surface2).padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Message deleted", color = p.ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                TextButton(onClick = { delete(gone, restore = true) }) { Text("Undo") }
+            }
         }
         // Composer: one line (who's speaking, the text, options, send); options open above it
         Column(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 12.dp, vertical = 6.dp),
@@ -829,6 +873,43 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             }) { Text(if (editBusy) "Saving…" else "Save") } },
             dismissButton = { TextButton(enabled = !editBusy, onClick = { editingMessage = null }) { Text("Cancel") } })
     }
+    forwarding?.let { message ->
+        ModalBottomSheet(onDismissRequest = { forwarding = null }, containerColor = p.surface) {
+            Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+                Text("Forward to…", color = p.ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                Text(ChatPresentation.preview(message), color = p.ink3, fontSize = 13.sp, maxLines = 2,
+                    modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp))
+                for (row in listRows.sortedByDescending { it.latest?.occurredAt ?: 0L }) {
+                    Row(Modifier.fillMaxWidth().clickable(enabled = !busy) {
+                        val source = space ?: return@clickable
+                        val from = channel ?: return@clickable
+                        if (ChatForward.asksFirst(source, row.space.id, row.channel.id, from.id, message)) forwardConfirm = row
+                        else forward(message, row)
+                    }.heightIn(min = 56.dp).padding(horizontal = 20.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ChannelDisc(row.channel, size = 40.dp)
+                        Column(Modifier.weight(1f)) {
+                            Text(row.title, color = p.ink, fontSize = 16.sp, maxLines = 1)
+                            Text(spaceLabel(row.space, directory[row.space.id], chorus.device?.accountId.orEmpty()), color = p.ink3, fontSize = 12.sp, maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    forwardConfirm?.let { row ->
+        AlertDialog(onDismissRequest = { forwardConfirm = null }, title = { Text("Forward outside this chat?") },
+            text = { Text("This shares a snapshot of the message with ${row.title}. Its original audience doesn't follow it there.") },
+            confirmButton = { TextButton(enabled = !busy, onClick = { forwarding?.let { forward(it, row) } }) { Text("Forward") } },
+            dismissButton = { TextButton(onClick = { forwardConfirm = null }) { Text("Cancel") } })
+    }
+    deleting?.let { message ->
+        AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Delete this message?") },
+            text = { Text("It disappears for everyone in this chat. You can undo right after.") },
+            confirmButton = { TextButton(onClick = { deleting = null; delete(message) }) { Text("Delete", color = p.danger) } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } })
+    }
     if (spaceAction == "new") {
         AlertDialog(onDismissRequest = { spaceAction = "" }, title = { Text("Start a chat") },
             text = {
@@ -908,6 +989,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     chorus: Chorus, unseenBy: List<String>, held: HeldMessage?, actingMemberId: String?, onReply: () -> Unit,
     onReplyPrivately: (() -> Unit)?, onEdit: (() -> Unit)?,
     reactions: List<ChatReaction> = emptyList(), onReact: ((String, Boolean) -> Unit)? = null,
+    onForward: (() -> Unit)? = null, onDelete: (() -> Unit)? = null,
     showSender: Boolean = true, showAvatar: Boolean = true, quote: ChatMessage? = null, onStage: () -> Unit) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
@@ -968,6 +1050,20 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 }
             }
         }
+        for (item in message.forward) {
+            val source = item.authors.firstOrNull()?.let(model::member)
+            val sourceColor = source?.let { tonesOf(it.color).name } ?: p.accent
+            Row(Modifier.fillMaxWidth().background(sourceColor.copy(alpha = .10f), RoundedCornerShape(6.dp))) {
+                Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(sourceColor))
+                Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    Text("Forwarded from " + item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
+                        .ifEmpty { "Someone" }, color = sourceColor, fontSize = 12.sp)
+                    Text(listOfNotNull(item.channelName, ChatPresentation.dateLabel(item.occurredAt)).joinToString(" · "),
+                        color = p.ink3, fontSize = 12.sp)
+                }
+            }
+            if (item.text.isNotBlank() && (message.cw == null || revealed)) Text(item.text, color = p.ink, fontSize = 16.sp)
+        }
         if (held != null) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically) {
@@ -1000,7 +1096,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 modifier = Modifier.clickable { revealed = !revealed }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
         }
         if (message.cw == null || revealed) {
-            Text(message.text, color = p.ink, fontSize = 16.sp)
+            if (message.text.isNotBlank() && message.text != message.forward.joinToString("\n") { it.text })
+                Text(message.text, color = p.ink, fontSize = 16.sp)
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus, authors, message.occurredAt)
             }
@@ -1067,13 +1164,15 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 HorizontalDivider(color = p.line)
                 if (held == null) ChatActionRow(R.drawable.ic_reply, "Reply") { menuOpen = false; onReply() }
                 if (held == null && onReplyPrivately != null) ChatActionRow(R.drawable.ic_lock, "Reply privately") { menuOpen = false; onReplyPrivately() }
-                if (message.cw == null || revealed) ChatActionRow(R.drawable.ic_journal, "Copy text") {
+                if (message.cw == null || revealed) ChatActionRow(R.drawable.ic_copy, "Copy text") {
                     val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("Message", message.text)); menuOpen = false
                 }
+                if (onForward != null) ChatActionRow(R.drawable.ic_forward, "Forward") { menuOpen = false; onForward() }
                 if (onEdit != null && (message.cw == null || revealed)) ChatActionRow(R.drawable.ic_edit, "Edit") { menuOpen = false; onEdit() }
                 if (held == null) ChatActionRow(R.drawable.ic_layers, "Select in stage mode") { menuOpen = false; onStage() }
                 if (held == null && unseenBy.isNotEmpty()) ChatActionRow(R.drawable.ic_members, "Not seen by…") { showUnseen = !showUnseen; menuOpen = false }
+                if (onDelete != null) ChatActionRow(R.drawable.ic_delete, "Delete", danger = true) { menuOpen = false; onDelete() }
             }
         }
         }

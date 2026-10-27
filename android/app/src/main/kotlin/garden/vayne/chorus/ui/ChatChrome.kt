@@ -193,12 +193,12 @@ internal fun ChatCount(count: Int, unread: Boolean) {
 }
 
 @Composable
-internal fun ChatActionRow(resource: Int, label: String, action: () -> Unit) {
+internal fun ChatActionRow(resource: Int, label: String, danger: Boolean = false, action: () -> Unit) {
     val p = LocalChorusPalette.current
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = action).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        ChatIcon(resource)
-        Text(label, color = p.ink, fontSize = 15.sp)
+        ChatIcon(resource, tint = if (danger) p.danger else p.ink2)
+        Text(label, color = if (danger) p.danger else p.ink, fontSize = 15.sp)
     }
 }
 

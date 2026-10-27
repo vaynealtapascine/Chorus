@@ -31,6 +31,7 @@ object ChatPresentation {
         message == null -> "No messages yet"
         message.cw != null -> "Content warning: ${message.cw}"
         poll != null -> "Poll" + (poll.question?.takeIf { it.isNotBlank() } ?: message.text.takeIf { it.isNotBlank() })?.let { " · " + it.replace('\n', ' ') }.orEmpty()
+        message.text.isBlank() && message.forward.isNotEmpty() -> "Forwarded · " + message.forward.first().text.replace('\n', ' ')
         message.text.isNotBlank() -> message.text.replace('\n', ' ')
         message.attachments.isNotEmpty() -> "Attachment · ${message.attachments.first().filename}"
         else -> "Message"
