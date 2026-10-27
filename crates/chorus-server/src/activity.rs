@@ -68,15 +68,18 @@ fn member_rule(conn: &Connection, account: &str, member: &str, which: &str) -> a
     })
 }
 
-/// `chorus_core::mentions` lookups over the projections.
-struct Directory<'a>(&'a Connection);
+/// `chorus_core::mentions` lookups over the projections, for a message in `channel`.
+struct Directory<'a> {
+    conn: &'a Connection,
+    channel: &'a str,
+}
 
 impl chorus_core::mentions::Directory for Directory<'_> {
     fn member_account(&self, member: &str) -> Option<String> {
-        account_of_member(self.0, member).ok().flatten()
+        account_of_member(self.conn, member).ok().flatten()
     }
     fn group(&self, group: &str) -> Option<(String, Vec<String>, Vec<String>)> {
-        let c = self.0;
+        let c = self.conn;
         let account: String = c
             .query_row("SELECT account_id FROM member_group WHERE id = ?1 AND deleted_at IS NULL", [group], |r| {
                 r.get(0)
@@ -93,8 +96,12 @@ impl chorus_core::mentions::Directory for Directory<'_> {
         let subgroups = list("SELECT id FROM member_group WHERE effective_parent_id = ?1 AND deleted_at IS NULL");
         Some((account, members, subgroups))
     }
+    /// D-085: a configured account's `@front` is the `mentions` pool of the channel's front.
     fn fronting_at(&self, account: &str, t: i64) -> Vec<String> {
-        self.0
+        if let Ok(Some(members)) = crate::fronts::purpose_members(self.conn, account, self.channel, "mentions", t) {
+            return members;
+        }
+        self.conn
             .prepare_cached(
                 "SELECT subject_id FROM front_interval WHERE account_id = ?1 AND subject_type = 'member'
                  AND level IN ('front', 'cocon') AND start_at <= ?2 AND (end_at IS NULL OR end_at > ?2)
@@ -107,12 +114,22 @@ impl chorus_core::mentions::Directory for Directory<'_> {
 
 /// Everyone a message's mentions reach (`chorus_core::mentions`): `@front` is who was here when
 /// it was written (`at`, its `occurred_at`).
-fn mentioned(conn: &Connection, p: &Value, author: &str, at: i64) -> Vec<chorus_core::mentions::Mentioned> {
-    chorus_core::mentions::resolve(p.get("entities").unwrap_or(&Value::Null), author, at, &Directory(conn))
+fn mentioned(
+    conn: &Connection,
+    p: &Value,
+    author: &str,
+    at: i64,
+    channel: &str,
+) -> Vec<chorus_core::mentions::Mentioned> {
+    chorus_core::mentions::resolve(p.get("entities").unwrap_or(&Value::Null), author, at, &Directory { conn, channel })
 }
 
-/// Members fronting or co-conscious right now.
-fn fronting(conn: &Connection, account: &str) -> anyhow::Result<Vec<String>> {
+/// Who a `fronting` chat rule counts at `at`: a configured account's `chat_alerts` pool for the
+/// channel's front (D-085), else the members fronting or co-conscious right now.
+fn fronting(conn: &Connection, account: &str, channel: &str, at: i64) -> anyhow::Result<Vec<String>> {
+    if let Some(members) = crate::fronts::purpose_members(conn, account, channel, "chat_alerts", at)? {
+        return Ok(members);
+    }
     let mut st = conn.prepare_cached(
         "SELECT subject_id FROM front_interval WHERE account_id = ?1 AND subject_type = 'member'
          AND end_at IS NULL AND level IN ('front', 'cocon')",
@@ -135,7 +152,7 @@ fn own_kind(
     }
     let authors: Vec<&str> =
         p.get("authors").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
-    let front = fronting(conn, account)?;
+    let front = fronting(conn, account, channel_id, at)?;
     let wants = |m: &str, which: &str| -> anyhow::Result<bool> {
         if authors.contains(&m) {
             return Ok(false);
@@ -149,7 +166,7 @@ fn own_kind(
     let mut kind = None;
     // its own members the message mentions: by name, through a group, or as `@front` (who was
     // fronting when it was written), each under that member's rule
-    for m in mentioned(conn, p, account, at) {
+    for m in mentioned(conn, p, account, at, channel_id) {
         if m.account == account
             && let Some(member) = &m.member
             && wants(member, "mentions")?
@@ -237,7 +254,7 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     }
     // a mention of one of their members, a group of theirs, their `@front` or the account
     // itself; only accounts that may view the channel (`others`) are asked
-    for m in mentioned(conn, p, author, o.time()) {
+    for m in mentioned(conn, p, author, o.time(), channel_id) {
         if others.contains(&m.account) {
             why.insert(m.account, "mention");
         }

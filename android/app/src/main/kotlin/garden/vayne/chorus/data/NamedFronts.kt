@@ -32,7 +32,13 @@ data class ResolvedFront(
 data class NamedFronts(
     val systemJson: String, val layers: List<FrontLayer>, val fronts: Map<String, NamedFront>,
     val resolved: Map<String, ResolvedFront>,
+    /** Body's stable front ID: the account ID. */
+    val bodyId: String = "",
 ) {
+    /** Live fronts a channel can select, Body first. */
+    val channelChoices: List<NamedFront> get() = fronts.values.filter { !it.deleted }
+        .sortedWith(compareBy<NamedFront> { it.id != bodyId }.thenBy { it.name.lowercase() }.thenBy { it.id })
+
     companion object {
         private fun optionalString(o: JSONObject, key: String): String? =
             if (o.has(key) && !o.isNull(key)) o.getString(key) else null
@@ -45,7 +51,7 @@ data class NamedFronts(
             FrontPresence(e.getString("subject_type"), e.getString("subject_id"), e.getString("layer_id"), e.optBoolean("is_primary"))
         }
 
-        fun parse(current: JSONObject?): NamedFronts? {
+        fun parse(current: JSONObject?, bodyId: String = ""): NamedFronts? {
             val system = current?.optJSONObject("system") ?: return null
             val layerRows = system.optJSONObject("layers") ?: JSONObject()
             val layers = layerRows.keys().asSequence().map { id ->
@@ -70,7 +76,7 @@ data class NamedFronts(
                     presence(f.optJSONArray("authorship")), presence(f.optJSONArray("notifications")),
                     purposes.keys().asSequence().associateWith { presence(purposes.optJSONArray(it)) })
             }
-            return NamedFronts(system.toString(), layers, fronts, resolved)
+            return NamedFronts(system.toString(), layers, fronts, resolved, bodyId)
         }
     }
 }

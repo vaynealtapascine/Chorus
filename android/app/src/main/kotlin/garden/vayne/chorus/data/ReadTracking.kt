@@ -3,6 +3,7 @@ package garden.vayne.chorus.data
 import org.json.JSONArray
 import org.json.JSONObject
 import uniffi.chorus_ffi.readReaders
+import uniffi.chorus_ffi.readReadersForFront
 import uniffi.chorus_ffi.readUnseenBy
 
 data class ReadMark(val member: String, val at: Long, val id: String)
@@ -33,6 +34,21 @@ object ReadTracking {
                 .put("member_id", entry.subjectId).put("is_primary", entry.isPrimary).put("level", entry.level))
         }
         val result = JSONArray(core(perMember, front.toString()))
+        return (0 until result.length()).map { result.getString(it) }
+    }
+
+    /** D-085: a configured account reads with the channel front's `reading` pool, own members only. */
+    fun readersFor(
+        model: Model,
+        channelId: String,
+        perMember: Boolean,
+        legacy: (Boolean, String) -> String = ::readReaders,
+        forFront: (Boolean, String, String) -> String = ::readReadersForFront,
+    ): List<String> {
+        val named = model.namedFronts ?: return readers(perMember, model.current, legacy)
+        val front = named.resolved[ChatSpeaker.frontOf(model, channelId)]?.takeIf { !it.deleted }
+        val pool = JSONArray().apply { front?.purposeCandidates?.get("reading").orEmpty().forEach { put(it.toJson()) } }
+        val result = JSONArray(forFront(perMember, pool.toString(), JSONArray(model.members.map { it.id }).toString()))
         return (0 until result.length()).map { result.getString(it) }
     }
 

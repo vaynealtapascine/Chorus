@@ -215,8 +215,20 @@ presence with the destination front's selections. Unavailable/deleted fallbacks 
 
 `reading::readers_for_front` / `api::read_readers_for_front` consume the selected reading pool
 without mapping any custom layer into a legacy role, filter to own member IDs, retain order and
-mark the account once. Channel consumers and historical mention/chat-alert resolution still need
-runtime integration; the shared selections alone do not complete D-085.
+mark the account once.
+
+Channel consumers are connected. A channel's front is the private account pref
+`authorship_front:<channel id>` (a front ID string; Body when absent), separate from
+`autoproxy:<channel id>`. `front_system::purpose_members` reads one purpose pool of that front.
+Both composers call `default_speaker_for_front` with it, and per-member reads use its `reading`
+pool through `read_readers_for_front` (web `channel-front.ts`, Android `ChatSpeaker` /
+`ReadTracking.readersFor`); unconfigured accounts keep the legacy rules unchanged. On the server,
+`fronts::purpose_members` resolves `@front` mentions from the `mentions` pool and the
+"only while fronting" chat rule from the `chat_alerts` pool, for the mentioned/recipient
+account's own choice of front in that channel. When front events were recorded after the
+message time, it re-folds only the ops recorded by then (configuration and presence as they
+stood at message time); otherwise the cached current state is used. Channel settings show a
+front picker only when the account has more than one live front.
 
 New presence entries use `{subject_type, subject_id, layer_id, is_primary}`. Switch replaces the
 own ordered set; Add inserts/moves a subject at an absolute optional position (default end);

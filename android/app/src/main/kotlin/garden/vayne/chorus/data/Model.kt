@@ -284,7 +284,7 @@ class Model(
                 }
             }
             val fold = p.optJSONObject("fronts")?.optJSONObject(accountId)
-            val namedFronts = NamedFronts.parse(p.optJSONObject("front_systems")?.optJSONObject(accountId))
+            val namedFronts = NamedFronts.parse(p.optJSONObject("front_systems")?.optJSONObject(accountId), accountId)
             val current = namedFronts?.resolved?.get(accountId)?.confirmed?.map { it.displayEntry() }
                 ?: if (namedFronts != null) emptyList() else entries(fold?.optJSONArray("current"))
             var since: Long? = null

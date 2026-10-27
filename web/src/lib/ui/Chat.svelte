@@ -8,6 +8,7 @@
   import { snapshot } from '../selection';
   import { editedSegments, segmentMarkup } from '../segments';
   import { canWriteAs } from '../posts';
+  import { channelFrontChoices, channelFrontId, channelFrontKey, channelReaders, channelSpeaker } from '../channel-front';
   import { sync, type Projection } from '../sync/client';
   import { flushUploads, imageThumbnail, stageBlob } from '../sync/uploads';
   import Message from './Message.svelte';
@@ -90,12 +91,19 @@
   }
   // the speaker chip before anyone picks: one rule in core (SPEC §5.2)
   const ownSenders = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
-  const defaults = $derived(core.defaultSpeaker({
+  const defaults = $derived(channelSpeaker(projection, sync.accountId, current?.id ?? '', {
     mode: autoproxy.mode, member: autoproxy.member ?? null, self_member: self?.id ?? null,
     fronting: frontingMembers,
     last_authors: msgs.findLast((m) => m.account_id === sync.accountId && !m.deleted)?.authors ?? [],
     members: ownSenders.map((m) => m.id),
   }));
+  // the channel's front (D-080/D-085): authorship, @front, per-member reads and chat alerts
+  const frontChoices = $derived(channelFrontChoices(projection, sync.accountId));
+  const channelFront = $derived(current ? channelFrontId(projection, sync.accountId, current.id) : sync.accountId);
+  function setChannelFront(front: string) {
+    if (!current) return;
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: channelFrontKey(current.id), value: front });
+  }
   let chosen = $state<string | null>(null);
   const speaker = $derived(chosen ?? defaults[0] ?? null);
   const speakers = $derived(
@@ -634,7 +642,7 @@
     if (!latest) return;
     // the account, and with "track reading per member" whoever is fronting (core decides)
     const marks = new Map(marksHere.map((m) => [m.member, m.at]));
-    for (const reader of core.readReaders(perMember, frontingMembers)) {
+    for (const reader of channelReaders(projection, sync.accountId, current.id, perMember, frontingMembers, ownSenders.map((m) => m.id))) {
       const at = reader === '' ? lastRead(projection, current.id, sync.accountId) : marks.get(reader) ?? 0;
       if (latest.occurred_at <= at) continue;
       sync.create('read.mark', scope, null, {
@@ -931,6 +939,14 @@
       <details class="chat-advanced">
         <summary>Advanced chat settings</summary>
         <p>Speaker parsing and content warning preferences are in <a href="#/settings">Settings</a>.</p>
+        {#if !self && frontChoices.length > 1}
+          <label>Front for this channel
+            <select aria-label="Front for this channel" value={channelFront} onchange={(e) => setChannelFront(e.currentTarget.value)}>
+              {#each frontChoices as f (f.id)}<option value={f.id}>{f.name}</option>{/each}
+              {#if !frontChoices.some((f) => f.id === channelFront)}<option value={channelFront}>Unavailable front</option>{/if}
+            </select>
+          </label>
+        {/if}
         {#if !self}
           <label>Speaker in this channel
             <select aria-label="Autoproxy for this channel" value={autoproxy.mode}

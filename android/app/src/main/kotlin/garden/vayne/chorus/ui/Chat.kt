@@ -220,6 +220,16 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             finally { busy = false }
         }
     }
+    fun setChannelFront(frontId: String) {
+        val id = channel?.id ?: return
+        if (busy) return
+        busy = true; error = null
+        actions.launch {
+            try { chorus.create("pref.set", null, ChatSpeaker.frontPayload(id, frontId)); selectedAuthor = "" }
+            catch (e: Exception) { error = e.message ?: "Could not save the channel's front." }
+            finally { busy = false }
+        }
+    }
     fun setSpeakerDefault(mode: String, memberId: String? = null) {
         val id = channel?.id ?: return
         if (busy) return
@@ -239,13 +249,14 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
     val readMarks = model.readMarks[channel?.id].orEmpty()
     LaunchedEffect(channel?.id, space?.id, messages.lastOrNull()?.id, readMarks,
-        model.current, model.accountPrefs.readPerMember, chorus.device?.accountId, staging) {
+        model.current, model.accountPrefs.readPerMember, chorus.device?.accountId, staging,
+        model.namedFronts, model.speakerDefaults[channel?.id]) {
         val latest = messages.lastOrNull() ?: return@LaunchedEffect
         val chosen = channel ?: return@LaunchedEffect
         val home = space ?: return@LaunchedEffect
         if (staging || chorus.device == null) return@LaunchedEffect
         try {
-            for (reader in ReadTracking.readers(model.accountPrefs.readPerMember, model.current)) {
+            for (reader in ReadTracking.readersFor(model, chosen.id, model.accountPrefs.readPerMember)) {
                 if (!ReadTracking.needsMark(latest.occurredAt, latest.id, readMarks, reader)) continue
                 chorus.create("read.mark", null, JSONObject().put("channel_id", chosen.id)
                     .put("message_id", latest.id).put("message_at", latest.occurredAt)
@@ -502,6 +513,17 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         modifier = Modifier.clickable { speakerSettingsOpen = !speakerSettingsOpen }.padding(vertical = 4.dp))
                     if (speakerSettingsOpen) {
                         val setting = model.speakerDefaults[channel.id] ?: SpeakerDefault()
+                        val fronts = model.namedFronts?.channelChoices.orEmpty()
+                        if (fronts.size > 1) {
+                            val selected = ChatSpeaker.frontOf(model, channel.id)
+                            Text("Front for this channel", color = p.ink2, fontSize = 12.sp)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(fronts, key = { it.id }) { front ->
+                                    ChatChip(front.name.ifBlank { "Body" }, front.id == selected) { setChannelFront(front.id) }
+                                }
+                                if (fronts.none { it.id == selected }) item { ChatChip("Unavailable front", true) {} }
+                            }
+                        }
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             item { ChatChip("Front", setting.mode == "front") { setSpeakerDefault("front") } }
                             item { ChatChip("Last speaker", setting.mode == "latch") { setSpeakerDefault("latch") } }

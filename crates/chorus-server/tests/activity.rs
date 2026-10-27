@@ -524,3 +524,73 @@ fn every_kind_of_mention_reaches_whom_it_names() {
     send(&mut w, &home, &news, "@June news!", ("member", Some(&june)));
     assert_eq!(latest(&w, &b), mention("@June news!"));
 }
+
+/// D-085: a configured account's `@front` uses the `mentions` pool of the channel's selected front
+/// and a `fronting` rule its `chat_alerts` pool; another channel keeps Body's legacy pools.
+#[test]
+fn channel_front_purposes_drive_front_mentions_and_fronting_alerts() {
+    let mut w = W::new();
+    let a = w.a.clone();
+    let acct = format!("account:{a}");
+    let (mo, kai, rin) = (new_id(NOW as u64, [40; 10]), new_id(NOW as u64, [41; 10]), new_id(NOW as u64, [42; 10]));
+    for (m, name) in [(&mo, "Mo"), (&kai, "Kai"), (&rin, "Rin")] {
+        w.push(&a, "member.create", &acct, m, json!({"name": name}));
+    }
+    let home_id = new_id(1, [4; 10]);
+    let home = format!("space:{home_id}");
+    ingest::grant(&w.c, &a, &home).unwrap();
+    w.push(&a, "space.create", &home, &home_id, json!({"kind": "internal", "name": "Home"}));
+    let (general, news) = (new_id(NOW as u64, [31; 10]), new_id(NOW as u64, [32; 10]));
+    for (c, name) in [(&general, "general"), (&news, "news")] {
+        w.push(&a, "channel.create", &home, c, json!({"space_id": home_id, "kind": "text", "name": name}));
+    }
+    let head = new_id(NOW as u64, [50; 10]);
+    let mut n = 70u8;
+    let mut id = || {
+        n += 1;
+        new_id(NOW as u64, [n; 10])
+    };
+    w.push(&a, "front.layer", &acct, &a, json!({"layer_id": "quiet", "name": "Quiet", "level": 5}));
+    w.push(&a, "front.define", &acct, &head, json!({"name": "Head", "purpose_layers": {"mentions": ["quiet"]}}));
+    let entry = |m: &str, layer: &str| json!({"subject_type": "member", "subject_id": m, "layer_id": layer, "is_primary": false});
+    w.push(&a, "front.change", &acct, &a, json!({"action": "switch", "entries": [entry(&kai, "front")]}));
+    let rin_joins = NOW + i64::from(w.n + 1) * 1000;
+    w.push(&a, "front.change", &acct, &head, json!({"action": "switch", "entries": [entry(&rin, "quiet")]}));
+    let key = format!("authorship_front:{general}");
+    w.push(&a, "pref.set", &acct, &id(), json!({"device": "", "key": key, "value": head}));
+    w.push(
+        &a,
+        "pref.set",
+        &acct,
+        &id(),
+        json!({"device": "", "key": format!("notify_member:{kai}"), "value": {"mentions": "never"}}),
+    );
+    let send = |w: &mut W, channel: &str, text: &str, id: String| {
+        let e = json!([{"type": "mention", "offset": 0, "length": 6, "target_type": "front"}]);
+        let mut m = msg(text, &[&mo], e);
+        m["channel_id"] = json!(channel);
+        w.push(&a, "message.send", &home, &id, m);
+    };
+    send(&mut w, &news, "@front body", id());
+    assert!(w.inbox(&a).is_empty(), "Body's legacy pool is Kai, whose mentions are off");
+    send(&mut w, &general, "@front head", id());
+    assert_eq!(w.inbox(&a).first(), Some(&("mention".to_string(), "@front head".to_string())), "Head's quiet Rin");
+    w.written = Some(rin_joins - 500); // written offline before Rin joined Head, arriving now
+    send(&mut w, &general, "@front earlier", id());
+    assert_eq!(w.inbox(&a).first().unwrap().1, "@front head", "Head's pool as it stood then was empty");
+
+    // Rin hears mentions only while fronting: Head's chat-alert pool keeps the legacy layers
+    w.push(
+        &a,
+        "pref.set",
+        &acct,
+        &id(),
+        json!({"device": "", "key": format!("notify_member:{rin}"), "value": {"mentions": "fronting"}}),
+    );
+    let before = w.inbox(&a).len();
+    send(&mut w, &general, "@front quiet", id());
+    assert_eq!(w.inbox(&a).len(), before, "quiet is not a chat-alert layer until selected");
+    w.push(&a, "front.define", &acct, &head, json!({"purpose_layers": {"chat_alerts": ["quiet"]}}));
+    send(&mut w, &general, "@front alert", id());
+    assert_eq!(w.inbox(&a).first(), Some(&("mention".to_string(), "@front alert".to_string())));
+}

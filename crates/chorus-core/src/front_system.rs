@@ -346,9 +346,71 @@ pub struct ResolvedFront {
     pub purpose_candidates: BTreeMap<String, Vec<Presence>>,
 }
 
+/// Account-local pref naming a channel's selected front (D-080/D-085); Body when absent.
+pub fn channel_front_key(channel: &str) -> String {
+    format!("authorship_front:{channel}")
+}
+
+/// Members in one purpose pool of the selected front, in its order without repeats. A missing
+/// or deleted front, or an unknown purpose, reaches nobody; groups/states are not members.
+pub fn purpose_members(resolved: &BTreeMap<String, ResolvedFront>, front: &str, purpose: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let pool = resolved.get(front).filter(|f| !f.deleted).and_then(|f| f.purpose_candidates.get(purpose));
+    for p in pool.into_iter().flatten() {
+        if p.subject_type == SubjectType::Member && !out.contains(&p.subject_id) {
+            out.push(p.subject_id.clone());
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn purpose_members_use_only_the_selected_fronts_pool() {
+        let p = |t: SubjectType, id: &str| Presence {
+            subject_type: t,
+            subject_id: id.into(),
+            layer_id: "custom".into(),
+            is_primary: false,
+        };
+        let front = |id: &str, deleted: bool, pool: Vec<Presence>| ResolvedFront {
+            id: id.into(),
+            name: id.into(),
+            deleted,
+            own: vec![],
+            effective: vec![],
+            source: None,
+            state: FollowState::Independent,
+            issue: None,
+            authorship: vec![],
+            notifications: vec![],
+            purpose_candidates: BTreeMap::from([("mentions".into(), pool)]),
+        };
+        let resolved = BTreeMap::from([
+            (
+                "body".into(),
+                front(
+                    "body",
+                    false,
+                    vec![
+                        p(SubjectType::Member, "b"),
+                        p(SubjectType::Group, "g"),
+                        p(SubjectType::Member, "a"),
+                        p(SubjectType::Member, "b"),
+                    ],
+                ),
+            ),
+            ("gone".into(), front("gone", true, vec![p(SubjectType::Member, "x")])),
+        ]);
+        assert_eq!(purpose_members(&resolved, "body", "mentions"), vec!["b", "a"]);
+        assert!(purpose_members(&resolved, "body", "reading").is_empty());
+        assert!(purpose_members(&resolved, "gone", "mentions").is_empty());
+        assert!(purpose_members(&resolved, "missing", "mentions").is_empty());
+        assert_eq!(channel_front_key("c1"), "authorship_front:c1");
+    }
     use proptest::prelude::*;
 
     fn entry(id: &str, layer: &str) -> Presence {

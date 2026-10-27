@@ -13,6 +13,7 @@ use chorus_core::front_projection::{AppendGuard, Current, Index};
 use chorus_core::front_system::{Front, Presence, ResolvedFront};
 use chorus_core::op::Op;
 use rusqlite::{Connection, OptionalExtension, params};
+use serde_json::Value;
 
 use crate::oplog;
 
@@ -188,6 +189,44 @@ pub fn current(conn: &Connection, account: &str) -> anyhow::Result<Option<Curren
         return Ok(None);
     }
     rebuild_account(conn, account)
+}
+
+/// The channel's selected front for an account (`authorship_front:<channel>`), Body when unset.
+pub fn channel_front(conn: &Connection, account: &str, channel: &str) -> anyhow::Result<String> {
+    let v: Option<String> = conn
+        .prepare_cached("SELECT value FROM pref WHERE account_id=?1 AND device_id='' AND key=?2")?
+        .query_row(params![account, chorus_core::front_system::channel_front_key(channel)], |r| r.get(0))
+        .optional()?;
+    Ok(v.and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| v.as_str().filter(|s| !s.is_empty()).map(String::from))
+        .unwrap_or_else(|| account.to_string()))
+}
+
+/// D-085 consumers (`@front` mentions, chat alerts): members in the purpose pool of the channel's
+/// selected front, as the account's front configuration and presence stood at `at`. `None` for an
+/// unconfigured account, whose callers keep the legacy front/co-conscious tables. The account's
+/// log is replayed only when front events were recorded after `at`.
+pub fn purpose_members(
+    conn: &Connection,
+    account: &str,
+    channel: &str,
+    purpose: &str,
+    at: i64,
+) -> anyhow::Result<Option<Vec<String>>> {
+    let Some(mut current) = current(conn, account)? else { return Ok(None) };
+    let latest: Option<i64> = conn
+        .prepare_cached(
+            "SELECT max(coalesce(occurred_at,device_at)) FROM op WHERE scope=?1 AND status='applied'
+             AND kind IN ('front.define','front.layer','front.change','front.switch','front.add',
+                          'front.remove','front.update','front.retract','front.amend')",
+        )?
+        .query_row([format!("account:{account}")], |r| r.get(0))?;
+    if latest.is_some_and(|l| l > at) {
+        let ops: Vec<Op> = account_ops(conn, account)?.into_iter().filter(|o| o.time() <= at).collect();
+        current = Index::from_ops(account, &ops).current;
+    }
+    let front = channel_front(conn, account, channel)?;
+    Ok(Some(chorus_core::front_system::purpose_members(&current.resolved, &front, purpose)))
 }
 
 fn has_named_ops(conn: &Connection, account: &str) -> anyhow::Result<bool> {
