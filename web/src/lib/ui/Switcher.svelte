@@ -1,11 +1,20 @@
 <script lang="ts">
   import { core } from '../core';
   import { fuzzy, groups, members } from '../data';
-  import { doSwitch, LEVEL_LABEL, LEVELS, type Entry, type Notify } from '../front.svelte';
+  import { doFrontSwitch, doSwitch, type Level, type Notify } from '../front.svelte';
+  import { frontLayers, frontView } from '../front-view';
+  import type { FrontPresence } from '../core/fronts';
   import { sync, type Projection } from '../sync/client';
   import AvatarImage from './AvatarImage.svelte';
 
-  let { projection, dark, onclose }: { projection: Projection; dark: boolean; onclose: () => void } = $props();
+  /** `front`: the named front to change (D-080); Body when absent. */
+  let { projection, dark, onclose, front }: { projection: Projection; dark: boolean; onclose: () => void; front?: string } = $props();
+  type Entry = FrontPresence;
+  const target = $derived(front ?? sync.accountId);
+  const configured = $derived(!!projection.front_systems?.[sync.accountId]);
+  const layers = $derived(frontLayers(projection, sync.accountId));
+  const layerName = (id: string) => layers.find((l) => l.id === id)?.name ?? id;
+  const title = $derived(target === sync.accountId ? "Who's here?" : `Who's in ${frontView(projection, sync.accountId, target).name}?`);
 
   interface Cand {
     type: 'member' | 'group';
@@ -27,7 +36,7 @@
   const byKey = $derived(new Map(cands.map((c) => [`${c.type}:${c.id}`, c])));
 
   // start from who is here now (a snapshot on open, deliberately not live)
-  const initial = () => (projection.fronts[sync.accountId]?.current ?? []).map((e) => ({ ...e })) as Entry[];
+  const initial = () => frontView(projection, sync.accountId, front ?? sync.accountId).entries.map((e) => ({ ...e })) as Entry[];
   let selected: Entry[] = $state(initial());
   let query = $state('');
   let note = $state('');
@@ -51,20 +60,23 @@
     if (selected.some((e) => key(e) === k)) {
       selected = selected.filter((e) => key(e) !== k);
     } else {
-      const first = !selected.some((e) => e.level === 'front');
-      selected = [...selected, { subject_type: c.type, subject_id: c.id, level: 'front', is_primary: first }];
+      const inner = layers[0]?.id ?? 'front';
+      const first = !selected.some((e) => e.layer_id === inner);
+      selected = [...selected, { subject_type: c.type, subject_id: c.id, layer_id: inner, is_primary: first }];
     }
     query = '';
   }
 
   function cycleLevel(i: number) {
     const e = selected[i];
-    const next = LEVELS[(LEVELS.indexOf(e.level) + 1) % LEVELS.length];
-    selected[i] = { ...e, level: next, is_primary: next === 'front' ? e.is_primary : false };
+    const ids = layers.map((l) => l.id);
+    const next = ids[(ids.indexOf(e.layer_id) + 1) % ids.length] ?? e.layer_id;
+    selected[i] = { ...e, layer_id: next, is_primary: next === ids[0] ? e.is_primary : false };
   }
 
   function makePrimary(i: number) {
-    selected = selected.map((e, j) => ({ ...e, is_primary: j === i, level: j === i ? 'front' : e.level }));
+    const inner = layers[0]?.id ?? 'front';
+    selected = selected.map((e, j) => ({ ...e, is_primary: j === i, layer_id: j === i ? inner : e.layer_id }));
   }
 
   function move(i: number, d: -1 | 1) {
@@ -77,12 +89,12 @@
 
   function commit(entries: Entry[]) {
     const at = atText ? new Date(atText).getTime() : undefined;
-    const names = entries.filter((e) => e.level === 'front').map((e) => byKey.get(key(e))?.name ?? '?');
-    doSwitch(entries, names.length ? `Switched to ${names.join(' & ')}` : 'Switched out', {
-      note: note.trim() || undefined,
-      at: Number.isFinite(at) ? at : undefined,
-      notify,
-    });
+    const inner = layers[0]?.id ?? 'front';
+    const names = entries.filter((e) => e.layer_id === inner).map((e) => byKey.get(key(e))?.name ?? '?');
+    const label = names.length ? `Switched to ${names.join(' & ')}` : 'Switched out';
+    const opts = { note: note.trim() || undefined, at: Number.isFinite(at) ? at : undefined, notify };
+    if (configured) doFrontSwitch(target, entries, label, opts);
+    else doSwitch(entries.map(({ layer_id, ...e }) => ({ ...e, level: layer_id as Level })), label, opts);
     onclose();
   }
 
@@ -98,7 +110,7 @@
 <div class="scrim" onclick={onclose} role="presentation"></div>
 <div class="sheet" role="dialog" aria-modal="true" aria-label="Switch">
   <div class="top">
-    <h2 class="display">Who's here?</h2>
+    <h2 class="display">{title}</h2>
     <button class="ghost" onclick={onclose}>Cancel</button>
   </div>
 
@@ -110,7 +122,7 @@
         <li style="--ring: {col.ring}">
           <span class="avatar small" aria-hidden="true"><AvatarImage hash={c?.avatarBlob} glyph={c?.glyph ?? '?'} name={c?.name} /></span>
           <span class="nm" style="color: {col.name}">{c?.name ?? 'Unknown'}</span>
-          <button class="lvl" data-level={e.level} onclick={() => cycleLevel(i)} title="Change level">{LEVEL_LABEL[e.level]}</button>
+          <button class="lvl" data-level={e.layer_id === layers[0]?.id ? 'front' : e.layer_id} onclick={() => cycleLevel(i)} title="Change layer">{layerName(e.layer_id)}</button>
           <button class="icon" class:on={e.is_primary} onclick={() => makePrimary(i)} title="Primary" aria-label="Make primary">★</button>
           <button class="icon" onclick={() => move(i, -1)} aria-label="Move up" disabled={i === 0}>↑</button>
           <button class="icon" onclick={() => move(i, 1)} aria-label="Move down" disabled={i === selected.length - 1}>↓</button>

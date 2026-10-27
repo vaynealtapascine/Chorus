@@ -3,8 +3,13 @@
   import type { FrontEntry, Member } from './types';
   import AvatarImage from './AvatarImage.svelte';
 
-  let { members, front, since, dark }: { members: Member[]; front: FrontEntry[]; since: number; dark: boolean } =
-    $props();
+  /** `layers` inner to outer; the innermost lists people, outer layers nest around it (D-080). */
+  let { members, front, since, dark, layers = [
+    { id: 'front', name: 'Fronting' }, { id: 'cocon', name: 'Co-conscious' }, { id: 'present', name: 'Present' },
+  ], title = 'Current front' }: {
+    members: Member[]; front: FrontEntry[]; since: number | null; dark: boolean;
+    layers?: { id: string; name: string }[]; title?: string;
+  } = $props();
 
   let now = $state(Date.now());
   $effect(() => {
@@ -16,40 +21,51 @@
 
   const byId = $derived(new Map(members.map((m) => [m.id, m])));
   const shown = $derived(front.map((f) => ({ f, m: byId.get(f.id)! })).filter((x) => x.m));
+  const inner = $derived(layers[0]?.id ?? 'front');
   const names = $derived(
     shown
-      .filter((x) => x.f.level === 'front')
+      .filter((x) => x.f.level === inner)
       .map((x) => x.m.name)
       .join(' & '),
   );
+  // entries in a layer this card doesn't list (e.g. one deleted since) still show, outermost
+  const unlisted = $derived(shown.filter((x) => !layers.some((l) => l.id === x.f.level)));
 
   function duration(ms: number): string {
     const m = Math.floor(Math.max(0, ms) / 60_000);
     if (m < 1) return 'just now';
     return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
   }
-  const sinceLabel = $derived(new Date(since).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+  const sinceLabel = $derived(since == null ? '' : new Date(since).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
 </script>
 
-<section class="card" aria-label="Who's here">
-  <div class="front-heading"><span class="front-dot"></span><strong>Current front</strong><span>{shown.length} here</span></div>
-  <div class="nearby layer">
-    <div class="conscious layer">
-      <div class="front layer">
-        <div class="layer-heading"><strong>Fronting</strong><span>{names ? `since ${sinceLabel}` : 'No one fronting'}</span></div>
-        {#each shown.filter((x) => x.f.level === 'front') as { f, m } (m.id)}
-          {@const c = core.adaptColor(m.color, dark)}
-          <div class="front-person" style="--ring: {c.ring}; --avatar-ink: {c.avatar_ink}; --name: {c.name}">
-            <span class="avatar"><AvatarImage hash={m.avatarBlob} glyph={m.sigil ?? m.name[0]} name={m.name} /></span>
-            <span class="person-name">{m.name}{#if f.primary}<span class="primary">Primary</span>{/if}</span>
-            <span class="duration">{duration(now - since)}</span>
-          </div>
-        {:else}<p class="empty">Tap to choose who's here.</p>{/each}
-      </div>
-      <div class="layer-footer"><span>Co-conscious</span><div class="chips">{#each shown.filter((x) => x.f.level === 'cocon') as { m } (m.id)}<span class="member-chip">{m.name}</span>{:else}<span class="none">No one</span>{/each}</div></div>
+{#snippet ring(i: number)}
+  {#if i === 0}
+    <div class="front layer">
+      <div class="layer-heading"><strong>{layers[0]?.name ?? 'Fronting'}</strong><span>{names ? (sinceLabel ? `since ${sinceLabel}` : '') : `No one in ${layers[0]?.name ?? 'front'}`}</span></div>
+      {#each shown.filter((x) => x.f.level === inner) as { f, m } (m.id)}
+        {@const c = core.adaptColor(m.color, dark)}
+        <div class="front-person" style="--ring: {c.ring}; --avatar-ink: {c.avatar_ink}; --name: {c.name}">
+          <span class="avatar"><AvatarImage hash={m.avatarBlob} glyph={m.sigil ?? m.name[0]} name={m.name} /></span>
+          <span class="person-name">{m.name}{#if f.primary}<span class="primary">Primary</span>{/if}</span>
+          {#if since != null}<span class="duration">{duration(now - since)}</span>{/if}
+        </div>
+      {:else}<p class="empty">Tap to choose who's here.</p>{/each}
     </div>
-    <div class="layer-footer"><span>Present</span><div class="chips">{#each shown.filter((x) => x.f.level === 'present') as { m } (m.id)}<span class="member-chip">{m.name}</span>{:else}<span class="none">No one</span>{/each}</div></div>
-  </div>
+  {:else}
+    <div class="layer" class:conscious={i === 1}>
+      {@render ring(i - 1)}
+      <div class="layer-footer"><span>{layers[i].name}</span><div class="chips">{#each shown.filter((x) => x.f.level === layers[i].id) as { m } (m.id)}<span class="member-chip">{m.name}</span>{:else}<span class="none">No one</span>{/each}</div></div>
+    </div>
+  {/if}
+{/snippet}
+
+<section class="card" aria-label="Who's here">
+  <div class="front-heading"><span class="front-dot"></span><strong>{title}</strong><span>{shown.length} here</span></div>
+  {@render ring(Math.max(0, layers.length - 1))}
+  {#if unlisted.length}
+    <div class="layer-footer"><span>Other</span><div class="chips">{#each unlisted as { m } (m.id)}<span class="member-chip">{m.name}</span>{/each}</div></div>
+  {/if}
 </section>
 
 <style>

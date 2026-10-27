@@ -18,6 +18,7 @@
   import PostStage from './lib/ui/PostStage.svelte';
   import More from './lib/ui/More.svelte';
   import Switcher from './lib/ui/Switcher.svelte';
+  import Fronts from './lib/ui/Fronts.svelte';
   import Trash from './lib/ui/Trash.svelte';
   import ThisComputer from './lib/ui/ThisComputer.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
@@ -29,6 +30,7 @@
   import { frontView } from './lib/front-view';
 
   let switching = $state(false);
+  let switchFront = $state<string | undefined>(undefined);
   addEventListener('keydown', (e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && sync.device && !person) {
       e.preventDefault();
@@ -69,7 +71,7 @@
     ? [{ path: '/journal', name: 'journal', label: 'Journal', icon: 'journal' }, ...allTabs.filter((t) => !['members', 'home'].includes(t.name))]
     : allTabs);
   const active = $derived(['member', 'profile'].includes(router.route.name) ? 'members' :
-    router.route.name === 'stage' ? 'chat' : ['history'].includes(router.route.name) ? 'home' :
+    router.route.name === 'stage' ? 'chat' : ['history', 'fronts'].includes(router.route.name) ? 'home' :
     ['insights', 'data', 'trash', 'settings', 'computer', 'search', 'post-stage'].includes(router.route.name) ? 'more' : router.route.name);
   const account = $derived(projection?.rows.account?.[sync.accountId]?.fields);
   const system = $derived(projection?.rows.system?.[sync.accountId]?.fields);
@@ -89,7 +91,7 @@
     }
     return current.filter((e) => e.layer_id === 'front').map((e) => subjects.get(e.subject_id)?.name).filter(Boolean).join(' & ') || 'No one fronting';
   });
-  const routeTitle = $derived(({ home: person ? 'Home' : 'Fronting', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', chat: 'Chat', people: 'Friends', history: 'Front history', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
+  const routeTitle = $derived(({ home: person ? 'Home' : 'Fronting', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', chat: 'Chat', people: 'Friends', history: 'Front history', fronts: 'Fronts', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
 </script>
 
 {#if status === 'no-device'}
@@ -135,7 +137,7 @@
       </p>
     {/if}
     <main id="main-content" tabindex="-1">
-      {#if person && (router.route.name === 'members' || router.route.name === 'history')}
+      {#if person && (router.route.name === 'members' || router.route.name === 'history' || router.route.name === 'fronts')}
         <Home {projection} {dark} onswitch={() => {}} />
       {:else if router.route.name === 'members'}
         <Members {projection} {dark} />
@@ -153,7 +155,9 @@
         <Chat {projection} {dark} channelId={router.route.id} focusId={router.route.messageId} />
       {:else if router.route.name === 'search'}
         <Search {projection} />
-      {:else if router.route.name === 'history'}
+      {:else if router.route.name === 'fronts'}
+          <Fronts {projection} />
+        {:else if router.route.name === 'history'}
         <History {projection} {dark} />
       {:else if router.route.name === 'insights'}
         <Insights {projection} />
@@ -170,13 +174,13 @@
       {:else if router.route.name === 'trash'}
         <Trash {projection} channelId={router.route.id} />
       {:else}
-        <Home {projection} {dark} onswitch={() => (switching = true)} />
+        <Home {projection} {dark} onswitch={(front?: string) => { switchFront = front; switching = true; }} />
       {/if}
     </main>
     </div>
   </div>
   {#if switching}
-    <Switcher {projection} {dark} onclose={() => (switching = false)} />
+    <Switcher {projection} {dark} front={switchFront} onclose={() => { switching = false; switchFront = undefined; }} />
   {/if}
   <UndoToast />
 {/if}

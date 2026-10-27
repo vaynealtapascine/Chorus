@@ -2,7 +2,8 @@
   import { core } from '../core';
   import { sync, type Projection } from '../sync/client';
   import { groups, selfMember } from '../data';
-  import { doSwitch } from '../front.svelte';
+  import { doFrontSwitch, doSwitch, resumeFollowing } from '../front.svelte';
+  import { frontLayers, frontList } from '../front-view';
   import FrontCard from './FrontCard.svelte';
   import Reviews from './Reviews.svelte';
   import LinkDevice from './LinkDevice.svelte';
@@ -10,7 +11,7 @@
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
 
-  let { projection, dark, onswitch }: { projection: Projection; dark: boolean; onswitch: () => void } = $props();
+  let { projection, dark, onswitch }: { projection: Projection; dark: boolean; onswitch: (front?: string) => void } = $props();
 
   const members: Member[] = $derived(
     Object.entries(projection.rows.member ?? {})
@@ -31,18 +32,30 @@
     ...members,
     ...groups(projection).map((g) => ({ id: g.id, name: g.name, color: g.color ?? '#A09184', sigil: '◌', avatarBlob: g.avatar_blob })),
   ]);
-  const fold = $derived(projection.fronts[sync.accountId]);
+  // named fronts (D-080): Body plus the system's own fronts; legacy accounts have only Body
+  const configured = $derived(!!projection.front_systems?.[sync.accountId]);
+  const fronts = $derived(frontList(projection, sync.accountId));
+  const layers = $derived(frontLayers(projection, sync.accountId));
+  let selectedId = $state(sync.accountId);
+  const selected = $derived(fronts.find((f) => f.id === selectedId) ?? fronts[0]);
   const front: FrontEntry[] = $derived(
-    (fold?.current ?? []).map((e) => ({ id: e.subject_id, level: e.level, primary: e.is_primary })),
+    (selected?.entries ?? []).map((e) => ({ id: e.subject_id, level: e.layer_id, primary: e.is_primary })),
   );
+  // the legacy timeline knows when Body's front began; named history is never folded on Home
+  const fold = $derived(projection.fronts[sync.accountId]);
   const since = $derived.by(() => {
+    if (configured) return null;
     const open = (fold?.intervals ?? []).filter((i) => i.end_at === null);
     return open.length ? Math.min(...open.map((i) => i.start_at)) : Date.now();
   });
 
   function switchTo(id: string) {
     const name = members.find((m) => m.id === id)?.name ?? 'someone';
-    doSwitch([{ subject_type: 'member', subject_id: id, level: 'front', is_primary: true }], `Switched to ${name}`);
+    if (configured && selected) {
+      doFrontSwitch(selected.id, [{ subject_type: 'member', subject_id: id, layer_id: layers[0]?.id ?? 'front', is_primary: true }], `Switched to ${name}`);
+    } else {
+      doSwitch([{ subject_type: 'member', subject_id: id, level: 'front', is_primary: true }], `Switched to ${name}`);
+    }
   }
 
   let adding = $state(false);
@@ -75,9 +88,25 @@
     </section>
   {:else}
   <Reviews {projection} />
-  <div class="front-actions"><a href="#/history"><Icon name="history" size={18} />Front history</a><button class="switch-button" onclick={onswitch}><Icon name="swap" size={18} />Switch</button></div>
-  <button class="card-button" onclick={onswitch} aria-label="Change who's here">
-    <FrontCard members={subjects} {front} {since} {dark} />
+  {#if fronts.length > 1}
+    <div class="front-tabs" role="tablist" aria-label="Fronts">
+      {#each fronts as f (f.id)}
+        <button role="tab" aria-selected={f.id === selected?.id} class:on={f.id === selected?.id} onclick={() => (selectedId = f.id)}>
+          {f.name}{#if f.entries.length}<span class="count">{f.entries.length}</span>{/if}
+        </button>
+      {/each}
+    </div>
+  {/if}
+  {#if selected && selected.state !== 'independent'}
+    <div class="follow-state" role="status">
+      {#if selected.state === 'following'}<span>Follows {selected.sourceName ?? 'another front'}</span>
+      {:else if selected.state === 'overridden'}<span>Changed by hand · not following {selected.sourceName ?? 'its source'}</span><button class="ghost" onclick={() => resumeFollowing(selected.id)}>Resume following</button>
+      {:else}<span>{selected.issue === 'cycle' ? 'Following loops back on itself' : 'Its source is unavailable'} · showing nothing as current</span>{/if}
+    </div>
+  {/if}
+  <div class="front-actions"><a href="#/history"><Icon name="history" size={18} />Front history</a>{#if !me}<a href="#/fronts"><Icon name="layers" size={18} />Fronts</a>{/if}<button class="switch-button" onclick={() => onswitch(selected?.id)}><Icon name="swap" size={18} />Switch</button></div>
+  <button class="card-button" onclick={() => onswitch(selected?.id)} aria-label={`Change who's in ${selected?.name ?? 'front'}`}>
+    <FrontCard members={subjects} {front} {since} {dark} {layers} title={configured ? selected?.name ?? 'Current front' : 'Current front'} />
   </button>
 
   <section aria-label="Quick switch">
@@ -118,6 +147,12 @@
 
 <style>
   .front-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .front-actions > a + a { margin-right: auto; }
+  .front-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+  .front-tabs button { min-height: 40px; padding: 0 14px; border-radius: var(--r-full); border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+  .front-tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); font-weight: 600; }
+  .front-tabs .count { font-size: var(--fs-xs); color: var(--ink-3); }
+  .follow-state { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: var(--r-md); background: var(--surface); color: var(--ink-2); font-size: var(--fs-sm); }
   .front-actions a { display: flex; align-items: center; gap: 8px; color: var(--ink-2); text-decoration: none; font-size: var(--fs-sm); min-height: 48px; }
   .switch-button { display: flex; align-items: center; gap: 8px; padding: 12px 20px; min-height: 48px; border: 0; border-radius: var(--r-full); background: var(--accent); color: var(--on-accent); font-weight: 700; cursor: pointer; }
   .device-tools { margin-top: 16px; border-top: 1px solid var(--line); color: var(--ink-3); padding-block: 16px; }
