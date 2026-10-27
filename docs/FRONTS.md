@@ -200,6 +200,13 @@ Body's effective changes / saved records through `Chorus.frontHistory` (refreshe
 front statistics, and its saved feeds are evaluated by the server, so server feed `fronting:` and
 named history SQL/exports remain pending.
 
+Server current readers: the REST message default author (`messages.rs` `default_author`) uses the
+authorship pool of the channel's selected front for a configured account (owned members only; an
+explicit empty selection selects nobody). Own-switch notifications (`notify_chat.own_switch`) also
+fire for Body `front.change` presence edits (not `history_only`, not other fronts); a retract by
+latest HLC silences a pending one, and the text names Body's Fronting layer by its exact ID and
+every other layer by its own name.
+
 Saved web UI projections now carry core's independent `ProjectionDigest {version, ops}`.
 Compatibility is checked before the first cached display and again when adopting the indexed
 ops. Old unversioned, malformed and future-version caches rebuild without discarding operations;

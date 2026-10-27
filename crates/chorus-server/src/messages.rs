@@ -8,6 +8,7 @@
 //! everything their account can read. Writes become ordinary `message.send` ops made on the
 //! server for the account, attributed to the token's pseudo-device (like `POST /front/switch`).
 
+use chorus_core::front::SubjectType;
 use chorus_core::op::Op;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Deserialize;
@@ -287,16 +288,26 @@ fn member_id(conn: &Connection, account: &str, who: &str) -> Result<String, Data
 }
 
 /// Who speaks by default: the primary fronter, else the first fronting member, else the one
-/// member of a person account.
-fn default_author(conn: &Connection, account: &str) -> Result<String, DataError> {
-    let fronting: Option<String> = conn
-        .query_row(
+/// member of a person account. A configured account (D-080) uses the authorship pool of the
+/// channel's selected front instead of the legacy Body tables.
+fn default_author(conn: &Connection, account: &str, channel: &str) -> Result<String, DataError> {
+    let fronting: Option<String> = if let Some(current) = crate::fronts::current(conn, account)? {
+        let front = crate::fronts::channel_front(conn, account, channel)?;
+        let pool = match current.resolved.get(&front).filter(|f| !f.deleted) {
+            Some(f) => crate::fronts::owned_presence(conn, account, &f.authorship)?,
+            None => Vec::new(),
+        };
+        let members: Vec<_> = pool.iter().filter(|p| p.subject_type == SubjectType::Member).collect();
+        members.iter().find(|p| p.is_primary).or(members.first()).map(|p| p.subject_id.clone())
+    } else {
+        conn.query_row(
             "SELECT subject_id FROM front_interval WHERE account_id=?1 AND subject_type='member' AND end_at IS NULL
                AND level='front' ORDER BY is_primary DESC, position LIMIT 1",
             [account],
             |r| r.get(0),
         )
-        .optional()?;
+        .optional()?
+    };
     if let Some(m) = fronting {
         return Ok(m);
     }
@@ -363,7 +374,7 @@ pub fn send(
         Some(list) if !list.is_empty() => {
             list.iter().map(|a| member_id(conn, &p.account_id, a)).collect::<Result<Vec<_>, _>>()?
         }
-        _ => vec![default_author(conn, &p.account_id)?],
+        _ => vec![default_author(conn, &p.account_id, channel)?],
     };
     let mut payload = json!({"channel_id": channel, "authors": authors, "text": text, "entities": entities});
     if let Some(r) = &input.reply_to {
@@ -391,5 +402,53 @@ pub fn send(
     match op {
         Some(o) => Ok(Some(o)),
         None => Err(DataError::Bad(ack.error.map(|e| e.message).unwrap_or_else(|| "message rejected".into()))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chorus_core::hlc::Hlc;
+
+    const BODY: &str = "0192f8c2-0000-7000-8000-0000000000a1";
+    const T: u64 = 1_790_000_000_000;
+
+    fn front_op(conn: &Connection, i: u64, kind: &str, payload: Value) {
+        let mut o: Op = serde_json::from_value(json!({"id":chorus_core::id::new_id(T+i*1000,[i as u8;10]),
+            "scope":format!("account:{BODY}"),"kind":kind,"entity_id":BODY,
+            "hlc":Hlc::new(T+i*1000,0,1),"device_at":T+i*1000,"occurred_at":T+i*1000,"received_at":T+i*1000,
+            "account_id":BODY,"device_id":"0192f8c2-0000-7000-8000-0000000000d1","payload":payload}))
+        .unwrap();
+        o.seq = Some(crate::oplog::insert(conn, &o, false, false).unwrap());
+        crate::fronts::after_op(conn, &o).unwrap();
+    }
+
+    #[test]
+    fn configured_default_author_uses_the_channel_fronts_authorship_pool() {
+        let mut conn = crate::db::open_memory().unwrap();
+        crate::db::migrate(&mut conn).unwrap();
+        for m in ["kai", "rin"] {
+            conn.execute("INSERT INTO member(id,account_id,name,created_at) VALUES (?1,?2,?1,0)", params![m, BODY])
+                .unwrap();
+        }
+        // a stale legacy row must not be read once the account is configured
+        conn.execute(
+            "INSERT INTO front_interval(id,account_id,subject_type,subject_id,level,is_primary,position,start_at,start_switch_id,start_tz_offset_min)
+             VALUES ('old',?1,'member','kai','front',1,0,0,'old',0)",
+            [BODY],
+        )
+        .unwrap();
+        assert_eq!(default_author(&conn, BODY, "c").unwrap(), "kai");
+        front_op(
+            &conn,
+            1,
+            "front.change",
+            json!({"action":"switch","entries":[
+            {"subject_type":"member","subject_id":"rin","layer_id":"front","is_primary":false}]}),
+        );
+        assert_eq!(default_author(&conn, BODY, "c").unwrap(), "rin");
+        // an explicit empty authorship selection selects nobody; two members leave no default
+        front_op(&conn, 2, "front.define", json!({"authorship_layers":[]}));
+        assert!(matches!(default_author(&conn, BODY, "c"), Err(DataError::Bad(_))));
     }
 }

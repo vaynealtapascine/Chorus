@@ -197,7 +197,12 @@ fn own_kind(
 /// Queue notifications for a freshly accepted op (inside the ingest transaction).
 pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     let Some(author) = o.account_id.as_deref() else { return Ok(()) };
-    if matches!(o.kind.as_str(), "front.switch" | "front.add" | "front.remove" | "front.update") {
+    // a configured account's Body presence edits (D-080) count like the legacy switch kinds
+    let body_change = o.kind == "front.change"
+        && o.entity_id.as_deref() == Some(author)
+        && o.payload.get("history_only").and_then(Value::as_bool) != Some(true)
+        && matches!(o.payload.get("action").and_then(Value::as_str), Some("switch" | "add" | "remove" | "update"));
+    if body_change || matches!(o.kind.as_str(), "front.switch" | "front.add" | "front.remove" | "front.update") {
         return own_switch(conn, o, author, now);
     }
     if o.kind != "message.send" {
@@ -308,18 +313,76 @@ fn own_switch(conn: &Connection, o: &Op, author: &str, now: i64) -> anyhow::Resu
     Ok(())
 }
 
-/// Title and text for a settled own switch, or `None` if it was undone.
-fn own_switch_text(conn: &Connection, account: &str, p: &Value) -> anyhow::Result<Option<(String, String)>> {
-    let switch = p.get("switch_id").and_then(Value::as_str).unwrap_or_default();
-    let live: Option<bool> =
-        conn.query_row("SELECT retracted = 0 FROM switch WHERE id = ?1", [switch], |r| r.get(0)).optional()?;
-    if live != Some(true) {
-        return Ok(None);
+/// A `front.change` is live unless its latest retract/unretract (by HLC, then ID) retracts it.
+fn named_change_live(conn: &Connection, account: &str, id: &str) -> anyhow::Result<bool> {
+    let scope = format!("account:{account}");
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM op WHERE id = ?1 AND scope = ?2 AND kind = 'front.change' AND status = 'applied')",
+        params![id, scope],
+        |r| r.get(0),
+    )?;
+    if !exists {
+        return Ok(false);
     }
-    let device: Option<String> = match p.get("from_device").and_then(Value::as_str) {
-        Some(d) => conn.query_row("SELECT name FROM device WHERE id = ?1", [d], |r| r.get(0)).optional()?,
-        None => None,
+    let last: Option<String> = conn
+        .query_row(
+            "SELECT json_extract(payload, '$.action') FROM op WHERE scope = ?1 AND kind = 'front.change'
+               AND status = 'applied' AND json_extract(payload, '$.target_op_id') = ?2
+               AND json_extract(payload, '$.action') IN ('retract', 'unretract')
+             ORDER BY hlc DESC, id DESC LIMIT 1",
+            params![scope, id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(last.as_deref() != Some("retract"))
+}
+
+fn subject_name(conn: &Connection, kind: chorus_core::front::SubjectType, id: &str) -> anyhow::Result<String> {
+    use chorus_core::front::SubjectType;
+    let sql = match kind {
+        SubjectType::Member => "SELECT COALESCE(display_name, name) FROM member WHERE id = ?1",
+        SubjectType::Group => "SELECT name FROM member_group WHERE id = ?1",
+        SubjectType::State => "SELECT name FROM custom_state WHERE id = ?1",
     };
+    let name: Option<Option<String>> = conn.prepare_cached(sql)?.query_row([id], |r| r.get(0)).optional()?;
+    Ok(name.flatten().unwrap_or_else(|| "?".into()))
+}
+
+/// Body's confirmed presence: the Fronting layer by its exact ID, then each other layer by its
+/// own name (inner to outer). A custom layer is never described as fronting or co-conscious.
+fn named_front_text(
+    conn: &Connection,
+    account: &str,
+    current: &chorus_core::front_projection::Current,
+) -> anyhow::Result<String> {
+    use chorus_core::front_system::FollowState;
+    let entries = match current.resolved.get(account) {
+        Some(b) if !b.deleted && b.state != FollowState::Unavailable => {
+            crate::fronts::owned_presence(conn, account, &b.effective)?
+        }
+        _ => Vec::new(),
+    };
+    let names = |layer: &str| -> anyhow::Result<Vec<String>> {
+        entries
+            .iter()
+            .filter(|e| e.layer_id == layer)
+            .map(|e| subject_name(conn, e.subject_type, &e.subject_id))
+            .collect()
+    };
+    let front = names("front")?;
+    let mut text = if front.is_empty() { "No one fronting".to_string() } else { front.join(" & ") };
+    let mut layers: Vec<_> = current.system.layers.values().filter(|l| l.id != "front").collect();
+    layers.sort_by(|a, b| a.level.cmp(&b.level).then_with(|| a.id.cmp(&b.id)));
+    for layer in layers {
+        let here = names(&layer.id)?;
+        if !here.is_empty() {
+            text.push_str(&format!(" · {} {}", layer.name, here.join(" & ")));
+        }
+    }
+    Ok(text)
+}
+
+fn legacy_front_text(conn: &Connection, account: &str) -> anyhow::Result<String> {
     let mut st = conn.prepare_cached(
         "SELECT CASE subject_type
                   WHEN 'member' THEN (SELECT COALESCE(display_name, name) FROM member WHERE id = subject_id)
@@ -341,6 +404,29 @@ fn own_switch_text(conn: &Connection, account: &str, p: &Value) -> anyhow::Resul
     if !cocon.is_empty() {
         text.push_str(&format!(" · co-con {}", cocon.join(" & ")));
     }
+    Ok(text)
+}
+
+/// Title and text for a settled own switch, or `None` if it was undone.
+fn own_switch_text(conn: &Connection, account: &str, p: &Value) -> anyhow::Result<Option<(String, String)>> {
+    let switch = p.get("switch_id").and_then(Value::as_str).unwrap_or_default();
+    let live: Option<bool> =
+        conn.query_row("SELECT retracted = 0 FROM switch WHERE id = ?1", [switch], |r| r.get(0)).optional()?;
+    let live = match live {
+        Some(live) => live,
+        None => named_change_live(conn, account, switch)?,
+    };
+    if !live {
+        return Ok(None);
+    }
+    let device: Option<String> = match p.get("from_device").and_then(Value::as_str) {
+        Some(d) => conn.query_row("SELECT name FROM device WHERE id = ?1", [d], |r| r.get(0)).optional()?,
+        None => None,
+    };
+    let text = match crate::fronts::current(conn, account)? {
+        Some(current) => named_front_text(conn, account, &current)?,
+        None => legacy_front_text(conn, account)?,
+    };
     let title = match device {
         Some(d) => format!("Front changed on {d}"),
         None => "Front changed".to_string(),

@@ -346,6 +346,55 @@ fn own_switches_ping_only_when_asked_and_not_when_undone() {
     assert_eq!(w.inbox(&a).len(), 1);
 }
 
+/// A configured account's Body edits (`front.change`, D-080) ping like legacy switches, are
+/// described by exact layer IDs/names, and stay quiet when undone or about another front.
+#[test]
+fn named_body_changes_ping_own_devices() {
+    let mut w = W::new();
+    let a = w.a.clone();
+    let acct = format!("account:{a}");
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    w.push(&a, "member.create", &acct, &kai, json!({"name": "Kai"}));
+    w.push(&a, "member.create", &acct, &june, json!({"name": "June"}));
+    let p = new_id(NOW as u64, [80; 10]);
+    w.push(&a, "pref.set", &acct, &p, json!({"device": "", "key": "notify_chat", "value": {"own_switch": true}}));
+    w.push(&a, "front.layer", &acct, &a, json!({"layer_id": "quiet", "name": "Quiet", "level": 5}));
+    let change = |w: &mut W, front: &str, payload: Value| -> String {
+        w.push(&a, "front.change", &acct, front, payload);
+        w.last_op.clone()
+    };
+    change(
+        &mut w,
+        &a,
+        json!({"action": "switch", "entries": [
+        {"subject_type": "member", "subject_id": june, "layer_id": "front", "is_primary": true},
+        {"subject_type": "member", "subject_id": kai, "layer_id": "quiet", "is_primary": false}]}),
+    );
+    assert_eq!(w.inbox(&a), [("own_switch".to_string(), "June · Quiet Kai".to_string())]);
+
+    // undone before it settles: nothing new
+    let sw = change(
+        &mut w,
+        &a,
+        json!({"action": "switch", "entries": [
+        {"subject_type": "member", "subject_id": kai, "layer_id": "front", "is_primary": true}]}),
+    );
+    change(&mut w, &a, json!({"action": "retract", "target_op_id": sw}));
+    assert_eq!(w.inbox(&a).len(), 1);
+
+    // another front's change is not a Body switch
+    let other = new_id(NOW as u64, [90; 10]);
+    w.push(&a, "front.define", &acct, &other, json!({"name": "Work"}));
+    change(
+        &mut w,
+        &other,
+        json!({"action": "switch", "entries": [
+        {"subject_type": "member", "subject_id": kai, "layer_id": "front", "is_primary": true}]}),
+    );
+    assert_eq!(w.inbox(&a).len(), 1);
+}
+
 /// Webhooks (API.md §7): `message.created` and `post.created` go to the author's own account's
 /// hooks, never to another account in the same space.
 #[test]
