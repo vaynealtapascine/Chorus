@@ -722,13 +722,14 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 ?: defaultAuthorId?.let(model::member)
             val senderAccount = chorus.device?.accountId.orEmpty()
             val ownSenders = remember(model, senderAccount) { ChatCompose.members(model, senderAccount) }
+            // The last preview stays up while the next one is parsed, so the "As …" line and the send
+            // button don't blink on every keystroke; sending parses the draft again itself.
             val authorPreview by produceState<ChatCompose.Preview?>(null, draft, author?.id, model, senderAccount) {
-                value = null
                 value = withContext(Dispatchers.Default) {
                     runCatching { ChatCompose.preview(model, draft, author?.id, senderAccount) }.getOrNull()
                 }
             }
-            val currentPreview = authorPreview?.takeIf { it.source == draft }
+            val currentPreview = authorPreview
             if (draft.isNotBlank() && currentPreview != null) {
                 Text(if (currentPreview.authors.isEmpty()) "Choose a sender, or type their symbols followed by a space."
                     else "As " + currentPreview.authors.joinToString(" & ") { model.member(it)?.shownName ?: "Someone" },
