@@ -18,7 +18,7 @@ Read-only high-fidelity context/render checks: 3:776, 3:822, 3:1170, 2094:5065;
    heights too. Removed the redundant presence caption and reduced padding before font changes.
    Channel rows have a 70 dp minimum; small text does not shrink the 48 dp action targets.
    Journal rows use a shared avatar gutter, inline identity/time and 15/21 feed text. Shortened
-   repeated metadata; reaction identity is disclosed in a contextual confirmation before writing,
+   repeated metadata; the redundant feed compose-prompt row was removed after equal-width comparison (the writing FAB retains the same action). Reaction identity is disclosed in a contextual confirmation before writing,
    with the acting member in accessibility semantics. No private reaction identities are fetched.
    Existing groupStart/groupEnd remain. Native new messages exposed a second issue: the core
    supplies an ordinary single-author segment, but the old grouping guard rejected any segment.
@@ -91,8 +91,8 @@ The quick Android gate and final full release-mode Android gate passed. The latt
 `CARGO_BUILD_JOBS=2`, JBR and the F: build/cache paths. It ran every existing release test and
 simulator/property seed; the harness scheduling is serial, not the tests’ internal concurrency.
 Results: Rust **395 passed**, app **165 passed**, bridge **7 passed**, web **109 passed / 1
-existing skip**, lint, builds and bundle budgets passed. `correction-full-android-final.log` is
-the passing log. The first full attempt (`correction-full-android.log`) hit Windows socket
+existing skip**, lint, builds and bundle budgets passed. `correction-full-android-layout-final.log` is the final passing log after removing the
+redundant feed prompt; `correction-full-android-final.log` retains the prior full passing run. The first full attempt (`correction-full-android.log`) hit Windows socket
 allocation error 10055 in the existing structured-visibility blob test. The isolated parallel
 blob suite then passed **9/9** (`correction-blobs-recheck.log`), followed by the entire passing
 serial-harness gate. No system limits or tests were changed to bypass the failure.

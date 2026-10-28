@@ -344,15 +344,6 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         if (journalTab == "friends") JournalFriends(chorus, model, onThread = { threadPostId = it }, onReply = {
             replyTo = it; audience = "server"; editing = true
         }) else LazyColumn(Modifier.fillMaxSize(), state = feedListState, contentPadding = PaddingValues(bottom = 80.dp)) {
-        item {
-            Row(Modifier.fillMaxWidth().clickable { if (journalTab == "entries") kind = "entry"; editing = true }.padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ChatIcon(R.drawable.ic_edit, tint = p.accent)
-                Text(if (journalTab == "entries") "Write a journal entry…" else "What’s on your mind?", color = p.ink3,
-                    style = MaterialTheme.typography.bodyMedium)
-            }
-            HorizontalDivider(color = p.line)
-        }
         if (reactionError != null) item { Text(reactionError.orEmpty(), color = p.danger) }
         if (events.none { journalTab != "entries" || it.post?.kind == "entry" }) item {
             Text(if (journalTab == "entries") "No journal entries yet. Start with a few words." else "No posts or switches yet. Write the first note.",
