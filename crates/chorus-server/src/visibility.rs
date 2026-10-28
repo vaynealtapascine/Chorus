@@ -30,7 +30,7 @@ pub fn visible_message_sql(account: &str) -> String {
 
 /// A channel the account may view that isn't a thread under a message it can't see (a thread
 /// whose parent hasn't arrived yet stays hidden until it does). `c` is the channel.
-fn visible_channel_sql(account: &str) -> String {
+pub(crate) fn visible_channel_sql(account: &str) -> String {
     format!(
         "({} AND NOT (c.kind = 'thread' AND c.parent_message_id IS NOT NULL
                AND NOT EXISTS (SELECT 1 FROM message m WHERE m.id = c.parent_message_id AND {PUBLIC_MESSAGE_SQL})))",

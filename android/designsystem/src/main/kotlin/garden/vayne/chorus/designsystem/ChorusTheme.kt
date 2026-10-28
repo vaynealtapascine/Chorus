@@ -12,6 +12,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.unit.dp
 import android.app.Activity
 import androidx.core.view.WindowCompat
@@ -21,11 +23,12 @@ val LocalChorusDark = staticCompositionLocalOf { true }
 enum class ThemeMode(val label: String) { Dark("Dark"), Light("Light"), System("Follow device") }
 data class Appearance(val mode: ThemeMode, val change: (ThemeMode) -> Unit)
 val LocalChorusAppearance = staticCompositionLocalOf { Appearance(ThemeMode.Dark) {} }
+@OptIn(ExperimentalTextApi::class)
 val HankenGrotesk = FontFamily(
-    Font(R.font.hanken_grotesk, FontWeight.Normal),
-    Font(R.font.hanken_grotesk, FontWeight.Medium),
-    Font(R.font.hanken_grotesk, FontWeight.SemiBold),
-    Font(R.font.hanken_grotesk, FontWeight.Bold),
+    Font(R.font.hanken_grotesk, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
+    Font(R.font.hanken_grotesk, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
+    Font(R.font.hanken_grotesk, FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
+    Font(R.font.hanken_grotesk, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
 )
 
 /** D-079: dark by default; an explicit device preference may follow the OS or select light. */

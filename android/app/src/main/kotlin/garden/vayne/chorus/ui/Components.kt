@@ -56,6 +56,7 @@ fun Avatar(glyph: String, color: String, size: Dp = 48.dp, modifier: Modifier = 
     val ctx = LocalContext.current
     val device = Chorus.get(ctx).device
     val bitmap = produceState<android.graphics.Bitmap?>(initialValue = null, avatarBlob, device?.session) {
+        value = null
         value = if (avatarBlob != null && device != null) withContext(Dispatchers.IO) {
             AvatarBlobs.load(ctx.applicationContext, avatarBlob, device)
         } else null

@@ -84,7 +84,7 @@ pub fn channels(conn: &Connection, p: &Principal, space: &str) -> Result<Option<
         return Ok(None);
     }
     let sql = format!(
-        "SELECT c.id, c.kind, c.category, c.name, c.topic, c.parent_message_id, c.archived_at FROM channel c
+        "SELECT c.id, c.kind, c.category, c.name, c.topic, c.parent_message_id, c.archived_at, c.avatar_blob FROM channel c
          WHERE c.space_id=?1 AND c.deleted_at IS NULL AND {view}
            AND (c.kind IS NOT 'thread' OR c.parent_message_id IS NULL OR EXISTS (
                 SELECT 1 FROM message m WHERE m.id=c.parent_message_id AND (m.account_id=?2 OR ({visible} AND ?3 = 0))))
@@ -98,7 +98,7 @@ pub fn channels(conn: &Connection, p: &Principal, space: &str) -> Result<Option<
             Ok(json!({
                 "id": r.get::<_, String>(0)?, "kind": r.get::<_, Option<String>>(1)?,
                 "category": r.get::<_, Option<String>>(2)?, "name": r.get::<_, Option<String>>(3)?,
-                "topic": r.get::<_, Option<String>>(4)?, "parent_message_id": r.get::<_, Option<String>>(5)?,
+                "avatar_blob": r.get::<_, Option<String>>(7)?, "topic": r.get::<_, Option<String>>(4)?, "parent_message_id": r.get::<_, Option<String>>(5)?,
                 "archived": r.get::<_, Option<i64>>(6)?.is_some(),
             }))
         })?

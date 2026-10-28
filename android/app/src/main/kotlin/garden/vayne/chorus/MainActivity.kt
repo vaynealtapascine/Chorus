@@ -207,7 +207,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = { Text(t.label) }) }
             }
             Column(Modifier.weight(1f)) {
-            val chatOwnChrome = activeTab == Tab.Chat && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
+            val chatOwnChrome = activeTab in listOf(Tab.Chat, Tab.Journal) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
             if (chatOwnChrome && !chatStageCapture) Box(Modifier.fillMaxWidth().background(p.surface).statusBarsPadding())
             if (!chatStageCapture && !chatOwnChrome) Row(
                 Modifier.fillMaxWidth().background(p.surface).statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
@@ -256,7 +256,9 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 else if (insightsOpen) InsightsScreen(chorus, model) { insightsOpen = false }
                 else if (frontsOpen && !model.isPerson) FrontsScreen(chorus, model) { frontsOpen = false }
                 else if (settingsOpen) SettingsScreen(chorus, model) { insightsOpen = true; settingsOpen = false }
-                else when (activeTab) {
+                else androidx.compose.animation.Crossfade(targetState = activeTab,
+                    animationSpec = androidx.compose.animation.core.tween(120), label = "Main destination") { shownTab ->
+                when (shownTab) {
                     Tab.Home -> Home(chorus, model, onFronts = { frontsOpen = true })
                     Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
                         onStageCapture = { chatStageCapture = it }, onDismissSearchHit = { chatSearchHit = null },
@@ -276,6 +278,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     Tab.More -> MoreScreen(person, onJournal = { tab = Tab.Journal }, onHistory = { tab = Tab.History },
                         onInsights = { insightsOpen = true }, onFronts = { frontsOpen = true }, onSettings = { settingsOpen = true },
                         onSearch = { searchOpen = true }, onLink = { linking = true })
+                }
                 }
             }
             // Give the composer the IME inset while typing; destinations return on dismiss.

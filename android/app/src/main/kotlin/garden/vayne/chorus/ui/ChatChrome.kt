@@ -58,10 +58,12 @@ internal fun ChatAvatar(member: Member, size: Dp = 48.dp, ring: String? = null, 
 @Composable
 internal fun ChannelDisc(channel: ChatChannel, member: Member? = null, size: Dp = 48.dp) {
     val p = LocalChorusPalette.current
-    if (member != null) ChatAvatar(member, size)
+    if (channel.avatarBlob != null || channel.color != null) Avatar(ChannelCompose.glyph(channel),
+        channel.color ?: "#42A397", size, avatarBlob = channel.avatarBlob, ring = false)
+    else if (member != null) ChatAvatar(member, size)
     else Box(Modifier.size(size).background(p.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
-        if (channel.kind == "dm") ChatIcon(R.drawable.ic_members, tint = p.accent)
-        else Text("#", color = p.accent, fontWeight = FontWeight.SemiBold, fontSize = (size.value * .45f).sp)
+        if (channel.isMemberDm) ChatIcon(R.drawable.ic_members, tint = p.accent)
+        else Text(ChannelCompose.glyph(channel), color = p.accent, fontWeight = FontWeight.SemiBold, fontSize = (size.value * .45f).sp)
     }
 }
 
@@ -71,7 +73,7 @@ internal data class ChatListRow(val channel: ChatChannel, val space: ChatSpace, 
 @Composable
 internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: String?, reader: String?,
     onOpen: (ChatListRow) -> Unit, onNew: (() -> Unit)?, onSwitch: () -> Unit,
-    onSearch: () -> Unit, modifier: Modifier = Modifier, readerId: String? = null) {
+    onSearch: () -> Unit, modifier: Modifier = Modifier, readerId: String? = null, onNewChannel: (() -> Unit)? = null) {
     val p = LocalChorusPalette.current
     var folder by rememberSaveable { mutableStateOf(ChatPresentation.Folder.All) }
     var menu by remember { mutableStateOf(false) }
@@ -88,6 +90,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
             Box {
                 ChatIconButton(R.drawable.ic_more, "Chat options") { menu = true }
                 DropdownMenu(menu, { menu = false }) {
+                    if (onNewChannel != null) DropdownMenuItem(text = { Text("New channel") }, onClick = { menu = false; onNewChannel() })
                     if (onNew != null) DropdownMenuItem(text = { Text("New message") }, onClick = { menu = false; onNew() })
                     if (!model.isPerson) DropdownMenuItem(text = { Text("Per-member read tracking is in Settings") }, onClick = { menu = false; showReader = true })
                 }
@@ -97,7 +100,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
             color = p.ink2, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
         if (!model.isPerson) {
             val presence = ChatPresentation.presence(model, selected).filter { it.subjectType == "member" }
-            Column(Modifier.background(p.surface)) {
+            Column(Modifier.fillMaxWidth().background(p.surface)) {
                 Text("Who's here", color = p.ink3, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
                 LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(presence, key = { it.subjectId }) { entry ->
@@ -133,7 +136,8 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                 Tab(selected = folder == candidate, onClick = { folder = candidate }, text = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(candidate.label, fontSize = 13.sp, color = if (folder == candidate) p.ink else p.ink3)
-                        ChatCount(inFolder.sumOf { it.unread }, folder == candidate && inFolder.any { it.unread > 0 })
+                        val count = inFolder.sumOf { it.unread }
+                        if (count > 0) ChatCount(count, folder == candidate)
                     }
                 })
             }
@@ -142,7 +146,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
             val filtered = rows.filter { folder == ChatPresentation.Folder.All || ChatPresentation.folder(it.channel, it.space) == folder }
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 88.dp)) {
                 items(filtered, key = { it.channel.id }) { row ->
-                    val direct = row.channel.kind == "dm" && row.space.kind == "internal"
+                    val direct = row.channel.isMemberDm && row.space.kind == "internal"
                     val peer = if (direct) row.channel.memberIds.firstOrNull { it != (readerId ?: ChatSpeaker.pick(model, row.channel.id)) }?.let(model::member) else null
                     Row(Modifier.fillMaxWidth().background(if (selected == row.channel.id) p.accentSoft else p.bg)
                         .clickable { onOpen(row) }.padding(horizontal = 12.dp, vertical = 12.dp),

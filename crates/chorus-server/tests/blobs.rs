@@ -428,3 +428,55 @@ async fn account_avatar_is_readable_to_an_active_follower() {
     }
     assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 200);
 }
+
+#[tokio::test]
+async fn channel_images_follow_current_view_permission_and_thread_parent_privacy() {
+    let s = Server::new().await;
+    let client = reqwest::Client::new();
+    let bytes = b"channel image";
+    let digest = hash(bytes);
+    let url = format!("{}/{digest}", s.base);
+    assert_eq!(
+        client
+            .put(&url)
+            .bearer_auth("alice-token")
+            .header("content-range", "bytes 0-12/13")
+            .body(bytes.as_slice())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        201
+    );
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("INSERT INTO space(id,kind,owner_account_id,created_at) VALUES ('s','internal','alice',0)", [])
+            .unwrap();
+        c.execute(
+            "INSERT INTO channel(id,space_id,kind,name,avatar_blob,created_at) VALUES ('c','s','text','Garden',?1,0)",
+            [&digest],
+        )
+        .unwrap();
+        c.execute("INSERT INTO scope_access(account_id,scope) VALUES ('bob','space:s')", []).unwrap();
+    }
+    let status = || client.get(&url).bearer_auth("bob-token").send();
+    assert_eq!(status().await.unwrap().status(), 403, "scope access alone is insufficient");
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute(r#"INSERT INTO channel_permission(channel_id,target_type,target_id,allow,deny,hlc) VALUES ('c','account','bob','["view"]','[]','0:0:0')"#, []).unwrap();
+    }
+    assert_eq!(status().await.unwrap().status(), 200, "an explicit channel guest sees its image");
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute(r#"UPDATE channel_permission SET allow='[]',deny='["view"]' WHERE channel_id='c'"#, []).unwrap();
+    }
+    assert_eq!(status().await.unwrap().status(), 403, "revoking view revokes the image");
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute(r#"UPDATE channel_permission SET allow='["view"]',deny='[]' WHERE channel_id='c'"#, []).unwrap();
+        c.execute(r#"INSERT INTO message(id,channel_id,account_id,text,occurred_at,received_at,visibility) VALUES ('private','c','alice','private',0,0,'{"mode":"system_only"}')"#, []).unwrap();
+        c.execute("UPDATE channel SET avatar_blob=NULL WHERE id='c'", []).unwrap();
+        c.execute("INSERT INTO channel(id,space_id,kind,name,parent_message_id,avatar_blob,created_at) VALUES ('t','s','thread','Thread','private',?1,0)", [&digest]).unwrap();
+    }
+    assert_eq!(status().await.unwrap().status(), 403, "a private thread parent keeps its image private");
+}

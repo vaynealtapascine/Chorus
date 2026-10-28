@@ -211,6 +211,7 @@ A state can be "fronting" like a member (subject type `state`).
 | category | text, short | A label to group channels. |
 | name, topic | text | |
 | icon | emoji | |
+| image | image | Optional representative channel image (D-088); removal restores icon/initial fallback. |
 | colour | colour | |
 | participants | list of → Member | For member DMs. |
 | settings | settings | Autoproxy, sticky speaker, slow mode, lock. |

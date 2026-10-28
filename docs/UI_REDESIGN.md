@@ -199,3 +199,21 @@ existing JVM suite, including speaker parsing, polls, edits, visibility and stag
 No device screenshot acceptance is claimed. The parent owns installation and visual verification
 on SM-A566B (also check expanded width, light theme, larger text and keyboard insets). No install,
 deploy, push, merge or device/system setting changes were performed in this task.
+
+## UI5 Android implementation and native inspection (2026-10-28)
+
+The owner explicitly authorized phone interaction, overwrite installation and a bounded keep-awake
+helper for this pass. Those permissions supersede the older session-specific device restrictions
+above. Both the SM-A566B and existing Chorus_A56 emulator were inspected; only the isolated demo
+received test messages, posts and channel/image writes. No production deployment was performed.
+
+Channel creation, image change/removal/fallbacks (D-088), native navigation motion, journal feed,
+editor and long-read refinement are implemented. Native inspection also corrected the Hanken
+variable-font weight axes, duplicate Journal chrome, presence-strip fill and long-title truncation.
+The shared core's authorship, visibility, read tracking, sync and existing chat actions remain in use.
+
+The implementation/self-inspection report, source frame IDs, evidence paths, validation and remaining
+Figma gaps are in [the UI5 handoff](handoff/ui5-android-2026-10-28.md). This is a first implementation
+pass; parent review owns visual acceptance. In particular the full selection-formatting toolbar,
+unsupported bookmark/repost/share actions, hardware frame-time measurement, tablet rendering and a
+reduced-animation setting-toggle check are not implied by the captures.

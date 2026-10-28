@@ -11,7 +11,7 @@ object ChatPresentation {
     enum class Folder(val label: String) { All("All"), Internal("Internal"), Shared("Shared"), Direct("Direct") }
 
     fun folder(channel: ChatChannel, space: ChatSpace): Folder = when {
-        channel.kind == "dm" || space.kind == "dm" -> Folder.Direct
+        channel.isMemberDm || space.kind == "dm" -> Folder.Direct
         space.kind == "internal" -> Folder.Internal
         else -> Folder.Shared
     }

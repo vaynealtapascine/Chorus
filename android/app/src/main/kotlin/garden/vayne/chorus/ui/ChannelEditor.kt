@@ -1,0 +1,132 @@
+package garden.vayne.chorus.ui
+
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import garden.vayne.chorus.data.*
+import garden.vayne.chorus.designsystem.LocalChorusPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+
+/** Uses Android's photo picker and the same durable staged-upload path as attachments. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, channel: ChatChannel?,
+    onDismiss: () -> Unit, onSaved: (String, String) -> Unit) {
+    val p = LocalChorusPalette.current
+    val ctx = LocalContext.current
+    val actions = rememberCoroutineScope()
+    var spaceId by rememberSaveable { mutableStateOf(channel?.spaceId ?: initialSpace
+        ?: model.spaces.firstOrNull { it.kind == "internal" }?.id.orEmpty()) }
+    var name by rememberSaveable { mutableStateOf(channel?.name.orEmpty()) }
+    var topic by rememberSaveable { mutableStateOf(channel?.topic.orEmpty()) }
+    var avatar by rememberSaveable { mutableStateOf(channel?.avatarBlob) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var spacesOpen by remember { mutableStateOf(false) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) actions.launch {
+            busy = true; error = null
+            try {
+                val dev = checkNotNull(chorus.device)
+                avatar = withContext(Dispatchers.IO) {
+                    val bytes = ctx.contentResolver.openInputStream(uri)?.use { input ->
+                        ByteArrayOutputStream().also { output ->
+                            val buffer = ByteArray(16 * 1024)
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                require(output.size() + count <= 10 * 1024 * 1024) { "Choose an image under 10 MB." }
+                                output.write(buffer, 0, count)
+                            }
+                        }.toByteArray() }
+                        ?: error("That image could not be opened. Choose it again.")
+                    require(bytes.size <= 10 * 1024 * 1024) { "Choose an image under 10 MB." }
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Choose a supported image." }
+                    var sample = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 1024) sample *= 2
+                    val source = BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
+                        BitmapFactory.Options().apply { inSampleSize = sample }) ?: error("Could not read this image.")
+                    val side = minOf(source.width, source.height)
+                    val crop = Bitmap.createBitmap(source, (source.width - side) / 2, (source.height - side) / 2, side, side)
+                    val small = Bitmap.createScaledBitmap(crop, minOf(side, 512), minOf(side, 512), true)
+                    val output = ByteArrayOutputStream().also { small.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+                    val staged = Blobs.stage(ctx, output.inputStream(), "image/png", dev.accountId)
+                    if (small !== crop) small.recycle()
+                    if (crop !== source) crop.recycle()
+                    source.recycle()
+                    staged.hash
+                }
+            } catch (e: Exception) { error = e.message ?: "Could not use this image. Try another." }
+            finally { busy = false }
+        }
+    }
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, containerColor = p.surface,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(if (channel == null) "New channel" else "Edit channel", style = MaterialTheme.typography.titleLarge)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ChannelDisc(ChatChannel("preview", spaceId, "text", name.ifBlank { "Channel" }, null,
+                    avatarBlob = avatar, icon = channel?.icon, color = channel?.color), size = 72.dp)
+                Column {
+                    TextButton(enabled = !busy, onClick = { picker.launch("image/*") }) {
+                        Text(if (avatar == null) "Add channel image" else "Change image")
+                    }
+                    if (avatar != null) TextButton(enabled = !busy, onClick = { avatar = null }) { Text("Remove image") }
+                }
+            }
+            Text("Images are cropped to a square. Without one, the channel uses its icon or initial.",
+                style = MaterialTheme.typography.bodySmall, color = p.ink3)
+            if (channel == null) Box {
+                OutlinedButton(enabled = !busy, onClick = { spacesOpen = true }) {
+                    Text("In ${model.spaces.find { it.id == spaceId }?.name ?: "a space"}")
+                }
+                DropdownMenu(spacesOpen, { spacesOpen = false }) {
+                    for (space in model.spaces.filter { it.kind != "dm" }) DropdownMenuItem(
+                        text = { Text(space.name) }, onClick = { spaceId = space.id; spacesOpen = false })
+                }
+            }
+            OutlinedTextField(name, { name = it }, label = { Text("Channel name") }, singleLine = true,
+                enabled = !busy, isError = name.length > 80, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(topic, { topic = it }, label = { Text("Description (optional)") },
+                enabled = !busy, minLines = 2, modifier = Modifier.fillMaxWidth())
+            Text("Channel owners and managers can change this. Saved on this device first, then synced.",
+                style = MaterialTheme.typography.bodySmall, color = p.ink3)
+            if (error != null) Text(error.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodyMedium)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") }
+                Button(enabled = !busy && name.isNotBlank() && name.trim().length <= 80 && spaceId.isNotBlank(), onClick = {
+                    busy = true; error = null
+                    actions.launch {
+                        try {
+                            val id = channel?.id ?: chorus.newId()
+                            val payload = if (channel == null) ChannelCompose.create(spaceId, name, topic, avatar)
+                                else ChannelCompose.update(channel, name, topic, avatar)
+                            if (payload.length() > 0) chorus.create(if (channel == null) "channel.create" else "channel.set",
+                                id, payload, scope = "space:$spaceId")
+                            if (avatar != null) UploadWork.enqueue(ctx)
+                            onSaved(spaceId, id)
+                        } catch (e: Exception) { error = e.message ?: "Could not save this channel." }
+                        finally { busy = false }
+                    }
+                }) { Text(if (busy) "Saving…" else if (channel == null) "Create channel" else "Save") }
+            }
+        }
+    }
+}

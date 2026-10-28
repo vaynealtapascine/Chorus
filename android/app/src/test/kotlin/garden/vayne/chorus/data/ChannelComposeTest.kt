@@ -1,0 +1,42 @@
+package garden.vayne.chorus.data
+
+import org.json.JSONObject
+import org.junit.Assert.*
+import org.junit.Test
+
+class ChannelComposeTest {
+    @Test fun schemaMemberDmUsesTheDirectFolderAndPeerFallback() {
+        val p = JSONObject("""{"rows":{"space":{"s":{"exists":true,"fields":{"kind":"internal"}}},"channel":{"c":{"exists":true,"fields":{"space_id":"s","kind":"member_dm","name":"Kai and Moss","member_ids":["kai","moss"]}}}}}""")
+        val model = Model.parse(p, "acct")
+        val channel = model.channels.single()
+        assertTrue(channel.isMemberDm)
+        assertEquals(listOf("kai", "moss"), channel.memberIds)
+        assertEquals(ChatPresentation.Folder.Direct, ChatPresentation.folder(channel, model.spaces.single()))
+    }
+    @Test fun imageRemovalIsExplicitAndDoesNotRewriteOtherFields() {
+        val channel = ChatChannel("c", "s", "text", "Garden", null, topic = "Quiet", avatarBlob = "a".repeat(64))
+        val changed = ChannelCompose.update(channel, "Garden", "Quiet", null)
+        assertEquals(setOf("avatar_blob"), changed.keys().asSequence().toSet())
+        assertTrue(changed.isNull("avatar_blob"))
+        assertEquals(0, ChannelCompose.update(channel, "Garden", "Quiet", channel.avatarBlob).length())
+    }
+    @Test fun replicaKeepsImageAndFallbackAcrossOfflineRoundTripAndDelta() {
+        val p = JSONObject("""{"rows":{"space":{"s":{"exists":true,"fields":{"kind":"internal"}}},
+          "channel":{"c":{"exists":true,"fields":{"space_id":"s","name":"Garden","avatar_blob":"${"a".repeat(64)}","icon":"🌿","color":"#42A397"}}}}}""")
+        val first = Model.parse(JSONObject(p.toString()), "acct").channels.single()
+        assertEquals("a".repeat(64), first.avatarBlob)
+        assertEquals("🌿", ChannelCompose.glyph(first))
+        val delta = JSONObject("""{"rows":{"channel":{"c":{"exists":true,"fields":{"space_id":"s","name":"Garden","avatar_blob":null,"icon":"🌿","color":"#42A397"}}}}}""")
+        Model.applyDelta(p, delta)
+        val removed = Model.parse(p, "acct").channels.single()
+        assertNull(removed.avatarBlob)
+        assertEquals("🌿", ChannelCompose.glyph(removed))
+        assertEquals("🌌", ChannelCompose.glyph(removed.copy(icon = null, name = "🌌 stars")))
+    }
+    @Test fun invalidNameOrImageNeverBuildsAnOperation() {
+        for ((name, avatar) in listOf(" " to null, "a".repeat(81) to null, "Garden" to "https://example.org/image")) {
+            assertTrue(runCatching { ChannelCompose.create("s", name, "", avatar) }.isFailure)
+        }
+        assertEquals("Garden", ChannelCompose.create("s", " Garden ", "", null).getString("name"))
+    }
+}

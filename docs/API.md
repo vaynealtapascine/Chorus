@@ -268,6 +268,9 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
     display name, pronouns, colour, sigils, avatar) for other accounts' members who wrote a message
     everyone in the space can read.
   - A space you aren't in is a 404.
+Channel list items also carry nullable `avatar_blob` (D-088). Fetch that hash through the ordinary
+blob endpoint; current channel visibility, including thread-parent privacy, gates image reads.
+
 - **Messages** (`messages.rs`, 2026-09-24): `GET /spaces/{id}/channels`,
   `GET /channels/{id}/messages?before=&after=&around=&limit=` (epoch ms, exclusive; `around` is a
   message id; oldest first, 1–100, default 50) and `GET /messages/{id}/thread`. Same rule as

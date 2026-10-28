@@ -425,7 +425,7 @@ CREATE TABLE channel (
   space_id TEXT NOT NULL REFERENCES space(id),
   kind TEXT NOT NULL CHECK (kind IN ('text','thread','member_dm')),
   category TEXT,                                -- category name (categories are just labels + sort)
-  name TEXT NOT NULL, topic TEXT, icon TEXT, color TEXT,
+  name TEXT NOT NULL, topic TEXT, icon TEXT, color TEXT, avatar_blob TEXT, -- optional channel image (D-088)
   parent_message_id TEXT,                       -- threads
   member_ids TEXT CHECK (member_ids IS NULL OR json_valid(member_ids)),  -- member_dm participants
   settings TEXT NOT NULL DEFAULT '{}',          -- slow_mode_s (Q17), lock (autoproxy is the account's pref, D-074)

@@ -206,6 +206,7 @@ const CHANNEL_FIELDS: &[&str] = &[
     "category",
     "name",
     "topic",
+    "avatar_blob",
     "icon",
     "color",
     "parent_message_id",
@@ -597,6 +598,14 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
         }
         "channel.create" | "channel.set" => {
             one_of("kind", &["text", "thread", "member_dm"], false)?;
+            if let Some(v) = p.get("avatar_blob")
+                && !v.is_null()
+                && !v.as_str().is_some_and(|s| {
+                    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+                })
+            {
+                return bad("avatar_blob must be a lowercase SHA-256 hash or null");
+            }
             // slow mode (Q17): whole seconds, at most 6 h; 0 or absent = off
             if let Some(v) = p.get("settings").and_then(|s| s.get("slow_mode_s"))
                 && !v.is_null()

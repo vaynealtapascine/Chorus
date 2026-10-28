@@ -631,3 +631,24 @@ changes only the invoked process; no PATH or other system settings were changed.
   generated UniFFI Kotlin bindings (the shared host DLL + uniffi-bindgen can generate them for
   JVM tests without building/installing Android native libraries). Wasm remains 307,010 /
   307,200 gzip-level-9 bytes; no shared-core changes or new dependencies.
+
+### 2026-10-28 — UI5 Android inspection and build notes (gpt-6.1-sol)
+
+- Hanken's vendored variable TTF needs explicit `FontVariation.Settings(FontVariation.weight(...))`
+  for the registered 400/500/600/700 variants in the pinned Compose 1.7.6 resource-font API. Native
+  captures exposed the old near-identical weights; the explicit axes visibly restore bold/semibold.
+  See [Android font guidance](https://developer.android.com/develop/ui/compose/text/fonts#variable-fonts).
+- `F:/DunBuild/chorus-verify.ps1` selects the correct worktree but always appends `--quick`. For the
+  required full release gate, source `chorus-env.ps1`, set the F: target/Gradle paths and Studio JBR,
+  build the web core and run `python scripts/verify.py --android --offline` directly.
+- Full release linking initially spawned many Rust compiler processes while native inspection ran.
+  Host memory pressure stalled UiAutomation; restarting the same AVD without wiping data and using
+  process-only `CARGO_BUILD_JOBS=2` resolved it. Only this task's verified Cargo descendants and
+  emulator process were stopped; owner services/settings were not touched.
+- The final wasm gzip-9 payload is 307111 bytes against 307200 allowed. It passes, but the 89-byte
+  headroom is small: keep checking the existing bundle gate when core code grows.
+- `member_dm` is the schema kind. Legacy Android checks for only `dm` missed participant avatars
+  and Direct-folder classification; both are now accepted for presentation.
+- Native evidence, build logs, review APK and short navigation recording live under
+  `F:/DunBuild/chorus-ui5-evidence/`; see the committed UI5 handoff. Phone-private captures remain
+  outside the repository. The normal app data on both devices was retained throughout.

@@ -1024,3 +1024,93 @@ fn a_role_change_survives_a_rebuild() {
     project::rebuild(&mut c).unwrap();
     assert_eq!(state(&c), (true, "read_only".into(), true), "the rebuild kept the member, the role and the access");
 }
+
+#[test]
+fn channel_images_are_independent_lww_fields_and_survive_rebuild() {
+    let (mut c, account, _, scope) = setup();
+    let session = ingest::Session {
+        account_id: account.clone(),
+        device_id: "d".into(),
+        sample: ClockSample { server_time: T, mono: None, boot_id: None, offset_ms: 0 },
+    };
+    let space = scope.strip_prefix("space:").unwrap();
+    ingest::server_op(&c, &account, "space.create", &scope, Some(space), json!({"kind":"internal","name":"Home"}), T)
+        .unwrap();
+    ingest::server_op(
+        &c,
+        &account,
+        "channel.create",
+        &scope,
+        Some("00000000-0001-7000-8000-000000000001"),
+        json!({"space_id":space,"kind":"text","name":"General"}),
+        T,
+    )
+    .unwrap();
+    let image = "a".repeat(64);
+    let mut ops = Vec::new();
+    // Deliberately arrive out of clock order; changing the title must not erase the image.
+    for (clock, payload) in [
+        (2, json!({"avatar_blob": image})),
+        (1, json!({"name":"Garden"})),
+        (4, json!({"avatar_blob":null})),
+        (3, json!({"topic":"Quiet"})),
+    ] {
+        let op = Op {
+            id: new_id((T + clock) as u64, [clock as u8 + 90; 10]),
+            kind: "channel.set".into(),
+            v: 1,
+            scope: scope.clone(),
+            entity_id: Some("00000000-0001-7000-8000-000000000001".into()),
+            hlc: Hlc::new((T + clock) as u64, 0, 1),
+            device_at: T + clock,
+            tz_offset_min: 0,
+            mono: None,
+            boot_id: None,
+            time_source: TimeSource::User,
+            seen_seq: 0,
+            member_id: None,
+            payload,
+            seq: None,
+            account_id: None,
+            device_id: None,
+            occurred_at: None,
+            received_at: None,
+        };
+        assert!(chorus_core::op::validate_new(&op).is_ok());
+        if clock == 2 {
+            assert_eq!(chorus_core::restore::blob_hashes(&op), vec![image.clone()]);
+        }
+        let (ack, _) = ingest::accept(&c, &session, op.clone(), T + clock, false).unwrap();
+        assert!(ack.error.is_none(), "{:?}", ack.error);
+        ops.push(op);
+        if clock == 1 {
+            assert_eq!(
+                c.query_row(
+                    "SELECT avatar_blob FROM channel WHERE id='00000000-0001-7000-8000-000000000001'",
+                    [],
+                    |r| r.get::<_, String>(0)
+                )
+                .unwrap(),
+                image
+            );
+        }
+    }
+    let sql = "SELECT name, topic, avatar_blob FROM channel WHERE id='00000000-0001-7000-8000-000000000001'";
+    let before = dump(&c, sql);
+    assert!(
+        c.query_row(
+            "SELECT avatar_blob IS NULL FROM channel WHERE id='00000000-0001-7000-8000-000000000001'",
+            [],
+            |r| r.get::<_, bool>(0)
+        )
+        .unwrap()
+    );
+    project::rebuild(&mut c).unwrap();
+    assert_eq!(dump(&c, sql), before);
+    // Images do not bypass channel management or leak through a name-only update.
+    let mut attempt = ops[0].clone();
+    attempt.payload = json!({"avatar_blob":"not-a-hash"});
+    assert!(chorus_core::op::validate_new(&attempt).is_err());
+    assert!(chorus_server::perms::write_denied(&c, "stranger", &ops[0]).unwrap().is_some());
+    assert!(chorus_server::perms::write_denied(&c, &account, &ops[0]).unwrap().is_none());
+}

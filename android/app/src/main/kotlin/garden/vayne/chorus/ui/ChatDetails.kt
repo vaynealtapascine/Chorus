@@ -101,7 +101,9 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
     onShowMessage: (String) -> Unit = {}, modifier: Modifier = Modifier) {
     val p = LocalChorusPalette.current
     val presence = ChatPresentation.presence(model, channel.id)
-    val members = if (space.kind == "internal") model.active.filter { channel.kind != "dm" || it.id in channel.memberIds } else emptyList()
+    val members = if (space.kind == "internal") model.active.filter { !channel.isMemberDm || it.id in channel.memberIds } else emptyList()
+    var editChannel by rememberSaveable(channel.id) { mutableStateOf(false) }
+    if (editChannel) ChannelEditor(chorus, model, space.id, channel, { editChannel = false }, { _, _ -> editChannel = false })
     var tab by rememberSaveable(channel.id) { mutableStateOf("members") }
     var shown by remember(channel.id, tab) { mutableStateOf(60) }
     var viewing by remember(channel.id) { mutableStateOf<ChatFileItem?>(null) }
@@ -116,7 +118,7 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             ChannelDisc(channel, size = 72.dp)
             Text(channel.name, color = p.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
-            val kind = when { space.kind == "dm" || channel.kind == "dm" -> "Direct"; space.kind == "internal" -> "Internal"; else -> "Shared · ${space.name}" }
+            val kind = when { space.kind == "dm" || channel.isMemberDm -> "Direct"; space.kind == "internal" -> "Internal"; else -> "Shared · ${space.name}" }
             val count = when {
                 space.kind == "internal" && !model.isPerson -> "${members.size} ${if (members.size == 1) "member" else "members"}"
                 directory != null && space.kind != "internal" -> "${directory.accounts.size} ${if (directory.accounts.size == 1) "account" else "accounts"}"
@@ -127,6 +129,7 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                 if (notifyLevel == "none") InfoAction(R.drawable.ic_bell, "Unmute") { onNotify(model.accountPrefs.defaultNotify(space.kind)) }
                 else InfoAction(R.drawable.ic_bell_off, "Mute") { onNotify("none") }
                 InfoAction(R.drawable.ic_search, "Search", onSearch)
+                if (channel.kind != "thread") InfoAction(R.drawable.ic_edit, "Edit") { editChannel = true }
             }
             channel.topic?.takeIf { it.isNotBlank() }?.let { topic ->
                 Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {

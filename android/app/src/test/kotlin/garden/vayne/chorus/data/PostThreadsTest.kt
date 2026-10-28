@@ -5,6 +5,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PostThreadsTest {
+    @Test fun detailIncludesTheParentAndItsRichEntitiesWithoutLosingReplies() {
+        val detail = PostThreads.parseDetail(JSONObject("""{"id":"parent","text":"Secret","occurred_at":10,"cw":"warning","entities":[{"type":"spoiler","offset":0,"length":6}],"replies":[{"id":"reply","text":"Hello","occurred_at":20}]}"""))
+        assertEquals("parent", detail.root?.id)
+        assertEquals("warning", detail.root?.cw)
+        assertEquals("spoiler", org.json.JSONArray(detail.root?.entities).getJSONObject(0).getString("type"))
+        assertEquals(listOf("reply"), detail.replies.map { it.id })
+    }
     @Test fun keepsAudienceFilteredPollDefinitionAndCounts() {
         val post = PostThreads.parse(JSONObject("""{"replies":[{"id":"foreign","kind":"note","text":"Dinner?","occurred_at":1,"author_cards":[],"poll":{"options":[{"id":"a","text":"Soup"},{"id":"b","text":"Rice"}],"multiple":true},"poll_tally":{"counts":{"a":2,"b":3},"voters":4}}]}""")).single()
         assertEquals(listOf("Soup", "Rice"), post.poll?.options?.map { it.text })
