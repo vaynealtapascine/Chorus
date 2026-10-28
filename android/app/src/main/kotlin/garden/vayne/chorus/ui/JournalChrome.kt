@@ -15,9 +15,54 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.*
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
+
+@Composable
+internal fun JournalModeChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+    val p = LocalChorusPalette.current
+    Box(Modifier.heightIn(min = 48.dp).clickable(onClick = onClick).padding(3.dp), contentAlignment = Alignment.Center) {
+        Text(label, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, lineHeight = 18.sp),
+            color = if (selected) p.ink else p.ink3,
+            modifier = Modifier.background(if (selected) p.surface else p.surface2, CircleShape).padding(horizontal = 14.dp, vertical = 6.dp))
+    }
+}
+
+/** Flat feed rows share an avatar gutter and compact identity line. The full reader keeps its
+ * body across the width; foreign callers pass only fields already supplied by filtered APIs. */
+@Composable
+internal fun JournalPostFrame(names: String, time: String, audience: String?, full: Boolean = false,
+    avatar: @Composable () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    val p = LocalChorusPalette.current
+    @Composable fun Identity() {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(names, color = p.ink, fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, lineHeight = 18.sp),
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(time, style = MaterialTheme.typography.bodySmall, color = p.ink3)
+            if (audience != null) Icon(androidx.compose.ui.res.painterResource(if (audience == "private") R.drawable.ic_lock else R.drawable.ic_globe),
+                JournalPresentation.audience(audience), Modifier.size(16.dp), tint = p.ink3)
+        }
+    }
+    Column(Modifier.fillMaxWidth().padding(horizontal = if (full) 20.dp else 16.dp, vertical = if (full) 16.dp else 10.dp)) {
+        if (full) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.width(48.dp)) { avatar() }
+                Column(Modifier.weight(1f)) { Identity() }
+            }
+            Spacer(Modifier.height(8.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+        } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.width(48.dp), contentAlignment = Alignment.TopCenter) { avatar() }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Identity()
+                content()
+            }
+        }
+    }
+}
 
 
 @Composable
@@ -40,9 +85,12 @@ internal fun JournalAuthorPicker(author: Member?, mine: List<Member>, onChoose: 
         if (author != null) ChatAvatar(author, 40.dp)
         Box(Modifier.weight(1f)) {
             Row(Modifier.clickable { open = true }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+              Row(Modifier.background(p.accentSoft, CircleShape).padding(horizontal = 10.dp, vertical = 6.dp),
+                  verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(author?.let { "Posting as ${it.shownName}" } ?: "Choose who is writing", color = p.accent,
-                    style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                ChatIcon(R.drawable.ic_down, tint = p.accent)
+                    style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_down), null, Modifier.size(14.dp), tint = p.accent)
+              }
             }
             DropdownMenu(open, { open = false }) {
                 for (member in mine) DropdownMenuItem(text = { Text(member.shownName) }, leadingIcon = { ChatAvatar(member, 32.dp) },
@@ -60,37 +108,12 @@ internal fun JournalAudiencePicker(audience: String, person: Boolean, onChoose: 
         TextButton(onClick = { open = true }) {
             ChatIcon(if (audience == "private") R.drawable.ic_lock else R.drawable.ic_globe, tint = p.accent)
             Spacer(Modifier.width(6.dp))
-            Text(JournalPresentation.audience(audience, person), maxLines = 2)
+            Text(JournalPresentation.audience(audience, person), style = MaterialTheme.typography.labelMedium, maxLines = 2)
             ChatIcon(R.drawable.ic_down, tint = p.accent)
         }
         DropdownMenu(open, { open = false }) {
             for (mode in listOf("private", "followers", "server")) DropdownMenuItem(
                 text = { Text(JournalPresentation.audience(mode, person)) }, onClick = { onChoose(mode); open = false })
-        }
-    }
-}
-
-@Composable
-internal fun JournalPostHeader(post: JournalPost, model: Model, onProfile: ((String) -> Unit)?) {
-    val p = LocalChorusPalette.current
-    val first = post.authors.firstNotNullOfOrNull(model::member)
-    var authorsOpen by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-        if (first != null) Box(Modifier.clickable(enabled = onProfile != null) { onProfile?.invoke(first.id) }.size(48.dp), contentAlignment = Alignment.Center) { ChatAvatar(first, 40.dp) }
-        Column(Modifier.weight(1f).clickable(enabled = first != null && onProfile != null) {
-            if (post.authors.size > 1) authorsOpen = true else first?.let { onProfile?.invoke(it.id) }
-        }.heightIn(min = 48.dp)) {
-            DropdownMenu(authorsOpen, { authorsOpen = false }) {
-                for (id in post.authors) model.member(id)?.let { member -> DropdownMenuItem(text = { Text(member.shownName) },
-                    onClick = { authorsOpen = false; onProfile?.invoke(id) }) }
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" },
-                    color = p.ink, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f))
-                ChatIcon(if (post.visibility == "private") R.drawable.ic_lock else R.drawable.ic_globe, JournalPresentation.audience(post.visibility, model.isPerson), p.ink3)
-            }
-            Text(ago(post.occurredAt), color = p.ink3, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

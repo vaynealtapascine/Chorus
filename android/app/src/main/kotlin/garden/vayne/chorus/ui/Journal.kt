@@ -1,7 +1,6 @@
 package garden.vayne.chorus.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateContentSize
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -40,6 +39,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.UploadWork
@@ -69,7 +77,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     onExternalReplyConsumed: () -> Unit = {}, externalOpenPost: String? = null,
     onExternalOpenConsumed: () -> Unit = {}, sharedDraft: SharedDraft? = null,
     onShareConsumed: () -> Unit = {}, externalNewEntry: Long? = null,
-    onExternalNewEntryConsumed: () -> Unit = {}) {
+    onExternalNewEntryConsumed: () -> Unit = {}, active: Boolean = true,
+    onFocusedRoute: (Boolean) -> Unit = {}) {
     val p = LocalChorusPalette.current
     val connection by chorus.status.collectAsState()
     var editorOptions by rememberSaveable { mutableStateOf(false) }
@@ -83,22 +92,23 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
     var kind by rememberSaveable { mutableStateOf("note") }
     var authorId by rememberSaveable { mutableStateOf("") }
-    var body by rememberSaveable { mutableStateOf("") }
+    var bodyValue by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
+    val body = bodyValue.text
     var title by rememberSaveable { mutableStateOf("") }
     var cw by rememberSaveable { mutableStateOf("") }
     var mood by rememberSaveable { mutableStateOf("") }
     var tags by rememberSaveable { mutableStateOf("") }
     var pollOn by rememberSaveable { mutableStateOf(false) }
-    val pollOptions = remember { mutableStateListOf("", "") }
+    val pollOptions = rememberSaveable(saver = PollOptionsSaver) { mutableStateListOf("", "") }
     var pollMultiple by rememberSaveable { mutableStateOf(false) }
     var audience by rememberSaveable { mutableStateOf("private") }
-    var busy by rememberSaveable { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var reactionError by remember { mutableStateOf<String?>(null) }
     var reactionBusy by remember { mutableStateOf(false) }
     val actions = rememberCoroutineScope()
     val ctx = LocalContext.current
-    val attachments = remember { mutableStateListOf<PendingAttachment>() }
+    val attachments = rememberSaveable(saver = AttachmentDraftSaver) { mutableStateListOf<PendingAttachment>() }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         for (uri in uris) attachments.add(PendingAttachment.of(ctx, uri))
     }
@@ -110,7 +120,10 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         if (chorus.device == null) return@LaunchedEffect
         profileId = null; threadPostId = null; replyTo = null
         section = "timeline"
-        if (incoming.text.isNotBlank()) body = listOf(body, incoming.text).filter { it.isNotBlank() }.joinToString("\n")
+        if (incoming.text.isNotBlank()) {
+            val text = listOf(body, incoming.text).filter { it.isNotBlank() }.joinToString("\n")
+            bodyValue = TextFieldValue(text, TextRange(text.length))
+        }
         for (uri in incoming.uris) {
             try { attachments.add(PendingAttachment.of(ctx, uri)) }
             catch (_: Exception) { error = "One shared file could not be opened. Please attach it again." }
@@ -130,7 +143,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             profileId = null; threadPostId = null
             section = "timeline"
             replyTo = externalReplyPost
-            kind = "note"; title = ""; body = ""; cw = ""; mood = ""; tags = ""
+            kind = "note"; title = ""; bodyValue = TextFieldValue(); cw = ""; mood = ""; tags = ""
             attachments.clear()
             audience = "server" // the foreign parent author must be able to read this reply
             authorId = Reply.speaker(model)?.id.orEmpty()
@@ -142,7 +155,6 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     LaunchedEffect(externalOpenPost) {
         if (externalOpenPost != null) {
             editing = false; profileId = null; threadPostId = externalOpenPost
-            attachments.clear()
             section = "timeline"
             onExternalOpenConsumed()
         }
@@ -155,10 +167,11 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         threadPostId != null -> "thread:$threadPostId"
         else -> section
     }
+    androidx.compose.runtime.SideEffect { if (active) onFocusedRoute(editing || profileId != null || threadPostId != null) }
     ChorusScene(route, if (editing) 2 else if (profileId != null || threadPostId != null || section != "timeline") 1 else 0) { shown ->
     if (shown.startsWith("profile:")) {
         val id = shown.substringAfter(":")
-        BackHandler(shown == route) { profileId = null }
+        BackHandler(active && shown == route) { profileId = null }
         MemberProfile(chorus, model, id, onClose = { profileId = null },
             onWrite = { authorId = id; replyTo = null; editing = true },
             onReply = { postId -> authorId = id; replyTo = postId; editing = true })
@@ -167,19 +180,20 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
 
     if (shown.startsWith("thread:")) {
         val id = shown.substringAfter(":")
-        BackHandler(shown == route) { threadPostId = null }
+        BackHandler(active && shown == route) { threadPostId = null }
         JournalThread(chorus, model, id, onClose = { threadPostId = null },
             onReply = { replyTo = id; editing = true })
         return@ChorusScene
     }
 
     if (shown == "write") {
-        BackHandler(shown == route) { if (!busy) editing = false }
+        BackHandler(active && shown == route) { if (!busy) editing = false }
+        val bodyFocus = remember { FocusRequester() }
         Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(enabled = !busy, onClick = { editing = false }) { Text("Cancel") }
-                Text(if (replyTo == null) "New ${if (kind == "entry") "entry" else "post"}" else "Write a reply", color = p.ink,
-                    fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 14.dp))
+                Text(if (replyTo == null) "Draft" else "Write a reply", color = p.ink3,
+                    style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 14.dp))
                 Button(enabled = !busy && author != null && (body.isNotBlank() || attachments.isNotEmpty()), onClick = {
                     val dev = chorus.device ?: return@Button
                     val writer = author ?: return@Button
@@ -209,7 +223,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                             pollOn = false; pollMultiple = false
                             pollOptions.clear(); pollOptions.addAll(listOf("", ""))
                             if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
-                            body = ""; title = ""; cw = ""; mood = ""; tags = ""; replyTo = null
+                            bodyValue = TextFieldValue(); title = ""; cw = ""; mood = ""; tags = ""; replyTo = null
                             attachments.clear()
                             editing = false
                         } catch (e: Exception) { error = e.message ?: "Could not post." }
@@ -217,46 +231,40 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                     }
                 }) { Text(if (busy) "Posting…" else "Post") }
             }
-            LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.padding(horizontal = 16.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.background(p.surface2, CircleShape)) {
+                    JournalModeChoice("Post", kind == "note") { if (!busy) kind = "note" }
+                    JournalModeChoice("Journal entry", kind == "entry") { if (!busy) kind = "entry" }
+                }
+            }
+            Box(Modifier.padding(horizontal = 16.dp)) { JournalAuthorPicker(author, mine) { if (!busy) authorId = it } }
+            LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (replyTo != null) item {
                     Text("Replying to a post. Check the audience before posting.", color = p.ink2)
                 }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        JournalChoice("Post", kind == "note") { if (!busy) kind = "note" }
-                        JournalChoice("Journal entry", kind == "entry") { if (!busy) kind = "entry" }
-                    }
-                }
-                item { JournalAuthorPicker(author, mine) { if (!busy) authorId = it } }
                 if (kind == "entry") item {
-                    JournalTextField(title, { title = it }, "Title (optional)", MaterialTheme.typography.titleLarge,
+                    JournalTextField(title, { title = it }, "Title (optional)", MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold),
                         Modifier.padding(start = 52.dp), enabled = !busy)
                 }
                 item {
-                    JournalTextField(body, { body = it }, if (kind == "entry") "Write your entry…" else "What’s on your mind?",
-                        MaterialTheme.typography.bodyLarge.copy(lineHeight = 25.sp), Modifier.padding(start = 52.dp),
-                        minLines = if (kind == "entry") 8 else 5, enabled = !busy)
+                    BasicTextField(bodyValue, { bodyValue = it }, enabled = !busy,
+                        modifier = Modifier.fillMaxWidth().padding(start = 52.dp).focusRequester(bodyFocus)
+                            .semantics { contentDescription = "Post text" },
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.ink, fontSize = 16.sp, lineHeight = 24.sp),
+                        cursorBrush = SolidColor(p.accent), minLines = 4,
+                        decorationBox = { inner -> Box {
+                            if (body.isEmpty()) Text(if (kind == "entry") "Write your entry…" else "What’s on your mind?", color = p.ink3,
+                                style = MaterialTheme.typography.bodyLarge)
+                            inner()
+                        } })
                 }
-                for ((i, attachment) in attachments.withIndex()) {
-                    item(key = "picked:$i") {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("📎 ${attachment.name}", color = p.ink, maxLines = 1)
-                                TextButton(enabled = !busy, onClick = { attachments.removeAt(i) }) { Text("Remove") }
-                            }
-                            JournalChoice(if (attachment.spoiler) "Spoiler ✓" else "Mark as spoiler", attachment.spoiler) {
-                                if (busy) return@JournalChoice
-                                attachments[i] = attachment.copy(spoiler = !attachment.spoiler)
-                            }
-                            if (attachment.mime.startsWith("image/")) OutlinedTextField(attachment.alt,
-                                { attachments[i] = attachment.copy(alt = it) }, label = { Text("Image description (alt text)") },
-                                modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !busy)
-                        }
+                if (attachments.isNotEmpty()) item {
+                    Box(Modifier.padding(start = 52.dp)) {
+                        JournalAttachments(attachments, !busy, onChange = { index, file -> attachments[index] = file },
+                            onRemove = { index -> attachments.removeAt(index) })
                     }
                 }
                 if (editorOptions && !busy) {
-                    item { Text("Formatting: **bold**, _italic_, ~strike~, `code`, ||spoiler||, [label](url).", color = p.ink3,
-                        style = MaterialTheme.typography.bodySmall) }
                     item { OutlinedTextField(cw, { cw = it }, label = { Text("Content warning (optional)") }, modifier = Modifier.fillMaxWidth()) }
                     item { OutlinedTextField(mood, { mood = it }, label = { Text("Mood (optional)") }, modifier = Modifier.fillMaxWidth()) }
                     item { OutlinedTextField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, modifier = Modifier.fillMaxWidth()) }
@@ -267,10 +275,12 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             HorizontalDivider(color = p.line)
             Column(Modifier.fillMaxWidth().background(p.surface)) {
                 JournalAudiencePicker(audience, model.isPerson) { if (!busy) audience = it }
+                HorizontalDivider(color = p.line, thickness = .5.dp)
+                JournalFormatToolbar(bodyValue, !busy) { bodyValue = it; bodyFocus.requestFocus() }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     ChatIconButton(R.drawable.ic_image, "Attach images or files") { if (!busy) picker.launch("*/*") }
-                    ChatIconButton(R.drawable.ic_more, if (editorOptions) "Hide post options" else "Formatting, warning, mood, tags and poll") { editorOptions = !editorOptions }
-                    Text(listOfNotNull("CW".takeIf { cw.isNotBlank() }, "Poll".takeIf { pollOn }, "${attachments.size} files".takeIf { attachments.isNotEmpty() }).joinToString(" · "),
+                    ChatIconButton(R.drawable.ic_more, if (editorOptions) "Hide post options" else "Warning, mood, tags and poll") { editorOptions = !editorOptions }
+                    Text(listOfNotNull("CW".takeIf { cw.isNotBlank() }, "Poll".takeIf { pollOn }, "${attachments.size} ${if (attachments.size == 1) "file" else "files"}".takeIf { attachments.isNotEmpty() }).joinToString(" · "),
                         color = p.ink3, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     Text("${body.trim().split(Regex("\\s+")).count { it.isNotBlank() }} words", color = p.ink3,
                         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(end = 12.dp))
@@ -307,8 +317,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     Column(Modifier.fillMaxSize().background(p.bg)) {
         Row(Modifier.fillMaxWidth().background(p.surface).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             author?.let { ChatAvatar(it, 36.dp) }
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 10.dp)) {
-                Text("Journal", style = MaterialTheme.typography.titleLarge, color = p.ink)
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 6.dp)) {
+                Text("Journal", style = MaterialTheme.typography.titleMedium.copy(fontSize = 20.sp, lineHeight = 26.sp), color = p.ink)
                 Text(if (connection != garden.vayne.chorus.data.Status.Live) "Offline · saved on this device"
                     else author?.let { "Posting as ${it.shownName}" } ?: "Your system’s stories", color = p.ink3,
                     style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -327,7 +337,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         ScrollableTabRow(selectedTabIndex = listOf("system", "friends", "entries").indexOf(journalTab).coerceAtLeast(0),
             containerColor = p.surface, contentColor = p.accent, edgePadding = 16.dp, divider = { HorizontalDivider(color = p.line) }) {
             for ((id, label) in listOf("system" to "Our system", "friends" to "Friends", "entries" to "Journals")) Tab(
-                selected = journalTab == id, onClick = { journalTab = id }, text = { Text(label) },
+                selected = journalTab == id, onClick = { journalTab = id }, text = { Text(label, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, lineHeight = 18.sp)) },
                 selectedContentColor = p.ink, unselectedContentColor = p.ink3)
         }
         Box(Modifier.weight(1f)) {
@@ -398,55 +408,58 @@ internal fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit
 @Composable
 internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, onReply: () -> Unit,
     onThread: (() -> Unit)? = null, reactMemberId: String? = null, reactionEnabled: Boolean = true,
-    onReact: ((JournalPost) -> Unit)? = null, onProfile: ((String) -> Unit)? = null, full: Boolean = false) {
+    onReact: ((JournalPost) -> Unit)? = null, onProfile: ((String) -> Unit)? = null, full: Boolean = false,
+    showActions: Boolean = true) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
     var expanded by rememberSaveable(post.id) { mutableStateOf(full) }
     var overflow by remember(post.id) { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().animateContentSize(androidx.compose.animation.core.tween(180)).padding(horizontal = if (full) 20.dp else 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        JournalPostHeader(post, model, onProfile)
-        Column(Modifier.padding(start = if (full) 0.dp else 52.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (post.replyTo != null) Text("Reply", color = p.ink3, style = MaterialTheme.typography.bodySmall)
-            if (post.cw != null) Surface(color = p.surface2, shape = RoundedCornerShape(10.dp)) {
-                Row(Modifier.fillMaxWidth().clickable { revealed = !revealed }.heightIn(min = 48.dp).padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Content warning: ${post.cw}", color = p.ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                    Text(if (revealed) "Hide" else "Show", color = p.accent, style = MaterialTheme.typography.labelMedium)
-                }
+    var authorsOpen by remember { mutableStateOf(false) }
+    val names = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
+    JournalPostFrame(names, ago(post.occurredAt), post.visibility, full, avatar = {
+        Box {
+            Box(Modifier.size(48.dp).clickable(enabled = onProfile != null) {
+                if (post.authors.size > 1) authorsOpen = true else post.authors.firstOrNull()?.let { onProfile?.invoke(it) }
+            }, contentAlignment = Alignment.TopCenter) {
+                post.authors.firstNotNullOfOrNull(model::member)?.let { ChatAvatar(it, 40.dp) }
             }
-            if (post.cw == null || revealed) {
-                post.title?.let { Text(it, color = p.ink, style = if (full) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold) }
-                RichBody(post.text, post.entities, maxLines = if (expanded || full) Int.MAX_VALUE else 3,
-                    onOverflow = { overflow = it }, style = MaterialTheme.typography.bodyLarge.copy(lineHeight = if (full) 25.sp else 22.sp))
-                if (!full && (overflow || expanded)) TextButton(onClick = {
-                    if (post.kind == "entry" && onThread != null) onThread() else expanded = !expanded
-                }, contentPadding = PaddingValues(0.dp)) { Text(if (expanded) "Show less" else "Show more") }
-                post.mood?.let { Text(it, color = p.ink2, style = MaterialTheme.typography.bodySmall) }
-                Text(listOfNotNull("Journal entry · ${JournalPresentation.readTime(post.text)}".takeIf { post.kind == "entry" },
-                    JournalPresentation.audience(post.visibility, model.isPerson)).joinToString(" · "), color = p.ink3, style = MaterialTheme.typography.bodySmall)
-                if (post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent, style = MaterialTheme.typography.bodySmall)
-                for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
-                PollCard(chorus, model, post.id, reactMemberId ?: Reply.speaker(model)?.id)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton(onClick = onReply) { ChatIcon(R.drawable.ic_reply); Spacer(Modifier.width(6.dp)); Text("Reply") }
-                    if (onThread != null) ChatIconButton(R.drawable.ic_thread, if (post.kind == "entry") "Read entry and replies" else "Read post and replies", onThread)
-                    if (reactMemberId != null && onReact != null) {
-                        val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == reactMemberId }
-                        TextButton(enabled = reactionEnabled, onClick = { onReact(post) }) {
-                            ChatIcon(R.drawable.ic_heart, if (selected) "Remove heart reaction" else "React with heart", if (selected) p.danger else p.ink3)
-                            Text(" ${post.reactions.count { it.emoji == PostReactions.HEART }}", color = if (selected) p.danger else p.ink3)
-                        }
-                    }
-                }
-                if (post.reactions.isNotEmpty()) ReactionNames(post.reactions)
-                if (reactMemberId != null && onReact != null) Text("Reactions show ${model.member(reactMemberId)?.shownName ?: "your member"} to readers.",
-                    color = p.ink3, style = MaterialTheme.typography.bodySmall)
+            DropdownMenu(authorsOpen, { authorsOpen = false }) {
+                for (id in post.authors) model.member(id)?.let { member -> DropdownMenuItem(text = { Text(member.shownName) },
+                    onClick = { authorsOpen = false; onProfile?.invoke(id) }) }
             }
         }
+    }) {
+        if (post.replyTo != null) Text("Reply", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+        if (post.cw != null) Surface(color = p.surface2, shape = RoundedCornerShape(10.dp)) {
+            Row(Modifier.fillMaxWidth().clickable { revealed = !revealed }.heightIn(min = 48.dp).padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Content warning: ${post.cw}", color = p.ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                Text(if (revealed) "Hide" else "Show", color = p.accent, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+        if (post.cw == null || revealed) {
+            post.title?.let { Text(it, color = p.ink, style = MaterialTheme.typography.titleSmall.copy(
+                fontSize = if (full) 24.sp else 15.sp, lineHeight = if (full) 30.sp else 20.sp), fontWeight = FontWeight.Bold) }
+            RichBody(post.text, post.entities, maxLines = if (expanded || full) Int.MAX_VALUE else 3,
+                onOverflow = { overflow = it }, style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = if (full) 16.sp else 15.sp, lineHeight = if (full) 24.sp else 21.sp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(listOfNotNull(JournalPresentation.readTime(post.text).takeIf { post.kind == "entry" },
+                    JournalPresentation.audience(post.visibility, model.isPerson)).joinToString(" · "),
+                    color = p.ink3, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                if (!full && (overflow || expanded)) TextButton(onClick = {
+                    if (post.kind == "entry" && onThread != null) onThread() else expanded = !expanded
+                }, contentPadding = PaddingValues(start = 8.dp)) { Text(if (expanded) "Less" else "Show more", style = MaterialTheme.typography.labelLarge) }
+            }
+            post.mood?.let { Text(it, color = p.ink2, style = MaterialTheme.typography.bodySmall) }
+            if (post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent, style = MaterialTheme.typography.bodySmall)
+            for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
+            PollCard(chorus, model, post.id, reactMemberId ?: Reply.speaker(model)?.id)
+            if (showActions) JournalActions(post.reactions, reactMemberId?.let(model::member), reactionEnabled,
+                onReply = onThread ?: onReply, onReact = onReact?.let { { it(post) } })
+        }
     }
-    HorizontalDivider(color = p.line, thickness = .5.dp)
+    if (!full) HorizontalDivider(color = p.line, thickness = .5.dp)
 }
 
 /** Server replies can come from other accounts, while own replies remain available offline. */
@@ -465,78 +478,72 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
         try {
             remote = PostThreads.load(dev, postId)
             error = null
-        } catch (e: Exception) {
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) {
             remote = null
-            error = e.message ?: "Could not load replies."
+            error = "Showing entries and replies saved on this device. Connect and refresh to load more."
         }
     }
     val replies = PostThreads.merge(local, remote?.replies.orEmpty())
     val reactions = PostReactions.merge(model.postReactions[postId].orEmpty(), remote?.reactions.orEmpty())
     val reactMember = Reply.speaker(model)?.takeIf { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId }
-    LazyColumn(Modifier.fillMaxSize().background(p.bg),
-        verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            Row(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                ChatIconButton(R.drawable.ic_back, "Back to journal", onClose)
-                Text(if (model.posts.find { it.id == postId }?.kind == "entry") "Journal entry" else "Post and replies", color = p.ink, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
-                ChatIconButton(R.drawable.ic_swap, "Refresh replies") { refresh++ }
-            }
+    val scroll = androidx.compose.foundation.lazy.rememberLazyListState()
+    Column(Modifier.fillMaxSize().background(p.bg)) {
+        Row(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            ChatIconButton(R.drawable.ic_back, "Back to journal", onClose)
+            Text(if (model.posts.find { it.id == postId }?.kind == "entry") "Journal entry" else "Post and replies", color = p.ink,
+                style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+            ChatIconButton(R.drawable.ic_swap, "Refresh replies") { refresh++ }
         }
-        model.posts.find { it.id == postId }?.let { root -> item(key = "root:$postId") {
-            JournalPostCard(root, model, chorus, onReply = onReply, full = true)
-        } } ?: remote?.root?.let { root -> item(key = "root:$postId") {
-            ThreadReplyCard(root, chorus, model, reactMember?.id)
-        } }
-        if (error != null) item { Text("Showing replies on this device. ${error.orEmpty()}", color = p.ink2) }
-        if (reactionError != null) item { Text(reactionError.orEmpty(), color = p.danger) }
-        if (reactions.isNotEmpty()) item { ReactionNames(reactions) }
-        if (reactMember != null) item {
-            val selected = reactions.any { it.emoji == PostReactions.HEART && it.memberId == reactMember.id }
-            TextButton(enabled = !reactionBusy, onClick = {
-                if (reactionBusy) return@TextButton
-                reactionBusy = true; reactionError = null
-                actions.launch {
-                    try {
-                        chorus.create(if (selected) "post.unreact" else "post.react", postId,
-                            PostReactions.payload(postId, reactMember.id))
-                        remote = remote?.copy(reactions = PostReactions.toggle(remote?.reactions.orEmpty(),
-                            reactMember.id, reactMember.shownName))
-                    } catch (e: Exception) { reactionError = e.message ?: "Could not react to this post." }
-                    finally { reactionBusy = false }
+        LazyColumn(Modifier.weight(1f), state = scroll, contentPadding = PaddingValues(bottom = 16.dp)) {
+            model.posts.find { it.id == postId }?.let { root -> item(key = "root:$postId") {
+                JournalPostCard(root, model, chorus, onReply = onReply, full = true, showActions = false)
+            } } ?: remote?.root?.let { root -> item(key = "root:$postId") {
+                ThreadReplyCard(root, chorus, model, reactMember?.id, full = true)
+            } }
+            if (error != null) item { Text(error.orEmpty(), color = p.ink2, style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(20.dp)) }
+            if (reactionError != null) item { Text(reactionError.orEmpty(), color = p.danger, modifier = Modifier.padding(20.dp)) }
+            if (replies.isEmpty()) item { Text(if (remote == null && error == null) "Loading replies…" else "No replies yet.",
+                color = p.ink2, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(20.dp)) }
+            items(replies, key = { it.id }) { reply -> ThreadReplyCard(reply, chorus, model, reactMember?.id) }
+        }
+        HorizontalDivider(color = p.line)
+        Box(Modifier.background(p.surface).padding(horizontal = 20.dp)) {
+            JournalActions(reactions, reactMember, !reactionBusy, onReply = onReply, onReact = reactMember?.let { member -> {
+                val selected = reactions.any { it.emoji == PostReactions.HEART && it.memberId == member.id }
+                if (!reactionBusy) {
+                    reactionBusy = true; reactionError = null
+                    actions.launch {
+                        try {
+                            chorus.create(if (selected) "post.unreact" else "post.react", postId, PostReactions.payload(postId, member.id))
+                            remote = remote?.copy(reactions = PostReactions.toggle(remote?.reactions.orEmpty(), member.id, member.shownName))
+                        } catch (e: Exception) { reactionError = "Could not save the reaction. Try again." }
+                        finally { reactionBusy = false }
+                    }
                 }
-            }) { Text(if (selected) "Remove 💜 reaction" else "React 💜") }
-            Text("Reacting shows this member to post readers right away.", color = p.ink3, fontSize = 12.sp)
+            } })
         }
-        if (replies.isEmpty()) item {
-            Text(if (remote == null && error == null) "Loading replies…" else "No replies yet.", color = p.ink2)
-        }
-        items(replies, key = { it.id }) { reply -> ThreadReplyCard(reply, chorus, model, reactMember?.id) }
-        item { TextButton(onClick = onReply) { Text("Write a reply") } }
     }
 }
 
 @Composable
-private fun ReactionNames(reactions: List<PostReaction>) {
-    val p = LocalChorusPalette.current
-    Text(reactions.joinToString(" · ") { "${it.emoji} ${it.memberName}" }, color = p.ink2)
-}
-
-@Composable
-private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, member: String?) {
+private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, member: String?, full: Boolean = false) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(reply.id) { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(reply.authorNames.joinToString(" & ").ifBlank { "Someone" }, color = p.ink,
-            fontWeight = FontWeight.SemiBold)
-        Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(reply.occurredAt)),
-            color = p.ink3, fontSize = 12.sp)
-        if (reply.cw != null) Text("Content warning: ${reply.cw} · ${if (revealed) "Hide" else "Show"}",
-            color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
+    val names = reply.authorNames.joinToString(" & ").ifBlank { "Someone" }
+    JournalPostFrame(names, ago(reply.occurredAt), null, full, avatar = {
+        Box(Modifier.size(40.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
+            Text(names.take(1), style = MaterialTheme.typography.titleSmall, color = p.ink2)
+        }
+    }) {
+        if (reply.cw != null) TextButton(onClick = { revealed = !revealed }) {
+            Text("Content warning: ${reply.cw} · ${if (revealed) "Hide" else "Show"}")
+        }
         if (reply.cw == null || revealed) {
-            if (reply.title != null) Text(reply.title, color = p.ink, fontWeight = FontWeight.SemiBold)
-            RichBody(reply.text, reply.entities)
+            if (reply.title != null) Text(reply.title, color = p.ink, fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleLarge)
+            RichBody(reply.text, reply.entities, style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp))
             PollCard(chorus, model, reply.id, member, reply.poll, reply.pollTally)
         }
     }

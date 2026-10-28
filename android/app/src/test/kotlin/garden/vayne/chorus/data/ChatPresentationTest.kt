@@ -27,6 +27,16 @@ class ChatPresentationTest {
         assertEquals("Poll · Hidden question", ChatPresentation.preview(message, poll))
     }
 
+    @Test fun listReplyPinAndActionPreviewsCannotRevealBodyOrForwardedSpoilers() {
+        val entities = """[{"type":"spoiler","offset":0,"length":6}]"""
+        val hidden = message.copy(text = "secret plan", entities = entities)
+        assertEquals("▪▪▪▪▪▪ plan", ChatPresentation.preview(hidden))
+        assertEquals("Poll · ▪▪▪▪▪▪ plan", ChatPresentation.preview(hidden, Poll(null, emptyList(), false)))
+        val forward = ChatForward.parse(org.json.JSONArray("""[{"message_id":"source","text":"secret plan","entities":$entities}]""")).single()
+        assertEquals("spoiler", org.json.JSONArray(forward.entities).getJSONObject(0).getString("type"))
+        assertEquals("Forwarded · ▪▪▪▪▪▪ plan", ChatPresentation.preview(hidden.copy(entities = "[]", forward = listOf(forward))))
+    }
+
     @Test fun ownBubblesFollowTheActingMemberWithinTheAccount() {
         assertTrue(ChatPresentation.own(message, "me", "fox"))
         assertFalse(ChatPresentation.own(message, "me", "amaranth"))
@@ -40,10 +50,26 @@ class ChatPresentationTest {
         for (different in listOf(next.copy(authors = listOf("other")), next.copy(accountId = "other"),
             next.copy(channelId = "other"), next.copy(occurredAt = 400_000), next.copy(cw = "CW"),
             next.copy(replyTo = "parent"), next.copy(visibilityMode = "members", visibleMemberIds = setOf("fox")),
-            next.copy(segments = listOf(ChatSegment(0, 5, listOf("fox")))))) {
+            next.copy(segments = listOf(ChatSegment(0, 5, listOf("other")))))) {
             assertFalse(ChatPresentation.grouped(message, different, zone))
         }
         assertFalse(ChatPresentation.grouped(message.copy(occurredAt = 86_399_000), next.copy(occurredAt = 86_401_000), zone))
+    }
+
+    @Test fun coreComposedSingleAuthorMessagesStillGroupWithTheirOrdinarySegment() {
+        val model = Model(listOf(Member("fox", "Fox", null, null, "#aabbcc", emptyList(), null, false)),
+            emptyList(), emptyMap(), emptyList(), null, emptyList())
+        val payload = ChatCompose.payload(model, "c", "fox", "Hello", "", "all", emptySet(), "internal")
+        val rows = payload.getJSONArray("segments")
+        val segments = (0 until rows.length()).map { index -> rows.getJSONObject(index).let { row ->
+            val authors = row.getJSONArray("authors")
+            ChatSegment(row.getInt("offset"), row.getInt("length"), (0 until authors.length()).map { authors.getString(it) })
+        } }
+        assertTrue(segments.isNotEmpty()) // Real core payload, not a hand-written empty fixture.
+        val composed = message.copy(text = payload.getString("text"), segments = segments)
+        assertTrue(ChatPresentation.grouped(composed, composed.copy(id = "next", occurredAt = 2_000), zone))
+        assertFalse(ChatPresentation.grouped(composed, composed.copy(id = "mixed",
+            segments = segments + ChatSegment(0, 5, listOf("someone-else"))), zone))
     }
 
     @Test fun mentionCompletionUsesOnlyExistingTargets() {

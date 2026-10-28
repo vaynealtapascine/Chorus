@@ -1,11 +1,18 @@
 package garden.vayne.chorus.ui
 
-import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -20,7 +27,8 @@ import org.json.JSONArray
 @Composable
 internal fun RichBody(text: String, entities: String, modifier: Modifier = Modifier,
     maxLines: Int = Int.MAX_VALUE, onOverflow: (Boolean) -> Unit = {},
-    style: TextStyle = MaterialTheme.typography.bodyLarge, onPlainClick: () -> Unit = {}) {
+    style: TextStyle = MaterialTheme.typography.bodyLarge, onPlainClick: () -> Unit = {},
+    onLongClick: (() -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val uri = LocalUriHandler.current
     var revealed by rememberSaveable(text, entities) { mutableStateOf(listOf<Int>()) }
@@ -55,14 +63,30 @@ internal fun RichBody(text: String, entities: String, modifier: Modifier = Modif
             }
         }
     }
-    ClickableText(annotated, modifier = modifier, style = style.copy(color = p.ink),
-        maxLines = maxLines, overflow = TextOverflow.Ellipsis, onTextLayout = { onOverflow(it.hasVisualOverflow) },
-        onClick = { offset ->
+    val plainClick by rememberUpdatedState(onPlainClick)
+    val longClick by rememberUpdatedState(onLongClick)
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    fun activate(offset: Int) {
             val spoiler = annotated.getStringAnnotations("spoiler", offset, offset).firstOrNull()?.item?.toIntOrNull()
             if (spoiler != null) revealed = if (spoiler in revealed) revealed - spoiler else revealed + spoiler
             else {
                 val link = annotated.getStringAnnotations("link", offset, offset).firstOrNull()
-                if (link != null) runCatching { uri.openUri(link.item) } else onPlainClick()
+                if (link != null) runCatching { uri.openUri(link.item) } else plainClick()
             }
-        })
+    }
+    BasicText(annotated, modifier = modifier.semantics {
+        if (onLongClick != null) {
+            onClick("Message actions") { plainClick(); true }
+            onLongClick("Message actions") { longClick?.invoke(); true }
+        }
+        customActions = annotated.getStringAnnotations(0, annotated.length).distinctBy { it.tag to it.item }.map { annotation ->
+            CustomAccessibilityAction(if (annotation.tag == "spoiler") "Reveal or hide spoiler" else "Open ${annotation.item}") {
+                activate(annotation.start); true
+            }
+        }
+    }.pointerInput(annotated, onLongClick != null) {
+        detectTapGestures(onLongPress = if (onLongClick != null) ({ longClick?.invoke() }) else null,
+            onTap = { position -> layout?.let { activate(it.getOffsetForPosition(position)) } })
+    }, style = style.copy(color = p.ink), maxLines = maxLines, overflow = TextOverflow.Ellipsis,
+        onTextLayout = { layout = it; onOverflow(it.hasVisualOverflow) })
 }

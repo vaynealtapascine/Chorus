@@ -1,6 +1,11 @@
 package garden.vayne.chorus.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -299,29 +304,30 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
     onReply: ((SharedPost) -> Unit)? = null, onReact: (SharedPost) -> Unit = {}) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().background(p.surface2).padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("${post.authorNames.joinToString(" & ").ifBlank { accountName }} · ${post.kind}",
-            color = p.ink, fontWeight = FontWeight.SemiBold)
-        Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(post.occurredAt)),
-            color = p.ink3, fontSize = 12.sp)
-        if (post.cw != null) Text("Content warning: ${post.cw} · ${if (revealed) "Hide" else "Show"}",
-            color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
+    var expanded by rememberSaveable(post.id) { mutableStateOf(false) }
+    var overflow by remember(post.id) { mutableStateOf(false) }
+    val names = post.authorNames.joinToString(" & ").ifBlank { accountName }
+    JournalPostFrame(names, ago(post.occurredAt), null, avatar = {
+        Box(Modifier.size(40.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
+            Text(names.take(1), color = p.ink2, style = MaterialTheme.typography.titleSmall)
+        }
+    }) {
+        if (post.cw != null) TextButton(onClick = { revealed = !revealed }) {
+            Text("Content warning: ${post.cw} · ${if (revealed) "Hide" else "Show"}")
+        }
         if (post.cw == null || revealed) {
-            if (post.title != null) Text(post.title, color = p.ink, fontWeight = FontWeight.SemiBold)
-            Text(post.text, color = p.ink)
+            if (post.title != null) Text(post.title, color = p.ink, fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp, lineHeight = 20.sp))
+            RichBody(post.text, post.entities, maxLines = if (expanded) Int.MAX_VALUE else 3,
+                onOverflow = { overflow = it }, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp))
+            if (overflow || expanded) TextButton(onClick = {
+                if (post.kind == "entry" && onThread != null) onThread(post) else expanded = !expanded
+            }) { Text(if (expanded) "Show less" else "Show more") }
             PollCard(chorus, model, post.id, reactMemberId ?: Reply.speaker(model)?.id, post.poll, post.pollTally)
             for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
-            if (post.reactions.isNotEmpty()) Text(post.reactions.joinToString(" · ") { "${it.emoji} ${it.memberName}" }, color = p.ink2)
-            if (onThread != null) TextButton(enabled = enabled, onClick = { onThread(post) }) { Text("Thread") }
-            if (reactMemberId != null) {
-                val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == reactMemberId }
-                TextButton(enabled = enabled, onClick = { onReact(post) }) {
-                    Text(if (selected) "Remove 💜 reaction" else "React 💜")
-                }
-                Text("Reacting shows this member to post readers right away.", color = p.ink3, fontSize = 12.sp)
-                if (onReply != null) TextButton(enabled = enabled, onClick = { onReply(post) }) { Text("Reply") }
-            }
+            JournalActions(post.reactions, reactMemberId?.let(model::member), enabled,
+                onReply = onThread?.let { { it(post) } } ?: onReply?.let { { it(post) } },
+                onReact = reactMemberId?.let { { onReact(post) } })
         }
     }
 }

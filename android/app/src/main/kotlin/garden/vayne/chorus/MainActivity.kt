@@ -100,9 +100,9 @@ class MainActivity : ComponentActivity() {
         }
         garden.vayne.chorus.data.Push.ensure(this)
         garden.vayne.chorus.data.Updater.schedule(this)
-        setContent { ChorusTheme { App(chorus, inviteLink.value, sharedDraft.value,
+        setContent { InspectionOverrides(intent) { ChorusTheme { App(chorus, inviteLink.value, sharedDraft.value,
             onShareDismissed = { sharedDraft.value = null }, newEntryRequest = newEntryRequest.value,
-            onNewEntryConsumed = { newEntryRequest.value = null }) } }
+            onNewEntryConsumed = { newEntryRequest.value = null }) } } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -137,6 +137,7 @@ private enum class Tab(val label: String, val icon: AppIcon) { Home("Fronting", 
 private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     onShareDismissed: () -> Unit, newEntryRequest: Long?, onNewEntryConsumed: () -> Unit) {
     val p = LocalChorusPalette.current
+    val motion = garden.vayne.chorus.ui.LocalChorusMotionOverride.current ?: android.animation.ValueAnimator.areAnimatorsEnabled()
     val expanded = LocalConfiguration.current.screenWidthDp >= 840
     val status by chorus.status.collectAsState()
     val model by chorus.model.collectAsState()
@@ -145,6 +146,11 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var chatChannel by rememberSaveable { mutableStateOf<String?>(null) }
     var chatSearchHit by remember { mutableStateOf<SearchDocument?>(null) }
     var chatStageCapture by remember { mutableStateOf(false) }
+    var chatFocused by rememberSaveable { mutableStateOf(false) }
+    var journalFocused by rememberSaveable { mutableStateOf(false) }
+    val destinationState = androidx.compose.runtime.key(chorus.device?.accountId) {
+        androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    }
     var journalReplyPost by rememberSaveable { mutableStateOf<String?>(null) }
     var journalOpenPost by rememberSaveable { mutableStateOf<String?>(null) }
     var chatShare by remember { mutableStateOf<SharedDraft?>(null) }
@@ -206,7 +212,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 destinations.forEach { t -> NavigationRailItem(selected = t == activeTab,
                     onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = { Text(t.label) }) }
             }
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f).navigationBarsPadding()) {
             val chatOwnChrome = activeTab in listOf(Tab.Chat, Tab.Journal) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
             if (chatOwnChrome && !chatStageCapture) Box(Modifier.fillMaxWidth().background(p.surface).statusBarsPadding())
             if (!chatStageCapture && !chatOwnChrome) Row(
@@ -257,19 +263,23 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 else if (frontsOpen && !model.isPerson) FrontsScreen(chorus, model) { frontsOpen = false }
                 else if (settingsOpen) SettingsScreen(chorus, model) { insightsOpen = true; settingsOpen = false }
                 else androidx.compose.animation.Crossfade(targetState = activeTab,
-                    animationSpec = androidx.compose.animation.core.tween(120), label = "Main destination") { shownTab ->
+                    animationSpec = androidx.compose.animation.core.tween(if (motion) 120 else 0), label = "Main destination") { shownTab ->
+                destinationState.SaveableStateProvider(shownTab.name) {
                 when (shownTab) {
                     Tab.Home -> Home(chorus, model, onFronts = { frontsOpen = true })
                     Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
                         onStageCapture = { chatStageCapture = it }, onDismissSearchHit = { chatSearchHit = null },
                         sharedDraft = chatShare, sharedChannel = sharedChannel,
-                        onShareConsumed = { chatShare = null; sharedChannel = null }, onSearch = { searchOpen = true })
+                        onShareConsumed = { chatShare = null; sharedChannel = null }, onSearch = { searchOpen = true },
+                        active = shownTab == activeTab, onFocusedRoute = { chatFocused = it },
+                        onOpenConsumed = { chatSpace = null; chatChannel = null })
                     Tab.Journal -> Journal(chorus, model, journalReplyPost,
                         onExternalReplyConsumed = { journalReplyPost = null },
                         externalOpenPost = journalOpenPost,
                         onExternalOpenConsumed = { journalOpenPost = null },
                         sharedDraft = journalShare, onShareConsumed = { journalShare = null },
-                        externalNewEntry = journalNewEntry, onExternalNewEntryConsumed = { journalNewEntry = null })
+                        externalNewEntry = journalNewEntry, onExternalNewEntryConsumed = { journalNewEntry = null },
+                        active = shownTab == activeTab, onFocusedRoute = { journalFocused = it })
                     Tab.People -> People(chorus, model,
                         onOpenChat = { spaceId -> chatSpace = spaceId; chatChannel = null; chatSearchHit = null; tab = Tab.Chat },
                         onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal })
@@ -280,17 +290,29 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         onSearch = { searchOpen = true }, onLink = { linking = true })
                 }
                 }
+                }
             }
-            // Give the composer the IME inset while typing; destinations return on dismiss.
-            if (!expanded && sharedDraft == null && !chatStageCapture && !WindowInsets.isImeVisible) NavigationBar(
-                containerColor = p.surface, tonalElevation = 0.dp,
+            // The bar and viewport resize together during push/pop; focused routes own their
+            // chrome. The shell applies the system navigation inset exactly once.
+            val focused = !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen &&
+                ((activeTab == Tab.Chat && chatFocused) || (activeTab == Tab.Journal && journalFocused))
+            androidx.compose.animation.AnimatedVisibility(
+                visible = !expanded && sharedDraft == null && !chatStageCapture && !WindowInsets.isImeVisible && !focused,
+                enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(if (motion) 220 else 0)) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(if (motion) 180 else 0)),
+                exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(if (motion) 220 else 0)) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(if (motion) 100 else 0))) {
+            NavigationBar(
+                containerColor = p.surface, tonalElevation = 0.dp, windowInsets = WindowInsets(0, 0, 0, 0),
             ) {
                 destinations.forEach { t -> NavigationBarItem(
                     selected = (t == activeTab || (t == Tab.More && activeTab !in destinations)) && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen,
-                    onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = { Text(t.label, maxLines = 1) },
+                    onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = {
+                        Text(t.label, fontSize = 11.sp, lineHeight = 16.sp, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                    },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = p.accent, selectedTextColor = p.accent,
                         indicatorColor = p.accentSoft, unselectedIconColor = p.ink3, unselectedTextColor = p.ink3),
                 ) }
+            }
             }
             }
 

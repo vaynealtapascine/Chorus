@@ -270,6 +270,9 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   - A space you aren't in is a 404.
 Channel list items also carry nullable `avatar_blob` (D-088). Fetch that hash through the ordinary
 blob endpoint; current channel visibility, including thread-parent privacy, gates image reads.
+Updated `GET /server` responses include `capabilities:["channel_images"]`. Clients must gate image
+changes on that capability; older responses omit it. Omit `avatar_blob` on an image-less create,
+since schema-15 servers reject the unknown field even if its value is null.
 
 - **Messages** (`messages.rs`, 2026-09-24): `GET /spaces/{id}/channels`,
   `GET /channels/{id}/messages?before=&after=&around=&limit=` (epoch ms, exclusive; `around` is a

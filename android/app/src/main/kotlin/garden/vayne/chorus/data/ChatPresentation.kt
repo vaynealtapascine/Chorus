@@ -30,12 +30,16 @@ object ChatPresentation {
     fun preview(message: ChatMessage?, poll: Poll? = null): String = when {
         message == null -> "No messages yet"
         message.cw != null -> "Content warning: ${message.cw}"
-        poll != null -> "Poll" + (poll.question?.takeIf { it.isNotBlank() } ?: message.text.takeIf { it.isNotBlank() })?.let { " · " + it.replace('\n', ' ') }.orEmpty()
-        message.text.isBlank() && message.forward.isNotEmpty() -> "Forwarded · " + message.forward.first().text.replace('\n', ' ')
-        message.text.isNotBlank() -> message.text.replace('\n', ' ')
+        poll != null -> "Poll" + (poll.question?.takeIf { it.isNotBlank() }
+            ?: message.text.takeIf { it.isNotBlank() }?.let { previewText(it, message.entities) })?.let { " · " + it.replace('\n', ' ') }.orEmpty()
+        message.forward.isNotEmpty() -> message.forward.first().let { "Forwarded · " + previewText(it.text, it.entities) }
+        message.text.isNotBlank() -> previewText(message.text, message.entities)
         message.attachments.isNotEmpty() -> "Attachment · ${message.attachments.first().filename}"
         else -> "Message"
     }
+
+    private fun previewText(text: String, entities: String): String =
+        RichTextPresentation.prepare(text, entities, emptyList()).text.replace('\n', ' ')
 
     fun own(message: ChatMessage, accountId: String, speakerId: String?): Boolean =
         speakerId != null && speakerId in message.authors &&
@@ -47,7 +51,8 @@ object ChatPresentation {
         return older.channelId == newer.channelId && older.authors == newer.authors && older.authors.isNotEmpty() &&
             older.accountId == newer.accountId && older.visibilityMode == newer.visibilityMode &&
             older.visibleMemberIds == newer.visibleMemberIds && older.cw == null && newer.cw == null &&
-            older.replyTo == null && newer.replyTo == null && older.segments.isEmpty() && newer.segments.isEmpty() &&
+            older.replyTo == null && newer.replyTo == null &&
+            older.segments.all { it.authors == older.authors } && newer.segments.all { it.authors == newer.authors } &&
             newer.occurredAt - older.occurredAt in 0..300_000 && day(older.occurredAt, zone) == day(newer.occurredAt, zone)
     }
 

@@ -48,6 +48,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Button
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -140,6 +141,9 @@ private data class StageRows(val channelId: String, val accountId: String, val s
     val viewingAs: String?, val front: List<Entry>, val window: ChannelWindow)
 private data class PendingPrivateReply(val message: ChatMessage, val channelId: String? = null,
     val spaceId: String? = null, val speakerId: String? = null)
+private data class ChatPaneSnapshot(val channel: garden.vayne.chorus.data.ChatChannel?, val space: ChatSpace?,
+    val messages: List<ChatMessage>, val library: List<ChatMessage>, val parent: ChatMessage?,
+    val parentChannel: garden.vayne.chorus.data.ChatChannel?, val reading: ChatReadingPosition)
 
 /** Local chat view: internal channels, shared spaces and account DMs use the same projection. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -148,7 +152,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     requestedChannel: String? = null, searchHit: SearchDocument? = null,
     onStageCapture: (Boolean) -> Unit = {},
     onDismissSearchHit: () -> Unit = {}, sharedDraft: SharedDraft? = null,
-    sharedChannel: String? = null, onShareConsumed: () -> Unit = {}, onSearch: () -> Unit = {}) {
+    sharedChannel: String? = null, onShareConsumed: () -> Unit = {}, onSearch: () -> Unit = {},
+    active: Boolean = true, onFocusedRoute: (Boolean) -> Unit = {}, onOpenConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val heldMessages by chorus.heldMessages.collectAsState()
     val syncStatus by chorus.status.collectAsState()
@@ -160,35 +165,38 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     // a message to bring into view (from chat info), consumed by the list
     var jumpTo by remember { mutableStateOf<String?>(null) }
     val expanded = LocalConfiguration.current.screenWidthDp >= 840
-    LaunchedEffect(requestedSpace, requestedChannel, searchHit?.id, sharedDraft?.id) {
-        if (requestedSpace != null || requestedChannel != null || searchHit != null || sharedDraft != null) conversationOpen = true
-    }
-
-
     var selectedSpace by rememberSaveable { mutableStateOf("") }
-    LaunchedEffect(requestedSpace) {
-        if (requestedSpace != null) selectedSpace = requestedSpace
-    }
     var selectedChannel by rememberSaveable { mutableStateOf("") }
-    LaunchedEffect(requestedChannel) {
-        if (requestedChannel != null) selectedChannel = requestedChannel
+    LaunchedEffect(requestedSpace, requestedChannel, searchHit?.id, sharedDraft?.id) {
+        if (requestedSpace != null || requestedChannel != null || searchHit != null || sharedDraft != null) {
+            if (requestedSpace != null) selectedSpace = requestedSpace
+            if (requestedChannel != null) selectedChannel = requestedChannel
+            else if (requestedSpace != null) selectedChannel = ""
+            conversationOpen = true
+            if (requestedSpace != null || requestedChannel != null) onOpenConsumed()
+        }
     }
+    val space = model.spaces.find { it.id == selectedSpace } ?: model.spaces.firstOrNull()
+    val channels = model.channels.filter { it.spaceId == space?.id }
+    val channel = channels.find { it.id == selectedChannel } ?: channels.firstOrNull { it.kind != "thread" }
+    val drafts = rememberSaveable(saver = ChatDraftsSaver) { androidx.compose.runtime.mutableStateMapOf<String, ChatDraft>() }
+    val composer = drafts.getOrPut(channel?.id ?: selectedChannel) { ChatDraft() }
     var viewingAs by rememberSaveable { mutableStateOf<String?>(null) }
-    var selectedAuthor by rememberSaveable { mutableStateOf("") }
-    var draft by rememberSaveable { mutableStateOf("") }
-    var cw by rememberSaveable { mutableStateOf("") }
+    var selectedAuthor by composer.author
+    var draft by composer.text
+    var cw by composer.cw
     // F5.7: a thread reply can also land in the parent channel, as a reply to the thread's parent
     var alsoSend by rememberSaveable { mutableStateOf(false) }
     // an optional poll on the next message (D-081)
-    var pollOn by rememberSaveable { mutableStateOf(false) }
-    val pollOptions = remember { mutableStateListOf("", "") }
-    var pollMultiple by rememberSaveable { mutableStateOf(false) }
+    var pollOn by composer.poll
+    val pollOptions = composer.options
+    var pollMultiple by composer.multiple
     var moreOpen by rememberSaveable { mutableStateOf(false) }
     var speakerSettingsOpen by rememberSaveable { mutableStateOf(false) }
     var followNext by remember { mutableStateOf(false) }
-    var audience by rememberSaveable { mutableStateOf("all") }
-    var visibleTo by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
-    var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
+    var audience by composer.audience
+    var visibleTo by composer.visibleTo
+    var replyTo by composer.replyTo
     var carriedReply by remember { mutableStateOf<ChatMessage?>(null) }
     var pendingPrivateReply by remember { mutableStateOf<PendingPrivateReply?>(null) }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
@@ -197,7 +205,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var deleting by remember { mutableStateOf<ChatMessage?>(null) }
     var undoDelete by remember { mutableStateOf<ChatMessage?>(null) }
     var notifyOpen by remember { mutableStateOf(false) }
-    var busy by rememberSaveable { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var directory by remember { mutableStateOf<Map<String, SpaceInfo>>(emptyMap()) }
     var connections by remember { mutableStateOf<List<SpaceAccount>>(emptyList()) }
@@ -210,7 +218,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var invitedAccounts by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var staging by rememberSaveable { mutableStateOf(false) }
     var stageSelection by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
-    BackHandler(conversationOpen && !staging) { conversationOpen = false }
+    BackHandler(active && conversationOpen && !staging && !infoOpen) { conversationOpen = false }
+    androidx.compose.runtime.SideEffect { if (active) onFocusedRoute(conversationOpen || infoOpen || staging) }
     var capturing by rememberSaveable { mutableStateOf(false) }
     var stageLimit by rememberSaveable { mutableStateOf(100) }
     var stageWindow by remember { mutableStateOf<StageRows?>(null) }
@@ -218,7 +227,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val actions = rememberCoroutineScope()
     val ctx = LocalContext.current
     // picked files waiting to be sent: staged (copied, hashed) only on send
-    val attachments = remember { mutableStateListOf<PendingAttachment>() }
+    val attachments = composer.files
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         for (uri in uris) attachments.add(PendingAttachment.of(ctx, uri))
         if (uris.isNotEmpty()) moreOpen = false
@@ -236,7 +245,6 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             error = "Chat details could not be loaded. Open Chat again to retry."
         }
     }
-    val space = model.spaces.find { it.id == selectedSpace } ?: model.spaces.firstOrNull()
     LaunchedEffect(space?.id, chorus.device?.session, refresh) {
         foreignAuthors = emptyMap()
         val dev = chorus.device ?: return@LaunchedEffect
@@ -244,8 +252,6 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         try { foreignAuthors = Spaces.authorCards(dev, id) }
         catch (_: Exception) { /* Own members still have projection names; retry on next refresh. */ }
     }
-    val channels = model.channels.filter { it.spaceId == space?.id }
-    val channel = channels.find { it.id == selectedChannel } ?: channels.firstOrNull { it.kind != "thread" }
     val threads = remember(model) { ChatThreads.summaries(model) }
     val threadParentChannel = remember(model, channel?.id) { channel?.takeIf { it.kind == "thread" }?.let { ChatThreads.parentChannel(model, it) } }
     // the message a thread hangs from, as this reader may see it (older ones come from the replica)
@@ -260,9 +266,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 accountVisible(it, s.kind, chorus.device?.accountId.orEmpty())
         } ?: chorus.stageWindow(home.id, 10_000, s.kind, model.current, viewingAs).messages.find { it.id == thread.parentMessageId }
     }
-    BackHandler(conversationOpen && channel?.kind == "thread" && threadParentChannel != null) {
+    BackHandler(active && conversationOpen && !infoOpen && channel?.kind == "thread" && threadParentChannel != null) {
         threadParentChannel?.let { selectedChannel = it.id }
     }
+    BackHandler(active && infoOpen) { infoOpen = false }
     LaunchedEffect(sharedDraft?.id, channel?.id, chorus.device?.accountId) {
         val incoming = sharedDraft ?: return@LaunchedEffect
         if (channel?.id != sharedChannel || chorus.device == null) return@LaunchedEffect
@@ -375,11 +382,12 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
 
     LaunchedEffect(channel?.id, space?.id, messages.lastOrNull()?.id, readMarks,
         model.current, model.accountPrefs.readPerMember, chorus.device?.accountId, staging,
-        model.namedFronts, model.speakerDefaults[channel?.id], conversationOpen, expanded) {
+        model.namedFronts, model.speakerDefaults[channel?.id], conversationOpen, expanded, active, requestedSpace, requestedChannel) {
         val latest = messages.lastOrNull() ?: return@LaunchedEffect
         val chosen = channel ?: return@LaunchedEffect
         val home = space ?: return@LaunchedEffect
-        if (staging || (!conversationOpen && !expanded) || chorus.device == null) return@LaunchedEffect
+        if (!active || requestedSpace != null || requestedChannel != null || staging ||
+            (!conversationOpen && !expanded) || chorus.device == null) return@LaunchedEffect
         try {
             for (reader in ReadTracking.readersFor(model, chosen.id, model.accountPrefs.readPerMember)) {
                 if (!ReadTracking.needsMark(latest.occurredAt, latest.id, readMarks, reader)) continue
@@ -399,10 +407,12 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             } }
         }
     }
+    var previousChannel by rememberSaveable { mutableStateOf(channel?.id) }
     LaunchedEffect(channel?.id, chorus.device?.accountId) {
+        if (previousChannel == channel?.id) return@LaunchedEffect
+        previousChannel = channel?.id
         editingMessage = null
-        selectedAuthor = ""
-        replyTo = null
+        alsoSend = false
         carriedReply = null
         speakerSettingsOpen = false
         infoOpen = false
@@ -430,7 +440,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
     LaunchedEffect(capturing) { onStageCapture(capturing) }
     DisposableEffect(Unit) { onDispose { onStageCapture(false) } }
-    BackHandler(staging) {
+    BackHandler(active && staging) {
         if (capturing) capturing = false else staging = false
     }
     if (staging && channel != null) {
@@ -468,8 +478,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
     val openChat: (ChatListRow) -> Unit = { row ->
         selectedSpace = row.space.id; selectedChannel = row.channel.id; conversationOpen = true
-        replyTo = null; carriedReply = null; pendingPrivateReply = null; moreOpen = false
-        audience = "all"; visibleTo = emptyList()
+        carriedReply = null; pendingPrivateReply = null; moreOpen = false
     }
     // a snapshot plus copies of its files in the target scope, then the reader follows it there
     fun forward(message: ChatMessage, row: ChatListRow) {
@@ -535,19 +544,52 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             finally { busy = false }
         }
     }
-    val messageListState = rememberLazyListState()
-    var positioned by remember(channel?.id, readerId) { mutableStateOf(false) }
+    val readingPositions = rememberSaveable(saver = ChatReadPositionsSaver) {
+        androidx.compose.runtime.mutableStateMapOf<String, ChatReadingPosition>()
+    }
+    val idleReading = remember { ChatReadingPosition(androidx.compose.foundation.lazy.LazyListState(), null) }
+    val reading = if (!conversationOpen && !infoOpen && !expanded) idleReading else readingPositions.getOrPut("${channel?.id}:$readerId") {
+        val initial = messages.asReversed().indexOfFirst { it.id == firstUnread }.coerceAtLeast(0)
+        ChatReadingPosition(androidx.compose.foundation.lazy.LazyListState(initial, 0), messages.lastOrNull()?.id)
+    }
     val typing by chorus.typing.collectAsState()
     val typingLabel = if (syncStatus == Status.Live) garden.vayne.chorus.data.TypingText.label(model, typing[channel?.id].orEmpty()) else null
-    val chatRoute = if (expanded) "wide" else if (infoOpen) "info" else if (conversationOpen) "conversation" else "list"
-    ChorusScene(chatRoute, if (infoOpen) 2 else if (conversationOpen) 1 else 0) { pane ->
+    val chatRoute = if (expanded) "wide/${channel?.id}" else if (infoOpen) "info/${channel?.id}" else if (conversationOpen) "conversation/${channel?.id}" else "list"
+    val snapshots = remember { mutableMapOf<String, ChatPaneSnapshot>() }
+    val latestRoute by androidx.compose.runtime.rememberUpdatedState(chatRoute)
+    snapshots[chatRoute] = ChatPaneSnapshot(channel, space, messages, library, threadParent, threadParentChannel, reading)
+    val depth = if (expanded) 1 else (if (conversationOpen) 1 else 0) + (if (channel?.kind == "thread") 1 else 0) + (if (infoOpen) 1 else 0)
+    ChorusScene(chatRoute, depth) { shown ->
+    DisposableEffect(shown) { onDispose { if (shown != latestRoute) snapshots.remove(shown) } }
+    val pane = shown.substringBefore('/')
+    val currentPane = active && shown == chatRoute
+    val snapshot = snapshots.getValue(shown)
+    // The exiting pane keeps its channel, messages and scroll state until its animation ends.
+    val channel = snapshot.channel
+    val space = snapshot.space
+    val messages = snapshot.messages
+    val library = snapshot.library
+    val threadParent = snapshot.parent
+    val threadParentChannel = snapshot.parentChannel
+    val paneComposer = drafts[channel?.id] ?: composer
+    var draft by paneComposer.text
+    var selectedAuthor by paneComposer.author
+    var cw by paneComposer.cw
+    var audience by paneComposer.audience
+    var visibleTo by paneComposer.visibleTo
+    var replyTo by paneComposer.replyTo
+    var pollOn by paneComposer.poll
+    var pollMultiple by paneComposer.multiple
+    val pollOptions = paneComposer.options
+    val attachments = paneComposer.files
+    val defaultAuthorId = channel?.id?.let { ChatSpeaker.pick(model, it) }
+    val replySpeakerId = selectedAuthor.takeIf { id -> model.active.any { it.id == id } } ?: defaultAuthorId
     Row(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         if (expanded || pane == "list") ChatListPane(model, listRows, if (expanded) channel?.id else null, readerName,
             openChat, { spaceAction = "new" },
             { switchOpen = true }, onSearch, if (expanded) Modifier.width(240.dp) else Modifier.weight(1f), readerId = readerId, onNewChannel = { editChannel = false; channelEditor = true })
         if (expanded) VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
         if (pane == "info" && !expanded && channel != null && space != null) {
-            BackHandler { infoOpen = false }
             ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; onSearch() },
                 { infoOpen = false }, model.accountPrefs.channelNotify(channel.id, space.kind), ::setNotify,
                 onShowMessage = { infoOpen = false; jumpTo = it }, modifier = Modifier.weight(1f))
@@ -559,12 +601,12 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             } else if (!expanded) ChatIconButton(R.drawable.ic_back, "Back to chats") { conversationOpen = false }
             channel?.let { ChannelDisc(it, member = threadParent?.authors?.firstOrNull()?.let(model::member).takeIf { inThread }, size = 36.dp) }
             Column(Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 10.dp)) {
-                Text(if (inThread) "Thread" else channel?.name ?: "Chat", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
+                Text(if (inThread) "Thread" else channel?.name ?: "Chat", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(typingLabel ?: if (inThread && syncStatus == Status.Live) "in ${threadParentChannel?.name ?: "a channel"} · ${ChatThreads.repliesLabel(messages.size)}"
                     else ChatPresentation.subtitle(syncStatus != Status.Live, readerName, unreadCount,
                     space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }.orEmpty()),
-                    color = if (typingLabel != null || syncStatus != Status.Live) p.accent else p.ink3, fontSize = 12.sp, maxLines = 2)
+                    color = if (typingLabel != null || syncStatus != Status.Live) p.accent else p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
             }
             ChatIconButton(R.drawable.ic_search, "Search messages", onSearch)
             Box {
@@ -599,14 +641,14 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 Box(Modifier.width(2.dp).height(32.dp).background(p.accent))
                 Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                     Text(if (pins.size > 1) "Pinned message ${pinStep % pins.size + 1} of ${pins.size}" else "Pinned message",
-                        color = p.accent, fontSize = 12.sp)
-                    Text(ChatPresentation.preview(shown), color = p.ink2, fontSize = 13.sp, maxLines = 1)
+                        color = p.accent, fontSize = 12.sp, lineHeight = 16.sp)
+                    Text(ChatPresentation.preview(shown), color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1)
                 }
                 ChatIcon(R.drawable.ic_pin, tint = p.ink3)
             }
             HorizontalDivider(color = p.line)
         }
-        if (error != null) Text(error.orEmpty(), color = p.danger, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+        if (error != null) Text(error.orEmpty(), color = p.danger, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(16.dp))
         if (space == null) Text("No spaces yet. Start a chat with someone you follow.", color = p.ink2, modifier = Modifier.padding(24.dp))
         else {
         if (searchHit != null && searchHit.channelId == channel?.id) {
@@ -630,26 +672,26 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             readerId?.let(model::member)?.let { ChatAvatar(it, 24.dp) }
             Text("Reading as $readerName · " + (catchUp.mark?.let { "read through ${ChatPresentation.dateLabel(it.at).lowercase()}" }
-                ?: "no saved read position"), color = p.ink2, fontSize = 12.sp, modifier = Modifier.weight(1f))
-            TextButton(onClick = { readerOpen = true }) { Text("Change", fontSize = 12.sp) }
+                ?: "no saved read position"), color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = { readerOpen = true }) { Text("Change", fontSize = 12.sp, lineHeight = 16.sp) }
         }
         if (pendingPrivateReply != null) Text("Opening private chat · Cancel", color = p.accent,
             modifier = Modifier.clickable { pendingPrivateReply = null }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart).padding(horizontal = 16.dp))
         // A reversed list keeps its place on the message that was newest, so a new one would land
         // just out of view: follow it while the reader is at (or near) the bottom, and after sending.
-        val listState = messageListState
+        val listState = snapshot.reading.list
         val newest = messages.lastOrNull()?.id
-        LaunchedEffect(newest, readerId) {
-            if (!positioned && readerName != null && firstUnread != null) {
-                val at = messages.asReversed().indexOfFirst { it.id == firstUnread }
-                if (at >= 0) listState.scrollToItem(at)
-            } else if (newest != null && (listState.firstVisibleItemIndex <= 2 || followNext)) listState.animateScrollToItem(0)
-            positioned = true
+        LaunchedEffect(newest, readerId, currentPane) {
+            if (!currentPane) return@LaunchedEffect
+            if (newest != null && ((newest != snapshot.reading.newest && listState.firstVisibleItemIndex <= 2) || followNext))
+                listState.animateScrollToItem(0)
+            snapshot.reading.newest = newest
             followNext = false
         }
         // after the opening position, so coming back from chat info lands on the chosen message
-        LaunchedEffect(jumpTo, positioned) {
-            val id = jumpTo?.takeIf { positioned } ?: return@LaunchedEffect
+        LaunchedEffect(jumpTo, currentPane) {
+            if (!currentPane) return@LaunchedEffect
+            val id = jumpTo ?: return@LaunchedEffect
             val at = messages.asReversed().indexOfFirst { it.id == id }
             if (at >= 0) listState.animateScrollToItem(at)
             jumpTo = null
@@ -664,11 +706,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 val groupEnd = !ChatPresentation.grouped(message, newer) || newer?.id == firstUnread
                 Column(Modifier.padding(top = if (groupStart) 8.dp else 0.dp)) {
                 if (readerName != null && message.id == firstUnread) Text("${unreadCount} unread for $readerName",
-                    color = p.accent, fontSize = 12.sp, textAlign = TextAlign.Center,
+                    color = p.accent, fontSize = 12.sp, lineHeight = 16.sp, textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).background(p.surface).padding(vertical = 6.dp))
                 if (older == null || ChatPresentation.day(older.occurredAt) != ChatPresentation.day(message.occurredAt)) {
                     Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-                        Text(ChatPresentation.dateLabel(message.occurredAt), color = p.ink3, fontSize = 12.sp,
+                        Text(ChatPresentation.dateLabel(message.occurredAt), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
                             modifier = Modifier.background(p.surface, RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 4.dp))
                     }
                 }
@@ -701,9 +743,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     if (parent != null) ChatMessageCard(parent, model, foreignAuthors, chorus, emptyList(), null,
                         actingMemberId = replySpeakerId, onReply = {}, onReplyPrivately = null, onEdit = null,
                         reactions = model.messageReactions[parent.id].orEmpty(), interactive = false, onStage = {})
-                    else Text("Original message unavailable in this view", color = p.ink3, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+                    else Text("Original message unavailable in this view", color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(16.dp))
                     Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-                        Text(ChatThreads.repliesLabel(messages.size), color = p.ink3, fontSize = 12.sp,
+                        Text(ChatThreads.repliesLabel(messages.size), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
                             modifier = Modifier.background(p.surface, RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 4.dp))
                     }
                 }
@@ -722,7 +764,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
         undoDelete?.let { gone ->
             Row(Modifier.fillMaxWidth().background(p.surface2).padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Message deleted", color = p.ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Text("Message deleted", color = p.ink, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = { delete(gone, restore = true) }) { Text("Undo") }
             }
         }
@@ -744,14 +786,14 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             if (draft.isNotBlank() && currentPreview != null) {
                 Text(if (currentPreview.authors.isEmpty()) "Choose a sender, or type their symbols followed by a space."
                     else "As " + currentPreview.authors.joinToString(" & ") { model.member(it)?.shownName ?: "Someone" },
-                    color = p.ink2, fontSize = 13.sp)
+                    color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp)
             }
             val mentionStart = ChatPresentation.frontMentionStart(draft)
             if (mentionStart != null) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
                 draft = draft.substring(0, mentionStart) + "@front "
             }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("@front", color = p.accent, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                Text("Channel front when it arrives", color = p.ink3, fontSize = 12.sp)
+                Text("Channel front when it arrives", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
             }
             val target = messages.find { it.id == replyTo } ?: carriedReply?.takeIf { it.id == replyTo }
             if (target != null) {
@@ -760,8 +802,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     ChatIcon(R.drawable.ic_reply, tint = p.accent)
                     Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
                         val name = target.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
-                        Text(if (carriedReply?.id == replyTo) "Private reply to $name" else "Reply to $name", color = p.accent, fontSize = 13.sp)
-                        Text(ChatPresentation.preview(target), color = p.ink3, fontSize = 13.sp, maxLines = 2)
+                        Text(if (carriedReply?.id == replyTo) "Private reply to $name" else "Reply to $name", color = p.accent, fontSize = 13.sp, lineHeight = 18.sp)
+                        Text(ChatPresentation.preview(target), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
                     }
                     ChatIconButton(R.drawable.ic_close, "Cancel reply") { replyTo = null; carriedReply = null }
                 }
@@ -777,7 +819,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChatIcon(R.drawable.ic_attach)
-                    Text(a.name, color = p.ink, fontSize = 13.sp, maxLines = 1, modifier = Modifier.weight(1f))
+                    Text(a.name, color = p.ink, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1, modifier = Modifier.weight(1f))
                     ChatChip(if (a.spoiler) "Spoiler ✓" else "Spoiler", a.spoiler) { attachments[i] = a.copy(spoiler = !a.spoiler) }
                     ChatIconButton(R.drawable.ic_close, "Remove ${a.name}") { attachments.removeAt(i) }
                 }
@@ -789,8 +831,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             if (moreOpen) ModalBottomSheet(onDismissRequest = { moreOpen = false }, containerColor = p.surface) {
               Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Add to message", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                Text("Attach images or files", color = p.accent, fontSize = 14.sp,
+                Text("Add to message", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 24.sp)
+                Text("Attach images or files", color = p.accent, fontSize = 14.sp, lineHeight = 20.sp,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { picker.launch("*/*") }.wrapContentSize(Alignment.CenterStart))
                 OutlinedTextField(cw, { cw = it }, placeholder = { Text("Content warning (optional)") },
                     modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -814,18 +856,18 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     }
                 }
                 if (space.kind != "internal" && audience == "all") {
-                    Text("Everyone in this space can see who is speaking.", color = p.ink3, fontSize = 12.sp)
+                    Text("Everyone in this space can see who is speaking.", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
                 }
                 if (!model.isPerson) {
                     Text(if (speakerSettingsOpen) "Advanced · Hide speaker default" else "Advanced · Speaker default ›",
-                        color = p.accent, fontSize = 13.sp,
+                        color = p.accent, fontSize = 13.sp, lineHeight = 18.sp,
                         modifier = Modifier.clickable { speakerSettingsOpen = !speakerSettingsOpen }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
                     if (speakerSettingsOpen) {
                         val setting = model.speakerDefaults[channel.id] ?: SpeakerDefault()
                         val fronts = model.namedFronts?.channelChoices.orEmpty()
                         if (fronts.size > 1) {
                             val selected = ChatSpeaker.frontOf(model, channel.id)
-                            Text("Front for this channel", color = p.ink2, fontSize = 12.sp)
+                            Text("Front for this channel", color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 items(fronts, key = { it.id }) { front ->
                                     ChatChip(front.name.ifBlank { "Body" }, front.id == selected) { setChannelFront(front.id) }
@@ -844,7 +886,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                             } }
                         }
                         if (setting.mode == "member") {
-                            Text("Always speak as", color = p.ink2, fontSize = 12.sp)
+                            Text("Always speak as", color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 items(ownSenders, key = { it.id }) { member ->
                                     ChatChip(member.shownName, member.id == setting.memberId) {
@@ -860,13 +902,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             }
             if (audience != "all" || cw.isNotBlank() || pollOn) {
                 Text(listOfNotNull(audienceLabel.takeIf { audience != "all" }, "CW: ${cw.trim()}".takeIf { cw.isNotBlank() }, "Poll".takeIf { pollOn })
-                    .joinToString(" · "), color = p.ink2, fontSize = 12.sp)
+                    .joinToString(" · "), color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
             }
             if (channel.kind == "thread" && threadParentChannel != null && threadParent != null) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { alsoSend = !alsoSend },
                     verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(alsoSend, { alsoSend = it })
-                    Text("Also send to ${threadParentChannel.name}", color = p.ink, fontSize = 14.sp)
+                    Text("Also send to ${threadParentChannel.name}", color = p.ink, fontSize = 14.sp, lineHeight = 20.sp)
                 }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -1008,9 +1050,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     forwarding?.let { message ->
         ModalBottomSheet(onDismissRequest = { forwarding = null }, containerColor = p.surface) {
             Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-                Text("Forward to…", color = p.ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                Text("Forward to…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-                Text(ChatPresentation.preview(message), color = p.ink3, fontSize = 13.sp, maxLines = 2,
+                Text(ChatPresentation.preview(message), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2,
                     modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp))
                 for (row in listRows.sortedByDescending { it.latest?.occurredAt ?: 0L }) {
                     Row(Modifier.fillMaxWidth().clickable(enabled = !busy) {
@@ -1022,8 +1064,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         ChannelDisc(row.channel, size = 40.dp)
                         Column(Modifier.weight(1f)) {
-                            Text(row.title, color = p.ink, fontSize = 16.sp, maxLines = 1)
-                            Text(spaceLabel(row.space, directory[row.space.id], chorus.device?.accountId.orEmpty()), color = p.ink3, fontSize = 12.sp, maxLines = 1)
+                            Text(row.title, color = p.ink, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 1)
+                            Text(spaceLabel(row.space, directory[row.space.id], chorus.device?.accountId.orEmpty()), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1)
                         }
                     }
                 }
@@ -1061,48 +1103,64 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             selectedSpace = home; selectedChannel = id; conversationOpen = true; infoOpen = false; channelEditor = false
         })
     if (spaceAction == "new") {
-        AlertDialog(onDismissRequest = { spaceAction = "" }, title = { Text("Start a chat") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { spaceAction = ""; editChannel = false; channelEditor = true }) { Text("Create a new channel") }
-                    Text("Choose a chat to write a message.")
-                    Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+        var choice by rememberSaveable { mutableStateOf("choose") }
+        ModalBottomSheet(onDismissRequest = { spaceAction = "" }, containerColor = p.surface,
+            sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (choice != "choose") ChatIconButton(R.drawable.ic_back, "Back to new chat choices") { choice = "choose" }
+                    Text(when (choice) { "direct" -> "Direct message"; "shared" -> "New shared space"; else -> "New chat" },
+                        style = MaterialTheme.typography.titleLarge)
+                }
+                if (choice == "choose") {
+                    ChatCreationChoice(R.drawable.ic_thread, "New channel", "A place for a topic, plans or shared notes", prominent = true) {
+                        spaceAction = ""; editChannel = false; channelEditor = true
+                    }
+                    ChatCreationChoice(R.drawable.ic_members, "Direct message", "Write to a member or a connected account") { choice = "direct" }
+                    ChatCreationChoice(R.drawable.ic_globe, "New shared space", "Invite connected accounts to a group chat") { choice = "shared" }
+                } else if (choice == "direct") {
+                    Text("Your chats", style = MaterialTheme.typography.labelLarge, color = p.ink3)
+                    Column(Modifier.heightIn(max = 260.dp).verticalScroll(rememberScrollState())) {
                         for (row in listRows) TextButton(onClick = { openChat(row); spaceAction = "" }) { Text(row.title) }
                     }
-                    if (connections.isNotEmpty()) Text("Messages in a shared space show who is speaking as they are sent.")
-                    if (connections.isNotEmpty()) OutlinedTextField(newSpaceName, { newSpaceName = it.take(80) }, label = { Text("Shared space name") }, singleLine = true)
-                    for (account in connections) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            ChatChip("DM", false) {
-                                val dev = chorus.device ?: return@ChatChip
-                                busy = true; error = null; spaceAction = ""
-                                actions.launch {
-                                    try { selectedSpace = Spaces.openDm(dev, account.id); selectedChannel = ""; conversationOpen = true; refresh++ }
-                                    catch (e: Exception) { error = e.message ?: "Could not start the DM." }
-                                    finally { busy = false }
-                                }
-                            }
-                            ChatChip(if (account.id in invitedAccounts) "✓ ${account.shownName}" else account.shownName,
-                                account.id in invitedAccounts) {
-                                invitedAccounts = if (account.id in invitedAccounts) invitedAccounts - account.id else invitedAccounts + account.id
-                            }
+                    for (account in connections) ChatCreationChoice(R.drawable.ic_members, account.shownName, "Start a direct message") {
+                        val dev = chorus.device ?: return@ChatCreationChoice
+                        busy = true; error = null; spaceAction = ""
+                        actions.launch {
+                            try { selectedSpace = Spaces.openDm(dev, account.id); selectedChannel = ""; conversationOpen = true; refresh++ }
+                            catch (_: Exception) { error = "Could not start the message. Try again when connected." }
+                            finally { busy = false }
                         }
                     }
-                }
-            },
-            confirmButton = {
-                TextButton(enabled = !busy && newSpaceName.isNotBlank() && invitedAccounts.isNotEmpty(), onClick = {
-                    val dev = chorus.device ?: return@TextButton
-                    busy = true; error = null; spaceAction = ""
-                    actions.launch {
-                        try {
-                            selectedSpace = Spaces.createShared(dev, newSpaceName, invitedAccounts)
-                            selectedChannel = ""; conversationOpen = true; newSpaceName = ""; invitedAccounts = emptyList(); refresh++
-                        } catch (e: Exception) { error = e.message ?: "Could not create the space." }
-                        finally { busy = false }
+                } else {
+                    Text("Messages show who is speaking to everyone in the space.", style = MaterialTheme.typography.bodySmall, color = p.ink3)
+                    OutlinedTextField(newSpaceName, { newSpaceName = it.take(80) }, label = { Text("Shared space name") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth())
+                    if (connections.isEmpty()) Text("Connect with an account in Friends before inviting them.", style = MaterialTheme.typography.bodyMedium, color = p.ink2)
+                    for (account in connections) Row(Modifier.fillMaxWidth().clickable {
+                        invitedAccounts = if (account.id in invitedAccounts) invitedAccounts - account.id else invitedAccounts + account.id
+                    }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(account.id in invitedAccounts, onCheckedChange = { checked ->
+                            invitedAccounts = if (checked) invitedAccounts + account.id else invitedAccounts - account.id
+                        })
+                        Text(account.shownName, style = MaterialTheme.typography.bodyMedium)
                     }
-                }) { Text("Create shared space") }
-            }, dismissButton = { TextButton(onClick = { spaceAction = "" }) { Text("Cancel") } })
+                    Button(enabled = !busy && newSpaceName.isNotBlank() && invitedAccounts.isNotEmpty(), onClick = {
+                        val dev = chorus.device ?: return@Button
+                        busy = true; error = null; spaceAction = ""
+                        actions.launch {
+                            try {
+                                selectedSpace = Spaces.createShared(dev, newSpaceName, invitedAccounts)
+                                selectedChannel = ""; conversationOpen = true; newSpaceName = ""; invitedAccounts = emptyList(); refresh++
+                            } catch (_: Exception) { error = "Could not create the space. Try again when connected." }
+                            finally { busy = false }
+                        }
+                    }) { Text("Create shared space") }
+                }
+                TextButton(onClick = { spaceAction = "" }) { Text("Cancel") }
+            }
+        }
     }
     if (spaceAction == "leave" && space != null) {
         AlertDialog(onDismissRequest = { spaceAction = "" }, title = { Text("Leave this space?") },
@@ -1129,7 +1187,7 @@ private fun spaceLabel(space: ChatSpace, info: SpaceInfo?, me: String): String =
 @Composable
 private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
     val p = LocalChorusPalette.current
-    Text(label, color = if (selected) p.accent else p.ink2, fontSize = 14.sp,
+    Text(label, color = if (selected) p.accent else p.ink2, fontSize = 14.sp, lineHeight = 20.sp,
         modifier = Modifier.background(if (selected) p.surface2 else p.surface, RoundedCornerShape(20.dp))
             .clickable(onClick = action).heightIn(min = 48.dp).wrapContentSize(Alignment.Center).padding(horizontal = 12.dp, vertical = 8.dp))
 }
@@ -1171,7 +1229,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 if (showAvatar) {
                     if (member != null) ChatAvatar(member, 28.dp)
                     else Box(Modifier.size(28.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
-                        Text(authors.take(1), color = p.ink2, fontSize = 12.sp)
+                        Text(authors.take(1), color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
                     }
                 }
             }
@@ -1184,11 +1242,11 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 bottomEnd = if (own && showAvatar) 6.dp else 16.dp, bottomStart = if (!own && showAvatar) 6.dp else 16.dp))
             .then(if (interactive) Modifier.combinedClickable(onClick = { menuOpen = true }, onLongClick = { menuOpen = true },
                 onLongClickLabel = "Message actions") else Modifier)
-            .padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            .padding(horizontal = 11.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (showSender) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+            Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp,
                 modifier = Modifier.weight(1f, fill = false))
-            if (layer != null) Text(layer, color = p.ink3, fontSize = 12.sp)
+            if (layer != null) Text(layer, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
         }
         if (message.replyTo != null) {
             val quoted = quote?.authors?.firstOrNull()?.let(model::member)
@@ -1197,9 +1255,9 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(quoteColor))
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                     Text(quote?.authors?.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
-                        ?: "Reply", color = quoteColor, fontSize = 12.sp)
+                        ?: "Reply", color = quoteColor, fontSize = 12.sp, lineHeight = 16.sp)
                     Text(if (quote != null) ChatPresentation.preview(quote) else "Message unavailable in this view",
-                        color = p.ink3, fontSize = 12.sp, maxLines = 2)
+                        color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
                 }
             }
         }
@@ -1210,19 +1268,22 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(sourceColor))
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                     Text("Forwarded from " + item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
-                        .ifEmpty { "Someone" }, color = sourceColor, fontSize = 12.sp)
+                        .ifEmpty { "Someone" }, color = sourceColor, fontSize = 12.sp, lineHeight = 16.sp)
                     Text(listOfNotNull(item.channelName, ChatPresentation.dateLabel(item.occurredAt)).joinToString(" · "),
-                        color = p.ink3, fontSize = 12.sp)
+                        color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
                 }
             }
-            if (item.text.isNotBlank() && (message.cw == null || revealed)) Text(item.text, color = p.ink, fontSize = 16.sp)
+            if (item.text.isNotBlank() && (message.cw == null || revealed)) RichBody(item.text, item.entities,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
+                onPlainClick = { if (interactive && held == null) menuOpen = true },
+                onLongClick = if (interactive && held == null) ({ menuOpen = true }) else null)
         }
         if (held != null) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Text("Slow mode: sending in ${((held.until - now).coerceAtLeast(0L) + 999L) / 1000L} s",
-                    color = p.ink2, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                Text(if (cancelBusy) "Canceling…" else "Cancel", color = p.accent, fontSize = 12.sp,
+                    color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.weight(1f))
+                Text(if (cancelBusy) "Canceling…" else "Cancel", color = p.accent, fontSize = 12.sp, lineHeight = 16.sp,
                     modifier = Modifier.clickable(enabled = !cancelBusy) {
                         cancelBusy = true; cancelError = null
                         actions.launch {
@@ -1233,24 +1294,26 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                         }
                     }.heightIn(min = 48.dp).wrapContentSize(Alignment.Center).semantics { contentDescription = "Cancel held message" })
             }
-            if (cancelError != null) Text(cancelError.orEmpty(), color = p.danger, fontSize = 12.sp)
+            if (cancelError != null) Text(cancelError.orEmpty(), color = p.danger, fontSize = 12.sp, lineHeight = 16.sp)
         }
         if (showUnseen && unseenBy.isNotEmpty()) Text("Not seen by " + unseenBy.map {
             model.member(it)?.shownName ?: "Someone"
-        }.joinToString(", "), color = p.ink3, fontSize = 12.sp)
+        }.joinToString(", "), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
         val tags = listOfNotNull(
 
             "Only this system".takeIf { message.visibilityMode == "system_only" },
             "Chosen members".takeIf { message.visibilityMode == "members" },
         )
-        if (tags.isNotEmpty()) Text(tags.joinToString(" · "), color = p.ink3, fontSize = 12.sp)
+        if (tags.isNotEmpty()) Text(tags.joinToString(" · "), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
         if (message.cw != null) {
             Text("Content warning: ${message.cw} · ${if (revealed) "Hide" else "Show"}", color = p.accent,
                 modifier = Modifier.clickable { revealed = !revealed }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
         }
         if (message.cw == null || revealed) {
             if (message.text.isNotBlank() && message.text != message.forward.joinToString("\n") { it.text })
-                RichBody(message.text, message.entities, onPlainClick = { if (interactive && held == null) menuOpen = true })
+                RichBody(message.text, message.entities, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
+                    onPlainClick = { if (interactive && held == null) menuOpen = true },
+                    onLongClick = if (interactive && held == null) ({ menuOpen = true }) else null)
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus, authors, message.occurredAt)
             }
@@ -1271,7 +1334,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                     Column(Modifier.fillMaxWidth().background(p.surface2).padding(8.dp)) {
                         Text("${if (revision.original) "Original" else "Edit ${revision.rev}"} · " +
                             DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(revision.at)),
-                            color = p.ink3, fontSize = 12.sp)
+                            color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
                         if (revision.contentWarning != null) Text(
                             "Content warning: ${revision.contentWarning} · ${if (revisionRevealed) "Hide" else "Show"}",
                             color = p.accent, modifier = Modifier.clickable { revisionRevealed = !revisionRevealed })
@@ -1286,7 +1349,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
                 for (id in thread.lastRepliers) model.member(id)?.let { ChatAvatar(it, 20.dp) }
             }
-            Text(ChatThreads.repliesLabel(thread.replies), color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(ChatThreads.repliesLabel(thread.replies), color = p.accent, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
         }
         Row(Modifier.then(if (reactions.isNotEmpty()) Modifier.fillMaxWidth() else Modifier.align(Alignment.End)),
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1294,7 +1357,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 { id -> model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone" }, onReact.takeIf { held == null })
             if (message.pinned) androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_pin), "Pinned",
                 Modifier.size(14.dp), tint = p.ink3)
-            Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.occurredAt)), color = p.ink3, fontSize = 12.sp)
+            Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.occurredAt)), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
             if (held != null) ChatIcon(R.drawable.ic_history, "Message held for slow mode")
         }
         }
@@ -1309,8 +1372,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             }
             Column(Modifier.widthIn(min = 120.dp, max = 300.dp).background(if (own) p.accentSoft else p.surface2, RoundedCornerShape(16.dp))
                 .padding(horizontal = 12.dp, vertical = 8.dp)) {
-                Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Text(ChatPresentation.preview(message), color = p.ink, maxLines = 4, fontSize = 15.sp)
+                Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp)
+                Text(ChatPresentation.preview(message), color = p.ink, maxLines = 4, fontSize = 15.sp, lineHeight = 20.sp)
             }
         Surface(shape = RoundedCornerShape(12.dp), color = p.surface, modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)) {
             Column(Modifier.padding(vertical = 4.dp)) {
@@ -1321,7 +1384,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         for (reader in seen.take(3)) ChatAvatar(reader, 24.dp)
-                        Text("Seen by " + seen.joinToString(", ") { it.shownName }, color = p.ink3, fontSize = 12.sp)
+                        Text("Seen by " + seen.joinToString(", ") { it.shownName }, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
                     }
                 }
                 HorizontalDivider(color = p.line)
@@ -1358,7 +1421,7 @@ private fun ReactionPicker(reactions: List<ChatReaction>, member: String?, expan
         Box(Modifier.size(44.dp).clip(CircleShape).background(if (chosen) p.accentSoft else Color.Transparent)
             .clickable(enabled = member != null) { onPick(emoji, !chosen) }
             .semantics { contentDescription = if (chosen) "Remove $emoji" else "React $emoji"; selected = chosen },
-            contentAlignment = Alignment.Center) { Text(emoji, fontSize = 24.sp) }
+            contentAlignment = Alignment.Center) { Text(emoji, fontSize = 24.sp, lineHeight = 28.sp) }
     }
     Surface(shape = RoundedCornerShape(24.dp), color = p.surface) {
         Column(Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
@@ -1372,7 +1435,7 @@ private fun ReactionPicker(reactions: List<ChatReaction>, member: String?, expan
                 }
             }
             if (expanded) FlowRow(Modifier.width(308.dp)) { for (emoji in ChatReactions.MORE) EmojiButton(emoji) }
-            if (member == null) Text("Choose who is speaking to react.", color = p.ink3, fontSize = 12.sp,
+            if (member == null) Text("Choose who is speaking to react.", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
                 modifier = Modifier.padding(8.dp))
         }
     }
@@ -1395,12 +1458,12 @@ private fun ReactionChips(reactions: List<ChatReaction>, member: String?, modifi
                 onLongClick = { who = true }, onLongClickLabel = "Who reacted")
                 .semantics { contentDescription = "${r.emoji} ${r.memberIds.size}: $names"; selected = mine },
                 contentAlignment = Alignment.Center) {
-                Text("${r.emoji} ${r.memberIds.size}", color = if (mine) p.accent else p.ink2, fontSize = 13.sp,
+                Text("${r.emoji} ${r.memberIds.size}", color = if (mine) p.accent else p.ink2, fontSize = 13.sp, lineHeight = 18.sp,
                     modifier = Modifier.background(if (mine) p.accentSoft else p.surface3, RoundedCornerShape(12.dp))
                         .then(if (mine) Modifier.border(1.dp, p.accent, RoundedCornerShape(12.dp)) else Modifier)
                         .padding(horizontal = 8.dp, vertical = 2.dp))
                 DropdownMenu(who, { who = false }) {
-                    Text("${r.emoji}  $names", color = p.ink, fontSize = 14.sp,
+                    Text("${r.emoji}  $names", color = p.ink, fontSize = 14.sp, lineHeight = 20.sp,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                 }
             }
@@ -1420,7 +1483,7 @@ internal fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus, who:
     var opened by rememberSaveable(attachment.id) { mutableStateOf(false) }
     var viewing by remember(attachment.id) { mutableStateOf(false) }
     if (attachment.spoiler && !opened) {
-        Text("Spoiler attachment · Reveal", color = p.accent, fontSize = 13.sp,
+        Text("Spoiler attachment · Reveal", color = p.accent, fontSize = 13.sp, lineHeight = 18.sp,
             modifier = Modifier.clickable { opened = true }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
         return
     }
@@ -1435,13 +1498,13 @@ internal fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus, who:
             .clickable(onClickLabel = "Open photo") { viewing = true }
             .semantics { contentDescription = attachment.altText.ifBlank { attachment.filename } },
             contentAlignment = Alignment.Center) {
-            if (shown == null) Text("Loading image, or unavailable offline.", color = p.ink3, fontSize = 12.sp,
+            if (shown == null) Text("Loading image, or unavailable offline.", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
                 modifier = Modifier.padding(24.dp))
             else Image(shown.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxWidth().aspectRatio((shown.width.toFloat() / shown.height.coerceAtLeast(1)).coerceIn(1f, 2.5f)))
         }
-        if (attachment.altText.isNotBlank()) Text(attachment.altText, color = p.ink3, fontSize = 12.sp)
-        if (attachment.spoiler) Text("Hide image", color = p.accent, fontSize = 12.sp,
+        if (attachment.altText.isNotBlank()) Text(attachment.altText, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+        if (attachment.spoiler) Text("Hide image", color = p.accent, fontSize = 12.sp, lineHeight = 16.sp,
             modifier = Modifier.clickable { opened = false }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
         if (viewing) MediaViewer(attachment, chorus, who, at, null, onClose = { viewing = false })
         return
@@ -1457,14 +1520,14 @@ internal fun ChatAttachmentView(attachment: ChatAttachment, chorus: Chorus, who:
         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
         ChatIcon(R.drawable.ic_file, tint = p.accent)
         Column(Modifier.weight(1f)) {
-            Text(attachment.filename, color = p.ink, fontSize = 14.sp, maxLines = 1)
-            Text(if (opening) "Opening…" else garden.vayne.chorus.data.ChatLibrary.size(attachment.size), color = p.ink3, fontSize = 12.sp)
+            Text(attachment.filename, color = p.ink, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 1)
+            Text(if (opening) "Opening…" else garden.vayne.chorus.data.ChatLibrary.size(attachment.size), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
         }
     }
-    if (attachment.altText.isNotBlank()) Text(attachment.altText, color = p.ink3, fontSize = 12.sp)
-    if (openError != null) Text(openError.orEmpty(), color = p.danger, fontSize = 12.sp)
+    if (attachment.altText.isNotBlank()) Text(attachment.altText, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+    if (openError != null) Text(openError.orEmpty(), color = p.danger, fontSize = 12.sp, lineHeight = 16.sp)
     if (attachment.spoiler && !image) {
-        Text("Hide attachment", color = p.accent, fontSize = 12.sp,
+        Text("Hide attachment", color = p.accent, fontSize = 12.sp, lineHeight = 16.sp,
             modifier = Modifier.clickable { opened = false })
     }
 }

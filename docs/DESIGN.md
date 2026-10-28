@@ -248,7 +248,7 @@ The shared spacing rhythm is a four-point scale from `spacing` in frontmatter. C
   safe-area-aware bottom clearance. Destinations are Members · Fronting · Chat · Friends · More.
   Journal and secondary tools are reachable through More; desktop adds direct Journal/Search/Settings.
 - **Android:** bottom navigation below 840 dp and a navigation rail from 840 dp. The same five
-  system destinations apply. The bottom bar yields to the IME while typing in chat.
+  system destinations apply. Focused phone conversation/info and journal editor/detail routes hide the destination bar, which returns on pop to their roots; the system navigation/IME insets remain. Expanded layouts retain the rail.
 - **Person accounts:** Journal · Chat · Friends · More; system-only front/member controls stay
   hidden as required by D-003.
 - **Chat:** 260 px channel list and flexible conversation at wide widths. From 1280 px an open

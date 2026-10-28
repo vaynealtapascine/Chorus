@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 /** One forwarded message as its recipients see it: the snapshot, not the original (SPEC §5.3). */
 data class ForwardItem(val messageId: String, val text: String, val channelName: String?,
-    val authors: List<String>, val occurredAt: Long)
+    val authors: List<String>, val occurredAt: Long, val entities: String = "[]")
 
 /**
  * Forwarding (D-048): a `message.forward` carries the origin id and a snapshot, so it reads the
@@ -17,7 +17,7 @@ object ChatForward {
         val id = o.optString("message_id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
         val authors = o.optJSONArray("authors")?.let { list -> (0 until list.length()).map(list::optString).filter { it.isNotBlank() } }.orEmpty()
         ForwardItem(id, o.optString("text"), o.optString("channel_name").takeIf { it.isNotBlank() && it != "null" },
-            authors, o.optLong("occurred_at"))
+            authors, o.optLong("occurred_at"), o.optJSONArray("entities")?.toString() ?: "[]")
     }
 
     private fun attachment(a: ChatAttachment): JSONObject = JSONObject().put("id", a.id).put("blob_hash", a.blobHash)

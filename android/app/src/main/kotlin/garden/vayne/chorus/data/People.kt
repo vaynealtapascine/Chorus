@@ -11,7 +11,8 @@ data class FollowList(val following: List<FollowInfo>, val followers: List<Follo
 data class PostReaction(val emoji: String, val memberId: String, val memberName: String)
 data class SharedPost(val id: String, val kind: String, val title: String?, val text: String,
     val cw: String?, val occurredAt: Long, val authorNames: List<String>, val reactions: List<PostReaction> = emptyList(),
-    val attachments: List<ChatAttachment> = emptyList(), val poll: Poll? = null, val pollTally: PollTally? = null)
+    val attachments: List<ChatAttachment> = emptyList(), val poll: Poll? = null, val pollTally: PollTally? = null,
+    val entities: String = "[]")
 data class SharedFront(val names: List<String>, val time: String)
 data class SharedStats(val days: Int, val members: List<Pair<String, Int>>)
 /** [fronts]: additional fronts the followed account granted (D-084), as (name, revealed names). */
@@ -40,7 +41,8 @@ object PeopleApi {
             } } ?: emptyList()
             SharedPost(post.getString("id"), post.getString("kind"), post.optionalText("title"),
                 post.getString("text"), post.optionalText("cw"), post.getLong("occurred_at"), names, reactions, files,
-                Polls.parse(post.optJSONObject("poll")), Polls.tally(post.optJSONObject("poll_tally")))
+                Polls.parse(post.optJSONObject("poll")), Polls.tally(post.optJSONObject("poll_tally")),
+                post.optJSONArray("entities")?.toString() ?: "[]")
         }
     }
 

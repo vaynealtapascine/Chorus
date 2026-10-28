@@ -1083,6 +1083,86 @@
         "description": "24 dp poll control, 2 dp rounded stroke; extends the existing chat icon vocabulary."
       },
       "sha256": "6772ba5ba4744d72a9e4ce7979308c3c1031b21b582c99b8176ff63462f4e051"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_format_bold.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp formatting control, 2 dp rounded stroke; follows the existing Figma-derived icon vocabulary."
+      },
+      "sha256": "5dd533b1939d0c22e158dc6392423c6339c283fdb5fadc55581d230943cee8d4"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_format_code.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp formatting control, 2 dp rounded stroke; follows the existing Figma-derived icon vocabulary."
+      },
+      "sha256": "fa20714755f618988d1e5982925485aaba311a02de41bb1a0bfd8dcccdd02e79"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_format_eye_off.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp formatting control, 2 dp rounded stroke; follows the existing Figma-derived icon vocabulary."
+      },
+      "sha256": "1a56b9c84f8d8de18af23db92ee099cc2cadce1b5a3be71254be141d42480cea"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_format_italic.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp formatting control, 2 dp rounded stroke; follows the existing Figma-derived icon vocabulary."
+      },
+      "sha256": "df2b1c6f70f3ab11afeea3b0078adad07dd04367f909442f28f578060bfb1d50"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_format_list_ol.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp formatting control, 2 dp rounded stroke; follows the existing Figma-derived icon vocabulary."
+      },
+      "sha256": "8ae2438b7f917dad4265acdc002832c8f0ecd56207780b9cb828fbeefcf5c083"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_format_list_ul.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp formatting control, 2 dp rounded stroke; follows the existing Figma-derived icon vocabulary."
+      },
+      "sha256": "1b3d54b7b134e6b7c887ccfa10dc9dc19c1eb595b7d2d685b5c2741d54291dee"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_format_quote.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp formatting control, 2 dp rounded stroke; follows the existing Figma-derived icon vocabulary."
+      },
+      "sha256": "8edc3442968a9a5417c622c82cc49dd7e38082071c2025eeadda90a12ef4b0a1"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_format_strike.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "authored-geometry",
+        "description": "24 dp formatting control, 2 dp rounded stroke; follows the existing Figma-derived icon vocabulary."
+      },
+      "sha256": "20ecc8899d5888c423de7fc98c152358bc8d9b1fcfe129402e3107ea849d353c"
     }
   ]
 }
