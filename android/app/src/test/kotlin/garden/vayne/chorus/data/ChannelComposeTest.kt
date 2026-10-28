@@ -5,6 +5,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ChannelComposeTest {
+    @Test fun imageOnlySavePreservesConcurrentMetadataEdits() {
+        val baseline = ChatChannel("c", "s", "text", "Garden", null, topic = "Quiet")
+        val live = baseline.copy(name = "Evening garden", topic = "Changed on another device")
+        val payload = ChannelCompose.update(baseline, baseline.name, baseline.topic.orEmpty(), "b".repeat(64))
+        assertEquals(setOf("avatar_blob"), payload.keys().asSequence().toSet())
+        // Apply exactly the emitted fields to the model that arrived while the sheet was open.
+        val saved = live.copy(avatarBlob = payload.getString("avatar_blob"))
+        assertEquals("Evening garden", saved.name)
+        assertEquals("Changed on another device", saved.topic)
+        assertEquals("b".repeat(64), saved.avatarBlob)
+    }
+    @Test fun imageLessCreateWorksOnOlderServersAndImageFeatureNeedsCapability() {
+        assertFalse(ChannelCompose.create("s", "Garden", "", null).has("avatar_blob"))
+        assertFalse(ChannelCompose.supportsImages(JSONObject("""{"version":"0.1.0"}""")))
+        assertTrue(ChannelCompose.supportsImages(JSONObject("""{"capabilities":["channel_images"]}""")))
+    }
     @Test fun schemaMemberDmUsesTheDirectFolderAndPeerFallback() {
         val p = JSONObject("""{"rows":{"space":{"s":{"exists":true,"fields":{"kind":"internal"}}},"channel":{"c":{"exists":true,"fields":{"space_id":"s","kind":"member_dm","name":"Kai and Moss","member_ids":["kai","moss"]}}}}}""")
         val model = Model.parse(p, "acct")

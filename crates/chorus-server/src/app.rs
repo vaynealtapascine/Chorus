@@ -291,6 +291,7 @@ async fn server_info(State(s): State<AppState>) -> Json<serde_json::Value> {
         "core": chorus_core::api::version(),
         "instance_id": s.instance_id,
         "core_min": "0.1.0",
+        "capabilities": ["channel_images"],
         // Chorus Home: the certificate phones pin on the home wifi (tls.rs)
         "tls_pin": s.cfg.server.lan_listen.as_ref()
             .and_then(|_| crate::tls::load_or_create(&s.cfg.server.data_dir).ok())

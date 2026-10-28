@@ -1,7 +1,7 @@
 package garden.vayne.chorus.ui
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
 
 /** Uses Android's photo picker and the same durable staged-upload path as attachments. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -29,6 +30,22 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val actions = rememberCoroutineScope()
+    // Compare with the sheet's opening snapshot, never a model refreshed by another device.
+    val baselineName by rememberSaveable(channel?.id) { mutableStateOf(channel?.name.orEmpty()) }
+    val baselineTopic by rememberSaveable(channel?.id) { mutableStateOf(channel?.topic) }
+    val baselineAvatar by rememberSaveable(channel?.id) { mutableStateOf(channel?.avatarBlob) }
+    val imagePrefs = remember { ctx.getSharedPreferences("chorus.server-capabilities", 0) }
+    val serverBase = chorus.device?.base.orEmpty()
+    var imagesSupported by remember(serverBase) { mutableStateOf(imagePrefs.getBoolean("images:$serverBase", false)) }
+    val connection by chorus.status.collectAsState()
+    LaunchedEffect(serverBase, connection) {
+        if (connection != Status.Live) return@LaunchedEffect
+        try {
+            imagesSupported = ChannelCompose.supportsImages(Api.call("GET", serverBase, "/server", null, null))
+            imagePrefs.edit().putBoolean("images:$serverBase", imagesSupported).apply()
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { /* Previously confirmed capabilities remain usable offline. */ }
+    }
     var spaceId by rememberSaveable { mutableStateOf(channel?.spaceId ?: initialSpace
         ?: model.spaces.firstOrNull { it.kind == "internal" }?.id.orEmpty()) }
     var name by rememberSaveable { mutableStateOf(channel?.name.orEmpty()) }
@@ -55,13 +72,12 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
                         }.toByteArray() }
                         ?: error("That image could not be opened. Choose it again.")
                     require(bytes.size <= 10 * 1024 * 1024) { "Choose an image under 10 MB." }
-                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Choose a supported image." }
-                    var sample = 1
-                    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 1024) sample *= 2
-                    val source = BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
-                        BitmapFactory.Options().apply { inSampleSize = sample }) ?: error("Could not read this image.")
+                    // ImageDecoder applies EXIF orientation before the square crop (minSdk 29).
+                    val source = ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, info, _ ->
+                        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                        val scale = minOf(1f, 1024f / maxOf(info.size.width, info.size.height))
+                        decoder.setTargetSize(maxOf(1, (info.size.width * scale).toInt()), maxOf(1, (info.size.height * scale).toInt()))
+                    }
                     val side = minOf(source.width, source.height)
                     val crop = Bitmap.createBitmap(source, (source.width - side) / 2, (source.height - side) / 2, side, side)
                     val small = Bitmap.createScaledBitmap(crop, minOf(side, 512), minOf(side, 512), true)
@@ -85,13 +101,13 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
                 ChannelDisc(ChatChannel("preview", spaceId, "text", name.ifBlank { "Channel" }, null,
                     avatarBlob = avatar, icon = channel?.icon, color = channel?.color), size = 72.dp)
                 Column {
-                    TextButton(enabled = !busy, onClick = { picker.launch("image/*") }) {
+                    TextButton(enabled = !busy && imagesSupported, onClick = { picker.launch("image/*") }) {
                         Text(if (avatar == null) "Add channel image" else "Change image")
                     }
-                    if (avatar != null) TextButton(enabled = !busy, onClick = { avatar = null }) { Text("Remove image") }
+                    if (avatar != null) TextButton(enabled = !busy && imagesSupported, onClick = { avatar = null }) { Text("Remove image") }
                 }
             }
-            Text("Images are cropped to a square. Without one, the channel uses its icon or initial.",
+            Text(if (imagesSupported) "Choose a square channel image." else "Channel images need a server update. You can still save the name and description.",
                 style = MaterialTheme.typography.bodySmall, color = p.ink3)
             if (channel == null) Box {
                 OutlinedButton(enabled = !busy, onClick = { spacesOpen = true }) {
@@ -106,7 +122,7 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
                 enabled = !busy, isError = name.length > 80, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(topic, { topic = it }, label = { Text("Description (optional)") },
                 enabled = !busy, minLines = 2, modifier = Modifier.fillMaxWidth())
-            Text("Channel owners and managers can change this. Saved on this device first, then synced.",
+            Text(if (connection == Status.Live) "Channel owners and managers can edit this." else "Offline · changes will sync when connected.",
                 style = MaterialTheme.typography.bodySmall, color = p.ink3)
             if (error != null) Text(error.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodyMedium)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -117,7 +133,7 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
                         try {
                             val id = channel?.id ?: chorus.newId()
                             val payload = if (channel == null) ChannelCompose.create(spaceId, name, topic, avatar)
-                                else ChannelCompose.update(channel, name, topic, avatar)
+                                else ChannelCompose.update(channel.copy(name = baselineName, topic = baselineTopic, avatarBlob = baselineAvatar), name, topic, avatar)
                             if (payload.length() > 0) chorus.create(if (channel == null) "channel.create" else "channel.set",
                                 id, payload, scope = "space:$spaceId")
                             if (avatar != null) UploadWork.enqueue(ctx)

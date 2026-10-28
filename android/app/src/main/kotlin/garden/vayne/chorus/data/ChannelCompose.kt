@@ -13,7 +13,14 @@ object ChannelCompose {
             .put("avatar_blob", avatar ?: JSONObject.NULL)
     }
     fun create(spaceId: String, name: String, topic: String, avatar: String?): JSONObject =
-        fields(name, topic, avatar).put("space_id", spaceId).put("kind", "text")
+        fields(name, topic, avatar).apply {
+            // Older servers reject unknown fields even when null. Absence conveys no image.
+            if (avatar == null) remove("avatar_blob")
+        }.put("space_id", spaceId).put("kind", "text")
+
+    fun supportsImages(server: JSONObject): Boolean = server.optJSONArray("capabilities")?.let { flags ->
+        (0 until flags.length()).any { flags.optString(it) == "channel_images" }
+    } == true
 
     fun update(channel: ChatChannel, name: String, topic: String, avatar: String?): JSONObject {
         val all = fields(name, topic, avatar)

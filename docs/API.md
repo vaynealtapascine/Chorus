@@ -129,7 +129,7 @@ EventSource clients pass `?token=`. `/overlay/front?token=…` is a transparent 
 
 ```
 GET  /me                                   account, devices, capabilities
-GET  /server                               name, version, instance_id, core_min, features
+GET  /server                               name, version, instance_id, core_min, capabilities
 
 GET  /members?include_archived=0
 GET  /members/{id}
