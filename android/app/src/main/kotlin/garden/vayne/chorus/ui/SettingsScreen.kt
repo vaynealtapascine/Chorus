@@ -53,6 +53,9 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
     val appearance = LocalChorusAppearance.current
     val actions = rememberCoroutineScope()
     val ctx = LocalContext.current
+    val navPrefs = remember { ctx.getSharedPreferences("chorus.navigation", 0) }
+    val navAccount = chorus.device?.accountId.orEmpty()
+    var navChoices by remember(navAccount, model.isPerson) { mutableStateOf(garden.vayne.chorus.data.DeviceNavigation.resolve(navPrefs.getString(navAccount, null), model.isPerson)) }
     val prefs = model.accountPrefs
     var advanced by rememberSaveable { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -164,6 +167,10 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("This device", color = p.ink, fontWeight = FontWeight.SemiBold)
+                NavigationSettings(navChoices, model.isPerson) { choices ->
+                    navChoices = choices
+                    navPrefs.edit().putString(navAccount, choices.joinToString(",")).apply()
+                }
                 SettingToggle("Keep everything on this device", keepEverything, !syncBusy) { on ->
                     actions.launch {
                         try { chorus.setKeepEverything(on); deviceError = null }

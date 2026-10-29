@@ -28,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,9 +47,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun Members(chorus: Chorus, model: Model) {
     val p = LocalChorusPalette.current
-    var query by remember { mutableStateOf("") }
-    var editing by remember { mutableStateOf<String?>(null) }
-    var archived by remember { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    var archived by rememberSaveable { mutableStateOf(false) }
 
     editing?.let { id ->
         BackHandler { editing = null }
@@ -107,12 +108,19 @@ fun Members(chorus: Chorus, model: Model) {
 @Composable
 private fun MemberEditor(chorus: Chorus, m: Member?, onDone: () -> Unit) {
     val p = LocalChorusPalette.current
-    var name by remember { mutableStateOf(m?.name.orEmpty()) }
-    var display by remember { mutableStateOf(m?.displayName.orEmpty()) }
-    var pronouns by remember { mutableStateOf(m?.pronouns.orEmpty()) }
-    var sigil by remember { mutableStateOf(m?.sigils?.firstOrNull().orEmpty()) }
-    var color by remember { mutableStateOf(m?.color ?: "#C0694E") }
-    var description by remember { mutableStateOf(m?.description.orEmpty()) }
+    // Keep the editor's opening values so a sync refresh cannot turn untouched fields into writes.
+    val baselineName by rememberSaveable(m?.id) { mutableStateOf(m?.name) }
+    val baselineDisplay by rememberSaveable(m?.id) { mutableStateOf(m?.displayName) }
+    val baselinePronouns by rememberSaveable(m?.id) { mutableStateOf(m?.pronouns) }
+    val baselineDescription by rememberSaveable(m?.id) { mutableStateOf(m?.description) }
+    val baselineColour by rememberSaveable(m?.id) { mutableStateOf(m?.color) }
+    val baselineSigils by rememberSaveable(m?.id) { mutableStateOf(m?.sigils.orEmpty()) }
+    var name by rememberSaveable(m?.id) { mutableStateOf(m?.name.orEmpty()) }
+    var display by rememberSaveable(m?.id) { mutableStateOf(m?.displayName.orEmpty()) }
+    var pronouns by rememberSaveable(m?.id) { mutableStateOf(m?.pronouns.orEmpty()) }
+    var sigil by rememberSaveable(m?.id) { mutableStateOf(m?.sigils?.firstOrNull().orEmpty()) }
+    var color by rememberSaveable(m?.id) { mutableStateOf(m?.color ?: "#C0694E") }
+    var description by rememberSaveable(m?.id) { mutableStateOf(m?.description.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     val actions = rememberCoroutineScope()
 
@@ -120,12 +128,12 @@ private fun MemberEditor(chorus: Chorus, m: Member?, onDone: () -> Unit) {
         if (name.isBlank()) { error = "A name is needed."; return }
         val f = JSONObject()
         fun changed(k: String, new: String, old: String?) { if (new.trim() != old.orEmpty()) f.put(k, new.trim().ifEmpty { JSONObject.NULL }) }
-        changed("name", name, m?.name)
-        changed("display_name", display, m?.displayName)
-        changed("pronouns", pronouns, m?.pronouns)
-        changed("description", description, m?.description)
-        if (Regex("^#[0-9a-fA-F]{6}$").matches(color.trim())) changed("color", color, m?.color) else { error = "Colour is #RRGGBB."; return }
-        val oldSigils = m?.sigils.orEmpty()
+        changed("name", name, baselineName)
+        changed("display_name", display, baselineDisplay)
+        changed("pronouns", pronouns, baselinePronouns)
+        changed("description", description, baselineDescription)
+        if (Regex("^#[0-9a-fA-F]{6}$").matches(color.trim())) changed("color", color, baselineColour) else { error = "Colour is #RRGGBB."; return }
+        val oldSigils = baselineSigils
         if (sigil.trim() != oldSigils.firstOrNull().orEmpty()) {
             f.put("sigils", JSONArray((listOf(sigil.trim()).filter { it.isNotEmpty() } + oldSigils.drop(1))))
         }
@@ -153,9 +161,10 @@ private fun MemberEditor(chorus: Chorus, m: Member?, onDone: () -> Unit) {
         OutlinedTextField(display, { display = it }, label = { Text("Display name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(pronouns, { pronouns = it }, label = { Text("Pronouns") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(sigil, { sigil = it }, label = { Text("Sigil") }, singleLine = true, modifier = Modifier.weight(1f))
-            OutlinedTextField(color, { color = it.take(7) }, label = { Text("Colour") }, singleLine = true, modifier = Modifier.weight(1f))
+            OutlinedTextField(sigil, { sigil = it }, label = { Text("Sigil") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+
         }
+        ColourField(color, { color = it }, modifier = Modifier.fillMaxWidth())
         Text("Representative characters or emoji. Start a message with one or more members' sigils, then a space.",
             color = p.ink2, fontSize = 13.sp)
         OutlinedTextField(description, { description = it }, label = { Text("Description") }, minLines = 3, modifier = Modifier.fillMaxWidth())

@@ -33,6 +33,9 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.DisposableEffect
+import garden.vayne.chorus.data.DeviceNavigation
 import androidx.compose.ui.platform.LocalConfiguration
 import garden.vayne.chorus.ui.AppIcon
 import garden.vayne.chorus.ui.ChorusIcon
@@ -137,11 +140,24 @@ private enum class Tab(val label: String, val icon: AppIcon) { Home("Fronting", 
 private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     onShareDismissed: () -> Unit, newEntryRequest: Long?, onNewEntryConsumed: () -> Unit) {
     val p = LocalChorusPalette.current
+    val context = LocalContext.current
+    val navPrefs = remember { context.getSharedPreferences("chorus.navigation", 0) }
+    val navAccount = chorus.device?.accountId.orEmpty()
+    var navRevision by remember { mutableStateOf(0) }
+    DisposableEffect(navPrefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> navRevision++ }
+        navPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { navPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
     val motion = garden.vayne.chorus.ui.LocalChorusMotionOverride.current ?: android.animation.ValueAnimator.areAnimatorsEnabled()
     val expanded = LocalConfiguration.current.screenWidthDp >= 840
     val status by chorus.status.collectAsState()
     val model by chorus.model.collectAsState()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
+    val navigationTabs = remember(navRevision, navAccount, model.isPerson) {
+        DeviceNavigation.resolve(navPrefs.getString(navAccount, null), model.isPerson).map { Tab.valueOf(it) } + Tab.More
+    }
+    val routedTab = if (model.isPerson && tab in listOf(Tab.Home, Tab.Members, Tab.History)) Tab.Journal else tab
     var chatSpace by rememberSaveable { mutableStateOf<String?>(null) }
     var chatChannel by rememberSaveable { mutableStateOf<String?>(null) }
     var chatSearchHit by remember { mutableStateOf<SearchDocument?>(null) }
@@ -192,7 +208,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     }
     if (linking && status != Status.NoDevice && status != Status.Loading) DeviceLink(chorus) { linking = false }
     if (quickSwitchOpen && !model.isPerson) Switcher(chorus, model) { quickSwitchOpen = false }
-    BackHandler(!quickSwitchOpen && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen && !model.isPerson && (tab == Tab.Journal || tab == Tab.History)) {
+    BackHandler(sharedDraft == null && !linking && !quickSwitchOpen && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen && routedTab !in navigationTabs) {
         tab = Tab.More
     }
 
@@ -204,12 +220,11 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         }
         else -> Row(Modifier.fillMaxSize().background(p.bg)) {
             val person = model.isPerson
-            val activeTab = if (person && (tab == Tab.Home || tab == Tab.Members || tab == Tab.History)) Tab.Journal else tab
-            val destinations = if (person) listOf(Tab.Journal, Tab.Chat, Tab.People, Tab.More)
-                else listOf(Tab.Members, Tab.Home, Tab.Chat, Tab.People, Tab.More)
+            val activeTab = routedTab
+            val destinations = navigationTabs
             fun select(t: Tab) { tab = t; settingsOpen = false; searchOpen = false; insightsOpen = false; frontsOpen = false }
             if (expanded && !chatStageCapture) NavigationRail(containerColor = p.surface) {
-                destinations.forEach { t -> NavigationRailItem(selected = t == activeTab,
+                destinations.forEach { t -> NavigationRailItem(selected = t == activeTab || (t == Tab.More && activeTab !in destinations),
                     onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = { Text(t.label) }) }
             }
             Column(Modifier.weight(1f).navigationBarsPadding()) {
@@ -285,7 +300,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal })
                     Tab.Members -> Members(chorus, model)
                     Tab.History -> History(chorus, model)
-                    Tab.More -> MoreScreen(person, onJournal = { tab = Tab.Journal }, onHistory = { tab = Tab.History },
+                    Tab.More -> MoreScreen(person, onMembers = { tab = Tab.Members }, onHome = { tab = Tab.Home }, onChat = { tab = Tab.Chat }, onPeople = { tab = Tab.People }, onJournal = { tab = Tab.Journal }, onHistory = { tab = Tab.History },
                         onInsights = { insightsOpen = true }, onFronts = { frontsOpen = true }, onSettings = { settingsOpen = true },
                         onSearch = { searchOpen = true }, onLink = { linking = true })
                 }

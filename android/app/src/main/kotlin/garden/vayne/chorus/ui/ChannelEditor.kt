@@ -33,6 +33,8 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
     // Compare with the sheet's opening snapshot, never a model refreshed by another device.
     val baselineName by rememberSaveable(channel?.id) { mutableStateOf(channel?.name.orEmpty()) }
     val baselineTopic by rememberSaveable(channel?.id) { mutableStateOf(channel?.topic) }
+    val baselineColour by rememberSaveable(channel?.id) { mutableStateOf(channel?.color) }
+    var colour by rememberSaveable(channel?.id) { mutableStateOf(channel?.color ?: "#42A397") }
     val baselineAvatar by rememberSaveable(channel?.id) { mutableStateOf(channel?.avatarBlob) }
     val imagePrefs = remember { ctx.getSharedPreferences("chorus.server-capabilities", 0) }
     val serverBase = chorus.device?.base.orEmpty()
@@ -99,7 +101,7 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
             Text(if (channel == null) "New channel" else "Edit channel", style = MaterialTheme.typography.titleLarge)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 ChannelDisc(ChatChannel("preview", spaceId, "text", name.ifBlank { "Channel" }, null,
-                    avatarBlob = avatar, icon = channel?.icon, color = channel?.color), size = 72.dp)
+                    avatarBlob = avatar, icon = channel?.icon, color = colour), size = 72.dp)
                 Column {
                     TextButton(enabled = !busy && imagesSupported, onClick = { picker.launch("image/*") }) {
                         Text(if (avatar == null) "Add channel image" else "Change image")
@@ -120,6 +122,7 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
             }
             OutlinedTextField(name, { name = it }, label = { Text("Channel name") }, singleLine = true,
                 enabled = !busy, isError = name.length > 80, modifier = Modifier.fillMaxWidth())
+            ColourField(colour, { colour = it }, modifier = Modifier.fillMaxWidth(), label = "Channel colour", enabled = !busy)
             OutlinedTextField(topic, { topic = it }, label = { Text("Description (optional)") },
                 enabled = !busy, minLines = 2, modifier = Modifier.fillMaxWidth())
             Text(if (connection == Status.Live) "Channel owners and managers can edit this." else "Offline · changes will sync when connected.",
@@ -132,8 +135,9 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
                     actions.launch {
                         try {
                             val id = channel?.id ?: chorus.newId()
-                            val payload = if (channel == null) ChannelCompose.create(spaceId, name, topic, avatar)
-                                else ChannelCompose.update(channel.copy(name = baselineName, topic = baselineTopic, avatarBlob = baselineAvatar), name, topic, avatar)
+                            val payload = if (channel == null) ChannelCompose.create(spaceId, name, topic, avatar, colour)
+                                else ChannelCompose.update(channel.copy(name = baselineName, topic = baselineTopic, avatarBlob = baselineAvatar,
+                                    color = baselineColour), name, topic, avatar, colour)
                             if (payload.length() > 0) chorus.create(if (channel == null) "channel.create" else "channel.set",
                                 id, payload, scope = "space:$spaceId")
                             if (avatar != null) UploadWork.enqueue(ctx)

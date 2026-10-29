@@ -247,8 +247,13 @@ The shared spacing rhythm is a four-point scale from `spacing` in frontmatter. C
 - **Compact web (<1024 px):** fixed bottom navigation, a 72 px app bar, 16 px content padding and
   safe-area-aware bottom clearance. Destinations are Members · Fronting · Chat · Friends · More.
   Journal and secondary tools are reachable through More; desktop adds direct Journal/Search/Settings.
-- **Android:** bottom navigation below 840 dp and a navigation rail from 840 dp. The same five
-  system destinations apply. Focused phone conversation/info and journal editor/detail routes hide the destination bar, which returns on pop to their roots; the system navigation/IME insets remain. Expanded layouts retain the rail.
+- **Android:** bottom navigation below 840 dp and a navigation rail from 840 dp. Defaults are
+  Members · Fronting · Chat · Journal · More (D-089). Settings → This device → Bottom navigation
+  opens a staged editor with preview, choose/reorder/remove controls and Restore defaults.
+  Up to four chosen destinations precede fixed More; all removed destinations remain in More.
+  Choices are device/account-local and do not reset destination drafts or scroll positions.
+  Focused phone conversation/info and journal editor/detail routes hide the destination bar,
+  which returns on pop to their roots; the system navigation/IME insets remain. Expanded layouts retain the rail.
 - **Person accounts:** Journal · Chat · Friends · More; system-only front/member controls stay
   hidden as required by D-003.
 - **Chat:** 260 px channel list and flexible conversation at wide widths. From 1280 px an open

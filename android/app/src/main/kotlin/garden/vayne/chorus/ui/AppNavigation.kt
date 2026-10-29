@@ -30,9 +30,15 @@ fun ChorusIcon(icon: AppIcon, description: String? = null, modifier: Modifier = 
 }
 
 @Composable
-fun MoreScreen(person: Boolean, onJournal: () -> Unit, onHistory: () -> Unit,
+fun MoreScreen(person: Boolean, onMembers: () -> Unit, onHome: () -> Unit, onChat: () -> Unit, onPeople: () -> Unit, onJournal: () -> Unit, onHistory: () -> Unit,
     onInsights: () -> Unit, onFronts: () -> Unit, onSettings: () -> Unit, onSearch: () -> Unit, onLink: () -> Unit) {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (!person) {
+            item { DestinationRow("Members", "Your members and profiles", AppIcon.Members, onMembers) }
+            item { DestinationRow("Fronting", "Current presence and quick switching", AppIcon.Front, onHome) }
+        }
+        item { DestinationRow("Chat", "Channels and direct messages", AppIcon.Chat, onChat) }
+        item { DestinationRow("Friends", "Connections and following", AppIcon.Friends, onPeople) }
         item { DestinationRow("Journal", "Entries, notes and member journals", AppIcon.Journal, onJournal) }
         if (!person) {
             item { DestinationRow("Fronts and layers", "Separate fronts, following and who counts for what", AppIcon.Front, onFronts) }

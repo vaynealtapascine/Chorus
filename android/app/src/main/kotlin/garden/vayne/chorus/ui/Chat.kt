@@ -1,5 +1,11 @@
 package garden.vayne.chorus.ui
 
+import garden.vayne.chorus.InspectionDialogContent
+
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +62,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -214,6 +223,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var channelEditor by rememberSaveable { mutableStateOf(false) }
     var editChannel by rememberSaveable { mutableStateOf(false) }
     var spaceAction by rememberSaveable { mutableStateOf("") }
+    var directRequest by remember { mutableStateOf<Job?>(null) }
+    var pendingDmParticipants by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var pendingDmId by rememberSaveable { mutableStateOf("") }
     var newSpaceName by rememberSaveable { mutableStateOf("") }
     var invitedAccounts by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var staging by rememberSaveable { mutableStateOf(false) }
@@ -618,8 +630,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     if (channel != null) DropdownMenuItem(text = { Text("Stage mode") }, onClick = { headerMenu = false; stageSelection = emptyList(); staging = true })
                     DropdownMenuItem(text = { Text("Message options") }, onClick = { headerMenu = false; moreOpen = !moreOpen })
                     if (space?.kind == "internal" && !model.isPerson) {
-                        DropdownMenuItem(text = { Text("Read as everyone present") }, onClick = { headerMenu = false; viewingAs = null })
-                        for (member in model.active) DropdownMenuItem(text = { Text("Read as ${member.shownName}") }, onClick = { headerMenu = false; viewingAs = member.id })
+                        DropdownMenuItem(text = { Text("Read as…") }, onClick = { headerMenu = false; readerOpen = true })
                     }
                     val canLeave = space != null && space.kind != "internal" && directory[space.id]?.let {
                         space.kind != "shared" || it.ownerAccountId != chorus.device?.accountId } == true
@@ -996,12 +1007,42 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
     }
     }
-    if (readerOpen) AlertDialog(onDismissRequest = { readerOpen = false }, title = { Text("Read as…") }, text = {
-        Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
-            TextButton(onClick = { viewingAs = null; readerOpen = false }) { Text("Everyone present") }
-            for (member in model.active) TextButton(onClick = { viewingAs = member.id; readerOpen = false }) { Text(member.shownName) }
+    if (readerOpen) {
+        var readerQuery by rememberSaveable { mutableStateOf("") }
+        val readers = remember(model.active, readerQuery) {
+            model.active.filter { member -> listOf(member.shownName, member.name, *member.sigils.toTypedArray()).any { it.contains(readerQuery.trim(), ignoreCase = true) } }
         }
-    }, confirmButton = { TextButton(onClick = { readerOpen = false }) { Text("Done") } })
+        ModalBottomSheet(onDismissRequest = { readerOpen = false }, containerColor = p.surface,
+            sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            InspectionDialogContent {
+                Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f).imePadding().padding(horizontal = 20.dp)) {
+                    Text("Read as…", style = MaterialTheme.typography.titleLarge)
+                    OutlinedTextField(value = readerQuery, onValueChange = { readerQuery = it },
+                        label = { Text("Search members") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp))
+                    LazyColumn(Modifier.fillMaxWidth().weight(1f).selectableGroup()) {
+                        item(key = "everyone") {
+                            androidx.compose.material3.ListItem(
+                                colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = p.surface),
+                                headlineContent = { Text("Everyone present") },
+                                trailingContent = { androidx.compose.material3.RadioButton(selected = viewingAs == null, onClick = null) },
+                                modifier = Modifier.fillMaxWidth().selectable(selected = viewingAs == null, role = Role.RadioButton) { viewingAs = null; readerOpen = false })
+                        }
+                        items(readers, key = { it.id }) { member ->
+                            androidx.compose.material3.ListItem(
+                                colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = p.surface),
+                                leadingContent = { Avatar(member.glyph, member.color, 36.dp, avatarBlob = member.avatarBlob) },
+                                headlineContent = { Text(member.shownName) },
+                                trailingContent = { androidx.compose.material3.RadioButton(selected = viewingAs == member.id, onClick = null) },
+                                modifier = Modifier.fillMaxWidth().selectable(selected = viewingAs == member.id, role = Role.RadioButton) { viewingAs = member.id; readerOpen = false })
+                        }
+                        if (readers.isEmpty()) item { Text("No matching members", Modifier.padding(16.dp)) }
+                    }
+                    TextButton(onClick = { readerOpen = false }, modifier = Modifier.align(Alignment.End)) { Text("Done") }
+                }
+            }
+        }
+    }
     if (switchOpen) Switcher(chorus, model, if (expanded) channel?.id?.let { ChatSpeaker.frontOf(model, it) } else model.namedFronts?.bodyId) { switchOpen = false }
     editingMessage?.let { original ->
         var editError by remember(original.id) { mutableStateOf<String?>(null) }
@@ -1104,61 +1145,107 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         })
     if (spaceAction == "new") {
         var choice by rememberSaveable { mutableStateOf("choose") }
-        ModalBottomSheet(onDismissRequest = { spaceAction = "" }, containerColor = p.surface,
+        ModalBottomSheet(onDismissRequest = { directRequest?.cancel(); spaceAction = "" }, containerColor = p.surface,
             sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-            Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (choice != "choose") ChatIconButton(R.drawable.ic_back, "Back to new chat choices") { choice = "choose" }
-                    Text(when (choice) { "direct" -> "Direct message"; "shared" -> "New shared space"; else -> "New chat" },
-                        style = MaterialTheme.typography.titleLarge)
-                }
-                if (choice == "choose") {
-                    ChatCreationChoice(R.drawable.ic_thread, "New channel", "A place for a topic, plans or shared notes", prominent = true) {
-                        spaceAction = ""; editChannel = false; channelEditor = true
+            InspectionDialogContent {
+                Column(Modifier.fillMaxWidth().then(if (choice == "direct") Modifier.fillMaxHeight(0.9f) else Modifier)
+                    .imePadding().then(if (choice == "direct") Modifier else Modifier.verticalScroll(rememberScrollState()))
+                    .padding(horizontal = 20.dp).padding(bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (choice != "choose") ChatIconButton(R.drawable.ic_back, "Back to new chat choices") { directRequest?.cancel(); choice = "choose" }
+                        Text(when (choice) { "direct" -> "Direct message"; "shared" -> "New shared space"; else -> "New chat" },
+                            style = MaterialTheme.typography.titleLarge)
                     }
-                    ChatCreationChoice(R.drawable.ic_members, "Direct message", "Write to a member or a connected account") { choice = "direct" }
-                    ChatCreationChoice(R.drawable.ic_globe, "New shared space", "Invite connected accounts to a group chat") { choice = "shared" }
-                } else if (choice == "direct") {
-                    Text("Your chats", style = MaterialTheme.typography.labelLarge, color = p.ink3)
-                    Column(Modifier.heightIn(max = 260.dp).verticalScroll(rememberScrollState())) {
-                        for (row in listRows) TextButton(onClick = { openChat(row); spaceAction = "" }) { Text(row.title) }
-                    }
-                    for (account in connections) ChatCreationChoice(R.drawable.ic_members, account.shownName, "Start a direct message") {
-                        val dev = chorus.device ?: return@ChatCreationChoice
-                        busy = true; error = null; spaceAction = ""
-                        actions.launch {
-                            try { selectedSpace = Spaces.openDm(dev, account.id); selectedChannel = ""; conversationOpen = true; refresh++ }
-                            catch (_: Exception) { error = "Could not start the message. Try again when connected." }
-                            finally { busy = false }
+                    if (choice == "choose") {
+                        ChatCreationChoice(R.drawable.ic_thread, "New channel", "A place for a topic, plans or shared notes", prominent = true) {
+                            spaceAction = ""; editChannel = false; channelEditor = true
                         }
-                    }
-                } else {
-                    Text("Messages show who is speaking to everyone in the space.", style = MaterialTheme.typography.bodySmall, color = p.ink3)
-                    OutlinedTextField(newSpaceName, { newSpaceName = it.take(80) }, label = { Text("Shared space name") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth())
-                    if (connections.isEmpty()) Text("Connect with an account in Friends before inviting them.", style = MaterialTheme.typography.bodyMedium, color = p.ink2)
-                    for (account in connections) Row(Modifier.fillMaxWidth().clickable {
-                        invitedAccounts = if (account.id in invitedAccounts) invitedAccounts - account.id else invitedAccounts + account.id
-                    }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(account.id in invitedAccounts, onCheckedChange = { checked ->
-                            invitedAccounts = if (checked) invitedAccounts + account.id else invitedAccounts - account.id
-                        })
-                        Text(account.shownName, style = MaterialTheme.typography.bodyMedium)
-                    }
-                    Button(enabled = !busy && newSpaceName.isNotBlank() && invitedAccounts.isNotEmpty(), onClick = {
-                        val dev = chorus.device ?: return@Button
-                        busy = true; error = null; spaceAction = ""
-                        actions.launch {
-                            try {
-                                selectedSpace = Spaces.createShared(dev, newSpaceName, invitedAccounts)
-                                selectedChannel = ""; conversationOpen = true; newSpaceName = ""; invitedAccounts = emptyList(); refresh++
-                            } catch (_: Exception) { error = "Could not create the space. Try again when connected." }
-                            finally { busy = false }
+                        ChatCreationChoice(R.drawable.ic_members, "Direct message", "Write to a member or a connected account") { choice = "direct" }
+                        ChatCreationChoice(R.drawable.ic_globe, "New shared space", "Invite connected accounts to a group chat") { choice = "shared" }
+                    } else if (choice == "direct") {
+                        DirectMessagePicker(model.active.filter { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId },
+                            connections, busy, syncStatus == Status.Live, error,
+                            onMembers = { speaker, recipients ->
+                                if (!busy) {
+                                    busy = true; error = null
+                                    directRequest = actions.launch {
+                                        try {
+                                            val latest = chorus.model.value
+                                            val home = latest.spaces.firstOrNull { it.kind == "internal" }
+                                                ?: throw IllegalStateException("Your internal space is not available yet.")
+                                            val participants = garden.vayne.chorus.data.MemberDms.selected(latest.active,
+                                                (listOf(speaker) + recipients).map { it.id }, chorus.device?.accountId.orEmpty())
+                                            val existing = garden.vayne.chorus.data.MemberDms.existing(latest.channels, home.id, participants.map { it.id })
+                                            val requestKey = listOf(home.id) + participants.map { it.id }.sorted()
+                                            // A timeout/cancel may follow a durable write before its model refresh.
+                                            // Retry that entity ID so a slow projection cannot create another DM.
+                                            if (existing == null && pendingDmParticipants != requestKey) {
+                                                pendingDmParticipants = requestKey; pendingDmId = chorus.newId()
+                                            }
+                                            val target = existing?.id ?: pendingDmId.also { id ->
+                                                chorus.create("channel.create", id, garden.vayne.chorus.data.MemberDms.payload(home.id, participants), scope = "space:${home.id}")
+                                            }
+                                            withTimeout(15_000) { chorus.model.first { next -> next.channels.any { it.id == target && it.spaceId == home.id } } }
+                                            // Seed the destination draft before opening; the source draft stays untouched.
+                                            drafts.getOrPut(target) { ChatDraft() }.author.value = speaker.id
+                                            selectedSpace = home.id; selectedChannel = target; viewingAs = speaker.id
+                                            conversationOpen = true; infoOpen = false; spaceAction = ""
+                                        } catch (_: TimeoutCancellationException) { error = "The conversation is not available yet. Try again after syncing."
+                                        } catch (e: CancellationException) { throw e
+                                        } catch (e: Exception) { error = e.message ?: "Could not start the message." }
+                                        finally { busy = false }
+                                    }
+                                }
+                            }, onAccount = { speaker, account ->
+                                val dev = chorus.device
+                                if (!busy && dev != null) {
+                                    busy = true; error = null
+                                    directRequest = actions.launch {
+                                        try {
+                                            garden.vayne.chorus.data.MemberDms.selected(chorus.model.value.active, listOf(speaker.id), dev.accountId)
+                                            val targetSpace = Spaces.openDm(dev, account.id)
+                                            val targetChannel = withTimeout(15_000) { chorus.model.first { next ->
+                                                next.spaces.any { it.id == targetSpace } && next.channels.any { it.spaceId == targetSpace && it.kind != "thread" }
+                                            } }.channels.first { it.spaceId == targetSpace && it.kind != "thread" }
+                                            garden.vayne.chorus.data.MemberDms.selected(chorus.model.value.active, listOf(speaker.id), dev.accountId)
+                                            drafts.getOrPut(targetChannel.id) { ChatDraft() }.author.value = speaker.id
+                                            selectedSpace = targetSpace; selectedChannel = targetChannel.id
+                                            viewingAs = null; conversationOpen = true; infoOpen = false; spaceAction = ""; refresh++
+                                        } catch (_: TimeoutCancellationException) { error = "The conversation is not available yet. Try again after syncing."
+                                        } catch (e: CancellationException) { throw e
+                                        } catch (_: Exception) { error = "Could not start the message. Try again when connected." }
+                                        finally { busy = false }
+                                    }
+                                }
+                            })
+                    } else {
+                        Text("Messages show who is speaking to everyone in the space.", style = MaterialTheme.typography.bodySmall, color = p.ink3)
+                        OutlinedTextField(newSpaceName, { newSpaceName = it.take(80) }, label = { Text("Shared space name") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth())
+                        if (connections.isEmpty()) Text("Connect with an account in Friends before inviting them.", style = MaterialTheme.typography.bodyMedium, color = p.ink2)
+                        for (account in connections) Row(Modifier.fillMaxWidth().clickable {
+                            invitedAccounts = if (account.id in invitedAccounts) invitedAccounts - account.id else invitedAccounts + account.id
+                        }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(account.id in invitedAccounts, onCheckedChange = { checked ->
+                                invitedAccounts = if (checked) invitedAccounts + account.id else invitedAccounts - account.id
+                            })
+                            Text(account.shownName, style = MaterialTheme.typography.bodyMedium)
                         }
-                    }) { Text("Create shared space") }
+                        Button(enabled = !busy && newSpaceName.isNotBlank() && invitedAccounts.isNotEmpty(), onClick = {
+                            val dev = chorus.device ?: return@Button
+                            busy = true; error = null; spaceAction = ""
+                            actions.launch {
+                                try {
+                                    selectedSpace = Spaces.createShared(dev, newSpaceName, invitedAccounts)
+                                    selectedChannel = ""; conversationOpen = true; newSpaceName = ""; invitedAccounts = emptyList(); refresh++
+                                } catch (_: Exception) { error = "Could not create the space. Try again when connected." }
+                                finally { busy = false }
+                            }
+                        }) { Text("Create shared space") }
+                    }
+                    TextButton(onClick = { directRequest?.cancel(); spaceAction = "" }) { Text("Cancel") }
                 }
-                TextButton(onClick = { spaceAction = "" }) { Text("Cancel") }
             }
         }
     }

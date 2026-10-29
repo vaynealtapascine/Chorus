@@ -5,6 +5,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ChannelComposeTest {
+    @Test fun colourOnlySavePreservesConcurrentMetadataAndUntouchedColourIsNotWritten() {
+        val baseline = ChatChannel("c", "s", "text", "Garden", null, topic = "Quiet", color = "#42A397")
+        val payload = ChannelCompose.update(baseline, "Garden", "Quiet", null, "#6D9ED2")
+        assertEquals(setOf("color"), payload.keys().asSequence().toSet())
+        val live = baseline.copy(name = "Evening", topic = "Remote edit", avatarBlob = "a".repeat(64))
+        val saved = live.copy(color = payload.getString("color"))
+        assertEquals(live.copy(color = "#6D9ED2"), saved)
+        assertFalse(ChannelCompose.update(baseline, "Renamed", "Quiet", null, baseline.color!!).has("color"))
+        assertFalse(ChannelCompose.update(baseline.copy(color = null), "Renamed", "Quiet", null, "#42A397").has("color"))
+        assertEquals("#6D9ED2", ChannelCompose.create("s", "Garden", "", null, "#6D9ED2").getString("color"))
+    }
     @Test fun imageOnlySavePreservesConcurrentMetadataEdits() {
         val baseline = ChatChannel("c", "s", "text", "Garden", null, topic = "Quiet")
         val live = baseline.copy(name = "Evening garden", topic = "Changed on another device")

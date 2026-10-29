@@ -81,6 +81,22 @@ android/
   widget/              Glance widgets + actions
 ```
 
+### 2.2.1 Native member and chat controls (UI6)
+
+- Navigation choices follow D-089: up to four device/account-local destinations plus fixed More.
+  The chooser stages edits until Apply; Cancel leaves the current bar intact. Stable route keys
+  retain drafts and scroll independently of tab placement.
+- Internal chat has one **Read as…** entry opening a searchable, lazy member sheet with current
+  selection and **Everyone present**. Selecting a reader retains the existing reading semantics.
+- **New → Direct message** selects a sender and one or more own-system recipients, then reuses
+  an existing `member_dm` with the same participant set or creates one through the ordinary
+  offline op path. Connected-account DMs retain their online API path. These are the existing
+  D-010/D-021 soft in-system privacy rules; UI6 channel restrictions remain separate work.
+- Member and channel colours use a staged visual picker: palette, recent colours, hue,
+  saturation, brightness, contrast-aware preview and optional hex precision. Applying a colour
+  changes the parent editor draft; saving that editor writes the existing field. Cancel does
+  not change the draft. Recent colours stay on this device.
+
 ### 2.3 Sync on Android
 
 - A single `SyncManager` owns the socket while the app is foregrounded or while a sync work runs.
