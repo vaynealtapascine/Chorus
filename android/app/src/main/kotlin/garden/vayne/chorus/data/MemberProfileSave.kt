@@ -29,7 +29,8 @@ object MemberProfileSave {
             if (current == null && target != null) {
                 // An absent-at-open slot may adopt a concurrent matching definition only if no
                 // existing value is rebound/overwritten. Established IDs never change targets.
-                require(opening.getString("value").isEmpty() && details.value(id, target).isEmpty()) { REOPEN }
+                require(opening.getString("value").isEmpty() && details.values[id]?.get(fieldId).isNullOrEmpty() &&
+                    details.value(id, target).isEmpty()) { REOPEN }
             }
             Triple(i, target?.id ?: fieldId, target == null)
         }

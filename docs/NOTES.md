@@ -703,3 +703,17 @@ The profile-save planner is called on Chorus's serial replica worker before `cre
 sync callback cannot slip between live definition preflight and writes. It never redefines a live
 ID. Deleted IDs stay unavailable even when a later field.define leaves a live-looking row with
 a tombstone; the parsed ProfileDetails must retain unavailable IDs, not merely drop deleted rows.
+
+### UI6 independent correction review (2026-10-30)
+
+The absent-at-open profile slot guard must inspect the latest reserved-ID value too, not only
+the opening value and latest other-ID destination. A value op can precede its definition;
+adopting another matching definition in that state hides the newly arrived old-ID value.
+MemberProfileSave now rejects that rebinding before any operations.
+
+Current rich-editor provenance has two outstanding limits: text undo has no paired provenance
+history, and saving original entities both in the member snapshot and bioDraft can exceed the
+activity-state Binder limit. A valid native 10,000-unit/2,000-mention bio crashed on background
+with a 1,151,760-byte parcel. Keep large drafts out of saved-state Bundles; retain bounded,
+account-scoped durable references. See docs/handoff/ui6-batch2-corrections-review.md for the
+actual probes and correction criteria. Linear-memory LCS still has quadratic runtime.

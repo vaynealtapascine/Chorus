@@ -77,6 +77,8 @@ class MemberProfileSaveTest {
         val fields = opening()
         val a = ProfileDetail("a", "Website", "url", "public")
         rejects(fields, ProfileDetails(listOf(a), mapOf("m" to mapOf("a" to "https://other.example"))))
+        // An out-of-order value can arrive at the reserved ID after opening, before its definition.
+        rejects(fields, ProfileDetails(listOf(a), mapOf("m" to mapOf(website(fields) to "https://concurrent.example"))))
         fields.getJSONObject(1).put("value", "orphan legacy URL")
         rejects(fields, ProfileDetails(listOf(a)))
     }
