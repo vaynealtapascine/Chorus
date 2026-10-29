@@ -196,6 +196,14 @@ class Chorus private constructor(private val ctx: Context) {
             out.getJSONObject("op").getString("id")
         }
 
+    /** Plan against the live replica and apply on its serial worker, without a sync gap. */
+    suspend fun saveMemberProfile(id: String, existed: Boolean, patch: JSONObject, fields: JSONArray, values: List<String>) =
+        withContext(dispatcher) {
+            val account = device?.accountId ?: error("not set up")
+            val plan = MemberProfileSave.plan(id, existed, patch, fields, values, awaitModel(), account)
+            for (op in plan) create(op.kind, op.entityId, op.payload)
+        }
+
     // ─── persistence + model ─────────────────────────────────────────────────
 
     private fun changed(r: CoreReplica) {

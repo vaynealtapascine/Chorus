@@ -192,6 +192,10 @@ struct P<'a> {
     r: &'a dyn Resolver,
     /// Nesting depth inside inline entities; code blocks only parse at depth 0.
     depth: usize,
+    #[cfg(feature = "editor")]
+    sources: Option<Vec<u32>>,
+    #[cfg(feature = "editor")]
+    source_units: Vec<u32>,
 }
 
 fn is_word(c: char) -> bool {
@@ -199,15 +203,14 @@ fn is_word(c: char) -> bool {
 }
 
 impl P<'_> {
-    fn push(&mut self, c: char) {
+    fn push(&mut self, c: char, _at: usize) {
+        #[cfg(feature = "editor")]
+        if let Some(sources) = &mut self.sources {
+            let at = self.source_units[_at];
+            sources.extend((0..c.len_utf16()).map(|unit| at + unit as u32));
+        }
         self.out.push(c);
         self.u16 += c.len_utf16() as u32;
-    }
-
-    fn push_str(&mut self, s: &str) {
-        for c in s.chars() {
-            self.push(c);
-        }
     }
 
     fn at(&self, i: usize, pat: &str) -> bool {
@@ -291,7 +294,7 @@ impl P<'_> {
                 continue;
             }
             if c == '\\' && i + 1 < to && ESCAPABLE.contains(&self.s[i + 1]) {
-                self.push(self.s[i + 1]);
+                self.push(self.s[i + 1], i + 1);
                 i += 2;
                 continue;
             }
@@ -314,7 +317,7 @@ impl P<'_> {
                     if self.s[j] == '\\' && matches!(self.s.get(j + 1), Some('`' | '\\')) {
                         j += 1;
                     }
-                    self.push(self.s[j]);
+                    self.push(self.s[j], j);
                     j += 1;
                 }
                 self.ents.push(Entity { kind: EntityKind::Code, offset: start, length: self.u16 - start });
@@ -374,8 +377,9 @@ impl P<'_> {
                     let name: String = self.s[i + 1..j].iter().collect();
                     if let Some((target_type, target_id)) = self.r.mention(&name) {
                         let start = self.u16;
-                        self.push('@');
-                        self.push_str(&name);
+                        for k in i..j {
+                            self.push(self.s[k], k);
+                        }
                         self.ents.push(Entity {
                             kind: EntityKind::Mention { target_type, target_id },
                             offset: start,
@@ -398,9 +402,9 @@ impl P<'_> {
                     let name: String = self.s[i + 1..j].iter().collect();
                     if let Some(emoji_id) = self.r.emoji(&name) {
                         let start = self.u16;
-                        self.push(':');
-                        self.push_str(&name);
-                        self.push(':');
+                        for k in i..=j {
+                            self.push(self.s[k], k);
+                        }
                         self.ents.push(Entity {
                             kind: EntityKind::CustomEmoji { emoji_id },
                             offset: start,
@@ -429,14 +433,14 @@ impl P<'_> {
                 if j > i + scheme_len {
                     let start = self.u16;
                     for k in i..j {
-                        self.push(self.s[k]);
+                        self.push(self.s[k], k);
                     }
                     self.ents.push(Entity { kind: EntityKind::Url, offset: start, length: self.u16 - start });
                     i = j;
                     continue;
                 }
             }
-            self.push(c);
+            self.push(c, i);
             i += 1;
         }
     }
@@ -480,7 +484,7 @@ impl P<'_> {
             if self.s[j] == '\\' && matches!(self.s.get(j + 1), Some('`' | '\\')) {
                 j += 1;
             }
-            self.push(self.s[j]);
+            self.push(self.s[j], j);
             j += 1;
         }
         if self.u16 > start {
@@ -551,6 +555,16 @@ fn count_fences(line: &[char]) -> usize {
 
 /// Parse Chorus markup into plain text + entities.
 pub fn parse(src: &str, r: &dyn Resolver) -> Rich {
+    parse_inner(src, r, false).0
+}
+
+/// One source UTF-16 index per emitted UTF-16 unit, including escapes, quotes and code.
+#[cfg(feature = "editor")]
+pub fn parse_mapped(src: &str, r: &dyn Resolver) -> (Rich, Vec<u32>) {
+    parse_inner(src, r, true)
+}
+
+fn parse_inner(src: &str, r: &dyn Resolver, _mapped: bool) -> (Rich, Vec<u32>) {
     let s: Vec<char> = src.chars().collect();
     // Split into lines (char ranges without the newline), classify, respecting code fences.
     let mut lines: Vec<(LineKind, usize, usize)> = Vec::new();
@@ -580,7 +594,29 @@ pub fn parse(src: &str, r: &dyn Resolver) -> Rich {
             start = i + 1;
         }
     }
-    let mut p = P { s, out: String::new(), u16: 0, ents: Vec::new(), r, depth: 0 };
+    #[cfg(feature = "editor")]
+    let source_units = {
+        let mut offset = 0;
+        s.iter()
+            .map(|c| {
+                let at = offset;
+                offset += c.len_utf16() as u32;
+                at
+            })
+            .collect()
+    };
+    let mut p = P {
+        s,
+        out: String::new(),
+        u16: 0,
+        ents: Vec::new(),
+        r,
+        depth: 0,
+        #[cfg(feature = "editor")]
+        sources: _mapped.then(Vec::new),
+        #[cfg(feature = "editor")]
+        source_units,
+    };
     let mut k = 0;
     while k < lines.len() {
         let kind = lines[k].0;
@@ -589,7 +625,7 @@ pub fn parse(src: &str, r: &dyn Resolver) -> Rich {
             g += 1;
         }
         if k > 0 {
-            p.push('\n');
+            p.push('\n', lines[k - 1].2);
         }
         match kind {
             LineKind::Normal => {
@@ -600,7 +636,7 @@ pub fn parse(src: &str, r: &dyn Resolver) -> Rich {
                 let start = p.u16;
                 for (n, &(_, from, to)) in lines[k..=g].iter().enumerate() {
                     if n > 0 {
-                        p.push('\n');
+                        p.push('\n', lines[k + n - 1].2);
                     }
                     p.inline(from, to);
                 }
@@ -616,7 +652,11 @@ pub fn parse(src: &str, r: &dyn Resolver) -> Rich {
     }
     let mut entities = p.ents;
     normalize_entities(&mut entities);
-    Rich { text: p.out, entities }
+    #[cfg(feature = "editor")]
+    let sources = p.sources.unwrap_or_default();
+    #[cfg(not(feature = "editor"))]
+    let sources = Vec::new();
+    (Rich { text: p.out, entities }, sources)
 }
 
 // ─── serializer ──────────────────────────────────────────────────────────────

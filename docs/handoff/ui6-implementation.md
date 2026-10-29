@@ -6,8 +6,10 @@ features below. No delegates, deployment, push, checkout creation or system chan
 
 Status: slices 1, 2, 8 and 10 passed independent Sol-6.1 source/native review and
 small corrections. See `ui6-batch1-review.md` for evidence and validation limits.
-Slices 7 and 9 are implemented and natively inspected in batch 2; independent Sol-6.1
-review/acceptance is pending. See `ui6-batch2-implementation.md`. Slices 3/4/5/6/11
+Slices 7 and 9 were withheld by the independent batch2 review for R1–R3. Corrective
+implementation and verification are recorded in `ui6-batch2-corrections.md`; a NEW independent
+Sol-6.1 reviewer must evaluate them before acceptance. Original provenance remains in
+`ui6-batch2-implementation.md` and `ui6-batch2-review.md`. Slices 3/4/5/6/11
 remain unimplemented.
 D-089 and DESIGN/CLIENTS describe navigation/colour behavior. Do not mark UI6 done.
 
@@ -30,11 +32,11 @@ D-089 and DESIGN/CLIENTS describe navigation/colour behavior. Do not mark UI6 do
 - [ ] 6 Channel sides: named groups, searchable membership/avatar stacks, distinct
   Follow front/Locked preference, preview, deterministic cofront/multi-author policy;
   legacy unchanged until configured, authors and read perspective preserved.
-- [~] 7 Implemented; independent review pending. Rich member profiles: avatar/banner pick/crop/remove, bio/links/location,
+- [~] 7 R1/R3 corrected; fresh independent review pending. Rich member profiles: avatar/banner pick/crop/remove, bio/links/location,
   privacy-aware editor/presentation and actual offline persisted media.
 - [x] 8 Shared colour picker: swatches/recent/hue/saturation/live preview, optional
   hex, accessible alternatives, no dependency needed for Compose primitives.
-- [~] 9 Implemented; independent review pending. Drag member ordering: explicit handle/mode, persisted sort_key, convergence,
+- [~] 9 R2 corrected; fresh independent review pending. Drag member ordering: explicit handle/mode, persisted sort_key, convergence,
   accessible moves; filtered/search lists cannot corrupt full ordering.
 - [x] 10 New Direct message: own-member and connected-account recipient sections,
   search, explicit member_dm participants, reuse/open, offline/empty/errors;
@@ -86,8 +88,8 @@ public fetch required login; no Mobbin screenshot inspection is claimed.
 
 ## Resume
 
-Launch a different Sol-6.1 reviewer for slices 7/9 using `ui6-batch2-implementation.md`,
-then correct any findings before acceptance. Continue remaining slices 3/4/5/6/11;
+Launch a NEW independent Sol-6.1 reviewer for slices 7/9 using `ui6-batch2-corrections.md`
+and the original batch2 review/probes. The corrective implementer must not self-accept. Continue remaining slices 3/4/5/6/11;
 do not reimplement or widen the accepted four slices. Source/native review, four
 resolved findings and exact checks are in `ui6-batch1-review.md`. Final artifact and
 commit metadata live outside the repo in `batch1-manifest.json`. Required final

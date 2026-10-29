@@ -1,7 +1,5 @@
 package garden.vayne.chorus.data
 
-import java.util.Locale
-
 /** Sparse fractional string positions. Unpositioned members retain name order; IDs break ties.
  * Only Members uses this order. Search relevance, fronts and recents keep their own ordering.
  * Printable ASCII positions have no terminal space, so there is always room between positions.
@@ -9,11 +7,13 @@ import java.util.Locale
 object MemberOrdering {
     private const val PREFIX = "~ui6:"
     private fun hex(s: String) = s.map { it.code.toString(16).padStart(4, '0') }.joinToString("")
+    // D-091: ASCII case folding only; preserve every other UTF-16 unit verbatim.
+    private fun fold(s: String) = s.map { if (it in 'A'..'Z') it + 32 else it }.joinToString("")
     fun key(m: Member): String {
         val stored = m.sortKey
         val position = if (stored?.startsWith(PREFIX) == true && stored.length > PREFIX.length &&
             stored.drop(PREFIX.length).all { it.code in 32..126 } && !stored.endsWith(' ')) stored.drop(PREFIX.length)
-            else hex(stored ?: m.shownName.lowercase(Locale.ROOT))
+            else hex(stored ?: fold(m.shownName))
         return "$position!${hex(m.id)}"
     }
     fun ordered(members: List<Member>): List<Member> {

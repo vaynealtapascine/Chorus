@@ -2,7 +2,6 @@ package garden.vayne.chorus.data
 
 import org.json.JSONArray
 import org.json.JSONObject
-import uniffi.chorus_ffi.parseMarkup
 import uniffi.chorus_ffi.toMarkup
 
 /** Rebuild an edit without changing which members authored each segment. Offsets are UTF-16. */
@@ -36,30 +35,43 @@ object ChatEdit {
     /** Also used by profile bios: editing nearby text must retain existing mention/emoji IDs. */
     fun names(text: String, entities: String, model: Model): String {
         val mentions = JSONObject()
-        for (member in model.members.filter { !it.archived }) {
-            mentions.put(member.name.lowercase(), JSONObject().put("target_type", "member").put("target_id", member.id))
-        }
         val emoji = JSONObject()
+        // Only unambiguous legacy labels supplement the live directory for newly typed tokens.
+        // Existing identities are retained separately by RichTextEdit's occurrence provenance.
+        val candidates = mutableMapOf<String, MutableSet<String>>()
         val source = JSONArray(entities)
         for (i in 0 until source.length()) {
             val entity = source.getJSONObject(i)
             val at = entity.getInt("offset")
-            val end = at + entity.getInt("length")
-            if (at < 0 || end > text.length) continue
-            val token = text.substring(at, end)
-            when (entity.optString("type")) {
-                "mention" -> if (token.startsWith("@")) mentions.put(token.drop(1).lowercase(),
-                    JSONObject().put("target_type", entity.getString("target_type"))
-                        .put("target_id", entity.optString("target_id").takeIf { it.isNotEmpty() } ?: JSONObject.NULL))
-                "custom_emoji" -> if (token.startsWith(":") && token.endsWith(":"))
-                    emoji.put(token.drop(1).dropLast(1), entity.getString("emoji_id"))
+            val length = entity.getInt("length")
+            if (at < 0 || length <= 0 || at.toLong() + length > text.length) continue
+            val token = text.substring(at, at + length)
+            if (entity.optString("type") == "mention" && token.startsWith("@")) {
+                val value = JSONObject().put("target_type", entity.getString("target_type"))
+                    .put("target_id", entity.opt("target_id") ?: JSONObject.NULL).toString()
+                candidates.getOrPut("m:" + token.drop(1).lowercase()) { mutableSetOf() }.add(value)
+            } else if (entity.optString("type") == "custom_emoji" && token.startsWith(":") && token.endsWith(":")) {
+                candidates.getOrPut("e:" + token.drop(1).dropLast(1)) { mutableSetOf() }.add(entity.getString("emoji_id"))
             }
+        }
+        for ((label, targets) in candidates) if (targets.size == 1) {
+            if (label.startsWith("m:")) mentions.put(label.drop(2), JSONObject(targets.single()))
+            else emoji.put(label.drop(2), targets.single())
+        }
+        for (member in model.members.filter { !it.archived }.sortedByDescending { it.id }) {
+            mentions.put(member.name.lowercase(), JSONObject().put("target_type", "member").put("target_id", member.id))
         }
         return JSONObject().put("mentions", mentions).put("emoji", emoji).toString()
     }
 
+    fun drafts(message: ChatMessage): List<String> = segments(message).map { segment ->
+        val source = rich(message, segment)
+        RichTextEdit.open(source.getString("text"), source.getJSONArray("entities").toString(), toMarkup(source.toString()))
+    }
+
     fun payload(message: ChatMessage, editedParts: List<String>, names: String,
-        parse: (String, String) -> String = ::parseMarkup): JSONObject {
+        states: List<String>? = null,
+        parse: ((String, String) -> String)? = null): JSONObject {
         val original = segments(message)
         require(editedParts.size == original.size) { "The message changed. Open Edit again." }
         val text = StringBuilder()
@@ -68,7 +80,8 @@ object ChatEdit {
         for ((index, part) in editedParts.withIndex()) {
             if (index > 0) text.append('\n')
             val offset = text.length
-            val rich = JSONObject(parse(part, names))
+            val rich = if (parse == null) RichTextEdit.parse((states ?: drafts(message))[index], part, names)
+                else JSONObject(parse(part, names))
             val content = rich.getString("text")
             text.append(content)
             val fields = rich.getJSONArray("entities")

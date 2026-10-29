@@ -4,7 +4,7 @@ import { memberOrderKey, orderedMembers } from './member-order';
 import type { MemberRow } from './data';
 
 test('manual member order agrees with the Android fixture, including Unicode and ties', () => {
-  const members = fixture.members.map(m => ({ ...m, color: '#123456', sigils: [], proxy_tags: [], archived: false, deleted: false })) as MemberRow[];
+  const members = fixture.members.map(m => ({ ...m, name: 'name_utf16' in m ? String.fromCharCode(...m.name_utf16!) : m.name, color: '#123456', sigils: [], proxy_tags: [], archived: false, deleted: false })) as MemberRow[];
   for (const member of members) expect(memberOrderKey(member)).toBe(fixture.keys[member.id as keyof typeof fixture.keys]);
   expect(orderedMembers(members).map(m => m.id)).toEqual(fixture.order);
   expect(orderedMembers([...members].reverse()).map(m => m.id)).toEqual(fixture.order);

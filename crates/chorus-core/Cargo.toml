@@ -10,6 +10,10 @@ authors.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Native editor source maps; deliberately not linked into the size-bounded WASM API.
+editor = []
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

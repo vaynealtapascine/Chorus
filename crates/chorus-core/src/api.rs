@@ -71,6 +71,13 @@ fn names(json: &str) -> Result<Names, String> {
     if json.trim().is_empty() { Ok(Names::default()) } else { parse("names", json) }
 }
 
+/// Native editor trace. No new wire format or WASM export.
+#[cfg(feature = "editor")]
+pub fn parse_markup_mapped(src: &str, names_json: &str) -> Result<String, String> {
+    let (rich, sources) = text::parse_mapped(src, &names(names_json)?);
+    Ok(js(&serde_json::json!({"text": rich.text, "entities": rich.entities, "sources": sources})))
+}
+
 /// Markup → `{"text", "entities"}`.
 pub fn parse_markup(src: &str, names_json: &str) -> Result<String, String> {
     Ok(js(&text::parse(src, &names(names_json)?)))

@@ -86,7 +86,12 @@ android/
 - Members rows open the shared Journal profile with banner, overlapping avatar, rich bio,
   typed fields and existing posts/highlights/media/relationships. Edit profile is explicit.
   Location and three website slots persist through existing typed fields, not local preferences.
-  Saved opening baselines survive recreation and omit untouched fields from patches.
+  Saved opening baselines survive recreation and omit untouched fields from patches. Bio/chat
+  edits retain identity per original mention/custom-emoji occurrence using saveable UTF-16
+  character provenance and core parser source maps, through text/formatting edits. Newly typed
+  tokens use the normal directory; code/escaped/retyped tokens cannot inherit stale IDs.
+  All changed custom-field slots preflight against the latest definitions before any save op;
+  incompatible/deleted/rebound definitions ask to cancel and reopen. Metadata/privacy is preserved.
 - Avatar/banner selection copies at most 10 MB into an app-cache draft, decodes with API29
   ImageDecoder (EXIF-aware, source capped at 100 MP, output at 1600 px), then crops before
   staging PNG through the ordinary offline upload queue. Avatar output is at most 512 px wide;

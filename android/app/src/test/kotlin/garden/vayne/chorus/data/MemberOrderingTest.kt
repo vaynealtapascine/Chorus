@@ -10,11 +10,22 @@ class MemberOrderingTest {
         val fixture = JSONObject(java.io.File(System.getProperty("chorus.fixtures"), "ui_member_order.json").readText())
         val rows = fixture.getJSONArray("members")
         val members = List(rows.length()) { i -> rows.getJSONObject(i).let {
-            member(it.getString("id"), it.getString("name"), it.optString("sort_key").ifEmpty { null })
+            member(it.getString("id"), it.optJSONArray("name_utf16")?.let { units ->
+                CharArray(units.length()) { i -> units.getInt(i).toChar() }.concatToString()
+            } ?: it.getString("name"), if (it.has("sort_key")) it.getString("sort_key") else null)
+                .copy(displayName = if (it.has("display_name")) it.getString("display_name") else null)
         } }
         for (m in members) assertEquals(fixture.getJSONObject("keys").getString(m.id), MemberOrdering.key(m))
         val order = fixture.getJSONArray("order")
         assertEquals(List(order.length()) { order.getString(it) }, MemberOrdering.ordered(members.reversed()).map { it.id })
+    }
+    @Test fun unicodeVersionSkewProbeUsesThePinnedPortableContract() {
+        // Original review probe diverged JBR vs Node. Both now preserve these non-ASCII units.
+        val rows = listOf(member("z", "\u1c89"), member("a", "\u1c8a"))
+        assertEquals(listOf("z", "a"), MemberOrdering.ordered(rows).map { it.id })
+        assertEquals("a", MemberOrdering.ordered(rows).last().id)
+        val latin = listOf(member("z", "\ua7cb"), member("a", "\u0264"))
+        assertEquals(listOf("a", "z"), MemberOrdering.ordered(latin).map { it.id })
     }
     private fun member(id: String, name: String = id, key: String? = null) =
         Member(id, name, null, null, "#123456", emptyList(), null, false, sortKey = key)
@@ -69,4 +80,21 @@ class MemberOrderingTest {
             assertEquals(id, MemberOrdering.ordered(rows)[1].id)
         }
     }
+ @Test fun pathologicalLegacyPositionsRemainStrictAndSparse() {
+  val keys=listOf(null,"","legacy","~ui6:","~ui6: ","~ui6:a","~ui6:a!","~ui6:a  !","~ui6:~","~ui6:~~","~ui6:\u00e9","~ui6:\n","duplicate","duplicate")
+  var rows=keys.mapIndexed { i,key-> member("id"+i.toString().padStart(2,'0'),"Name$i",key) }
+  val random=Random(6509)
+  repeat(600) {
+   val current=MemberOrdering.ordered(rows)
+   val expected=current.map {it.id}.toMutableList()
+   val id=expected.removeAt(random.nextInt(expected.size))
+   expected.add(random.nextInt(expected.size+1),id)
+   val patches=MemberOrdering.patches(rows,"mine",expected,setOf(id))
+   assertTrue(patches.size<=1)
+   rows=rows.map {m-> patches.find {it.first==m.id}?.let {m.copy(sortKey=it.second)}?:m}
+   assertEquals(expected,MemberOrdering.ordered(rows).map {it.id})
+   val sorted=MemberOrdering.ordered(rows).map {MemberOrdering.key(it)}
+   assertTrue(sorted.zipWithNext().all { (a,b)->a<b })
+  }
+ }
 }

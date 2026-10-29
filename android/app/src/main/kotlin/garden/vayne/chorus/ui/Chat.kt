@@ -110,6 +110,7 @@ import garden.vayne.chorus.data.ReadTracking
 import garden.vayne.chorus.data.HeldMessage
 import garden.vayne.chorus.data.PrivateReplies
 import garden.vayne.chorus.data.ChatCompose
+import garden.vayne.chorus.data.RichTextEdit
 import garden.vayne.chorus.data.ChatEdit
 import garden.vayne.chorus.data.ChatSpace
 import garden.vayne.chorus.data.Chorus
@@ -1050,6 +1051,14 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         val parts = remember(original.id, original.text, original.entities) {
             mutableStateListOf<String>().also { it.addAll(ChatEdit.parts(original)) }
         }
+        val editDrafts = remember(original.id, original.text, original.entities) {
+            mutableStateListOf<String>().also { it.addAll(ChatEdit.drafts(original)) }
+        }
+        val editValues = remember(original.id, original.text, original.entities) {
+            mutableStateListOf<androidx.compose.ui.text.input.TextFieldValue>().also { values ->
+                parts.forEach { values.add(androidx.compose.ui.text.input.TextFieldValue(it)) }
+            }
+        }
         AlertDialog(onDismissRequest = { if (!editBusy) editingMessage = null },
             title = { Text("Edit message") },
             text = {
@@ -1057,7 +1066,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (parts.size > 1) Text("Each part keeps its original speaker.")
                     for (index in parts.indices) {
-                        OutlinedTextField(parts[index], { parts[index] = it }, modifier = Modifier.fillMaxWidth(),
+                        OutlinedTextField(editValues[index], {
+                            editDrafts[index] = RichTextEdit.update(editDrafts[index], it.text,
+                                editValues[index].selection.start, editValues[index].selection.end, it.selection.start)
+                            parts[index] = it.text; editValues[index] = it
+                        }, modifier = Modifier.fillMaxWidth(),
                             label = { Text(if (parts.size == 1) "Message" else "Part ${index + 1} · " +
                                 original.segments[index].authors.map { model.member(it)?.shownName ?: "Someone" }.joinToString(" & ")) },
                             minLines = 2, maxLines = 6)
@@ -1079,7 +1092,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 actions.launch {
                     try {
                         chorus.create("message.edit", original.id,
-                            ChatEdit.payload(original, parts.toList(), ChatEdit.names(original, model)),
+                            ChatEdit.payload(original, parts.toList(), ChatEdit.names(original, model), editDrafts.toList()),
                             scope = "space:${requireNotNull(space?.id) { "Space unavailable" }}")
                         editingMessage = null
                     } catch (e: Exception) { editError = e.message ?: "Could not edit the message." }

@@ -5,7 +5,11 @@ Reorder previews remain local until Save/Apply. Reorder compares the opening eli
 position keys with the current model before writing; a concurrent order/membership change asks
 the user to reopen rather than applying stale neighbours. Applied fractional positions converge
 through ordinary member LWW registers and deterministic ID ties (DATA_MODEL.md §3). No new
-wire capability or projection cache version is required.
+wire capability or projection cache version is required. D-091 specifies ASCII-only folding
+for unset member positions: all non-ASCII UTF-16 units are preserved, avoiding runtime Unicode
+version differences. Valid stored fractional positions are unchanged. The profile save planner
+preflights changed field IDs and chooses safe concurrent-definition reuse on the replica's serial
+worker, before emitting member/field operations; untouched legacy values remain untouched.
 
 Offline-first. Every client can do everything it is allowed to do while disconnected, for as long as
 it likes, and converges cleanly when it reconnects. The server can also be off (the PC is asleep)

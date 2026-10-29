@@ -3,7 +3,10 @@
 Implementer: GPT-6.1-sol, no delegates. Checkout `F:/DunBuild/chorus-ui-redesign`,
 branch `feat/figma-ui-redesign`, clean starting
 `32790135f25b4eecb0d8b3675c9f720ba73cf141`. Scope: slices **7 and 9** only.
-Independent Sol-6.1 review/acceptance belongs to the parent and is **pending**.
+Independent review **withheld acceptance** for R1–R3; this document records the original
+implementation, not the corrected result. See `ui6-batch2-review.md` and
+`ui6-batch2-corrections.md`. Fresh independent Sol-6.1 acceptance belongs to the parent and
+is **pending**.
 UI6 remains open for slices **3/4/5/6/11**, plus this batch's independent review.
 Accepted slices 1/2/8/10 are retained.
 

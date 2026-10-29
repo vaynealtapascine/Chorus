@@ -14,11 +14,11 @@
     },
     {
       "id": "accent",
-      "name": "Éclair"
+      "name": "\u00c9clair"
     },
     {
       "id": "emoji",
-      "name": "🌿"
+      "name": "\ud83c\udf3f"
     },
     {
       "id": "front",
@@ -34,26 +34,239 @@
       "id": "tie-a",
       "name": "A",
       "sort_key": "~ui6:1"
+    },
+    {
+      "id": "z",
+      "name": "\u1c89"
+    },
+    {
+      "id": "a-cyrillic",
+      "name": "\u1c8a"
+    },
+    {
+      "id": "latin-new",
+      "name": "\ua7cb"
+    },
+    {
+      "id": "latin-small",
+      "name": "\u0264"
+    },
+    {
+      "id": "dotted",
+      "name": "\u0130I\u0131i"
+    },
+    {
+      "id": "sigma",
+      "name": "\u03a3\u03c3\u03c2"
+    },
+    {
+      "id": "sharp",
+      "name": "\u1e9e\u00df"
+    },
+    {
+      "id": "combining",
+      "name": "E\u0301"
+    },
+    {
+      "id": "accent-lower",
+      "name": "\u00e9clair"
+    },
+    {
+      "id": "deseret",
+      "name": "\ud801\udc00\ud801\udc28"
+    },
+    {
+      "id": "display",
+      "name": "Unused",
+      "display_name": "ABC"
+    },
+    {
+      "id": "display-empty",
+      "name": "Unused",
+      "display_name": ""
+    },
+    {
+      "id": "empty",
+      "name": "Z",
+      "sort_key": ""
+    },
+    {
+      "id": "prefix",
+      "name": "Z",
+      "sort_key": "~ui6:"
+    },
+    {
+      "id": "space",
+      "name": "Z",
+      "sort_key": "~ui6: "
+    },
+    {
+      "id": "trailing",
+      "name": "Z",
+      "sort_key": "~ui6:a "
+    },
+    {
+      "id": "invalid-non-ascii",
+      "name": "Z",
+      "sort_key": "~ui6:\u00e9"
+    },
+    {
+      "id": "invalid-control",
+      "name": "Z",
+      "sort_key": "~ui6:\n"
+    },
+    {
+      "id": "legacy-upper",
+      "name": "ignored",
+      "sort_key": "ABC"
+    },
+    {
+      "id": "legacy-prefix",
+      "name": "ignored",
+      "sort_key": "ABC!"
+    },
+    {
+      "id": "duplicate-a",
+      "name": "Z",
+      "sort_key": "duplicate"
+    },
+    {
+      "id": "duplicate-b",
+      "name": "A",
+      "sort_key": "duplicate"
+    },
+    {
+      "id": "position-a",
+      "name": "Z",
+      "sort_key": "~ui6:a"
+    },
+    {
+      "id": "position-prefix",
+      "name": "Z",
+      "sort_key": "~ui6:a!"
+    },
+    {
+      "id": "position-interior-space",
+      "name": "Z",
+      "sort_key": "~ui6:a  !"
+    },
+    {
+      "id": "position-upper",
+      "name": "Z",
+      "sort_key": "~ui6:~"
+    },
+    {
+      "id": "lone-high",
+      "name": "fixture units",
+      "name_utf16": [
+        55296
+      ]
+    },
+    {
+      "id": "lone-low",
+      "name": "fixture units",
+      "name_utf16": [
+        56320
+      ]
+    },
+    {
+      "id": "pair",
+      "name": "fixture units",
+      "name_utf16": [
+        55296,
+        56320
+      ]
+    },
+    {
+      "id": "id-surrogate-pair\ud83d\ude00",
+      "name": "Tie"
+    },
+    {
+      "id": "id-unit-boundary",
+      "name": "Tie"
     }
   ],
   "keys": {
     "b": "00730061006d0065!0062",
     "a": "00730061006d0065!0061",
     "upper": "007a!00750070007000650072",
-    "accent": "00e90063006c006100690072!0061006300630065006e0074",
+    "accent": "00c90063006c006100690072!0061006300630065006e0074",
     "emoji": "d83cdf3f!0065006d006f006a0069",
     "front": "/!00660072006f006e0074",
     "tie-b": "1!007400690065002d0062",
-    "tie-a": "1!007400690065002d0061"
+    "tie-a": "1!007400690065002d0061",
+    "z": "1c89!007a",
+    "a-cyrillic": "1c8a!0061002d0063007900720069006c006c00690063",
+    "latin-new": "a7cb!006c006100740069006e002d006e00650077",
+    "latin-small": "0264!006c006100740069006e002d0073006d0061006c006c",
+    "dotted": "0130006901310069!0064006f0074007400650064",
+    "sigma": "03a303c303c2!007300690067006d0061",
+    "sharp": "1e9e00df!00730068006100720070",
+    "combining": "00650301!0063006f006d00620069006e0069006e0067",
+    "accent-lower": "00e90063006c006100690072!0061006300630065006e0074002d006c006f007700650072",
+    "deseret": "d801dc00d801dc28!0064006500730065007200650074",
+    "display": "006100620063!0064006900730070006c00610079",
+    "display-empty": "!0064006900730070006c00610079002d0065006d007000740079",
+    "empty": "!0065006d007000740079",
+    "prefix": "007e007500690036003a!007000720065006600690078",
+    "space": "007e007500690036003a0020!00730070006100630065",
+    "trailing": "007e007500690036003a00610020!0074007200610069006c0069006e0067",
+    "invalid-non-ascii": "007e007500690036003a00e9!0069006e00760061006c00690064002d006e006f006e002d00610073006300690069",
+    "invalid-control": "007e007500690036003a000a!0069006e00760061006c00690064002d0063006f006e00740072006f006c",
+    "legacy-upper": "004100420043!006c00650067006100630079002d00750070007000650072",
+    "legacy-prefix": "0041004200430021!006c00650067006100630079002d007000720065006600690078",
+    "duplicate-a": "006400750070006c00690063006100740065!006400750070006c00690063006100740065002d0061",
+    "duplicate-b": "006400750070006c00690063006100740065!006400750070006c00690063006100740065002d0062",
+    "position-a": "a!0070006f0073006900740069006f006e002d0061",
+    "position-prefix": "a!!0070006f0073006900740069006f006e002d007000720065006600690078",
+    "position-interior-space": "a  !!0070006f0073006900740069006f006e002d0069006e0074006500720069006f0072002d00730070006100630065",
+    "position-upper": "~!0070006f0073006900740069006f006e002d00750070007000650072",
+    "lone-high": "d800!006c006f006e0065002d0068006900670068",
+    "lone-low": "dc00!006c006f006e0065002d006c006f0077",
+    "pair": "d800dc00!0070006100690072",
+    "id-surrogate-pair\ud83d\ude00": "007400690065!00690064002d0073007500720072006f0067006100740065002d0070006100690072d83dde00",
+    "id-unit-boundary": "007400690065!00690064002d0075006e00690074002d0062006f0075006e0064006100720079"
   },
   "order": [
+    "display-empty",
+    "empty",
     "front",
+    "legacy-upper",
+    "legacy-prefix",
+    "display",
+    "duplicate-a",
+    "duplicate-b",
+    "combining",
     "a",
     "b",
+    "id-surrogate-pair\ud83d\ude00",
+    "id-unit-boundary",
     "upper",
+    "prefix",
+    "invalid-control",
+    "space",
+    "trailing",
+    "invalid-non-ascii",
     "accent",
+    "accent-lower",
+    "dotted",
+    "latin-small",
+    "sigma",
     "tie-a",
     "tie-b",
-    "emoji"
-  ]
+    "z",
+    "a-cyrillic",
+    "sharp",
+    "position-interior-space",
+    "position-prefix",
+    "position-a",
+    "latin-new",
+    "lone-high",
+    "pair",
+    "deseret",
+    "emoji",
+    "lone-low",
+    "position-upper"
+  ],
+  "contract": "D-091: ASCII A-Z fold only for unset positions; preserve all other UTF-16 units. Raw legacy keys never fold."
 }

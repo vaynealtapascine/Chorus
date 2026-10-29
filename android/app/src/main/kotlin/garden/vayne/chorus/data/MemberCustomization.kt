@@ -5,7 +5,6 @@ import org.json.JSONObject
 import java.net.URI
 import java.util.Locale
 import java.util.UUID
-import uniffi.chorus_ffi.parseMarkup
 import uniffi.chorus_ffi.toMarkup
 
 data class ProfileDetail(val id: String, val name: String, val type: String, val visibility: String)
@@ -13,7 +12,8 @@ data class ProfileDetail(val id: String, val name: String, val type: String, val
 /** Location and up to three websites are ordinary typed fields, never client-only metadata. */
 data class ProfileDetails(val definitions: List<ProfileDetail> = emptyList(),
     val values: Map<String, Map<String, String>> = emptyMap(),
-    val visibility: Map<String, String> = emptyMap()) {
+    val visibility: Map<String, String> = emptyMap(),
+    val unavailableIds: Set<String> = emptySet()) {
     fun field(account: String, name: String, type: String): ProfileDetail = definitions
         .filter { it.name.equals(name, true) && it.type == type }.minByOrNull { it.id }
         ?: ProfileDetail(UUID.nameUUIDFromBytes("chorus.profile:$account:$name".toByteArray(Charsets.UTF_8)).toString(), name, type, "private")
@@ -44,7 +44,7 @@ data class ProfileDetails(val definitions: List<ProfileDetail> = emptyList(),
             val visibility = members.keys().asSequence().associateWith { id ->
                 members.optJSONObject(id)?.optJSONObject("fields")?.optJSONObject("visibility")?.optString("mode") ?: "private"
             }
-            return ProfileDetails(definitions, values, visibility)
+            return ProfileDetails(definitions, values, visibility, defs.keys().asSequence().toSet() - definitions.map { it.id }.toSet())
         }
     }
 }
@@ -73,8 +73,8 @@ object MemberCustomization {
 
     /** Opening snapshot is immutable even when sync refreshes the live model. */
     fun patch(baseline: Member?, name: String, display: String, pronouns: String, sigil: String, color: String,
-        bio: String, baselineBio: String, avatar: String?, banner: String?, birthday: String, names: String = "",
-        parse: (String, String) -> String = ::parseMarkup): JSONObject {
+        bio: String, baselineBio: String, avatar: String?, banner: String?, birthday: String, names: String = "", bioDraft: String? = null,
+        parse: ((String, String) -> String)? = null): JSONObject {
         require(name == baseline?.name || (name.trim().isNotEmpty() && name.trim().length <= 100)) { "Use a name of 1–100 characters." }
         require((display == baseline?.displayName.orEmpty() || display.trim().length <= 100) &&
             (pronouns == baseline?.pronouns.orEmpty() || pronouns.trim().length <= 100)) { "Keep names and pronouns under 100 characters." }
@@ -96,7 +96,9 @@ object MemberCustomization {
         text("color", color, baseline?.color)
         changed("avatar_blob", avatar, baseline?.avatarBlob); changed("banner_blob", banner, baseline?.bannerBlob)
         if (bio != baselineBio) {
-            val rich = JSONObject(parse(bio, names))
+            val rich = if (parse == null) RichTextEdit.parse(bioDraft ?: RichTextEdit.open(
+                baseline?.description.orEmpty(), baseline?.descriptionEntities ?: "[]", baselineBio), bio, names)
+                else JSONObject(parse(bio, names))
             f.put("description", rich.getString("text").ifEmpty { null } ?: JSONObject.NULL)
                 .put("description_entities", rich.getJSONArray("entities"))
         }

@@ -60,6 +60,12 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
     var sigil by rememberSaveable { mutableStateOf(baseline?.sigils?.firstOrNull().orEmpty()) }
     var color by rememberSaveable { mutableStateOf(baseline?.color ?: "#C0694E") }
     var bio by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(baselineBio)) }
+    var bioDraft by rememberSaveable { mutableStateOf(RichTextEdit.open(
+        baseline?.description.orEmpty(), baseline?.descriptionEntities ?: "[]", baselineBio)) }
+    fun editBio(value: TextFieldValue, formatting: Boolean = false) {
+        bioDraft = RichTextEdit.update(bioDraft, value.text, bio.selection.start, bio.selection.end, value.selection.start, preserveReplacement = formatting)
+        bio = value
+    }
     var birthday by rememberSaveable { mutableStateOf(baseline?.birthday.orEmpty()) }
     var avatar by rememberSaveable { mutableStateOf(baseline?.avatarBlob) }
     var banner by rememberSaveable { mutableStateOf(baseline?.bannerBlob) }
@@ -120,38 +126,11 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
                 error = null
                 actions.launch {
                     try {
-                        val changedDetails = MemberCustomization.validateDetails(values,
-                            List(fields.length()) { fields.getJSONObject(it).getString("value") })
                         val patch = MemberCustomization.patch(baseline, name, display, pronouns, sigil, color,
                             bio.text, baselineBio, avatar, banner, birthday,
-                            names = ChatEdit.names(baseline?.description.orEmpty(), baseline?.descriptionEntities ?: "[]", model))
+                            names = ChatEdit.names(baseline?.description.orEmpty(), baseline?.descriptionEntities ?: "[]", model), bioDraft = bioDraft)
                         busy = true
-                        val latest = chorus.awaitModel()
-                        if (baseline != null) require(latest.member(id)?.let { it.createdByAccountId == null || it.createdByAccountId == account } == true) {
-                            "This member is no longer available. Cancel and reopen the profile."
-                        }
-                        // Definitions are deterministic per account, safe for offline concurrent creation.
-                        // Existing definitions/visibility are never overwritten by this editor.
-                        for (i in changedDetails) {
-                            val def = fields.getJSONObject(i)
-                            val fieldId = def.getString("id")
-                            val existing = latest.profileDetails.definitions.find { it.id == fieldId }
-                            require(!def.getBoolean("exists") || existing?.type == def.getString("type")) {
-                                "A profile field changed. Cancel and reopen before editing it."
-                            }
-                        }
-                        if (baseline == null) chorus.create("member.create", id, patch)
-                        else if (patch.length() > 0) chorus.create("member.set", id, patch)
-                        for (i in changedDetails) {
-                            val def = fields.getJSONObject(i)
-                            val new = values[i].trim()
-                            val fieldId = def.getString("id")
-                            if (latest.profileDetails.definitions.none { it.id == fieldId }) chorus.create("field.define", fieldId,
-                                JSONObject().put("name", def.getString("name")).put("type", def.getString("type"))
-                                    .put("default_visibility", JSONObject().put("mode", "private")))
-                            chorus.create("field.set_value", null, JSONObject().put("member_id", id).put("field_id", fieldId)
-                                .put("value", new.ifEmpty { null } ?: JSONObject.NULL))
-                        }
+                        chorus.saveMemberProfile(id, baseline != null, patch, fields, values)
                         if (avatar != null || banner != null) UploadWork.enqueue(ctx)
                         onDone()
                     } catch (e: kotlinx.coroutines.CancellationException) { throw e }
@@ -177,8 +156,8 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
             OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(display, { display = it }, label = { Text("Display name") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(pronouns, { pronouns = it }, label = { Text("Pronouns") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(bio, { bio = it }, label = { Text("Bio") }, minLines = 3, enabled = !busy, modifier = Modifier.fillMaxWidth())
-            JournalFormatToolbar(bio, !busy) { bio = it }
+            OutlinedTextField(bio, { editBio(it) }, label = { Text("Bio") }, minLines = 3, enabled = !busy, modifier = Modifier.fillMaxWidth())
+            JournalFormatToolbar(bio, !busy) { editBio(it, formatting = true) }
             for (i in values.indices) {
                 val def = fields.getJSONObject(i)
                 OutlinedTextField(values[i], { value -> values = values.toMutableList().apply { set(i, value) } },

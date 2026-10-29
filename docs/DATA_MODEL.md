@@ -136,13 +136,23 @@ Website 2 and Website 3 (`url`). Reuse the matching live definition with the sma
 otherwise its ID is UUIDv3 of UTF-8 `chorus.profile:<account-id>:<field-name>` (Java's
 `UUID.nameUUIDFromBytes`, MD5 without an additional namespace). New definitions are private.
 Existing definitions, default visibility and member field-visibility maps remain untouched.
+At Save, preflight **all changed** field slots before any member/field op, on the replica's
+serial worker. Every reused live ID must have the expected type, even when absent at opening;
+a missing formerly-live ID or a tombstone requires reopening. An absent-at-open ID newly used
+for another name also requires reopening. Keep established IDs even if another matching ID
+appears. If an absent slot's reserved ID is still unused and a matching definition appeared at
+another ID, reuse the smallest live matching ID only when neither old nor target has an existing
+value to rebind/overwrite; otherwise reopen. Never redefine a live field or overwrite its metadata.
 No additional member columns are needed.
 
 Manual member positions use existing `member.set.sort_key`. D-090 keys start `~ui6:` followed by
 a fractional printable-ASCII position, never ending in space. Compare the position plus `!` plus
 four-hex-digit UTF-16 units of the member ID by code units, not locale collation. Legacy/unset
-positions first encode their sort key or lowercase display-name/name as four-hex-digit UTF-16
-units. Identity suffixes permit insertion between otherwise equal positions without renumbering.
+positions encode a non-null sort key **verbatim**, including empty/invalid/prefix-only keys.
+For an unset key, take display-name if non-null (even empty), otherwise name; fold only ASCII
+A–Z UTF-16 units by adding 32. Preserve all other units, with no Unicode normalization/casing
+or locale/runtime tables (D-091). Encode each unit as four lowercase hex digits. This includes
+unpaired surrogates on JS/JVM; the pure-core reference accepts UTF-16 units explicitly. Identity suffixes permit insertion between otherwise equal positions without renumbering.
 Choose a printable midpoint between complete neighbouring keys; only moved members are written.
 The shared `fixtures/ui_member_order.json` fixes Android/web Unicode and tie behavior. Ordinary
 field-level LWW resolves competing edits of one member; different members may converge at the

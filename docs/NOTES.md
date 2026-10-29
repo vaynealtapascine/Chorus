@@ -673,3 +673,33 @@ changes only the invoked process; no PATH or other system settings were changed.
   For the UI6 offline check, force-stop only the fictional demo app before removing its existing
   tcp:5265 mapping, cold-launch and confirm the native Offline caption. Restore the same mapping
   afterward. No server restart or device connectivity setting is needed.
+
+
+## 2026-10-29 — UI6 batch2 corrective editor and ordering contracts
+
+JBR/Android/Node Unicode lowercase tables are different versions: U+1C89/U+1C8A and U+A7CB
+reproduce divergent fallback member order. Locale.ROOT is insufficient. D-091 pins ASCII-only
+folding and preserves every other UTF-16 unit. The pure-core reference and Kotlin/TS fallbacks
+share fixtures (including unpaired surrogate units represented as arrays, because JSON/Rust
+strings require valid scalar sequences). No locale APIs or Unicode-version tables participate.
+The reference is not a new WASM export: existing WASM has only 89 bytes of headroom.
+
+Visible markup is not an entity identity serialization. Two identical @Kai/:wave: labels can
+carry distinct IDs. Native `parse_markup_mapped` supplies source UTF-16 indices for emitted text
+units; editor-local saveable provenance carries each original occurrence through incremental
+edits, then restores its identity only if all its original characters still form the same complete
+nonliteral token. Formatting may split a token in markup without splitting its plain text range.
+Selection disambiguates deletion/insertion of equal strings. A bounded Myers fast path plus a
+linear-space LCS fallback supports multi-location/bulk
+formatting without a quadratic bio-length allocation. Toolbar formatting is explicitly identified;
+a selected TextField replacement creates new tokens instead of reusing selected identities.
+Shorter parsed tokens wholly inside an unchanged formatted atom must be replaced by its original
+full occurrence, including when the shorter label is itself a known member name.
+The core `editor` feature is enabled by chorus-ffi only, so these native source maps add no WASM
+API. The accompanying parser refactor is still subject to the unchanged gzip budget. Both ABI
+libraries and generated Kotlin bindings must be rebuilt together.
+
+The profile-save planner is called on Chorus's serial replica worker before `create` calls, so a
+sync callback cannot slip between live definition preflight and writes. It never redefines a live
+ID. Deleted IDs stay unavailable even when a later field.define leaves a live-looking row with
+a tombstone; the parsed ProfileDetails must retain unavailable IDs, not merely drop deleted rows.
