@@ -1,0 +1,59 @@
+{
+  "members": [
+    {
+      "id": "b",
+      "name": "Same"
+    },
+    {
+      "id": "a",
+      "name": "Same"
+    },
+    {
+      "id": "upper",
+      "name": "Z"
+    },
+    {
+      "id": "accent",
+      "name": "Éclair"
+    },
+    {
+      "id": "emoji",
+      "name": "🌿"
+    },
+    {
+      "id": "front",
+      "name": "Last",
+      "sort_key": "~ui6:/"
+    },
+    {
+      "id": "tie-b",
+      "name": "B",
+      "sort_key": "~ui6:1"
+    },
+    {
+      "id": "tie-a",
+      "name": "A",
+      "sort_key": "~ui6:1"
+    }
+  ],
+  "keys": {
+    "b": "00730061006d0065!0062",
+    "a": "00730061006d0065!0061",
+    "upper": "007a!00750070007000650072",
+    "accent": "00e90063006c006100690072!0061006300630065006e0074",
+    "emoji": "d83cdf3f!0065006d006f006a0069",
+    "front": "/!00660072006f006e0074",
+    "tie-b": "1!007400690065002d0062",
+    "tie-a": "1!007400690065002d0061"
+  },
+  "order": [
+    "front",
+    "a",
+    "b",
+    "upper",
+    "accent",
+    "tie-a",
+    "tie-b",
+    "emoji"
+  ]
+}

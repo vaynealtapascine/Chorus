@@ -131,6 +131,23 @@ any order). `CHORUS_FUZZ_CASES=<n>` runs the server one longer.
 
 ## 3. Op catalogue (v1)
 
+UI6 profile details (D-090) reuse `field.define` / `field.set_value`: Location (`text`), Website,
+Website 2 and Website 3 (`url`). Reuse the matching live definition with the smallest ID;
+otherwise its ID is UUIDv3 of UTF-8 `chorus.profile:<account-id>:<field-name>` (Java's
+`UUID.nameUUIDFromBytes`, MD5 without an additional namespace). New definitions are private.
+Existing definitions, default visibility and member field-visibility maps remain untouched.
+No additional member columns are needed.
+
+Manual member positions use existing `member.set.sort_key`. D-090 keys start `~ui6:` followed by
+a fractional printable-ASCII position, never ending in space. Compare the position plus `!` plus
+four-hex-digit UTF-16 units of the member ID by code units, not locale collation. Legacy/unset
+positions first encode their sort key or lowercase display-name/name as four-hex-digit UTF-16
+units. Identity suffixes permit insertion between otherwise equal positions without renumbering.
+Choose a printable midpoint between complete neighbouring keys; only moved members are written.
+The shared `fixtures/ui_member_order.json` fixes Android/web Unicode and tie behavior. Ordinary
+field-level LWW resolves competing edits of one member; different members may converge at the
+same position, resolved by ID. These positions govern Members, not front/speaker/recent order.
+
 Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW element set
 (add/remove per element, highest HLC wins) · **APP** = append-only, each op creates a new row ·
 **TL** = timeline fold (front, SYNC.md §5).

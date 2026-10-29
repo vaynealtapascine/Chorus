@@ -33,7 +33,7 @@ object OfflineFiles {
             add(f.hash("thumb_blob_hash"))
             if (f.optLong("size") <= Blobs.MAX_KEPT) add(f.hash("blob_hash"))
         }
-        fields("member") { add(it.hash("avatar_blob")) }
+        fields("member") { add(it.hash("avatar_blob")); add(it.hash("banner_blob")) }
         fields("member_group") { add(it.hash("avatar_blob")) }
         fields("custom_emoji") { add(it.hash("blob_hash")) }
         return files.toList()

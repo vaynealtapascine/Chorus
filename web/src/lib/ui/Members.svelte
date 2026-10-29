@@ -7,6 +7,7 @@
   import PkImport from './PkImport.svelte';
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
+  import { orderedMembers } from '../member-order';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
 
@@ -22,7 +23,7 @@
   const shown = $derived.by(() => {
     let list = all.filter((m) => (filter === 'archived' ? m.archived : !m.archived));
     if (filter !== 'all' && filter !== 'archived') list = list.filter((m) => inGroup.get(filter)?.has(m.id));
-    if (!query.trim()) return list;
+    if (!query.trim()) return orderedMembers(list);
     return list
       .map((m) => ({ m, s: fuzzy(query, [m.name, m.display_name, m.pronouns, ...m.sigils].filter(Boolean).join(' ')) }))
       .filter((x) => x.s !== null)

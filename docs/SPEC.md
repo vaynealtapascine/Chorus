@@ -90,6 +90,12 @@ Fields: name, display name, pronouns, avatar, banner, colour, description (rich 
 fields (typed: text, long text, number, date, select, multi-select, boolean, colour, URL, member
 reference, rating), pinned post, archived flag, sort key, per-field visibility.
 
+Android's staged profile editor gives Location and up to three websites first-class controls,
+persisted as ordinary typed custom fields (D-090). Profile media supports adjustable avatar and
+3:1 banner crops. Save persists the draft; Apply crop changes only the draft. Members opens the
+shared Journal profile presentation. Reorder mode stages active own-member drag moves until
+Apply, with Cancel and accessible earlier/later alternatives; searching retains relevance order.
+
 Lists at 500 members must stay instant: virtualised grid/list, fuzzy search on name/display
 name/pronouns/sigil/tags, filters by group/state/archived, sort by name/recent front/front time/
 custom order.

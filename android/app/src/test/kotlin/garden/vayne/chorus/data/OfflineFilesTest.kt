@@ -34,11 +34,11 @@ class OfflineFilesTest {
             .put("tombstone", row(JSONObject().put("blob_hash", deleted).put("size", 1), false))
         val projection = JSONObject().put("rows", JSONObject()
             .put("attachment", attachments)
-            .put("member", JSONObject().put("one", row(JSONObject().put("avatar_blob", avatar))))
+            .put("member", JSONObject().put("one", row(JSONObject().put("avatar_blob", avatar).put("banner_blob", "9".repeat(64)))))
             .put("member_group", JSONObject().put("group", row(JSONObject().put("avatar_blob", avatar))))
             .put("custom_emoji", JSONObject().put("one", row(JSONObject().put("blob_hash", emoji)))
                 .put("bad", row(JSONObject().put("blob_hash", "../not-a-hash")))))
-        assertEquals(listOf(original, thumbnail, avatar, emoji), OfflineFiles.filesOf(projection))
+        assertEquals(listOf("9".repeat(64), original, thumbnail, avatar, emoji), OfflineFiles.filesOf(projection))
     }
 
     @Test fun durableCopyChecksHashAndLimitBeforePublishing() {
@@ -84,5 +84,13 @@ class OfflineFilesTest {
         assertEquals(bytes.toList(), queued.readBytes().toList())
         assertFalse(File(queued.parentFile, wrong).exists())
         assertEquals(1, Blobs.queueRestore(ctx, device, listOf(hash)))
+
+        val profile = "prepared profile banner".toByteArray()
+        val profileHash = MessageDigest.getInstance("SHA-256").digest(profile).joinToString("") { "%02x".format(it) }
+        File(cache, "profile-blobs").apply { mkdirs() }.resolve(profileHash).writeBytes(profile)
+        assertEquals(1, Blobs.queueRestore(ctx, device, listOf(profileHash)))
+        assertEquals(profile.toList(), File(files, "restore-blobs/$account/$profileHash").readBytes().toList())
+        assertTrue(Blobs.keep(ctx, profileHash, device))
+        assertEquals(profile.toList(), File(files, "kept-blobs/$account/$profileHash").readBytes().toList())
     }
 }

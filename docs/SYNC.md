@@ -1,5 +1,12 @@
 # Chorus — sync
 
+D-090 member customization uses existing account-scoped field-level ops. Profile drafts and
+Reorder previews remain local until Save/Apply. Reorder compares the opening eligible members'
+position keys with the current model before writing; a concurrent order/membership change asks
+the user to reopen rather than applying stale neighbours. Applied fractional positions converge
+through ordinary member LWW registers and deterministic ID ties (DATA_MODEL.md §3). No new
+wire capability or projection cache version is required.
+
 Offline-first. Every client can do everything it is allowed to do while disconnected, for as long as
 it likes, and converges cleanly when it reconnects. The server can also be off (the PC is asleep)
 while phones keep working.

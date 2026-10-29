@@ -19,6 +19,7 @@ export interface MemberRow {
   birthday?: string;
   avatar_blob?: string;
   banner_blob?: string;
+  sort_key?: string;
   pinned_post_id?: string;
   archived: boolean;
   deleted: boolean;
@@ -211,6 +212,7 @@ export function members(p: Projection): MemberRow[] {
         birthday: str(f.birthday),
         avatar_blob: str(f.avatar_blob),
         banner_blob: str(f.banner_blob),
+        sort_key: str(f.sort_key),
         pinned_post_id: str(f.pinned_post_id),
         archived: f.archived_at != null,
         deleted: f.deleted_at != null,

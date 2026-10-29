@@ -164,11 +164,13 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var chatStageCapture by remember { mutableStateOf(false) }
     var chatFocused by rememberSaveable { mutableStateOf(false) }
     var journalFocused by rememberSaveable { mutableStateOf(false) }
+    var membersFocused by rememberSaveable { mutableStateOf(false) }
     val destinationState = androidx.compose.runtime.key(chorus.device?.accountId) {
         androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     }
     var journalReplyPost by rememberSaveable { mutableStateOf<String?>(null) }
     var journalOpenPost by rememberSaveable { mutableStateOf<String?>(null) }
+    var journalOpenProfile by rememberSaveable { mutableStateOf<String?>(null) }
     var chatShare by remember { mutableStateOf<SharedDraft?>(null) }
     var journalShare by remember { mutableStateOf<SharedDraft?>(null) }
     var journalNewEntry by remember { mutableStateOf<Long?>(null) }
@@ -187,7 +189,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             chatSearchHit = null
             chatStageCapture = false
             chatSpace = null; chatChannel = null
-            journalReplyPost = null; journalOpenPost = null
+            journalReplyPost = null; journalOpenPost = null; journalOpenProfile = null
             chatShare = null; journalShare = null; journalNewEntry = null; sharedChannel = null
             onShareDismissed()
             searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
@@ -228,7 +230,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = { Text(t.label) }) }
             }
             Column(Modifier.weight(1f).navigationBarsPadding()) {
-            val chatOwnChrome = activeTab in listOf(Tab.Chat, Tab.Journal) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
+            val chatOwnChrome = (activeTab in listOf(Tab.Chat, Tab.Journal) || (activeTab == Tab.Members && membersFocused)) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
             if (chatOwnChrome && !chatStageCapture) Box(Modifier.fillMaxWidth().background(p.surface).statusBarsPadding())
             if (!chatStageCapture && !chatOwnChrome) Row(
                 Modifier.fillMaxWidth().background(p.surface).statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
@@ -292,13 +294,16 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         onExternalReplyConsumed = { journalReplyPost = null },
                         externalOpenPost = journalOpenPost,
                         onExternalOpenConsumed = { journalOpenPost = null },
+                        externalOpenProfile = journalOpenProfile, onExternalProfileConsumed = { journalOpenProfile = null },
                         sharedDraft = journalShare, onShareConsumed = { journalShare = null },
                         externalNewEntry = journalNewEntry, onExternalNewEntryConsumed = { journalNewEntry = null },
                         active = shownTab == activeTab, onFocusedRoute = { journalFocused = it })
                     Tab.People -> People(chorus, model,
                         onOpenChat = { spaceId -> chatSpace = spaceId; chatChannel = null; chatSearchHit = null; tab = Tab.Chat },
                         onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal })
-                    Tab.Members -> Members(chorus, model)
+                    Tab.Members -> Members(chorus, model, onJournal = { member, post ->
+                        journalOpenProfile = member; journalOpenPost = post; tab = Tab.Journal
+                    }, active = shownTab == activeTab, onFocusedRoute = { membersFocused = it })
                     Tab.History -> History(chorus, model)
                     Tab.More -> MoreScreen(person, onMembers = { tab = Tab.Members }, onHome = { tab = Tab.Home }, onChat = { tab = Tab.Chat }, onPeople = { tab = Tab.People }, onJournal = { tab = Tab.Journal }, onHistory = { tab = Tab.History },
                         onInsights = { insightsOpen = true }, onFronts = { frontsOpen = true }, onSettings = { settingsOpen = true },
@@ -310,7 +315,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             // The bar and viewport resize together during push/pop; focused routes own their
             // chrome. The shell applies the system navigation inset exactly once.
             val focused = !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen &&
-                ((activeTab == Tab.Chat && chatFocused) || (activeTab == Tab.Journal && journalFocused))
+                ((activeTab == Tab.Chat && chatFocused) || (activeTab == Tab.Journal && journalFocused) || (activeTab == Tab.Members && membersFocused))
             androidx.compose.animation.AnimatedVisibility(
                 visible = !expanded && sharedDraft == null && !chatStageCapture && !WindowInsets.isImeVisible && !focused,
                 enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(if (motion) 220 else 0)) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(if (motion) 180 else 0)),

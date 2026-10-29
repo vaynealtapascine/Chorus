@@ -142,7 +142,7 @@ object Blobs {
         val target = File(dir, hash)
         if (target.isFile) return true
         val source = pendingFile(ctx, hash)
-            ?: listOf("chat", "avatar", "emoji").firstNotNullOfOrNull { kind ->
+            ?: listOf("chat", "avatar", "emoji", "profile").firstNotNullOfOrNull { kind ->
                 File(cacheDir(ctx, kind), hash).takeIf(File::isFile)
             }
             ?: file(ctx, hash, device, maxBytes = MAX_KEPT)
@@ -190,7 +190,7 @@ object Blobs {
             if (target.isFile) { queued++; continue }
             val source = pendingFile(ctx, hash)
                 ?: keptDir(ctx, device.accountId)?.let { File(it, hash).takeIf(File::isFile) }
-                ?: listOf("chat", "avatar", "emoji").firstNotNullOfOrNull { kind ->
+                ?: listOf("chat", "avatar", "emoji", "profile").firstNotNullOfOrNull { kind ->
                     File(cacheDir(ctx, kind), hash).takeIf(File::isFile)
                 }
                 ?: continue

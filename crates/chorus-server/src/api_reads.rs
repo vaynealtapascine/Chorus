@@ -62,7 +62,7 @@ pub fn member(conn: &Connection, p: &Principal, id: &str) -> Result<Option<Value
     let m = conn
         .query_row(
             "SELECT id, name, display_name, pronouns, description, description_entities, color, avatar_blob,
-                    banner_blob, birthday, sigils, proxy_tags, is_self, short_id, pk_id, created_at, archived_at
+                    banner_blob, birthday, sigils, proxy_tags, is_self, short_id, pk_id, created_at, archived_at, sort_key
              FROM member WHERE id = ?1 AND account_id = ?2 AND deleted_at IS NULL",
             params![id, p.account_id],
             |r| {
@@ -84,6 +84,7 @@ pub fn member(conn: &Connection, p: &Principal, id: &str) -> Result<Option<Value
                     "pk_id": r.get::<_, Option<String>>(14)?,
                     "created_at": r.get::<_, i64>(15)?,
                     "archived": r.get::<_, Option<i64>>(16)?.is_some(),
+                    "sort_key": r.get::<_, Option<String>>(17)?,
                 }))
             },
         )

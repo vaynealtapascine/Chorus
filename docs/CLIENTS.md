@@ -83,6 +83,24 @@ android/
 
 ### 2.2.1 Native member and chat controls (UI6)
 
+- Members rows open the shared Journal profile with banner, overlapping avatar, rich bio,
+  typed fields and existing posts/highlights/media/relationships. Edit profile is explicit.
+  Location and three website slots persist through existing typed fields, not local preferences.
+  Saved opening baselines survive recreation and omit untouched fields from patches.
+- Avatar/banner selection copies at most 10 MB into an app-cache draft, decodes with API29
+  ImageDecoder (EXIF-aware, source capped at 100 MP, output at 1600 px), then crops before
+  staging PNG through the ordinary offline upload queue. Avatar output is at most 512 px wide;
+  banners at most 1500 px, aspect 3:1. Zoom and position sliders provide accessible framing.
+  Cancel crop leaves the editor draft alone; Apply changes the draft, Save writes references.
+  Missing/cache-evicted sources ask the user to choose again. Member banners join durable offline
+  retention and restore catalogues. Unsaved edits survive recreation; Back asks before discard.
+- Reorder is available on the full active own-member list. Handles drag with displacement and
+  frame-clock edge autoscroll; Earlier/Later buttons and accessibility actions provide alternatives.
+  Apply emits sparse member.set patches; Cancel/Back discard the draft, gesture cancellation
+  restores the pre-drag draft, and recreation cancels an interrupted drag. Saved drafts retain
+  completed moves. Concurrent list/order changes require reopening. Filtered/archive/search
+  views offer Show all active members to reorder. Search keeps relevance and name/ID ties.
+
 - Navigation choices follow D-089: up to four device/account-local destinations plus fixed More.
   The chooser stages edits until Apply; Cancel leaves the current bar intact. Stable route keys
   retain drafts and scroll independently of tab placement.

@@ -20,6 +20,9 @@ data class Member(
     val createdByAccountId: String? = null,
     val bannerBlob: String? = null,
     val pinnedPostId: String? = null,
+    val sortKey: String? = null,
+    val descriptionEntities: String = "[]",
+    val birthday: String? = null,
 ) {
     val shownName: String get() = displayName ?: name
     val glyph: String get() = sigils.firstOrNull() ?: name.take(1).uppercase()
@@ -129,6 +132,7 @@ class Model(
     val pinnedMessages: Map<String, List<ChatMessage>> = emptyMap(),
     /** message id → reactions (DATA_MODEL `reaction` set). */
     val messageReactions: Map<String, List<ChatReaction>> = emptyMap(),
+    val profileDetails: ProfileDetails = ProfileDetails(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -281,9 +285,10 @@ class Model(
                             tags.optJSONObject(i)?.let { ProxyTag(it.optString("prefix"), it.optString("suffix")) }
                         } } ?: emptyList(),
                         f.str("created_by_account_id"), f.str("banner_blob"), f.str("pinned_post_id"),
+                        f.str("sort_key"), f.optJSONArray("description_entities")?.toString() ?: "[]", f.str("birthday"),
                     )
                 }
-                .sortedBy { it.shownName.lowercase() }
+                .sortedWith(compareBy<Member> { it.shownName.lowercase(java.util.Locale.ROOT) }.thenBy { it.id })
             val groups = rows(p, "member_group")
                 .filter { (_, f) -> !f.present("deleted_at") }
                 .map { (id, f) -> Group(id, f.str("name") ?: "Untitled", f.str("kind") ?: "subsystem", f.str("parent_id"), f.str("color")) }
@@ -418,7 +423,8 @@ class Model(
                 LocalRelationships.links(p), AccountPrefs.fromProjection(p, accountId), searchMessages, savedStages,
                 ChatSpeaker.preferences(p, accountId, channels), lastAuthorsByChannel,
                 ReadTracking.marks(p, accountId), frontIntervals, namedFronts, Polls.fromProjection(p), typingNames,
-                messageReactions = ChatReactions.fromProjection(p.optJSONObject("sets")), pinnedMessages = pinnedMessages)
+                messageReactions = ChatReactions.fromProjection(p.optJSONObject("sets")), pinnedMessages = pinnedMessages,
+                profileDetails = ProfileDetails.parse(p))
         }
     }
 }

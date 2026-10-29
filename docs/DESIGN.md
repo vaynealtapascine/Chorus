@@ -266,6 +266,13 @@ The shared spacing rhythm is a four-point scale from `spacing` in frontmatter. C
 - **Journal:** readable feed (up to 760 px), plus a 280 px context column from 1280 px. Below this,
   shortcuts remain reachable through the feed tabs and app navigation.
 - **Members:** responsive row cards with a minimum desired column width of 320 px; long names wrap.
+- **Android member profiles (D-090):** Members and Journal share the profile header: a quiet wide
+  banner well, overlapping member-colour avatar, prominent name, pronouns and rich bio. Edit
+  profile is a labelled 48 dp action. The full-screen editor has pinned Cancel/Save, scrollable
+  fields and IME clearance; additional identity details stay under More details. Crop sheets
+  show the actual image with zoom/position controls and staged Apply/Cancel. Reorder uses a
+  full active-member list with visible drag handles, short interruptible displacement (instant
+  under reduced motion), accessible Earlier/Later and pinned Apply/Cancel.
 - **Switcher:** bottom sheet on compact web; centered from 641 px, maximum width 560 px and height
   88vh. Android uses native sheets/dialogs and system Back.
 
@@ -374,7 +381,7 @@ This inventory is retained from the v1 design spec; `PROGRESS.md` owns its imple
 | **Chat** | Spaces rail, channel list, message list, composer | Send |
 | **Thread / Pins / Search** | Side panel (web) / full screen (Android) | — |
 | **Members** | Grid/list toggle, search, filter chips (group, state, archived), sort | Add member |
-| **Member editor** | Basic fields; sections for Proxy & sigils, Custom fields, Privacy, Notifications | Save (auto-save) |
+| **Member editor** | Basic fields; sections for Proxy & sigils, Custom fields, Privacy, Notifications | Save draft (Android) / auto-save (web) |
 | **Profile** | Banner, avatar, names, pronouns, sigils, bio, fields, stats, tabs (Posts, Replies, Journal, Highlights, Media, Relationships) | Post as this member |
 | **Journal** | System timeline, feeds tabs (Following, Lists, custom feeds), compose | Write |
 | **Compose post** | Author chip(s), note/entry toggle, title (entry), body, mood, tags, CW, visibility | Post |

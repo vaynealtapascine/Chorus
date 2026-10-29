@@ -78,7 +78,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     onExternalOpenConsumed: () -> Unit = {}, sharedDraft: SharedDraft? = null,
     onShareConsumed: () -> Unit = {}, externalNewEntry: Long? = null,
     onExternalNewEntryConsumed: () -> Unit = {}, active: Boolean = true,
-    onFocusedRoute: (Boolean) -> Unit = {}) {
+    onFocusedRoute: (Boolean) -> Unit = {}, externalOpenProfile: String? = null,
+    onExternalProfileConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val connection by chorus.status.collectAsState()
     var editorOptions by rememberSaveable { mutableStateOf(false) }
@@ -114,6 +115,13 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     }
     val mine = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId }
     val author = mine.find { it.id == authorId } ?: Reply.speaker(model)?.takeIf { it in mine } ?: mine.firstOrNull()
+
+    LaunchedEffect(externalOpenProfile) {
+        if (externalOpenProfile != null) {
+            editing = false; threadPostId = null; profileId = externalOpenProfile
+            onExternalProfileConsumed()
+        }
+    }
 
     LaunchedEffect(sharedDraft?.id, chorus.device?.accountId) {
         val incoming = sharedDraft ?: return@LaunchedEffect

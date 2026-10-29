@@ -31,19 +31,22 @@ object ChatEdit {
         segments(message).map { markup(rich(message, it).toString()) }
 
     /** Include names from the original entities so existing mentions and emoji still resolve. */
-    fun names(message: ChatMessage, model: Model): String {
+    fun names(message: ChatMessage, model: Model): String = names(message.text, message.entities, model)
+
+    /** Also used by profile bios: editing nearby text must retain existing mention/emoji IDs. */
+    fun names(text: String, entities: String, model: Model): String {
         val mentions = JSONObject()
         for (member in model.members.filter { !it.archived }) {
             mentions.put(member.name.lowercase(), JSONObject().put("target_type", "member").put("target_id", member.id))
         }
         val emoji = JSONObject()
-        val source = JSONArray(message.entities)
+        val source = JSONArray(entities)
         for (i in 0 until source.length()) {
             val entity = source.getJSONObject(i)
             val at = entity.getInt("offset")
             val end = at + entity.getInt("length")
-            if (at < 0 || end > message.text.length) continue
-            val token = message.text.substring(at, end)
+            if (at < 0 || end > text.length) continue
+            val token = text.substring(at, end)
             when (entity.optString("type")) {
                 "mention" -> if (token.startsWith("@")) mentions.put(token.drop(1).lowercase(),
                     JSONObject().put("target_type", entity.getString("target_type"))

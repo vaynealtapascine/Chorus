@@ -635,3 +635,63 @@ fn profiles_and_lists_read_through_the_api() {
     assert!(p["highlights"].is_null());
     assert!(chorus_server::api_journal::lists(&c, &mp).is_err());
 }
+
+#[test]
+fn profile_customization_round_trips_privately_through_reads_export_and_rebuild() {
+    let mut c = db::open_memory().unwrap();
+    db::migrate(&mut c).unwrap();
+    for id in [ALICE, BOB] {
+        c.execute("INSERT INTO account(id,kind,created_at) VALUES (?1,'system',0)", [id]).unwrap();
+        ingest::grant(&c, id, &format!("account:{id}")).unwrap();
+    }
+    let scope = format!("account:{ALICE}");
+    let member = new_id(1, [60; 10]);
+    let location = new_id(1, [61; 10]);
+    let website = new_id(1, [62; 10]);
+    let avatar = "a".repeat(64);
+    let banner = "b".repeat(64);
+    let changes = [
+        (
+            "member.create",
+            &member,
+            json!({"name":"Kai","avatar_blob":avatar,"banner_blob":banner,
+            "description":"Botanical notes","description_entities":[{"type":"bold","offset":0,"length":9}],"sort_key":"~ui6:/"}),
+        ),
+        ("field.define", &location, json!({"name":"Location","type":"text","default_visibility":{"mode":"private"}})),
+        ("field.define", &website, json!({"name":"Website","type":"url","default_visibility":{"mode":"private"}})),
+        ("field.set_value", &location, json!({"member_id":member,"field_id":location,"value":"Private garden"})),
+        (
+            "field.set_value",
+            &website,
+            json!({"member_id":member,"field_id":website,"value":"https://example.org/garden"}),
+        ),
+    ];
+    for (index, (kind, id, payload)) in changes.into_iter().enumerate() {
+        ingest::server_op(&c, ALICE, kind, &scope, Some(id), payload, 1_790_000_000_000 + index as i64).unwrap();
+    }
+    let owner = api_data::Principal::owner(ALICE);
+    let other = api_data::Principal::owner(BOB);
+    let before = chorus_server::api_reads::member(&c, &owner, &member).unwrap().unwrap();
+    assert_eq!(before["sort_key"], "~ui6:/");
+    assert_eq!(before["banner_blob"], banner);
+    assert_eq!(before["fields"].as_array().unwrap().len(), 2);
+    assert_eq!(api_data::members(&c, &owner).unwrap()["items"][0]["sort_key"], "~ui6:/");
+    assert!(chorus_server::api_reads::member(&c, &other, &member).unwrap().is_none());
+    assert!(chorus_server::api_journal::profile(&c, &other, &member).unwrap().is_none());
+    assert_eq!(api_data::members(&c, &other).unwrap()["items"], json!([]));
+    // Accepting a follow still does not widen the own-account metadata/profile routes.
+    c.execute(
+        "INSERT INTO follow(id,follower_account_id,target_account_id,status,created_at) VALUES ('f',?1,?2,'active',0)",
+        params![BOB, ALICE],
+    )
+    .unwrap();
+    assert!(chorus_server::api_journal::profile(&c, &other, &member).unwrap().is_none());
+    let export = String::from_utf8(chorus_server::exports::ops_jsonl(&c, ALICE).unwrap()).unwrap();
+    for value in [&banner, &avatar, "Private garden", "https://example.org/garden", "~ui6:/"] {
+        assert!(export.contains(value));
+    }
+    let foreign = String::from_utf8(chorus_server::exports::ops_jsonl(&c, BOB).unwrap()).unwrap();
+    assert!(!foreign.contains("Private garden"));
+    chorus_server::project::rebuild(&mut c).unwrap();
+    assert_eq!(before, chorus_server::api_reads::member(&c, &owner, &member).unwrap().unwrap());
+}

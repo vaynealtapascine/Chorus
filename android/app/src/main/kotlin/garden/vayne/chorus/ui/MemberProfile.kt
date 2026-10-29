@@ -46,24 +46,24 @@ import java.util.Date
 /** Own member profile: local details stay visible offline; server adds readable outside highlights. */
 @Composable
 internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
-    onClose: () -> Unit, onWrite: () -> Unit, onReply: (String) -> Unit) {
+    onClose: () -> Unit, onWrite: () -> Unit, onReply: (String) -> Unit,
+    closeLabel: String = "Journal", writeLabel: String? = null) {
     val p = LocalChorusPalette.current
     val dev = chorus.device
     val ctx = LocalContext.current
     val actions = rememberCoroutineScope()
     val member = model.member(memberId)?.takeIf { it.createdByAccountId == null || it.createdByAccountId == dev?.accountId }
     var tab by rememberSaveable(memberId) { mutableStateOf("Posts") }
+    var editing by rememberSaveable(memberId) { mutableStateOf(false) }
+    if (editing && member != null) {
+        MemberEditor(chorus, model, member) { editing = false }
+        return
+    }
     var bundle by remember(memberId, dev?.accountId) { mutableStateOf<ProfileBundle?>(null) }
     var error by remember(memberId, dev?.accountId) { mutableStateOf<String?>(null) }
     var pinBusy by remember(memberId) { mutableStateOf(false) }
     var highlightBusy by remember(memberId) { mutableStateOf(false) }
     var removedHighlights by remember(memberId) { mutableStateOf<Set<String>>(emptySet()) }
-    val banner = produceState<android.graphics.Bitmap?>(initialValue = null, member?.bannerBlob, dev?.session) {
-        value = if (member?.bannerBlob != null && dev != null) withContext(Dispatchers.IO) {
-            Blobs.image(ctx.applicationContext, member.bannerBlob, dev, kind = "profile", maxPx = 1400,
-                maxBytes = 10L * 1024 * 1024)
-        } else null
-    }
 
     LaunchedEffect(dev?.session, memberId) {
         bundle = null
@@ -75,7 +75,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
 
     if (member == null) {
         Column(Modifier.fillMaxSize().background(p.bg).padding(16.dp)) {
-            TextButton(onClick = onClose) { Text("‹ Journal") }
+            TextButton(onClick = onClose) { Text("‹ $closeLabel") }
             Text("Member unavailable", color = p.ink2)
         }
         return
@@ -107,21 +107,25 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            if (banner.value != null) Image(banner.value!!.asImageBitmap(), contentDescription = "Profile banner",
-                contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().height(150.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = onClose) { Text("‹ Journal") }
-                TextButton(onClick = onWrite) { Text("Post as ${member.shownName}") }
+                TextButton(onClick = onClose) { Text("‹ $closeLabel") }
+                TextButton(onClick = { editing = true }) { Text("Edit profile") }
             }
-            Avatar(member.glyph, member.color, size = 64.dp, avatarBlob = member.avatarBlob)
-            Text(member.shownName, color = p.ink, fontWeight = FontWeight.SemiBold)
-            if (member.displayName != null) Text(member.name, color = p.ink2)
-            if (member.pronouns != null) Text(member.pronouns, color = p.ink2)
-            if (member.sigils.isNotEmpty()) Text(member.sigils.joinToString(" · "), color = p.ink2)
-            if (member.description != null) Text(member.description, color = p.ink)
+            ProfileIdentity(member, chorus)
+            if (member.description != null) RichBody(member.description, member.descriptionEntities,
+                modifier = Modifier.padding(top = 12.dp))
+            TextButton(onClick = onWrite) { Text(writeLabel ?: "Post as ${member.shownName}") }
             val groups = model.membership.filter { memberId in it.value }.keys.mapNotNull { model.group(it)?.name }
             if (groups.isNotEmpty()) Text(groups.joinToString(" · "), color = p.ink2)
-            for (field in model.profileFields[memberId].orEmpty()) Text("${field.name}: ${field.value}", color = p.ink2)
+            val uri = androidx.compose.ui.platform.LocalUriHandler.current
+            for (field in model.profileFields[memberId].orEmpty()) {
+                if (garden.vayne.chorus.data.MemberCustomization.validWebsite(field.value))
+                    TextButton(onClick = { runCatching { uri.openUri(field.value) }.onFailure { error = "No app could open this website." } }) { Text("${field.name}: ${field.value}") }
+                else Text("${field.name}: ${field.value}", color = p.ink2)
+            }
+            if (member.birthday != null) Text("Birthday: ${member.birthday}", color = p.ink2)
+            Text("Profile audience: ${garden.vayne.chorus.data.JournalPresentation.audience(model.profileDetails.visibility[memberId] ?: "private", model.isPerson)}",
+                color = p.ink3, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
             if (!model.isPerson) {
                 Text("Front: ${"%.1f".format(metrics.weekHours)} h in 7 days · ${"%.1f".format(metrics.monthHours)} h in 28 days",
                     color = p.ink2)

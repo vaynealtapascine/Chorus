@@ -114,6 +114,7 @@ matter to a screen.
 | PluralKit id | text | When imported. |
 | archived | time | Archived members hide from the switcher and lists. |
 | custom field values | per field: value | See *Custom field*. |
+| location / websites | typed custom fields | Android first-class Location and up to three Website controls; existing field privacy/export/sync contracts (D-090). |
 | groups | list of → Group | Via group membership. |
 
 ### Group (or subsystem)

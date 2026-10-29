@@ -395,6 +395,13 @@ async fn follower_avatar_is_unavailable_until_member_is_revealed() {
             [r#"[{"t":"subject","subject_type":"member","subject_id":"m1","level":"front","is_primary":true,"name":"Visible"}]"#]).unwrap();
     }
     assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 200);
+    // Revealing this member's front does not grant their private profile banner.
+    {
+        let c = s.state.db.lock().unwrap();
+        c.execute("UPDATE member SET avatar_blob = NULL, banner_blob = ?1 WHERE id = 'm1'", [&digest]).unwrap();
+    }
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 403);
+    assert_eq!(client.get(&url).bearer_auth("alice-token").send().await.unwrap().status(), 200);
 }
 
 #[tokio::test]

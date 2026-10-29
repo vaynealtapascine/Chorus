@@ -1,5 +1,12 @@
 # Chorus — API
 
+D-090 profile details continue to use ordinary typed custom fields and account-scoped sync ops;
+`GET /members/{id}` and `/profiles/{id}` return them in `fields`. These routes remain own-account
+only, including when the caller follows the member's account. `/members` and `/members/{id}` now
+include nullable `sort_key`; list responses retain name/ID order so consumers explicitly choose
+manual versus other order. Follower-front and public author-card metadata are not widened.
+Avatar/banner hashes retain private authenticated blob reads and existing export references.
+
 Base: `https://chorus.<domain>/api/v1`. JSON, UTF-8. Times are ms UTC integers (plus ISO strings in
 export/CSV endpoints). IDs are UUIDv7 strings. All writes from apps go through **sync** (ops); REST
 is for reads, auth, blobs, exports and third-party scripts.

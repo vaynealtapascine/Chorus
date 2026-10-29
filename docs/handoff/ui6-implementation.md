@@ -6,7 +6,9 @@ features below. No delegates, deployment, push, checkout creation or system chan
 
 Status: slices 1, 2, 8 and 10 passed independent Sol-6.1 source/native review and
 small corrections. See `ui6-batch1-review.md` for evidence and validation limits.
-The remaining seven slices have no implementation.
+Slices 7 and 9 are implemented and natively inspected in batch 2; independent Sol-6.1
+review/acceptance is pending. See `ui6-batch2-implementation.md`. Slices 3/4/5/6/11
+remain unimplemented.
 D-089 and DESIGN/CLIENTS describe navigation/colour behavior. Do not mark UI6 done.
 
 ## Required slices and acceptance matrix
@@ -28,11 +30,11 @@ D-089 and DESIGN/CLIENTS describe navigation/colour behavior. Do not mark UI6 do
 - [ ] 6 Channel sides: named groups, searchable membership/avatar stacks, distinct
   Follow front/Locked preference, preview, deterministic cofront/multi-author policy;
   legacy unchanged until configured, authors and read perspective preserved.
-- [ ] 7 Rich member profiles: avatar/banner pick/crop/remove, bio/links/location,
+- [~] 7 Implemented; independent review pending. Rich member profiles: avatar/banner pick/crop/remove, bio/links/location,
   privacy-aware editor/presentation and actual offline persisted media.
 - [x] 8 Shared colour picker: swatches/recent/hue/saturation/live preview, optional
   hex, accessible alternatives, no dependency needed for Compose primitives.
-- [ ] 9 Drag member ordering: explicit handle/mode, persisted sort_key, convergence,
+- [~] 9 Implemented; independent review pending. Drag member ordering: explicit handle/mode, persisted sort_key, convergence,
   accessible moves; filtered/search lists cannot corrupt full ordering.
 - [x] 10 New Direct message: own-member and connected-account recipient sections,
   search, explicit member_dm participants, reuse/open, offline/empty/errors;
@@ -53,7 +55,8 @@ spoiler and concurrent-edit fixes, and independent front-purpose policies.
 Native inspection for the first four slices is recorded in `ui6-batch1-review.md`:
 keyboard, Back, Apply/Cancel, 150% text and actual DM create/reuse. Native 500-member
 timing, tablet and TalkBack were not run; reviewed lazy-list structure is not a timing
-claim. Remaining seven slices still need implementation and native checks. Evidence
+claim. Batch 2 profiles/ordering now have implementation/native evidence; independent review
+is pending. Slices 3/4/5/6/11 still need implementation and native checks. Evidence
 and APK belong outside repo at F:/DunBuild/chorus-ui6-evidence; phone images stay private
 and are never committed. Do not infer visual success from tests.
 
@@ -83,7 +86,8 @@ public fetch required login; no Mobbin screenshot inspection is claimed.
 
 ## Resume
 
-Continue slices 9/7 (ordering/profiles), then the remaining authorized features;
+Launch a different Sol-6.1 reviewer for slices 7/9 using `ui6-batch2-implementation.md`,
+then correct any findings before acceptance. Continue remaining slices 3/4/5/6/11;
 do not reimplement or widen the accepted four slices. Source/native review, four
 resolved findings and exact checks are in `ui6-batch1-review.md`. Final artifact and
 commit metadata live outside the repo in `batch1-manifest.json`. Required final

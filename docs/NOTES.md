@@ -652,3 +652,24 @@ changes only the invoked process; no PATH or other system settings were changed.
 - Native evidence, build logs, review APK and short navigation recording live under
   `F:/DunBuild/chorus-ui5-evidence/`; see the committed UI5 handoff. Phone-private captures remain
   outside the repository. The normal app data on both devices was retained throughout.
+
+
+### 2026-10-29 — UI6 member media and native inspection
+
+- Material3 ModalBottomSheet can retain the small loading-content anchor when asynchronously
+  decoded image content becomes much taller. On the emulator this stranded the crop controls
+  below the window during the disconnected-demo check. Profile crop content reserves a bounded
+  viewport before decoding, then scrolls within it; do not size the sheet from the loading row.
+- UploadWork moves completed staged files into the chat cache. Profile-specific avatar/banner
+  readers cannot rely on a background durable keeper winning that race. Crop Apply verifies a
+  copy into the account-local durable cache immediately, before returning the draft hash.
+  OfflineFiles also catalogs banners, and keep/restore can find the profile cache.
+- `am kill` immediately after Home may leave the app process alive. Actual recreation evidence
+  backgrounds first, checks its PID, kills only the fictional demo app process via its debug UID,
+  reopens the existing task and confirms a different PID. A cold-load blank screenshot is not
+  proof of restored state; capture after local loading completes. No system settings are needed.
+
+- Removing an ADB reverse mapping does not necessarily close established sockets/HTTP pools.
+  For the UI6 offline check, force-stop only the fictional demo app before removing its existing
+  tcp:5265 mapping, cold-launch and confirm the native Offline caption. Restore the same mapping
+  afterward. No server restart or device connectivity setting is needed.

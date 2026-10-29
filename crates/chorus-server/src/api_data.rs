@@ -338,8 +338,8 @@ pub fn members(conn: &Connection, p: &Principal) -> Result<Value, DataError> {
         return Err(DataError::Scope("read:members"));
     }
     let mut st = conn.prepare_cached(
-        "SELECT id, name, display_name, pronouns, color, sigils, archived_at FROM member
-         WHERE account_id = ?1 AND deleted_at IS NULL ORDER BY name",
+        "SELECT id, name, display_name, pronouns, color, sigils, archived_at, sort_key FROM member
+         WHERE account_id = ?1 AND deleted_at IS NULL ORDER BY name, id",
     )?;
     let rows = st.query_map([&p.account_id], |r| {
         Ok(json!({
@@ -350,6 +350,7 @@ pub fn members(conn: &Connection, p: &Principal) -> Result<Value, DataError> {
             "color": r.get::<_, Option<String>>(4)?,
             "sigils": serde_json::from_str::<Value>(&r.get::<_, String>(5)?).unwrap_or(json!([])),
             "archived": r.get::<_, Option<i64>>(6)?.is_some(),
+            "sort_key": r.get::<_, Option<String>>(7)?,
         }))
     })?;
     Ok(json!({"items": rows.collect::<Result<Vec<_>, _>>()?}))
