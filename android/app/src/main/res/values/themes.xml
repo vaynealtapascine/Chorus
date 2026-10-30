@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Charcoal canvas from the first frame, so launch never flashes a lighter window (D-079: dark default). -->
+    <style name="Theme.Chorus" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/chorus_canvas</item>
+        <item name="android:colorAccent">@color/chorus_teal</item>
+    </style>
+    <color name="chorus_canvas">#FF15161A</color>
+    <color name="chorus_teal">#FF42A397</color>
+</resources>

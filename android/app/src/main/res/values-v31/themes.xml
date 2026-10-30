@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Chorus" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/chorus_canvas</item>
+        <item name="android:colorAccent">@color/chorus_teal</item>
+        <item name="android:windowSplashScreenBackground">@color/chorus_canvas</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+    </style>
+</resources>

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-24T08:23:30.215599+00:00",
+  "updatedAt": "2026-10-30",
   "scope": "UI1 shared foundation assets; no new generated illustrations.",
   "reference": {
-    "title": "Chorus \u2014 Flows Copy",
+    "title": "Chorus — Flows Copy",
     "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
     "url": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy",
     "frames": [
@@ -1163,6 +1163,51 @@
         "description": "24 dp formatting control, 2 dp rounded stroke; follows the existing Figma-derived icon vocabulary."
       },
       "sha256": "20ecc8899d5888c423de7fc98c152358bc8d9b1fcfe129402e3107ea849d353c"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/ic_launcher_foreground.xml",
+      "kind": "app-icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "72:1329",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=72-1329",
+        "iconNodeId": "72:1330",
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/fc27578f-ece4-49aa-97eb-8e76affa2e17/60902.svg"
+      },
+      "transformation": "Wordmark 'O' path unchanged (evenOdd), scaled to 50 dp in the 108 dp adaptive viewport, cream #FEF4E8.",
+      "sha256": "d8ad0af2c6c56944a35a7693ffa51f4985e225e6499103288d0206ccbb1d6202"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/ic_launcher_monochrome.xml",
+      "kind": "app-icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "72:1329",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=72-1329",
+        "iconNodeId": "72:1330",
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/fc27578f-ece4-49aa-97eb-8e76affa2e17/60902.svg"
+      },
+      "transformation": "Same path in white for Android 13 themed icons.",
+      "sha256": "a54bc01c1072345a7d7f30bd242b7de2606de00a0154d79b1a5beecdcf70be55"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/ic_stat_chorus.xml",
+      "kind": "app-icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "72:1329",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=72-1329",
+        "iconNodeId": "72:1330",
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/fc27578f-ece4-49aa-97eb-8e76affa2e17/60902.svg"
+      },
+      "transformation": "Same path in white at 20/24 dp for the notification status-bar icon.",
+      "sha256": "263a0eb2a5d127fd308c3e838a6174898256232a82914dba5dfa77ad47b9996a"
     }
   ]
 }

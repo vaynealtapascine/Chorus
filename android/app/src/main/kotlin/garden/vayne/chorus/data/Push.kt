@@ -176,7 +176,7 @@ object Push {
         // one notification per followed account (latest state wins); one per message
         val key = if (isMessage) p.optString("message_id") else p.optString("account_id")
         val n = NotificationCompat.Builder(ctx, if (isMessage) CHANNEL_MESSAGES else CHANNEL_SWITCHES)
-            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setSmallIcon(garden.vayne.chorus.R.drawable.ic_stat_chorus)
             .setContentTitle(p.optString("title", "Chorus"))
             .setContentText(p.optString("text"))
             .setAutoCancel(true)

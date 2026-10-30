@@ -106,7 +106,7 @@ object Reply {
             try {
                 // replace the notification so the reply spinner stops
                 val n = NotificationCompat.Builder(app, Push.CHANNEL_MESSAGES)
-                    .setSmallIcon(android.R.drawable.ic_popup_reminder)
+                    .setSmallIcon(garden.vayne.chorus.R.drawable.ic_stat_chorus)
                     .setContentTitle(title).setContentText(result)
                     .setOnlyAlertOnce(true).setAutoCancel(true)
                     .setTimeoutAfter(10_000)
