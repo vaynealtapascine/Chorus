@@ -1,5 +1,7 @@
 package garden.vayne.chorus.ui
 
+import android.content.Context
+import android.content.Intent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -197,6 +199,7 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
     onQuote: ((JournalPost) -> Unit)? = null, large: Boolean = false) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
+    val ctx = LocalContext.current
     var busy by remember(post.id) { mutableStateOf(false) }
     var error by remember(post.id) { mutableStateOf<String?>(null) }
     val account = chorus.device?.accountId
@@ -223,6 +226,9 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
             chorus.create("post.delete", repost.id, org.json.JSONObject())
         } } },
         onQuote = onQuote?.let { { it(post) } },
+        onShare = JournalSocial.shareText(post.title, post.cw, post.text).takeIf { it.isNotBlank() }?.let { text ->
+            { shareJournalText(ctx, post.title, text) }
+        },
         // saving is a private account pref: it syncs to this account's devices and never reaches the author
         saved = model.accountPrefs.isSaved(post.id),
         onBookmark = { write("Could not update your saved posts. Try again.") {
@@ -235,4 +241,16 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
             }
         } }, readersSeeName = post.visibility != "private", large = large)
     if (error != null) Text(error.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodySmall)
+}
+
+/** Hand plain post text to the Android share sheet; nothing else leaves the app. The content
+ * warning is the first line of [text], so a post is never shared without it. */
+internal fun shareJournalText(ctx: Context, title: String?, text: String) {
+    if (text.isBlank()) return
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+        title?.takeIf { it.isNotBlank() }?.let { putExtra(Intent.EXTRA_TITLE, it); putExtra(Intent.EXTRA_SUBJECT, it) }
+    }
+    try { ctx.startActivity(Intent.createChooser(send, "Share post")) } catch (_: android.content.ActivityNotFoundException) {}
 }

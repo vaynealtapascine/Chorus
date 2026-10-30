@@ -29,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,6 +38,7 @@ import garden.vayne.chorus.data.FollowList
 import garden.vayne.chorus.data.FollowPresets
 import garden.vayne.chorus.data.NamedFronts
 import garden.vayne.chorus.data.FollowerView
+import garden.vayne.chorus.data.JournalSocial
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PeopleApi
 import garden.vayne.chorus.data.PostReactions
@@ -306,6 +308,7 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
     var expanded by rememberSaveable(post.id) { mutableStateOf(false) }
     var overflow by remember(post.id) { mutableStateOf(false) }
+    val ctx = LocalContext.current
     val names = post.authorNames.joinToString(" & ").ifBlank { accountName }
     JournalPostFrame(names, compactAgo(post.occurredAt), null, avatar = {
         Box(Modifier.size(40.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
@@ -327,7 +330,10 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
             for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
             JournalActions(post.reactions, reactMemberId?.let(model::member), enabled,
                 onReply = onThread?.let { { it(post) } } ?: onReply?.let { { it(post) } },
-                onReact = reactMemberId?.let { { onReact(post) } })
+                onReact = reactMemberId?.let { { onReact(post) } },
+                onShare = JournalSocial.shareText(post.title, post.cw, post.text).takeIf { it.isNotBlank() }?.let { text ->
+                    { shareJournalText(ctx, post.title, text) }
+                })
         }
     }
 }
