@@ -39,4 +39,34 @@ class AccountPrefsTest {
         assertTrue(current.getBoolean("share_history"))
         assertFalse(current.has("share_stats"))
     }
+
+    @Test fun bookmarksAreOnlyTrueAccountWidePrefsAndPendingWins() {
+        val p = JSONObject("""{"rows":{"pref":{
+            "acct||bookmark:a":{"exists":true,"fields":{"value":true}},
+            "acct||bookmark:b":{"exists":true,"fields":{"value":true}},
+            "||bookmark:b":{"exists":true,"fields":{"value":null}},
+            "||bookmark:c":{"exists":true,"fields":{"value":true}},
+            "acct||bookmark:d":{"exists":true,"fields":{"value":null}},
+            "other||bookmark:e":{"exists":true,"fields":{"value":true}},
+            "acct|phone|bookmark:f":{"exists":true,"fields":{"value":true}},
+            "acct||bookmark:g":{"exists":false,"fields":{"value":true}},
+            "acct||notify_channel:h":{"exists":true,"fields":{"value":"all"}}
+        }}}""")
+        val prefs = AccountPrefs.fromProjection(p, "acct")
+        assertEquals(setOf("a", "c"), prefs.bookmarks)
+        assertTrue(prefs.isSaved("a"))
+        assertFalse(prefs.isSaved("b"))
+        assertEquals(mapOf("h" to "all"), prefs.notifyChannels)
+        assertTrue(AccountPrefs.fromProjection(JSONObject("{}"), "acct").bookmarks.isEmpty())
+    }
+
+    @Test fun bookmarkPayloadSavesWithTrueAndClearsWithNull() {
+        val save = AccountPrefs.bookmarkPayload("post-1", true)
+        assertEquals("", save.getString("device"))
+        assertEquals("bookmark:post-1", save.getString("key"))
+        assertEquals(true, save.get("value"))
+        val clear = AccountPrefs.bookmarkPayload("post-1", false)
+        assertTrue(clear.isNull("value"))
+        assertTrue(clear.has("value"))
+    }
 }

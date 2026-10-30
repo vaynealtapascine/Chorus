@@ -82,6 +82,10 @@ data class JournalPost(
     val occurredAt: Long, val cw: String?, val visibility: String, val replyTo: String?,
     val mood: String?, val tags: List<String>, val reactions: List<PostReaction> = emptyList(),
     val attachments: List<ChatAttachment> = emptyList(), val entities: String = "[]",
+    /** `post.create` `repost_of`: a repost has no text of its own and shows the original. */
+    val repostOf: String? = null,
+    /** `post.create` `quote.post_id`: the post a quote post embeds. */
+    val quotePostId: String? = null,
 )
 
 data class MemberList(val id: String, val name: String, val description: String?, val memberIds: Set<String>)
@@ -391,7 +395,8 @@ class Model(
                     f.str("title"), f.str("text").orEmpty(), f.optLong("occurred_at"), f.str("cw"),
                     f.optJSONObject("visibility")?.str("mode") ?: "private", f.str("reply_to"),
                     f.str("mood"), strings(f.optJSONArray("tags")), postReactions[id].orEmpty(),
-                    files(f.optJSONArray("attachments"), attachments), f.optJSONArray("entities")?.toString() ?: "[]") }
+                    files(f.optJSONArray("attachments"), attachments), f.optJSONArray("entities")?.toString() ?: "[]",
+                    f.str("repost_of"), (f.opt("quote") as? JSONObject)?.str("post_id")) }
                 .sortedWith(compareByDescending<JournalPost> { it.occurredAt }.thenByDescending { it.id })
             val listItems = HashMap<String, MutableSet<String>>()
             p.optJSONObject("sets")?.optJSONObject("member_list_item")?.let { set ->
