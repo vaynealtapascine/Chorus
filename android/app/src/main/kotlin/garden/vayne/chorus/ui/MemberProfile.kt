@@ -47,6 +47,7 @@ import garden.vayne.chorus.data.ProfileBundle
 import garden.vayne.chorus.data.ProfileHighlights
 import garden.vayne.chorus.data.ProfileMetrics
 import garden.vayne.chorus.data.ProfilePresentation
+import garden.vayne.chorus.data.Subsystems
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
 import kotlinx.coroutines.Dispatchers
@@ -66,7 +67,7 @@ private val ProfileTabs = listOf("Posts", "Replies", "Journal", "Media", "Highli
 @Composable
 internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     onClose: () -> Unit, onWrite: () -> Unit, onReply: (String) -> Unit,
-    closeLabel: String = "Journal", writeLabel: String? = null) {
+    closeLabel: String = "Journal", writeLabel: String? = null, onOpenProfile: ((String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val dev = chorus.device
     val actions = rememberCoroutineScope()
@@ -81,6 +82,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     var error by remember(memberId, dev?.accountId) { mutableStateOf<String?>(null) }
     var busy by remember(memberId) { mutableStateOf(false) }
     var removedHighlights by remember(memberId) { mutableStateOf<Set<String>>(emptySet()) }
+    var subsystemOpen by remember(memberId) { mutableStateOf(false) }
 
     LaunchedEffect(dev?.session, memberId) {
         bundle = null
@@ -127,10 +129,12 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().background(p.bg), state = list, contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "hero") {
-            ProfileHero(member, chorus, closeLabel, onClose, writeLabel, onWrite, onEdit = { editing = true })
+            ProfileHero(member, chorus, closeLabel, onClose, writeLabel, onWrite, onEdit = { editing = true },
+                subsystemLabel = if (model.isPerson) null else if (Subsystems.groupOf(model, memberId) != null) "Who’s inside"
+                    else "Make a subsystem", onSubsystem = { subsystemOpen = true })
         }
         item(key = "details") {
-            ProfileDetails(member, model, error, onTab = { tab = it })
+            ProfileDetails(member, model, error, onTab = { tab = it }, onInside = { subsystemOpen = true }, onOpenProfile = onOpenProfile)
         }
         stickyHeader(key = "tabs") { ProfileTabRow(tab) { tab = it } }
         fun posts(shown: List<JournalPost>, empty: String) {
@@ -196,13 +200,14 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
             }
         }
     }
+    if (subsystemOpen) SubsystemSheet(chorus, model, member) { subsystemOpen = false }
 }
 
 /** Banner (or a soft wash in the member's colour) with back and `⋯` floating on it, the avatar
  * overlapping its lower edge on a ring of the page colour, and the two profile actions. */
 @Composable
 private fun ProfileHero(member: Member, chorus: Chorus, closeLabel: String, onClose: () -> Unit,
-    writeLabel: String?, onWrite: () -> Unit, onEdit: () -> Unit) {
+    writeLabel: String?, onWrite: () -> Unit, onEdit: () -> Unit, subsystemLabel: String?, onSubsystem: () -> Unit) {
     val p = LocalChorusPalette.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     var menu by remember { mutableStateOf(false) }
@@ -214,6 +219,8 @@ private fun ProfileHero(member: Member, chorus: Chorus, closeLabel: String, onCl
             DropdownMenu(menu, { menu = false }) {
                 DropdownMenuItem(text = { Text("Edit profile") }, onClick = { menu = false; onEdit() },
                     leadingIcon = { Icon(painterResource(R.drawable.ic_edit), null, Modifier.size(20.dp), tint = p.ink2) })
+                if (subsystemLabel != null) DropdownMenuItem(text = { Text(subsystemLabel) }, onClick = { menu = false; onSubsystem() },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_layers), null, Modifier.size(20.dp), tint = p.ink2) })
                 DropdownMenuItem(text = { Text("Copy name") }, onClick = {
                     menu = false; clipboard.setText(androidx.compose.ui.text.AnnotatedString(member.shownName))
                 }, leadingIcon = { Icon(painterResource(R.drawable.ic_copy), null, Modifier.size(20.dp), tint = p.ink2) })
@@ -281,7 +288,8 @@ private fun ProfilePill(label: String, icon: Int?, filled: Boolean, description:
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ProfileDetails(member: Member, model: Model, error: String?, onTab: (String) -> Unit) {
+private fun ProfileDetails(member: Member, model: Model, error: String?, onTab: (String) -> Unit, onInside: () -> Unit,
+    onOpenProfile: ((String) -> Unit)?) {
     val p = LocalChorusPalette.current
     val counts = ProfilePresentation.counts(model, member.id)
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 14.dp),
@@ -290,12 +298,14 @@ private fun ProfileDetails(member: Member, model: Model, error: String?, onTab: 
             style = MaterialTheme.typography.headlineSmall.copy(fontSize = 26.sp, lineHeight = 32.sp))
         val secondary = member.name.takeIf { member.displayName != null && it != member.displayName }
         val sigils = member.sigils.filter(String::isNotBlank)
-        if (secondary != null || !member.pronouns.isNullOrBlank() || sigils.isNotEmpty())
+        val subsystem = Subsystems.groupOf(model, member.id)
+        if (secondary != null || !member.pronouns.isNullOrBlank() || sigils.isNotEmpty() || subsystem != null)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (secondary != null) Text(secondary, color = p.ink3, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                     modifier = Modifier.align(Alignment.CenterVertically))
                 if (!member.pronouns.isNullOrBlank()) ProfileChip(member.pronouns)
                 if (sigils.isNotEmpty()) ProfileChip(sigils.joinToString(" "))
+                if (subsystem != null) ProfileChip("Subsystem", R.drawable.ic_layers)
             }
         if (!model.isPerson) FrontLine(model, member.id)
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -305,10 +315,17 @@ private fun ProfileDetails(member: Member, model: Model, error: String?, onTab: 
         }
         if (member.description != null) RichBody(member.description, member.descriptionEntities,
             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp))
+        if (subsystem != null) InsideRow(model, member, onInside)
         val groups = model.membership.filter { member.id in it.value }.keys.mapNotNull(model::group).sortedBy { it.name.lowercase() }
         val audience = model.profileDetails.visibility[member.id] ?: "private"
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (group in groups) ProfileChip(group.name, if (group.isSubsystem) R.drawable.ic_layers else R.drawable.ic_members)
+            for (group in groups) {
+                // a subsystem that is a member reads as being inside them, and opens their profile
+                val holder = Subsystems.memberOf(model, group.id)?.takeIf { it.id != member.id }
+                if (holder != null) ProfileChip("Part of ${holder.shownName}", R.drawable.ic_layers,
+                    onClick = onOpenProfile?.let { open -> { open(holder.id) } })
+                else ProfileChip(group.name, if (group.isSubsystem) R.drawable.ic_layers else R.drawable.ic_members)
+            }
             ProfileChip(ProfilePresentation.audienceLine(audience, model.isPerson),
                 if (audience == "server") R.drawable.ic_globe else R.drawable.ic_lock)
         }
@@ -327,7 +344,8 @@ private fun FrontLine(model: Model, memberId: String) {
     if (status != null) Row(Modifier.height(24.dp).clip(CircleShape).background(p.accent.copy(alpha = .16f))
         .padding(start = 8.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(Modifier.size(8.dp).background(p.accent, CircleShape))
-        Text(listOfNotNull(status.layer, status.since?.let { ProfilePresentation.duration(now - it) }).joinToString(" · "),
+        Text(listOfNotNull(status.layer + status.with?.let { " with $it" }.orEmpty(),
+            status.since?.let { ProfilePresentation.duration(now - it) }).joinToString(" · "),
             color = p.accent, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp, lineHeight = 16.sp))
     } else ProfileMetrics.compute(model, memberId, now).lastFrontAt?.let { last ->
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -351,9 +369,10 @@ private fun ProfileStat(count: Int, one: String, many: String, onClick: () -> Un
 }
 
 @Composable
-private fun ProfileChip(label: String, icon: Int? = null) {
+private fun ProfileChip(label: String, icon: Int? = null, onClick: (() -> Unit)? = null) {
     val p = LocalChorusPalette.current
-    Row(Modifier.height(24.dp).clip(CircleShape).background(p.surface2).padding(horizontal = 10.dp),
+    Row(Modifier.height(24.dp).clip(CircleShape).background(p.surface2)
+        .then(if (onClick != null) Modifier.clickable(onClickLabel = label, onClick = onClick) else Modifier).padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
         if (icon != null) Icon(painterResource(icon), null, Modifier.size(13.dp), tint = p.ink2)
         Text(label, color = p.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis,

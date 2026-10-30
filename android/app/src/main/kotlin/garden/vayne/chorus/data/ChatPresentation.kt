@@ -16,7 +16,12 @@ object ChatPresentation {
         else -> Folder.Shared
     }
 
-    fun presence(model: Model, channelId: String?): List<Entry> {
+    /** Who is here for [channelId] (or the Body), with everyone inside a fronting subsystem added
+     * as fronting with it (D-092, display only: reads, privacy and authorship use [recorded]). */
+    fun presence(model: Model, channelId: String?): List<Entry> = Subsystems.expand(model, recorded(model, channelId)).entries
+
+    /** The front exactly as switched. */
+    fun recorded(model: Model, channelId: String?): List<Entry> {
         val named = model.namedFronts ?: return model.current
         val front = channelId?.let { ChatSpeaker.frontOf(model, it) } ?: named.bodyId
         return named.entries(front ?: named.bodyId)

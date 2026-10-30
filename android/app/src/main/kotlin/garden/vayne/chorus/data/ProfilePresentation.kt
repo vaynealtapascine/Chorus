@@ -4,21 +4,24 @@ package garden.vayne.chorus.data
  * under the name. Nothing here writes; the front itself still comes from core's projection. */
 object ProfilePresentation {
     /** [layer] is the shown layer name ("Fronting", "Co-conscious" or a configured layer such as
-     * "Steering"); [since] is when this member's current stretch began, when known. */
-    data class FrontStatus(val layer: String, val since: Long?)
+     * "Steering"); [since] is when this member's current stretch began, when known; [with] names
+     * the subsystem they're inside when they only front with it (D-092). */
+    data class FrontStatus(val layer: String, val since: Long?, val with: String? = null)
 
     data class Counts(val posts: Int, val entries: Int, val relationships: Int)
 
     /** Where [memberId] is in the body's confirmed front right now, or null when they aren't. */
     fun frontStatus(model: Model, memberId: String): FrontStatus? {
-        val entry = ChatPresentation.presence(model, null)
+        val expanded = Subsystems.expand(model, ChatPresentation.recorded(model, null))
+        val entry = expanded.entries
             .filter { it.subjectType == "member" && it.subjectId == memberId }
             .minByOrNull { layerRank(model, it.level) } ?: return null
         val layer = ChatPresentation.layer(model, entry) ?: return null
-        val since = model.frontIntervals
-            .filter { it.subjectType == "member" && it.subjectId == memberId && it.endAt == null }
-            .minOfOrNull { it.startAt } ?: model.since
-        return FrontStatus(layer.replaceFirstChar { it.titlecase() }, since)
+        val via = expanded.via[memberId]
+        fun openSince(id: String) = model.frontIntervals
+            .filter { it.subjectId == id && it.endAt == null }.minOfOrNull { it.startAt }
+        val since = openSince(memberId) ?: via?.let { openSince(it.subjectId) } ?: model.since
+        return FrontStatus(layer.replaceFirstChar { it.titlecase() }, since, via?.name)
     }
 
     /** Innermost first: a member both fronting and nearby reads as fronting. */

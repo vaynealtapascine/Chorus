@@ -198,7 +198,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         BackHandler(active && shown == route) { profileId = null }
         MemberProfile(chorus, model, id, onClose = { profileId = null },
             onWrite = { authorId = id; replyTo = null; editing = true },
-            onReply = { postId -> authorId = id; replyTo = postId; editing = true })
+            onReply = { postId -> authorId = id; replyTo = postId; editing = true }, onOpenProfile = { profileId = it })
         return@ChorusScene
     }
 

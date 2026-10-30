@@ -22,6 +22,15 @@ class ProfilePresentationTest {
         assertNull(ProfilePresentation.frontStatus(model, "nobody"))
     }
 
+    @Test fun aMemberInsideAFrontingSubsystemFrontsWithIt() {
+        val model = Model(listOf(member("garden"), member("kai")), listOf(Group("g", "Garden", "subsystem", null, null)),
+            mapOf("g" to setOf("kai")), listOf(Entry("member", "garden", "front", true)), 100L, emptyList(),
+            frontIntervals = listOf(FrontInterval("now", "member", "garden", "front", true, 400L, null)),
+            accountPrefs = AccountPrefs(memberSubsystems = mapOf("garden" to "g")))
+        assertEquals(ProfilePresentation.FrontStatus("Fronting", 400L, "garden"), ProfilePresentation.frontStatus(model, "kai"))
+        assertEquals(ProfilePresentation.FrontStatus("Fronting", 400L), ProfilePresentation.frontStatus(model, "garden"))
+    }
+
     @Test fun durationReadsLikeAClock() {
         assertEquals("just now", ProfilePresentation.duration(30_000))
         assertEquals("45m", ProfilePresentation.duration(45 * 60_000L))

@@ -69,7 +69,7 @@ fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, onClose: () 
         val recents = model.recents(20)
         val members = model.active.filter { allowed == null || it.id in allowed }
             .map { Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob) }
-        val subsystems = if (allowed == null) model.groups.filter { it.isSubsystem }
+        val subsystems = if (allowed == null) model.groups.filter { it.isSubsystem && garden.vayne.chorus.data.Subsystems.memberOf(model, it.id) == null }
             .map { Subject("group", it.id, it.name, it.color ?: "#A09184", "◌") } else emptyList()
         (members + subsystems).mapNotNull { s -> fuzzy(query, s.name)?.let { score -> s to score } }
             .sortedWith(compareBy<Pair<Subject, Int>> { it.second }.thenBy { recents.indexOf(it.first.id).let { n -> if (n < 0) Int.MAX_VALUE else n } }.thenBy { it.first.name })

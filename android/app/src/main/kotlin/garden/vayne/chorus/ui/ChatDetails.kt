@@ -59,7 +59,8 @@ internal fun SendAsSheet(model: Model, channelId: String, members: List<Member>,
     val presence = ChatPresentation.presence(model, channelId).filter { it.subjectType == "member" }
     val frontId = ChatSpeaker.frontOf(model, channelId)
     val presentIds = if (model.namedFronts == null) presence.filter { it.level == "front" || it.level == "cocon" }.map { it.subjectId }.toSet()
-        else model.namedFronts.resolved[frontId]?.authorship.orEmpty().filter { it.subjectType == "member" }.map { it.subjectId }.toSet()
+        else Subsystems.expand(model, model.namedFronts.resolved[frontId]?.authorship.orEmpty().map { it.displayEntry() }).entries
+            .filter { it.subjectType == "member" }.map { it.subjectId }.toSet()
     val frontName = model.namedFronts?.fronts?.get(frontId)?.name ?: "Body"
     val present = presence.filter { it.subjectId in presentIds }.mapNotNull { entry -> members.find { it.id == entry.subjectId } }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = p.surface) {

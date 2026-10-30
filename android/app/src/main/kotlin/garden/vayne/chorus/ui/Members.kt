@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.MemberOrdering
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.Subsystems
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 
 @Composable
@@ -39,7 +40,7 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
     if (reordering) { MemberReorder(chorus, model) { reordering = false }; return }
     profile?.let { id ->
         MemberProfile(chorus, model, id, onClose = { profile = null }, onWrite = { onJournal(id, null) },
-            onReply = { onJournal(null, it) }, closeLabel = "Members", writeLabel = "Journal")
+            onReply = { onJournal(null, it) }, closeLabel = "Members", writeLabel = "Journal", onOpenProfile = { profile = it })
         return
     }
     val eligible = remember(model.members, chorus.device?.accountId, archived) {
@@ -50,6 +51,8 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
     }.sortedWith(compareBy<Pair<Int, garden.vayne.chorus.data.Member>> { it.first }
         .thenBy { it.second.shownName.lowercase(java.util.Locale.ROOT) }.thenBy { it.second.id }).map { it.second }
     val list = rememberLazyListState()
+    // members inside a fronting subsystem read as fronting with it (D-092)
+    val here = remember(model) { Subsystems.expand(model, model.current).entries }
     LazyColumn(Modifier.padding(horizontal = 16.dp), state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -75,11 +78,15 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(m.shownName, color = tonesOf(m.color).name, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    val groups = model.membership.filter { m.id in it.value }.keys.mapNotNull { model.group(it)?.name }
-                    val sub = listOfNotNull(m.pronouns, groups.joinToString(", ").ifEmpty { null }).joinToString(" · ")
+                    // inside a member who is a subsystem: "in Foxglove" rather than the group's name
+                    val groups = model.membership.filter { m.id in it.value }.keys.mapNotNull { id ->
+                        Subsystems.memberOf(model, id)?.takeIf { it.id != m.id }?.let { "in ${it.shownName}" } ?: model.group(id)?.name }
+                    val inside = Subsystems.parts(model, m.id).size.takeIf { Subsystems.groupOf(model, m.id) != null }
+                    val sub = listOfNotNull(m.pronouns, inside?.let { "Subsystem · $it inside" },
+                        groups.joinToString(", ").ifEmpty { null }).joinToString(" · ")
                     if (sub.isNotEmpty()) Text(sub, color = p.ink3, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
-                model.current.find { it.subjectId == m.id && it.subjectType == "member" }?.let { entry ->
+                here.find { it.subjectId == m.id && it.subjectType == "member" }?.let { entry ->
                     Text(if (entry.level == "front") "Fronting" else if (entry.level == "cocon") "Co-conscious" else "Present",
                         color = p.accent, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 8.dp))
                 }

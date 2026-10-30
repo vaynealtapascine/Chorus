@@ -8,7 +8,9 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
     /** channel id → `notify_channel:<id>` (all · mentions · none, NOTIFICATIONS §7). */
     val notifyChannels: Map<String, String> = emptyMap(),
     /** Saved journal posts: `bookmark:<post id>` = true. Private to this account's devices. */
-    val bookmarks: Set<String> = emptySet()) {
+    val bookmarks: Set<String> = emptySet(),
+    /** Members who are subsystems: `member_subsystem:<member id>` = the subsystem group's id (D-092). */
+    val memberSubsystems: Map<String, String> = emptyMap()) {
     fun isSaved(postId: String): Boolean = postId in bookmarks
 
     /** A channel's chat notifications; DMs default to everything, other channels to mentions (as on web). */
@@ -37,8 +39,26 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
                 value("follow_ceiling") as? JSONObject ?: legacy?.optJSONObject("follow_ceiling") ?: JSONObject(),
                 value("chat.cw_auto_expand") == true, value("chat.segment_parsing") != false,
                 value("chat.read_per_member") == true, value("share_typing") == true, channelLevels(prefs, accountId),
-                savedPosts(prefs, accountId))
+                savedPosts(prefs, accountId), keyed(prefs, accountId, MEMBER_SUBSYSTEM).mapNotNull { (member, value) ->
+                    (value as? String)?.takeIf { it.isNotBlank() }?.let { member to it } }.toMap())
         }
+
+        /** Account-wide (no device) prefs under [prefix], by the rest of the key; a pending local
+         * change wins over the stamped row, so a cleared (null) value hides an older one. */
+        private fun keyed(prefs: JSONObject?, accountId: String, prefix: String): Map<String, Any?> {
+            val pending = HashMap<String, Any?>()
+            val stamped = HashMap<String, Any?>()
+            for (k in prefs?.keys()?.asSequence().orEmpty()) {
+                val parts = k.split('|', limit = 3)
+                if (parts.size != 3 || parts[1].isNotEmpty() || (parts[0].isNotEmpty() && parts[0] != accountId)) continue
+                val id = parts[2].takeIf { it.startsWith(prefix) }?.removePrefix(prefix)?.takeIf { it.isNotBlank() } ?: continue
+                val row = prefs?.optJSONObject(k)?.takeIf { it.optBoolean("exists") } ?: continue
+                (if (parts[0].isEmpty()) pending else stamped)[id] = row.optJSONObject("fields")?.opt("value")?.takeIf { it != JSONObject.NULL }
+            }
+            return stamped + pending
+        }
+
+        const val MEMBER_SUBSYSTEM = "member_subsystem:"
 
         /** Account-wide (no device) `bookmark:` prefs set to true; a pending local change wins, so
          * saving then un-saving before the op is stamped never resurrects the stamped value. */

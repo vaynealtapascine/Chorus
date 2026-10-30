@@ -38,8 +38,9 @@ the next app start. The owner's phone is logged in to the real account: inspect 
 | 0 | UI6 batch 2 wrap-up (Sol's R1 follow-up + chat-draft cache fix); launcher/notification icon from the owner's wordmark mark (Figma 72:1330); dark splash | Claude | done, deployed |
 | 1 | Chat feel: swipe to reply, double-tap to react, message enter/exit animation, reaction pop, send-button morph, animated jump-to-latest with unread badge, haptics, chat list sorted by activity with Draft:/typing previews | Sonnet (xhigh) | paused (owner: Journal first); partial work on branch `wip/ui7-slice1` (chat list order/drafts, swipe to reply, double-tap heart, haptics) |
 | 2 | Journal feed (F6.3/F6.4): Twitter-class post cards — action row (reply/repost/like/bookmark/share with counts and animations), reposted-by header, quote card, media grid; post detail with stats and a sticky reply bar; Saved | Sonnet (xhigh) | done; reviewed and polished by Claude; deployed 0.1.591 |
-| 3 | Journal composer (F6.2/F6.11): full-screen, Post / Journal entry, posting-as (subsystem-grouped), audience + replies chips, media row, selection formatting, word count, drafts | Sonnet (high) | |
-| 4 | Member profile (F6.1): banner + overlapping avatar, Message / Edit profile, status chip, stats, tabs Posts / Replies / Journal / Media / About, subsystem chips | Sonnet (high) | |
+| 3 | Journal composer (F6.2/F6.11): full-screen, Post / Journal entry, posting-as (subsystem-grouped), audience + replies chips, media row, selection formatting, word count, drafts | Sonnet (high) | paused by the API rate limit; partial work on branch `wip/ui7-slice3` |
+| 4 | Member profile (F6.1): banner + overlapping avatar, Post / Edit profile, status chip, stats, tabs Posts / Replies / Journal / Media / Highlights / About, subsystem chips; tighter post action row | Claude | done, deployed 0.1.594 (owner asked for it before slice 3) |
+| 4b | Members who are subsystems (D-092): make a subsystem from the profile, choose who is inside, "Fronting with Garden" for everyone inside a fronting subsystem (display only) | Claude | done |
 | 5 | Mentions autocomplete in chat and posts: members, `@front`, subsystems; keyboard-friendly | Sonnet (high) | |
 | 6 | Photos (F5.8): attach sheet with recent-photo grid and multi-select, album bubbles, full-screen viewer (pinch, swipe between, swipe down to close) | Sonnet (xhigh) | |
 | 7 | Chat list and info (F5.1/F5.25/F5.26): folder editor, compact rows, swipe actions, pinned chats, info quick actions (Mute/Search/Pinned) | Sonnet (high) | |
@@ -53,6 +54,9 @@ board; handles would make the Figma `@member.system` lines real.
 
 Owner, 2026-10-30 (after the API rate limit stopped three parallel runs): **one slice at a time,
 in order, each landing on the phone before the next starts.** Journal first.
+
+Owner, 2026-10-31: profile and the post action row first, then members as subsystems, then
+desktop/web chat to Figma parity (F5 desktop frames).
 
 Slice 12 (Fronting to Figma F3.1–F3.3: front chips, nested layer card with member rows, avatar-grid
 switch sheet with tap-to-cycle layers, member layer sheet) is planned but not started.

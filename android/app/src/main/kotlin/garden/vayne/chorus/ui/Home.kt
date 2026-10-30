@@ -57,6 +57,7 @@ import garden.vayne.chorus.data.Front
 import garden.vayne.chorus.data.Mode
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.Subject
+import garden.vayne.chorus.data.Subsystems
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.widget.WidgetPins
 import kotlinx.coroutines.delay
@@ -281,7 +282,8 @@ private fun tiles(model: Model, query: String, folder: String?, pins: List<Strin
         val ms = members.mapNotNull { m ->
             fuzzy(query, listOfNotNull(m.name, m.displayName, m.pronouns, *m.sigils.toTypedArray()).joinToString(" "))?.let { it to Tile.One(Subject("member", m.id, m.shownName, m.color, m.glyph, m.avatarBlob)) }
         }
-        val gs = model.groups.filter { it.isSubsystem }.mapNotNull { g ->
+        // a subsystem that is a member is switched in as that member, already in [ms]
+        val gs = model.groups.filter { it.isSubsystem && Subsystems.memberOf(model, it.id) == null }.mapNotNull { g ->
             fuzzy(query, g.name)?.let { (it + 1) to Tile.One(Subject("group", g.id, g.name, g.color ?: "#A09184", "◌"), whole = true) }
         }
         return (ms + gs).sortedBy { it.first }.map { it.second }
@@ -292,9 +294,12 @@ private fun tiles(model: Model, query: String, folder: String?, pins: List<Strin
         val inside = model.membership[folder].orEmpty()
         val recent = model.recents(200)
         val order = { id: String -> recent.indexOf(id).let { if (it < 0) Int.MAX_VALUE else it } }
-        return listOf<Tile>(Tile.One(Subject("group", g.id, g.name, g.color ?: "#A09184", "◌"), whole = true)) +
+        val self = Subsystems.memberOf(model, g.id)
+        val whole = if (self != null) Tile.One(Subject("member", self.id, self.shownName, self.color, self.glyph, self.avatarBlob), whole = true)
+            else Tile.One(Subject("group", g.id, g.name, g.color ?: "#A09184", "◌"), whole = true)
+        return listOf<Tile>(whole) +
             subsystems.filter { it.parentId == folder }.map { Tile.Folder(it.id, it.name, it.color, model.membership[it.id]?.size ?: 0) } +
-            members.filter { it.id in inside }.sortedBy { order(it.id) }.map { Tile.One(Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob)) }
+            members.filter { it.id in inside && it.id != self?.id }.sortedBy { order(it.id) }.map { Tile.One(Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob)) }
     }
     val recents = model.recents(8)
     val byId = members.associateBy { it.id }
@@ -363,7 +368,7 @@ private fun FolderTile(f: Tile.Folder, onTap: () -> Unit) {
 private val LEGACY_LAYERS = listOf("front" to "Fronting", "cocon" to "Co-conscious", "present" to "Present")
 
 /** Who is here now (DESIGN.md §4.1). The innermost layer lists people; outer layers nest around it
- * in display order (D-080). */
+ * in display order (D-080). Everyone inside a fronting subsystem shows under it (D-092). */
 @Composable
 fun FrontCard(
     model: Model,
@@ -376,17 +381,19 @@ fun FrontCard(
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); now = System.currentTimeMillis() } }
     val since = sinceAt?.let { ago(it, now) }
-    val names = { layer: String -> entries.filter { it.level == layer }.mapNotNull { model.subject(it.subjectType, it.subjectId)?.name } }
+    val expanded = Subsystems.expand(model, entries)
+    val shown = expanded.entries
+    val names = { layer: String -> shown.filter { it.level == layer }.mapNotNull { model.subject(it.subjectType, it.subjectId)?.name } }
     Column(Modifier.fillMaxWidth().padding(top = 8.dp).background(p.surface, RoundedCornerShape(22.dp)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
             ChorusIcon(AppIcon.Front)
             Spacer(Modifier.width(8.dp))
             Text(title, color = p.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("${entries.size} here", color = p.ink3, fontSize = 12.sp)
+            Text("${shown.size} here", color = p.ink3, fontSize = 12.sp)
         }
-        LayerRing(model, entries, layers, layers.lastIndex, since, names)
-        val unlisted = entries.filter { e -> layers.none { it.first == e.level } }
+        LayerRing(model, shown, layers, layers.lastIndex, since, names, expanded.via)
+        val unlisted = shown.filter { e -> layers.none { it.first == e.level } }
             .mapNotNull { model.subject(it.subjectType, it.subjectId)?.name }
         if (unlisted.isNotEmpty()) PresenceLine("Other", unlisted)
     }
@@ -395,7 +402,7 @@ fun FrontCard(
 @Composable
 private fun LayerRing(
     model: Model, entries: List<Entry>, layers: List<Pair<String, String>>, i: Int, since: String?,
-    names: (String) -> List<String>,
+    names: (String) -> List<String>, via: Map<String, Subsystems.Via> = emptyMap(),
 ) {
     val p = LocalChorusPalette.current
     if (i <= 0) {
@@ -409,15 +416,21 @@ private fun LayerRing(
             }
             val inner = entries.filter { it.level == id }
             if (inner.isEmpty()) Text("No one in $label", color = p.ink2, modifier = Modifier.padding(8.dp))
-            inner.forEach { entry -> model.subject(entry.subjectType, entry.subjectId)?.let { member ->
-                Row(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(12.dp)).padding(10.dp),
+            // a subsystem's row carries everyone inside it, indented one step per level
+            fun nested(entry: Entry, depth: Int): List<Pair<Entry, Int>> = listOf(entry to depth) +
+                inner.filter { via[it.subjectId]?.subjectId == entry.subjectId }.flatMap { nested(it, depth + 1) }
+            val rows = inner.filter { it.subjectId !in via }.flatMap { nested(it, 0) }
+            rows.forEach { (entry, depth) -> model.subject(entry.subjectType, entry.subjectId)?.let { member ->
+                Row(Modifier.fillMaxWidth().padding(start = (20 * depth).dp).background(p.surface, RoundedCornerShape(12.dp))
+                    .padding(if (depth == 0) 10.dp else 8.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Avatar(member.glyph, member.color, 40.dp, avatarBlob = member.avatarBlob)
+                    Avatar(member.glyph, member.color, if (depth == 0) 40.dp else 32.dp, avatarBlob = member.avatarBlob)
                     Column(Modifier.weight(1f)) {
                         Text(member.name, color = p.ink, fontWeight = FontWeight.SemiBold)
                         if (entry.isPrimary) Text("Primary", color = p.ink3, fontSize = 12.sp)
+                        via[entry.subjectId]?.let { Text("With ${it.name}", color = p.ink3, fontSize = 12.sp) }
                     }
-                    if (since != null) Text(since, color = p.ink3, fontSize = 12.sp)
+                    if (since != null && depth == 0) Text(since, color = p.ink3, fontSize = 12.sp)
                 }
             } }
         }
@@ -426,7 +439,7 @@ private fun LayerRing(
     val edge = if (i == 1) p.accent.copy(alpha = .5f) else p.line
     Column(Modifier.fillMaxWidth().border(1.dp, edge, RoundedCornerShape(18.dp + (2 * i).dp)).padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        LayerRing(model, entries, layers, i - 1, since, names)
+        LayerRing(model, entries, layers, i - 1, since, names, via)
         PresenceLine(layers[i].second, names(layers[i].first))
     }
 }
