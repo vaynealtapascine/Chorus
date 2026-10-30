@@ -1,6 +1,11 @@
 package garden.vayne.chorus.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -340,6 +345,19 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     else model.switches.map { JournalEvent(it.id, it.occurredAt, null, if (it.retracted) "Undone switch" else fronting(it.resultingFront)) }
     val events = (model.posts.map { JournalEvent(it.id, it.occurredAt, it, null) } + switchEvents)
         .sortedWith(compareByDescending<JournalEvent> { it.at }.thenByDescending { it.id })
+    val shownEvents = events.filter { journalTab != "entries" || it.post?.kind == "entry" }
+    // New posts arriving (from another device) while the reader is scrolled down offer a way back to the top.
+    val motion = rememberChorusMotion()
+    val newestPost = shownEvents.firstOrNull { it.post != null }?.id
+    var announced by remember(journalTab) { mutableStateOf(newestPost) }
+    var newPosts by remember(journalTab) { mutableStateOf(false) }
+    LaunchedEffect(journalTab, newestPost) {
+        if (newestPost != announced) {
+            if (feedListState.firstVisibleItemIndex > 0) newPosts = true
+            announced = newestPost
+        }
+    }
+    LaunchedEffect(feedListState.firstVisibleItemIndex) { if (feedListState.firstVisibleItemIndex == 0) newPosts = false }
     Column(Modifier.fillMaxSize().background(p.bg)) {
         Row(Modifier.fillMaxWidth().background(p.surface).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             author?.let { ChatAvatar(it, 36.dp) }
@@ -371,11 +389,11 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         if (journalTab == "friends") JournalFriends(chorus, model, onThread = { threadPostId = it }, onReply = {
             replyTo = it; audience = "server"; editing = true
         }) else LazyColumn(Modifier.fillMaxSize(), state = feedListState, contentPadding = PaddingValues(bottom = 80.dp)) {
-        if (events.none { journalTab != "entries" || it.post?.kind == "entry" }) item {
+        if (shownEvents.isEmpty()) item {
             Text(if (journalTab == "entries") "No journal entries yet. Start with a few words." else "No posts or switches yet. Write the first note.",
                 color = p.ink2, modifier = Modifier.padding(24.dp))
         }
-        for (event in events.filter { journalTab != "entries" || it.post?.kind == "entry" }) item(key = "${if (event.post == null) "switch" else "post"}:${event.id}") {
+        for (event in shownEvents) item(key = "${if (event.post == null) "switch" else "post"}:${event.id}") {
             if (event.post != null) JournalPostCard(event.post, model, chorus,
                 onReply = { replyTo = it.id; editing = true },
                 onThread = { threadPostId = it.id },
@@ -389,6 +407,12 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             }
         }
         }
+        NewPostsPill(newPosts && journalTab != "friends", motion, Modifier.align(Alignment.TopCenter).padding(top = 8.dp)) {
+            actions.launch {
+                if (motion) feedListState.animateScrollToItem(0) else feedListState.scrollToItem(0)
+                newPosts = false
+            }
+        }
         FloatingActionButton(onClick = { replyTo = null; if (journalTab == "entries") kind = "entry"; editing = true },
             containerColor = p.accent, contentColor = p.onAccent, shape = CircleShape,
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).size(56.dp)) {
@@ -396,6 +420,19 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         }
         }
     }
+    }
+}
+
+/** "↑ New posts": slides in at the top when posts arrive while the reader is further down. */
+@Composable
+private fun NewPostsPill(visible: Boolean, motion: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val p = LocalChorusPalette.current
+    AnimatedVisibility(visible, modifier,
+        enter = fadeIn(ChorusMotion.tween(motion)) + slideInVertically(ChorusMotion.tween(motion)) { -it },
+        exit = fadeOut(ChorusMotion.tween(motion, ChorusMotion.Quick)) + slideOutVertically(ChorusMotion.tween(motion, ChorusMotion.Quick)) { -it }) {
+        Surface(onClick = onClick, color = p.accent, contentColor = p.onAccent, shape = CircleShape, shadowElevation = 6.dp) {
+            Text("↑ New posts", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+        }
     }
 }
 
