@@ -39,7 +39,7 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
     if (reordering) { MemberReorder(chorus, model) { reordering = false }; return }
     profile?.let { id ->
         MemberProfile(chorus, model, id, onClose = { profile = null }, onWrite = { onJournal(id, null) },
-            onReply = { onJournal(null, it) }, closeLabel = "Members", writeLabel = "Open journal")
+            onReply = { onJournal(null, it) }, closeLabel = "Members", writeLabel = "Journal")
         return
     }
     val eligible = remember(model.members, chorus.device?.accountId, archived) {

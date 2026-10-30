@@ -70,6 +70,14 @@ private fun MediaGrid(images: List<ChatAttachment>, chorus: Chorus, who: String,
     viewing?.let { MediaViewer(it, chorus, who, at, null, onClose = { viewing = null }) }
 }
 
+/** One photo cell outside a post's own grid (the profile's Media tab), opening the full-screen viewer. */
+@Composable
+internal fun MediaThumb(a: ChatAttachment, chorus: Chorus, modifier: Modifier, who: String, at: Long) {
+    var viewing by remember { mutableStateOf(false) }
+    MediaTile(a, chorus, modifier, 0) { viewing = true }
+    if (viewing) MediaViewer(a, chorus, who, at, null, onClose = { viewing = false })
+}
+
 /** One image cell. A spoiler stays covered (and undecoded) until tapped; long-press covers it again. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

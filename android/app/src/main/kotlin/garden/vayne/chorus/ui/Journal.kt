@@ -483,9 +483,9 @@ internal fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit
 internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, onReply: (JournalPost) -> Unit,
     onThread: ((JournalPost) -> Unit)? = null, onProfile: ((String) -> Unit)? = null, full: Boolean = false,
     showActions: Boolean = true, repostedBy: String? = null, onQuote: ((JournalPost) -> Unit)? = null,
-    onOpenPost: ((String) -> Unit)? = null) {
+    onOpenPost: ((String) -> Unit)? = null, extraMenu: List<Pair<String, () -> Unit>> = emptyList()) {
     Column(Modifier.fillMaxWidth()) {
-        JournalPostCardBody(post, model, chorus, onReply, onThread, onProfile, full, showActions, repostedBy, onQuote, onOpenPost)
+        JournalPostCardBody(post, model, chorus, onReply, onThread, onProfile, full, showActions, repostedBy, onQuote, onOpenPost, extraMenu)
     }
 }
 
@@ -493,14 +493,14 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
 private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus, onReply: (JournalPost) -> Unit,
     onThread: ((JournalPost) -> Unit)?, onProfile: ((String) -> Unit)?, full: Boolean,
     showActions: Boolean, repostedBy: String?, onQuote: ((JournalPost) -> Unit)?,
-    onOpenPost: ((String) -> Unit)?) {
+    onOpenPost: ((String) -> Unit)?, extraMenu: List<Pair<String, () -> Unit>> = emptyList()) {
     val p = LocalChorusPalette.current
     // A repost has no text: show the original (one level only) under "X reposted", or say it's gone.
     if (post.repostOf != null && repostedBy == null) {
         val by = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
         val original = model.posts.find { it.id == post.repostOf }?.takeIf { it.repostOf == null }
         if (original == null) RepostUnavailable(by)
-        else JournalPostCardBody(original, model, chorus, onReply, onThread, onProfile, full, showActions, by, onQuote, onOpenPost)
+        else JournalPostCardBody(original, model, chorus, onReply, onThread, onProfile, full, showActions, by, onQuote, onOpenPost, extraMenu)
         return
     }
     if (repostedBy != null) RepostHeader(repostedBy)
@@ -531,7 +531,7 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
             JournalSocial.shareText(post.title, post.cw, post.text).takeIf { it.isNotBlank() }?.let { text ->
                 "Copy text" to { clipboard.setText(androidx.compose.ui.text.AnnotatedString(text)) }
             },
-            ("Change audience" to { audienceOpen = true }).takeIf { JournalSocial.canEditAudience(post, model, chorus.device?.accountId) }))
+            ("Change audience" to { audienceOpen = true }).takeIf { JournalSocial.canEditAudience(post, model, chorus.device?.accountId) }) + extraMenu)
     }, onClick = open) {
         if (post.replyTo != null) Text("Reply", color = p.ink3, style = MaterialTheme.typography.bodySmall)
         if (post.cw != null) Surface(color = p.surface2, shape = RoundedCornerShape(10.dp)) {

@@ -1,56 +1,74 @@
 package garden.vayne.chorus.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.foundation.Image
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import garden.vayne.chorus.data.Chorus
+import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Blobs
+import garden.vayne.chorus.data.ChatAttachment
+import garden.vayne.chorus.data.Chorus
+import garden.vayne.chorus.data.JournalPresentation
+import garden.vayne.chorus.data.JournalPost
+import garden.vayne.chorus.data.Member
+import garden.vayne.chorus.data.MemberCustomization
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.ProfileApi
 import garden.vayne.chorus.data.ProfileBundle
 import garden.vayne.chorus.data.ProfileHighlights
 import garden.vayne.chorus.data.ProfileMetrics
+import garden.vayne.chorus.data.ProfilePresentation
 import garden.vayne.chorus.designsystem.LocalChorusPalette
+import garden.vayne.chorus.designsystem.R
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
-/** Own member profile: local details stay visible offline; server adds readable outside highlights. */
+private val ProfileTabs = listOf("Posts", "Replies", "Journal", "Media", "Highlights", "About")
+
+/** Own member profile (Figma F6.1): banner with the avatar overlapping it, Post / Edit profile,
+ * name, pronouns and sigils, where they are in the front right now, counts, bio, groups and the
+ * profile's audience; then sticky tabs. Pinning and highlighting live in each post's `⋯`. Local
+ * details stay visible offline; the server adds readable outside highlights. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     onClose: () -> Unit, onWrite: () -> Unit, onReply: (String) -> Unit,
     closeLabel: String = "Journal", writeLabel: String? = null) {
     val p = LocalChorusPalette.current
     val dev = chorus.device
-    val ctx = LocalContext.current
     val actions = rememberCoroutineScope()
     val member = model.member(memberId)?.takeIf { it.createdByAccountId == null || it.createdByAccountId == dev?.accountId }
     var tab by rememberSaveable(memberId) { mutableStateOf("Posts") }
@@ -61,8 +79,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     }
     var bundle by remember(memberId, dev?.accountId) { mutableStateOf<ProfileBundle?>(null) }
     var error by remember(memberId, dev?.accountId) { mutableStateOf<String?>(null) }
-    var pinBusy by remember(memberId) { mutableStateOf(false) }
-    var highlightBusy by remember(memberId) { mutableStateOf(false) }
+    var busy by remember(memberId) { mutableStateOf(false) }
     var removedHighlights by remember(memberId) { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(dev?.session, memberId) {
@@ -81,137 +98,372 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
         return
     }
 
-    val ownPosts = model.posts.filter { memberId in it.authors }
-    val media = ownPosts.flatMap { post -> post.attachments.map { post to it } }
-    val metrics = ProfileMetrics.compute(model, memberId)
+    val ownPosts = model.posts.filter { memberId in it.authors && it.repostOf == null }
     val pinned = model.posts.find { it.id == member.pinnedPostId }
     val highlightedIds = model.highlights[memberId].orEmpty()
-    val localHighlights = model.posts.filter { it.id in highlightedIds }
-    fun setHighlight(postId: String, add: Boolean) {
-        if (highlightBusy) return
-        highlightBusy = true; error = null
+    fun write(failure: String, block: suspend () -> Unit) {
+        if (busy) return
+        busy = true; error = null
         actions.launch {
-            try {
-                chorus.create(if (add) "highlight.add" else "highlight.remove", memberId,
-                    ProfileHighlights.payload(memberId, postId))
-                removedHighlights = if (add) removedHighlights - postId else removedHighlights + postId
-            } catch (e: Exception) { error = e.message ?: "Could not update this highlight." }
-            finally { highlightBusy = false }
+            try { block() } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { error = e.message ?: failure }
+            finally { busy = false }
         }
     }
-    val selectedPosts = when (tab) {
-        "Replies" -> ownPosts.filter { it.replyTo != null }
-        "Journal" -> ownPosts.filter { it.kind == "entry" && it.replyTo == null }
-        else -> ownPosts.filter { it.replyTo == null }
+    fun setPinned(postId: String?) = write(if (postId == null) "Could not unpin this post." else "Could not pin this post.") {
+        chorus.create("member.set", memberId, org.json.JSONObject().put("pinned_post_id", postId ?: org.json.JSONObject.NULL))
     }
-    LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = onClose) { Text("‹ $closeLabel") }
-                TextButton(onClick = { editing = true }) { Text("Edit profile") }
-            }
-            ProfileIdentity(member, chorus)
-            if (member.description != null) RichBody(member.description, member.descriptionEntities,
-                modifier = Modifier.padding(top = 12.dp))
-            TextButton(onClick = onWrite) { Text(writeLabel ?: "Post as ${member.shownName}") }
-            val groups = model.membership.filter { memberId in it.value }.keys.mapNotNull { model.group(it)?.name }
-            if (groups.isNotEmpty()) Text(groups.joinToString(" · "), color = p.ink2)
-            val uri = androidx.compose.ui.platform.LocalUriHandler.current
-            for (field in model.profileFields[memberId].orEmpty()) {
-                if (garden.vayne.chorus.data.MemberCustomization.validWebsite(field.value))
-                    TextButton(onClick = { runCatching { uri.openUri(field.value) }.onFailure { error = "No app could open this website." } }) { Text("${field.name}: ${field.value}") }
-                else Text("${field.name}: ${field.value}", color = p.ink2)
-            }
-            if (member.birthday != null) Text("Birthday: ${member.birthday}", color = p.ink2)
-            Text("Profile audience: ${garden.vayne.chorus.data.JournalPresentation.audience(model.profileDetails.visibility[memberId] ?: "private", model.isPerson)}",
-                color = p.ink3, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
-            if (!model.isPerson) {
-                Text("Front: ${"%.1f".format(metrics.weekHours)} h in 7 days · ${"%.1f".format(metrics.monthHours)} h in 28 days",
-                    color = p.ink2)
-                Text(metrics.lastFrontAt?.let { "Last fronted ${DateFormat.getDateInstance().format(Date(it))}" }
-                    ?: "No front recorded", color = p.ink2)
-            }
-            Text("${metrics.messages} messages", color = p.ink2)
-            bundle?.let { details ->
-                Text("${details.posts} posts · ${details.entries} entries · ${details.notes} notes", color = p.ink2)
-            }
-            if (error != null) Text(error.orEmpty(), color = p.ink3)
+    fun setHighlight(postId: String, add: Boolean) = write("Could not update this highlight.") {
+        chorus.create(if (add) "highlight.add" else "highlight.remove", memberId, ProfileHighlights.payload(memberId, postId))
+        removedHighlights = if (add) removedHighlights - postId else removedHighlights + postId
+    }
+    // pinning and highlighting are this profile's own extras on each card's ⋯
+    fun menu(post: JournalPost): List<Pair<String, () -> Unit>> = listOfNotNull(
+        if (post.id == member.pinnedPostId) "Unpin from profile" to { setPinned(null) }
+        else ("Pin to profile" to { setPinned(post.id) }).takeIf { post.replyTo == null },
+        if (post.id in highlightedIds) "Remove highlight" to { setHighlight(post.id, false) }
+        else "Highlight on profile" to { setHighlight(post.id, true) })
+
+    val list = rememberLazyListState()
+    LazyColumn(Modifier.fillMaxSize().background(p.bg), state = list, contentPadding = PaddingValues(bottom = 24.dp)) {
+        item(key = "hero") {
+            ProfileHero(member, chorus, closeLabel, onClose, writeLabel, onWrite, onEdit = { editing = true })
         }
-        if (pinned != null) item(key = "pinned:${pinned.id}") {
-            Text("Pinned post", color = p.ink, fontWeight = FontWeight.SemiBold)
-            JournalPostCard(pinned, model, chorus, onReply = { onReply(it.id) })
-            TextButton(enabled = !pinBusy, onClick = {
-                pinBusy = true
-                actions.launch {
-                    try { chorus.create("member.set", memberId, org.json.JSONObject().put("pinned_post_id", org.json.JSONObject.NULL)) }
-                    catch (e: Exception) { error = e.message ?: "Could not unpin this post." }
-                    finally { pinBusy = false }
-                }
-            }) { Text("Unpin") }
+        item(key = "details") {
+            ProfileDetails(member, model, error, onTab = { tab = it })
         }
-        item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (choice in listOf("Posts", "Replies", "Journal", "Highlights", "Media", "Relationships")) item {
-                    Text(choice, color = if (tab == choice) p.accent else p.ink2,
-                        modifier = Modifier.background(if (tab == choice) p.surface2 else p.surface)
-                            .clickable { tab = choice }.padding(horizontal = 10.dp, vertical = 8.dp))
+        stickyHeader(key = "tabs") { ProfileTabRow(tab) { tab = it } }
+        fun posts(shown: List<JournalPost>, empty: String) {
+            if (shown.isEmpty()) item(key = "empty:$tab") {
+                ProfileEmpty(empty, Modifier.animateItem())
+            }
+            for (post in shown) item(key = "$tab:${post.id}") {
+                Column(Modifier.animateItem()) {
+                    JournalPostCard(post, model, chorus, onReply = { onReply(it.id) }, extraMenu = menu(post))
                 }
             }
         }
         when (tab) {
+            "Posts" -> {
+                if (pinned != null) item(key = "pinned:${pinned.id}") {
+                    Column(Modifier.animateItem()) {
+                        PinnedHeader()
+                        JournalPostCard(pinned, model, chorus, onReply = { onReply(it.id) }, extraMenu = menu(pinned))
+                    }
+                }
+                posts(ownPosts.filter { it.replyTo == null && it.kind != "entry" && it.id != pinned?.id }
+                    .sortedByDescending { it.occurredAt }, "No posts yet.")
+            }
+            "Replies" -> posts(ownPosts.filter { it.replyTo != null }.sortedByDescending { it.occurredAt }, "No replies yet.")
+            "Journal" -> posts(ownPosts.filter { it.kind == "entry" && it.replyTo == null }.sortedByDescending { it.occurredAt },
+                "No journal entries yet.")
+            "Media" -> {
+                val media = ownPosts.sortedByDescending { it.occurredAt }.flatMap { post ->
+                    post.attachments.filter { it.mime.startsWith("image/") }.map { post to it }
+                }
+                if (media.isEmpty()) item(key = "empty:media") {
+                    ProfileEmpty("No photos from ${member.shownName} on this device yet.", Modifier.animateItem())
+                }
+                else for ((row, cells) in media.chunked(3).withIndex()) item(key = "media:$row") {
+                    MediaRow(cells, chorus, member.shownName, Modifier.animateItem())
+                }
+            }
             "Highlights" -> {
+                val local = model.posts.filter { it.id in highlightedIds }
                 val foreign = bundle?.highlights.orEmpty().filter { post ->
                     model.posts.none { it.id == post.id } && post.id !in removedHighlights
                 }
-                if (localHighlights.isEmpty() && foreign.isEmpty()) item {
-                    Text(if (bundle == null && localHighlights.isEmpty()) "No saved highlights on this device. Connect to load others."
-                        else "No highlights yet.", color = p.ink2)
+                if (local.isEmpty() && foreign.isEmpty()) item(key = "empty:highlights") {
+                    ProfileEmpty(if (bundle == null) "No highlights on this device. Connect to load the rest."
+                        else "No highlights yet. Add one from a post’s ⋯ menu.", Modifier.animateItem())
                 }
-                for (post in localHighlights) item(key = "local-highlight:${post.id}") {
-                    JournalPostCard(post, model, chorus, onReply = { onReply(it.id) })
-                    TextButton(enabled = !highlightBusy, onClick = { setHighlight(post.id, false) }) { Text("Remove highlight") }
+                for (post in local) item(key = "highlight:${post.id}") {
+                    Column(Modifier.animateItem()) {
+                        JournalPostCard(post, model, chorus, onReply = { onReply(it.id) }, extraMenu = menu(post))
+                    }
                 }
                 for (post in foreign) item(key = "remote-highlight:${post.id}") {
-                    SharedPostPreview(post, member.shownName, chorus, model)
-                    TextButton(enabled = !highlightBusy, onClick = { setHighlight(post.id, false) }) { Text("Remove highlight") }
-                }
-            }
-            "Relationships" -> {
-                item { ProfileRelationships(chorus, model, memberId) }
-            }
-            "Media" -> {
-                if (media.isEmpty()) item { Text("No media from this member on this device yet.", color = p.ink2) }
-                for ((post, attachment) in media) item(key = "media:${post.id}:${attachment.id}") {
-                    var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
-                    Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(post.title ?: DateFormat.getDateInstance().format(Date(post.occurredAt)),
-                            color = p.ink, fontWeight = FontWeight.SemiBold)
-                        if (post.cw != null) Text("Content warning: ${post.cw} · ${if (revealed) "Hide" else "Show"}",
-                            color = p.accent, modifier = Modifier.clickable { revealed = !revealed })
-                        if (post.cw == null || revealed) ChatAttachmentView(attachment, chorus)
+                    Column(Modifier.animateItem()) {
+                        SharedPostPreview(post, member.shownName, chorus, model)
+                        TextButton(enabled = !busy, onClick = { setHighlight(post.id, false) },
+                            modifier = Modifier.padding(start = 60.dp)) { Text("Remove highlight") }
+                        HorizontalDivider(color = p.line, thickness = .5.dp)
                     }
                 }
             }
-            else -> {
-                if (selectedPosts.isEmpty()) item { Text("No ${tab.lowercase()} yet.", color = p.ink2) }
-                for (post in selectedPosts) item(key = "profile-post:${post.id}") {
-                    JournalPostCard(post, model, chorus, onReply = { onReply(it.id) })
-                    if (post.id != member.pinnedPostId) TextButton(enabled = !pinBusy, onClick = {
-                        pinBusy = true
-                        actions.launch {
-                            try { chorus.create("member.set", memberId, org.json.JSONObject().put("pinned_post_id", post.id)) }
-                            catch (e: Exception) { error = e.message ?: "Could not pin this post." }
-                            finally { pinBusy = false }
-                        }
-                    }) { Text("Pin to profile") }
-                    TextButton(enabled = !highlightBusy, onClick = {
-                        setHighlight(post.id, post.id !in highlightedIds)
-                    }) { Text(if (post.id in highlightedIds) "Remove highlight" else "Highlight post") }
+            else -> item(key = "about") {
+                ProfileAbout(chorus, model, member, bundle, Modifier.animateItem())
+            }
+        }
+    }
+}
+
+/** Banner (or a soft wash in the member's colour) with back and `⋯` floating on it, the avatar
+ * overlapping its lower edge on a ring of the page colour, and the two profile actions. */
+@Composable
+private fun ProfileHero(member: Member, chorus: Chorus, closeLabel: String, onClose: () -> Unit,
+    writeLabel: String?, onWrite: () -> Unit, onEdit: () -> Unit) {
+    val p = LocalChorusPalette.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    var menu by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxWidth().height(184.dp)) {
+        ProfileBanner(member, chorus, Modifier.fillMaxWidth().height(128.dp))
+        HeroButton(R.drawable.ic_back, "Back to $closeLabel", onClose, Modifier.align(Alignment.TopStart).padding(12.dp))
+        Box(Modifier.align(Alignment.TopEnd).padding(12.dp)) {
+            HeroButton(R.drawable.ic_more, "More profile options", { menu = true })
+            DropdownMenu(menu, { menu = false }) {
+                DropdownMenuItem(text = { Text("Edit profile") }, onClick = { menu = false; onEdit() },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_edit), null, Modifier.size(20.dp), tint = p.ink2) })
+                DropdownMenuItem(text = { Text("Copy name") }, onClick = {
+                    menu = false; clipboard.setText(androidx.compose.ui.text.AnnotatedString(member.shownName))
+                }, leadingIcon = { Icon(painterResource(R.drawable.ic_copy), null, Modifier.size(20.dp), tint = p.ink2) })
+            }
+        }
+        Box(Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 10.dp).size(92.dp)
+            .background(p.bg, CircleShape), contentAlignment = Alignment.Center) {
+            Avatar(member.glyph, member.color, 84.dp, avatarBlob = member.avatarBlob, ring = false)
+        }
+        Row(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ProfilePill(writeLabel ?: "Post", if (writeLabel == null) R.drawable.ic_edit else R.drawable.ic_journal,
+                filled = true, description = if (writeLabel == null) "Post as ${member.shownName}" else "Open ${member.shownName}’s journal",
+                onClick = onWrite)
+            ProfilePill("Edit profile", null, filled = false, onClick = onEdit)
+        }
+    }
+}
+
+@Composable
+private fun ProfileBanner(member: Member, chorus: Chorus, modifier: Modifier) {
+    val p = LocalChorusPalette.current
+    val ctx = LocalContext.current
+    val dev = chorus.device
+    val tone = tonesOf(member.color).ring
+    val image by produceState<android.graphics.Bitmap?>(null, member.bannerBlob, dev?.session) {
+        value = null
+        value = member.bannerBlob?.let { hash -> withContext(Dispatchers.IO) {
+            Blobs.image(ctx, hash, dev, kind = "profile", maxPx = 1500, maxBytes = 10L * 1024 * 1024)
+        } }
+    }
+    Box(modifier.background(p.surface2)) {
+        val shown = image
+        if (shown != null) Image(shown.asImageBitmap(), "Profile banner", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        // no banner yet: the member's colour washed over the page, with a few soft discs
+        else Canvas(Modifier.fillMaxSize()) {
+            drawRect(Brush.linearGradient(listOf(tone.copy(alpha = .55f), tone.copy(alpha = .22f)),
+                Offset.Zero, Offset(size.width, size.height)))
+            val unit = size.width / 390f
+            drawCircle(tone.copy(alpha = .45f), 75 * unit, Offset(325 * unit, 35 * unit))
+            drawCircle(p.accent.copy(alpha = .28f), 55 * unit, Offset(25 * unit, 115 * unit))
+            drawCircle(Color.White.copy(alpha = .10f), 45 * unit, Offset(345 * unit, 95 * unit))
+        }
+    }
+}
+
+@Composable
+private fun HeroButton(icon: Int, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier.size(36.dp).clip(CircleShape).background(Color.Black.copy(alpha = .42f)).clickable(onClickLabel = description, onClick = onClick),
+        contentAlignment = Alignment.Center) {
+        Icon(painterResource(icon), description, Modifier.size(20.dp), tint = Color.White)
+    }
+}
+
+@Composable
+private fun ProfilePill(label: String, icon: Int?, filled: Boolean, description: String = label, onClick: () -> Unit) {
+    val p = LocalChorusPalette.current
+    val ink = if (filled) p.onAccent else p.ink
+    Row(Modifier.height(34.dp).clip(CircleShape).background(if (filled) p.accent else p.surface2)
+        .clickable(onClickLabel = description, onClick = onClick).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (icon != null) Icon(painterResource(icon), null, Modifier.size(16.dp), tint = ink)
+        Text(label, color = ink, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp, lineHeight = 18.sp))
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ProfileDetails(member: Member, model: Model, error: String?, onTab: (String) -> Unit) {
+    val p = LocalChorusPalette.current
+    val counts = ProfilePresentation.counts(model, member.id)
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(member.shownName, color = p.ink, fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.headlineSmall.copy(fontSize = 26.sp, lineHeight = 32.sp))
+        val secondary = member.name.takeIf { member.displayName != null && it != member.displayName }
+        val sigils = member.sigils.filter(String::isNotBlank)
+        if (secondary != null || !member.pronouns.isNullOrBlank() || sigils.isNotEmpty())
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (secondary != null) Text(secondary, color = p.ink3, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                    modifier = Modifier.align(Alignment.CenterVertically))
+                if (!member.pronouns.isNullOrBlank()) ProfileChip(member.pronouns)
+                if (sigils.isNotEmpty()) ProfileChip(sigils.joinToString(" "))
+            }
+        if (!model.isPerson) FrontLine(model, member.id)
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            ProfileStat(counts.posts, "post", "posts") { onTab("Posts") }
+            ProfileStat(counts.entries, "entry", "entries") { onTab("Journal") }
+            ProfileStat(counts.relationships, "relationship", "relationships") { onTab("About") }
+        }
+        if (member.description != null) RichBody(member.description, member.descriptionEntities,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp))
+        val groups = model.membership.filter { member.id in it.value }.keys.mapNotNull(model::group).sortedBy { it.name.lowercase() }
+        val audience = model.profileDetails.visibility[member.id] ?: "private"
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (group in groups) ProfileChip(group.name, if (group.isSubsystem) R.drawable.ic_layers else R.drawable.ic_members)
+            ProfileChip(ProfilePresentation.audienceLine(audience, model.isPerson),
+                if (audience == "server") R.drawable.ic_globe else R.drawable.ic_lock)
+        }
+        if (error != null) Text(error, color = p.ink3, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/** "● Steering · 2h 04m" while they're in the front; otherwise when they last were. */
+@Composable
+private fun FrontLine(model: Model, memberId: String) {
+    val p = LocalChorusPalette.current
+    val now by produceState(System.currentTimeMillis()) {
+        while (true) { delay(30_000); value = System.currentTimeMillis() }
+    }
+    val status = ProfilePresentation.frontStatus(model, memberId)
+    if (status != null) Row(Modifier.height(24.dp).clip(CircleShape).background(p.accent.copy(alpha = .16f))
+        .padding(start = 8.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.size(8.dp).background(p.accent, CircleShape))
+        Text(listOfNotNull(status.layer, status.since?.let { ProfilePresentation.duration(now - it) }).joinToString(" · "),
+            color = p.accent, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp, lineHeight = 16.sp))
+    } else ProfileMetrics.compute(model, memberId, now).lastFrontAt?.let { last ->
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(painterResource(R.drawable.ic_history), null, Modifier.size(14.dp), tint = p.ink3)
+            Text("Last fronted " + JournalPresentation.shortAgo(last, now) { "on " + DateFormat.getDateInstance().format(Date(it)) }
+                .let { if (it.startsWith("on ")) it else if (it == "now") "just now" else "$it ago" },
+                color = p.ink3, style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp))
+        }
+    }
+}
+
+@Composable
+private fun ProfileStat(count: Int, one: String, many: String, onClick: () -> Unit) {
+    val p = LocalChorusPalette.current
+    Text(buildAnnotatedString {
+        withStyle(SpanStyle(color = p.ink, fontWeight = FontWeight.Bold)) { append(count.toString()) }
+        append(" ")
+        append(if (count == 1) one else many)
+    }, color = p.ink3, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick).padding(vertical = 2.dp))
+}
+
+@Composable
+private fun ProfileChip(label: String, icon: Int? = null) {
+    val p = LocalChorusPalette.current
+    Row(Modifier.height(24.dp).clip(CircleShape).background(p.surface2).padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        if (icon != null) Icon(painterResource(icon), null, Modifier.size(13.dp), tint = p.ink2)
+        Text(label, color = p.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, lineHeight = 16.sp))
+    }
+}
+
+/** Sticky under-lined tabs; the line under the chosen tab grows in and the old one shrinks away. */
+@Composable
+private fun ProfileTabRow(selected: String, onSelect: (String) -> Unit) {
+    val p = LocalChorusPalette.current
+    val motion = rememberChorusMotion()
+    Column(Modifier.fillMaxWidth().background(p.bg)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp)) {
+            for (tab in ProfileTabs) {
+                val chosen = tab == selected
+                val line by animateFloatAsState(if (chosen) 1f else 0f, ChorusMotion.tween(motion), label = "profile tab")
+                Column(Modifier.clickable(onClickLabel = "Show $tab") { onSelect(tab) }.padding(horizontal = 11.dp).width(IntrinsicSize.Max),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(tab, color = if (chosen) p.ink else p.ink3, fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 19.sp),
+                        modifier = Modifier.padding(top = 10.dp, bottom = 8.dp))
+                    Box(Modifier.fillMaxWidth().height(3.dp).graphicsLayer { scaleX = line; alpha = line }
+                        .background(p.accent, RoundedCornerShape(1.5.dp)))
                 }
             }
         }
-        item { Text("", modifier = Modifier.padding(bottom = 16.dp)) }
+        HorizontalDivider(color = p.line, thickness = .5.dp)
+    }
+}
+
+@Composable
+private fun PinnedHeader() {
+    val p = LocalChorusPalette.current
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.width(40.dp), contentAlignment = Alignment.CenterEnd) {
+            Icon(painterResource(R.drawable.ic_pin), null, Modifier.size(14.dp), tint = p.accent)
+        }
+        Text("Pinned", color = p.ink3, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun ProfileEmpty(text: String, modifier: Modifier = Modifier) {
+    Text(text, color = LocalChorusPalette.current.ink3, style = MaterialTheme.typography.bodyMedium,
+        modifier = modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp),
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+}
+
+/** Three square photos per row, 2 dp apart. A post's content warning covers its photos until tapped. */
+@Composable
+private fun MediaRow(cells: List<Pair<JournalPost, ChatAttachment>>, chorus: Chorus, who: String, modifier: Modifier) {
+    val p = LocalChorusPalette.current
+    Row(modifier.fillMaxWidth().padding(bottom = 2.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        for (i in 0 until 3) {
+            val cell = cells.getOrNull(i)
+            if (cell == null) { Spacer(Modifier.weight(1f)); continue }
+            val (post, attachment) = cell
+            var revealed by rememberSaveable(post.id) { mutableStateOf(post.cw == null) }
+            val tile = Modifier.weight(1f).aspectRatio(1f)
+            if (revealed) MediaThumb(attachment, chorus, tile, who, post.occurredAt)
+            else Box(tile.background(p.surface3).clickable(onClickLabel = "Show photo") { revealed = true }.padding(8.dp),
+                contentAlignment = Alignment.Center) {
+                Text("Content warning: ${post.cw}", color = p.ink2, style = MaterialTheme.typography.labelSmall,
+                    maxLines = 3, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+        }
+    }
+}
+
+/** Everything that doesn't fit the header: fields, front time, counts and relationships. */
+@Composable
+private fun ProfileAbout(chorus: Chorus, model: Model, member: Member, bundle: ProfileBundle?, modifier: Modifier) {
+    val p = LocalChorusPalette.current
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    var linkError by remember { mutableStateOf<String?>(null) }
+    val metrics = ProfileMetrics.compute(model, member.id)
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        @Composable fun AboutRow(label: String, value: String, onClick: (() -> Unit)? = null) {
+            Column(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(label, color = p.ink3, style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp))
+                Text(value, color = if (onClick != null) p.accent else p.ink, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp))
+            }
+            HorizontalDivider(color = p.line, thickness = .5.dp)
+        }
+        if (member.displayName != null && member.name != member.displayName) AboutRow("Name", member.name)
+        if (!member.pronouns.isNullOrBlank()) AboutRow("Pronouns", member.pronouns)
+        if (member.birthday != null) AboutRow("Birthday", member.birthday)
+        for (field in model.profileFields[member.id].orEmpty()) {
+            if (MemberCustomization.validWebsite(field.value)) AboutRow(field.name, field.value) {
+                runCatching { uri.openUri(field.value) }.onFailure { linkError = "No app could open this website." }
+            } else AboutRow(field.name, field.value)
+        }
+        if (!model.isPerson) {
+            AboutRow("Front time", "${"%.1f".format(metrics.weekHours)} h in 7 days · ${"%.1f".format(metrics.monthHours)} h in 28 days")
+            AboutRow("Last fronted", if (ProfilePresentation.frontStatus(model, member.id) != null) "Now"
+                else metrics.lastFrontAt?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)) }
+                    ?: "No front recorded")
+        }
+        AboutRow("Messages", "${metrics.messages}")
+        fun count(n: Int, one: String, many: String) = "$n ${if (n == 1) one else many}"
+        bundle?.let { AboutRow("Shared on the server", listOf(count(it.posts, "post", "posts"), count(it.entries, "entry", "entries"),
+            count(it.notes, "note", "notes")).joinToString(" · ")) }
+        AboutRow("Profile audience", JournalPresentation.audience(model.profileDetails.visibility[member.id] ?: "private", model.isPerson))
+        if (linkError != null) Text(linkError.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 8.dp))
+        Text("Relationships", color = p.ink, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
+        ProfileRelationships(chorus, model, member.id)
     }
 }
