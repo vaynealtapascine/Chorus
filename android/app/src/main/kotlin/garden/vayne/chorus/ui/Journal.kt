@@ -92,6 +92,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     var section by rememberSaveable { mutableStateOf("timeline") }
     var selectedListId by rememberSaveable { mutableStateOf("") }
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
+    var quoteOf by rememberSaveable { mutableStateOf<String?>(null) }
     var kind by rememberSaveable { mutableStateOf("note") }
     var authorId by rememberSaveable { mutableStateOf("") }
     var bodyValue by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
@@ -149,7 +150,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         if (externalReplyPost != null) {
             profileId = null; threadPostId = null
             section = "timeline"
-            replyTo = externalReplyPost
+            replyTo = externalReplyPost; quoteOf = null
             kind = "note"; title = ""; bodyValue = TextFieldValue(); cw = ""; mood = ""; tags = ""
             attachments.clear()
             audience = "server" // the foreign parent author must be able to read this reply
@@ -214,6 +215,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                     val writingMood = mood
                     val writingTags = tags
                     val writingReply = replyTo
+                    val writingQuote = quoteOf
                     val writingPoll = if (pollOn) Polls.draft(pollOptions.toList(), pollMultiple).getOrElse {
                         error = it.message; return@Button
                     } else null
@@ -224,13 +226,13 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                                 sendAttachment(chorus, ctx, a, opKind = "post.attachment")
                             }
                             val payload = PostCompose.payload(model, dev.accountId, writingKind, writer.id, writingBody,
-                                writingTitle, writingCw, writingAudience, writingMood, writingTags, writingReply, attachmentIds = attachmentIds)
+                                writingTitle, writingCw, writingAudience, writingMood, writingTags, writingReply, attachmentIds = attachmentIds, quotePostId = writingQuote)
                             if (writingPoll != null) payload.put("poll", writingPoll)
                             chorus.create("post.create", chorus.newId(), payload)
                             pollOn = false; pollMultiple = false
                             pollOptions.clear(); pollOptions.addAll(listOf("", ""))
                             if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
-                            bodyValue = TextFieldValue(); title = ""; cw = ""; mood = ""; tags = ""; replyTo = null
+                            bodyValue = TextFieldValue(); title = ""; cw = ""; mood = ""; tags = ""; replyTo = null; quoteOf = null
                             attachments.clear()
                             editing = false
                         } catch (e: Exception) { error = e.message ?: "Could not post." }
@@ -260,10 +262,16 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.ink, fontSize = 16.sp, lineHeight = 24.sp),
                         cursorBrush = SolidColor(p.accent), minLines = 4,
                         decorationBox = { inner -> Box {
-                            if (body.isEmpty()) Text(if (kind == "entry") "Write your entry…" else "What’s on your mind?", color = p.ink3,
+                            if (body.isEmpty()) Text(if (kind == "entry") "Write your entry…" else if (quoteOf != null) "Add a comment…" else "What’s on your mind?", color = p.ink3,
                                 style = MaterialTheme.typography.bodyLarge)
                             inner()
                         } })
+                }
+                if (quoteOf != null) item {
+                    Column(Modifier.padding(start = 52.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        QuoteEmbed(model.posts.find { it.id == quoteOf }?.takeIf { it.repostOf == null }, model)
+                        TextButton(enabled = !busy, onClick = { quoteOf = null }) { Text("Remove quote") }
+                    }
                 }
                 if (attachments.isNotEmpty()) item {
                     Box(Modifier.padding(start = 52.dp)) {
@@ -359,6 +367,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             if (event.post != null) JournalPostCard(event.post, model, chorus,
                 onReply = { replyTo = it.id; editing = true },
                 onThread = { threadPostId = it.id },
+                onQuote = { quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
+                onOpenPost = { threadPostId = it },
                 onProfile = { profileId = it })
             else Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
                 Text(event.switchLabel.orEmpty(), color = p.ink2)
@@ -390,14 +400,15 @@ internal fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit
 @Composable
 internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, onReply: (JournalPost) -> Unit,
     onThread: ((JournalPost) -> Unit)? = null, onProfile: ((String) -> Unit)? = null, full: Boolean = false,
-    showActions: Boolean = true, repostedBy: String? = null) {
+    showActions: Boolean = true, repostedBy: String? = null, onQuote: ((JournalPost) -> Unit)? = null,
+    onOpenPost: ((String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     // A repost has no text: show the original (one level only) under "X reposted", or say it's gone.
     if (post.repostOf != null && repostedBy == null) {
         val by = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
         val original = model.posts.find { it.id == post.repostOf }?.takeIf { it.repostOf == null }
         if (original == null) RepostUnavailable(by)
-        else JournalPostCard(original, model, chorus, onReply, onThread, onProfile, full, showActions, repostedBy = by)
+        else JournalPostCard(original, model, chorus, onReply, onThread, onProfile, full, showActions, repostedBy = by, onQuote = onQuote, onOpenPost = onOpenPost)
         return
     }
     if (repostedBy != null) RepostHeader(repostedBy)
@@ -452,7 +463,9 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
                 style = MaterialTheme.typography.bodySmall)
             for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
             PollCard(chorus, model, post.id, Reply.speaker(model)?.id)
-            if (showActions) JournalPostActions(post, model, chorus, onReply = { (onThread ?: onReply)(post) })
+            post.quotePostId?.let { id -> QuoteEmbed(model.posts.find { it.id == id }?.takeIf { it.repostOf == null }, model,
+                onOpen = onOpenPost?.let { open -> { open(id) } }) }
+            if (showActions) JournalPostActions(post, model, chorus, onReply = { (onThread ?: onReply)(post) }, onQuote = onQuote)
         }
     }
     if (!full) HorizontalDivider(color = p.line, thickness = .5.dp)
