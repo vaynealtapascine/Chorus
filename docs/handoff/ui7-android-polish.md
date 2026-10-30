@@ -36,8 +36,8 @@ the next app start. The owner's phone is logged in to the real account: inspect 
 | # | Slice | Who | State |
 | --- | --- | --- | --- |
 | 0 | UI6 batch 2 wrap-up (Sol's R1 follow-up + chat-draft cache fix); launcher/notification icon from the owner's wordmark mark (Figma 72:1330); dark splash | Claude | done, deployed |
-| 1 | Chat feel: swipe to reply, double-tap to react, message enter/exit animation, reaction pop, send-button morph, animated jump-to-latest with unread badge, haptics, chat list sorted by activity with Draft:/typing previews | Sonnet (xhigh) | |
-| 2 | Journal feed (F6.3/F6.4): Twitter-class post cards — action row (reply/repost/like/bookmark/share with counts and animations), reposted-by header, quote card, media grid; post detail with stats and a sticky reply bar; Saved | Sonnet (xhigh) | done, pending review (+ change a post's audience) |
+| 1 | Chat feel: swipe to reply, double-tap to react, message enter/exit animation, reaction pop, send-button morph, animated jump-to-latest with unread badge, haptics, chat list sorted by activity with Draft:/typing previews | Sonnet (xhigh) | paused (owner: Journal first); partial work on branch `wip/ui7-slice1` (chat list order/drafts, swipe to reply, double-tap heart, haptics) |
+| 2 | Journal feed (F6.3/F6.4): Twitter-class post cards — action row (reply/repost/like/bookmark/share with counts and animations), reposted-by header, quote card, media grid; post detail with stats and a sticky reply bar; Saved | Sonnet (xhigh) | done; reviewed and polished by Claude; deployed 0.1.591 |
 | 3 | Journal composer (F6.2/F6.11): full-screen, Post / Journal entry, posting-as (subsystem-grouped), audience + replies chips, media row, selection formatting, word count, drafts | Sonnet (high) | |
 | 4 | Member profile (F6.1): banner + overlapping avatar, Message / Edit profile, status chip, stats, tabs Posts / Replies / Journal / Media / About, subsystem chips | Sonnet (high) | |
 | 5 | Mentions autocomplete in chat and posts: members, `@front`, subsystems; keyboard-friendly | Sonnet (high) | |
@@ -50,6 +50,12 @@ the next app start. The owner's phone is logged in to the real account: inspect 
 
 UI6 slices 4 (handles), 5 (per-member restrictions) and 6 (channel sides) remain on the UI6
 board; handles would make the Figma `@member.system` lines real.
+
+Owner, 2026-10-30 (after the API rate limit stopped three parallel runs): **one slice at a time,
+in order, each landing on the phone before the next starts.** Journal first.
+
+Slice 12 (Fronting to Figma F3.1–F3.3: front chips, nested layer card with member rows, avatar-grid
+switch sheet with tap-to-cycle layers, member layer sheet) is planned but not started.
 
 ## Rules for implementers
 
