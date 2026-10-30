@@ -35,6 +35,12 @@ object PostCompose {
         return result
     }
 
+    /** `post.set_visibility`: who can read an existing post; nothing else about it changes. */
+    fun visibilityPayload(audience: String): JSONObject {
+        require(audience in JournalPresentation.AUDIENCES) { "Choose an audience." }
+        return JSONObject().put("visibility", JSONObject().put("mode", audience))
+    }
+
     /** A repost is a text-less note that points at the original; it stays in the reposter's own
      * system unless a wider audience is chosen. Undoing it deletes (tombstones) this post. */
     fun repostPayload(model: Model, accountId: String, authorId: String, originalId: String,

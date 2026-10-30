@@ -465,6 +465,7 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
     var expanded by rememberSaveable(post.id) { mutableStateOf(full) }
     var overflow by remember(post.id) { mutableStateOf(false) }
     var authorsOpen by remember { mutableStateOf(false) }
+    var audienceOpen by remember(post.id) { mutableStateOf(false) }
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val names = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
     val open = onThread?.takeIf { !full }?.let { { it(post) } }
@@ -485,7 +486,8 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
             open?.let { "Open post" to it },
             JournalSocial.shareText(post.title, post.cw, post.text).takeIf { it.isNotBlank() }?.let { text ->
                 "Copy text" to { clipboard.setText(androidx.compose.ui.text.AnnotatedString(text)) }
-            }))
+            },
+            ("Change audience" to { audienceOpen = true }).takeIf { JournalSocial.canEditAudience(post, model, chorus.device?.accountId) }))
     }, onClick = open) {
         if (post.replyTo != null) Text("Reply", color = p.ink3, style = MaterialTheme.typography.bodySmall)
         if (post.cw != null) Surface(color = p.surface2, shape = RoundedCornerShape(10.dp)) {
@@ -517,6 +519,7 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
             if (showActions) JournalPostActions(post, model, chorus, onReply = { (onThread ?: onReply)(post) }, onQuote = onQuote)
         }
     }
+    if (audienceOpen) JournalAudienceDialog(post, model, chorus, onDismiss = { audienceOpen = false })
     if (!full) HorizontalDivider(color = p.line, thickness = .5.dp)
 }
 

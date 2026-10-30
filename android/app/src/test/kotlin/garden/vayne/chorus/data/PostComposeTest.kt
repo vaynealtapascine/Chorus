@@ -79,6 +79,15 @@ class PostComposeTest {
             .getJSONObject("visibility").getString("mode"))
     }
 
+    @Test fun visibilityChangeCarriesOnlyTheNewAudience() {
+        val p = PostCompose.visibilityPayload("followers")
+        assertEquals(listOf("visibility"), p.keys().asSequence().toList())
+        assertEquals("followers", p.getJSONObject("visibility").getString("mode"))
+        var rejected = false
+        try { PostCompose.visibilityPayload("everyone") } catch (_: IllegalArgumentException) { rejected = true }
+        assertTrue(rejected)
+    }
+
     @Test fun repostRejectsForeignMembersAndBadAudiences() {
         for (bad in listOf<() -> Any>(
             { PostCompose.repostPayload(model, "mine", "foreign", "original") },

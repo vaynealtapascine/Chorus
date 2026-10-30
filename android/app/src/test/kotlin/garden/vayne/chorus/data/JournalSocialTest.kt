@@ -1,6 +1,8 @@
 package garden.vayne.chorus.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -29,6 +31,18 @@ class JournalSocialTest {
     @Test fun savedViewIsNewestFirstSkipsRepostsAndUnknownIds() {
         assertEquals(listOf("other", "original"), JournalSocial.saved(posts, setOf("original", "other", "gone", "boost-kai")).map { it.id })
         assertEquals(emptyList<String>(), JournalSocial.saved(posts, emptySet()).map { it.id })
+    }
+
+    @Test fun onlyPostsByOwnMembersCanHaveTheirAudienceChanged() {
+        val model = Model(listOf(Member("own", "Kai", null, null, "#fff", emptyList(), null, false, createdByAccountId = "mine"),
+            Member("legacy", "June", null, null, "#fff", emptyList(), null, false),
+            Member("foreign", "Alex", null, null, "#fff", emptyList(), null, false, createdByAccountId = "theirs")),
+            emptyList(), emptyMap(), emptyList(), null, emptyList())
+        assertTrue(JournalSocial.canEditAudience(post("a", 1, listOf("own")), model, "mine"))
+        assertTrue(JournalSocial.canEditAudience(post("b", 1, listOf("legacy")), model, "mine"))
+        assertTrue(JournalSocial.canEditAudience(post("c", 1, listOf("foreign", "own")), model, "mine"))
+        assertFalse(JournalSocial.canEditAudience(post("d", 1, listOf("foreign")), model, "mine"))
+        assertFalse(JournalSocial.canEditAudience(post("e", 1, listOf("gone")), model, "mine"))
     }
 
     @Test fun shareTextLeadsWithTheContentWarningThenTitleAndBody() {

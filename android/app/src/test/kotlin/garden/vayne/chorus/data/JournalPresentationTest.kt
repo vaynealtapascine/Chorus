@@ -1,6 +1,8 @@
 package garden.vayne.chorus.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class JournalPresentationTest {
@@ -15,6 +17,18 @@ class JournalPresentationTest {
         assertEquals("6d", ago(6 * 86_400 + 3600))
         assertEquals("date", ago(7 * 86_400))
         assertEquals("now", JournalPresentation.shortAgo(now + 5000, now) { "date" })
+    }
+
+    @Test fun wideningIsComparedAlongPrivateFollowersServer() {
+        assertTrue(JournalPresentation.widens("private", "followers"))
+        assertTrue(JournalPresentation.widens("private", "server"))
+        assertTrue(JournalPresentation.widens("followers", "server"))
+        assertFalse(JournalPresentation.widens("server", "followers"))
+        assertFalse(JournalPresentation.widens("followers", "private"))
+        assertFalse(JournalPresentation.widens("followers", "followers"))
+        // an audience this app doesn't know is treated as wider than private
+        assertTrue(JournalPresentation.widens("bucket", "followers"))
+        assertFalse(JournalPresentation.widens("bucket", "private"))
     }
 
     @Test fun entryMetaListsKindReadTimeAndTags() {

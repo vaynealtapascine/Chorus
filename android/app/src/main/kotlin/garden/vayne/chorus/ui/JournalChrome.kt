@@ -136,7 +136,7 @@ internal fun JournalAudiencePicker(audience: String, person: Boolean, onChoose: 
             ChatIcon(R.drawable.ic_down, tint = p.accent)
         }
         DropdownMenu(open, { open = false }) {
-            for (mode in listOf("private", "followers", "server")) DropdownMenuItem(
+            for (mode in JournalPresentation.AUDIENCES) DropdownMenuItem(
                 text = { Text(JournalPresentation.audience(mode, person)) }, onClick = { onChoose(mode); open = false })
         }
     }

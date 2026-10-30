@@ -11,6 +11,11 @@ object JournalSocial {
     fun repostBy(posts: List<JournalPost>, postId: String, memberId: String): JournalPost? =
         reposts(posts, postId).firstOrNull { memberId in it.authors }
 
+    /** Only a post written by one of this account's members can have its audience changed here. */
+    fun canEditAudience(post: JournalPost, model: Model, accountId: String?): Boolean = post.authors.any { id ->
+        model.member(id)?.let { it.createdByAccountId == null || it.createdByAccountId == accountId } == true
+    }
+
     /** Newest first, the order of the Saved view. Reposts are never saved in place of the original. */
     fun saved(posts: List<JournalPost>, saved: Set<String>): List<JournalPost> =
         posts.filter { it.id in saved && it.repostOf == null }

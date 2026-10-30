@@ -1,6 +1,16 @@
 package garden.vayne.chorus.data
 
 object JournalPresentation {
+    /** Narrowest to widest: who can read a post. */
+    val AUDIENCES = listOf("private", "followers", "server")
+
+    /** Whether moving a post from [from] to [to] lets more people read it. An audience this app
+     * doesn't know (a bucket, say) counts as wider than private, so the warning is never skipped. */
+    fun widens(from: String, to: String): Boolean {
+        val before = AUDIENCES.indexOf(from)
+        return if (before < 0) to != "private" else AUDIENCES.indexOf(to) > before
+    }
+
     fun audience(mode: String, person: Boolean = false): String = when (mode) {
         "private" -> if (person) "Only me" else "Only our system"
         "followers" -> "Followers"
