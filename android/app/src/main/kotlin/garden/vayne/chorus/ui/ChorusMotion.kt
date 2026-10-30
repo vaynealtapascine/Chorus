@@ -21,6 +21,37 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 /** Debug inspection may override motion without touching device settings. Release never sets it. */
 internal val LocalChorusMotionOverride = staticCompositionLocalOf<Boolean?> { null }
 
+/** Whether to animate: false when the system's animator duration scale is off (reduced motion)
+ * or a debug inspection override says so. Follows the setting live. */
+@Composable
+internal fun rememberChorusMotion(): Boolean {
+    val resolver = LocalContext.current.contentResolver
+    var enabled by remember { mutableStateOf(ValueAnimator.areAnimatorsEnabled()) }
+    DisposableEffect(resolver) {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) { enabled = ValueAnimator.areAnimatorsEnabled() }
+        }
+        resolver.registerContentObserver(Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, observer)
+        onDispose { resolver.unregisterContentObserver(observer) }
+    }
+    return LocalChorusMotionOverride.current ?: enabled
+}
+
+/** Motion tokens: quick, soft and interruptible. Gestures use springs; state changes use tweens. */
+internal object ChorusMotion {
+    /** Decelerating ease shared with navigation. */
+    val Ease = CubicBezierEasing(.16f, 1f, .3f, 1f)
+    const val Quick = 140
+    const val Standard = 220
+    const val Gentle = 320
+    /** For things that pop in (reactions, likes): a little overshoot, settles fast. */
+    fun <T> pop() = androidx.compose.animation.core.spring<T>(dampingRatio = .55f, stiffness = 600f)
+    /** For drags returning home (swipe to reply) and layout settling: no overshoot. */
+    fun <T> settle() = androidx.compose.animation.core.spring<T>(dampingRatio = 1f, stiffness = 500f)
+    fun <T> tween(motion: Boolean, millis: Int = Standard) =
+        androidx.compose.animation.core.tween<T>(if (motion) millis else 0, easing = Ease)
+}
+
 /** Shared-axis motion preserves navigation direction. State is owned above this host, so a
  * model refresh or a keyboard edit never starts a transition. Android scales these animations. */
 @Composable
