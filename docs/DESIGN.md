@@ -269,7 +269,9 @@ The shared spacing rhythm is a four-point scale from `spacing` in frontmatter. C
 - **Android member profiles (D-090):** Members and Journal share the profile header: a quiet wide
   banner well, overlapping member-colour avatar, prominent name, pronouns and rich bio. Edit
   profile is a labelled 48 dp action. The full-screen editor has pinned Cancel/Save, scrollable
-  fields and IME clearance; additional identity details stay under More details. Crop sheets
+  fields and IME clearance; additional identity details stay under More details.
+  Bio and message-part editors retain native selection/composition, with labelled 48 dp Undo/Redo
+  controls and keyboard equivalents restoring rich occurrence identity along with text. Crop sheets
   show the actual image with zoom/position controls and staged Apply/Cancel. Reorder uses a
   full active-member list with visible drag handles, short interruptible displacement (instant
   under reduced motion), accessible Earlier/Later and pinned Apply/Cancel.

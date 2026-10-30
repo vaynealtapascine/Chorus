@@ -15,7 +15,8 @@ import garden.vayne.chorus.designsystem.R
 /** No heading/list entities are invented. Lists insert ordinary readable bullet/number text;
  * quote and inline actions use exactly the syntax understood by chorus-core::text. */
 @Composable
-internal fun JournalFormatToolbar(value: TextFieldValue, enabled: Boolean, onChange: (TextFieldValue) -> Unit) {
+internal fun JournalFormatToolbar(value: TextFieldValue, enabled: Boolean, onMappedChange: ((MappedFormatting) -> Unit)? = null, onChange: (TextFieldValue) -> Unit) {
+    fun change(edit: MappedFormatting) { onMappedChange?.invoke(edit) ?: onChange(edit.value) }
     val p = LocalChorusPalette.current
     var linkOpen by remember { mutableStateOf(false) }
     var linkSelection by remember { mutableStateOf(value) }
@@ -27,11 +28,11 @@ internal fun JournalFormatToolbar(value: TextFieldValue, enabled: Boolean, onCha
             Triple(R.drawable.ic_format_bold, "Bold", "**"), Triple(R.drawable.ic_format_italic, "Italic", "_"),
             Triple(R.drawable.ic_format_strike, "Strikethrough", "~~"), Triple(R.drawable.ic_format_code, "Code", "`"),
             Triple(R.drawable.ic_format_eye_off, "Spoiler", "||"))) item {
-            FormatButton(icon, name, ready, EditorFormatting.active(value, marker)) { onChange(EditorFormatting.inline(value, marker)) }
+            FormatButton(icon, name, ready, EditorFormatting.active(value, marker)) { change(EditorFormatting.mappedInline(value, marker)) }
         }
-        item { FormatButton(R.drawable.ic_format_quote, "Quote", ready) { onChange(EditorFormatting.lines(value, "> ")) } }
-        item { FormatButton(R.drawable.ic_format_list_ul, "Bulleted text", ready) { onChange(EditorFormatting.lines(value, "• ")) } }
-        item { FormatButton(R.drawable.ic_format_list_ol, "Numbered text", ready) { onChange(EditorFormatting.lines(value, "", numbered = true)) } }
+        item { FormatButton(R.drawable.ic_format_quote, "Quote", ready) { change(EditorFormatting.mappedLines(value, "> ")) } }
+        item { FormatButton(R.drawable.ic_format_list_ul, "Bulleted text", ready) { change(EditorFormatting.mappedLines(value, "• ")) } }
+        item { FormatButton(R.drawable.ic_format_list_ol, "Numbered text", ready) { change(EditorFormatting.mappedLines(value, "", numbered = true)) } }
         item { FormatButton(R.drawable.ic_link, "Insert link", ready) { linkSelection = value; url = ""; linkError = null; linkOpen = true } }
     }
     if (linkOpen) AlertDialog(onDismissRequest = { linkOpen = false }, title = { Text("Insert link") }, text = {
@@ -41,7 +42,7 @@ internal fun JournalFormatToolbar(value: TextFieldValue, enabled: Boolean, onCha
             if (linkError != null) Text(linkError.orEmpty(), color = p.danger)
         }
     }, confirmButton = { TextButton(enabled = url.isNotBlank(), onClick = {
-        runCatching { EditorFormatting.link(linkSelection, url.trim()) }.onSuccess { onChange(it); linkOpen = false }
+        runCatching { EditorFormatting.mappedLink(linkSelection, url.trim()) }.onSuccess { change(it); linkOpen = false }
             .onFailure { linkError = it.message }
     }) { Text("Insert") } }, dismissButton = { TextButton(onClick = { linkOpen = false }) { Text("Cancel") } })
 }

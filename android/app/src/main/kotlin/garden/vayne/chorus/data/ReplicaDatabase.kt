@@ -44,6 +44,15 @@ interface ReplicaDao {
 
     @Query("DELETE FROM kv")
     fun clearValues()
+
+    @Query("DELETE FROM kv WHERE k = :key")
+    fun deleteValue(key: String)
+
+    @Query("SELECT k FROM kv WHERE k LIKE 'editor-draft-v1:%'")
+    fun editorDraftKeys(): List<String>
+
+    @Query("SELECT substr(CAST(v AS BLOB), :start, :length) FROM kv WHERE k = :key")
+    fun valueChunk(key: String, start: Int, length: Int): ByteArray?
 }
 
 @Database(entities = [StoredOp::class, StoredValue::class], version = 1, exportSchema = true)

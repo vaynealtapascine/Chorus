@@ -129,6 +129,11 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        recordEditorSavedState(outState)
+    }
+
     private fun inviteFrom(i: Intent?): String? =
         i?.takeIf { it.action == Intent.ACTION_VIEW }?.data?.toString()?.takeIf { "/i/" in it }
 }

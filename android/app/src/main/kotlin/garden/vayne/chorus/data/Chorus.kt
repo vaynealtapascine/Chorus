@@ -61,6 +61,8 @@ data class MessageRevision(val rev: Int, val at: Long, val original: Boolean, va
  */
 class Chorus private constructor(private val ctx: Context) {
     private val store = Store(ctx)
+    val editorDrafts = EditorDraftStore(store::editorDraft, store::put, store::remove)
+    val editorOwner: String get() = device?.let { "${it.base}|${it.accountId}" }.orEmpty()
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "chorus-store") }
     private val dispatcher = worker.asCoroutineDispatcher()
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -175,8 +177,9 @@ class Chorus private constructor(private val ctx: Context) {
      * Throws [uniffi.chorus_ffi.CoreException] when the core rejects it.
      */
     suspend fun create(kind: String, entityId: String?, payload: JSONObject, scope: String = accountScope, userTime: Long? = null,
-        memberId: String? = null): String =
+        memberId: String? = null, expectedEditorOwner: String? = null): String =
         withContext(dispatcher) {
+            check(expectedEditorOwner == null || editorOwner == expectedEditorOwner) { "The account changed. Reopen this draft in its account." }
             check(_status.value != Status.StorageError) { "The local replica could not be saved." }
             val r = replica ?: error("not set up")
             val n = JSONObject().put("kind", kind).put("scope", scope).put("entity_id", entityId ?: JSONObject.NULL)
@@ -197,8 +200,9 @@ class Chorus private constructor(private val ctx: Context) {
         }
 
     /** Plan against the live replica and apply on its serial worker, without a sync gap. */
-    suspend fun saveMemberProfile(id: String, existed: Boolean, patch: JSONObject, fields: JSONArray, values: List<String>) =
+    suspend fun saveMemberProfile(id: String, existed: Boolean, patch: JSONObject, fields: JSONArray, values: List<String>, expectedEditorOwner: String? = null) =
         withContext(dispatcher) {
+            check(expectedEditorOwner == null || editorOwner == expectedEditorOwner) { "The account changed. Reopen this draft in its account." }
             val account = device?.accountId ?: error("not set up")
             val plan = MemberProfileSave.plan(id, existed, patch, fields, values, awaitModel(), account)
             for (op in plan) create(op.kind, op.entityId, op.payload)

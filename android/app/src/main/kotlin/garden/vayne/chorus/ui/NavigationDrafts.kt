@@ -36,10 +36,9 @@ internal class ChatDraft {
     val multiple = mutableStateOf(false)
     val options = mutableStateListOf("", "")
     val files = mutableStateListOf<PendingAttachment>()
-    fun encode(): String = JSONObject().put("text", text.value).put("cw", cw.value).put("author", author.value)
-        .put("audience", audience.value).put("visible", JSONArray(visibleTo.value)).put("reply", replyTo.value)
-        .put("poll", poll.value).put("multiple", multiple.value).put("options", JSONArray(options))
-        .put("files", JSONArray(files.map { it.encode() })).toString()
+    fun snapshot() = ChatDraftSnapshot(text.value, cw.value, author.value, audience.value, visibleTo.value.toList(), replyTo.value,
+        poll.value, multiple.value, options.toList(), files.toList())
+    fun encode(): String = snapshot().encode()
     companion object {
         fun decode(encoded: String): ChatDraft = ChatDraft().apply {
             val j = JSONObject(encoded)
@@ -54,9 +53,54 @@ internal class ChatDraft {
     }
 }
 
-internal val ChatDraftsSaver = Saver<SnapshotStateMap<String, ChatDraft>, Map<String, String>>(
-    save = { drafts -> drafts.mapValues { it.value.encode() } },
-    restore = { saved -> saved.mapValues { ChatDraft.decode(it.value) }.toList().toMutableStateMap() })
+/** Captures immutable values on the UI thread without serializing large text there. */
+internal data class ChatDraftSnapshot(val text: String, val cw: String, val author: String, val audience: String,
+    val visibleTo: List<String>, val replyTo: String?, val poll: Boolean, val multiple: Boolean,
+    val options: List<String>, val files: List<PendingAttachment>) {
+    fun encode(): String = JSONObject().put("text", text).put("cw", cw).put("author", author)
+        .put("audience", audience).put("visible", JSONArray(visibleTo)).put("reply", replyTo)
+        .put("poll", poll).put("multiple", multiple).put("options", JSONArray(options))
+        .put("files", JSONArray(files.map { it.encode() })).toString()
+}
+
+/** Composer drafts for every chat, per account. They live for the process here, so leaving and
+ * returning to Chat never reloads or blocks, and persist in the encrypted replica under one stable
+ * key per account, so a draft survives a restart like in other messengers. */
+private object ChatDraftCache {
+    val byOwner = mutableMapOf<String, SnapshotStateMap<String, ChatDraft>>()
+    val reference: String = java.util.UUID.nameUUIDFromBytes("chat-composers".toByteArray()).toString()
+}
+
+@Composable
+internal fun rememberDurableChatDrafts(chorus: garden.vayne.chorus.data.Chorus): SnapshotStateMap<String, ChatDraft>? {
+    val owner = chorus.editorOwner
+    val storage = chorus.editorDrafts
+    val key = remember(owner) { if (owner.isBlank()) null else storage.key(owner, "chat-composers", ChatDraftCache.reference) }
+    var drafts by remember(owner) { mutableStateOf(ChatDraftCache.byOwner[owner]) }
+    val loaded = drafts
+    if (loaded == null) {
+        LaunchedEffect(owner) {
+            val saved = if (key == null) null else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    storage.load(key).get()?.let { encoded ->
+                        val j = JSONObject(encoded)
+                        j.keys().asSequence().associateWith { ChatDraft.decode(j.getString(it)) }
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (e: Exception) { android.util.Log.e("ChorusDraft", "Chat drafts could not be read", e); null }
+            }
+            drafts = ChatDraftCache.byOwner.getOrPut(owner) { (saved ?: emptyMap()).toList().toMutableStateMap() }
+        }
+        return null
+    }
+    if (key != null) LaunchedEffect(key, loaded) {
+        // Coalesced on the draft worker; the first emission rewrites what was just read, harmlessly.
+        snapshotFlow { loaded.mapValues { it.value.snapshot() } }.collect { snapshot ->
+            storage.autosave(key) { JSONObject(snapshot.mapValues { it.value.encode() }).toString() }
+        }
+    }
+    return loaded
+}
 
 internal class ChatReadingPosition(val list: LazyListState, var newest: String?)
 internal val ChatReadPositionsSaver = Saver<SnapshotStateMap<String, ChatReadingPosition>, Map<String, String>>(

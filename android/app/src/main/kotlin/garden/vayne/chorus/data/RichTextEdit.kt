@@ -48,6 +48,22 @@ object RichTextEdit {
             if (origin >= 0) positions.getOrPut(origin) { mutableListOf() }.add(i)
         }
         val result = rich.getJSONArray("entities")
+        val parsedEntities = List(result.length()) { result.getJSONObject(it) }
+        val atoms = parsedEntities.filter(::atomic).sortedBy { it.getInt("offset") }
+        val literals = parsedEntities.filter { it.optString("type") in setOf("code", "pre") }.sortedBy { it.getInt("offset") }
+        fun overlaps(rows: List<JSONObject>, start: Int, end: Int): List<JSONObject> {
+            // Parser atoms and literal code/pre spans are disjoint within their own lists.
+            var low = 0; var high = rows.size
+            while (low < high) {
+                val middle = (low + high) / 2
+                val row = rows[middle]
+                if (row.getInt("offset") + row.getInt("length") <= start) low = middle + 1 else high = middle
+            }
+            val found = mutableListOf<JSONObject>()
+            while (low < rows.size && rows[low].getInt("offset") < end) found.add(rows[low++])
+            return found
+        }
+        val retained = mutableListOf<JSONObject>()
         val original = draft.getJSONArray("entities")
         val originalText = draft.getString("text")
         for (i in 0 until original.length()) {
@@ -82,22 +98,16 @@ object RichTextEdit {
                 if (end > start + length) continue
             }
             // Explicit literal formatting removes semantic atoms; never resurrect stale spans in code.
-            if ((0 until result.length()).any { j -> result.getJSONObject(j).let {
-                it.optString("type") in setOf("code", "pre") && it.getInt("offset") < start + length &&
-                    it.getInt("offset") + it.getInt("length") > start
-            } }) continue
-            // An extended/retyped token resolves normally, rather than inheriting an old prefix ID.
-            val overlapping = (0 until result.length()).map { result.getJSONObject(it) }.filter {
-                atomic(it) && it.getInt("offset") < start + length && it.getInt("offset") + it.getInt("length") > start
-            }
+            if (overlaps(literals, start, start + length).isNotEmpty()) continue
+            val overlapping = overlaps(atoms, start, start + length)
             if (overlapping.any { it.getInt("offset") < start || it.getInt("offset") + it.getInt("length") > start + length }) continue
-            for (j in result.length() - 1 downTo 0) {
-                val e = result.getJSONObject(j)
-                if (atomic(e) && e.getInt("offset") >= start && e.getInt("offset") + e.getInt("length") <= start + length) result.remove(j)
-            }
-            result.put(JSONObject(entity.toString()).put("offset", start))
+            retained.add(JSONObject(entity.toString()).put("offset", start))
         }
-        val sorted = (0 until result.length()).map { result.getJSONObject(it) }
+        val spans = retained.sortedBy { it.getInt("offset") }
+        val merged = parsedEntities.filter { e ->
+            !atomic(e) || overlaps(spans, e.getInt("offset"), e.getInt("offset") + e.getInt("length")).isEmpty()
+        } + retained
+        val sorted = merged
             .sortedWith(compareBy<JSONObject> { it.getInt("offset") }.thenByDescending { it.getInt("length") }.thenBy { kinds.indexOf(it.optString("type")) })
         return JSONObject().put("text", text).put("entities", JSONArray(sorted))
     }

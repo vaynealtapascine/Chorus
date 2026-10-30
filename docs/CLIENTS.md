@@ -87,9 +87,20 @@ android/
   typed fields and existing posts/highlights/media/relationships. Edit profile is explicit.
   Location and three website slots persist through existing typed fields, not local preferences.
   Saved opening baselines survive recreation and omit untouched fields from patches. Bio/chat
-  edits retain identity per original mention/custom-emoji occurrence using saveable UTF-16
-  character provenance and core parser source maps, through text/formatting edits. Newly typed
+  edits retain identity per original mention/custom-emoji occurrence using durable UTF-16
+  character provenance and core parser source maps, through text/formatting edits. Explicit
+  Undo/Redo restores text, selection and provenance together; identical selected retyping is new
+  input. Keyboard shortcuts, IME context actions and touch controls share that history. Newly typed
   tokens use the normal directory; code/escaped/retyped tokens cannot inherit stale IDs.
+  Profile opening snapshots, rich histories and message edit segments live in
+  account/server/purpose/session-scoped encrypted replica KV records. Chat composer drafts are one
+  stable record per account, cached for the process: returning to Chat never reloads them, and a
+  draft survives an app restart. Activity saved state
+  carries only bounded references. Autosaves coalesce; saving activity state joins an exact latest
+  checkpoint before background process death. Save/Discard removes only that own editor session;
+  failed or cancelled saves retain it. Rich undo has a 32-frame / conservative 1 MiB history bound
+  without truncating the current text or original rich data. Formatter source maps are linear;
+  rich parsing and draft serialization run off the UI thread.
   All changed custom-field slots preflight against the latest definitions before any save op;
   incompatible/deleted/rebound definitions ask to cancel and reopen. Metadata/privacy is preserved.
 - Avatar/banner selection copies at most 10 MB into an app-cache draft, decodes with API29

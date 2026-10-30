@@ -33,6 +33,21 @@ class Store(private val ctx: Context) {
         dao.put(StoredValue(key, value))
     }
 
+    fun remove(key: String) = dao.deleteValue(key)
+    /** CursorWindow is bounded independently of Binder. Read a large draft in one transaction,
+     * in bounded binary chunks, so several long chat drafts cannot exceed a cursor row limit. */
+    internal fun editorDraft(key: String): String? = database.runInTransaction(java.util.concurrent.Callable {
+        val output = java.io.ByteArrayOutputStream()
+        val chunkSize = 128 * 1024
+        while (true) {
+            val chunk = dao.valueChunk(key, output.size() + 1, chunkSize) ?: return@Callable null
+            output.write(chunk)
+            if (chunk.size < chunkSize) break
+        }
+        output.toString(Charsets.UTF_8.name())
+    })
+    internal fun editorDrafts(): List<StoredValue> = dao.editorDraftKeys().mapNotNull { key -> editorDraft(key)?.let { StoredValue(key, it) } }
+
     /** All ops for `CoreReplica.restore`. Stable order makes startup reproducible. */
     fun opsJson(): String = dao.opJson().joinToString(prefix = "[", postfix = "]")
 

@@ -189,7 +189,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val space = model.spaces.find { it.id == selectedSpace } ?: model.spaces.firstOrNull()
     val channels = model.channels.filter { it.spaceId == space?.id }
     val channel = channels.find { it.id == selectedChannel } ?: channels.firstOrNull { it.kind != "thread" }
-    val drafts = rememberSaveable(saver = ChatDraftsSaver) { androidx.compose.runtime.mutableStateMapOf<String, ChatDraft>() }
+    val drafts = rememberDurableChatDrafts(chorus) ?: return
     val composer = drafts.getOrPut(channel?.id ?: selectedChannel) { ChatDraft() }
     var viewingAs by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedAuthor by composer.author
@@ -209,7 +209,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var replyTo by composer.replyTo
     var carriedReply by remember { mutableStateOf<ChatMessage?>(null) }
     var pendingPrivateReply by remember { mutableStateOf<PendingPrivateReply?>(null) }
-    var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var editingMessageId by rememberSaveable { mutableStateOf<String?>(null) }
     var forwarding by remember { mutableStateOf<ChatMessage?>(null) }
     var forwardConfirm by remember { mutableStateOf<ChatListRow?>(null) }
     var deleting by remember { mutableStateOf<ChatMessage?>(null) }
@@ -424,7 +424,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     LaunchedEffect(channel?.id, chorus.device?.accountId) {
         if (previousChannel == channel?.id) return@LaunchedEffect
         previousChannel = channel?.id
-        editingMessage = null
+        editingMessageId = null
         alsoSend = false
         carriedReply = null
         speakerSettingsOpen = false
@@ -745,7 +745,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     onReplyPrivately = if (canPrivate) ({ replyPrivately(message) }) else null,
                     onEdit = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
                         heldMessages[message.id] == null)
-                        ({ editingMessage = message }) else null)
+                        ({ editingMessageId = message.id }) else null)
                 }
             }
             // F5.7: the parent heads the thread, then how many replies follow
@@ -1045,62 +1045,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
     }
     if (switchOpen) Switcher(chorus, model, if (expanded) channel?.id?.let { ChatSpeaker.frontOf(model, it) } else model.namedFronts?.bodyId) { switchOpen = false }
-    editingMessage?.let { original ->
-        var editError by remember(original.id) { mutableStateOf<String?>(null) }
-        var editBusy by remember(original.id) { mutableStateOf(false) }
-        val parts = remember(original.id, original.text, original.entities) {
-            mutableStateListOf<String>().also { it.addAll(ChatEdit.parts(original)) }
-        }
-        val editDrafts = remember(original.id, original.text, original.entities) {
-            mutableStateListOf<String>().also { it.addAll(ChatEdit.drafts(original)) }
-        }
-        val editValues = remember(original.id, original.text, original.entities) {
-            mutableStateListOf<androidx.compose.ui.text.input.TextFieldValue>().also { values ->
-                parts.forEach { values.add(androidx.compose.ui.text.input.TextFieldValue(it)) }
-            }
-        }
-        AlertDialog(onDismissRequest = { if (!editBusy) editingMessage = null },
-            title = { Text("Edit message") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (parts.size > 1) Text("Each part keeps its original speaker.")
-                    for (index in parts.indices) {
-                        OutlinedTextField(editValues[index], {
-                            editDrafts[index] = RichTextEdit.update(editDrafts[index], it.text,
-                                editValues[index].selection.start, editValues[index].selection.end, it.selection.start)
-                            parts[index] = it.text; editValues[index] = it
-                        }, modifier = Modifier.fillMaxWidth(),
-                            label = { Text(if (parts.size == 1) "Message" else "Part ${index + 1} · " +
-                                original.segments[index].authors.map { model.member(it)?.shownName ?: "Someone" }.joinToString(" & ")) },
-                            minLines = 2, maxLines = 6)
-                    }
-                    if (editError != null) Text(editError.orEmpty(), color = p.danger)
-                }
-            },
-            confirmButton = { TextButton(enabled = !editBusy && parts.any { it.isNotBlank() }, onClick = {
-                val current = model.chatMessages[original.channelId]?.find { it.id == original.id }
-                val ownAccount = chorus.device?.accountId
-                if (ownAccount == null || original.accountId != ownAccount || current == null ||
-                    current.text != original.text || current.entities != original.entities ||
-                    current.segments != original.segments ||
-                    current.accountId != ownAccount) {
-                    editError = "The message changed. Close Edit and reopen it."
-                    return@TextButton
-                }
-                editBusy = true; editError = null
-                actions.launch {
-                    try {
-                        chorus.create("message.edit", original.id,
-                            ChatEdit.payload(original, parts.toList(), ChatEdit.names(original, model), editDrafts.toList()),
-                            scope = "space:${requireNotNull(space?.id) { "Space unavailable" }}")
-                        editingMessage = null
-                    } catch (e: Exception) { editError = e.message ?: "Could not edit the message." }
-                    finally { editBusy = false }
-                }
-            }) { Text(if (editBusy) "Saving…" else "Save") } },
-            dismissButton = { TextButton(enabled = !editBusy, onClick = { editingMessage = null }) { Text("Cancel") } })
-    }
+    editingMessageId?.let { id -> MessageEditDialog(chorus, model, id) { editingMessageId = null } }
     forwarding?.let { message ->
         ModalBottomSheet(onDismissRequest = { forwarding = null }, containerColor = p.surface) {
             Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {

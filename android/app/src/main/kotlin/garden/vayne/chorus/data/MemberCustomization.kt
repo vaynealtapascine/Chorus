@@ -73,7 +73,7 @@ object MemberCustomization {
 
     /** Opening snapshot is immutable even when sync refreshes the live model. */
     fun patch(baseline: Member?, name: String, display: String, pronouns: String, sigil: String, color: String,
-        bio: String, baselineBio: String, avatar: String?, banner: String?, birthday: String, names: String = "", bioDraft: String? = null,
+        bio: String, baselineBio: String, avatar: String?, banner: String?, birthday: String, names: String = "", bioDraft: String? = null, bioDirty: Boolean = false,
         parse: ((String, String) -> String)? = null): JSONObject {
         require(name == baseline?.name || (name.trim().isNotEmpty() && name.trim().length <= 100)) { "Use a name of 1–100 characters." }
         require((display == baseline?.displayName.orEmpty() || display.trim().length <= 100) &&
@@ -95,7 +95,7 @@ object MemberCustomization {
         text("pronouns", pronouns, baseline?.pronouns); text("birthday", date, baseline?.birthday)
         text("color", color, baseline?.color)
         changed("avatar_blob", avatar, baseline?.avatarBlob); changed("banner_blob", banner, baseline?.bannerBlob)
-        if (bio != baselineBio) {
+        if (bio != baselineBio || bioDirty) {
             val rich = if (parse == null) RichTextEdit.parse(bioDraft ?: RichTextEdit.open(
                 baseline?.description.orEmpty(), baseline?.descriptionEntities ?: "[]", baselineBio), bio, names)
                 else JSONObject(parse(bio, names))

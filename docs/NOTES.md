@@ -717,3 +717,37 @@ activity-state Binder limit. A valid native 10,000-unit/2,000-mention bio crashe
 with a 1,151,760-byte parcel. Keep large drafts out of saved-state Bundles; retain bounded,
 account-scoped durable references. See docs/handoff/ui6-batch2-corrections-review.md for the
 actual probes and correction criteria. Linear-memory LCS still has quadratic runtime.
+
+
+## 2026-10-30 — UI6 R1 follow-up: explicit undo and durable editor state
+
+Compose Foundation is pinned at 1.7.6. Its value-based CoreTextField/TextFieldKeyInput keeps a
+private text-only UndoManager and sends restored TextFieldValue through the ordinary callback.
+Matching text/history cannot distinguish undo from deliberate retyping. The state-based
+TextFieldState exposes exact original/current replacement ranges through InputTransformation,
+including same-text replacement. Use those ranges for new-input provenance; never infer undo.
+The shared rich field consumes Ctrl/Meta+Z, Shift+Z and Y before the native key handler and
+wraps PlatformTextInputMethodRequest's actual InputConnection for android.R.id.undo/redo.
+Both routes and labelled Undo/Redo controls use the same bounded rich history. The native
+text-only history is cleared and is never a fallback. Unmarked IME commitText replacements
+remain new input; there is no reliable undo-intent signal in an opaque replacement.
+
+Inspected primary sources are Google's Maven 1.7.6 foundation/foundation-android and
+ui/ui-android sources. Relevant classes: CoreTextField, TextFieldKeyInput, TextFieldState,
+InputTransformation, LegacyPlatformTextInputServiceAdapter, StatelessInputConnection.
+The latter's context menu supports selection/cut/copy/paste but has no native undo branch.
+The existing UI6 source-map parser remains the source of rich-text semantics; no Rust/WASM
+change or budget increase was necessary.
+
+Large immutable baselines, per-unit origins, rich histories, all chat composer drafts and
+message-part edits now use encrypted Store KV records; only random references enter the
+activity Bundle. Coalesced autosaves carry monotonically ordered revisions. A save-state
+checkpoint captures current UI values/selection synchronously, then joins serialization and
+an atomic SQLCipher write on the draft worker. A later accepted autosave cannot be overwritten
+by an older queued checkpoint. Saves/discards close only their exact scoped record; errors
+and cancellation retain the draft. Initial loading/parsing and save parsing are background
+work. Toolbar actions produce exact linear maps rather than running Myers/Hirschberg on the
+UI thread. The original generic diff remains for compatibility callers/tests, not live input
+or formatting. Rich parsing's previous repeated full entity scans were replaced with indexed
+atomic/literal span lookups. See handoff/ui6-batch2-r1-followup.md and its external evidence
+for final native results and remaining validation limits.
