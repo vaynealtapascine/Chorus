@@ -30,40 +30,64 @@ internal fun JournalModeChoice(label: String, selected: Boolean, onClick: () -> 
     }
 }
 
-/** Flat feed rows share an avatar gutter and compact identity line. The full reader keeps its
- * body across the width; foreign callers pass only fields already supplied by filtered APIs. */
+/** Flat feed rows share an avatar gutter and compact identity line: bold name, muted `· 25m`, a
+ * lock when the audience isn't public and an optional overflow. The full reader keeps its body
+ * across the width; foreign callers pass only fields already supplied by filtered APIs. The
+ * overflow floats over the card's corner so its 48 dp target never grows the header. */
 @Composable
 internal fun JournalPostFrame(names: String, time: String, audience: String?, full: Boolean = false,
-    avatar: @Composable () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    avatar: @Composable () -> Unit, overflow: (@Composable () -> Unit)? = null, onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit) {
     val p = LocalChorusPalette.current
     @Composable fun Identity() {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(names, color = p.ink, fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, lineHeight = 18.sp),
-                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text(time, style = MaterialTheme.typography.bodySmall, color = p.ink3)
-            if (audience != null) Icon(androidx.compose.ui.res.painterResource(if (audience == "private") R.drawable.ic_lock else R.drawable.ic_globe),
-                JournalPresentation.audience(audience), Modifier.size(16.dp), tint = p.ink3)
+        Row(Modifier.fillMaxWidth().padding(end = if (overflow != null) 36.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Text(names, color = p.ink, fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp, lineHeight = 18.sp),
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(" · $time", style = MaterialTheme.typography.bodySmall, color = p.ink3, maxLines = 1, softWrap = false)
+            }
+            if (audience == "private" || audience == "followers") Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_lock),
+                JournalPresentation.audience(audience), Modifier.padding(start = 6.dp).size(14.dp), tint = p.ink3)
         }
     }
-    Column(Modifier.fillMaxWidth().padding(horizontal = if (full) 20.dp else 16.dp, vertical = if (full) 16.dp else 10.dp)) {
-        if (full) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.width(48.dp)) { avatar() }
-                Column(Modifier.weight(1f)) { Identity() }
+    Box(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClickLabel = "Open post", onClick = onClick) else Modifier)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = if (full) 20.dp else 16.dp, vertical = if (full) 16.dp else 10.dp)) {
+            if (full) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.width(48.dp)) { avatar() }
+                    Column(Modifier.weight(1f)) { Identity() }
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+            } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.width(48.dp), contentAlignment = Alignment.TopCenter) { avatar() }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Identity()
+                    content()
+                }
             }
-            Spacer(Modifier.height(8.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
-        } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.width(48.dp), contentAlignment = Alignment.TopCenter) { avatar() }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Identity()
-                content()
-            }
+        }
+        if (overflow != null) Box(Modifier.align(Alignment.TopEnd).padding(top = if (full) 20.dp else 5.dp, end = 4.dp)) { overflow() }
+    }
+}
+
+/** The `⋯` on a card: quiet extras that don't deserve a button in the action row. */
+@Composable
+internal fun JournalOverflow(label: String, items: List<Pair<String, () -> Unit>>) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }, modifier = Modifier.size(40.dp)) { ChatIcon(R.drawable.ic_more, label, LocalChorusPalette.current.ink3) }
+        DropdownMenu(open, { open = false }) {
+            for ((text, action) in items) DropdownMenuItem(text = { Text(text) }, onClick = { open = false; action() })
         }
     }
 }
 
+/** `25m`, `3h`, `2d`, then a date: the muted time after a name. */
+internal fun compactAgo(ms: Long): String = JournalPresentation.shortAgo(ms) {
+    java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(it))
+}
 
 @Composable
 internal fun JournalTextField(value: String, onChange: (String) -> Unit, hint: String, style: TextStyle,
@@ -112,7 +136,7 @@ internal fun JournalAudiencePicker(audience: String, person: Boolean, onChoose: 
             ChatIcon(R.drawable.ic_down, tint = p.accent)
         }
         DropdownMenu(open, { open = false }) {
-            for (mode in listOf("private", "followers", "server")) DropdownMenuItem(
+            for (mode in JournalPresentation.AUDIENCES) DropdownMenuItem(
                 text = { Text(JournalPresentation.audience(mode, person)) }, onClick = { onChoose(mode); open = false })
         }
     }

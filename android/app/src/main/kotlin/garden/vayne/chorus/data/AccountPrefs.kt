@@ -6,7 +6,11 @@ import org.json.JSONObject
 data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCeiling: JSONObject = JSONObject(),
     val cwAutoExpand: Boolean = false, val segmentParsing: Boolean = true, val readPerMember: Boolean = false, val shareTyping: Boolean = false,
     /** channel id → `notify_channel:<id>` (all · mentions · none, NOTIFICATIONS §7). */
-    val notifyChannels: Map<String, String> = emptyMap()) {
+    val notifyChannels: Map<String, String> = emptyMap(),
+    /** Saved journal posts: `bookmark:<post id>` = true. Private to this account's devices. */
+    val bookmarks: Set<String> = emptySet()) {
+    fun isSaved(postId: String): Boolean = postId in bookmarks
+
     /** A channel's chat notifications; DMs default to everything, other channels to mentions (as on web). */
     fun channelNotify(channelId: String, spaceKind: String): String =
         notifyChannels[channelId] ?: defaultNotify(spaceKind)
@@ -32,8 +36,30 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
             return AccountPrefs(value("notify_chat") as? JSONObject ?: JSONObject(),
                 value("follow_ceiling") as? JSONObject ?: legacy?.optJSONObject("follow_ceiling") ?: JSONObject(),
                 value("chat.cw_auto_expand") == true, value("chat.segment_parsing") != false,
-                value("chat.read_per_member") == true, value("share_typing") == true, channelLevels(prefs, accountId))
+                value("chat.read_per_member") == true, value("share_typing") == true, channelLevels(prefs, accountId),
+                savedPosts(prefs, accountId))
         }
+
+        /** Account-wide (no device) `bookmark:` prefs set to true; a pending local change wins, so
+         * saving then un-saving before the op is stamped never resurrects the stamped value. */
+        private fun savedPosts(prefs: JSONObject?, accountId: String): Set<String> {
+            val pending = HashMap<String, Boolean>()
+            val stamped = HashMap<String, Boolean>()
+            for (k in prefs?.keys()?.asSequence().orEmpty()) {
+                val parts = k.split('|', limit = 3)
+                if (parts.size != 3 || parts[1].isNotEmpty() || (parts[0].isNotEmpty() && parts[0] != accountId)) continue
+                val post = parts[2].takeIf { it.startsWith(BOOKMARK) }?.removePrefix(BOOKMARK)?.takeIf { it.isNotBlank() } ?: continue
+                val row = prefs?.optJSONObject(k)?.takeIf { it.optBoolean("exists") } ?: continue
+                (if (parts[0].isEmpty()) pending else stamped)[post] = row.optJSONObject("fields")?.opt("value") == true
+            }
+            return (stamped + pending).filterValues { it }.keys
+        }
+
+        const val BOOKMARK = "bookmark:"
+
+        /** Saving writes `true`; un-saving writes null (D-063), so the row is just cleared. */
+        fun bookmarkPayload(postId: String, saved: Boolean): JSONObject =
+            payload(BOOKMARK + postId, if (saved) true else JSONObject.NULL)
 
         /** Account-wide (no device) `notify_channel:` prefs; a pending local change wins. */
         private fun channelLevels(prefs: JSONObject?, accountId: String): Map<String, String> {

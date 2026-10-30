@@ -1,6 +1,11 @@
 package garden.vayne.chorus.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -37,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -52,6 +58,8 @@ import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.UploadWork
 import garden.vayne.chorus.data.JournalPost
+import garden.vayne.chorus.data.Member
+import garden.vayne.chorus.data.JournalSocial
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.Polls
 import androidx.compose.runtime.collectAsState
@@ -91,6 +99,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     var section by rememberSaveable { mutableStateOf("timeline") }
     var selectedListId by rememberSaveable { mutableStateOf("") }
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
+    var quoteOf by rememberSaveable { mutableStateOf<String?>(null) }
     var kind by rememberSaveable { mutableStateOf("note") }
     var authorId by rememberSaveable { mutableStateOf("") }
     var bodyValue by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
@@ -105,8 +114,6 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     var audience by rememberSaveable { mutableStateOf("private") }
     var busy by remember { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
-    var reactionError by remember { mutableStateOf<String?>(null) }
-    var reactionBusy by remember { mutableStateOf(false) }
     val actions = rememberCoroutineScope()
     val ctx = LocalContext.current
     val attachments = rememberSaveable(saver = AttachmentDraftSaver) { mutableStateListOf<PendingAttachment>() }
@@ -150,7 +157,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         if (externalReplyPost != null) {
             profileId = null; threadPostId = null
             section = "timeline"
-            replyTo = externalReplyPost
+            replyTo = externalReplyPost; quoteOf = null
             kind = "note"; title = ""; bodyValue = TextFieldValue(); cw = ""; mood = ""; tags = ""
             attachments.clear()
             audience = "server" // the foreign parent author must be able to read this reply
@@ -189,8 +196,10 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     if (shown.startsWith("thread:")) {
         val id = shown.substringAfter(":")
         BackHandler(active && shown == route) { threadPostId = null }
-        JournalThread(chorus, model, id, onClose = { threadPostId = null },
-            onReply = { replyTo = id; editing = true })
+        JournalThread(chorus, model, id, onClose = { threadPostId = null }, onReply = { replyTo = id; editing = true },
+            replyAuthor = author, replyAuthors = mine, onPickAuthor = { authorId = it },
+            onQuote = { quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
+            onOpenPost = { threadPostId = it })
         return@ChorusScene
     }
 
@@ -215,6 +224,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                     val writingMood = mood
                     val writingTags = tags
                     val writingReply = replyTo
+                    val writingQuote = quoteOf
                     val writingPoll = if (pollOn) Polls.draft(pollOptions.toList(), pollMultiple).getOrElse {
                         error = it.message; return@Button
                     } else null
@@ -225,13 +235,13 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                                 sendAttachment(chorus, ctx, a, opKind = "post.attachment")
                             }
                             val payload = PostCompose.payload(model, dev.accountId, writingKind, writer.id, writingBody,
-                                writingTitle, writingCw, writingAudience, writingMood, writingTags, writingReply, attachmentIds = attachmentIds)
+                                writingTitle, writingCw, writingAudience, writingMood, writingTags, writingReply, attachmentIds = attachmentIds, quotePostId = writingQuote)
                             if (writingPoll != null) payload.put("poll", writingPoll)
                             chorus.create("post.create", chorus.newId(), payload)
                             pollOn = false; pollMultiple = false
                             pollOptions.clear(); pollOptions.addAll(listOf("", ""))
                             if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
-                            bodyValue = TextFieldValue(); title = ""; cw = ""; mood = ""; tags = ""; replyTo = null
+                            bodyValue = TextFieldValue(); title = ""; cw = ""; mood = ""; tags = ""; replyTo = null; quoteOf = null
                             attachments.clear()
                             editing = false
                         } catch (e: Exception) { error = e.message ?: "Could not post." }
@@ -261,10 +271,16 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.ink, fontSize = 16.sp, lineHeight = 24.sp),
                         cursorBrush = SolidColor(p.accent), minLines = 4,
                         decorationBox = { inner -> Box {
-                            if (body.isEmpty()) Text(if (kind == "entry") "Write your entry…" else "What’s on your mind?", color = p.ink3,
+                            if (body.isEmpty()) Text(if (kind == "entry") "Write your entry…" else if (quoteOf != null) "Add a comment…" else "What’s on your mind?", color = p.ink3,
                                 style = MaterialTheme.typography.bodyLarge)
                             inner()
                         } })
+                }
+                if (quoteOf != null) item {
+                    Column(Modifier.padding(start = 52.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        QuoteEmbed(model.posts.find { it.id == quoteOf }?.takeIf { it.repostOf == null }, model)
+                        TextButton(enabled = !busy, onClick = { quoteOf = null }) { Text("Remove quote") }
+                    }
                 }
                 if (attachments.isNotEmpty()) item {
                     Box(Modifier.padding(start = 52.dp)) {
@@ -309,6 +325,13 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         JournalFeeds(chorus, model, onTimeline = { section = "timeline" })
         return@ChorusScene
     }
+    if (shown == "saved") {
+        BackHandler(active && shown == route) { section = "timeline" }
+        JournalSaved(chorus, model, onBack = { section = "timeline" }, onReply = { replyTo = it; editing = true },
+            onThread = { threadPostId = it }, onQuote = { quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
+            onProfile = { profileId = it })
+        return@ChorusScene
+    }
 
     // a configured account reads Body's effective changes (exact Fronting layer ID), never the stale log
     val frontRevision by chorus.frontHistoryRevision.collectAsState()
@@ -322,6 +345,19 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     else model.switches.map { JournalEvent(it.id, it.occurredAt, null, if (it.retracted) "Undone switch" else fronting(it.resultingFront)) }
     val events = (model.posts.map { JournalEvent(it.id, it.occurredAt, it, null) } + switchEvents)
         .sortedWith(compareByDescending<JournalEvent> { it.at }.thenByDescending { it.id })
+    val shownEvents = events.filter { journalTab != "entries" || it.post?.kind == "entry" }
+    // New posts arriving (from another device) while the reader is scrolled down offer a way back to the top.
+    val motion = rememberChorusMotion()
+    val newestPost = shownEvents.firstOrNull { it.post != null }?.id
+    var announced by remember(journalTab) { mutableStateOf(newestPost) }
+    var newPosts by remember(journalTab) { mutableStateOf(false) }
+    LaunchedEffect(journalTab, newestPost) {
+        if (newestPost != announced) {
+            if (feedListState.firstVisibleItemIndex > 0) newPosts = true
+            announced = newestPost
+        }
+    }
+    LaunchedEffect(feedListState.firstVisibleItemIndex) { if (feedListState.firstVisibleItemIndex == 0) newPosts = false }
     Column(Modifier.fillMaxSize().background(p.bg)) {
         Row(Modifier.fillMaxWidth().background(p.surface).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             author?.let { ChatAvatar(it, 36.dp) }
@@ -334,6 +370,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             Box {
                 ChatIconButton(R.drawable.ic_more, "Journal options") { feedMenu = true }
                 DropdownMenu(feedMenu, { feedMenu = false }) {
+                    DropdownMenuItem(text = { Text("Saved") }, onClick = { feedMenu = false; section = "saved" })
                     DropdownMenuItem(text = { Text("Lists") }, onClick = { feedMenu = false; section = "lists" })
                     DropdownMenuItem(text = { Text("Feeds") }, onClick = { feedMenu = false; section = "feeds" })
                     if (model.isPerson) model.members.firstOrNull { it.isSelf }?.let { self ->
@@ -352,30 +389,16 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         if (journalTab == "friends") JournalFriends(chorus, model, onThread = { threadPostId = it }, onReply = {
             replyTo = it; audience = "server"; editing = true
         }) else LazyColumn(Modifier.fillMaxSize(), state = feedListState, contentPadding = PaddingValues(bottom = 80.dp)) {
-        if (reactionError != null) item { Text(reactionError.orEmpty(), color = p.danger) }
-        if (events.none { journalTab != "entries" || it.post?.kind == "entry" }) item {
+        if (shownEvents.isEmpty()) item {
             Text(if (journalTab == "entries") "No journal entries yet. Start with a few words." else "No posts or switches yet. Write the first note.",
                 color = p.ink2, modifier = Modifier.padding(24.dp))
         }
-        for (event in events.filter { journalTab != "entries" || it.post?.kind == "entry" }) item(key = "${if (event.post == null) "switch" else "post"}:${event.id}") {
+        for (event in shownEvents) item(key = "${if (event.post == null) "switch" else "post"}:${event.id}") {
             if (event.post != null) JournalPostCard(event.post, model, chorus,
-                onReply = { replyTo = event.post.id; editing = true },
-                onThread = { threadPostId = event.post.id },
-                reactMemberId = Reply.speaker(model)?.id,
-                reactionEnabled = !reactionBusy,
-                onReact = { post ->
-                    val member = Reply.speaker(model) ?: return@JournalPostCard
-                    if (reactionBusy) return@JournalPostCard
-                    reactionBusy = true; reactionError = null
-                    actions.launch {
-                        try {
-                            val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == member.id }
-                            chorus.create(if (selected) "post.unreact" else "post.react", post.id,
-                                PostReactions.payload(post.id, member.id))
-                        } catch (e: Exception) { reactionError = e.message ?: "Could not react to this post." }
-                        finally { reactionBusy = false }
-                    }
-                },
+                onReply = { replyTo = it.id; editing = true },
+                onThread = { threadPostId = it.id },
+                onQuote = { quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
+                onOpenPost = { threadPostId = it },
                 onProfile = { profileId = it })
             else Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
                 Text(event.switchLabel.orEmpty(), color = p.ink2)
@@ -384,6 +407,12 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             }
         }
         }
+        NewPostsPill(newPosts && journalTab != "friends", motion, Modifier.align(Alignment.TopCenter).padding(top = 8.dp)) {
+            actions.launch {
+                if (motion) feedListState.animateScrollToItem(0) else feedListState.scrollToItem(0)
+                newPosts = false
+            }
+        }
         FloatingActionButton(onClick = { replyTo = null; if (journalTab == "entries") kind = "entry"; editing = true },
             containerColor = p.accent, contentColor = p.onAccent, shape = CircleShape,
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).size(56.dp)) {
@@ -391,6 +420,19 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         }
         }
     }
+    }
+}
+
+/** "↑ New posts": slides in at the top when posts arrive while the reader is further down. */
+@Composable
+private fun NewPostsPill(visible: Boolean, motion: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val p = LocalChorusPalette.current
+    AnimatedVisibility(visible, modifier,
+        enter = fadeIn(ChorusMotion.tween(motion)) + slideInVertically(ChorusMotion.tween(motion)) { -it },
+        exit = fadeOut(ChorusMotion.tween(motion, ChorusMotion.Quick)) + slideOutVertically(ChorusMotion.tween(motion, ChorusMotion.Quick)) { -it }) {
+        Surface(onClick = onClick, color = p.accent, contentColor = p.onAccent, shape = CircleShape, shadowElevation = 6.dp) {
+            Text("↑ New posts", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+        }
     }
 }
 
@@ -405,17 +447,29 @@ internal fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit
 }
 
 @Composable
-internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, onReply: () -> Unit,
-    onThread: (() -> Unit)? = null, reactMemberId: String? = null, reactionEnabled: Boolean = true,
-    onReact: ((JournalPost) -> Unit)? = null, onProfile: ((String) -> Unit)? = null, full: Boolean = false,
-    showActions: Boolean = true) {
+internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, onReply: (JournalPost) -> Unit,
+    onThread: ((JournalPost) -> Unit)? = null, onProfile: ((String) -> Unit)? = null, full: Boolean = false,
+    showActions: Boolean = true, repostedBy: String? = null, onQuote: ((JournalPost) -> Unit)? = null,
+    onOpenPost: ((String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
+    // A repost has no text: show the original (one level only) under "X reposted", or say it's gone.
+    if (post.repostOf != null && repostedBy == null) {
+        val by = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
+        val original = model.posts.find { it.id == post.repostOf }?.takeIf { it.repostOf == null }
+        if (original == null) RepostUnavailable(by)
+        else JournalPostCard(original, model, chorus, onReply, onThread, onProfile, full, showActions, repostedBy = by, onQuote = onQuote, onOpenPost = onOpenPost)
+        return
+    }
+    if (repostedBy != null) RepostHeader(repostedBy)
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
     var expanded by rememberSaveable(post.id) { mutableStateOf(full) }
     var overflow by remember(post.id) { mutableStateOf(false) }
     var authorsOpen by remember { mutableStateOf(false) }
+    var audienceOpen by remember(post.id) { mutableStateOf(false) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val names = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
-    JournalPostFrame(names, ago(post.occurredAt), post.visibility, full, avatar = {
+    val open = onThread?.takeIf { !full }?.let { { it(post) } }
+    JournalPostFrame(names, compactAgo(post.occurredAt), post.visibility, full, avatar = {
         Box {
             Box(Modifier.size(48.dp).clickable(enabled = onProfile != null) {
                 if (post.authors.size > 1) authorsOpen = true else post.authors.firstOrNull()?.let { onProfile?.invoke(it) }
@@ -427,7 +481,14 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
                     onClick = { authorsOpen = false; onProfile?.invoke(id) }) }
             }
         }
-    }) {
+    }, overflow = {
+        JournalOverflow("More options for this post", listOfNotNull(
+            open?.let { "Open post" to it },
+            JournalSocial.shareText(post.title, post.cw, post.text).takeIf { it.isNotBlank() }?.let { text ->
+                "Copy text" to { clipboard.setText(androidx.compose.ui.text.AnnotatedString(text)) }
+            },
+            ("Change audience" to { audienceOpen = true }).takeIf { JournalSocial.canEditAudience(post, model, chorus.device?.accountId) }))
+    }, onClick = open) {
         if (post.replyTo != null) Text("Reply", color = p.ink3, style = MaterialTheme.typography.bodySmall)
         if (post.cw != null) Surface(color = p.surface2, shape = RoundedCornerShape(10.dp)) {
             Row(Modifier.fillMaxWidth().clickable { revealed = !revealed }.heightIn(min = 48.dp).padding(horizontal = 10.dp),
@@ -438,39 +499,43 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
         }
         if (post.cw == null || revealed) {
             post.title?.let { Text(it, color = p.ink, style = MaterialTheme.typography.titleSmall.copy(
-                fontSize = if (full) 24.sp else 15.sp, lineHeight = if (full) 30.sp else 20.sp), fontWeight = FontWeight.Bold) }
+                fontSize = if (full) 24.sp else 16.sp, lineHeight = if (full) 30.sp else 22.sp), fontWeight = FontWeight.Bold) }
             RichBody(post.text, post.entities, maxLines = if (expanded || full) Int.MAX_VALUE else 3,
-                onOverflow = { overflow = it }, style = MaterialTheme.typography.bodyMedium.copy(
+                onOverflow = { overflow = it }, onPlainClick = { open?.invoke() }, style = MaterialTheme.typography.bodyMedium.copy(
                     fontSize = if (full) 16.sp else 15.sp, lineHeight = if (full) 24.sp else 21.sp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(listOfNotNull(JournalPresentation.readTime(post.text).takeIf { post.kind == "entry" },
-                    JournalPresentation.audience(post.visibility, model.isPerson)).joinToString(" · "),
-                    color = p.ink3, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                if (!full && (overflow || expanded)) TextButton(onClick = {
-                    if (post.kind == "entry" && onThread != null) onThread() else expanded = !expanded
-                }, contentPadding = PaddingValues(start = 8.dp)) { Text(if (expanded) "Less" else "Show more", style = MaterialTheme.typography.labelLarge) }
-            }
+            if (!full && (overflow || expanded)) Text(if (expanded) "Show less" else "Show more", color = p.accent,
+                style = MaterialTheme.typography.labelLarge, modifier = Modifier.clickable {
+                    if (post.kind == "entry" && onThread != null) onThread(post) else expanded = !expanded
+                }.heightIn(min = 32.dp).wrapContentHeight(Alignment.CenterVertically))
+            if (post.kind == "entry") Text(JournalPresentation.entryMeta(post.text, post.tags), color = p.ink3,
+                style = MaterialTheme.typography.bodySmall)
             post.mood?.let { Text(it, color = p.ink2, style = MaterialTheme.typography.bodySmall) }
-            if (post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent, style = MaterialTheme.typography.bodySmall)
-            for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
-            PollCard(chorus, model, post.id, reactMemberId ?: Reply.speaker(model)?.id)
-            if (showActions) JournalActions(post.reactions, reactMemberId?.let(model::member), reactionEnabled,
-                onReply = onThread ?: onReply, onReact = onReact?.let { { it(post) } })
+            if (post.kind != "entry" && post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
+                style = MaterialTheme.typography.bodySmall)
+            JournalMedia(post.attachments, chorus, names, post.occurredAt)
+            PollCard(chorus, model, post.id, Reply.speaker(model)?.id)
+            post.quotePostId?.let { id -> QuoteEmbed(model.posts.find { it.id == id }?.takeIf { it.repostOf == null }, model,
+                onOpen = onOpenPost?.let { open -> { open(id) } }) }
+            if (showActions) JournalPostActions(post, model, chorus, onReply = { (onThread ?: onReply)(post) }, onQuote = onQuote)
         }
     }
+    if (audienceOpen) JournalAudienceDialog(post, model, chorus, onDismiss = { audienceOpen = false })
     if (!full) HorizontalDivider(color = p.line, thickness = .5.dp)
 }
 
-/** Server replies can come from other accounts, while own replies remain available offline. */
+/** Server replies can come from other accounts, while own replies remain available offline. The
+ * focused post is larger, followed by when it was written, its counts, a large action row and the
+ * replies as compact cards; the reply bar stays pinned and opens the existing composer, so the
+ * audience is still chosen there. [replyAuthors] is who may write here (one member for a person
+ * account, so no picker is shown). */
 @Composable
-internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose: () -> Unit, onReply: () -> Unit) {
+internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose: () -> Unit, onReply: () -> Unit,
+    replyAuthor: Member? = null, replyAuthors: List<Member> = emptyList(), onPickAuthor: ((String) -> Unit)? = null,
+    onQuote: ((JournalPost) -> Unit)? = null, onOpenPost: ((String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
-    val actions = rememberCoroutineScope()
     var remote by remember(postId) { mutableStateOf<PostDetail?>(null) }
     var error by remember(postId) { mutableStateOf<String?>(null) }
     var refresh by remember(postId) { mutableStateOf(0) }
-    var reactionError by remember(postId) { mutableStateOf<String?>(null) }
-    var reactionBusy by remember(postId) { mutableStateOf(false) }
     val local = PostThreads.ownReplies(model, postId)
     LaunchedEffect(postId, chorus.device?.session, refresh) {
         val dev = chorus.device ?: return@LaunchedEffect
@@ -485,44 +550,95 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
     }
     val replies = PostThreads.merge(local, remote?.replies.orEmpty())
     val reactions = PostReactions.merge(model.postReactions[postId].orEmpty(), remote?.reactions.orEmpty())
-    val reactMember = Reply.speaker(model)?.takeIf { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId }
+    val rootPost = model.posts.find { it.id == postId }
+    val foreignRoot = remote?.root?.takeIf { rootPost == null }
+    // a post from another account has no local row: describe it with what the server sent
+    val focused = rootPost ?: foreignRoot?.let { JournalPost(it.id, "note", emptyList(), it.title, it.text, it.occurredAt,
+        it.cw, "server", null, null, emptyList()) }
     val scroll = androidx.compose.foundation.lazy.rememberLazyListState()
-    Column(Modifier.fillMaxSize().background(p.bg)) {
+    Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         Row(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             ChatIconButton(R.drawable.ic_back, "Back to journal", onClose)
-            Text(if (model.posts.find { it.id == postId }?.kind == "entry") "Journal entry" else "Post and replies", color = p.ink,
+            Text(if (rootPost?.kind == "entry") "Journal entry" else "Post", color = p.ink,
                 style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
             ChatIconButton(R.drawable.ic_swap, "Refresh replies") { refresh++ }
         }
         LazyColumn(Modifier.weight(1f), state = scroll, contentPadding = PaddingValues(bottom = 16.dp)) {
-            model.posts.find { it.id == postId }?.let { root -> item(key = "root:$postId") {
-                JournalPostCard(root, model, chorus, onReply = onReply, full = true, showActions = false)
-            } } ?: remote?.root?.let { root -> item(key = "root:$postId") {
-                ThreadReplyCard(root, chorus, model, reactMember?.id, full = true)
-            } }
+            if (rootPost != null) item(key = "root:$postId") {
+                JournalPostCard(rootPost, model, chorus, onReply = { onReply() }, full = true, showActions = false,
+                    onOpenPost = onOpenPost)
+            } else if (foreignRoot != null) item(key = "root:$postId") {
+                ThreadReplyCard(foreignRoot, chorus, model, Reply.speaker(model)?.id, full = true)
+            }
+            if (focused != null) item(key = "detail:$postId") {
+                val hearts = reactions.count { it.emoji == PostReactions.HEART }
+                val reposts = JournalSocial.reposts(model.posts, postId).size
+                val at = Date(focused.occurredAt)
+                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                    Text(listOfNotNull(DateFormat.getTimeInstance(DateFormat.SHORT).format(at),
+                        DateFormat.getDateInstance(DateFormat.MEDIUM).format(at),
+                        JournalPresentation.audience(focused.visibility, model.isPerson).takeIf { rootPost != null }).joinToString(" · "),
+                        color = p.ink3, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 12.dp))
+                    if (hearts > 0 || reposts > 0) {
+                        HorizontalDivider(color = p.line, thickness = .5.dp)
+                        Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            if (reposts > 0) DetailStat(reposts, if (reposts == 1) "repost" else "reposts")
+                            if (hearts > 0) DetailStat(hearts, if (hearts == 1) "like" else "likes")
+                        }
+                    }
+                    HorizontalDivider(color = p.line, thickness = .5.dp)
+                    JournalPostActions(focused, model, chorus, onReply = onReply, onQuote = onQuote, large = true,
+                        reactions = reactions, foreign = rootPost == null, onReacted = { member ->
+                            remote = remote?.copy(reactions = PostReactions.toggle(remote?.reactions.orEmpty(), member.id, member.shownName))
+                        })
+                    HorizontalDivider(color = p.line, thickness = .5.dp)
+                }
+            }
             if (error != null) item { Text(error.orEmpty(), color = p.ink2, style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(20.dp)) }
-            if (reactionError != null) item { Text(reactionError.orEmpty(), color = p.danger, modifier = Modifier.padding(20.dp)) }
             if (replies.isEmpty()) item { Text(if (remote == null && error == null) "Loading replies…" else "No replies yet.",
                 color = p.ink2, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(20.dp)) }
-            items(replies, key = { it.id }) { reply -> ThreadReplyCard(reply, chorus, model, reactMember?.id) }
+            items(replies, key = { it.id }) { reply -> ThreadReplyCard(reply, chorus, model, replyAuthor?.id) }
         }
         HorizontalDivider(color = p.line)
-        Box(Modifier.background(p.surface).padding(horizontal = 20.dp)) {
-            JournalActions(reactions, reactMember, !reactionBusy, onReply = onReply, onReact = reactMember?.let { member -> {
-                val selected = reactions.any { it.emoji == PostReactions.HEART && it.memberId == member.id }
-                if (!reactionBusy) {
-                    reactionBusy = true; reactionError = null
-                    actions.launch {
-                        try {
-                            chorus.create(if (selected) "post.unreact" else "post.react", postId, PostReactions.payload(postId, member.id))
-                            remote = remote?.copy(reactions = PostReactions.toggle(remote?.reactions.orEmpty(), member.id, member.shownName))
-                        } catch (e: Exception) { reactionError = "Could not save the reaction. Try again." }
-                        finally { reactionBusy = false }
-                    }
-                }
-            } })
+        JournalReplyBar(replyAuthor, replyAuthors, onPickAuthor, onReply)
+    }
+}
+
+@Composable
+private fun DetailStat(count: Int, label: String) {
+    val p = LocalChorusPalette.current
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(count.toString(), color = p.ink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+        Text(label, color = p.ink3, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** The pinned reply bar: who is replying (tap the chip to change), a rounded "Write your reply"
+ * field and send. Both open the existing reply composer, where the audience is checked. */
+@Composable
+private fun JournalReplyBar(author: Member?, authors: List<Member>, onPick: ((String) -> Unit)?, onReply: () -> Unit) {
+    val p = LocalChorusPalette.current
+    var picking by remember { mutableStateOf(false) }
+    val canPick = onPick != null && authors.size > 1
+    Row(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (author != null) Box {
+            Row(Modifier.clip(CircleShape).then(if (canPick) Modifier.clickable(onClickLabel = "Change who is replying") { picking = true } else Modifier)
+                .heightIn(min = 48.dp).padding(end = if (canPick) 4.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
+                ChatAvatar(author, 32.dp, label = "Replying as ${author.shownName}")
+                if (canPick) Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_down), null, Modifier.size(14.dp), tint = p.ink3)
+            }
+            DropdownMenu(picking, { picking = false }) {
+                for (member in authors) DropdownMenuItem(text = { Text(member.shownName) }, leadingIcon = { ChatAvatar(member, 32.dp) },
+                    onClick = { picking = false; onPick?.invoke(member.id) })
+            }
         }
+        Box(Modifier.weight(1f).heightIn(min = 44.dp).clip(CircleShape).background(p.surface2)
+            .clickable(onClickLabel = "Write a reply", onClick = onReply).padding(horizontal = 16.dp), contentAlignment = Alignment.CenterStart) {
+            Text("Write your reply", color = p.ink3, style = MaterialTheme.typography.bodyMedium)
+        }
+        IconButton(onClick = onReply, modifier = Modifier.size(48.dp)) { ChatIcon(R.drawable.ic_send, "Write a reply", p.accent) }
     }
 }
 
@@ -531,7 +647,7 @@ private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, me
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(reply.id) { mutableStateOf(false) }
     val names = reply.authorNames.joinToString(" & ").ifBlank { "Someone" }
-    JournalPostFrame(names, ago(reply.occurredAt), null, full, avatar = {
+    JournalPostFrame(names, compactAgo(reply.occurredAt), null, full, avatar = {
         Box(Modifier.size(40.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
             Text(names.take(1), style = MaterialTheme.typography.titleSmall, color = p.ink2)
         }
@@ -541,9 +657,11 @@ private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, me
         }
         if (reply.cw == null || revealed) {
             if (reply.title != null) Text(reply.title, color = p.ink, fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleLarge)
-            RichBody(reply.text, reply.entities, style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp))
+                style = MaterialTheme.typography.titleSmall.copy(fontSize = if (full) 24.sp else 16.sp, lineHeight = if (full) 30.sp else 22.sp))
+            RichBody(reply.text, reply.entities, style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = if (full) 16.sp else 15.sp, lineHeight = if (full) 24.sp else 21.sp))
             PollCard(chorus, model, reply.id, member, reply.poll, reply.pollTally)
         }
     }
+    if (!full) HorizontalDivider(color = p.line, thickness = .5.dp)
 }

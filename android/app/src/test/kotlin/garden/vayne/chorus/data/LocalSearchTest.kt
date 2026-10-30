@@ -25,6 +25,17 @@ class LocalSearchTest {
         assertTrue(search.search("vio has:file", "Messages").isEmpty())
     }
 
+    @Test fun textlessRepostsAreNotSearchResults() {
+        val model = Model(listOf(Member("kai", "Kai", null, null, "#888888", emptyList(), null, false)),
+            emptyList(), emptyMap(), emptyList(), null, emptyList(),
+            posts = listOf(JournalPost("original", "note", listOf("kai"), null, "Inside the garden", 200, null, "private",
+                null, null, emptyList()),
+                JournalPost("boost", "note", listOf("kai"), null, "", 210, null, "private", null, null, emptyList(),
+                    repostOf = "original")))
+        assertEquals(listOf("original"), LocalSearch.fromModel(model).search("garden", "Posts").map { it.id })
+        assertEquals(listOf("original"), LocalSearch.fromModel(model).search("from:kai", "Posts").map { it.id })
+    }
+
     @Test fun searchIncludesLocalMessagesOlderThanTheChatDisplayWindow() {
         val messages = JSONObject()
         for (i in 0..120) messages.put("m$i", JSONObject().put("exists", true).put("fields",

@@ -117,7 +117,7 @@ class LocalSearch private constructor(private val docs: List<SearchDocument>, pr
         fun fromModel(model: Model, saved: List<SwitchRow>? = null): LocalSearch {
             val names = model.members.associate { it.id to it.shownName } + model.groups.associate { it.id to it.name }
             val channels = model.channels.associate { it.id to it.name }
-            val posts = model.posts.map { post -> SearchDocument(post.id, "Posts", post.occurredAt, post.text,
+            val posts = model.posts.filter { it.repostOf == null }.map { post -> SearchDocument(post.id, "Posts", post.occurredAt, post.text,
                 post.title, post.cw, post.authors, tags = post.tags) }
             val rows = if (model.namedFronts != null) saved.orEmpty() else model.switches
             val switches = rows.filter { !it.retracted }.map { row ->

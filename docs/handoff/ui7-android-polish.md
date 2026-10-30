@@ -37,7 +37,7 @@ the next app start. The owner's phone is logged in to the real account: inspect 
 | --- | --- | --- | --- |
 | 0 | UI6 batch 2 wrap-up (Sol's R1 follow-up + chat-draft cache fix); launcher/notification icon from the owner's wordmark mark (Figma 72:1330); dark splash | Claude | done, deployed |
 | 1 | Chat feel: swipe to reply, double-tap to react, message enter/exit animation, reaction pop, send-button morph, animated jump-to-latest with unread badge, haptics, chat list sorted by activity with Draft:/typing previews | Sonnet (xhigh) | |
-| 2 | Journal feed (F6.3/F6.4): Twitter-class post cards — action row (reply/repost/like/bookmark/share with counts and animations), reposted-by header, quote card, media grid; post detail with stats and a sticky reply bar; Saved | Sonnet (xhigh) | |
+| 2 | Journal feed (F6.3/F6.4): Twitter-class post cards — action row (reply/repost/like/bookmark/share with counts and animations), reposted-by header, quote card, media grid; post detail with stats and a sticky reply bar; Saved | Sonnet (xhigh) | done, pending review (+ change a post's audience) |
 | 3 | Journal composer (F6.2/F6.11): full-screen, Post / Journal entry, posting-as (subsystem-grouped), audience + replies chips, media row, selection formatting, word count, drafts | Sonnet (high) | |
 | 4 | Member profile (F6.1): banner + overlapping avatar, Message / Edit profile, status chip, stats, tabs Posts / Replies / Journal / Media / About, subsystem chips | Sonnet (high) | |
 | 5 | Mentions autocomplete in chat and posts: members, `@front`, subsystems; keyboard-friendly | Sonnet (high) | |

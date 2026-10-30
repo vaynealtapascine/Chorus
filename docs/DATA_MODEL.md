@@ -217,7 +217,7 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `follow.request` / `follow.accept` / `follow.set_ceiling` / `follow.set_prefs` / `follow.end` | NOTIFICATIONS.md | LWW-F |
 | `emoji.create` / `emoji.set` / `emoji.delete` / `emoji.restore` | `{name, aliases, category, blob_hash, is_animated}` | LWW-F |
 | `stage.save` / `stage.delete` | stage view definitions | LWW-F |
-| `pref.set` | per-account or per-device preferences (`{scope:'account'|'device', key, value}`) | LWW-F |
+| `pref.set` | per-account or per-device preferences (`{scope:'account'|'device', key, value}`). Journal saves are one account pref per post, `bookmark:<post id>` = `true` (null clears): private to the account's own devices, never visible to the post's author (UI7) | LWW-F |
 | `admin.*` | invites, device revoke, purge | server-only |
 
 The authoritative list is `CATALOGUE` in `chorus-core/src/op.rs` (kind → table, scope, merge action, settable fields); this table documents it. Every payload type is a Rust struct in `chorus-core` with serde; the JSON Schema for each is

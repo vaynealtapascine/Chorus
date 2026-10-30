@@ -14,4 +14,25 @@ class JournalModelTest {
         assertEquals("Kai", model.member("m")?.shownName)
         assertFalse(model.members.single().createdByAccountId != "mine")
     }
+
+    @Test fun repostAndQuoteLinksAreReadFromTheProjectionAndTolerateAbsence() {
+        val p = JSONObject("""{"rows":{"member":{"m":{"exists":true,"fields":{"name":"Kai"}}},"post":{
+            "plain":{"exists":true,"fields":{"kind":"note","authors":["m"],"text":"Hi","occurred_at":10}},
+            "boost":{"exists":true,"fields":{"kind":"note","authors":["m"],"text":"","occurred_at":20,"repost_of":"plain"}},
+            "quote":{"exists":true,"fields":{"kind":"note","authors":["m"],"text":"So true","occurred_at":30,"quote":{"post_id":"plain"}}},
+            "odd":{"exists":true,"fields":{"kind":"note","authors":["m"],"text":"x","occurred_at":40,"quote":"not an object","repost_of":null}}}}}""")
+        val posts = Model.parse(p, "mine").posts.associateBy { it.id }
+        assertEquals(null, posts.getValue("plain").repostOf)
+        assertEquals(null, posts.getValue("plain").quotePostId)
+        assertEquals("plain", posts.getValue("boost").repostOf)
+        assertEquals("plain", posts.getValue("quote").quotePostId)
+        assertEquals(null, posts.getValue("quote").repostOf)
+        assertEquals(null, posts.getValue("odd").quotePostId)
+        assertEquals(null, posts.getValue("odd").repostOf)
+    }
+
+    @Test fun bookmarksReachTheModelThroughAccountPrefs() {
+        val p = JSONObject("""{"rows":{"pref":{"mine||bookmark:plain":{"exists":true,"fields":{"value":true}}}}}""")
+        assertEquals(setOf("plain"), Model.parse(p, "mine").accountPrefs.bookmarks)
+    }
 }

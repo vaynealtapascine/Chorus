@@ -113,8 +113,8 @@ internal fun JournalLists(chorus: Chorus, model: Model, selectedId: String, onSe
                 item { Text("Posts", color = p.ink, fontWeight = FontWeight.SemiBold) }
                 if (posts.isEmpty()) item { Text("No posts from these members yet.", color = p.ink2) }
                 items(posts, key = { "post:${it.id}" }) { post ->
-                    JournalPostCard(post, model, chorus, onReply = { onReply(post.id) },
-                        onThread = { onThread(post.id) })
+                    JournalPostCard(post, model, chorus, onReply = { onReply(it.id) },
+                        onThread = { onThread(it.id) })
                 }
             }
         }
