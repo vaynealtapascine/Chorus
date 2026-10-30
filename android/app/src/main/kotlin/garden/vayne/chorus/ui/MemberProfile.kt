@@ -140,7 +140,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
         }
         if (pinned != null) item(key = "pinned:${pinned.id}") {
             Text("Pinned post", color = p.ink, fontWeight = FontWeight.SemiBold)
-            JournalPostCard(pinned, model, chorus, onReply = { onReply(pinned.id) })
+            JournalPostCard(pinned, model, chorus, onReply = { onReply(it.id) })
             TextButton(enabled = !pinBusy, onClick = {
                 pinBusy = true
                 actions.launch {
@@ -169,7 +169,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
                         else "No highlights yet.", color = p.ink2)
                 }
                 for (post in localHighlights) item(key = "local-highlight:${post.id}") {
-                    JournalPostCard(post, model, chorus, onReply = { onReply(post.id) })
+                    JournalPostCard(post, model, chorus, onReply = { onReply(it.id) })
                     TextButton(enabled = !highlightBusy, onClick = { setHighlight(post.id, false) }) { Text("Remove highlight") }
                 }
                 for (post in foreign) item(key = "remote-highlight:${post.id}") {
@@ -197,7 +197,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
             else -> {
                 if (selectedPosts.isEmpty()) item { Text("No ${tab.lowercase()} yet.", color = p.ink2) }
                 for (post in selectedPosts) item(key = "profile-post:${post.id}") {
-                    JournalPostCard(post, model, chorus, onReply = { onReply(post.id) })
+                    JournalPostCard(post, model, chorus, onReply = { onReply(it.id) })
                     if (post.id != member.pinnedPostId) TextButton(enabled = !pinBusy, onClick = {
                         pinBusy = true
                         actions.launch {

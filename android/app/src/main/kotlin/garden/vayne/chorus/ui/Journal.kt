@@ -357,8 +357,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         }
         for (event in events.filter { journalTab != "entries" || it.post?.kind == "entry" }) item(key = "${if (event.post == null) "switch" else "post"}:${event.id}") {
             if (event.post != null) JournalPostCard(event.post, model, chorus,
-                onReply = { replyTo = event.post.id; editing = true },
-                onThread = { threadPostId = event.post.id },
+                onReply = { replyTo = it.id; editing = true },
+                onThread = { threadPostId = it.id },
                 onProfile = { profileId = it })
             else Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
                 Text(event.switchLabel.orEmpty(), color = p.ink2)
@@ -388,17 +388,26 @@ internal fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit
 }
 
 @Composable
-internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, onReply: () -> Unit,
-    onThread: (() -> Unit)? = null, onProfile: ((String) -> Unit)? = null, full: Boolean = false,
-    showActions: Boolean = true) {
+internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, onReply: (JournalPost) -> Unit,
+    onThread: ((JournalPost) -> Unit)? = null, onProfile: ((String) -> Unit)? = null, full: Boolean = false,
+    showActions: Boolean = true, repostedBy: String? = null) {
     val p = LocalChorusPalette.current
+    // A repost has no text: show the original (one level only) under "X reposted", or say it's gone.
+    if (post.repostOf != null && repostedBy == null) {
+        val by = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
+        val original = model.posts.find { it.id == post.repostOf }?.takeIf { it.repostOf == null }
+        if (original == null) RepostUnavailable(by)
+        else JournalPostCard(original, model, chorus, onReply, onThread, onProfile, full, showActions, repostedBy = by)
+        return
+    }
+    if (repostedBy != null) RepostHeader(repostedBy)
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
     var expanded by rememberSaveable(post.id) { mutableStateOf(full) }
     var overflow by remember(post.id) { mutableStateOf(false) }
     var authorsOpen by remember { mutableStateOf(false) }
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val names = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
-    val open = onThread.takeIf { !full }
+    val open = onThread?.takeIf { !full }?.let { { it(post) } }
     JournalPostFrame(names, compactAgo(post.occurredAt), post.visibility, full, avatar = {
         Box {
             Box(Modifier.size(48.dp).clickable(enabled = onProfile != null) {
@@ -434,7 +443,7 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
                     fontSize = if (full) 16.sp else 15.sp, lineHeight = if (full) 24.sp else 21.sp))
             if (!full && (overflow || expanded)) Text(if (expanded) "Show less" else "Show more", color = p.accent,
                 style = MaterialTheme.typography.labelLarge, modifier = Modifier.clickable {
-                    if (post.kind == "entry" && onThread != null) onThread() else expanded = !expanded
+                    if (post.kind == "entry" && onThread != null) onThread(post) else expanded = !expanded
                 }.heightIn(min = 32.dp).wrapContentHeight(Alignment.CenterVertically))
             if (post.kind == "entry") Text(JournalPresentation.entryMeta(post.text, post.tags), color = p.ink3,
                 style = MaterialTheme.typography.bodySmall)
@@ -443,7 +452,7 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
                 style = MaterialTheme.typography.bodySmall)
             for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
             PollCard(chorus, model, post.id, Reply.speaker(model)?.id)
-            if (showActions) JournalPostActions(post, model, chorus, onReply = onThread ?: onReply)
+            if (showActions) JournalPostActions(post, model, chorus, onReply = { (onThread ?: onReply)(post) })
         }
     }
     if (!full) HorizontalDivider(color = p.line, thickness = .5.dp)
@@ -484,7 +493,7 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
         }
         LazyColumn(Modifier.weight(1f), state = scroll, contentPadding = PaddingValues(bottom = 16.dp)) {
             model.posts.find { it.id == postId }?.let { root -> item(key = "root:$postId") {
-                JournalPostCard(root, model, chorus, onReply = onReply, full = true, showActions = false)
+                JournalPostCard(root, model, chorus, onReply = { onReply() }, full = true, showActions = false)
             } } ?: remote?.root?.let { root -> item(key = "root:$postId") {
                 ThreadReplyCard(root, chorus, model, reactMember?.id, full = true)
             } }

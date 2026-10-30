@@ -194,7 +194,7 @@ private fun PopIcon(icon: Int, active: Boolean, tint: Color, size: Dp, burst: Bo
  * `chorus.create` like any other op, so each works offline. Shown errors stay one quiet line. */
 @Composable
 internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus, onReply: () -> Unit,
-    large: Boolean = false) {
+    onQuote: ((JournalPost) -> Unit)? = null, large: Boolean = false) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var busy by remember(post.id) { mutableStateOf(false) }
@@ -210,7 +210,19 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
             finally { busy = false }
         }
     }
+    val own = member?.let { JournalSocial.repostBy(model.posts, post.id, it.id) }
     JournalActions(post.reactions, member, !busy, onReply = onReply, replies = JournalSocial.replyCount(model.posts, post.id),
+        reposts = JournalSocial.reposts(model.posts, post.id).size, reposted = own != null,
+        onRepost = member?.let { who -> {
+            write("Could not repost. Try again.") {
+                chorus.create("post.create", chorus.newId(), PostCompose.repostPayload(model, account.orEmpty(), who.id, post.id))
+            }
+        } },
+        // undoing deletes (tombstones) the repost, never the original
+        onUndoRepost = own?.let { repost -> { write("Could not undo the repost. Try again.") {
+            chorus.create("post.delete", repost.id, org.json.JSONObject())
+        } } },
+        onQuote = onQuote?.let { { it(post) } },
         onReact = member?.let { who -> {
             val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == who.id }
             write("Could not save the reaction. Try again.") {
