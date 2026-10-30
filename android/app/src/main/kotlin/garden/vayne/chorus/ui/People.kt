@@ -310,7 +310,7 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
     var overflow by remember(post.id) { mutableStateOf(false) }
     val ctx = LocalContext.current
     val names = post.authorNames.joinToString(" & ").ifBlank { accountName }
-    JournalPostFrame(names, compactAgo(post.occurredAt), null, avatar = {
+    JournalPostFrame(names, compactAgo(post.occurredAt), null, endsWithActions = post.cw == null || revealed, avatar = {
         Box(Modifier.size(40.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
             Text(names.take(1), color = p.ink2, style = MaterialTheme.typography.titleSmall)
         }

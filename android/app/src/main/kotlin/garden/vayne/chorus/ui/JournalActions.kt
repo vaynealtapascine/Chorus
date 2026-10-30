@@ -26,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -33,6 +34,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import garden.vayne.chorus.data.*
 import garden.vayne.chorus.designsystem.LocalChorusPalette
@@ -46,7 +48,9 @@ import kotlinx.coroutines.launch
 private const val NAME_NOTICE = "heart_name_notice"
 
 /** One action row across own/shared posts and the post detail: reply, repost, heart, save and
- * share, evenly spaced, each with a muted count. A heart is one tap; the contextual identity
+ * share, each with a muted count. Icons sit at even steps from the text edge to the card's end
+ * (Figma F6.3: 18 dp icons, 13 sp counts), so the columns line up from post to post whatever the
+ * counts are; each target reaches 8 dp past its icon. A heart is one tap; the contextual identity
  * disclosure appears only the first time on this device, and only when other accounts can read
  * the post. Long-press the heart to see who reacted. Callbacks left null hide that action. */
 @Composable
@@ -69,15 +73,20 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
     }
     // the large detail row repeats the counts in its stats line above, so it shows icons only
     fun shown(count: Int) = count.takeIf { !large }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        if (onReply != null) ActionButton(shown(replies), p.ink3, "Reply", large, onClick = onReply) {
-            Icon(painterResource(R.drawable.ic_reply), null, Modifier.size(if (large) 24.dp else 20.dp), tint = p.ink3)
+    val icon = if (large) 22.dp else 18.dp
+    // keyed, so a heart appearing between two others never hands its animation state to a neighbour
+    val actions = ArrayList<Pair<String, @Composable () -> Unit>>()
+    if (onReply != null) actions += "reply" to {
+        ActionButton(shown(replies), p.ink3, "Reply", large, onClick = onReply) {
+            Icon(painterResource(R.drawable.ic_reply), null, Modifier.size(icon), tint = p.ink3)
         }
-        if (onRepost != null) Box {
+    }
+    if (onRepost != null) actions += "repost" to {
+        Box {
             val tint = if (reposted) p.accent else p.ink3
             ActionButton(shown(reposts), tint, if (reposted) "Reposted; open repost options" else "Repost", large,
                 onClick = { repostMenu = true }) {
-                PopIcon(R.drawable.ic_repost, reposted, tint, if (large) 24.dp else 20.dp)
+                PopIcon(R.drawable.ic_repost, reposted, tint, icon)
             }
             DropdownMenu(repostMenu, { repostMenu = false }) {
                 DropdownMenuItem(text = { Text(if (reposted) "Undo repost" else "Repost") }, enabled = enabled,
@@ -90,25 +99,33 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
                     onClick = { repostMenu = false; onQuote() })
             }
         }
-        if (canReact || hearts > 0) {
-            val tint = if (selected) p.danger else p.ink3
-            ActionButton(shown(hearts), tint,
-                if (canReact) "${if (selected) "Remove heart" else "Heart"} as ${member!!.shownName}; visible to post readers"
-                else "$hearts ${if (hearts == 1) "heart" else "hearts"}", large, enabled = enabled || !canReact,
-                onClick = { if (canReact) heart() else who = true },
-                onLongClick = { who = true }.takeIf { hearts > 0 }, longClickLabel = "Show who reacted") {
-                PopIcon(if (selected) R.drawable.ic_heart_filled else R.drawable.ic_heart, selected, tint,
-                    if (large) 24.dp else 20.dp, burst = true)
-            }
+    }
+    if (canReact || hearts > 0) actions += "heart" to {
+        val tint = if (selected) p.danger else p.ink3
+        ActionButton(shown(hearts), tint,
+            if (canReact) "${if (selected) "Remove heart" else "Heart"} as ${member!!.shownName}; visible to post readers"
+            else "$hearts ${if (hearts == 1) "heart" else "hearts"}", large, enabled = enabled || !canReact,
+            onClick = { if (canReact) heart() else who = true },
+            onLongClick = { who = true }.takeIf { hearts > 0 }, longClickLabel = "Show who reacted") {
+            PopIcon(if (selected) R.drawable.ic_heart_filled else R.drawable.ic_heart, selected, tint, icon, burst = true)
         }
-        if (onBookmark != null) {
-            val tint = if (saved) p.accent else p.ink3
-            ActionButton(null, tint, if (saved) "Remove from saved" else "Save", large, onClick = onBookmark) {
-                PopIcon(if (saved) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark, saved, tint, if (large) 24.dp else 20.dp)
-            }
+    }
+    if (onBookmark != null) actions += "save" to {
+        val tint = if (saved) p.accent else p.ink3
+        ActionButton(null, tint, if (saved) "Remove from saved" else "Save", large, onClick = onBookmark) {
+            PopIcon(if (saved) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark, saved, tint, icon)
         }
-        if (onShare != null) ActionButton(null, p.ink3, "Share", large, onClick = onShare) {
-            Icon(painterResource(R.drawable.ic_share), null, Modifier.size(if (large) 24.dp else 20.dp), tint = p.ink3)
+    }
+    if (onShare != null) actions += "share" to {
+        ActionButton(null, p.ink3, "Share", large, onClick = onShare) {
+            Icon(painterResource(R.drawable.ic_share), null, Modifier.size(icon), tint = p.ink3)
+        }
+    }
+    // every action but the last gets an equal cell and the last is only its own target wide, so
+    // the icons fall at even steps and the last one ends flush with the text column
+    Row(Modifier.fillMaxWidth().bleed(ActionPad), verticalAlignment = Alignment.CenterVertically) {
+        actions.forEachIndexed { i, (name, action) ->
+            key(name) { if (i < actions.lastIndex) Box(Modifier.weight(1f)) { action() } else action() }
         }
     }
     if (disclose && member != null) AlertDialog(onDismissRequest = { disclose = false },
@@ -124,15 +141,27 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
         confirmButton = { TextButton(onClick = { who = false }) { Text("Done") } })
 }
 
+/** How far each action's target reaches past its icon; the row bleeds as far on both sides. */
+private val ActionPad = 8.dp
+
+/** Widen by [by] on both sides without moving the content's own edges. */
+private fun Modifier.bleed(by: Dp) = layout { measurable, constraints ->
+    val extra = (by * 2).roundToPx()
+    if (!constraints.hasBoundedWidth) return@layout measurable.measure(constraints).let { layout(it.width, it.height) { it.place(0, 0) } }
+    val wide = constraints.maxWidth + extra
+    val placeable = measurable.measure(constraints.copy(minWidth = wide, maxWidth = wide))
+    layout(constraints.maxWidth, placeable.height) { placeable.place(-extra / 2, 0) }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ActionButton(count: Int?, tint: Color, description: String, large: Boolean, enabled: Boolean = true,
     onLongClick: (() -> Unit)? = null, longClickLabel: String? = null, onClick: () -> Unit, icon: @Composable () -> Unit) {
-    Row(Modifier.heightIn(min = if (large) 52.dp else 48.dp).widthIn(min = 48.dp).clip(RoundedCornerShape(24.dp))
+    Row(Modifier.height(if (large) 48.dp else 36.dp).clip(RoundedCornerShape(18.dp))
         .combinedClickable(enabled = enabled, role = Role.Button, onClick = onClick, onLongClick = onLongClick,
             onLongClickLabel = longClickLabel)
-        .semantics { contentDescription = description }.padding(horizontal = 6.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        .semantics { contentDescription = description }.padding(horizontal = ActionPad),
+        verticalAlignment = Alignment.CenterVertically) {
         icon()
         if (count != null) RollingCount(count, tint)
     }
@@ -151,8 +180,8 @@ private fun RollingCount(count: Int, tint: Color) {
                 fadeOut(ChorusMotion.tween(true, ChorusMotion.Quick)))
         spec.using(SizeTransform(clip = false))
     }, label = "action count") { n ->
-        if (n > 0) Text(n.toString(), color = tint, style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(start = 4.dp))
+        if (n > 0) Text(n.toString(), color = tint, style = MaterialTheme.typography.bodySmall.copy(
+            fontSize = 13.sp, lineHeight = 18.sp), modifier = Modifier.padding(start = 5.dp))
     }
 }
 
@@ -177,7 +206,7 @@ private fun PopIcon(icon: Int, active: Boolean, tint: Color, size: Dp, burst: Bo
             scale.animateTo(1f, ChorusMotion.settle())
         }
     }
-    Box(Modifier.size(size + 12.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
         if (burst) Canvas(Modifier.requiredSize(size + 28.dp)) {
             val t = progress.value
             if (t <= 0f || t >= 1f) return@Canvas

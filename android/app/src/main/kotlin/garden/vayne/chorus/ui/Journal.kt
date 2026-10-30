@@ -512,9 +512,10 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val names = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
     val open = onThread?.takeIf { !full }?.let { { it(post) } }
-    JournalPostFrame(names, compactAgo(post.occurredAt), post.visibility, full, avatar = {
+    JournalPostFrame(names, compactAgo(post.occurredAt), post.visibility, full, endsWithActions = showActions && !full &&
+        (post.cw == null || revealed), avatar = {
         Box {
-            Box(Modifier.size(48.dp).clickable(enabled = onProfile != null) {
+            Box(Modifier.size(if (full) 48.dp else 40.dp).clip(CircleShape).clickable(enabled = onProfile != null) {
                 if (post.authors.size > 1) authorsOpen = true else post.authors.firstOrNull()?.let { onProfile?.invoke(it) }
             }, contentAlignment = Alignment.TopCenter) {
                 post.authors.firstNotNullOfOrNull(model::member)?.let { ChatAvatar(it, 40.dp) }

@@ -33,26 +33,29 @@ internal fun JournalModeChoice(label: String, selected: Boolean, onClick: () -> 
 /** Flat feed rows share an avatar gutter and compact identity line: bold name, muted `· 25m`, a
  * lock when the audience isn't public and an optional overflow. The full reader keeps its body
  * across the width; foreign callers pass only fields already supplied by filtered APIs. The
- * overflow floats over the card's corner so its 48 dp target never grows the header. */
+ * overflow floats over the card's corner so its 48 dp target never grows the header.
+ * An action row last ([endsWithActions]) brings its own air, so the card adds almost none below it. */
 @Composable
 internal fun JournalPostFrame(names: String, time: String, audience: String?, full: Boolean = false,
     avatar: @Composable () -> Unit, overflow: (@Composable () -> Unit)? = null, onClick: (() -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit) {
+    endsWithActions: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
     val p = LocalChorusPalette.current
     @Composable fun Identity() {
         Row(Modifier.fillMaxWidth().padding(end = if (overflow != null) 36.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                Text(names, color = p.ink, fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp, lineHeight = 18.sp),
+                Text(names, color = p.ink, fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp, lineHeight = 20.sp),
                     maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Text(" · $time", style = MaterialTheme.typography.bodySmall, color = p.ink3, maxLines = 1, softWrap = false)
+                Text(" · $time", style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+                    color = p.ink3, maxLines = 1, softWrap = false)
             }
             if (audience == "private" || audience == "followers") Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_lock),
                 JournalPresentation.audience(audience), Modifier.padding(start = 6.dp).size(14.dp), tint = p.ink3)
         }
     }
     Box(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClickLabel = "Open post", onClick = onClick) else Modifier)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = if (full) 20.dp else 16.dp, vertical = if (full) 16.dp else 10.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = if (full) 20.dp else 16.dp).padding(
+            top = if (full) 16.dp else 10.dp, bottom = if (full) 16.dp else if (endsWithActions) 1.dp else 10.dp)) {
             if (full) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(Modifier.width(48.dp)) { avatar() }
@@ -60,8 +63,8 @@ internal fun JournalPostFrame(names: String, time: String, audience: String?, fu
                 }
                 Spacer(Modifier.height(8.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
-            } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.width(48.dp), contentAlignment = Alignment.TopCenter) { avatar() }
+            } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.width(40.dp), contentAlignment = Alignment.TopCenter) { avatar() }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Identity()
                     content()
