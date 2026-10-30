@@ -176,6 +176,15 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     }
 
     val feedListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // our own newest post: shown at once instead of slipping in above the first visible card
+    var justPosted by remember { mutableStateOf<String?>(null) }
+    // which tab and newest post the feed last showed; kept outside the scene so returning from the
+    // composer or a post still notices what arrived meanwhile
+    var announced by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    var newPosts by remember { mutableStateOf(false) }
+    // read before the list measures an inserted post, so it says where the reader was
+    val atTop by remember { androidx.compose.runtime.derivedStateOf {
+        feedListState.firstVisibleItemIndex == 0 && feedListState.firstVisibleItemScrollOffset < 48 } }
     val route = when {
         editing -> "write"
         profileId != null -> "profile:$profileId"
@@ -206,6 +215,16 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     if (shown == "write") {
         BackHandler(active && shown == route) { if (!busy) editing = false }
         val bodyFocus = remember { FocusRequester() }
+        // open ready to type, like other apps' composers: focus the empty body and bring up the keyboard
+        val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+        LaunchedEffect(Unit) {
+            if (body.isNotEmpty() || kind == "entry") return@LaunchedEffect
+            // the field is a lazy item: wait for it to attach (and the scene to settle) before focusing
+            repeat(20) {
+                androidx.compose.runtime.withFrameNanos { }
+                if (runCatching { bodyFocus.requestFocus() }.isSuccess) { keyboard?.show(); return@LaunchedEffect }
+            }
+        }
         Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(enabled = !busy, onClick = { editing = false }) { Text("Cancel") }
@@ -237,7 +256,9 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                             val payload = PostCompose.payload(model, dev.accountId, writingKind, writer.id, writingBody,
                                 writingTitle, writingCw, writingAudience, writingMood, writingTags, writingReply, attachmentIds = attachmentIds, quotePostId = writingQuote)
                             if (writingPoll != null) payload.put("poll", writingPoll)
-                            chorus.create("post.create", chorus.newId(), payload)
+                            val postId = chorus.newId()
+                            justPosted = postId
+                            chorus.create("post.create", postId, payload)
                             pollOn = false; pollMultiple = false
                             pollOptions.clear(); pollOptions.addAll(listOf("", ""))
                             if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
@@ -338,8 +359,9 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     val named by produceState<NamedHistory?>(null, frontRevision, model.namedFronts != null) {
         value = if (model.namedFronts != null) runCatching { chorus.frontHistory() }.getOrNull() else null
     }
-    fun fronting(entries: List<Entry>) = "Front: " + entries.filter { e -> e.level == "front" }
-        .mapNotNull { e -> model.subject(e.subjectType, e.subjectId)?.name }.joinToString(" & ").ifBlank { "no one" }
+    fun fronting(entries: List<Entry>) = entries.filter { e -> e.level == "front" }
+        .mapNotNull { e -> model.subject(e.subjectType, e.subjectId)?.name }.joinToString(" & ")
+        .let { if (it.isBlank()) "No one fronting" else "$it fronting" }
     val switchEvents = if (model.namedFronts != null)
         named?.changes.orEmpty().map { JournalEvent(it.id, it.occurredAt, null, fronting(it.entries.map { e -> e.displayEntry() })) }
     else model.switches.map { JournalEvent(it.id, it.occurredAt, null, if (it.retracted) "Undone switch" else fronting(it.resultingFront)) }
@@ -349,13 +371,16 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     // New posts arriving (from another device) while the reader is scrolled down offer a way back to the top.
     val motion = rememberChorusMotion()
     val newestPost = shownEvents.firstOrNull { it.post != null }?.id
-    var announced by remember(journalTab) { mutableStateOf(newestPost) }
-    var newPosts by remember(journalTab) { mutableStateOf(false) }
+    val wasAtTop = atTop
     LaunchedEffect(journalTab, newestPost) {
-        if (newestPost != announced) {
-            if (feedListState.firstVisibleItemIndex > 0) newPosts = true
-            announced = newestPost
-        }
+        val before = announced
+        announced = journalTab to newestPost
+        if (before == null || before.first != journalTab || before.second == newestPost) return@LaunchedEffect
+        if (newestPost == justPosted || wasAtTop) {
+            newPosts = false
+            if (motion) feedListState.animateScrollToItem(0) else feedListState.scrollToItem(0)
+            justPosted = null
+        } else newPosts = true
     }
     LaunchedEffect(feedListState.firstVisibleItemIndex) { if (feedListState.firstVisibleItemIndex == 0) newPosts = false }
     Column(Modifier.fillMaxSize().background(p.bg)) {
@@ -394,16 +419,22 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 color = p.ink2, modifier = Modifier.padding(24.dp))
         }
         for (event in shownEvents) item(key = "${if (event.post == null) "switch" else "post"}:${event.id}") {
+            Column(Modifier.animateItem(fadeInSpec = if (motion) ChorusMotion.tween(true, ChorusMotion.Gentle) else null,
+                placementSpec = if (motion) ChorusMotion.settle() else null,
+                fadeOutSpec = if (motion) ChorusMotion.tween(true, ChorusMotion.Quick) else null)) {
             if (event.post != null) JournalPostCard(event.post, model, chorus,
                 onReply = { replyTo = it.id; editing = true },
                 onThread = { threadPostId = it.id },
                 onQuote = { quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
                 onOpenPost = { threadPostId = it },
                 onProfile = { profileId = it })
-            else Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
-                Text(event.switchLabel.orEmpty(), color = p.ink2)
-                Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(event.at)),
-                    color = p.ink3, fontSize = 12.sp)
+            // a switch is a quiet marker in the timeline, aligned with the post avatars
+            else Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) { ChatIcon(R.drawable.ic_swap, tint = p.ink3) }
+                Text(event.switchLabel.orEmpty() + " · " + compactAgo(event.at), color = p.ink3,
+                    style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
             }
         }
         }
@@ -446,18 +477,30 @@ internal fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit
             .clickable(onClick = onClick).heightIn(min = 48.dp).wrapContentSize(Alignment.Center).padding(horizontal = 12.dp, vertical = 8.dp))
 }
 
+/** One feed card: an optional "X reposted" line, the post and its divider, stacked in one column
+ * (lazy list items overlap sibling roots, so the card owns its layout). */
 @Composable
 internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, onReply: (JournalPost) -> Unit,
     onThread: ((JournalPost) -> Unit)? = null, onProfile: ((String) -> Unit)? = null, full: Boolean = false,
     showActions: Boolean = true, repostedBy: String? = null, onQuote: ((JournalPost) -> Unit)? = null,
     onOpenPost: ((String) -> Unit)? = null) {
+    Column(Modifier.fillMaxWidth()) {
+        JournalPostCardBody(post, model, chorus, onReply, onThread, onProfile, full, showActions, repostedBy, onQuote, onOpenPost)
+    }
+}
+
+@Composable
+private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus, onReply: (JournalPost) -> Unit,
+    onThread: ((JournalPost) -> Unit)?, onProfile: ((String) -> Unit)?, full: Boolean,
+    showActions: Boolean, repostedBy: String?, onQuote: ((JournalPost) -> Unit)?,
+    onOpenPost: ((String) -> Unit)?) {
     val p = LocalChorusPalette.current
     // A repost has no text: show the original (one level only) under "X reposted", or say it's gone.
     if (post.repostOf != null && repostedBy == null) {
         val by = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
         val original = model.posts.find { it.id == post.repostOf }?.takeIf { it.repostOf == null }
         if (original == null) RepostUnavailable(by)
-        else JournalPostCard(original, model, chorus, onReply, onThread, onProfile, full, showActions, repostedBy = by, onQuote = onQuote, onOpenPost = onOpenPost)
+        else JournalPostCardBody(original, model, chorus, onReply, onThread, onProfile, full, showActions, by, onQuote, onOpenPost)
         return
     }
     if (repostedBy != null) RepostHeader(repostedBy)
@@ -528,6 +571,7 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
  * replies as compact cards; the reply bar stays pinned and opens the existing composer, so the
  * audience is still chosen there. [replyAuthors] is who may write here (one member for a person
  * account, so no picker is shown). */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose: () -> Unit, onReply: () -> Unit,
     replyAuthor: Member? = null, replyAuthors: List<Member> = emptyList(), onPickAuthor: ((String) -> Unit)? = null,
@@ -536,6 +580,7 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
     var remote by remember(postId) { mutableStateOf<PostDetail?>(null) }
     var error by remember(postId) { mutableStateOf<String?>(null) }
     var refresh by remember(postId) { mutableStateOf(0) }
+    var refreshing by remember(postId) { mutableStateOf(false) }
     val local = PostThreads.ownReplies(model, postId)
     LaunchedEffect(postId, chorus.device?.session, refresh) {
         val dev = chorus.device ?: return@LaunchedEffect
@@ -546,7 +591,7 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
         catch (_: Exception) {
             remote = null
             error = "Showing entries and replies saved on this device. Connect and refresh to load more."
-        }
+        } finally { refreshing = false }
     }
     val replies = PostThreads.merge(local, remote?.replies.orEmpty())
     val reactions = PostReactions.merge(model.postReactions[postId].orEmpty(), remote?.reactions.orEmpty())
@@ -561,9 +606,10 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
             ChatIconButton(R.drawable.ic_back, "Back to journal", onClose)
             Text(if (rootPost?.kind == "entry") "Journal entry" else "Post", color = p.ink,
                 style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
-            ChatIconButton(R.drawable.ic_swap, "Refresh replies") { refresh++ }
         }
-        LazyColumn(Modifier.weight(1f), state = scroll, contentPadding = PaddingValues(bottom = 16.dp)) {
+        // pull down to fetch replies again; own replies are already local
+        androidx.compose.material3.pulltorefresh.PullToRefreshBox(refreshing, { refreshing = true; refresh++ }, Modifier.weight(1f)) {
+        LazyColumn(Modifier.fillMaxSize(), state = scroll, contentPadding = PaddingValues(bottom = 16.dp)) {
             if (rootPost != null) item(key = "root:$postId") {
                 JournalPostCard(rootPost, model, chorus, onReply = { onReply() }, full = true, showActions = false,
                     onOpenPost = onOpenPost)
@@ -577,7 +623,11 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
                 Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
                     Text(listOfNotNull(DateFormat.getTimeInstance(DateFormat.SHORT).format(at),
                         DateFormat.getDateInstance(DateFormat.MEDIUM).format(at),
-                        JournalPresentation.audience(focused.visibility, model.isPerson).takeIf { rootPost != null }).joinToString(" · "),
+                        JournalPresentation.audience(focused.visibility, model.isPerson).takeIf { rootPost != null },
+                        // own posts only: who was here when it was written (Body; not for configured layers)
+                        rootPost?.takeIf { model.namedFronts == null }?.let { post ->
+                            JournalPresentation.frontContext(model.frontIntervals, post.occurredAt) { model.member(it)?.shownName }
+                        }).joinToString(" · "),
                         color = p.ink3, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 12.dp))
                     if (hearts > 0 || reposts > 0) {
                         HorizontalDivider(color = p.line, thickness = .5.dp)
@@ -598,7 +648,8 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
                 modifier = Modifier.padding(20.dp)) }
             if (replies.isEmpty()) item { Text(if (remote == null && error == null) "Loading replies…" else "No replies yet.",
                 color = p.ink2, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(20.dp)) }
-            items(replies, key = { it.id }) { reply -> ThreadReplyCard(reply, chorus, model, replyAuthor?.id) }
+            items(replies, key = { it.id }) { reply -> Column { ThreadReplyCard(reply, chorus, model, replyAuthor?.id) } }
+        }
         }
         HorizontalDivider(color = p.line)
         JournalReplyBar(replyAuthor, replyAuthors, onPickAuthor, onReply)
@@ -627,7 +678,7 @@ private fun JournalReplyBar(author: Member?, authors: List<Member>, onPick: ((St
             Row(Modifier.clip(CircleShape).then(if (canPick) Modifier.clickable(onClickLabel = "Change who is replying") { picking = true } else Modifier)
                 .heightIn(min = 48.dp).padding(end = if (canPick) 4.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
                 ChatAvatar(author, 32.dp, label = "Replying as ${author.shownName}")
-                if (canPick) Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_down), null, Modifier.size(14.dp), tint = p.ink3)
+                if (canPick) Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_chevron_down), null, Modifier.size(16.dp), tint = p.ink3)
             }
             DropdownMenu(picking, { picking = false }) {
                 for (member in authors) DropdownMenuItem(text = { Text(member.shownName) }, leadingIcon = { ChatAvatar(member, 32.dp) },

@@ -80,11 +80,14 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
                 PopIcon(R.drawable.ic_repost, reposted, tint, if (large) 24.dp else 20.dp)
             }
             DropdownMenu(repostMenu, { repostMenu = false }) {
-                DropdownMenuItem(text = { Text(if (reposted) "Undo repost" else "Repost") }, enabled = enabled, onClick = {
+                DropdownMenuItem(text = { Text(if (reposted) "Undo repost" else "Repost") }, enabled = enabled,
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_repost), null, Modifier.size(20.dp), tint = p.ink2) }, onClick = {
                     repostMenu = false
                     if (reposted) onUndoRepost?.invoke() else onRepost()
                 })
-                if (onQuote != null) DropdownMenuItem(text = { Text("Quote") }, onClick = { repostMenu = false; onQuote() })
+                if (onQuote != null) DropdownMenuItem(text = { Text("Quote") },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_format_quote), null, Modifier.size(20.dp), tint = p.ink2) },
+                    onClick = { repostMenu = false; onQuote() })
             }
         }
         if (canReact || hearts > 0) {

@@ -35,4 +35,17 @@ class JournalPresentationTest {
         assertEquals("Journal entry · 1 min read · #day #notes", JournalPresentation.entryMeta("Short", listOf("day", "notes")))
         assertEquals("Journal entry · 2 min read", JournalPresentation.entryMeta(List(250) { "word" }.joinToString(" "), emptyList()))
     }
+
+    @Test fun frontContextNamesWhoWasHereWhenPosted() {
+        val names = mapOf("a" to "Amarynthe", "n" to "Nairon", "f" to "Foxglove")
+        val iv = listOf(
+            FrontInterval("1", "member", "a", "front", true, 100, 500),
+            FrontInterval("2", "member", "n", "cocon", false, 150, null),
+            FrontInterval("3", "member", "f", "front", false, 600, null),
+            FrontInterval("4", "group", "g", "front", false, 0, null))
+        assertEquals("while Amarynthe was fronting, Nairon co-conscious", JournalPresentation.frontContext(iv, 200, names::get))
+        assertEquals("while Foxglove was fronting, Nairon co-conscious", JournalPresentation.frontContext(iv, 700, names::get))
+        assertEquals(null, JournalPresentation.frontContext(iv, 50, names::get))
+        assertEquals("while Nairon was co-conscious", JournalPresentation.frontContext(iv, 550, names::get))
+    }
 }

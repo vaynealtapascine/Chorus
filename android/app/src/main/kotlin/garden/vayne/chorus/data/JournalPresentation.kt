@@ -38,4 +38,22 @@ object JournalPresentation {
         val words = text.trim().split(Regex("\\s+")).count { it.isNotBlank() }
         return "${maxOf(1, (words + 199) / 200)} min read"
     }
+
+    /** Who was here when a post was written, from Body's saved intervals: "while Amarynthe was
+     * fronting, Nairon co-conscious". Members only, primary first; null when nobody was recorded. */
+    fun frontContext(intervals: List<FrontInterval>, at: Long, name: (String) -> String?): String? {
+        fun at(level: String) = intervals.filter { it.subjectType == "member" && it.level == level &&
+            it.startAt <= at && (it.endAt ?: Long.MAX_VALUE) > at }
+            .sortedWith(compareByDescending<FrontInterval> { it.isPrimary }.thenBy { it.startAt })
+            .mapNotNull { name(it.subjectId) }.distinct()
+        val fronting = at("front")
+        val cocon = at("cocon")
+        if (fronting.isEmpty() && cocon.isEmpty()) return null
+        val lead = fronting.takeIf { it.isNotEmpty() }?.let {
+            "while ${it.joinToString(" & ")} ${if (it.size == 1) "was" else "were"} fronting"
+        }
+        val aware = cocon.takeIf { it.isNotEmpty() }?.let { "${it.joinToString(" & ")} co-conscious" }
+        return lead?.let { listOfNotNull(it, aware).joinToString(", ") }
+            ?: "while ${cocon.joinToString(" & ")} ${if (cocon.size == 1) "was" else "were"} co-conscious"
+    }
 }
