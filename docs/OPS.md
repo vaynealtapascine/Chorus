@@ -131,7 +131,10 @@ chorus-server migrate                   # run pending schema migrations (also au
 ## 6. Deploy / update
 
 - `scripts/deploy.ps1` (M12.1): builds the release binary and web bundle, stops the service,
-  copies to `~/selfhost/chorus/app`, starts the service, checks `/api/v1/server`.
+  copies to `~/selfhost/chorus/app`, starts the service, checks `/api/v1/server`. `-Android` also
+  publishes the APK for in-app updates; `-AndroidOnly` publishes only the APK and leaves the running
+  server and web app untouched (for Android-only changes). `adb install -r` of the published APK
+  updates a connected phone in place.
 - Migrations are forward-only, run automatically on start after the pre-migration backup.
 - Android releases: signed APK built locally (`scripts/android-release.ps1`); served for friends
   at `https://chorus.vayne.garden/download/android` with an in-app "Update available" check

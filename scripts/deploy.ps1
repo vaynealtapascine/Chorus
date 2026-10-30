@@ -3,6 +3,8 @@
 #   pwsh scripts/deploy.ps1            build (release) + copy
 #   pwsh scripts/deploy.ps1 -NoBuild   copy the existing build only
 #   pwsh scripts/deploy.ps1 -Android   also build and publish the Android app for in-app updates
+#   pwsh scripts/deploy.ps1 -AndroidOnly   only build and publish the Android app; the server and
+#                                          web app keep running untouched
 #
 # Target layout (docs/OPS.md §1):
 #   app\chorus-server.exe   the server (a running one is renamed aside; it notices and exits,
@@ -11,8 +13,9 @@
 #   app\android\            chorus.apk + chorus.json (version, sha256) for in-app updates
 #   data\                   database, blobs — never touched by deploys
 #   install.cmd             one-time service + Caddy setup (double-click; asks for admin)
-param([switch]$NoBuild, [switch]$Android, [string]$Target = (Join-Path $HOME 'selfhost\chorus'))
+param([switch]$NoBuild, [switch]$Android, [switch]$AndroidOnly, [string]$Target = (Join-Path $HOME 'selfhost\chorus'))
 $ErrorActionPreference = 'Stop'
+if ($AndroidOnly) { $Android = $true }
 $root = Split-Path $PSScriptRoot -Parent
 
 # Build off the small C: drive when the F: build area exists (C: filling up made a deploy stop
@@ -30,14 +33,16 @@ if (Test-Path 'F:\DunBuild') {
 if (-not $NoBuild) {
     Push-Location $root
     try {
-        cargo build --release -p chorus-server
-        if ($LASTEXITCODE) { throw 'server build failed' }
-        & (Join-Path $PSScriptRoot 'build-web-core.ps1')
-        Push-Location web
-        try {
-            npm run build
-            if ($LASTEXITCODE) { throw 'web build failed' }
-        } finally { Pop-Location }
+        if (-not $AndroidOnly) {
+            cargo build --release -p chorus-server
+            if ($LASTEXITCODE) { throw 'server build failed' }
+            & (Join-Path $PSScriptRoot 'build-web-core.ps1')
+            Push-Location web
+            try {
+                npm run build
+                if ($LASTEXITCODE) { throw 'web build failed' }
+            } finally { Pop-Location }
+        }
         if ($Android) {
             # AGP needs Java 11+; the machine JAVA_HOME may be an old Java 8 JRE, so prefer Studio's JBR
             $jbr = 'C:\Program Files\Android\Android Studio\jbr'
@@ -58,8 +63,10 @@ if (-not $NoBuild) {
 # Honour CARGO_TARGET_DIR: builds may live off the small C: drive (see NOTES).
 $targetRoot = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $root 'target' }
 $serverExe = Join-Path $targetRoot 'release\chorus-server.exe'
-if (-not (Test-Path $serverExe)) { throw "no server build at $serverExe" }
-if (-not (Test-Path (Join-Path $root 'web\dist\index.html'))) { throw 'no web build in web\dist' }
+if (-not $AndroidOnly) {
+    if (-not (Test-Path $serverExe)) { throw "no server build at $serverExe" }
+    if (-not (Test-Path (Join-Path $root 'web\dist\index.html'))) { throw 'no web build in web\dist' }
+}
 if ($Android) {
     $outRoot = if ($env:CHORUS_GRADLE_BUILD_DIR) { Join-Path $env:CHORUS_GRADLE_BUILD_DIR 'app' } else { Join-Path $root 'android\app\build' }
     $apk = Get-ChildItem (Join-Path $outRoot 'outputs\apk\release') -Filter *.apk -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -69,14 +76,16 @@ if ($Android) {
 $app = Join-Path $Target 'app'
 New-Item -ItemType Directory -Force $app, (Join-Path $Target 'data') | Out-Null
 
-# Web first (served from disk; open pages keep working).
-$web = Join-Path $app 'web'
-if (Test-Path $web) { Remove-Item -Recurse -Force $web }
-Copy-Item -Recurse (Join-Path $root 'web\dist') $web
+if (-not $AndroidOnly) {
+    # Web first (served from disk; open pages keep working).
+    $web = Join-Path $app 'web'
+    if (Test-Path $web) { Remove-Item -Recurse -Force $web }
+    Copy-Item -Recurse (Join-Path $root 'web\dist') $web
 
-# Deploy scripts
-foreach ($f in 'install.ps1', 'install.cmd', 'check.cmd', 'README.txt') {
-    Copy-Item (Join-Path $root "deploy\$f") (Join-Path $Target $f) -Force
+    # Deploy scripts
+    foreach ($f in 'install.ps1', 'install.cmd', 'check.cmd', 'README.txt') {
+        Copy-Item (Join-Path $root "deploy\$f") (Join-Path $Target $f) -Force
+    }
 }
 
 # Android: phones on the tailnet pick this up within hours (or on next app start)
@@ -95,6 +104,8 @@ if ($Android) {
     [IO.File]::WriteAllText((Join-Path $dir 'chorus.json'), ($meta | ConvertTo-Json))
     Write-Host "Published Android $($meta.version_name) ($([math]::Round($meta.size / 1MB, 1)) MB)."
 }
+
+if ($AndroidOnly) { return }
 
 # Server last. Windows lets us rename a running exe; the server sees its binary change and exits.
 $exe = Join-Path $app 'chorus-server.exe'
