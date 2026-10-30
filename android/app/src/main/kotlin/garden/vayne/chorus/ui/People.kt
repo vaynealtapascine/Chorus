@@ -327,7 +327,7 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
                 if (post.kind == "entry" && onThread != null) onThread(post) else expanded = !expanded
             }) { Text(if (expanded) "Show less" else "Show more") }
             PollCard(chorus, model, post.id, reactMemberId ?: Reply.speaker(model)?.id, post.poll, post.pollTally)
-            for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
+            JournalMedia(post.attachments, chorus, names, post.occurredAt)
             JournalActions(post.reactions, reactMemberId?.let(model::member), enabled,
                 onReply = onThread?.let { { it(post) } } ?: onReply?.let { { it(post) } },
                 onReact = reactMemberId?.let { { onReact(post) } },

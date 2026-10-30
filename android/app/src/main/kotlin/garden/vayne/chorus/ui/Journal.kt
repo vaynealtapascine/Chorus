@@ -469,7 +469,7 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
             post.mood?.let { Text(it, color = p.ink2, style = MaterialTheme.typography.bodySmall) }
             if (post.kind != "entry" && post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
                 style = MaterialTheme.typography.bodySmall)
-            for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
+            JournalMedia(post.attachments, chorus, names, post.occurredAt)
             PollCard(chorus, model, post.id, Reply.speaker(model)?.id)
             post.quotePostId?.let { id -> QuoteEmbed(model.posts.find { it.id == id }?.takeIf { it.repostOf == null }, model,
                 onOpen = onOpenPost?.let { open -> { open(id) } }) }
