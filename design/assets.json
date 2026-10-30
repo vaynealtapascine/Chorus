@@ -881,29 +881,6 @@
       "sha256": "7af224c2e074baf1331ee2554af2044453c336343968676519c3772f8e9f0c73"
     },
     {
-      "path": "android/designsystem/src/main/res/drawable-xxxhdpi/ic_send.png",
-      "kind": "icon",
-      "format": "png",
-      "source": {
-        "kind": "owner-supplied-figma",
-        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
-        "frameNodeId": "2094:5066",
-        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2094-5066",
-        "iconNodeId": null,
-        "downloadUrl": "https://www.figma.com/api/mcp/asset/a450c91c-b0c2-4727-a657-2093bea234d2/78003.svg"
-      },
-      "derivedFrom": "web/public/icons/send.svg",
-      "sourceSha256": "7af224c2e074baf1331ee2554af2044453c336343968676519c3772f8e9f0c73",
-      "transformation": "ImageMagick rasterization at 4x, lossless PNG; embedded source provenance added with Impeccable embed-prompt. RGBA pixels verified unchanged after embedding.",
-      "dimensions": [
-        96,
-        96
-      ],
-      "density": "xxxhdpi",
-      "provenance": "Embedded via Impeccable embed-prompt; recover with embed-prompt <path> --read.",
-      "sha256": "8ede8631157ddd1a0e3f329965f6b001b82f670f1604a221936f181d080e0826"
-    },
-    {
       "path": "web/public/icons/settings.svg",
       "kind": "icon",
       "format": "svg",
@@ -1208,6 +1185,36 @@
       },
       "transformation": "Same path in white at 20/24 dp for the notification status-bar icon.",
       "sha256": "263a0eb2a5d127fd308c3e838a6174898256232a82914dba5dfa77ad47b9996a"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_send.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2056:34",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2056-34",
+        "iconNodeId": "2056:68",
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/1d03c82e-921a-4519-8ba3-b180cf46565a/36422.svg"
+      },
+      "transformation": "Icon/send paths unchanged as a stroked vector (white, tinted in use). Replaces an xxxhdpi PNG that had been taken from the desktop journal frame's share glyph.",
+      "sha256": "5d010428db12788f2b5154c5fb123d7c9267b2a7298a98cf8a54335f87ca1a83"
+    },
+    {
+      "path": "android/designsystem/src/main/res/drawable/ic_chevron_down.xml",
+      "kind": "icon",
+      "format": "android-vector",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2056:34",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2056-34",
+        "iconNodeId": "2056:109",
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/24be18e3-79f2-4454-b795-bd290d818578/48358.svg"
+      },
+      "transformation": "Icon/down path unchanged as a stroked vector (white, tinted in use).",
+      "sha256": "ecaf23a0b5ea95e3e7216b23852ff0ebdf3df82ef060be0a0c06b119d7e0c4ea"
     }
   ]
 }

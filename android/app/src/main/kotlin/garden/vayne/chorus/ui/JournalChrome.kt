@@ -113,7 +113,7 @@ internal fun JournalAuthorPicker(author: Member?, mine: List<Member>, onChoose: 
                   verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(author?.let { "Posting as ${it.shownName}" } ?: "Choose who is writing", color = p.accent,
                     style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_down), null, Modifier.size(14.dp), tint = p.accent)
+                Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_chevron_down), null, Modifier.size(16.dp), tint = p.accent)
               }
             }
             DropdownMenu(open, { open = false }) {
@@ -133,7 +133,7 @@ internal fun JournalAudiencePicker(audience: String, person: Boolean, onChoose: 
             ChatIcon(if (audience == "private") R.drawable.ic_lock else R.drawable.ic_globe, tint = p.accent)
             Spacer(Modifier.width(6.dp))
             Text(JournalPresentation.audience(audience, person), style = MaterialTheme.typography.labelMedium, maxLines = 2)
-            ChatIcon(R.drawable.ic_down, tint = p.accent)
+            ChatIcon(R.drawable.ic_chevron_down, tint = p.accent)
         }
         DropdownMenu(open, { open = false }) {
             for (mode in JournalPresentation.AUDIENCES) DropdownMenuItem(
