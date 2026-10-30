@@ -690,6 +690,16 @@ export function messagePage(p: Projection, channelId: string, n: number): { rows
   return { rows: tail, ids, total: ids.length };
 }
 
+/** A channel's newest message that isn't deleted (the chat list's preview), building only it. */
+export function latestMessage(p: Projection, channelId: string): MessageRow | undefined {
+  const rows = (p.rows.message ?? {}) as Record<string, MessageRecord>;
+  const ids = orderOf(rows).get(channelId) ?? [];
+  for (let i = ids.length - 1; i >= 0; i--) {
+    if (rows[ids[i]]?.fields.deleted_at == null) return messageRow(p, ids[i]);
+  }
+  return undefined;
+}
+
 /** A channel's pinned messages (not deleted), oldest first, without building the rest. */
 export function pinnedMessages(p: Projection, channelId: string): MessageRow[] {
   const rows = (p.rows.message ?? {}) as Record<string, MessageRecord>;

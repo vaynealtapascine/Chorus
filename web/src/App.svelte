@@ -30,6 +30,9 @@
   import { frontView } from './lib/front-view';
 
   let switching = $state(false);
+  // the desktop chat hides the sidebar behind its rail's menu button (Figma F5.21)
+  let navOpen = $state(false);
+  $effect(() => { void router.route; navOpen = false; });
   let switchFront = $state<string | undefined>(undefined);
   addEventListener('keydown', (e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && sync.device && !person) {
@@ -97,7 +100,7 @@
 {#if status === 'no-device'}
   <Onboarding />
 {:else if projection}
-  <div class="shell" class:chat-page={router.route.name === 'chat'}>
+  <div class="shell" class:chat-page={router.route.name === 'chat'} class:nav-open={navOpen}>
     <a class="skip" href="#main-content" onclick={(e) => { e.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
     <aside class="app-nav" aria-label="App navigation">
       <a class="identity" href="#/" title={accountName}>
@@ -123,6 +126,7 @@
         </button>
       {/if}
     </aside>
+    {#if navOpen}<button class="scrim" aria-label="Close navigation" onclick={() => (navOpen = false)}></button>{/if}
     <div class="workspace">
       <header class="app-bar">
         <div><strong>{routeTitle}</strong><span class="account-subtitle">{accountName}</span></div>
@@ -152,7 +156,8 @@
       {:else if router.route.name === 'more'}
         <More />
       {:else if router.route.name === 'chat'}
-        <Chat {projection} {dark} channelId={router.route.id} focusId={router.route.messageId} />
+        <Chat {projection} {dark} channelId={router.route.id} focusId={router.route.messageId}
+          onswitch={() => (switching = true)} onmenu={() => (navOpen = true)} />
       {:else if router.route.name === 'search'}
         <Search {projection} />
       {:else if router.route.name === 'fronts'}
@@ -219,7 +224,16 @@
   main { padding: 24px; max-width: 1200px; margin-inline: auto; min-width: 0; outline: none; }
   .chat-page main { padding: 0; max-width: none; }
   .storage-full { margin: 0; padding: 12px 24px; font-size: var(--fs-sm); background: var(--accent-soft); }
-  @media (min-width: 1600px) { .shell { grid-template-columns: minmax(240px, calc((100vw - 1320px) / 2)) minmax(0, 1fr); } .app-nav { align-items: stretch; padding-left: max(16px, calc((100vw - 1560px) / 2)); } }
+  @media (min-width: 1600px) { .shell:not(.chat-page) { grid-template-columns: minmax(240px, calc((100vw - 1320px) / 2)) minmax(0, 1fr); } .app-nav { align-items: stretch; padding-left: max(16px, calc((100vw - 1560px) / 2)); } }
+  .scrim { display: none; }
+  @media (min-width: 1024px) {
+    .shell.chat-page { grid-template-columns: minmax(0, 1fr); }
+    .chat-page .app-nav { position: fixed; inset: 0 auto 0 0; z-index: 30; width: 280px; transform: translateX(-100%); visibility: hidden;
+      transition: transform var(--t-base) var(--ease), visibility 0s linear var(--t-base); }
+    .chat-page.nav-open .app-nav { transform: none; visibility: visible; transition: transform var(--t-base) var(--ease); box-shadow: var(--shadow-pop); }
+    .chat-page .scrim { display: block; position: fixed; inset: 0; z-index: 29; border: 0; background: rgb(0 0 0 / .4); }
+    .chat-page .app-bar { display: none; }
+  }
   @media (max-width: 1023px) {
     .shell { display: block; padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
     .app-nav { position: fixed; inset: auto 0 0; z-index: 10; height: auto; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: var(--surface); border: 0; border-top: 1px solid var(--line); display: block; }

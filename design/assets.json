@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-30",
+  "updatedAt": "2026-10-31",
   "scope": "UI1 shared foundation assets; no new generated illustrations.",
   "reference": {
     "title": "Chorus — Flows Copy",
@@ -866,21 +866,6 @@
       "sha256": "c984c9851729ad85a0547b64d5d95c478b217a3c072dd7cab3d6be1f002021cb"
     },
     {
-      "path": "web/public/icons/send.svg",
-      "kind": "icon",
-      "format": "svg",
-      "source": {
-        "kind": "owner-supplied-figma",
-        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
-        "frameNodeId": "2094:5066",
-        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2094-5066",
-        "iconNodeId": null,
-        "downloadUrl": "https://www.figma.com/api/mcp/asset/a450c91c-b0c2-4727-a657-2093bea234d2/78003.svg"
-      },
-      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
-      "sha256": "7af224c2e074baf1331ee2554af2044453c336343968676519c3772f8e9f0c73"
-    },
-    {
       "path": "web/public/icons/settings.svg",
       "kind": "icon",
       "format": "svg",
@@ -1215,6 +1200,171 @@
       },
       "transformation": "Icon/down path unchanged as a stroked vector (white, tinted in use).",
       "sha256": "ecaf23a0b5ea95e3e7216b23852ff0ebdf3df82ef060be0a0c06b119d7e0c4ea"
+    },
+    {
+      "path": "web/public/icons/share.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2094:5066",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2094-5066",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/a450c91c-b0c2-4727-a657-2093bea234d2/78003.svg"
+      },
+      "transformation": "Downloaded unchanged (Figma Icon/share; it shipped as send.svg until UI7); web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "7af224c2e074baf1331ee2554af2044453c336343968676519c3772f8e9f0c73"
+    },
+    {
+      "path": "web/public/icons/send.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2056:34",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2056-34",
+        "iconNodeId": "2056:68",
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/1d03c82e-921a-4519-8ba3-b180cf46565a/36422.svg"
+      },
+      "transformation": "Figma Icon/send paths, as in android/designsystem ic_send.xml; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "925ab4fe425961353282f099d8d57a03e626b64ca650dd3132d3efc22d8d0799"
+    },
+    {
+      "path": "web/public/icons/menu.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": "2056:243",
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/4f6f11c0-806a-4616-aeeb-88b0533deedd/0511f.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "5d475ac4044530dbbce78fc5fa91f9f4bd40127842e26b86f50807086db8d23f"
+    },
+    {
+      "path": "web/public/icons/globe.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": "2056:258",
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/4f6f11c0-806a-4616-aeeb-88b0533deedd/a9b82.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "fdeabe538752f06aec271b169a1061ba4fc34c275a68e4c6e3686a948f2ae825"
+    },
+    {
+      "path": "web/public/icons/sliders.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": "2056:176",
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/4f6f11c0-806a-4616-aeeb-88b0533deedd/e564f.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "83b304009326e22df122dfcc34cd7c483aac4e2d719bfb5831357126242520c6"
+    },
+    {
+      "path": "web/public/icons/target.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": "2056:281",
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/4f6f11c0-806a-4616-aeeb-88b0533deedd/bb5cb.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "8d8bccaf32e2a88e85036c85df2911e8a8edb81d6f0b20881f159ad156183670"
+    },
+    {
+      "path": "web/public/icons/users.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": "2056:152",
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/4f6f11c0-806a-4616-aeeb-88b0533deedd/733e4.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "5bc30dad19eeae5fefa54f4de1640945dd13809ed0d154d5770e23b6d57e109a"
+    },
+    {
+      "path": "web/public/icons/doc.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/02e2aa33-5ccc-4245-8dac-4bb6b830cd37/ede73.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "dbf804f4d31916941dc47c67b38f44f4c6b3512c5d501b684f7cdf4277a4954d"
+    },
+    {
+      "path": "web/public/icons/hash.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/dadb84bb-42b0-403f-b57a-29004942fd2f/a17a0.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "05fc30afa83bb1dd7883badeda1c573a0e5f8107c1c9755b10a9e4afe37c18d2"
+    },
+    {
+      "path": "web/public/icons/muted.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/dadb84bb-42b0-403f-b57a-29004942fd2f/dcd33.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "9e00161282b3fb6ac7b7b5dcf4620b4b00b45ff92600049221e4a732c2423505"
+    },
+    {
+      "path": "web/public/icons/read.svg",
+      "kind": "icon",
+      "format": "svg",
+      "source": {
+        "kind": "owner-supplied-figma",
+        "fileKey": "389A1Z2QPTRpZw6d79Cz7k",
+        "frameNodeId": "2019:1557",
+        "frameUrl": "https://www.figma.com/design/389A1Z2QPTRpZw6d79Cz7k/Chorus--Flows--Copy?node-id=2019-1557",
+        "iconNodeId": null,
+        "downloadUrl": "https://www.figma.com/api/mcp/asset/1e1e39e9-579f-4620-938c-e34e3f89a4c3/9afbc.svg"
+      },
+      "transformation": "Downloaded unchanged; web Icon.svelte applies a currentColor CSS mask.",
+      "sha256": "993738cc13d8d4dd6eeec24691b615b8523caa06f2a56849a626f83535caa9e5"
     }
   ]
 }

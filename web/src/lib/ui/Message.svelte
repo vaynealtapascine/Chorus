@@ -49,9 +49,15 @@
     heldUntil,
     oncancelheld,
     extra,
+    last = true,
+    tag,
   }: {
     m: MessageRow;
     cont: boolean;
+    /** The last of a run from the same authors: it carries their face (Figma F5.21). */
+    last?: boolean;
+    /** Beside the name: the author's layer when not in the innermost one, or another system's name. */
+    tag?: string;
     people: Map<string, MemberRow>;
     dark: boolean;
     lookup: (id: string) => (MessageRow & { channel_name?: string }) | undefined;
@@ -108,6 +114,9 @@
   let palette = $state(false);
   let cwExpanded = $state<boolean | null>(null);
   const showBody = $derived(!m.cw || (cwExpanded ?? cwAutoExpand));
+  // the one speaking here writes on the right; this account's other members on the left, named
+  // (a message still waiting to sync has no account yet: it's ours)
+  const out = $derived((mine || !m.account_id) && (!speaker || m.authors.includes(speaker)));
 
   const color = (id: string) => {
     const hex = people.get(id)?.color ?? '#A09184';
@@ -151,34 +160,39 @@
 </script>
 
 {#if m.deleted}
-  <div class="msg deleted" data-message-id={m.id}>
+  <div class="msg-row" class:out><div class="msg deleted" data-message-id={m.id}>
     Message deleted{#if mine}<button class="link" onclick={onrestore}>Restore</button>{/if}
     {#if thread}<button class="link" onclick={onthread}>Open thread · {thread.replyCount} {thread.replyCount === 1 ? 'reply' : 'replies'}</button>{/if}
-  </div>
+  </div></div>
 {:else}
-  <div class="msg" class:cont class:self={!!speaker && m.authors.includes(speaker)} class:pinned={m.pinned} class:selected data-message-id={m.id}>
-    {#if replied}
-      <div class="replybar">
-        ↪ <span style="color: {color(replied.authors[0] ?? '').name}">{replied.authors.map(nameOf).join(' & ')}</span>
-        {#if replied.channel_id !== m.channel_id && replied.channel_name}<span class="elsewhere">in #{replied.channel_name}</span>{/if}
-        <span class="snip">{replied.deleted ? 'deleted message' : replied.cw ? `Content warning: ${replied.cw}` : replied.text.slice(0, 80)}</span>
-      </div>
-    {/if}
-    {#if !cont || replied || selecting || m.cw}
+  <div class="msg-row" class:out class:cont class:last>
+  {#if !out}
+    <span class="slot">{#if last}{@const a = m.authors[0] ?? ''}<span class="avatar" style="--ring: {color(a).ring}; --avatar-ink: {color(a).avatar_ink}" title={nameOf(a)}><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></span>{/if}</span>
+  {/if}
+  <div class="msg" class:cont class:self={out} class:pinned={m.pinned} class:selected data-message-id={m.id}>
+    {#if !cont || selecting}
       <div class="head">
         {#if selecting}<button class="select-toggle" aria-label={selected ? 'Deselect message' : 'Select message'} aria-pressed={selected} onclick={onselect}>{selected ? '☑' : '□'}</button>{/if}
-        <span class="avatars">
-          {#each m.authors.slice(0, 3) as a (a)}
-            <span class="avatar" style="--ring: {color(a).ring}; --avatar-ink: {color(a).avatar_ink}"><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></span>
-          {/each}
-        </span>
+        {#if m.authors.length > 1}
+          <span class="avatars">
+            {#each m.authors.slice(0, 3) as a (a)}
+              <span class="avatar small" style="--ring: {color(a).ring}; --avatar-ink: {color(a).avatar_ink}"><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></span>
+            {/each}
+          </span>
+        {/if}
         <span class="who">
           {#each m.authors as a, i (a)}{#if i}<span class="amp">{' & '}</span>{/if}<span style="color: {color(a).name}">{nameOf(a)}</span>{/each}
         </span>
-        <time>{time(m.occurred_at)}</time>
+        {#if tag}<span class="layer">{tag}</span>{/if}
         {#if m.sent_offline}<span class="tag" title="Composed offline, synced later">sent offline</span>{/if}
-        {#if m.pinned}<span class="tag">pinned</span>{/if}
-        {#if unseen.length}<span class="unseen" title="Not seen by {unseen.join(', ')}" aria-label="Not seen by {unseen.join(', ')}">●</span>{/if}
+        {#if m.pinned}<span class="tag pin-tag" title="Pinned"><Icon name="pin" size={12} /></span>{/if}
+      </div>
+    {/if}
+    {#if replied}
+      {@const qc = color(replied.authors[0] ?? '')}
+      <div class="reply-quote" style="--q: {qc.name}">
+        <span class="q-name">{replied.authors.map(nameOf).join(' & ')}{#if replied.channel_id !== m.channel_id && replied.channel_name}<span class="elsewhere"> · #{replied.channel_name}</span>{/if}</span>
+        <span class="snip">{replied.deleted ? 'Deleted message' : replied.cw ? `Content warning: ${replied.cw}` : replied.text.slice(0, 120)}</span>
       </div>
     {/if}
     {#if m.cw}
@@ -208,11 +222,11 @@
       {#if m.segments.length > 1}
         {#each m.segments as s, i (i)}
           {@const seg = segmentRich(m, s)}
-          <div class="segment">
+          <div class="segment" style="--q: {color(s.authors[0] ?? '').name}">
             <span class="segment-head">
               <span class="segment-avatars">
                 {#each s.authors as author (author)}
-                  <span class="segment-avatar" style="--ring: {color(author).ring}" title={nameOf(author)}><AvatarImage hash={people.get(author)?.avatar_blob} glyph={people.get(author)?.sigils[0] ?? nameOf(author)[0]} name={nameOf(author)} /></span>
+                  <span class="segment-avatar" style="--ring: {color(author).ring}; --avatar-ink: {color(author).avatar_ink}" title={nameOf(author)}><AvatarImage hash={people.get(author)?.avatar_blob} glyph={people.get(author)?.sigils[0] ?? nameOf(author)[0]} name={nameOf(author)} /></span>
                 {/each}
               </span>
               <span class="who" style="color: {color(s.authors[0] ?? '').name}">{s.authors.map(nameOf).join(' & ')}</span>
@@ -221,13 +235,12 @@
           </div>
         {/each}
       {:else if m.text}
-        <span class="selectable" data-message-offset="0"><RichText text={m.text} entities={m.entities} emoji={emojiById} /></span>
+        <span class="selectable text" data-message-offset="0"><RichText text={m.text} entities={m.entities} emoji={emojiById} /></span>
       {/if}
       {#if m.attachments.length && !m.forward_snapshot?.some((f) => f.attachments?.length)}
         <div class="attachments">{#each m.attachments as a (a.id)}<AttachmentView attachment={a} />{/each}</div>
       {/if}
       {@render extra?.(m.id)}
-      {#if m.edited}<button class="edited" onclick={toggleHistory} aria-expanded={!!history}>(edited)</button>{/if}
       {#if history}
         <ol class="history" aria-label="Edit history">
           {#each history as r (r.rev)}
@@ -263,6 +276,12 @@
         </button>
       {/if}
     </div>{/if}
+    <div class="meta">
+      {#if unseen.length}<span class="unseen" title="Not seen by {unseen.join(', ')}" aria-label="Not seen by {unseen.join(', ')}">●</span>{/if}
+      {#if m.edited}<button class="edited" onclick={toggleHistory} aria-expanded={!!history}>edited</button>{/if}
+      <time datetime={new Date(m.occurred_at).toISOString()}>{time(m.occurred_at)}</time>
+      {#if out}<span class="sent" class:pending={!m.account_id} title={m.account_id ? 'Sent' : 'Waiting to sync'}><Icon name={m.account_id ? 'read' : 'history'} size={14} /></span>{/if}
+    </div>
     {#if palette}
       <div class="palette" role="listbox" aria-label="React">
         {#each PALETTE as e (e)}
@@ -281,7 +300,7 @@
     {/if}
     <!-- a held message isn't sent yet: only Cancel, nothing covering it (narrow screens) -->
     {#if !heldUntil}
-    <button class="action-trigger" bind:this={actionTrigger} popovertarget={menuId} aria-label="Message actions" title="Message actions"><Icon name="more" size={20} /></button>
+    <button class="action-trigger" bind:this={actionTrigger} popovertarget={menuId} aria-label="Message actions" title="Message actions"><Icon name="more" size={18} /></button>
     <div class="actions" bind:this={actionMenu} id={menuId} popover="auto" ontoggle={(e) => { if (e.newState === 'open') placeActions(); }} role="group" aria-label="Message actions">
       <button onclick={() => runAction(() => (palette = !palette))} title="React" disabled={!speaker}><Icon name="smile" size={20} />React</button>
       <button onclick={() => runAction(onreply)} title="Reply"><Icon name="action-reply" size={20} />Reply</button>
@@ -299,232 +318,100 @@
     </div>
     {/if}
   </div>
+  </div>
 {/if}
 
 <style>
-  .cw-toggle { display: block; margin: var(--s-2) 0; padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); cursor: pointer; text-align: left; font: inherit; }
+  /* Bubbles (Figma F5.21): others on the left with their face beside the last of a run, the one
+     speaking here on the right; names open a run, time and a sent tick close each bubble. */
+  .msg-row { display: flex; align-items: flex-end; gap: 8px; padding: 2px 56px 2px 0; min-width: 0; }
+  .msg-row:not(.cont) { margin-top: 6px; }
+  .msg-row.out { justify-content: flex-end; padding: 2px 0 2px 72px; }
+  .slot { flex: none; width: 32px; height: 32px; }
+  .slot .avatar { width: 32px; height: 32px; font-size: 13px; font-weight: 700; }
   .msg {
     position: relative;
-    padding: 12px;
-    border-radius: 16px;
+    display: grid;
+    gap: 3px;
+    padding: 7px 11px 6px;
+    border-radius: 16px 16px 16px 5px;
     background: var(--surface-2);
-    max-width: min(90%, 72ch);
-    align-self: flex-start;
     min-width: 0;
+    max-width: min(100%, 560px);
+    font-size: 15px;
+    line-height: 20px;
+    transition: background var(--t-fast) var(--ease);
   }
-  .msg.cont { padding-top: 8px; }
-  .msg.cont .body { padding-right: 36px; min-height: 36px; }
-  .msg.self { align-self: flex-end; background: var(--accent-soft); }
-  .head { flex-wrap: wrap; }
-  .msg.selected { background: var(--accent-soft); }
-  .select-toggle { background: none; border: 0; color: var(--accent); cursor: pointer; }
+  .msg-row:not(.last) .msg { border-bottom-left-radius: 8px; }
+  .msg.self { background: var(--bubble-out); border-radius: 16px 16px 5px 16px; }
+  .msg-row.out:not(.last) .msg { border-bottom-right-radius: 8px; }
+  .msg.selected { box-shadow: 0 0 0 2px var(--accent); }
+  .msg.deleted { color: var(--ink-3); font-style: italic; font-size: var(--fs-sm); background: none; border: 1px dashed var(--line); }
+  .cw-toggle { display: block; margin: 2px 0; padding: 6px 10px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); cursor: pointer; text-align: left; font: inherit; font-size: 14px; }
+  .select-toggle { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; }
+  .link { background: none; border: 0; color: var(--accent); cursor: pointer; font-style: normal; margin-left: var(--s-2); }
+  .head { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: 22px; }
+  .who { font-weight: 600; font-size: 13px; line-height: 17px; min-width: 0; overflow-wrap: anywhere; }
+  .amp { color: var(--ink-3); font-weight: 400; }
+  .layer { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+  .tag { display: inline-flex; align-items: center; font-size: 11px; color: var(--ink-3); border: 1px solid var(--line); border-radius: var(--r-full); padding: 0 6px; }
+  .pin-tag { border: 0; padding: 0; color: var(--warn); }
+  .reply-quote { display: grid; padding: 4px 10px 4px 9px; border-left: 3px solid var(--q); border-radius: 6px; background: color-mix(in srgb, var(--q) 12%, transparent); font-size: 13px; line-height: 17px; min-width: 0; }
+  .q-name { color: var(--q); font-weight: 600; }
+  .snip { color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .elsewhere { font-weight: 400; color: var(--ink-3); }
+  .body { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+  .text { white-space: pre-wrap; }
+  blockquote { margin: 2px 0; border-left: 3px solid var(--line); padding-left: var(--s-3); color: var(--ink-2); white-space: pre-wrap; }
   blockquote span { display: block; font-size: var(--fs-xs); color: var(--ink-3); }
-  .msg:hover {
-    background: var(--surface-2);
-  }
-  .msg.pinned {
-    box-shadow: inset 2px 0 0 var(--warn);
-  }
-  .deleted {
-    color: var(--ink-3);
-    font-style: italic;
-    font-size: var(--fs-sm);
-  }
-  .link {
-    background: none;
-    border: 0;
-    color: var(--accent);
-    cursor: pointer;
-    font-style: normal;
-    margin-left: var(--s-2);
-  }
-  .replybar {
-    font-size: var(--fs-xs);
-    color: var(--ink-3);
-    display: flex;
-    gap: var(--s-2);
-    padding-left: calc(28px + var(--s-2));
-    overflow: hidden;
-    white-space: nowrap;
-  }
-  .snip {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .elsewhere {
-    font-style: italic;
-  }
-  .head {
-    display: flex;
-    align-items: center;
-    gap: var(--s-2);
-  }
-  .who {
-    font-weight: 600;
-  }
-  .amp {
-    color: var(--ink-3);
-    font-weight: 400;
-  }
-  time,
-  .tag,
-  .edited {
-    font-size: var(--fs-xs);
-    color: var(--ink-3);
-  }
-  .unseen {
-    color: var(--accent, var(--ink-3));
-    font-size: var(--fs-xs);
-  }
-  button.edited {
-    background: none;
-    border: 0;
-    padding: 0 var(--s-1);
-    cursor: pointer;
-    text-decoration: underline dotted;
-  }
-  .history {
-    margin: var(--s-1) 0;
-    padding: var(--s-2) var(--s-3);
-    list-style: none;
-    border-left: 2px solid var(--line);
-    display: grid;
-    gap: var(--s-1);
-    color: var(--ink-2);
-  }
-  .tag {
-    border: 1px solid var(--line);
-    border-radius: var(--r-full);
-    padding: 0 var(--s-2);
-  }
-  .body {
-    padding-left: calc(28px + var(--s-2));
-  }
-  blockquote {
-    margin: 2px 0;
-    border-left: 3px solid var(--line);
-    padding-left: var(--s-3);
-    color: var(--ink-2);
-    white-space: pre-wrap;
-  }
-  .forward {
-    border: 1px solid var(--line);
-    border-radius: var(--r-sm);
-    padding: var(--s-2) var(--s-3);
-    margin: 2px 0;
-    display: grid;
-    gap: 2px;
-  }
-  .fwd {
-    font-size: var(--fs-xs);
-    color: var(--ink-3);
-  }
-  .segment {
-    display: grid;
-    gap: 2px;
-    padding: var(--s-1) 0 var(--s-1) var(--s-3);
-    border-left: 2px solid var(--line);
-    margin-top: var(--s-1);
-  }
+  .forward { border-left: 3px solid var(--accent); border-radius: 6px; padding: 4px 10px; margin: 2px 0; display: grid; gap: 2px; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .fwd { font-size: 12px; color: var(--accent); font-weight: 600; }
+  .segment { display: grid; gap: 2px; padding: 2px 0 2px 10px; border-left: 2px solid var(--q, var(--line)); margin-top: 2px; }
   .segment-head { display: flex; align-items: center; gap: var(--s-2); font-size: var(--fs-xs); }
-  .segment-avatars { display: flex; }
-  .segment-avatar {
-    width: 20px;
-    height: 20px;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    background: var(--surface-2);
-    box-shadow: 0 0 0 1px var(--ring, var(--line));
-  }
+  .segment-avatars, .avatars { display: flex; }
+  .segment-avatar, .thread-avatar { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; overflow: hidden; font-size: 11px;
+    background: var(--ring, var(--surface)); color: var(--avatar-ink, var(--ink)); box-shadow: 0 0 0 2px var(--surface-2); }
   .segment-avatar + .segment-avatar { margin-left: -4px; }
-  .avatars {
-    display: flex;
-  }
-  .avatar {
-    width: 28px;
-    height: 28px;
-    flex: none;
-    display: grid;
-    place-items: center;
-    font-size: 14px;
-    border-radius: 50%;
-    background: var(--ring, var(--surface-2));
-    color: var(--avatar-ink, var(--ink));
-  }
-  .avatars .avatar + .avatar {
-    margin-left: -8px;
-  }
-  .reacts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s-1);
-    margin-top: var(--s-1);
-  }
-  .react {
-    font: inherit;
-    font-size: var(--fs-sm);
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: var(--r-full);
-    padding: 0 var(--s-2);
-    cursor: pointer;
-  }
-  .react.mine {
-    border-color: var(--accent);
-    background: var(--accent-soft);
-  }
-  .react span {
-    color: var(--ink-2);
-    font-size: var(--fs-xs);
-  }
-  .thread-preview {
-    display: flex;
-    align-items: center;
-    gap: var(--s-2);
-    margin-top: var(--s-2);
-    padding: var(--s-1) var(--s-2);
-    font: inherit;
-    font-size: var(--fs-xs);
-    font-weight: 600;
-    color: var(--accent);
-    background: var(--accent-soft);
-    border: 0;
-    border-radius: var(--r-full);
-    cursor: pointer;
-  }
+  .avatar { width: 28px; height: 28px; flex: none; display: grid; place-items: center; overflow: hidden; font-size: 14px; border-radius: 50%;
+    background: var(--ring, var(--surface-2)); color: var(--avatar-ink, var(--ink)); }
+  .avatar.small { width: 20px; height: 20px; font-size: 11px; box-shadow: 0 0 0 2px var(--surface-2); }
+  .avatars .avatar + .avatar { margin-left: -6px; }
+  .attachments { display: grid; gap: 4px; margin-top: 2px; }
+  .reacts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+  .react { display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 13px; line-height: 17px; font-weight: 600; padding: 3px 8px; border: 0; border-radius: 12px; cursor: pointer;
+    background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-2); transition: background var(--t-fast) var(--ease); }
+  .react.mine { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  .react span { font-size: 13px; }
+  .thread-preview { display: flex; align-items: center; gap: var(--s-2); width: fit-content; margin-top: 2px; padding: 4px 10px 4px 6px; font: inherit; font-size: 12px; font-weight: 600;
+    color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 0; border-radius: var(--r-full); cursor: pointer; }
   .thread-avatars { display: flex; }
-  .thread-avatar {
-    width: 20px;
-    height: 20px;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    background: var(--surface);
-    box-shadow: 0 0 0 1px var(--ring, var(--line));
-  }
   .thread-avatar + .thread-avatar { margin-left: -5px; }
-  .palette {
-    display: flex;
-    gap: 2px;
-    margin: var(--s-1) 0 0 calc(28px + var(--s-2));
+  .meta { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: -2px; font-size: 11px; line-height: 14px; color: var(--ink-3); }
+  .meta time { font-size: 11px; }
+  .sent { display: inline-grid; color: var(--accent); }
+  .sent.pending { color: var(--ink-3); }
+  .unseen { color: var(--accent); font-size: 9px; }
+  button.edited { background: none; border: 0; padding: 0; font: inherit; font-size: 11px; color: var(--ink-3); cursor: pointer; text-decoration: underline dotted; }
+  .history { margin: var(--s-1) 0; padding: var(--s-2) var(--s-3); list-style: none; border-left: 2px solid var(--line); display: grid; gap: var(--s-1); color: var(--ink-2); font-size: var(--fs-sm); }
+  .history time { font-size: 11px; color: var(--ink-3); }
+  .palette { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 4px; }
+  .palette button { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); cursor: pointer; font-size: 18px; width: 34px; height: 34px; }
+  .action-trigger { position: absolute; right: 2px; top: 2px; width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; }
+  .action-trigger:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); color: var(--ink); }
+  /* with a mouse, the ⋯ waits for the pointer or keyboard focus, like Telegram's hover menu */
+  @media (hover: hover) {
+    .action-trigger { opacity: 0; transition: opacity var(--t-fast) var(--ease); }
+    .msg:hover .action-trigger, .msg:focus-within .action-trigger, .action-trigger:focus-visible { opacity: 1; }
   }
-  .palette button {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-sm);
-    cursor: pointer;
-    font-size: 18px;
-    width: 34px;
-    height: 34px;
-  }
-  .action-trigger { position: absolute; right: 2px; top: 2px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; }
-  .head { padding-right: 36px; }
   .actions { position: fixed; inset: auto; margin: 0; width: 280px; max-width: calc(100vw - 24px); max-height: min(70dvh, 560px); overflow-y: auto; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-pop); padding: 6px; }
   .actions:popover-open { display: grid; }
-  .actions button { display: flex; gap: 14px; align-items: center; background: none; border: 0; cursor: pointer; min-height: 48px; padding: 10px 12px; border-radius: 10px; color: var(--ink); text-align: left; font-size: var(--fs-md); }
+  .actions button { display: flex; gap: 14px; align-items: center; background: none; border: 0; cursor: pointer; min-height: 44px; padding: 10px 12px; border-radius: 10px; color: var(--ink); text-align: left; font-size: var(--fs-md); }
   .actions button :global(.icon) { color: var(--ink-3); }
   .actions button:hover { background: var(--surface-2); }
   .actions button.delete-action, .actions button.delete-action :global(.icon) { color: var(--danger); }
   .held { margin: 0; font-size: var(--fs-sm); color: var(--ink-3); }
+  @media (max-width: 640px) {
+    .msg-row { padding-right: 24px; }
+    .msg-row.out { padding-left: 40px; }
+  }
 </style>

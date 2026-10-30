@@ -16,7 +16,7 @@ test('chat and journal polls take one editable vote per member', async ({ browse
     await page.locator('button.member', { hasText: 'Kai' }).click();
 
     await go(page, 'chat');
-    await page.getByText('Advanced chat settings', { exact: true }).click(); // polls are Advanced
+    await page.getByRole('button', { name: 'Message options', exact: true }).click(); // polls are behind the composer's options
     await page.getByText('Add a poll', { exact: true }).click();
     await page.getByLabel('Poll option 1').fill('Pasta');
     await page.getByLabel('Poll option 2').fill('Soup');
