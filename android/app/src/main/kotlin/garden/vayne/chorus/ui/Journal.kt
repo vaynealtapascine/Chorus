@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.UploadWork
 import garden.vayne.chorus.data.JournalPost
+import garden.vayne.chorus.data.JournalSocial
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.Polls
 import androidx.compose.runtime.collectAsState
@@ -414,8 +415,10 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
     var expanded by rememberSaveable(post.id) { mutableStateOf(full) }
     var overflow by remember(post.id) { mutableStateOf(false) }
     var authorsOpen by remember { mutableStateOf(false) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val names = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
-    JournalPostFrame(names, ago(post.occurredAt), post.visibility, full, avatar = {
+    val open = onThread.takeIf { !full }
+    JournalPostFrame(names, compactAgo(post.occurredAt), post.visibility, full, avatar = {
         Box {
             Box(Modifier.size(48.dp).clickable(enabled = onProfile != null) {
                 if (post.authors.size > 1) authorsOpen = true else post.authors.firstOrNull()?.let { onProfile?.invoke(it) }
@@ -427,7 +430,13 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
                     onClick = { authorsOpen = false; onProfile?.invoke(id) }) }
             }
         }
-    }) {
+    }, overflow = {
+        JournalOverflow("More options for this post", listOfNotNull(
+            open?.let { "Open post" to it },
+            JournalSocial.shareText(post.title, post.cw, post.text).takeIf { it.isNotBlank() }?.let { text ->
+                "Copy text" to { clipboard.setText(androidx.compose.ui.text.AnnotatedString(text)) }
+            }))
+    }, onClick = open) {
         if (post.replyTo != null) Text("Reply", color = p.ink3, style = MaterialTheme.typography.bodySmall)
         if (post.cw != null) Surface(color = p.surface2, shape = RoundedCornerShape(10.dp)) {
             Row(Modifier.fillMaxWidth().clickable { revealed = !revealed }.heightIn(min = 48.dp).padding(horizontal = 10.dp),
@@ -438,20 +447,19 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
         }
         if (post.cw == null || revealed) {
             post.title?.let { Text(it, color = p.ink, style = MaterialTheme.typography.titleSmall.copy(
-                fontSize = if (full) 24.sp else 15.sp, lineHeight = if (full) 30.sp else 20.sp), fontWeight = FontWeight.Bold) }
+                fontSize = if (full) 24.sp else 16.sp, lineHeight = if (full) 30.sp else 22.sp), fontWeight = FontWeight.Bold) }
             RichBody(post.text, post.entities, maxLines = if (expanded || full) Int.MAX_VALUE else 3,
-                onOverflow = { overflow = it }, style = MaterialTheme.typography.bodyMedium.copy(
+                onOverflow = { overflow = it }, onPlainClick = { open?.invoke() }, style = MaterialTheme.typography.bodyMedium.copy(
                     fontSize = if (full) 16.sp else 15.sp, lineHeight = if (full) 24.sp else 21.sp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(listOfNotNull(JournalPresentation.readTime(post.text).takeIf { post.kind == "entry" },
-                    JournalPresentation.audience(post.visibility, model.isPerson)).joinToString(" · "),
-                    color = p.ink3, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                if (!full && (overflow || expanded)) TextButton(onClick = {
+            if (!full && (overflow || expanded)) Text(if (expanded) "Show less" else "Show more", color = p.accent,
+                style = MaterialTheme.typography.labelLarge, modifier = Modifier.clickable {
                     if (post.kind == "entry" && onThread != null) onThread() else expanded = !expanded
-                }, contentPadding = PaddingValues(start = 8.dp)) { Text(if (expanded) "Less" else "Show more", style = MaterialTheme.typography.labelLarge) }
-            }
+                }.heightIn(min = 32.dp).wrapContentHeight(Alignment.CenterVertically))
+            if (post.kind == "entry") Text(JournalPresentation.entryMeta(post.text, post.tags), color = p.ink3,
+                style = MaterialTheme.typography.bodySmall)
             post.mood?.let { Text(it, color = p.ink2, style = MaterialTheme.typography.bodySmall) }
-            if (post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent, style = MaterialTheme.typography.bodySmall)
+            if (post.kind != "entry" && post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
+                style = MaterialTheme.typography.bodySmall)
             for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
             PollCard(chorus, model, post.id, reactMemberId ?: Reply.speaker(model)?.id)
             if (showActions) JournalActions(post.reactions, reactMemberId?.let(model::member), reactionEnabled,
@@ -531,7 +539,7 @@ private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, me
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(reply.id) { mutableStateOf(false) }
     val names = reply.authorNames.joinToString(" & ").ifBlank { "Someone" }
-    JournalPostFrame(names, ago(reply.occurredAt), null, full, avatar = {
+    JournalPostFrame(names, compactAgo(reply.occurredAt), null, full, avatar = {
         Box(Modifier.size(40.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
             Text(names.take(1), style = MaterialTheme.typography.titleSmall, color = p.ink2)
         }

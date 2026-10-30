@@ -307,11 +307,11 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
     var expanded by rememberSaveable(post.id) { mutableStateOf(false) }
     var overflow by remember(post.id) { mutableStateOf(false) }
     val names = post.authorNames.joinToString(" & ").ifBlank { accountName }
-    JournalPostFrame(names, ago(post.occurredAt), null, avatar = {
+    JournalPostFrame(names, compactAgo(post.occurredAt), null, avatar = {
         Box(Modifier.size(40.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
             Text(names.take(1), color = p.ink2, style = MaterialTheme.typography.titleSmall)
         }
-    }) {
+    }, onClick = onThread?.let { open -> { open(post) } }) {
         if (post.cw != null) TextButton(onClick = { revealed = !revealed }) {
             Text("Content warning: ${post.cw} · ${if (revealed) "Hide" else "Show"}")
         }
