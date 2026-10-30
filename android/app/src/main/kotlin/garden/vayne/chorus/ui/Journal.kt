@@ -106,8 +106,6 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     var audience by rememberSaveable { mutableStateOf("private") }
     var busy by remember { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
-    var reactionError by remember { mutableStateOf<String?>(null) }
-    var reactionBusy by remember { mutableStateOf(false) }
     val actions = rememberCoroutineScope()
     val ctx = LocalContext.current
     val attachments = rememberSaveable(saver = AttachmentDraftSaver) { mutableStateListOf<PendingAttachment>() }
@@ -353,7 +351,6 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         if (journalTab == "friends") JournalFriends(chorus, model, onThread = { threadPostId = it }, onReply = {
             replyTo = it; audience = "server"; editing = true
         }) else LazyColumn(Modifier.fillMaxSize(), state = feedListState, contentPadding = PaddingValues(bottom = 80.dp)) {
-        if (reactionError != null) item { Text(reactionError.orEmpty(), color = p.danger) }
         if (events.none { journalTab != "entries" || it.post?.kind == "entry" }) item {
             Text(if (journalTab == "entries") "No journal entries yet. Start with a few words." else "No posts or switches yet. Write the first note.",
                 color = p.ink2, modifier = Modifier.padding(24.dp))
@@ -362,21 +359,6 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             if (event.post != null) JournalPostCard(event.post, model, chorus,
                 onReply = { replyTo = event.post.id; editing = true },
                 onThread = { threadPostId = event.post.id },
-                reactMemberId = Reply.speaker(model)?.id,
-                reactionEnabled = !reactionBusy,
-                onReact = { post ->
-                    val member = Reply.speaker(model) ?: return@JournalPostCard
-                    if (reactionBusy) return@JournalPostCard
-                    reactionBusy = true; reactionError = null
-                    actions.launch {
-                        try {
-                            val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == member.id }
-                            chorus.create(if (selected) "post.unreact" else "post.react", post.id,
-                                PostReactions.payload(post.id, member.id))
-                        } catch (e: Exception) { reactionError = e.message ?: "Could not react to this post." }
-                        finally { reactionBusy = false }
-                    }
-                },
                 onProfile = { profileId = it })
             else Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
                 Text(event.switchLabel.orEmpty(), color = p.ink2)
@@ -407,8 +389,7 @@ internal fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit
 
 @Composable
 internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, onReply: () -> Unit,
-    onThread: (() -> Unit)? = null, reactMemberId: String? = null, reactionEnabled: Boolean = true,
-    onReact: ((JournalPost) -> Unit)? = null, onProfile: ((String) -> Unit)? = null, full: Boolean = false,
+    onThread: (() -> Unit)? = null, onProfile: ((String) -> Unit)? = null, full: Boolean = false,
     showActions: Boolean = true) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
@@ -461,9 +442,8 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
             if (post.kind != "entry" && post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
                 style = MaterialTheme.typography.bodySmall)
             for (attachment in post.attachments) ChatAttachmentView(attachment, chorus)
-            PollCard(chorus, model, post.id, reactMemberId ?: Reply.speaker(model)?.id)
-            if (showActions) JournalActions(post.reactions, reactMemberId?.let(model::member), reactionEnabled,
-                onReply = onThread ?: onReply, onReact = onReact?.let { { it(post) } })
+            PollCard(chorus, model, post.id, Reply.speaker(model)?.id)
+            if (showActions) JournalPostActions(post, model, chorus, onReply = onThread ?: onReply)
         }
     }
     if (!full) HorizontalDivider(color = p.line, thickness = .5.dp)
