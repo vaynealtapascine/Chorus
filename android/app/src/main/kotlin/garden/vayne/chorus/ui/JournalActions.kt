@@ -196,7 +196,8 @@ private fun PopIcon(icon: Int, active: Boolean, tint: Color, size: Dp, burst: Bo
  * `chorus.create` like any other op, so each works offline. Shown errors stay one quiet line. */
 @Composable
 internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus, onReply: () -> Unit,
-    onQuote: ((JournalPost) -> Unit)? = null, large: Boolean = false) {
+    onQuote: ((JournalPost) -> Unit)? = null, large: Boolean = false, reactions: List<PostReaction> = post.reactions,
+    foreign: Boolean = false, onReacted: ((Member) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     val ctx = LocalContext.current
@@ -213,10 +214,11 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
             finally { busy = false }
         }
     }
-    val own = member?.let { JournalSocial.repostBy(model.posts, post.id, it.id) }
-    JournalActions(post.reactions, member, !busy, onReply = onReply, replies = JournalSocial.replyCount(model.posts, post.id),
+    // a post from another account isn't in the local replica: it can be hearted and shared, not reposted or saved
+    val own = member?.takeIf { !foreign }?.let { JournalSocial.repostBy(model.posts, post.id, it.id) }
+    JournalActions(reactions, member, !busy, onReply = onReply, replies = JournalSocial.replyCount(model.posts, post.id),
         reposts = JournalSocial.reposts(model.posts, post.id).size, reposted = own != null,
-        onRepost = member?.let { who -> {
+        onRepost = member?.takeIf { !foreign }?.let { who -> {
             write("Could not repost. Try again.") {
                 chorus.create("post.create", chorus.newId(), PostCompose.repostPayload(model, account.orEmpty(), who.id, post.id))
             }
@@ -225,21 +227,22 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
         onUndoRepost = own?.let { repost -> { write("Could not undo the repost. Try again.") {
             chorus.create("post.delete", repost.id, org.json.JSONObject())
         } } },
-        onQuote = onQuote?.let { { it(post) } },
+        onQuote = onQuote?.takeIf { !foreign }?.let { { it(post) } },
         onShare = JournalSocial.shareText(post.title, post.cw, post.text).takeIf { it.isNotBlank() }?.let { text ->
             { shareJournalText(ctx, post.title, text) }
         },
         // saving is a private account pref: it syncs to this account's devices and never reaches the author
         saved = model.accountPrefs.isSaved(post.id),
-        onBookmark = { write("Could not update your saved posts. Try again.") {
+        onBookmark = if (foreign) null else ({ write("Could not update your saved posts. Try again.") {
             chorus.create("pref.set", null, AccountPrefs.bookmarkPayload(post.id, !model.accountPrefs.isSaved(post.id)))
-        } },
+        } }),
         onReact = member?.let { who -> {
-            val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == who.id }
+            val selected = reactions.any { it.emoji == PostReactions.HEART && it.memberId == who.id }
             write("Could not save the reaction. Try again.") {
                 chorus.create(if (selected) "post.unreact" else "post.react", post.id, PostReactions.payload(post.id, who.id))
+                onReacted?.invoke(who)
             }
-        } }, readersSeeName = post.visibility != "private", large = large)
+        } }, readersSeeName = foreign || post.visibility != "private", large = large)
     if (error != null) Text(error.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodySmall)
 }
 
