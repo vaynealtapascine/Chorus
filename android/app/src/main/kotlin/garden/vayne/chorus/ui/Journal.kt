@@ -316,6 +316,13 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         JournalFeeds(chorus, model, onTimeline = { section = "timeline" })
         return@ChorusScene
     }
+    if (shown == "saved") {
+        BackHandler(active && shown == route) { section = "timeline" }
+        JournalSaved(chorus, model, onBack = { section = "timeline" }, onReply = { replyTo = it; editing = true },
+            onThread = { threadPostId = it }, onQuote = { quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
+            onProfile = { profileId = it })
+        return@ChorusScene
+    }
 
     // a configured account reads Body's effective changes (exact Fronting layer ID), never the stale log
     val frontRevision by chorus.frontHistoryRevision.collectAsState()
@@ -341,6 +348,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             Box {
                 ChatIconButton(R.drawable.ic_more, "Journal options") { feedMenu = true }
                 DropdownMenu(feedMenu, { feedMenu = false }) {
+                    DropdownMenuItem(text = { Text("Saved") }, onClick = { feedMenu = false; section = "saved" })
                     DropdownMenuItem(text = { Text("Lists") }, onClick = { feedMenu = false; section = "lists" })
                     DropdownMenuItem(text = { Text("Feeds") }, onClick = { feedMenu = false; section = "feeds" })
                     if (model.isPerson) model.members.firstOrNull { it.isSelf }?.let { self ->

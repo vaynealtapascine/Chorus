@@ -223,6 +223,11 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
             chorus.create("post.delete", repost.id, org.json.JSONObject())
         } } },
         onQuote = onQuote?.let { { it(post) } },
+        // saving is a private account pref: it syncs to this account's devices and never reaches the author
+        saved = model.accountPrefs.isSaved(post.id),
+        onBookmark = { write("Could not update your saved posts. Try again.") {
+            chorus.create("pref.set", null, AccountPrefs.bookmarkPayload(post.id, !model.accountPrefs.isSaved(post.id)))
+        } },
         onReact = member?.let { who -> {
             val selected = post.reactions.any { it.emoji == PostReactions.HEART && it.memberId == who.id }
             write("Could not save the reaction. Try again.") {
