@@ -16,6 +16,9 @@ colors:
   warn: "#E0B560"
   danger: "#E8776D"
   on-accent: "#101018"
+  sun: "#F0BD1B"
+  on-sun: "#1C1B19"
+  bubble-out: "#213B3A"
   light-bg: "#F7F6F2"
   light-surface: "#FFFFFF"
   light-surface-2: "#EFEEE9"
@@ -30,6 +33,9 @@ colors:
   light-warn: "#C99A3B"
   light-danger: "#B5524A"
   light-on-accent: "#FFFFFF"
+  light-sun: "#E5AE17"
+  light-on-sun: "#1C1B19"
+  light-bubble-out: "#D8ECE7"
 typography:
   headline:
     fontFamily: "Hanken Grotesk, system-ui, sans-serif"

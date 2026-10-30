@@ -15,6 +15,9 @@
   --warn: #E0B560;
   --danger: #E8776D;
   --on-accent: #101018;
+  --sun: #F0BD1B;
+  --on-sun: #1C1B19;
+  --bubble-out: #213B3A;
   --r-sm: 10px;
   --r-md: 16px;
   --r-lg: 22px;
@@ -60,5 +63,8 @@
   --warn: #C99A3B;
   --danger: #B5524A;
   --on-accent: #FFFFFF;
+  --sun: #E5AE17;
+  --on-sun: #1C1B19;
+  --bubble-out: #D8ECE7;
   color-scheme: light;
 }

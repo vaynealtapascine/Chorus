@@ -19,6 +19,9 @@ data class ChorusPalette(
     val warn: Color,
     val danger: Color,
     val onAccent: Color,
+    val sun: Color,
+    val onSun: Color,
+    val bubbleOut: Color,
 )
 
 object Tokens {
@@ -37,6 +40,9 @@ object Tokens {
         warn = Color(0xFFC99A3B),
         danger = Color(0xFFB5524A),
         onAccent = Color(0xFFFFFFFF),
+        sun = Color(0xFFE5AE17),
+        onSun = Color(0xFF1C1B19),
+        bubbleOut = Color(0xFFD8ECE7),
     )
     val Dark = ChorusPalette(
         bg = Color(0xFF15161A),
@@ -53,6 +59,9 @@ object Tokens {
         warn = Color(0xFFE0B560),
         danger = Color(0xFFE8776D),
         onAccent = Color(0xFF101018),
+        sun = Color(0xFFF0BD1B),
+        onSun = Color(0xFF1C1B19),
+        bubbleOut = Color(0xFF213B3A),
     )
     val radiusSm = 10.dp
     val radiusMd = 16.dp
