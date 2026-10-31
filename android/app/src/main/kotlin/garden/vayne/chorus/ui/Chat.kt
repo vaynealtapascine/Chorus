@@ -258,11 +258,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             error = "Chat details could not be loaded. Open Chat again to retry."
         }
     }
+    var cardsFor by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(space?.id, chorus.device?.session, refresh) {
         foreignAuthors = emptyMap()
+        cardsFor = null
         val dev = chorus.device ?: return@LaunchedEffect
         val id = space?.id?.takeIf { space.kind != "internal" } ?: return@LaunchedEffect
-        try { foreignAuthors = Spaces.authorCards(dev, id) }
+        try { foreignAuthors = Spaces.authorCards(dev, id); cardsFor = id }
         catch (_: Exception) { /* Own members still have projection names; retry on next refresh. */ }
     }
     val threads = remember(model) { ChatThreads.summaries(model) }
@@ -370,6 +372,18 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val messages = model.chatMessages[channel?.id].orEmpty().filter {
         space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
             accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
+    }
+    // someone from another account spoke here after the cards were fetched: fetch them again (once
+    // per new set of speakers, merged so names already shown stay), else they read "Someone" until
+    // the chat is reopened. A member the server keeps hidden just stays unnamed.
+    val strangers = messages.flatMap { it.authors }.filter { model.member(it) == null }.distinct().sorted()
+    LaunchedEffect(cardsFor, strangers) {
+        val id = cardsFor ?: return@LaunchedEffect
+        val dev = chorus.device ?: return@LaunchedEffect
+        if (id != space?.id || strangers.all { it in foreignAuthors }) return@LaunchedEffect
+        try { foreignAuthors = foreignAuthors + Spaces.authorCards(dev, id) }
+        catch (e: CancellationException) { throw e }
+        catch (_: Exception) { /* the next newcomer, refresh or reopen asks again */ }
     }
     // chat info tabs read every locally synced message the reader can see, not only the newest 100
     val library by produceState(messages, channel?.id, space?.kind, viewingAs, model.chatMessages[channel?.id],
