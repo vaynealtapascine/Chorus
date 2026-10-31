@@ -815,6 +815,9 @@
     document.addEventListener('visibilitychange', on);
     return () => document.removeEventListener('visibilitychange', on);
   });
+  // what this view already marked: on a deep link this effect runs before App follows the
+  // projection, so it would see its own mark missing and write it again, a thousand times over
+  const marked = new Map<string, string>();
   $effect(() => {
     if (!current || !visible) return;
     const latest = visibleMsgs.findLast((m) => !m.deleted);
@@ -823,7 +826,9 @@
     const marks = new Map(marksHere.map((m) => [m.member, m.at]));
     for (const reader of channelReaders(projection, sync.accountId, current.id, perMember, frontingMembers, ownSenders.map((m) => m.id))) {
       const at = reader === '' ? lastRead(projection, current.id, sync.accountId) : marks.get(reader) ?? 0;
-      if (latest.occurred_at <= at) continue;
+      const key = `${current.id}|${reader}`;
+      if (latest.occurred_at <= at || marked.get(key) === latest.id) continue;
+      marked.set(key, latest.id);
       sync.create('read.mark', scope, null, {
         channel_id: current.id,
         message_id: latest.id,
