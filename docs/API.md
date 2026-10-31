@@ -44,6 +44,21 @@ POST /auth/redeem
 → 201 { "account_id":"…", "device_id":"…", "short_id":"a1b2c3d4", "session":"<token>", "expires_at":… }
 ```
 
+`account.kind` is the joiner's own answer (D-093): `system` or `person` on either kind of account
+invite; omitted, the invite's kind stands. Anything else is `400 bad_request` and leaves the invite
+unused. A person account gets one self member and no internal space (D-003).
+
+Look at an invite without using it, so onboarding can ask the right question (a device invite
+needs only the link):
+
+```
+POST /auth/invite { "code": "…" }
+→ 200 { "kind": "system" | "person" | "device" }
+```
+
+Unknown, used up and expired codes are all the same `400 bad_request`. Like redeeming, it counts
+against the `/auth/*` rate limit.
+
 Link another device of the same account (any enrolled device; one use, 1 day):
 
 ```

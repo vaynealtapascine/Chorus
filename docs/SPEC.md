@@ -60,9 +60,11 @@ Status: v1 spec, 2026-09-23. Decisions referenced as `D-xxx` live in [DECISIONS.
 
 1. The server admin runs `chorus-server invite --kind system|person` or uses the Admin screen. An
    invite is a one-time URL (`https://chorus.<domain>/i/<code>`) and a QR code.
-2. The new user opens it in the Android app (deep link) or the browser. The device generates a
-   keypair (Android Keystore / WebCrypto non-extractable), registers the public key, and becomes
-   the first device of a new account.
+2. The new user opens it in the Android app (deep link) or the browser and answers **Who's
+   joining?** — *We're a system* or *Just me* (D-093; the invite's kind is only the default, and
+   `scripts/invite.ps1` makes them). The device generates a keypair (Android Keystore / WebCrypto
+   non-extractable), registers the public key, and becomes the first device of a new account. A
+   device invite skips the question and links the device to its account.
 3. System setup (systems only, 4 short steps, all skippable): name + avatar, terminology, add a few
    members (or **Import from PluralKit**), pick your first front.
 4. Additional devices: from Settings → Devices → "Add a device" produces a device-invite QR for

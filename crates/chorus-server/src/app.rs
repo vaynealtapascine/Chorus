@@ -134,6 +134,7 @@ pub fn router(state: AppState) -> Router {
     }
     let api = Router::new()
         .route("/server", get(server_info))
+        .route("/auth/invite", post(peek_invite))
         .route("/auth/redeem", post(redeem))
         .route("/auth/challenge", post(challenge))
         .route("/auth/session", post(session))
@@ -313,6 +314,18 @@ async fn redeem(State(s): State<AppState>, Json(b): Json<RedeemIn>) -> Result<Re
         auth::redeem(&mut conn, &b.code, &b.device, b.account.as_ref(), now_ms(), s.session_ttl())?
     };
     Ok((StatusCode::CREATED, Json(e)).into_response())
+}
+
+#[derive(Deserialize)]
+struct PeekIn {
+    code: String,
+}
+
+/// What an invite is for, before using it (D-093): onboarding asks "system or just you?" only for
+/// new accounts. Under the sign-in rate limit, like redeeming.
+async fn peek_invite(State(s): State<AppState>, Json(b): Json<PeekIn>) -> Result<Json<serde_json::Value>, ApiError> {
+    let kind = auth::peek_invite(&s.db(), &b.code, now_ms())?;
+    Ok(Json(json!({ "kind": kind })))
 }
 
 #[derive(Deserialize)]

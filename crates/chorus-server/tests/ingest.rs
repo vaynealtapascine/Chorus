@@ -202,7 +202,7 @@ fn enrolment_ops_are_readable_through_the_log() {
         &mut c,
         &code,
         &auth::DeviceIn { name: "p".into(), platform: "android".into(), public_key: pk },
-        Some(&auth::AccountIn { display_name: None, handle: None }),
+        Some(&auth::AccountIn { display_name: None, handle: None, kind: None }),
         NOW,
         1000,
     )

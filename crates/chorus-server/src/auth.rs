@@ -97,12 +97,16 @@ pub struct DeviceIn {
     pub public_key: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct AccountIn {
     #[serde(default)]
     pub display_name: Option<String>,
     #[serde(default)]
     pub handle: Option<String>,
+    /// `system` or `person`: what the person joining said they are (D-093). Either kind of
+    /// account invite takes either answer; without one, the invite's kind stands.
+    #[serde(default)]
+    pub kind: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -130,6 +134,21 @@ pub fn parse_key(spki_b64: &str) -> Result<VerifyingKey, AuthError> {
 
 pub(crate) fn valid_handle(h: &str) -> bool {
     (2..=32).contains(&h.len()) && h.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+}
+
+/// What an invite is for, without using it (D-093): `system` or `person` for a new account (the
+/// onboarding asks which one the person is, starting from this answer), `device` for another device
+/// of an existing account. Unknown, expired and used-up codes are all `BadInvite`.
+pub fn peek_invite(conn: &Connection, code: &str, now: i64) -> Result<String, AuthError> {
+    let inv: Option<(String, i64, i64, i64)> = conn
+        .query_row("SELECT kind, expires_at, max_uses, uses FROM invite WHERE code_hash = ?1", [hash(code)], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .optional()?;
+    match inv {
+        Some((kind, expires_at, max_uses, uses)) if expires_at >= now && uses < max_uses => Ok(kind),
+        _ => Err(AuthError::BadInvite),
+    }
 }
 
 /// Redeem an invite: a new account (system/person) with its first device, or a new device on an
@@ -164,6 +183,11 @@ pub fn redeem(
         inv_account.ok_or(AuthError::BadInvite)?
     } else {
         let a = account.ok_or_else(|| AuthError::BadRequest("account details required".into()))?;
+        let kind = match a.kind.as_deref() {
+            None => kind,
+            Some(k @ ("system" | "person")) => k.to_string(),
+            Some(_) => return Err(AuthError::BadRequest("kind: system or person".into())),
+        };
         let handle = a.handle.clone().unwrap_or_default().to_lowercase();
         if !handle.is_empty() && !valid_handle(&handle) {
             return Err(AuthError::BadRequest("handle: 2–32 of a-z, 0-9, _".into()));
@@ -413,7 +437,7 @@ pub(crate) mod tests {
         let code = create_invite(&c, InviteKind::Person, None, "cli", INVITE_TTL_MS, 1, now).unwrap();
         let (_, pk) = key(3);
         let dev = DeviceIn { name: "Phone".into(), platform: "android".into(), public_key: pk };
-        let acct = AccountIn { display_name: Some("Alex".into()), handle: Some("alex".into()) };
+        let acct = AccountIn { display_name: Some("Alex".into()), handle: Some("alex".into()), ..Default::default() };
         let e = redeem(&mut c, &code, &dev, Some(&acct), now, 1000).unwrap();
         assert_eq!(e.kind, "person");
         let selves = |c: &Connection| -> Vec<(String, bool)> {
@@ -439,13 +463,46 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn the_person_joining_chooses_system_or_person() {
+        let mut c = db();
+        let now = 1_790_000_000_000;
+        let (_, pk) = key(5);
+        let dev = DeviceIn { name: "Phone".into(), platform: "android".into(), public_key: pk };
+        let joined = |c: &mut Connection, invite: InviteKind, kind: Option<&str>, handle: &str| {
+            let code = create_invite(c, invite, None, "cli", INVITE_TTL_MS, 1, now).unwrap();
+            assert_eq!(peek_invite(c, &code, now).unwrap(), invite.as_str());
+            let acct = AccountIn { handle: Some(handle.into()), kind: kind.map(str::to_string), ..Default::default() };
+            let e = redeem(c, &code, &dev, Some(&acct), now, 1000);
+            // a used-up code peeks like an unknown one; a refused answer doesn't use it up
+            assert_eq!(matches!(peek_invite(c, &code, now), Err(AuthError::BadInvite)), e.is_ok());
+            e
+        };
+        // a system invite taken by a singlet: a person account with its self member, no Home space
+        let e = joined(&mut c, InviteKind::System, Some("person"), "sam").unwrap();
+        assert_eq!(e.kind, "person");
+        let selves: i64 = c
+            .query_row("SELECT count(*) FROM member WHERE account_id = ?1 AND is_self", [&e.account_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(selves, 1);
+        assert!(!ingest::scopes_of(&c, &e.account_id).unwrap().iter().any(|s| s.starts_with("space:")));
+        // and the other way; no answer keeps the invite's kind
+        assert_eq!(joined(&mut c, InviteKind::Person, Some("system"), "stars").unwrap().kind, "system");
+        assert_eq!(joined(&mut c, InviteKind::Person, None, "alex").unwrap().kind, "person");
+        assert!(matches!(joined(&mut c, InviteKind::System, Some("admin"), "eve"), Err(AuthError::BadRequest(_))));
+        assert!(matches!(peek_invite(&c, "nope", now), Err(AuthError::BadInvite)));
+        let late = create_invite(&c, InviteKind::System, None, "cli", 10, 1, now).unwrap();
+        assert!(matches!(peek_invite(&c, &late, now + 11), Err(AuthError::BadInvite)));
+    }
+
+    #[test]
     fn enrol_system_then_device_then_renew_session() {
         let mut c = db();
         let now = 1_790_000_000_000;
         let code = create_invite(&c, InviteKind::System, None, "cli", INVITE_TTL_MS, 1, now).unwrap();
         let (sk, pk) = key(7);
         let dev = DeviceIn { name: "Pixel".into(), platform: "android".into(), public_key: pk };
-        let acct = AccountIn { display_name: Some("The Stars".into()), handle: Some("stars".into()) };
+        let acct =
+            AccountIn { display_name: Some("The Stars".into()), handle: Some("stars".into()), ..Default::default() };
         let e = redeem(&mut c, &code, &dev, Some(&acct), now, 1000).unwrap();
         // invite is single-use
         assert!(matches!(redeem(&mut c, &code, &dev, Some(&acct), now, 1000), Err(AuthError::BadInvite)));
@@ -509,11 +566,11 @@ pub(crate) mod tests {
         let now = 1;
         let (_, pk) = key(3);
         let dev = DeviceIn { name: "x".into(), platform: "web".into(), public_key: pk };
-        let a = AccountIn { display_name: None, handle: Some("kai".into()) };
+        let a = AccountIn { display_name: None, handle: Some("kai".into()), ..Default::default() };
         let c1 = create_invite(&c, InviteKind::Person, None, "cli", INVITE_TTL_MS, 5, now).unwrap();
         redeem(&mut c, &c1, &dev, Some(&a), now, 1000).unwrap();
         assert!(matches!(redeem(&mut c, &c1, &dev, Some(&a), now, 1000), Err(AuthError::HandleTaken)));
-        let bad = AccountIn { display_name: None, handle: Some("Bad Handle!".into()) };
+        let bad = AccountIn { display_name: None, handle: Some("Bad Handle!".into()), ..Default::default() };
         assert!(matches!(redeem(&mut c, &c1, &dev, Some(&bad), now, 1000), Err(AuthError::BadRequest(_))));
         let badkey = DeviceIn { name: "x".into(), platform: "web".into(), public_key: "nope".into() };
         assert!(matches!(redeem(&mut c, &c1, &badkey, Some(&a), now, 1000), Err(AuthError::BadKey)));

@@ -22,11 +22,11 @@ Existing screens are working but unstyled beyond the tokens; nothing below is lo
 
 | ID   | Flow                                                                                     | Platforms | Notes                                                                                 |
 | ---- | ---------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------- |
-| F1.1 | Open an invite link → name the system (or yourself) → handle → this device's name → Home | A, W      | The link may arrive by QR, paste or tap. System vs person invite changes the wording. |
+| F1.1 | Open an invite link → "Who's joining?" (system / just me) → name → handle → this device's name → Home | A, W      | The link may arrive by QR, paste or tap. The answer, not the invite, picks the account kind (D-093); a device invite goes straight to "Link this device". |
 | F1.2 | Choose terminology (system/collective/…, fronting/switching words)                       | A, W      | SPEC §3.1; applies everywhere, notifications included.                                |
 | F1.3 | Add the first members (quick: sigil, name, colour) or import from PluralKit              | A, W      | PK import: pick file → preview counts → import → result (M11).                        |
 | F1.4 | Set the first front                                                                      | A, W      | Ends onboarding.                                                                      |
-| F1.5 | Person account onboarding (no members; "for systems" notes where member UI would be)     | A, W      | Person accounts hide the switcher, Members, History, widget tiles.                    |
+| F1.5 | Person account onboarding (no members; "for systems" notes where member UI would be)     | A, W      | Person accounts hide the switcher, Members, History, widget tiles, switch-sharing presets, grants and bucket ceilings; Home shows "Friends right now" and People lists Following first (D-093). |
 | F1.6 | Link another device: show QR/link on one device → scan/open on the other                 | A, W      | 1-day, one-use. Also "Sign out" a lost device from the list.                          |
 
 ## F2 · Chorus Home (one-click install on a home PC, HOME.md)
