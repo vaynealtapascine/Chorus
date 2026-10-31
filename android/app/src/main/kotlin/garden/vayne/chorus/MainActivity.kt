@@ -95,6 +95,7 @@ class MainActivity : ComponentActivity() {
         if (intent.action == "garden.vayne.chorus.NEW_ENTRY") newEntryRequest.value = ++nextEntryId
         val chorus = Chorus.get(this)
         SyncWork.schedulePeriodic(this)
+        garden.vayne.chorus.data.NotifyCheck.start(this)
         // switch notifications (M8.1): ask once on Android 13+, then register with ntfy if present
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED

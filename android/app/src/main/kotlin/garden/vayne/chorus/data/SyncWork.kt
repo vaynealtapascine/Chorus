@@ -22,6 +22,8 @@ import java.util.concurrent.TimeUnit
 class SyncWork(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val chorus = Chorus.get(applicationContext)
+        // the slower safety net for the five-minute notification look
+        runCatching { NotifyCheck.run(applicationContext) }
         return when {
             chorus.syncOnce() -> Result.success()
             chorus.status.value == Status.StorageError -> Result.failure()

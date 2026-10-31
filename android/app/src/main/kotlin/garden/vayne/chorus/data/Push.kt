@@ -65,6 +65,9 @@ object Push {
 
     private suspend fun load(chorus: Chorus): State? = chorus.setting("push")?.let { runCatching { State.parse(it) }.getOrNull() }
 
+    /** Whether a distributor gave us an endpoint, so pushes arrive (else [NotifyCheck] looks). */
+    suspend fun registered(chorus: Chorus): Boolean = load(chorus)?.endpoint != null
+
     /**
      * Make sure this device is registered (call on app start once signed in). Picks the ntfy app if
      * present, else the only distributor. Does nothing when none is installed.
