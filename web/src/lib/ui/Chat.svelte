@@ -26,6 +26,8 @@
   import { expandFront } from '../subsystems';
   import Icon from './Icon.svelte';
   import { authorCards, listSpaces, openDm, spaceTitle, type SpaceInfo } from '../spaces';
+  import { accountsLabel, frontingLine } from '../friends';
+  import { frontOf, refreshFront } from '../friend-fronts.svelte';
   import { carryReply, takeReply } from '../replyElsewhere';
   import ChannelPermissions from './ChannelPermissions.svelte';
   import SpaceRoles from './SpaceRoles.svelte';
@@ -691,9 +693,18 @@
       const here = shownFront.entries.filter((e) => e.subject_type === 'member' && people.has(e.subject_id)).map((e) => nameOf(e.subject_id));
       return here.length ? `${here.slice(0, 2).join(' & ')}${here.length > 2 ? ` & ${here.length - 2} more` : ''} here` : `${roomMembers.length} members`;
     }
-    if (space?.kind === 'dm') return 'Direct message';
-    const n = directory.get(space?.id ?? '')?.accounts.length ?? 0;
-    return `${space?.kind === 'shared' && spaceChannels.length > 1 ? `${space.name} · ` : ''}${n ? `${n} systems` : 'Shared space'}`;
+    // a DM with someone you follow: who's fronting there, as far as they share it
+    if (space?.kind === 'dm') return frontingLine((dmPartner ? frontOf(dmPartner.id) : undefined)?.map((m) => m.name) ?? []) ?? 'Direct message';
+    const label = accountsLabel(directory.get(space?.id ?? '')?.accounts ?? []);
+    return `${space?.kind === 'shared' && spaceChannels.length > 1 ? `${space.name} · ` : ''}${label || 'Shared space'}`;
+  });
+  const dmPartner = $derived(space?.kind === 'dm' ? directory.get(space.id)?.accounts.find((a) => a.id !== sync.accountId) : undefined);
+  $effect(() => {
+    const id = dmPartner?.id;
+    if (!id) return;
+    void refreshFront(id);
+    const t = setInterval(() => void refreshFront(id), 60_000);
+    return () => clearInterval(t);
   });
   const roomDisc = $derived.by((): { glyph: string; member?: MemberRow; style: string } => {
     if (current?.kind === 'member_dm') {

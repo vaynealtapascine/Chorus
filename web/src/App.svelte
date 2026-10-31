@@ -78,7 +78,9 @@
     ['insights', 'data', 'trash', 'settings', 'computer', 'search', 'post-stage'].includes(router.route.name) ? 'more' : router.route.name);
   const account = $derived(projection?.rows.account?.[sync.accountId]?.fields);
   const system = $derived(projection?.rows.system?.[sync.accountId]?.fields);
-  const accountName = $derived(String(system?.name ?? account?.display_name ?? 'Your system'));
+  // a singlet is named by their self member, never "Your system"
+  const self = $derived(projection ? selfMember(projection) : undefined);
+  const accountName = $derived(String(system?.name ?? account?.display_name ?? (self ? self.display_name ?? self.name : 'Your system')));
   const bodyFront = $derived(frontView(projection, sync.accountId));
   const current = $derived(bodyFront.entries);
   const subjects = $derived(new Map([

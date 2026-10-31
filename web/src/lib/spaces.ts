@@ -77,3 +77,19 @@ export function spaceTitle(s: { id: string; kind: string; name: string }, info: 
   }
   return s.name;
 }
+
+/** What we may see of an account we follow (NOTIFICATIONS.md §5); null when we don't follow it. */
+export async function followerView(accountId: string): Promise<{ entries: { level: string; name: string; color?: string | null }[]; shared?: boolean } | null> {
+  try {
+    return await call('GET', `/accounts/${encodeURIComponent(accountId)}/view`);
+  } catch {
+    return null;
+  }
+}
+
+export interface Follow { id: string; status: string; account: SpaceAccount & { avatar_blob?: string | null } }
+
+/** The accounts this one follows (active and asked), from /follows. */
+export async function following(): Promise<Follow[]> {
+  return ((await call('GET', '/follows'))?.following ?? []) as Follow[];
+}

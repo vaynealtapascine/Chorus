@@ -27,9 +27,24 @@ export function inviteCode(input: string): string {
   return m ? m[1] : s;
 }
 
+/** What an invite is for, without using it (D-093): `system`/`person` for a new account (the
+ *  invite's suggestion; the person joining picks), `device` for another device of an account.
+ *  Null when the server predates the question, so onboarding asks nothing. */
+export async function inviteKind(invite: string): Promise<'system' | 'person' | 'device' | null> {
+  const r = await apiFetch(`${apiBase()}/auth/invite`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code: inviteCode(invite) }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 400) throw new Error(j?.error?.message ?? 'That invite has expired or was already used.');
+  const kind = r.ok ? j?.kind : null;
+  return kind === 'system' || kind === 'person' || kind === 'device' ? kind : null;
+}
+
 export async function enrol(
   invite: string,
-  account: { display_name?: string; handle?: string } | null,
+  account: { display_name?: string; handle?: string; kind?: 'system' | 'person' } | null,
   deviceName: string,
 ): Promise<DeviceRecord> {
   const keys = (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, [

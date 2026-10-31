@@ -7,6 +7,8 @@
   let { folder, counts, person, onfolder, onmenu }: {
     folder: Folder; counts: Record<Folder, number>; person: boolean; onfolder: (f: Folder) => void; onmenu: () => void;
   } = $props();
+  // a singlet has no members to talk among: their own channels stay under All chats
+  const folders = $derived(person ? FOLDERS.filter((f) => f.id !== 'internal') : FOLDERS);
   const destinations = $derived([
     ...(person ? [] : [{ href: '#/members', label: 'Members', icon: 'users' }, { href: '#/', label: 'Fronting', icon: 'target' }]),
     ...(person ? [{ href: '#/journal', label: 'Journal', icon: 'journal' }] : []),
@@ -17,7 +19,7 @@
 
 <nav class="rail" aria-label="Chat folders">
   <button class="menu" onclick={onmenu} aria-label="Open navigation"><Icon name="menu" size={22} /></button>
-  {#each FOLDERS as f (f.id)}
+  {#each folders as f (f.id)}
     <button class="item" class:on={folder === f.id} aria-pressed={folder === f.id} onclick={() => onfolder(f.id)}
       aria-label={counts[f.id] ? `${f.label}, ${counts[f.id]} unread` : f.label}>
       <Icon name={f.icon} size={22} />

@@ -10,6 +10,9 @@
   import type { FrontEntry, Member } from './types';
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
+  import { following, openDm, type Follow } from '../spaces';
+  import { frontingLine } from '../friends';
+  import { frontOf, refreshFront } from '../friend-fronts.svelte';
 
   let { projection, dark, onswitch }: { projection: Projection; dark: boolean; onswitch: (front?: string) => void } = $props();
 
@@ -27,6 +30,33 @@
       .sort((a, b) => a.name.localeCompare(b.name)),
   );
   const me = $derived(selfMember(projection));
+
+  // a singlet's Home: the friends they follow, and who's fronting there as far as each shares it
+  let friends = $state<Follow[]>([]);
+  let friendError = $state('');
+  async function loadFriends() {
+    try {
+      friends = (await following()).filter((f) => f.status === 'active');
+      await Promise.all(friends.map((f) => refreshFront(f.account.id, 30_000)));
+    } catch {
+      /* offline: keep what we had */
+    }
+  }
+  $effect(() => {
+    if (!me) return;
+    void loadFriends();
+    const t = setInterval(() => void loadFriends(), 60_000);
+    return () => clearInterval(t);
+  });
+  async function message(accountId: string) {
+    friendError = '';
+    try {
+      location.hash = `#/chat/space:${await openDm(accountId)}`;
+    } catch (e) {
+      friendError = e instanceof Error ? e.message : String(e);
+    }
+  }
+  const friendName = (f: Follow) => f.account.display_name ?? (f.account.handle ? `@${f.account.handle}` : 'Someone');
   // the front card can show subsystems fronting as a unit, not only members
   const subjects: Member[] = $derived([
     ...members,
@@ -83,9 +113,33 @@
       <span class="avatar" aria-hidden="true"><AvatarImage hash={me.avatar_blob} glyph={me.name[0]} name={me.name} /></span>
       <div>
         <h1 class="display">Hi, {me.display_name ?? me.name}</h1>
-        <p class="empty">Follow friends and chat with them from <a href="#/people">People</a> and <a href="#/chat">Chat</a>.</p>
+        {#if !friends.length}<p class="empty">Follow friends and chat with them from <a href="#/people">People</a> and <a href="#/chat">Chat</a>.</p>{/if}
       </div>
     </section>
+    {#if friends.length}
+      <section class="friends" aria-label="Friends right now">
+        <h2>Friends right now</h2>
+        <ul>
+          {#each friends as f (f.id)}
+            {@const front = frontOf(f.account.id) ?? []}
+            <li>
+              <span class="avatar" aria-hidden="true"><AvatarImage hash={f.account.avatar_blob} glyph={friendName(f).replace('@', '')[0]} name={friendName(f)} /></span>
+              <div class="who">
+                <strong>{friendName(f)}</strong>
+                {#if front.length}
+                  <span class="fronting">{#each front.slice(0, 4) as m, i (`${m.name}:${i}`)}<span class="dot" style="background: {m.color ?? 'var(--accent)'}"></span>{/each}{frontingLine(front.map((m) => m.name))}</span>
+                {:else if f.account.kind === 'system'}
+                  <span>Not sharing who's fronting right now</span>
+                {/if}
+              </div>
+              <button class="ghost" onclick={() => message(f.account.id)}>Message</button>
+            </li>
+          {/each}
+        </ul>
+        {#if friendError}<p class="error" role="alert">{friendError}</p>{/if}
+        <p class="empty"><a href="#/people">People</a> has their posts, and who follows you.</p>
+      </section>
+    {/if}
   {:else}
   {#if !configured}<Reviews {projection} />{/if}
   {#if fronts.length > 1}
@@ -166,6 +220,17 @@
   .person .avatar { width: 56px; height: 56px; flex: none; border-radius: var(--r-full); overflow: hidden; }
   .person h1 { margin: 0; font-size: var(--fs-xl, 1.5rem); }
   .person a { color: var(--accent); }
+  .friends ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+  .friends li { display: flex; gap: var(--s-3); align-items: center; padding: var(--s-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
+  .friends .avatar { width: 40px; height: 40px; flex: none; border-radius: var(--r-full); overflow: hidden; display: grid; place-items: center; background: var(--surface-2); color: var(--ink-2); }
+  .friends .who { flex: 1; display: grid; gap: 2px; min-width: 0; }
+  .friends .who span { color: var(--ink-2); font-size: var(--fs-sm); }
+  .friends .fronting { display: flex; align-items: center; gap: 4px; }
+  .friends .dot { width: 8px; height: 8px; border-radius: var(--r-full); flex: none; }
+  .friends .dot:last-of-type { margin-right: 4px; }
+  .friends .ghost { background: none; border: 1px solid var(--line); color: var(--accent); border-radius: var(--r-full); padding: var(--s-1) var(--s-3); font: inherit; font-weight: 600; cursor: pointer; }
+  .friends a { color: var(--accent); }
+  .friends .error { color: var(--danger); }
   .data-links a { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
   .card-button {
     all: unset;

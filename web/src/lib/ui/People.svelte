@@ -19,6 +19,7 @@
   import type { Entity } from '../core';
   import { disablePush, enablePush, pushActive, pushSupported, testPush } from '../push';
   import { createShared, openDm } from '../spaces';
+  import { putFront } from '../friend-fronts.svelte';
 
   let { projection }: { projection: Projection } = $props();
 
@@ -156,6 +157,7 @@
     for (const f of following.filter((x) => x.status === 'active')) {
       try {
         next[f.account.id] = await api(`/accounts/${f.account.id}/view`);
+        putFront(f.account.id, next[f.account.id]);
       } catch {
         /* not shared (yet) */
       }
@@ -301,7 +303,7 @@
 
   function accept(id: string, preset: string) {
     sync.create('follow.accept', sync.accountScope, id, {});
-    setPreset(id, preset);
+    if (isSystem) setPreset(id, preset);
   }
 
   function remove(id: string) {
@@ -333,6 +335,9 @@
   </form>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
+  <!-- a singlet comes here for the people they follow; a system for its requests and followers -->
+  {#if !isSystem}{@render followingList()}{/if}
+
   {#if followers.some((f) => f.status === 'requested')}
     <h2>Requests</h2>
     <ul>
@@ -340,6 +345,7 @@
       <li class="card">
         <span class="person-avatar"><AvatarImage hash={f.account.avatar_blob} glyph={(f.account.display_name ?? f.account.handle ?? '?')[0]} name={name(f.account)} /></span>
         <div class="who"><strong>{name(f.account)}</strong><span>wants to follow you</span></div>
+          {#if isSystem}
           <label class="preset">
             <span>They'll see switches</span>
             <select value={choice[f.id] ?? 'inherit'} onchange={(e) => (choice[f.id] = e.currentTarget.value)}>
@@ -347,6 +353,7 @@
               {#each PRESETS as p (p.id)}<option value={p.id}>{p.label} — {p.hint}</option>{/each}
             </select>
           </label>
+          {/if}
           <div class="actions">
             <button class="primary" onclick={() => accept(f.id, choice[f.id] ?? 'inherit')}>Accept</button>
             <button class="ghost" onclick={() => remove(f.id)}>Decline</button>
@@ -357,13 +364,15 @@
   {/if}
 
   <h2>Followers</h2>
-  <p class="hint">Delay hides <em>when</em> you switched as it happens; fuzzing hides the exact time afterwards.</p>
+  {#if isSystem}<p class="hint">Delay hides <em>when</em> you switched as it happens; fuzzing hides the exact time afterwards.</p>
+  {:else}<p class="hint">They see the posts you share with followers.</p>{/if}
   <ul>
     {#each followers.filter((f) => f.status === 'active') as f (f.id)}
       {@const current = ceilingOf(f.id)}
       <li class="card">
         <span class="person-avatar"><AvatarImage hash={f.account.avatar_blob} glyph={(f.account.display_name ?? f.account.handle ?? '?')[0]} name={name(f.account)} /></span>
         <div class="who"><strong>{name(f.account)}</strong>{#if f.account.handle}<span>@{f.account.handle}</span>{/if}</div>
+        {#if isSystem}
         <label class="preset">
           <span>Sees switches</span>
           <select value={current} onchange={(e) => setPreset(f.id, e.currentTarget.value)}>
@@ -372,7 +381,8 @@
             {#each PRESETS as p (p.id)}<option value={p.id}>{p.label} — {p.hint}</option>{/each}
           </select>
         </label>
-        {#if grantableFronts.length || grantableLayers.length}
+        {/if}
+        {#if isSystem && (grantableFronts.length || grantableLayers.length)}
           <details class="grants">
             <summary>Additional fronts and layers</summary>
             <p class="hint">They see Body only until you allow more. Delays and privacy rules still apply.</p>
@@ -414,12 +424,13 @@
 
   <section class="bucket-section" aria-label="Sharing buckets">
     <h2>Sharing buckets</h2>
-    <p class="hint">Group followers to choose what each group can hear. A follower in several buckets gets the most open setting for each detail.</p>
+    {#if isSystem}<p class="hint">Group followers to choose what each group can hear. A follower in several buckets gets the most open setting for each detail.</p>
+    {:else}<p class="hint">Group followers to choose who sees which posts.</p>{/if}
     <form class="bucket-new" onsubmit={addBucket}>
       <input bind:value={newBucket} placeholder="Bucket name" aria-label="New bucket name" />
-      <select bind:value={newBucketPreset} aria-label="New bucket ceiling">
+      {#if isSystem}<select bind:value={newBucketPreset} aria-label="New bucket ceiling">
         {#each PRESETS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
-      </select>
+      </select>{/if}
       <button class="primary">Create bucket</button>
     </form>
     {#each ownBuckets as bucket (bucket.id)}
@@ -429,19 +440,73 @@
           const name = e.currentTarget.value.trim();
           if (name && name !== bucket.name) sync.create('bucket.set', sync.accountScope, bucket.id, { name });
         }} /></label>
-        <label>Ceiling <select value={preset} aria-label={`Ceiling for ${bucket.name}`} onchange={(e) => sync.create('bucket.set', sync.accountScope, bucket.id, {
+        {#if isSystem}<label>Ceiling <select value={preset} aria-label={`Ceiling for ${bucket.name}`} onchange={(e) => sync.create('bucket.set', sync.accountScope, bucket.id, {
           ceiling: JSON.parse(presetJson[e.currentTarget.value]),
         })}>
           {#if preset === 'custom'}<option value="custom" disabled>Custom (Advanced)</option>{/if}
           {#each PRESETS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
-        </select></label>
+        </select></label>{/if}
         <button class="ghost" onclick={() => sync.create('bucket.delete', sync.accountScope, bucket.id, {})}>Delete</button>
       </div>
     {/each}
-    <p class="hint">Set the default for new followers in <a href="#/settings">Settings</a>.</p>
+    {#if isSystem}<p class="hint">Set the default for new followers in <a href="#/settings">Settings</a>.</p>{/if}
   </section>
 
+  {#if isSystem}{@render followingList()}{/if}
+
+  {#if connections.length}
+    <h2>Shared spaces</h2>
+    <p class="hint">
+      A chat with people you're connected to. What you post there is seen as it's sent, so it also shows who's
+      around at that moment, even if your switch notifications are delayed.
+    </p>
+    <form class="card new-space" onsubmit={newSpace}>
+      <input bind:value={spaceName} placeholder="Name (e.g. Book club)" aria-label="Shared space name" maxlength="80" required />
+      <div class="bucket-checks" aria-label="Who to bring in">
+        {#each connections as a (a.id)}
+          <label><input type="checkbox" value={a.id} bind:group={spaceWith} /> {name(a)}</label>
+        {/each}
+      </div>
+      <button class="primary" disabled={!spaceName.trim()}>Start a shared space</button>
+    </form>
+  {/if}
+
+  {#if notes.length || following.length || isSystem}
+    <div class="notes-head">
+      <h2>Recent</h2>
+      {#if pushOn}
+        <button class="ghost" onclick={sendTest}>Send a test</button>
+        <button class="ghost" onclick={turnOffPush}>Stop notifying this browser</button>
+      {:else if typeof Notification !== 'undefined' && (!canNotify || pushSupported())}
+        <button class="ghost" onclick={enableNotifications}>Notify me in this browser</button>
+      {/if}
+    </div>
+    {#if pushNote}<p class="muted">{pushNote} Notifications will show while this page is open.</p>{/if}
+    {#if testNote}<p class="muted">{testNote}</p>{/if}
+    <ul>
+      {#each notes as n (n.id)}
+        <li class="note">
+          <strong>{noteTitle(n)}</strong>
+          {#if n.kind !== 'switch' && n.channel_id}
+            <a href="#/chat/{n.channel_id}">{n.text}</a>
+          {:else}
+            <span>{n.text}</span>
+          {/if}
+          <time>{fuzzyWhen(n.time.at, n.time.precision, n.time.part)}</time>
+        </li>
+      {:else}
+        <li class="muted">Nothing yet. Switches arrive after the delay each system chose.</li>
+      {/each}
+    </ul>
+  {/if}
+</section>
+
+
+{#snippet followingList()}
   <h2>Following</h2>
+  {#if !isSystem && following.some((f) => f.account.kind === 'system')}
+    <p class="hint">Systems share who's fronting as far as they choose, so you know who you're talking to. Their messages and posts show which member wrote them.</p>
+  {/if}
   <ul>
     {#each following as f (f.id)}
       <li class="card">
@@ -492,7 +557,7 @@
                       <AttachmentView {attachment} />
                     {/each}
                     {#if post.reactions?.length}<p class="post-reactions">{post.reactions.map((r) => `${r.emoji} ${r.member_name}`).join(' · ')}</p>{/if}
-                    {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button><span class="hint">Reacting shows this member to post readers right away.</span>{/if}
+                    {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button><span class="hint">{isSystem ? 'Reacting shows this member to post readers right away.' : 'Post readers see your reaction right away.'}</span>{/if}
                     {#if reactMember}<button class="ghost" onclick={() => (replyingPost = replyingPost === post.id ? null : post.id)}>{replyingPost === post.id ? 'Cancel reply' : 'Reply'}</button>{/if}
                   </details>
                 {:else}
@@ -502,7 +567,7 @@
                     <AttachmentView {attachment} />
                   {/each}
                   {#if post.reactions?.length}<p class="post-reactions">{post.reactions.map((r) => `${r.emoji} ${r.member_name}`).join(' · ')}</p>{/if}
-                  {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button><span class="hint">Reacting shows this member to post readers right away.</span>{/if}
+                  {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button><span class="hint">{isSystem ? 'Reacting shows this member to post readers right away.' : 'Post readers see your reaction right away.'}</span>{/if}
                   {#if reactMember}<button class="ghost" onclick={() => (replyingPost = replyingPost === post.id ? null : post.id)}>{replyingPost === post.id ? 'Cancel reply' : 'Reply'}</button>{/if}
                 {/if}
                 {#if replyingPost === post.id && reactMember}
@@ -520,53 +585,7 @@
     {/each}
   </ul>
   <p class="hint">Quiet hours and notification kinds are in <a href="#/settings">Settings</a>. Each channel’s ⋯ menu has its own notification level.</p>
-
-  {#if connections.length}
-    <h2>Shared spaces</h2>
-    <p class="hint">
-      A chat with people you're connected to. What you post there is seen as it's sent, so it also shows who's
-      around at that moment, even if your switch notifications are delayed.
-    </p>
-    <form class="card new-space" onsubmit={newSpace}>
-      <input bind:value={spaceName} placeholder="Name (e.g. Book club)" aria-label="Shared space name" maxlength="80" required />
-      <div class="bucket-checks" aria-label="Who to bring in">
-        {#each connections as a (a.id)}
-          <label><input type="checkbox" value={a.id} bind:group={spaceWith} /> {name(a)}</label>
-        {/each}
-      </div>
-      <button class="primary" disabled={!spaceName.trim()}>Start a shared space</button>
-    </form>
-  {/if}
-
-  {#if notes.length || following.length || isSystem}
-    <div class="notes-head">
-      <h2>Recent</h2>
-      {#if pushOn}
-        <button class="ghost" onclick={sendTest}>Send a test</button>
-        <button class="ghost" onclick={turnOffPush}>Stop notifying this browser</button>
-      {:else if typeof Notification !== 'undefined' && (!canNotify || pushSupported())}
-        <button class="ghost" onclick={enableNotifications}>Notify me in this browser</button>
-      {/if}
-    </div>
-    {#if pushNote}<p class="muted">{pushNote} Notifications will show while this page is open.</p>{/if}
-    {#if testNote}<p class="muted">{testNote}</p>{/if}
-    <ul>
-      {#each notes as n (n.id)}
-        <li class="note">
-          <strong>{noteTitle(n)}</strong>
-          {#if n.kind !== 'switch' && n.channel_id}
-            <a href="#/chat/{n.channel_id}">{n.text}</a>
-          {:else}
-            <span>{n.text}</span>
-          {/if}
-          <time>{fuzzyWhen(n.time.at, n.time.precision, n.time.part)}</time>
-        </li>
-      {:else}
-        <li class="muted">Nothing yet. Switches arrive after the delay each system chose.</li>
-      {/each}
-    </ul>
-  {/if}
-</section>
+{/snippet}
 
 <style>
   .person-avatar, .front-avatar { display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: var(--surface-2); color: var(--ink-2); flex: none; }
@@ -586,7 +605,7 @@
     display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: center; justify-content: space-between;
     padding: var(--s-3) var(--s-4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
   }
-  .who { display: grid; }
+  .who { display: grid; flex: 1; min-width: 12em; }
   .who span, .preset span, .hint, .muted { color: var(--ink-3); font-size: var(--fs-sm); }
   .hint { margin: 0; }
   .bucket-section { display: grid; gap: var(--s-2); }
