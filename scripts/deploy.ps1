@@ -15,6 +15,10 @@
 #   install.cmd             one-time service + Caddy setup (double-click; asks for admin)
 param([switch]$NoBuild, [switch]$Android, [switch]$AndroidOnly, [string]$Target = (Join-Path $HOME 'selfhost\chorus'))
 $ErrorActionPreference = 'Stop'
+# chorus.vayne.garden moved to ns2-up-net-nz (D-094); this only updates the PC's fallback copy
+if (-not $AndroidOnly) {
+    Write-Host 'Note: the live server is on ns2-up-net-nz now; deploy it with scripts/deploy-linux.ps1. This updates the PC copy.' -ForegroundColor Yellow
+}
 if ($AndroidOnly) { $Android = $true }
 $root = Split-Path $PSScriptRoot -Parent
 

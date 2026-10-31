@@ -7,6 +7,14 @@ Two supported ways to run the server (D-062):
 - **Linux server on the public internet** (§9): a systemd service behind Caddy, built and packed
   on the PC by `scripts/pack-linux.ps1`, installed by `deploy/linux/install.sh`.
 
+**Where it runs now (D-094, 2026-10-31):** `chorus.vayne.garden` is the Linux install on
+`ns2-up-net-nz` (Vultr), tailnet-only (`install.sh --tailnet`, §9). Deploy with
+`pwsh scripts/deploy-linux.ps1 [-Android]` (not `deploy.ps1`, which only updates the retired PC
+copy; `-Android` still stages the APK through the PC install's `app\android`), make invites with
+`pwsh scripts/invite.ps1`, look at it with `ssh root@ns2-up-net-nz` (Tailscale SSH: root only,
+with a browser check now and then). The PC install in `~\selfhost\chorus` is the fallback: to go
+back, point the Cloudflare A record at 100.68.254.40 again and start the PC's Chorus service.
+
 ---
 
 ## 1. Layout on the PC

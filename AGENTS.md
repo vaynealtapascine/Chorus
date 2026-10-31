@@ -67,8 +67,9 @@ same commit and note it in the log.
 
 ## Environment notes (owner's machine)
 
-- Windows 11, PowerShell + Git Bash. The server runs on this PC as a service; clients reach it over
-  Tailscale through Caddy (see OPS.md).
+- Windows 11, PowerShell + Git Bash. Since 2026-10-31 the server runs on `ns2-up-net-nz` (Linux,
+  tailnet-only, D-094): deploy with `scripts/deploy-linux.ps1`, not `deploy.ps1`. Clients reach it
+  over Tailscale through Caddy (see OPS.md). The PC's own install is a stopped fallback.
 - Android device is a Samsung phone. `JAVA_HOME` may point at an old JRE — use Android Studio's
   bundled JBR for Gradle.
 - Agents must not install Windows services or change system settings; write the script and tell
