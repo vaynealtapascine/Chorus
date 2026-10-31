@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Chorus on a Debian 12+ / Ubuntu 22.04+ server (x86_64), behind Caddy on the public internet.
-# Run it as root from the unpacked bundle (scripts/pack-linux.ps1 makes the bundle):
+# Chorus on a Debian 12+ / Ubuntu 22.04+ server (x86_64), behind Caddy on the public internet
+# (or only on your tailnet, with --tailnet). Run it as root from the unpacked bundle
+# (scripts/pack-linux.ps1 makes the bundle):
 #
 #   sudo bash install.sh --domain chorus.example.org [--email you@example.org]
 #                        [--ntfy https://ntfy.example.org] [--import] [--replace-data]
+#                        [--tailnet --cf-token-file /root/cf-token]
 #
 # First run: installs Caddy if missing, creates the `chorus` user, /opt/chorus/{app,data,backups},
 # /etc/chorus/chorus.toml and the chorus systemd service, adds the site to Caddy and prints your
@@ -15,6 +17,13 @@
 #   --email         for Let's Encrypt notices (only used when this script writes a new Caddyfile)
 #   --ntfy          your ntfy server, if push notifications should go through it
 #   --no-caddy      don't touch Caddy (you proxy https://DOMAIN to 127.0.0.1:5250 yourself)
+#   --tailnet       reachable only over Tailscale, like Chorus on the PC: the DNS record points at
+#                   this machine's Tailscale address, Caddy gets the certificate through a Cloudflare
+#                   DNS challenge (adds the caddy-dns/cloudflare module and holds the caddy package
+#                   so apt can't drop it; update Caddy with `caddy upgrade`), and the firewall is
+#                   left alone. Webhooks keep the PC's default: tailnet/LAN targets only.
+#   --cf-token-file a file holding a Cloudflare API token that can edit the zone's DNS; copied to
+#                   /etc/caddy/cloudflare.env (root only). Needed the first time with --tailnet.
 set -euo pipefail
 
 say() { printf '\n\033[36m== %s\033[0m\n' "$*"; }
@@ -30,16 +39,18 @@ TOML="$ETC/chorus.toml"
 UNIT=/etc/systemd/system/chorus.service
 EXE="$OPT/app/chorus-server"
 
-DOMAIN="" EMAIL="" NTFY="" IMPORT=0 REPLACE=0 CADDY=1
+DOMAIN="" EMAIL="" NTFY="" IMPORT=0 REPLACE=0 CADDY=1 TAILNET=0 CF_TOKEN_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
+    --tailnet) TAILNET=1; shift ;;
+    --cf-token-file) CF_TOKEN_FILE="${2:?--cf-token-file needs a value}"; shift 2 ;;
     --domain) DOMAIN="${2:?--domain needs a value}"; shift 2 ;;
     --email) EMAIL="${2:?--email needs a value}"; shift 2 ;;
     --ntfy) NTFY="${2:?--ntfy needs a value}"; shift 2 ;;
     --import) IMPORT=1; shift ;;
     --replace-data) REPLACE=1; shift ;;
     --no-caddy) CADDY=0; shift ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
     *) fail "unknown option $1 (see --help)" ;;
   esac
 done
@@ -48,6 +59,21 @@ done
 command -v systemctl > /dev/null || fail "this needs systemd"
 [ "$(uname -m)" = x86_64 ] || fail "the bundled server is built for x86_64, this machine is $(uname -m)"
 [ -x "$HERE/app/chorus-server" ] || [ -f "$HERE/app/chorus-server" ] || fail "no app/chorus-server next to install.sh; unpack the whole bundle"
+CF_ENV=/etc/caddy/cloudflare.env
+# an update keeps a tailnet install a tailnet install
+if [ "$TAILNET" = 0 ] && [ "$CADDY" = 1 ] && grep -qs 'dns cloudflare' /etc/caddy/sites/chorus.caddy; then
+  TAILNET=1
+  note "keeping --tailnet from the last install"
+fi
+if [ "$TAILNET" = 1 ]; then
+  command -v tailscale > /dev/null || fail "--tailnet needs Tailscale on this machine"
+  [ "$CADDY" = 1 ] || fail "--tailnet sets up Caddy; leave out --no-caddy"
+  if [ -n "$CF_TOKEN_FILE" ]; then
+    [ -s "$CF_TOKEN_FILE" ] || fail "no token in $CF_TOKEN_FILE"
+  elif [ ! -s "$CF_ENV" ]; then
+    fail "--tailnet needs --cf-token-file the first time (a Cloudflare token that can edit the zone's DNS)"
+  fi
+fi
 
 # The domain: from the command line, else from an earlier install.
 if [ -z "$DOMAIN" ] && [ -f "$TOML" ]; then
@@ -70,6 +96,13 @@ if [ "$CADDY" = 1 ] && ! command -v caddy > /dev/null; then
   curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt > /etc/apt/sources.list.d/caddy-stable.list
   apt-get update -q > /dev/null
   apt-get install -y -q caddy > /dev/null
+fi
+if [ "$TAILNET" = 1 ] && ! caddy list-modules 2> /dev/null | grep -qx 'dns.providers.cloudflare'; then
+  # caddyserver.com builds the same Caddy with the module added; apt would put the plain one back
+  note "adding the Cloudflare DNS module to Caddy"
+  caddy add-package github.com/caddy-dns/cloudflare > /dev/null || fail "couldn't add caddy-dns/cloudflare to Caddy"
+  apt-mark hold caddy > /dev/null
+  note "caddy is held in apt now; update it with: caddy upgrade"
 fi
 [ "$CADDY" = 1 ] && ok "caddy $(caddy version | cut -d' ' -f1)"
 
@@ -114,15 +147,21 @@ if [ ! -f "$TOML" ]; then
     echo "time = \"04:00\""
     echo
     echo "[security]"
-    echo "# On the public internet, webhooks may only point to public addresses, never to this"
-    echo "# machine's own services (Caddy's admin API, ntfy, ...)."
-    echo "webhook_targets = \"public\""
+    if [ "$TAILNET" = 1 ]; then
+      echo "# Only reachable over Tailscale: webhooks and push endpoints may point at tailnet/LAN"
+      echo "# addresses (never this machine's loopback), as on the PC."
+      echo "webhook_targets = \"internal\""
+    else
+      echo "# On the public internet, webhooks may only point to public addresses, never to this"
+      echo "# machine's own services (Caddy's admin API, ntfy, ...)."
+      echo "webhook_targets = \"public\""
+    fi
   } > "$TMP/chorus.toml"
   install -o root -g chorus -m 640 "$TMP/chorus.toml" "$TOML"
   ok "wrote $TOML"
 else
   ok "kept $TOML"
-  grep -q '^webhook_targets' "$TOML" || warn "$TOML has no webhook_targets; add webhook_targets = \"public\" under [security]"
+  [ "$TAILNET" = 1 ] || grep -q '^webhook_targets' "$TOML" || warn "$TOML has no webhook_targets; add webhook_targets = \"public\" under [security]"
 fi
 
 fresh=0
@@ -178,6 +217,19 @@ if [ "$CADDY" = 1 ]; then
   install -d -m 755 /etc/caddy/sites
   install -d -o caddy -g caddy -m 750 /var/log/caddy
   fill "$HERE/files/chorus.caddy" > /etc/caddy/sites/chorus.caddy
+  if [ "$TAILNET" = 1 ]; then
+    # the record points at a tailnet address Let's Encrypt can't reach: prove the domain in DNS
+    sed -i 's|^\t# @TLS@$|\ttls {\n\t\tdns cloudflare {env.CF_API_TOKEN}\n\t\tresolvers 1.1.1.1\n\t}|' /etc/caddy/sites/chorus.caddy
+    if [ -n "$CF_TOKEN_FILE" ]; then
+      printf 'CF_API_TOKEN=%s\n' "$(tr -d ' \r\n' < "$CF_TOKEN_FILE")" > "$TMP/cloudflare.env"
+      install -o root -g root -m 600 "$TMP/cloudflare.env" "$CF_ENV"
+    fi
+    install -d -m 755 /etc/systemd/system/caddy.service.d
+    printf '[Service]\nEnvironmentFile=%s\n' "$CF_ENV" > /etc/systemd/system/caddy.service.d/cloudflare.conf
+    systemctl daemon-reload
+  else
+    sed -i '/# @TLS@/d' /etc/caddy/sites/chorus.caddy
+  fi
   CF=/etc/caddy/Caddyfile
   if [ -f "$CF" ] && grep -q 'import /etc/caddy/sites/\*\.caddy' "$CF"; then
     note "the Caddyfile already imports /etc/caddy/sites"
@@ -195,7 +247,7 @@ if [ "$CADDY" = 1 ]; then
     printf '\n# Chorus and other sites installed as files\nimport /etc/caddy/sites/*.caddy\n' >> "$CF"
     note "added 'import /etc/caddy/sites/*.caddy' to $CF (the old one is $CF.before-chorus)"
   fi
-  if ! caddy validate --config "$CF" --adapter caddyfile > "$TMP/validate.log" 2>&1; then
+  if ! (if [ "$TAILNET" = 1 ]; then set -a; . "$CF_ENV"; set +a; fi; caddy validate --config "$CF" --adapter caddyfile) > "$TMP/validate.log" 2>&1; then
     cat "$TMP/validate.log" >&2
     [ -f "$CF.before-chorus" ] && cp "$CF.before-chorus" "$CF"
     rm -f /etc/caddy/sites/chorus.caddy
@@ -204,10 +256,13 @@ if [ "$CADDY" = 1 ]; then
   # validating as root creates the site's log file as root; the caddy user must own it
   chown -R caddy:caddy /var/log/caddy
   systemctl enable -q caddy
-  systemctl reload caddy 2> /dev/null || systemctl restart caddy
+  # restart rather than reload when Caddy must pick up its environment file
+  if [ "$TAILNET" = 1 ]; then systemctl restart caddy; else systemctl reload caddy 2> /dev/null || systemctl restart caddy; fi
   ok "https://$DOMAIN -> 127.0.0.1:5250"
 
-  if command -v ufw > /dev/null && ufw status | grep -q '^Status: active'; then
+  if [ "$TAILNET" = 1 ]; then
+    note "firewall untouched: Chorus is for the tailnet only"
+  elif command -v ufw > /dev/null && ufw status | grep -q '^Status: active'; then
     ufw allow 80/tcp comment 'caddy (certificates, redirect)' > /dev/null
     ufw allow 443/tcp comment 'caddy' > /dev/null
     ufw allow 443/udp comment 'caddy http/3' > /dev/null
@@ -222,6 +277,10 @@ resolved="$(getent ahostsv4 "$DOMAIN" 2> /dev/null | awk 'NR==1 {print $1}')"
 mine="$(hostname -I 2> /dev/null | tr ' ' '\n' | grep -v '^$' || true)"
 if [ -n "$resolved" ] && printf '%s\n' "$mine" | grep -qx "$resolved"; then
   ok "$DOMAIN points here ($resolved)"
+elif [ "$TAILNET" = 1 ]; then
+  warn "$DOMAIN resolves to '${resolved:-nothing}'. When this server is ready, point its A record at"
+  note "this machine's Tailscale address, $(tailscale ip -4 2> /dev/null | head -n1) (DNS only / not proxied)."
+  note "The certificate doesn't wait for that: Caddy proves the domain through Cloudflare's DNS."
 else
   warn "$DOMAIN resolves to '${resolved:-nothing}'. Point an A record at this server's public IPv4"
   note "(DNS only / not proxied), then: systemctl reload caddy. Caddy fetches the certificate itself."

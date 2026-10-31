@@ -301,6 +301,16 @@ updates). What differs from the PC:
   sandboxed, so an uploaded file never runs as a page. The address comes from Caddy's `X-Forwarded-For`, trusted only on
   loopback connections. For floods below HTTP (SYN, many sockets), use the provider's firewall
   or fail2ban on `/var/log/caddy/chorus.log`.
+- **Tailnet-only (`install.sh --tailnet --cf-token-file <file>`)**: the same server, reachable
+  only over Tailscale, as on the PC. The DNS record points at the machine's Tailscale address, so
+  Let's Encrypt can't reach it: Caddy proves the domain through Cloudflare's DNS instead (the
+  `caddy-dns/cloudflare` module, added with `caddy add-package`; the apt package is then held, so
+  update Caddy with `caddy upgrade`). The token lives in `/etc/caddy/cloudflare.env` (root, 0600),
+  loaded by a `caddy.service.d/cloudflare.conf` drop-in. The firewall is left alone (no public
+  80/443) and `webhook_targets` stays `internal`, the PC's default. Later runs of `install.sh`
+  keep the mode. This is how `chorus.vayne.garden` runs on `ns2-up-net-nz` (D-094); updates go
+  out with `pwsh scripts/deploy-linux.ps1 [-Android]` and invites come from
+  `pwsh scripts/invite.ps1` (D-093).
 - **Coexisting with the selfhost VPS bundle** (memos, ntfy, Arbor, …): that bundle's Caddyfile
   imports `/etc/caddy/sites/*.caddy`, so Chorus's site survives its reinstalls. Chorus can use
   that ntfy as its push distributor (`ntfy_url`).

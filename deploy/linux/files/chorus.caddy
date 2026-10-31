@@ -1,6 +1,7 @@
 # /etc/caddy/sites/chorus.caddy - written by Chorus's install.sh; edits here are replaced.
 # Imported by /etc/caddy/Caddyfile ("import /etc/caddy/sites/*.caddy").
 @DOMAIN@ {
+	# @TLS@
 	encode zstd gzip
 	header {
 		Strict-Transport-Security "max-age=31536000"

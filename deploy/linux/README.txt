@@ -59,8 +59,17 @@ Moving from the PC (keeps everything; devices stay signed in)
   If ntfy also moves to this server (the selfhost VPS bundle), phones re-register on their own.
 
 
+Only on your tailnet (no public ports)
+  sudo bash install.sh --domain chorus.vayne.garden --tailnet --cf-token-file /root/cf-token
+  The A record then points at the server's Tailscale address (tailscale ip -4), and Caddy gets
+  the certificate through Cloudflare's DNS with that token (one that can edit the zone's DNS;
+  the PC's Caddy uses the same kind). The firewall isn't touched. Later runs keep the mode.
+  Delete /root/cf-token afterwards: install.sh keeps its own copy, readable by root only.
+
+
 Updating
-  pwsh scripts/pack-linux.ps1, copy, unpack over the old folder, sudo bash install.sh
+  From the PC: pwsh scripts/deploy-linux.ps1 [-Android]   (packs, copies over ssh, installs)
+  By hand: pwsh scripts/pack-linux.ps1, copy, unpack over the old folder, sudo bash install.sh
   The service restarts with the new program; schema migrations run by themselves after an
   automatic backup.
 
