@@ -164,7 +164,7 @@ pub struct Registration {
 }
 
 pub fn register(conn: &Connection, device_id: &str, r: &Registration) -> Result<(), PushError> {
-    if !(r.endpoint.starts_with("https://") || r.endpoint.starts_with("http://")) {
+    if !(r.endpoint.starts_with("https://") || r.endpoint.starts_with("http://") || r.endpoint.starts_with("fcm:")) {
         return Err(PushError::BadKey("endpoint"));
     }
     let key = unb64url(&r.p256dh).ok_or(PushError::BadKey("p256dh"))?;
@@ -238,6 +238,9 @@ pub fn prepare_except(
         } else {
             None
         };
+        // FCM caps the whole message at 4 KB, so a long one is a tickle there (fcm.rs)
+        let fits = !endpoint.starts_with("fcm:") || text.len() <= crate::fcm::MAX_PAYLOAD;
+        let text = if fits { text.clone() } else { br#"{"t":"sync"}"#.to_vec() };
         match encrypt(&key, &auth, &text) {
             Ok(body) => out.push(Outbound { device_id, endpoint, body, vapid }),
             Err(e) => tracing::warn!(device = %device_id, error = %e, "push: can't encrypt"),
@@ -312,6 +315,19 @@ pub enum Sent {
 /// Check the endpoint again (the address may have changed since it was registered), then POST
 /// to exactly the checked address.
 pub async fn send(o: &Outbound, targets: WebhookTargets, ntfy_url: Option<&str>) -> Sent {
+    if let Some(token) = o.endpoint.strip_prefix("fcm:") {
+        return match crate::fcm::get() {
+            Some(fcm) => match fcm.send(token, &o.body).await {
+                crate::fcm::Outcome::Ok => Sent::Ok,
+                crate::fcm::Outcome::Gone => Sent::Gone,
+                crate::fcm::Outcome::Failed => Sent::Failed,
+            },
+            None => {
+                tracing::warn!(device = %o.device_id, "push: an FCM device, but FCM is off on this server");
+                Sent::Failed
+            }
+        };
+    }
     let http = match check_endpoint(&o.endpoint, targets, ntfy_url).await {
         Ok(target) => crate::webhooks::pinned_client(&target),
         Err(e) => Err(e),

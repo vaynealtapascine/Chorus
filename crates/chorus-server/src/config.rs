@@ -41,6 +41,9 @@ pub struct Server {
 pub struct Push {
     pub ntfy_url: Option<String>,
     pub ntfy_token: Option<String>,
+    /// A Firebase service-account JSON: phones without a push app get instant push through FCM
+    /// (fcm.rs, D-096). Readable by the service only.
+    pub fcm_service_account: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -69,6 +69,8 @@ data_dir = "C:/Users/pcuser/selfhost/chorus/data"
 [push]
 ntfy_url = "https://ntfy.vayne.garden"      # UnifiedPush distributor
 # ntfy_token = "…"                           # if ntfy has auth enabled
+# fcm_service_account = "/etc/chorus/fcm-service-account.json"   # Firebase service account (D-096);
+#   root:chorus 0640. With it, /server lists "fcm" and phones without a push app register FCM tokens.
 
 [backup]
 dir = "C:/Users/pcuser/selfhost/chorus/backups"

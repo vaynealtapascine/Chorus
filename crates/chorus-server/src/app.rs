@@ -292,7 +292,8 @@ async fn server_info(State(s): State<AppState>) -> Json<serde_json::Value> {
         "core": chorus_core::api::version(),
         "instance_id": s.instance_id,
         "core_min": "0.1.0",
-        "capabilities": ["channel_images"],
+        // "fcm": phones may register an FCM token as their push endpoint (fcm.rs)
+        "capabilities": if crate::fcm::get().is_some() { json!(["channel_images", "fcm"]) } else { json!(["channel_images"]) },
         // Chorus Home: the certificate phones pin on the home wifi (tls.rs)
         "tls_pin": s.cfg.server.lan_listen.as_ref()
             .and_then(|_| crate::tls::load_or_create(&s.cfg.server.data_dir).ok())
@@ -537,10 +538,24 @@ async fn push_register(
     Json(b): Json<crate::push::Registration>,
 ) -> Result<StatusCode, ApiError> {
     who(&s, &s.db(), &headers)?;
-    // where it points is checked before the database lock is taken (it resolves names)
-    crate::push::check_endpoint(b.endpoint.trim(), s.cfg.security.webhook_targets(), s.cfg.push.ntfy_url.as_deref())
+    if let Some(token) = b.endpoint.trim().strip_prefix("fcm:") {
+        // an FCM token, sent through Google's API, never as a URL (fcm.rs)
+        if crate::fcm::get().is_none() {
+            return Err(ApiError(StatusCode::BAD_REQUEST, "bad_request", "this server doesn't send FCM pushes".into()));
+        }
+        if !crate::fcm::valid_token(token) {
+            return Err(ApiError(StatusCode::BAD_REQUEST, "bad_request", "not an FCM registration token".into()));
+        }
+    } else {
+        // where it points is checked before the database lock is taken (it resolves names)
+        crate::push::check_endpoint(
+            b.endpoint.trim(),
+            s.cfg.security.webhook_targets(),
+            s.cfg.push.ntfy_url.as_deref(),
+        )
         .await
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "bad_request", e))?;
+    }
     let conn = s.db();
     let me = who(&s, &conn, &headers)?;
     crate::push::register(&conn, &me.device_id, &b)
@@ -2315,6 +2330,7 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!(%addr, "chorus-server listening");
     watch_own_binary();
+    crate::fcm::init(state.cfg.push.fcm_service_account.as_deref());
     run_notifier(state.clone());
     crate::backup::start_nightly(state.cfg.clone())?;
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();

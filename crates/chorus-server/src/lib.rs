@@ -15,6 +15,7 @@ pub mod db;
 pub mod drain;
 pub mod export_job;
 pub mod exports;
+pub mod fcm;
 pub mod feeds;
 pub mod follows;
 pub mod fronts;

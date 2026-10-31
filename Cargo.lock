@@ -474,6 +474,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
+ "aws-lc-rs",
  "axum",
  "base64 0.23.1",
  "chorus-core",
