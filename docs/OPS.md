@@ -7,13 +7,14 @@ Two supported ways to run the server (D-062):
 - **Linux server on the public internet** (§9): a systemd service behind Caddy, built and packed
   on the PC by `scripts/pack-linux.ps1`, installed by `deploy/linux/install.sh`.
 
-**Where it runs now (D-094, 2026-10-31):** `chorus.vayne.garden` is the Linux install on
-`ns2-up-net-nz` (Vultr), tailnet-only (`install.sh --tailnet`, §9). Deploy with
+**Where it runs now (D-094, D-095, 2026-10-31):** `chorus.vayne.garden` is the Linux install on
+`ns2-up-net-nz` (Vultr), public on 149.28.134.169 (80/443 open, SSH tailnet-only; §9). Deploy with
 `pwsh scripts/deploy-linux.ps1 [-Android]` (not `deploy.ps1`, which only updates the retired PC
 copy; `-Android` still stages the APK through the PC install's `app\android`), make invites with
 `pwsh scripts/invite.ps1`, look at it with `ssh root@ns2-up-net-nz` (Tailscale SSH: root only,
 with a browser check now and then). The PC install in `~\selfhost\chorus` is the fallback: to go
-back, point the Cloudflare A record at 100.68.254.40 again and start the PC's Chorus service.
+back, point the Cloudflare A record at 100.68.254.40 again and start the PC's Chorus service (its
+data is as of the move; ns2 has everything since).
 
 ---
 
@@ -316,9 +317,12 @@ updates). What differs from the PC:
   update Caddy with `caddy upgrade`). The token lives in `/etc/caddy/cloudflare.env` (root, 0600),
   loaded by a `caddy.service.d/cloudflare.conf` drop-in. The firewall is left alone (no public
   80/443) and `webhook_targets` stays `internal`, the PC's default. Later runs of `install.sh`
-  keep the mode. This is how `chorus.vayne.garden` runs on `ns2-up-net-nz` (D-094); updates go
-  out with `pwsh scripts/deploy-linux.ps1 [-Android]` and invites come from
-  `pwsh scripts/invite.ps1` (D-093).
+  keep the mode. `chorus.vayne.garden` ran this way on `ns2-up-net-nz` (D-094) until it went
+  public (D-095). To go public from it: open 80/443 in ufw, point the A record at the public IP,
+  then delete the `tls { dns cloudflare … }` block from the site, the caddy drop-in and
+  `/etc/caddy/cloudflare.env`, `apt-mark unhold caddy && apt-get install --reinstall caddy`, and
+  set `webhook_targets = "public"`. Updates go out with `pwsh scripts/deploy-linux.ps1
+  [-Android]` and invites come from `pwsh scripts/invite.ps1` (D-093).
 - **Coexisting with the selfhost VPS bundle** (memos, ntfy, Arbor, …): that bundle's Caddyfile
   imports `/etc/caddy/sites/*.caddy`, so Chorus's site survives its reinstalls. Chorus can use
   that ntfy as its push distributor (`ntfy_url`).
