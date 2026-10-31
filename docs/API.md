@@ -224,7 +224,9 @@ GET  /follows                               following + followers ({following:[�
 POST /follows {target:"@handle"|account_id}  ask to follow (201; 200 with the open follow's id if one exists)
 PUT  /follows/{id}/prefs {…}                 the follower's own prefs (NOTIFICATIONS.md §4)
 DELETE /follows/{id}                         unfollow (follower) or remove (target)
-GET  /notifications?before=
+GET  /notifications?after=<ms>             delivered notifications, newest first (100); `after` keeps
+                                            only newer ones, and pings caused by the calling device's
+                                            own writes are left out (D-096: phones without push poll it)
 GET  /insights/{chart}?from=&to=           dashboard data (same numbers as the views)
 ```
 

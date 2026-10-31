@@ -685,3 +685,36 @@ fn configured_own_switch_liveness_uses_canonical_body_for_old_and_new_targets() 
         }
     }
 }
+
+#[test]
+fn a_phone_without_push_asks_for_what_is_new_and_not_its_own() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    w.push(&a, "member.create", &format!("account:{a}"), &kai, json!({"name": "Kai"}));
+    w.push(&b, "member.create", &format!("account:{b}"), &june, json!({"name": "June"}));
+    let m1 = new_id(NOW as u64, [50; 10]);
+    let ent = json!([{"type": "mention", "offset": 3, "length": 5, "target_type": "member", "target_id": june}]);
+    w.push(&a, "message.send", &space, &m1, msg("hi @June", &[&kai], ent));
+    assert_eq!(w.inbox(&b).len(), 1);
+
+    let ids = |after: i64, device: &str| -> Vec<String> {
+        notifier::list_for(&w.c, &b, Some(device), after, 50).unwrap()["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["text"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let delivered: i64 =
+        w.c.query_row("SELECT delivered_at FROM notification WHERE recipient_account_id = ?1", [&b], |r| r.get(0))
+            .unwrap();
+    // new since the last check, and nothing once it has been seen
+    assert_eq!(ids(delivered - 1, "phone"), ["hi @June"]);
+    assert!(ids(delivered, "phone").is_empty());
+    // a ping about something this device wrote isn't shown on it (the push skips it too)
+    w.c.execute("UPDATE notification SET payload = json_set(payload, '$.from_device', 'phone')", []).unwrap();
+    assert!(ids(0, "phone").is_empty());
+    assert_eq!(ids(0, "laptop"), ["hi @June"]);
+}

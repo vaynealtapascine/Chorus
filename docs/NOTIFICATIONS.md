@@ -17,8 +17,12 @@ Two families:
 - Payloads are encrypted with **RFC 8291 (Web Push encryption)** using keys the app registered, so
   ntfy only relays ciphertext. Payload ≤ 3 KB: the rendered, already-filtered notification. If it
   would be larger, the server sends a **tickle** (`{"t":"sync"}`) and the app syncs, then renders.
-- Fallbacks (Settings → Advanced → Delivery): persistent foreground WebSocket service; or
-  WorkManager poll every 15 min.
+- **Without push** (no distributor app, D-096): the Android app looks every 5 minutes
+  (`NotifyCheck`, a self-rebooking WorkManager job; the 15-minute background sync looks too) at
+  `GET /notifications?after=<last seen>` and shows what the server delivered since, exactly as the
+  push would have. Android batches background work while the phone dozes, so it is "within a few
+  minutes" when the phone is in use and slower when idle. The first look only notes where "new"
+  starts. A persistent foreground WebSocket service remains a possible later fallback.
 - **Web PWA:**
   - In-page notifications while it is open.
   - **Web Push** (D-061) once "Notify me in this browser" is on. It works in the built app only,

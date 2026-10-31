@@ -814,21 +814,36 @@ fn precision_of(d: &Option<notify::Displayed>) -> Value {
 /// Delivered notifications for `follower`, newest first: switches of accounts they follow, and
 /// activity (mentions, DMs, replies) from shared spaces.
 pub fn list(conn: &Connection, follower: &str, limit: i64) -> anyhow::Result<Value> {
-    let mut items = switch_items(conn, follower, limit)?;
+    list_for(conn, follower, None, 0, limit)
+}
+
+/// [`list`] as one device asks for it: only what was delivered after `after`, and without the
+/// pings its own writes caused (the push skips that device too). Phones without push poll this.
+pub fn list_for(
+    conn: &Connection,
+    follower: &str,
+    device: Option<&str>,
+    after: i64,
+    limit: i64,
+) -> anyhow::Result<Value> {
+    let mut items = switch_items(conn, follower, after, limit)?;
     let mut st = conn.prepare_cached(
         "SELECT id, kind, payload, delivered_at FROM notification
-         WHERE recipient_account_id = ?1 AND kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'export_ready') AND delivered_at IS NOT NULL
+         WHERE recipient_account_id = ?1 AND kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'export_ready') AND delivered_at > ?3
          ORDER BY delivered_at DESC, id DESC LIMIT ?2",
     )?;
-    let rows = st.query_map(params![follower, limit], |r| {
+    let rows = st.query_map(params![follower, limit, after], |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?))
     })?;
     for r in rows {
         let (id, kind, payload, delivered) = r?;
         let p: Value = serde_json::from_str(&payload).unwrap_or(json!({}));
+        if device.is_some() && p["from_device"].as_str() == device {
+            continue;
+        }
         items.push(json!({
             "id": id, "kind": kind, "title": p["title"], "text": p["text"],
-            "channel_id": p["channel_id"], "message_id": p["message_id"],
+            "channel_id": p["channel_id"], "message_id": p["message_id"], "scope": p["scope"], "reply_as": p["reply_as"],
             "time": {"at": delivered, "precision": "exact"}, "delivered_at": delivered,
         }));
     }
@@ -837,14 +852,14 @@ pub fn list(conn: &Connection, follower: &str, limit: i64) -> anyhow::Result<Val
     Ok(json!({"items": items}))
 }
 
-fn switch_items(conn: &Connection, follower: &str, limit: i64) -> anyhow::Result<Vec<Value>> {
+fn switch_items(conn: &Connection, follower: &str, after: i64, limit: i64) -> anyhow::Result<Vec<Value>> {
     let mut st = conn.prepare_cached(
         "SELECT n.id, n.payload, n.delivered_at, a.id, a.handle, a.display_name FROM notification n
          JOIN account a ON a.id = json_extract(n.payload, '$.target_account_id')
-         WHERE n.recipient_account_id = ?1 AND n.kind = 'switch' AND n.delivered_at IS NOT NULL
+         WHERE n.recipient_account_id = ?1 AND n.kind = 'switch' AND n.delivered_at > ?3
          ORDER BY n.delivered_at DESC, n.id DESC LIMIT ?2",
     )?;
-    let rows = st.query_map(params![follower, limit], |r| {
+    let rows = st.query_map(params![follower, limit, after], |r| {
         Ok((
             r.get::<_, String>(0)?,
             r.get::<_, String>(1)?,

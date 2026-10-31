@@ -1528,13 +1528,20 @@ async fn overlay_front() -> Response {
         .into_response()
 }
 
+#[derive(Deserialize)]
+struct NotificationsQ {
+    /// Only what was delivered after this time (ms): a phone without push checking for new ones.
+    after: Option<i64>,
+}
+
 async fn notifications(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<NotificationsQ>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let conn = s.db();
     let me = who(&s, &conn, &headers)?;
-    Ok(Json(crate::notifier::list(&conn, &me.account_id, 100)?))
+    Ok(Json(crate::notifier::list_for(&conn, &me.account_id, Some(&me.device_id), q.after.unwrap_or(0), 100)?))
 }
 
 /// A follower's view of another account: only what has been revealed (NOTIFICATIONS.md §5).
