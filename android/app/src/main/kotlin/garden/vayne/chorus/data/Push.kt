@@ -83,7 +83,9 @@ object Push {
                 ?: found.firstOrNull { it.startsWith("io.heckel.ntfy") }
                 ?: found.singleOrNull()
             if (distributor == null) {
-                Log.i(TAG, "no UnifiedPush distributor installed (install ntfy to get switch notifications)")
+                // no push app: Google's push if this build and the server have it (D-096), else
+                // NotifyCheck looks every five minutes
+                if (!registerFcm(app, chorus, current)) Log.i(TAG, "no push app and no FCM; checking every few minutes instead")
                 return@launch
             }
             val state = if (current != null && current.distributor == distributor) {
@@ -105,16 +107,42 @@ object Push {
         }
     }
 
-    private suspend fun upload(chorus: Chorus, s: State) {
-        val dev = chorus.awaitDevice() ?: return
-        val endpoint = s.endpoint ?: return
-        runCatching {
+    private suspend fun upload(chorus: Chorus, s: State): Boolean {
+        val dev = chorus.awaitDevice() ?: return false
+        val endpoint = s.endpoint ?: return false
+        return runCatching {
             Api.call(
                 "PUT", dev.base, "/devices/push",
                 JSONObject().put("endpoint", endpoint).put("p256dh", b64url(s.keys.publicRaw)).put("auth", b64url(s.keys.auth)),
                 dev.session,
             )
-        }.onFailure { Log.w(TAG, "couldn't register the push endpoint with the server", it) }
+        }.onFailure { Log.w(TAG, "couldn't register the push endpoint with the server", it) }.isSuccess
+    }
+
+    /** Register this phone's FCM token as its endpoint (`fcm:<token>`); false when FCM can't be used. */
+    private suspend fun registerFcm(ctx: Context, chorus: Chorus, current: State?): Boolean {
+        val token = Fcm.token(ctx) ?: return false
+        val base = current?.takeIf { it.distributor == Fcm.DISTRIBUTOR }
+            ?: State(UUID.randomUUID().toString(), Fcm.DISTRIBUTOR, null, WebPushCrypto.generate())
+        val next = base.copy(endpoint = "fcm:$token")
+        if (next == current) return true
+        // a server without FCM refuses the token; then the endpoint stays empty and NotifyCheck looks
+        val ok = upload(chorus, next)
+        chorus.putSetting("push", (if (ok) next else next.copy(endpoint = null)).json())
+        return ok
+    }
+
+    /** An FCM data message: the same RFC 8291 record a push app would have handed us. */
+    suspend fun onFcm(ctx: Context, record: String) {
+        val s = load(Chorus.get(ctx.applicationContext)) ?: return
+        if (s.distributor != Fcm.DISTRIBUTOR) return
+        val key = WebPushCrypto.privateFromPkcs8(s.keys.privatePkcs8)
+        val plain = WebPushCrypto.decrypt(key, s.keys.publicRaw, s.keys.auth, unb64(record))
+        if (plain == null) {
+            Log.w(TAG, "fcm push didn't decrypt; ignoring")
+            return
+        }
+        show(ctx, JSONObject(String(plain)))
     }
 
     /** Broadcasts from the distributor. */

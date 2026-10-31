@@ -19,6 +19,23 @@ android {
             .standardOutput.asText.get().trim().toIntOrNull() ?: 1
         versionCode = commits
         versionName = "0.1.$commits"
+        // FCM (D-096): the operator's Firebase project, read from their google-services.json (kept
+        // out of the public repo) into the resource names Firebase looks for at startup. Without
+        // the file the app builds as before and phones use a push app or the 5-minute check.
+        val fcmConfig = (providers.gradleProperty("chorus.fcmConfig").orNull ?: System.getenv("CHORUS_FCM_CONFIG"))
+            ?.let(::File) ?: File(System.getProperty("user.home"), "selfhost/fcm/google-services.json")
+        if (fcmConfig.isFile) {
+            @Suppress("UNCHECKED_CAST")
+            val json = groovy.json.JsonSlurper().parse(fcmConfig) as Map<String, Any?>
+            val project = json["project_info"] as Map<String, Any?>
+            val client = (json["client"] as List<Map<String, Any?>>).first {
+                ((it["client_info"] as Map<String, Any?>)["android_client_info"] as Map<String, Any?>)["package_name"] == "garden.vayne.chorus"
+            }
+            resValue("string", "google_app_id", (client["client_info"] as Map<String, Any?>)["mobilesdk_app_id"].toString())
+            resValue("string", "google_api_key", ((client["api_key"] as List<Map<String, Any?>>).first())["current_key"].toString())
+            resValue("string", "gcm_defaultSenderId", project["project_number"].toString())
+            resValue("string", "project_id", project["project_id"].toString())
+        }
     }
     // The published APK (GitHub releases, D-072) is signed with the release key, which CI gets from
     // Infisical (`.github/workflows/release-android.yml`); other builds use this PC's debug key so
@@ -46,7 +63,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; resValues = true }
 }
 
 dependencies {
@@ -67,6 +84,7 @@ dependencies {
     implementation(libs.sqlcipher)
     implementation(libs.androidx.sqlite)
     implementation(libs.work.runtime)
+    implementation(libs.firebase.messaging)
     testImplementation(libs.junit)
     testImplementation(libs.jna) // host JNA for tests that exercise the real shared composer
     // the real org.json for JVM tests (Android's is a stub there)
