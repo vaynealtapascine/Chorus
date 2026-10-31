@@ -421,6 +421,15 @@ Measured 2026-09-25 (headless Chromium, remote box, minified build, three runs):
   silently in the background (Advanced toggle: "Install updates automatically", default on for
   the owner's account, off for others). Falls back to a one-tap prompt when Android refuses.
 - Friends' phones get the same flow; Obtainium can also track the URL.
+- **As built (UI7, 2026-10-31):** there is no sync announcement yet. Every app open checks
+  `/android/latest` (at most every 5 minutes), fetches a newer build on unmetered networks (or when
+  the banner's Download is tapped) and shows a banner: "Chorus 0.1.N is ready · Update". Updating
+  closes the app, so it waits for the tap; leaving the app installs it silently when Chorus is the
+  installer of record (Android 12+). If Android asks for a confirmation while the app is open, its
+  dialog opens at once; in the background it is a notification. If "Install unknown apps" is off
+  for Chorus, the banner's Allow opens that switch and the install resumes on return. A 12-hour
+  WorkManager check on unmetered networks covers phones that stay closed. A build installed with
+  `adb install` has no installer of record, so its first self-update may ask once.
 
 ## 6. PluralKit import (M11)
 

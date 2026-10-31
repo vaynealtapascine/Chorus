@@ -122,10 +122,13 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         Chorus.get(this).setForeground(true)
+        // every open looks for a newer build (CLIENTS.md §5a); the banner offers it
+        garden.vayne.chorus.data.Updater.onOpen(this)
     }
 
     override fun onStop() {
         Chorus.get(this).setForeground(false)
+        garden.vayne.chorus.data.Updater.onClose(this)
         super.onStop()
     }
 
@@ -251,6 +254,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 if (!person) IconButton(onClick = { quickSwitchOpen = true }) { ChorusIcon(AppIcon.Swap, "Open switcher") }
                 IconButton(onClick = { settingsOpen = !settingsOpen; searchOpen = false; insightsOpen = false; frontsOpen = false }) { ChorusIcon(if (settingsOpen) AppIcon.Close else AppIcon.Settings, if (settingsOpen) "Close settings" else "Settings") }
             }
+            if (!chatStageCapture) garden.vayne.chorus.ui.UpdateBanner()
             Box(Modifier.weight(1f)) {
                 if (sharedDraft != null) ShareChooser(sharedDraft, model, chorus.device?.accountId,
                     onCancel = onShareDismissed,

@@ -88,7 +88,7 @@ if (-not $AndroidOnly) {
     }
 }
 
-# Android: phones on the tailnet pick this up within hours (or on next app start)
+# Android: phones on the tailnet offer this the next time Chorus opens (and check every 12 h on Wi-Fi)
 if ($Android) {
     $dir = Join-Path $app 'android'
     New-Item -ItemType Directory -Force $dir | Out-Null

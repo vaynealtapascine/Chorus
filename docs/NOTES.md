@@ -751,3 +751,13 @@ UI thread. The original generic diff remains for compatibility callers/tests, no
 or formatting. Rich parsing's previous repeated full entity scans were replaced with indexed
 atomic/literal span lookups. See handoff/ui6-batch2-r1-followup.md and its external evidence
 for final native results and remaining validation limits.
+
+## Android self-updates after an adb install (2026-10-31)
+
+Until UI7 the app only looked for updates in a 12-hour WorkManager job (unmetered, KEEP), so opening
+Chorus never brought a new build. A phone set up with `adb install` also has no installer of
+record and usually has "Install unknown apps" off for Chorus: the old code's only signal for both
+was a notification. Now every open checks and the in-app banner handles the permission and the
+system's confirmation; after one self-update Chorus is the installer of record and later updates
+install silently when the app is left (verified on the emulator: null installer → Allow → silent
+install; then open + Home → silent install).
