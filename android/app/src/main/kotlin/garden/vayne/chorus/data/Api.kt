@@ -57,8 +57,24 @@ object Api {
         return Invite("$scheme://${m.groupValues[2]}", m.groupValues[3], m.groupValues[4].ifEmpty { null })
     }
 
-    /** Redeem an invite with a fresh device key. `name` is only used for new accounts. */
-    suspend fun enrol(link: String, name: String?): DeviceRecord {
+    /**
+     * What an invite is for, without using it (D-093): `system` or `person` for a new account (the
+     * invite's suggestion; the person joining picks), `device` for another device of an account.
+     * Null when the server predates the question, so onboarding asks nothing.
+     */
+    suspend fun inviteKind(link: String): String? {
+        val (base, code, pin) = parseInvite(link) ?: throw ApiException("That doesn't look like a Chorus invite link.")
+        Pins.trust(pin)
+        return try {
+            post(base, "/auth/invite", JSONObject().put("code", code)).optString("kind").takeIf { it in setOf("system", "person", "device") }
+        } catch (e: ApiException) {
+            if (e.code == "bad_request") throw e else null
+        }
+    }
+
+    /** Redeem an invite with a fresh device key. The account details are only used for new
+     * accounts; [kind] is `system` or `person` (D-093). */
+    suspend fun enrol(link: String, name: String?, handle: String? = null, kind: String? = null): DeviceRecord {
         val (base, code, pin) = parseInvite(link) ?: throw ApiException("That doesn't look like a Chorus invite link.")
         Pins.trust(pin)
         val body = JSONObject()
@@ -68,7 +84,11 @@ object Api {
                 JSONObject().put("name", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
                     .put("platform", "android").put("public_key", DeviceKey.create()),
             )
-        if (!name.isNullOrBlank()) body.put("account", JSONObject().put("display_name", name.trim()))
+        if (!name.isNullOrBlank() || !handle.isNullOrBlank() || kind != null) body.put("account", JSONObject().apply {
+            if (!name.isNullOrBlank()) put("display_name", name.trim())
+            if (!handle.isNullOrBlank()) put("handle", handle.trim().removePrefix("@").lowercase())
+            if (kind != null) put("kind", kind)
+        })
         val e = post(base, "/auth/redeem", body)
         return DeviceRecord(
             base, e.getString("device_id"), e.getString("short_id"), e.getString("account_id"),

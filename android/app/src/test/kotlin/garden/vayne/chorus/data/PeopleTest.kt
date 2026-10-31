@@ -32,6 +32,20 @@ class PeopleTest {
         assertEquals(listOf("Kai", "Rin"), PeopleApi.followerView(visible).frontNames)
     }
 
+    @Test fun followerViewKeepsSharedColoursAndAccountKinds() {
+        val view = PeopleApi.followerView(JSONObject("""{"entries":[{"level":"front","name":"Kai","color":"#7FB3A8"},{"level":"front","name":"Rin","color":null},{"level":"cocon","name":"Ash","color":"#fff"}]}"""))
+        assertEquals(listOf(SharedMember("Kai", "#7FB3A8"), SharedMember("Rin", null)), view.front)
+        val list = PeopleApi.parse(JSONObject("""{"following":[{"id":"f","account":{"id":"s","handle":"stars","kind":"system"},"status":"active"},{"id":"g","account":{"id":"p","handle":"alex","kind":"person"},"status":"active"}],"followers":[]}"""))
+        assertEquals(listOf(true, false), list.following.map { it.account.isSystem })
+    }
+
+    @Test fun frontingLinesNameUpToTwoThenCount() {
+        assertEquals(null, FriendFronts.line(emptyList()))
+        assertEquals("Kai is fronting", FriendFronts.line(listOf("Kai")))
+        assertEquals("Kai & Rin are fronting", FriendFronts.line(listOf("Kai", "Rin")))
+        assertEquals("Kai, Rin & 2 more are fronting", FriendFronts.line(listOf("Kai", "Rin", "Ash", "Moss")))
+    }
+
     @Test fun followerHistoryAndStatsUseOnlyServerSharedFieldsAndPrecision() {
         val hidden = PeopleApi.followerView(JSONObject("""{"shared":false,"entries":[],"history":[{"entries":[{"name":"Secret","level":"front"}],"time":{"at":123,"precision":"exact"}}],"stats":{"days":30,"members":[{"name":"Secret","share_pct":100}]}}"""))
         assertEquals(null, hidden.history)

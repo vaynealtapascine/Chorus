@@ -597,6 +597,18 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val attachments = paneComposer.files
     val defaultAuthorId = channel?.id?.let { ChatSpeaker.pick(model, it) }
     val replySpeakerId = selectedAuthor.takeIf { id -> model.active.any { it.id == id } } ?: defaultAuthorId
+    // a DM with someone you follow: who's fronting there, as far as they share it (FriendFronts)
+    val dmPartner = space?.takeIf { it.kind == "dm" }?.let { s -> directory[s.id]?.accounts?.firstOrNull { it.id != chorus.device?.accountId } }
+    val friendViews by garden.vayne.chorus.data.FriendFronts.views.collectAsState()
+    LaunchedEffect(dmPartner?.id, chorus.device?.accountId) {
+        val other = dmPartner ?: return@LaunchedEffect
+        while (true) {
+            chorus.device?.let { garden.vayne.chorus.data.FriendFronts.refresh(it, other.id) }
+            delay(60_000)
+        }
+    }
+    val partnerFront = dmPartner?.let { other -> chorus.device?.let { friendViews[garden.vayne.chorus.data.FriendFronts.key(it.accountId, other.id)] } }
+        ?.let { garden.vayne.chorus.data.FriendFronts.line(it.frontNames) }
     Row(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         if (expanded || pane == "list") ChatListPane(model, listRows, if (expanded) channel?.id else null, readerName,
             openChat, { spaceAction = "new" },
@@ -612,13 +624,16 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             if (inThread && threadParentChannel != null) ChatIconButton(R.drawable.ic_back, "Back to ${threadParentChannel.name}") {
                 selectedChannel = threadParentChannel.id
             } else if (!expanded) ChatIconButton(R.drawable.ic_back, "Back to chats") { conversationOpen = false }
-            channel?.let { ChannelDisc(it, member = threadParent?.authors?.firstOrNull()?.let(model::member).takeIf { inThread }, size = 36.dp) }
+            // an account DM's channel is just "dm": it is shown as the account at the other end
+            val dmName = dmPartner?.shownName?.takeIf { !inThread }
+            channel?.let { ChannelDisc(if (dmName != null) it.copy(name = dmName) else it,
+                member = threadParent?.authors?.firstOrNull()?.let(model::member).takeIf { inThread }, size = 36.dp) }
             Column(Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 10.dp)) {
-                Text(if (inThread) "Thread" else channel?.name ?: "Chat", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp,
+                Text(if (inThread) "Thread" else dmName ?: channel?.name ?: "Chat", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(typingLabel ?: if (inThread && syncStatus == Status.Live) "in ${threadParentChannel?.name ?: "a channel"} · ${ChatThreads.repliesLabel(messages.size)}"
                     else ChatPresentation.subtitle(syncStatus != Status.Live, readerName, unreadCount,
-                    space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }.orEmpty()),
+                    partnerFront ?: space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }.orEmpty()),
                     color = if (typingLabel != null || syncStatus != Status.Live) p.accent else p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
             }
             ChatIconButton(R.drawable.ic_search, "Search messages", onSearch)

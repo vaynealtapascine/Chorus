@@ -15,9 +15,11 @@ data class SharedPost(val id: String, val kind: String, val title: String?, val 
     val entities: String = "[]")
 data class SharedFront(val names: List<String>, val time: String)
 data class SharedStats(val days: Int, val members: List<Pair<String, Int>>)
+/** Someone a followed account shows as fronting, with their colour when shared. */
+data class SharedMember(val name: String, val color: String?)
 /** [fronts]: additional fronts the followed account granted (D-084), as (name, revealed names). */
 data class FollowerView(val frontNames: List<String>, val history: List<SharedFront>?, val stats: SharedStats?,
-    val fronts: List<Pair<String, List<String>>> = emptyList())
+    val fronts: List<Pair<String, List<String>>> = emptyList(), val front: List<SharedMember> = emptyList())
 
 object PeopleApi {
     fun sharedPosts(j: JSONObject): List<SharedPost> {
@@ -54,7 +56,8 @@ object PeopleApi {
                 val p = f.getJSONObject("account")
                 FollowInfo(f.getString("id"), SpaceAccount(p.getString("id"),
                     p.optString("handle").takeIf { p.has("handle") && !p.isNull("handle") && it.isNotBlank() },
-                    p.optString("display_name").takeIf { p.has("display_name") && !p.isNull("display_name") && it.isNotBlank() }),
+                    p.optString("display_name").takeIf { p.has("display_name") && !p.isNull("display_name") && it.isNotBlank() },
+                    p.optString("kind").takeIf { p.has("kind") && !p.isNull("kind") && it.isNotBlank() }),
                     f.getString("status"), f.optJSONObject("prefs") ?: JSONObject())
             }
         }
@@ -87,7 +90,14 @@ object PeopleApi {
                     ?: "Another front") to names(front.optJSONArray("entries"), false)
             }
         } } ?: emptyList()
-        return FollowerView(names(j.optJSONArray("entries"), true), history, stats, fronts)
+        val front = j.optJSONArray("entries")?.let { entries -> (0 until entries.length()).mapNotNull { i ->
+            entries.optJSONObject(i)?.takeIf { it.optString("level") == "front" }?.let { e ->
+                e.optString("name").takeIf { it.isNotBlank() && it != "null" }?.let { name ->
+                    SharedMember(name, e.optString("color").takeIf { e.has("color") && !e.isNull("color") && it.isNotBlank() })
+                }
+            }
+        } } ?: emptyList()
+        return FollowerView(front.map { it.name }, history, stats, fronts, front)
     }
 
     /** Keep time at the precision already chosen by the server; never render hidden clock data. */

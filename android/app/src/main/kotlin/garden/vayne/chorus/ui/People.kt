@@ -38,6 +38,8 @@ import garden.vayne.chorus.data.FollowList
 import garden.vayne.chorus.data.FollowPresets
 import garden.vayne.chorus.data.NamedFronts
 import garden.vayne.chorus.data.FollowerView
+import garden.vayne.chorus.data.FriendFronts
+import garden.vayne.chorus.data.SharedMember
 import garden.vayne.chorus.data.JournalSocial
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PeopleApi
@@ -86,6 +88,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
             views = next.following.filter { it.status == "active" }.mapNotNull { f ->
                 runCatching { f.account.id to PeopleApi.followerView(PeopleApi.view(dev, f.account.id)) }.getOrNull()
             }.toMap()
+            for ((account, view) in views) FriendFronts.put(dev.accountId, account, view)
             sharedPosts = next.following.filter { it.status == "active" }.mapNotNull { f ->
                 runCatching { f.account.id to PeopleApi.posts(dev, f.account.id) }.getOrNull()
             }.toMap()
@@ -134,73 +137,27 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
             if (error != null) Text(error.orEmpty(), color = p.danger)
             TextButton(onClick = { refresh++ }) { Text("Refresh") }
         }
-        val requests = follows.followers.filter { it.status == "requested" }
-        if (requests.isNotEmpty()) {
-            item { Text("Requests", color = p.ink, fontWeight = FontWeight.SemiBold) }
-            for (f in requests) item(key = "request:${f.id}") {
-                Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
-                    Text("${f.account.shownName} wants to follow you", color = p.ink)
-                    FollowPresetPicker("They'll see switches", requestChoices[f.id] ?: "inherit") {
-                        requestChoices = requestChoices + (f.id to it)
-                    }
-                    Row {
-                        TextButton(enabled = !busy, onClick = { action {
-                            chorus.create("follow.accept", f.id, JSONObject())
-                            chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
-                                FollowPresets.ceiling(requestChoices[f.id] ?: "inherit", model.followCeilings[f.id] ?: JSONObject())))
-                        } }) { Text("Accept") }
-                        TextButton(enabled = !busy, onClick = { action {
-                            chorus.create("follow.end", f.id, JSONObject())
-                        } }) { Text("Decline") }
-                    }
-                }
-            }
-        }
+        if (model.isPerson) {
         item {
-            Text("Followers", color = p.ink, fontWeight = FontWeight.SemiBold)
-            Text("Delay hides when you switched as it happens; fuzzing hides the exact time afterwards.", color = p.ink2)
+            Text("Following", color = p.ink, fontWeight = FontWeight.SemiBold)
+            if (model.isPerson && follows.following.any { it.account.isSystem }) Text("Systems share who's fronting " +
+                "as far as they choose, so you know who you're talking to. Their messages and posts show which member wrote them.",
+                color = p.ink2)
         }
-        if (follows.followers.none { it.status == "active" }) item { Text("No followers yet.", color = p.ink2) }
-        for (f in follows.followers.filter { it.status == "active" }) item(key = "follower:${f.id}") {
-            Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
-                Text(f.account.shownName, color = p.ink)
-                FollowPresetPicker("Sees switches", FollowPresets.choiceOf(model.followCeilings[f.id] ?: JSONObject())) { choice ->
-                    action {
-                        chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
-                            FollowPresets.ceiling(choice, model.followCeilings[f.id] ?: JSONObject())))
-                    }
-                }
-                FollowAdvanced(model.followCeilings[f.id] ?: JSONObject(), !busy) { key, enabled ->
-                    action {
-                        chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
-                            FollowPresets.withSharing(model.followCeilings[f.id] ?: JSONObject(), key, enabled)))
-                    }
-                }
-                FollowGrants(model.namedFronts, model.followCeilings[f.id] ?: JSONObject(), !busy) { key, id, on ->
-                    action {
-                        chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
-                            FollowPresets.withGrant(model.followCeilings[f.id] ?: JSONObject(), key, id, on)))
-                    }
-                }
-                Row {
-                    TextButton(enabled = !busy, onClick = { action {
-                        val dev = checkNotNull(chorus.device) { "Not signed in." }
-                        onOpenChat(Spaces.openDm(dev, f.account.id))
-                    } }) { Text("Message") }
-                    TextButton(enabled = !busy, onClick = { action {
-                        chorus.create("follow.end", f.id, JSONObject())
-                    } }) { Text("Remove") }
-                }
-            }
-        }
-        item { Text("Following", color = p.ink, fontWeight = FontWeight.SemiBold) }
         if (follows.following.isEmpty()) item { Text("You aren't following anyone yet.", color = p.ink2) }
         for (f in follows.following) item(key = "following:${f.id}") {
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
-                Text(f.account.shownName, color = p.ink)
-                Text(if (f.status == "requested") "Waiting for them to accept"
-                    else views[f.account.id]?.frontNames?.takeIf { it.isNotEmpty() }?.joinToString(" & ") ?: "Nothing shared yet",
-                    color = p.ink2)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(f.account.shownName, color = p.ink, fontWeight = FontWeight.SemiBold)
+                    if (f.account.isSystem) Text("System", color = p.ink3, fontSize = 12.sp,
+                        modifier = Modifier.background(p.surface2, CircleShape).padding(horizontal = 8.dp, vertical = 2.dp))
+                }
+                val front = views[f.account.id]?.front.orEmpty()
+                when {
+                    f.status == "requested" -> Text("Waiting for them to accept", color = p.ink2)
+                    front.isNotEmpty() -> FrontingNow(front)
+                    f.account.kind != "person" -> Text("Not sharing who's fronting right now", color = p.ink2)
+                }
                 if (f.status == "active") views[f.account.id]?.let { FollowerViewDetails(it) }
                 Row {
                     if (f.status == "active") TextButton(enabled = !busy, onClick = { action {
@@ -236,7 +193,184 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                 }
             }
         }
-        item { Text("A follower sees your switches only within the sharing limit you choose for them.",
+        val requests = follows.followers.filter { it.status == "requested" }
+        if (requests.isNotEmpty()) {
+            item { Text("Requests", color = p.ink, fontWeight = FontWeight.SemiBold) }
+            for (f in requests) item(key = "request:${f.id}") {
+                Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
+                    Text("${f.account.shownName} wants to follow you", color = p.ink)
+                    if (!model.isPerson) FollowPresetPicker("They'll see switches", requestChoices[f.id] ?: "inherit") {
+                        requestChoices = requestChoices + (f.id to it)
+                    }
+                    Row {
+                        TextButton(enabled = !busy, onClick = { action {
+                            chorus.create("follow.accept", f.id, JSONObject())
+                            if (!model.isPerson) chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
+                                FollowPresets.ceiling(requestChoices[f.id] ?: "inherit", model.followCeilings[f.id] ?: JSONObject())))
+                        } }) { Text("Accept") }
+                        TextButton(enabled = !busy, onClick = { action {
+                            chorus.create("follow.end", f.id, JSONObject())
+                        } }) { Text("Decline") }
+                    }
+                }
+            }
+        }
+        item {
+            Text("Followers", color = p.ink, fontWeight = FontWeight.SemiBold)
+            Text(if (model.isPerson) "They see the posts you share with followers."
+                else "Delay hides when you switched as it happens; fuzzing hides the exact time afterwards.", color = p.ink2)
+        }
+        if (follows.followers.none { it.status == "active" }) item { Text("No followers yet.", color = p.ink2) }
+        for (f in follows.followers.filter { it.status == "active" }) item(key = "follower:${f.id}") {
+            Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
+                Text(f.account.shownName, color = p.ink)
+                if (!model.isPerson) FollowPresetPicker("Sees switches", FollowPresets.choiceOf(model.followCeilings[f.id] ?: JSONObject())) { choice ->
+                    action {
+                        chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
+                            FollowPresets.ceiling(choice, model.followCeilings[f.id] ?: JSONObject())))
+                    }
+                }
+                if (!model.isPerson) FollowAdvanced(model.followCeilings[f.id] ?: JSONObject(), !busy) { key, enabled ->
+                    action {
+                        chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
+                            FollowPresets.withSharing(model.followCeilings[f.id] ?: JSONObject(), key, enabled)))
+                    }
+                }
+                if (!model.isPerson) FollowGrants(model.namedFronts, model.followCeilings[f.id] ?: JSONObject(), !busy) { key, id, on ->
+                    action {
+                        chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
+                            FollowPresets.withGrant(model.followCeilings[f.id] ?: JSONObject(), key, id, on)))
+                    }
+                }
+                Row {
+                    TextButton(enabled = !busy, onClick = { action {
+                        val dev = checkNotNull(chorus.device) { "Not signed in." }
+                        onOpenChat(Spaces.openDm(dev, f.account.id))
+                    } }) { Text("Message") }
+                    TextButton(enabled = !busy, onClick = { action {
+                        chorus.create("follow.end", f.id, JSONObject())
+                    } }) { Text("Remove") }
+                }
+            }
+        }
+        } else {
+        val requests = follows.followers.filter { it.status == "requested" }
+        if (requests.isNotEmpty()) {
+            item { Text("Requests", color = p.ink, fontWeight = FontWeight.SemiBold) }
+            for (f in requests) item(key = "request:${f.id}") {
+                Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
+                    Text("${f.account.shownName} wants to follow you", color = p.ink)
+                    if (!model.isPerson) FollowPresetPicker("They'll see switches", requestChoices[f.id] ?: "inherit") {
+                        requestChoices = requestChoices + (f.id to it)
+                    }
+                    Row {
+                        TextButton(enabled = !busy, onClick = { action {
+                            chorus.create("follow.accept", f.id, JSONObject())
+                            if (!model.isPerson) chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
+                                FollowPresets.ceiling(requestChoices[f.id] ?: "inherit", model.followCeilings[f.id] ?: JSONObject())))
+                        } }) { Text("Accept") }
+                        TextButton(enabled = !busy, onClick = { action {
+                            chorus.create("follow.end", f.id, JSONObject())
+                        } }) { Text("Decline") }
+                    }
+                }
+            }
+        }
+        item {
+            Text("Followers", color = p.ink, fontWeight = FontWeight.SemiBold)
+            Text(if (model.isPerson) "They see the posts you share with followers."
+                else "Delay hides when you switched as it happens; fuzzing hides the exact time afterwards.", color = p.ink2)
+        }
+        if (follows.followers.none { it.status == "active" }) item { Text("No followers yet.", color = p.ink2) }
+        for (f in follows.followers.filter { it.status == "active" }) item(key = "follower:${f.id}") {
+            Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
+                Text(f.account.shownName, color = p.ink)
+                if (!model.isPerson) FollowPresetPicker("Sees switches", FollowPresets.choiceOf(model.followCeilings[f.id] ?: JSONObject())) { choice ->
+                    action {
+                        chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
+                            FollowPresets.ceiling(choice, model.followCeilings[f.id] ?: JSONObject())))
+                    }
+                }
+                if (!model.isPerson) FollowAdvanced(model.followCeilings[f.id] ?: JSONObject(), !busy) { key, enabled ->
+                    action {
+                        chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
+                            FollowPresets.withSharing(model.followCeilings[f.id] ?: JSONObject(), key, enabled)))
+                    }
+                }
+                if (!model.isPerson) FollowGrants(model.namedFronts, model.followCeilings[f.id] ?: JSONObject(), !busy) { key, id, on ->
+                    action {
+                        chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling",
+                            FollowPresets.withGrant(model.followCeilings[f.id] ?: JSONObject(), key, id, on)))
+                    }
+                }
+                Row {
+                    TextButton(enabled = !busy, onClick = { action {
+                        val dev = checkNotNull(chorus.device) { "Not signed in." }
+                        onOpenChat(Spaces.openDm(dev, f.account.id))
+                    } }) { Text("Message") }
+                    TextButton(enabled = !busy, onClick = { action {
+                        chorus.create("follow.end", f.id, JSONObject())
+                    } }) { Text("Remove") }
+                }
+            }
+        }
+        item {
+            Text("Following", color = p.ink, fontWeight = FontWeight.SemiBold)
+            if (model.isPerson && follows.following.any { it.account.isSystem }) Text("Systems share who's fronting " +
+                "as far as they choose, so you know who you're talking to. Their messages and posts show which member wrote them.",
+                color = p.ink2)
+        }
+        if (follows.following.isEmpty()) item { Text("You aren't following anyone yet.", color = p.ink2) }
+        for (f in follows.following) item(key = "following:${f.id}") {
+            Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(f.account.shownName, color = p.ink, fontWeight = FontWeight.SemiBold)
+                    if (f.account.isSystem) Text("System", color = p.ink3, fontSize = 12.sp,
+                        modifier = Modifier.background(p.surface2, CircleShape).padding(horizontal = 8.dp, vertical = 2.dp))
+                }
+                val front = views[f.account.id]?.front.orEmpty()
+                when {
+                    f.status == "requested" -> Text("Waiting for them to accept", color = p.ink2)
+                    front.isNotEmpty() -> FrontingNow(front)
+                    f.account.kind != "person" -> Text("Not sharing who's fronting right now", color = p.ink2)
+                }
+                if (f.status == "active") views[f.account.id]?.let { FollowerViewDetails(it) }
+                Row {
+                    if (f.status == "active") TextButton(enabled = !busy, onClick = { action {
+                        val dev = checkNotNull(chorus.device) { "Not signed in." }
+                        onOpenChat(Spaces.openDm(dev, f.account.id))
+                    } }) { Text("Message") }
+                    TextButton(enabled = !busy, onClick = { action {
+                        val dev = checkNotNull(chorus.device) { "Not signed in." }
+                        PeopleApi.unfollow(dev, f.id)
+                    } }) { Text("Unfollow") }
+                }
+                sharedPosts[f.account.id]?.takeIf { it.isNotEmpty() }?.let { posts ->
+                    Text("Shared posts", color = p.ink2, fontWeight = FontWeight.SemiBold)
+                    for (post in posts) SharedPostPreview(post, f.account.shownName, chorus, model,
+                        reactMember?.id, !busy, onThread = { threadPostId = it.id },
+                        onReply = { onReplyPost(it.id) }) { selected ->
+                        val member = reactMember ?: return@SharedPostPreview
+                        if (busy) return@SharedPostPreview
+                        busy = true; error = null
+                        actions.launch {
+                            try {
+                                val chosen = selected.reactions.any { it.emoji == PostReactions.HEART && it.memberId == member.id }
+                                chorus.create(if (chosen) "post.unreact" else "post.react", selected.id,
+                                    PostReactions.payload(selected.id, member.id))
+                                sharedPosts = sharedPosts + (f.account.id to posts.map { item ->
+                                    if (item.id == selected.id) item.copy(reactions = PostReactions.toggle(item.reactions,
+                                        member.id, member.shownName)) else item
+                                })
+                            } catch (e: Exception) { error = e.message ?: "Could not react to this post." }
+                            finally { busy = false }
+                        }
+                    }
+                }
+            }
+        }
+        }
+        if (!model.isPerson) item { Text("A follower sees your switches only within the sharing limit you choose for them.",
             color = p.ink2, modifier = Modifier.padding(bottom = 20.dp)) }
     }
 }
@@ -259,6 +393,20 @@ private fun FollowGrants(named: NamedFronts?, ceiling: JSONObject, enabled: Bool
                 Text("${if (id in chosen) "✓" else "○"} $name")
             }
         }
+    }
+}
+
+/** "● Kai ● Wren fronting", each name in its member colour when shared. */
+@Composable
+private fun FrontingNow(front: List<SharedMember>) {
+    val p = LocalChorusPalette.current
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (m in front.take(4)) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            val c = m.color?.let { runCatching { androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(it)) }.getOrNull() } ?: p.accent
+            Box(Modifier.size(8.dp).background(c, CircleShape))
+            Text(m.name, color = p.ink, fontSize = 14.sp)
+        }
+        Text(if (front.size > 4) "& ${front.size - 4} more fronting" else "fronting", color = p.ink2, fontSize = 14.sp)
     }
 }
 
