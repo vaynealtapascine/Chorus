@@ -35,6 +35,8 @@ class PeopleTest {
     @Test fun followerViewKeepsSharedColoursAndAccountKinds() {
         val view = PeopleApi.followerView(JSONObject("""{"entries":[{"level":"front","name":"Kai","color":"#7FB3A8"},{"level":"front","name":"Rin","color":null},{"level":"cocon","name":"Ash","color":"#fff"}]}"""))
         assertEquals(listOf(SharedMember("Kai", "#7FB3A8"), SharedMember("Rin", null)), view.front)
+        val pictured = PeopleApi.followerView(JSONObject("""{"entries":[{"level":"front","name":"Kai","color":"#7FB3A8","glyph":"⚓","avatar_blob":"abc"}]}"""))
+        assertEquals(listOf(SharedMember("Kai", "#7FB3A8", "⚓", "abc")), pictured.front)
         val list = PeopleApi.parse(JSONObject("""{"following":[{"id":"f","account":{"id":"s","handle":"stars","kind":"system"},"status":"active"},{"id":"g","account":{"id":"p","handle":"alex","kind":"person"},"status":"active"}],"followers":[]}"""))
         assertEquals(listOf(true, false), list.following.map { it.account.isSystem })
     }

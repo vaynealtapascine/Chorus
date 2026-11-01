@@ -21,4 +21,12 @@ class SpacesTest {
         assertEquals("Mx Moss", cards.getValue("a").name)
         assertEquals("Someone", cards.getValue("b").name)
     }
+
+    @Test fun foreignAuthorCardKeepsPictureColourAndSigil() {
+        val cards = Spaces.authors(JSONObject("""{"accounts":[],"members":[{"id":"a","account_id":"them","name":"Moss","color":"#7FB3A8","sigils":["🌿"],"avatar_blob":"abc"},{"id":"b","account_id":"them","name":"rin","color":null,"sigils":[],"avatar_blob":null}]}"""))
+        val moss = cards.getValue("a").member
+        assertEquals(listOf("abc", "#7FB3A8", "🌿"), listOf(moss.avatarBlob, moss.color, moss.glyph))
+        val rin = cards.getValue("b").member
+        assertEquals(listOf(null, "#A09184", "R"), listOf(rin.avatarBlob, rin.color, rin.glyph))
+    }
 }

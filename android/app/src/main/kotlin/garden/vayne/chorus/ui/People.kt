@@ -405,14 +405,13 @@ private fun FollowGrants(named: NamedFronts?, ceiling: JSONObject, enabled: Bool
     }
 }
 
-/** "● Kai ● Wren fronting", each name in its member colour when shared. */
+/** "Kai, Wren fronting", each with their picture (or sigil) in their member colour when shared. */
 @Composable
 private fun FrontingNow(front: List<SharedMember>) {
     val p = LocalChorusPalette.current
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         for (m in front.take(4)) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            val c = m.color?.let { runCatching { androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(it)) }.getOrNull() } ?: p.accent
-            Box(Modifier.size(8.dp).background(c, CircleShape))
+            Avatar(m.glyph ?: m.name.take(1).uppercase(), m.color ?: "#A09184", 22.dp, avatarBlob = m.avatarBlob, ring = false)
             Text(m.name, color = p.ink, fontSize = 14.sp)
         }
         Text(if (front.size > 4) "& ${front.size - 4} more fronting" else "fronting", color = p.ink2, fontSize = 14.sp)
