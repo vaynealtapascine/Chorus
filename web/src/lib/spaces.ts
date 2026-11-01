@@ -87,6 +87,18 @@ export async function followerView(accountId: string): Promise<{ entries: { leve
   }
 }
 
+/** Accounts connected to this one by an active follow either way: who can join our spaces (spaces.rs). */
+export async function connections(): Promise<SpaceAccount[]> {
+  const j = await call('GET', '/follows');
+  const seen = new Map<string, SpaceAccount>();
+  for (const f of [...(j?.following ?? []), ...(j?.followers ?? [])] as Follow[]) {
+    if (f.status === 'active' && f.account && f.account.id !== sync.accountId) seen.set(f.account.id, f.account);
+  }
+  return [...seen.values()].sort((a, b) => (a.display_name ?? a.handle ?? '').localeCompare(b.display_name ?? b.handle ?? ''));
+}
+
+export const accountName = (a: { display_name: string | null; handle: string | null }) => a.display_name ?? (a.handle ? `@${a.handle}` : 'Someone');
+
 export interface Follow { id: string; status: string; account: SpaceAccount & { avatar_blob?: string | null } }
 
 /** The accounts this one follows (active and asked), from /follows. */

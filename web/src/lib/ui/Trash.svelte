@@ -1,11 +1,15 @@
 <script lang="ts">
-  import { trashItems, type TrashKind } from '../data';
+  import { channels, trashItems, type TrashKind } from '../data';
+  import { chatShown } from '../chat-visible';
   import { sync, type Projection } from '../sync/client';
 
   let { projection, channelId }: { projection: Projection; channelId?: string } = $props();
   let query = $state('');
   let kind = $state<TrashKind | 'all'>('all');
-  const all = $derived(trashItems(projection, sync.accountId));
+  // deleted messages of a private chat that isn't ours to see now stay out (D-097, D-098)
+  const chatOk = $derived(chatShown(projection, sync.accountId));
+  const byChannel = $derived(new Map(channels(projection).map((c) => [c.id, c])));
+  const all = $derived(trashItems(projection, sync.accountId).filter((item) => item.kind !== 'message' || !item.channelId || chatOk(byChannel.get(item.channelId))));
   const shown = $derived(all.filter((item) =>
     (!channelId || (item.kind === 'message' && item.channelId === channelId)) &&
     (kind === 'all' || item.kind === kind) &&

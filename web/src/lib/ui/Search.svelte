@@ -8,6 +8,7 @@
   import { apiFetch } from '../http';
   import { sync, type Projection } from '../sync/client';
   import { bodyPresence } from '../front-view';
+  import { chatShown } from '../chat-visible';
 
   let { projection }: { projection: Projection } = $props();
   let query = $state('');
@@ -49,7 +50,9 @@
   const space = $derived(new Map(spaces(projection).map((s) => [s.id, s])));
   const people = $derived(new Map(members(projection).map((m) => [m.id, m])));
   const active = $derived(activeViewers(bodyPresence(projection, sync.accountId)));
-  const shown = $derived(all.filter((h) => memberVisible(h, space.get(ch.get(h.channel_id)?.space_id ?? '')?.kind, active, viewingAs)));
+  // members' private chats and private chats in DMs only while theirs are here (D-097, D-098)
+  const chatOk = $derived(chatShown(projection, sync.accountId, viewingAs));
+  const shown = $derived(all.filter((h) => chatOk(ch.get(h.channel_id)) && memberVisible(h, space.get(ch.get(h.channel_id)?.space_id ?? '')?.kind, active, viewingAs)));
 
   onMount(() => {
     index = new SearchIndex(projection);

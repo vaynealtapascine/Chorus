@@ -324,6 +324,7 @@ export interface SpaceRow {
   id: string;
   kind: 'internal' | 'shared' | 'dm';
   name: string;
+  description?: string;
 }
 
 export interface ChannelRow {
@@ -334,8 +335,12 @@ export interface ChannelRow {
   topic?: string;
   category?: string;
   parent_message_id?: string;
-  /** A member DM's members. */
+  /** A member DM's members; a channel kept to some members; a private chat's people (D-098). */
   member_ids?: string[];
+  icon?: string;
+  color?: string;
+  /** Representative image (D-088), a blob hash. */
+  avatar_blob?: string;
   archived: boolean;
 }
 
@@ -454,6 +459,7 @@ export function spaces(p: Projection): SpaceRow[] {
       id,
       kind: (str(r.fields.kind) ?? 'shared') as SpaceRow['kind'],
       name: str(r.fields.name) ?? 'Space',
+      description: str(r.fields.description),
     }))
     .sort((a, b) => (a.kind === 'internal' ? -1 : b.kind === 'internal' ? 1 : a.name.localeCompare(b.name)));
 }
@@ -470,6 +476,9 @@ export function channels(p: Projection, spaceId?: string): ChannelRow[] {
       category: str(r.fields.category),
       parent_message_id: str(r.fields.parent_message_id),
       member_ids: Array.isArray(r.fields.member_ids) ? r.fields.member_ids.filter((m): m is string => typeof m === 'string') : undefined,
+      icon: str(r.fields.icon),
+      color: str(r.fields.color),
+      avatar_blob: str(r.fields.avatar_blob),
       archived: r.fields.archived_at != null,
     }))
     .filter((c) => !spaceId || c.space_id === spaceId)

@@ -83,6 +83,22 @@ describe('pins, private chats and cleared chats (D-097)', () => {
     expect(privateVisible({ kind: 'text' }, home, [], null, true)).toBe(true);
     expect(isPrivate({ kind: 'text', member_ids: ['kai'] }, { kind: 'shared' })).toBe(false);
   });
+  it('shows a private chat in a DM only while our member in it is here as switched (D-098)', () => {
+    const dm = { kind: 'dm' };
+    const chat = { kind: 'member_dm', member_ids: ['kai', 'robin'] };
+    const own = (id: string) => id === 'kai' || id === 'june';
+    const f = (id: string, level = 'front') => [{ subject_type: 'member', subject_id: id, level }];
+    expect(privateVisible(chat, dm, f('june'), null, true, own)).toBe(false);
+    expect(privateVisible(chat, dm, f('kai'), null, true, own)).toBe(true);
+    expect(privateVisible(chat, dm, f('kai', 'cocon'), null, true, own)).toBe(true);
+    // not by "Read as", not with hiding turned off, not through a fronting subsystem (display only)
+    expect(privateVisible(chat, dm, f('june'), 'kai', true, own)).toBe(false);
+    expect(privateVisible(chat, dm, f('june'), null, false, own)).toBe(false);
+    expect(privateVisible(chat, dm, f('kai'), null, true, own, f('june'))).toBe(false);
+    // the other side (nobody of ours listed) sees it as any DM
+    expect(privateVisible(chat, dm, [], null, true, (id) => id === 'robin-self')).toBe(true);
+    expect(privateVisible({ kind: 'text' }, dm, [], null, true, own)).toBe(true);
+  });
   it('puts pins first in their order, then by activity', () => {
     const rows = [{ id: 'a', at: 10, title: 'a' }, { id: 'b', at: 50, title: 'b' }, { id: 'c', at: 30, title: 'c' }, { id: 'd', at: 40, title: 'd' }];
     expect(orderChats(rows, ['c', 'a']).map((r) => r.id)).toEqual(['c', 'a', 'b', 'd']);

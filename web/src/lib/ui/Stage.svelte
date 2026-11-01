@@ -8,6 +8,7 @@
   import { core } from '../core';
   import { channels, members, messages, spaces, type MemberRow, type MessageRow } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
+  import { chatShown } from '../chat-visible';
   import { segmentRich } from '../segments';
   import { sync, type Projection } from '../sync/client';
   import { bodyPresence } from '../front-view';
@@ -62,7 +63,9 @@
   const channel = $derived(channels(projection).find((c) => c.id === channelId));
   const space = $derived(spaces(projection).find((s) => s.id === channel?.space_id));
   const activeMembers = $derived(activeViewers(bodyPresence(projection, sync.accountId)));
-  const list = $derived(messages(projection, channelId).filter((m) => !m.deleted && memberVisible(m, space?.kind, activeMembers, viewingAs)));
+  // a private chat that isn't ours to see now stages nothing (D-097, D-098)
+  const open = $derived(chatShown(projection, sync.accountId)(channel));
+  const list = $derived(open ? messages(projection, channelId).filter((m) => !m.deleted && memberVisible(m, space?.kind, activeMembers, viewingAs)) : []);
   const byId = $derived(new Map(list.map((m) => [m.id, m])));
   const people = $derived(new Map(members(projection).map((m) => [m.id, m])));
   const authorsHere = $derived([...new Set(list.flatMap((m) => m.authors))].map((id) => people.get(id)).filter(Boolean) as MemberRow[]);

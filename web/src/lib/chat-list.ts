@@ -2,6 +2,7 @@
 // activity first, split into folders like Android's chat list. Display only: reads stay in data.ts.
 import type { ChannelRow, MessageRow, SpaceRow } from './data';
 import type { Interval } from './sync/client';
+import { privateSides } from './chat-manage';
 
 export type Folder = 'all' | 'internal' | 'shared' | 'direct';
 export const FOLDERS: { id: Folder; label: string; icon: string }[] = [
@@ -134,18 +135,29 @@ export function isPrivate(channel: { kind: string; member_ids?: string[] }, spac
   return space?.kind === 'internal' && (channel.kind === 'member_dm' || !!channel.member_ids?.length);
 }
 
-/** Shown while one of its members fronts or is co-conscious, or while reading as one of them. */
+type FrontEntry = { subject_type: string; subject_id: string; level: string };
+const hereIn = (front: FrontEntry[], members: string[]) =>
+  front.some((e) => e.subject_type === 'member' && (e.level === 'front' || e.level === 'cocon') && members.includes(e.subject_id));
+
+/** Shown while one of its members fronts or is co-conscious, or while reading as one of them.
+ * A private chat in a DM kept to some of our members (D-098; `own` says who is ours) shows only
+ * while one of them is here by the front exactly as switched (`switched`, default `front`), never
+ * by "Read as", whatever `chat.hide_private` says. */
 export function privateVisible(
   channel: { kind: string; member_ids?: string[] },
   space: { kind: string } | undefined,
-  front: { subject_type: string; subject_id: string; level: string }[],
+  front: FrontEntry[],
   viewingAs: string | null,
   hidePrivate: boolean,
+  own?: (memberId: string) => boolean,
+  switched: FrontEntry[] = front,
 ): boolean {
+  const mine = own && privateSides(channel, space, own)?.mine;
+  if (mine?.length) return hereIn(switched, mine);
   if (!hidePrivate || !isPrivate(channel, space)) return true;
   const members = channel.member_ids ?? [];
   if (viewingAs && members.includes(viewingAs)) return true;
-  return front.some((e) => e.subject_type === 'member' && (e.level === 'front' || e.level === 'cocon') && members.includes(e.subject_id));
+  return hereIn(front, members);
 }
 
 /** Pinned (in pin order) first, then the rest by activity. */

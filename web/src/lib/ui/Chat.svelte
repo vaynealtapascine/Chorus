@@ -21,7 +21,7 @@
   import SpaceRail from './SpaceRail.svelte';
   import ChatFolderRail from './ChatFolderRail.svelte';
   import ChatList from './ChatList.svelte';
-  import { chatPrefs, dayLabel, discColor, folderOf, frontEvents, privateVisible, type Folder } from '../chat-list';
+  import { chatPrefs, dayLabel, discColor, folderOf, frontEvents, type Folder } from '../chat-list';
   import AttachmentView from './AttachmentView.svelte';
   import { expandFront } from '../subsystems';
   import Icon from './Icon.svelte';
@@ -31,6 +31,11 @@
   import { carryReply, takeReply } from '../replyElsewhere';
   import ChannelPermissions from './ChannelPermissions.svelte';
   import SpaceRoles from './SpaceRoles.svelte';
+  import ChannelEditor from './ChannelEditor.svelte';
+  import NewChat from './NewChat.svelte';
+  import SpacePanel from './SpacePanel.svelte';
+  import { chatShown } from '../chat-visible';
+  import { canEditSpace, privateSides, roleIn } from '../chat-manage';
   import { selfMember, type MemberRow } from '../data';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
@@ -43,6 +48,8 @@
   $effect(() => sessionStorage.setItem('chorus.chat.folder', folder));
 
   let showInfo = $state(window.matchMedia('(min-width: 1280px)').matches);
+  // "Read as": whose view of hidden messages and members' chats this is (none: whoever is here)
+  let viewingAs = $state<string | null>(null);
   const roomMembers = $derived(members(projection).filter((m) => !m.deleted && !m.archived));
   const ss = $derived(spaces(projection));
   const allChannels = $derived(channels(projection));
@@ -52,15 +59,19 @@
       (channelId?.startsWith('space:')
         ? allChannels.find((c) => c.space_id === channelId.slice(6) && !c.archived && c.kind !== 'thread')
         : undefined) ??
-      // nothing asked for: the first chat that isn't someone else's private one (D-097)
-      allChannels.find((c) => !c.archived && c.kind !== 'thread' &&
-        privateVisible(c, ss.find((s) => s.id === c.space_id), fronting, viewingAs, chatPrefs(projection.rows.pref ?? {}, sync.accountId).hidePrivate)) ??
+      // nothing asked for: the first chat that isn't someone else's private one (D-097, D-098)
+      allChannels.find((c) => !c.archived && c.kind !== 'thread' && shownNow(c)) ??
       allChannels.find((c) => !c.archived && c.kind !== 'thread'),
   );
   const space = $derived(ss.find((s) => s.id === current?.space_id) ?? ss[0]);
-  // members' private chats only while one of them is here (D-097), as in ChatList
-  const spaceChannels = $derived(allChannels.filter((c) => c.space_id === space?.id && !c.archived && c.kind !== 'thread' &&
-    privateVisible(c, space, fronting, viewingAs, chatPrefs(projection.rows.pref ?? {}, sync.accountId).hidePrivate)));
+  // members' private chats only while one of them is here (D-097, D-098), as in ChatList
+  const shownNow = $derived(chatShown(projection, sync.accountId, viewingAs));
+  const spaceChannels = $derived(allChannels.filter((c) => c.space_id === space?.id && !c.archived && c.kind !== 'thread' && shownNow(c)));
+  // a private chat in a DM (D-098): whose it is on our side and theirs
+  const ownIds = $derived(new Set(members(projection).map((m) => m.id)));
+  const sides = $derived(current && space ? privateSides(current, space, (id) => ownIds.has(id)) : null);
+  // someone's private chat that isn't ours to look at now: its words stay out, and nothing is marked read
+  const lockedOut = $derived(!!current && !shownNow(current));
   // only the newest pages are built and in the DOM; scrolling up adds older ones (SPEC §9: pages
   // of 100, and a 50k-message channel's first screen within 150 ms)
   const PAGE = 100;
@@ -96,11 +107,10 @@
     .map((e) => ({ member_id: e.subject_id, is_primary: !!e.is_primary, level: e.level })));
   // a person account always speaks as its self member (D-003)
   const self = $derived(selfMember(projection));
-  let viewingAs = $state<string | null>(null);
   const activeMembers = $derived(activeViewers(fronting));
   // a chat cleared for us (D-097) keeps its earlier messages out of view
   const clearedAt = $derived(current ? chatPrefs(projection.rows.pref ?? {}, sync.accountId).hidden.get(current.id) : undefined);
-  const visibleMsgs = $derived(msgs.filter((m) => memberVisible(m, space?.kind, activeMembers, viewingAs) &&
+  const visibleMsgs = $derived(lockedOut ? [] : msgs.filter((m) => memberVisible(m, space?.kind, activeMembers, viewingAs) &&
     (clearedAt === undefined || m.occurred_at > clearedAt)));
   // this account's autoproxy for the channel (D-074): pref `autoproxy:<channel id>`
   type Autoproxy = 'off' | 'front' | 'latch' | 'member';
@@ -115,7 +125,9 @@
     sync.create('pref.set', sync.accountScope, null, { device: '', key: autoproxyKey, value: member ? { mode, member } : { mode } });
   }
   // the speaker chip before anyone picks: one rule in core (SPEC §5.2)
-  const ownSenders = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
+  // in a private chat only its members of ours speak (D-098; the server refuses anyone else)
+  const ownSenders = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId) &&
+    (!sides?.mine.length || sides.mine.includes(m.id))));
   const defaults = $derived(channelSpeaker(projection, sync.accountId, current?.id ?? '', {
     mode: autoproxy.mode, member: autoproxy.member ?? null, self_member: self?.id ?? null,
     fronting: frontingMembers,
@@ -130,7 +142,10 @@
     sync.create('pref.set', sync.accountScope, null, { device: '', key: channelFrontKey(current.id), value: front });
   }
   let chosen = $state<string | null>(null);
-  const speaker = $derived(chosen ?? defaults[0] ?? null);
+  const speaker = $derived(chosen ?? (sides?.mine.length
+    ? defaults.find((d) => sides.mine.includes(d)) ?? sides.mine.find((id) => fronting.some((e) => e.subject_id === id)) ?? sides.mine[0]
+    : defaults[0]) ?? null);
+  const defaultAuthors = $derived(chosen ? [chosen] : sides?.mine.length ? (speaker ? [speaker] : []) : defaults);
   const speakers = $derived(
     ownSenders.map((m) => ({ member_id: m.id, sigils: m.sigils, proxy_tags: m.proxy_tags })),
   );
@@ -169,6 +184,11 @@
   let selectedIds = $state(new Set<string>());
   let showPins = $state(false);
   let menuOpen = $state(false);
+  // New chat, and editing this chat (D-099)
+  let newChat = $state(false);
+  let editingChannel = $state(false);
+  let editingGroup = $state(false);
+  let dirTick = $state(0);
   // content warning, poll and audience for the next message (Figma: behind the composer's sliders)
   let optionsOpen = $state(false);
   // messages waiting out slow mode (D-076): not in the projection, so follow the sync client
@@ -337,7 +357,7 @@
   let replyIn = $state<MessageRow | null>(null);
   const replyTargets = $derived(
     allChannels
-      .filter((c) => c.id !== current?.id && !c.archived)
+      .filter((c) => c.id !== current?.id && !c.archived && shownNow(c))
       .map((c) => ({ id: c.id, label: `${ss.find((x) => x.id === c.space_id)?.name ?? 'DM'} › ${c.kind === 'thread' ? 'thread' : '#'}${c.name}` }))
       .sort((a, b) => a.label.localeCompare(b.label)),
   );
@@ -371,8 +391,8 @@
     }
   }
 
-  const preview: Composed | null = $derived(draft.trim() && !editing ? core.compose(draft, speakers, { segments: parseSegments }, chosen ? [chosen] : defaults, names) : null);
-  const messageAuthors = $derived(preview?.authors ?? (chosen ? [chosen] : defaults));
+  const preview: Composed | null = $derived(draft.trim() && !editing ? core.compose(draft, speakers, { segments: parseSegments }, defaultAuthors, names) : null);
+  const messageAuthors = $derived(preview?.authors ?? defaultAuthors);
   let typingDraft: { channel: string; member: string | null; audience: 'all' | 'system' } | null = null;
   let lastTypingDraft = '';
   function stopTyping() {
@@ -637,6 +657,8 @@
     return sync.syncIssues().filter((i) => ['message.send', 'message.forward'].includes(i.kind) && i.payload.channel_id === current?.id);
   });
   const slowLabel = (s: number) => (s < 60 ? `${s} s` : s < 3600 ? `${s / 60} min` : `${s / 3600} h`);
+  // a group's name, description and face: its owner and admins (D-099)
+  const groupEditable = $derived(!!space && canEditSpace(space.kind, roleIn(projection.rows.space_member, space.id, directory.get(space.id), sync.accountId)));
   const canManage = $derived.by(() => {
     if (!space) return false;
     const info = directory.get(space.id);
@@ -646,6 +668,9 @@
     return owner === sync.accountId || projection.rows.space_member?.[`${space.id}|${sync.accountId}`]?.fields.role === 'admin';
   });
 
+  // who may edit this chat: our own space's chats, a group's for its managers, our private chat in a DM
+  const canEditChannel = $derived(!!current && current.kind !== 'thread' && !lockedOut &&
+    (space?.kind === 'internal' ? !self : space?.kind === 'dm' ? current.kind === 'member_dm' && !!sides?.mine.length : canManage));
   function addChannel(e: SubmitEvent) {
     e.preventDefault();
     const name = newChannel.trim().toLowerCase().replace(/\s+/g, '-');
@@ -689,13 +714,17 @@
   // the conversation's face and words (Figma F5.21 header and info)
   const nameOf = (id: string) => { const m = people.get(id); return m?.display_name ?? m?.name ?? 'Someone'; };
   const systemName = $derived(String(projection.rows.system?.[sync.accountId]?.fields.name ?? 'your system'));
-  const roomTitle = $derived(current?.kind === 'thread' ? 'Thread'
+  const roomTitle = $derived(lockedOut ? 'Private chat' : current?.kind === 'thread' ? 'Thread'
+    : sides?.theirs.length ? sides.theirs.map(nameOf).join(' & ')
     : space?.kind === 'dm' ? spaceTitle(space, directory.get(space.id), sync.accountId)
     : current?.kind === 'member_dm' ? current.name
     : space?.kind === 'shared' && spaceChannels.length <= 1 ? space.name
     : current?.name ?? 'Chat');
   const roomSubtitle = $derived.by(() => {
+    if (lockedOut) return 'Opens while its member is here';
     if (current?.kind === 'thread') return parentChannel ? `in #${parentChannel.name}` : '';
+    if (sides && space) return sides.mine.length ? `Private · ${sides.mine.map(nameOf).join(' & ')}`
+      : `Private chat · ${spaceTitle(space, directory.get(space.id), sync.accountId)}`;
     if (current?.topic) return current.topic;
     if (space?.kind === 'internal') {
       const here = shownFront.entries.filter((e) => e.subject_type === 'member' && people.has(e.subject_id)).map((e) => nameOf(e.subject_id));
@@ -714,13 +743,19 @@
     const t = setInterval(() => void refreshFront(id), 60_000);
     return () => clearInterval(t);
   });
-  const roomDisc = $derived.by((): { glyph: string; member?: MemberRow; style: string } => {
-    if (current?.kind === 'member_dm') {
-      const m = people.get(current.member_ids?.find((id) => id !== speaker) ?? current.member_ids?.[0] ?? '');
+  const roomDisc = $derived.by((): { glyph: string; member?: MemberRow; style: string; blob?: string } => {
+    if (lockedOut) return { glyph: '🔒', style: 'background: var(--surface-2); color: var(--ink-2)' };
+    if (current?.avatar_blob && current.kind !== 'thread') {
+      const c = core.adaptColor(current.color ?? discColor(current.id), dark);
+      return { glyph: current.icon ?? (roomTitle.match(/\p{L}|\p{N}/u)?.[0] ?? '#').toUpperCase(), blob: current.avatar_blob, style: `background: ${c.ring}; color: ${c.avatar_ink}` };
+    }
+    if (current?.kind === 'member_dm' && (space?.kind === 'internal' || sides?.theirs.length)) {
+      const m = people.get(sides?.theirs[0] ?? current.member_ids?.find((id) => id !== speaker) ?? current.member_ids?.[0] ?? '');
       if (m) { const c = core.adaptColor(m.color, dark); return { glyph: m.sigils[0] ?? m.name[0] ?? '?', member: m, style: `background: ${c.ring}; color: ${c.avatar_ink}` }; }
     }
-    if (space?.kind === 'internal' && current?.kind !== 'thread') return { glyph: '#', style: 'background: var(--accent-soft); color: var(--accent)' };
-    const c = core.adaptColor(discColor(current?.id ?? ''), dark);
+    if (space?.kind === 'internal' && current?.kind !== 'thread' && !current?.icon && !current?.color) return { glyph: '#', style: 'background: var(--accent-soft); color: var(--accent)' };
+    const c = core.adaptColor(current?.color ?? discColor(current?.id ?? ''), dark);
+    if (current?.icon) return { glyph: current.icon, style: `background: ${c.ring}; color: ${c.avatar_ink}` };
     return { glyph: (roomTitle.match(/\p{L}|\p{N}/u)?.[0] ?? '#').toUpperCase(), style: `background: ${c.ring}; color: ${c.avatar_ink}` };
   });
   // beside a name: the author's layer when they aren't in the innermost one, or another system's name
@@ -739,7 +774,7 @@
   const byLayer = $derived.by(() => {
     const order = frontLayers(projection, sync.accountId).map((l) => l.id);
     const marks = new Map(marksHere.map((x) => [x.member, x.at]));
-    const inRoom = current?.kind === 'member_dm' ? roomMembers.filter((m) => current.member_ids?.includes(m.id)) : roomMembers;
+    const inRoom = current?.member_ids?.length ? roomMembers.filter((m) => current.member_ids?.includes(m.id)) : roomMembers;
     return inRoom.map((m) => {
       const e = shownFront.entries.find((f) => f.subject_type === 'member' && f.subject_id === m.id);
       const via = shownFront.via.get(m.id);
@@ -811,7 +846,7 @@
     if (at >= 0 && at < first) shown = page.total - at + PAGE / 2;
   });
   const pinned = $derived(
-    current ? pinnedMessages(projection, current.id).filter((m) => memberVisible(m, space?.kind, activeMembers, viewingAs)) : [],
+    current && !lockedOut ? pinnedMessages(projection, current.id).filter((m) => memberVisible(m, space?.kind, activeMembers, viewingAs)) : [],
   );
   const reacts = $derived(reactions(projection));
 
@@ -876,6 +911,7 @@
   // who is in which space (names for DMs), refreshed when spaces come and go
   $effect(() => {
     void ss.length;
+    void dirTick;
     listSpaces()
       .then((items) => (directory = new Map(items.map((i) => [i.id, i]))))
       .catch(() => {});
@@ -904,7 +940,7 @@
   });
   $effect(() => {
     const id = focusId;
-    if (!id || visibleMsgs.some((m) => m.id === id)) { history = null; historyError = ''; return; }
+    if (!id || lockedOut || visibleMsgs.some((m) => m.id === id)) { history = null; historyError = ''; return; }
     const abort = new AbortController();
     history = null;
     historyRevealed = false;
@@ -933,7 +969,7 @@
 <div class="chat" class:with-info={showInfo}>
   <div class="desk-rail"><ChatFolderRail {folder} counts={folderCounts} person={!!self} onfolder={(f) => (folder = f)} {onmenu} /></div>
   <div class="desk-list"><ChatList {projection} {dark} currentId={current?.id} {folder} {directory} person={!!self} {onswitch} {viewingAs}
-    onnewchannel={homeSpace && !self ? newChannelIn : undefined} /></div>
+    onnewchannel={homeSpace && !self ? newChannelIn : undefined} onnewchat={() => (newChat = true)} /></div>
   <aside class="channels" aria-label="Channels">
     <div class="channel-title">Chats <a class="icon-button" href="#/search" aria-label="Search messages"><Icon name="search" size={18} /></a></div>
     <SpaceRail spaces={ss} channels={allChannels} currentId={space?.id} {directory} me={sync.accountId} />
@@ -948,6 +984,7 @@
         <input bind:value={newChannel} placeholder="new channel" aria-label="New channel name" />
       </form>
     {/if}
+    <button class="new-chat" onclick={() => (newChat = true)} aria-label="New chat"><Icon name="plus" size={18} /> New chat</button>
   </aside>
 
   <section class="room" aria-label={current ? `#${current.name}` : 'Chat'} ondragover={(e) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); }} ondrop={dropFiles}>
@@ -955,19 +992,21 @@
       {#if current?.kind === 'thread'}
         <a class="icon-button thread-back" href="#/chat/{parentChannel?.id ?? ''}" aria-label="Back to #{parentChannel?.name ?? 'channel'}"><span aria-hidden="true">‹</span></a>
       {/if}
-      <span class="room-disc" style={roomDisc.style}>{#if roomDisc.member}<AvatarImage hash={roomDisc.member.avatar_blob} glyph={roomDisc.glyph} name={roomTitle} />{:else}{roomDisc.glyph}{/if}</span>
+      <span class="room-disc" style={roomDisc.style}>{#if roomDisc.member}<AvatarImage hash={roomDisc.member.avatar_blob} glyph={roomDisc.glyph} name={roomTitle} />{:else if roomDisc.blob}<AvatarImage hash={roomDisc.blob} glyph={roomDisc.glyph} name={roomTitle} />{:else}{roomDisc.glyph}{/if}</span>
       <button class="titles" onclick={() => (showInfo = !showInfo)} aria-label="Chat info" aria-expanded={showInfo}>
         <h1>{roomTitle}</h1>
         {#if typingSubtitle}<span class="sub typing" role="status">{typingSubtitle}</span>{:else if roomSubtitle}<span class="sub">{roomSubtitle}</span>{/if}
       </button>
       <a class="icon-button" href="#/search" aria-label="Search messages"><Icon name="search" size={22} /></a>
-      {#if current}
+      {#if current && !lockedOut}
         <details class="room-menu" bind:open={menuOpen}>
           <summary class="icon-button" aria-label="Channel menu"><Icon name="more" size={22} /></summary>
           <div class="menu-items">
             <button onclick={() => { showPins = !showPins; menuOpen = false; }}><Icon name="pin" size={18} />{showPins ? 'Hide pinned messages' : `Pinned messages · ${pinned.length}`}</button>
             <a href="#/stage/{current.id}"><Icon name="select" size={18} />Stage… (screenshot)</a>
             <a href="#/trash/{current.id}"><Icon name="delete" size={18} />Show deleted</a>
+            {#if canEditChannel}<button onclick={() => { editingChannel = true; menuOpen = false; }}><Icon name="edit" size={18} />{current.kind === 'member_dm' ? 'Edit chat…' : 'Edit channel…'}</button>{/if}
+            <button onclick={() => { newChat = true; menuOpen = false; }}><Icon name="plus" size={18} />New chat…</button>
             {#if space?.kind === 'internal'}
               <label class="notify">Viewing as
                 <select aria-label="Viewing as member" value={viewingAs ?? ''} onchange={(e) => (viewingAs = e.currentTarget.value || null)}>
@@ -1104,19 +1143,26 @@
           </article>
         {:else if historyError}<p class="hint" role="status">{historyError}</p>{/if}
       {/if}
-      {#if windowed && current && !olderDone && !first}
+      {#if windowed && current && !olderDone && !first && !lockedOut}
         <button class="older-load" disabled={olderBusy || !syncLive} onclick={() => void loadOlder()}>
           {olderBusy ? 'Loading…' : 'Older messages (from the server)'}
         </button>
         {#if olderError}<p class="hint" role="status">{olderError}</p>{/if}
       {/if}
-      {#each older as o (o.id)}
+      {#each lockedOut ? [] : older as o (o.id)}
         <article class="older">
           <span class="who">{o.authors.map((id) => people.get(id)?.name ?? 'Someone').join(' & ')}</span>
           <time>{new Date(o.occurred_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</time>
           {#if o.cw}<div class="hint">Content warning: {o.cw}</div>{:else}<p><RichText text={o.text} entities={o.entities} emoji={emojiById} /></p>{/if}
         </article>
       {/each}
+      {#if lockedOut}
+        <div class="locked" role="status">
+          <span class="lock-disc"><Icon name="lock" size={28} /></span>
+          <strong>This chat is private</strong>
+          <p>It belongs to one member of your system, and opens while they're fronting or co-conscious.</p>
+        </div>
+      {/if}
       {#each timeline as line (line.key)}
         {#if line.kind === 'day'}
           <div class="service day"><span>{line.text}</span></div>
@@ -1159,7 +1205,7 @@
         />
         {/if}
       {:else}
-        <p class="empty">{space?.kind === 'internal' ? 'Say hello — messages here are only for your system.' : 'No messages yet. Say hello.'}</p>
+        {#if !lockedOut}<p class="empty">{sides?.mine.length ? `A private chat for ${sides.mine.map(nameOf).join(' & ')}. Nobody else in your system sees it or writes here.` : space?.kind === 'internal' ? 'Say hello — messages here are only for your system.' : 'No messages yet. Say hello.'}</p>{/if}
       {/each}
     </div>
 
@@ -1176,7 +1222,7 @@
         Forward {forwarding.length} {forwarding.length === 1 ? 'item' : 'items'} to
         <select onchange={(e) => { forwardTo((e.currentTarget as HTMLSelectElement).value); e.currentTarget.value = ''; }} aria-label="Forward to channel">
           <option value="">choose…</option>
-          {#each allChannels.filter((c) => !c.archived) as c (c.id)}<option value={c.id}># {c.name}</option>{/each}
+          {#each allChannels.filter((c) => !c.archived && shownNow(c)) as c (c.id)}<option value={c.id}># {c.name}</option>{/each}
         </select>
         {#if !speaker}<span>Pick a speaker first.</span>{/if}
         <button class="x" onclick={() => (forwarding = null)} aria-label="Cancel forward">✕</button>
@@ -1211,7 +1257,7 @@
         {#if quoting}
           <select onchange={(e) => { moveQuote((e.currentTarget as HTMLSelectElement).value); e.currentTarget.value = ''; }} aria-label="Quote in another channel">
             <option value="">Quote in…</option>
-            {#each allChannels.filter((c) => !c.archived && c.id !== current?.id) as c (c.id)}<option value={c.id}># {c.name}</option>{/each}
+            {#each allChannels.filter((c) => !c.archived && c.id !== current?.id && shownNow(c)) as c (c.id)}<option value={c.id}># {c.name}</option>{/each}
           </select>
         {/if}
         <button class="x" onclick={cancel} aria-label="Cancel">✕</button>
@@ -1264,6 +1310,7 @@
       </div>
     {/if}
     {#if uploadError}<p class="upload-error" role="alert">{uploadError}</p>{/if}
+    {#if !lockedOut}
     <div class="composer">
       <input class="file-input" type="file" multiple bind:this={fileInput} onchange={(e) => { addFiles(e.currentTarget.files ?? []); e.currentTarget.value = ''; }} aria-label="Choose attachments" />
       {#if !editing}<div class="chip-wrap">
@@ -1332,22 +1379,31 @@
       <button class="send" class:ready={editing ? true : canSend} onclick={() => void send()} aria-label={editing ? 'Save' : 'Send'} title={editing ? 'Save' : 'Send'}
         disabled={editing ? (editingParts ? !editingParts.some((part) => part.trim()) : !draft.trim()) : !canSend}><Icon name={editing ? 'read' : 'send'} size={20} /></button>
     </div>
+    {/if}
   </section>
   {#if showInfo}
     <aside class="room-info" aria-label="Chat info">
       <div class="info-heading"><strong>{space?.kind === 'dm' || (current?.kind === 'member_dm' && (current.member_ids?.length ?? 0) <= 2) ? 'Info' : 'Group info'}</strong><button class="icon-button" aria-label="Close chat info" onclick={() => (showInfo = false)}><Icon name="close" size={22} /></button></div>
       <div class="info-hero">
-        <span class="room-symbol" style={roomDisc.style}>{#if roomDisc.member}<AvatarImage hash={roomDisc.member.avatar_blob} glyph={roomDisc.glyph} name={roomTitle} />{:else}{roomDisc.glyph}{/if}</span>
+        <span class="room-symbol" style={roomDisc.style}>{#if roomDisc.member}<AvatarImage hash={roomDisc.member.avatar_blob} glyph={roomDisc.glyph} name={roomTitle} />{:else if roomDisc.blob}<AvatarImage hash={roomDisc.blob} glyph={roomDisc.glyph} name={roomTitle} />{:else}{roomDisc.glyph}{/if}</span>
         <h2>{roomTitle}</h2>
-        <p class="info-kind">{space?.kind === 'internal' ? `Internal · only ${systemName}` : space?.kind === 'dm' ? 'Direct message' : `Shared · ${space?.name ?? 'space'}`}</p>
+        <p class="info-kind">{space?.kind === 'internal' ? `Internal · only ${systemName}` : sides ? roomSubtitle : space?.kind === 'dm' ? 'Direct message'
+          : spaceChannels.length > 1 ? `Shared · ${space?.name ?? 'space'}` : `Group · ${accountsLabel(directory.get(space?.id ?? '')?.accounts ?? []) || 'shared'}`}</p>
         {#if current?.topic}<p class="info-topic">{current.topic}</p>{/if}
       </div>
-      <div class="info-actions">
+      <div class="info-actions" hidden={lockedOut}>
         <button onclick={() => setNotifyLevel(notifyLevel === 'none' ? (space?.kind === 'dm' ? 'all' : 'mentions') : 'none')} aria-pressed={notifyLevel === 'none'}>
           <Icon name={notifyLevel === 'none' ? 'muted' : 'muted'} size={20} />{notifyLevel === 'none' ? 'Unmute' : 'Mute'}</button>
         <a href="#/search"><Icon name="search" size={20} />Search</a>
         <button onclick={() => { showPins = !showPins; if (window.innerWidth < 1280) showInfo = false; }}><Icon name="pin" size={20} />Pinned{pinned.length ? ` · ${pinned.length}` : ''}</button>
+        {#if groupEditable && spaceChannels.length <= 1}<button onclick={() => (editingGroup = true)}><Icon name="edit" size={20} />Edit</button>
+        {:else if canEditChannel}<button onclick={() => (editingChannel = true)}><Icon name="edit" size={20} />Edit</button>{/if}
       </div>
+      {#if space && !lockedOut}
+        <SpacePanel {projection} {dark} {space} channel={current} info={directory.get(space.id)} {people} {speaker} isShown={shownNow}
+          onchanged={() => dirTick++} oneditgroup={() => (editingGroup = true)}
+          oneditchannel={canEditChannel && !(groupEditable && spaceChannels.length <= 1) ? () => (editingChannel = true) : undefined} />
+      {/if}
       {#if space?.kind === 'internal'}
         <h3>Members{shownFront.entries.length ? ' · by layer' : ''}</h3>
         <div class="info-members">
@@ -1371,6 +1427,15 @@
     </aside>
   {/if}
 </div>
+{#if newChat}<NewChat {projection} {dark} onclose={() => (newChat = false)} />{/if}
+{#if editingGroup && space}
+  <ChannelEditor {projection} {dark} spaceId={space.id} spaceKind={space.kind} group={space}
+    channel={spaceChannels.length <= 1 ? spaceChannels[0] : undefined} onclose={() => (editingGroup = false)} />
+{/if}
+{#if editingChannel && current && space}
+  <ChannelEditor {projection} {dark} spaceId={space.id} spaceKind={space.kind} channel={current}
+    canDelete={space.kind === 'internal' || canManage || !!sides?.mine.length} onclose={() => (editingChannel = false)} />
+{/if}
 
 <style>
   .history-message { display: grid; gap: var(--s-2); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
@@ -1393,6 +1458,11 @@
   .pending-file input:not([type='checkbox']) { min-width: 10ch; flex: 1; }
   .pending-file button { border: 0; background: none; color: var(--accent); cursor: pointer; }
   .upload-error { color: var(--danger, #b33); font-size: var(--fs-sm); }
+  .locked { display: grid; justify-items: center; gap: 8px; margin: auto; max-width: 340px; padding: 32px 16px; text-align: center; color: var(--ink-2); }
+  .locked p { margin: 0; font-size: var(--fs-sm); color: var(--ink-3); }
+  .lock-disc { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--ink-2); }
+  .new-chat { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 10px; border: 0; border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font: inherit; font-size: var(--fs-sm); cursor: pointer; white-space: nowrap; }
+  @media (min-width: 1024px) { .new-chat { display: none; } }
   .chat {
     display: grid;
     grid-template-columns: 260px minmax(0, 1fr);

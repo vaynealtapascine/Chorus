@@ -2,21 +2,37 @@
   // The desktop chat list (Figma F5.21): search, who is here now, then every conversation across
   // spaces, newest first, with its last message, time and unread count. Muted chats keep a grey badge.
   import { core } from '../core';
-  import { channels, latestMessage, members, spaces, unread, fuzzy, type ChannelRow, type SpaceRow } from '../data';
+  import { channels, latestMessage, members, spaces, unread, fuzzy, type ChannelRow, type MemberRow, type SpaceRow } from '../data';
   import { chatPrefs, chatTime, discColor, folderOf, HIDDEN, movePin, orderChats, PINS, previewOf, privateVisible, togglePin, type Folder } from '../chat-list';
   import { bodyPresence, frontLayers } from '../front-view';
   import { expandFront } from '../subsystems';
-  import { spaceTitle, type SpaceInfo } from '../spaces';
+  import { authorCards, spaceTitle, type SpaceInfo } from '../spaces';
+  import { privateSides } from '../chat-manage';
   import { sync, type Projection } from '../sync/client';
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
 
-  let { projection, dark, currentId, folder, directory, person, onswitch, onnewchannel, viewingAs = null }: {
+  let { projection, dark, currentId, folder, directory, person, onswitch, onnewchannel, onnewchat, viewingAs = null }: {
     projection: Projection; dark: boolean; currentId?: string; folder: Folder; directory: Map<string, SpaceInfo>;
-    person: boolean; onswitch: () => void; onnewchannel?: (name: string) => void; viewingAs?: string | null;
+    person: boolean; onswitch: () => void; onnewchannel?: (name: string) => void;
+    /** The pencil opens New chat (NewChat.svelte); without it, the old inline form. */
+    onnewchat?: () => void; viewingAs?: string | null;
   } = $props();
 
   let query = $state('');
+  // names for other accounts' members a private chat is kept to (D-098), from author cards
+  let cards = $state(new Map<string, MemberRow>());
+  const needCards = $derived([...new Set(channels(projection).filter((c) => c.kind === 'member_dm' && c.member_ids?.length &&
+    ss.find((s) => s.id === c.space_id)?.kind === 'dm' && c.member_ids.some((m) => !people.has(m))).map((c) => c.space_id))].sort().join(','));
+  let cardsFor = '';
+  $effect(() => {
+    const want = needCards;
+    if (!want || want === cardsFor) return;
+    cardsFor = want;
+    for (const id of want.split(',')) {
+      authorCards(id).then((c) => { cards = new Map([...cards, ...c.members.map((m) => [m.id, m] as const)]); }).catch(() => {});
+    }
+  });
   let composing = $state(false);
   let newName = $state('');
   const people = $derived(new Map(members(projection).map((m) => [m.id, m])));
@@ -33,24 +49,30 @@
     const all = channels(projection).filter((c) => !c.archived && c.kind !== 'thread');
     const prefs = projection.rows.pref ?? {};
     // members inside a fronting subsystem count as here (D-092)
-    const front = expandFront(projection, sync.accountId, bodyPresence(projection, sync.accountId)).entries;
+    const switched = bodyPresence(projection, sync.accountId);
+    const front = expandFront(projection, sync.accountId, switched).entries;
+    const own = new Set(members(projection).map((m) => m.id));
     const list: Row[] = [];
     for (const c of all) {
       const space = ss.find((s) => s.id === c.space_id);
       // a member's private chats only while one of them is here (D-097)
-      if (!privateVisible(c, space, front, viewingAs, organize.hidePrivate)) continue;
+      if (!privateVisible(c, space, front, viewingAs, organize.hidePrivate, (m) => own.has(m), switched)) continue;
       // cleared for us: gone until something newer arrives
       const cleared = organize.hidden.get(c.id);
       if (cleared !== undefined && (latestMessage(projection, c.id)?.occurred_at ?? 0) <= cleared) continue;
-      list.push(row(c, space, all, prefs));
+      list.push(row(c, space, all, prefs, own));
     }
     return orderChats(list, organize.pins);
   });
-  function row(c: ChannelRow, space: SpaceRow | undefined, all: ChannelRow[], prefs: NonNullable<Projection['rows']['pref']>): Row {
+  function row(c: ChannelRow, space: SpaceRow | undefined, all: ChannelRow[], prefs: NonNullable<Projection['rows']['pref']>, own: Set<string>): Row {
     {
       const f = folderOf(c, space);
-      const siblings = all.filter((o) => o.space_id === c.space_id).length;
-      const title = c.kind === 'member_dm' ? c.name
+      const siblings = all.filter((o) => o.space_id === c.space_id && o.kind !== 'thread').length;
+      // a private chat in a DM (D-098): titled by their member on their side, by the friend on ours
+      const sides = privateSides(c, space, (m) => own.has(m));
+      const theirs = sides?.theirs.map((id) => cards.get(id)?.display_name ?? cards.get(id)?.name).filter(Boolean).join(' & ');
+      const title = sides ? (theirs || (space ? spaceTitle(space, directory.get(space.id), sync.accountId) : c.name))
+        : c.kind === 'member_dm' ? c.name
         : space?.kind === 'dm' ? spaceTitle(space, directory.get(space.id), sync.accountId)
         : space?.kind === 'shared' ? (siblings > 1 ? `${space.name} · ${c.name}` : space.name)
         : c.name;
@@ -58,12 +80,14 @@
       // a DM between two of our own members already says who: show only the words
       const preview = previewOf(latest, (id) => (people.has(id) ? nameOf(id) : ''), c.kind !== 'member_dm');
       const notify = (prefs[`${sync.accountId}||notify_channel:${c.id}`] ?? prefs[`||notify_channel:${c.id}`])?.fields.value;
-      const partner = c.kind === 'member_dm' ? people.get(c.member_ids?.[0] ?? '') : undefined;
-      const disc = partner
-        ? { glyph: partner.sigils[0] ?? partner.name[0] ?? '?', color: partner.color, blob: partner.avatar_blob ?? undefined }
-        : { glyph: (title.match(/\p{L}|\p{N}/u)?.[0] ?? '#').toUpperCase(), color: discColor(c.id) };
+      const partner = c.kind === 'member_dm' && !sides ? people.get(c.member_ids?.[0] ?? '')
+        : sides?.theirs.length ? cards.get(sides.theirs[0]) : undefined;
+      const letter = (title.match(/\p{L}|\p{N}/u)?.[0] ?? '#').toUpperCase();
+      const disc = c.avatar_blob ? { glyph: c.icon ?? letter, color: c.color ?? discColor(c.id), blob: c.avatar_blob }
+        : partner ? { glyph: partner.sigils[0] ?? partner.name[0] ?? '?', color: partner.color, blob: partner.avatar_blob ?? undefined }
+        : { glyph: c.icon ?? letter, color: c.color ?? discColor(c.id) };
       return {
-        channel: c, space, folder: f, title, icon: c.kind === 'member_dm' || space?.kind === 'dm' ? null : f === 'internal' ? 'hash' : 'globe',
+        channel: c, space, folder: f, title, icon: sides ? 'lock' : c.kind === 'member_dm' || space?.kind === 'dm' ? null : f === 'internal' ? (c.member_ids?.length ? 'lock' : 'hash') : 'globe',
         at: latest?.occurred_at ?? 0, unread: c.id === currentId ? 0 : unread(projection, c.id, sync.accountId),
         muted: notify === 'none', who: preview.who, text: preview.text, disc, id: c.id, pinned: organize.pins.includes(c.id),
       };
@@ -121,7 +145,7 @@
 <section class="list" aria-label="Chats">
   <div class="search-row">
     <label class="search"><Icon name="search" size={18} /><input bind:value={query} placeholder="Search" aria-label="Search chats" /></label>
-    <button class="compose" class:on={composing} onclick={() => (composing = !composing)} aria-label="New chat" aria-expanded={composing}><Icon name="edit" size={22} /></button>
+    <button class="compose" class:on={composing} onclick={() => (onnewchat ? onnewchat() : (composing = !composing))} aria-label="New chat" aria-expanded={composing}><Icon name="edit" size={22} /></button>
   </div>
   {#if composing}
     <div class="compose-panel">
