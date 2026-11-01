@@ -22,10 +22,10 @@ roles), the members of a members' DM or group, and the members a members-only ch
 | 2 | Web: spaces and member lists (D-099) — chat info editor: name/description of a shared space, people with Add / Remove / role, Leave / Delete group; channel editor (name, topic, icon, colour, members it is kept to); New chat menu: channel, members' DM or group (picker), shared space, DM with a friend | done (`NewChat`, `ChannelEditor`, `SpacePanel`, `chat-manage.ts`); checked on an isolated seeded demo (F:/DunBuild/ui8-demo, port 5283/5284) |
 | 3 | Web: private chats — "Private chat as …" from a DM, lock badge and privacy line, composer locked to the member, list rows titled for each side | done (`chat-visible.ts` filters list, pickers, search, Trash, Stage; locked chats show a lock screen) |
 | 4 | Android: spaces and member lists — people in a space with Add / Remove / role, rename/describe, Leave / Delete; members-only channels and editing a members' DM's people in the channel editor | implemented; gate passed; independent review pending |
-| 5 | Android: private chats, same rules as web | implemented; gate passed; independent review pending |
+| 5 | Android: private chats, same rules as web | done; reviewed by an independent Sol 6.1 pass, its findings fixed (server re-create bypass, locked retained actions, thread inheritance) |
 | 6 | Android feel (UI7 slice 1, parked on `wip/ui7-slice1`): swipe to reply, double-tap heart, haptics, Draft:/typing previews in the list | implemented; Android compile/lint/JVM and quick offline Android gate passed; independent review pending |
-| 7 | Parity gaps (table below) | |
-| 8 | Mentions autocomplete on both (members, groups, `@front`) | |
+| 7 | Parity gaps (table below) | partly: web gained jump to latest, unread line, Up to edit, emoji picker, Files/Links; Android gained Advanced permissions and slow mode, composer emoji. Still missing on Android: quote (message or selection), reply in another channel, multi-select bundles, front-change lines |
+| 8 | Mentions autocomplete on both (members, groups, `@front`) | web done (`chat-composer.ts`); Android still `@front` only |
 
 ## Parity matrix (2026-11-01 survey)
 
