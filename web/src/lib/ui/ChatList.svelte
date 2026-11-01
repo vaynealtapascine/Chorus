@@ -5,7 +5,6 @@
   import { channels, latestMessage, members, spaces, unread, fuzzy, type ChannelRow, type MemberRow, type SpaceRow } from '../data';
   import { chatPrefs, chatTime, discColor, folderOf, HIDDEN, movePin, orderChats, PINS, previewOf, privateVisible, togglePin, type Folder } from '../chat-list';
   import { bodyPresence, frontLayers } from '../front-view';
-  import { expandFront } from '../subsystems';
   import { authorCards, spaceTitle, type SpaceInfo } from '../spaces';
   import { privateSides } from '../chat-manage';
   import { sync, type Projection } from '../sync/client';
@@ -50,7 +49,7 @@
     const prefs = projection.rows.pref ?? {};
     // members inside a fronting subsystem count as here (D-092)
     const switched = bodyPresence(projection, sync.accountId);
-    const front = expandFront(projection, sync.accountId, switched).entries;
+    const front = switched;
     const own = new Set(members(projection).map((m) => m.id));
     const list: Row[] = [];
     for (const c of all) {
@@ -127,7 +126,8 @@
   // who is here now: the Body's presence, innermost layer first
   const layers = $derived(frontLayers(projection, sync.accountId));
   // members inside a fronting subsystem come with it (D-092, display only)
-  const expanded = $derived(expandFront(projection, sync.accountId, bodyPresence(projection, sync.accountId)));
+  // the front exactly as switched (D-102: a subsystem's members don't each join the strip)
+  const expanded = $derived({ entries: bodyPresence(projection, sync.accountId), via: new Map<string, string>() });
   const here = $derived(expanded.entries.filter((e) => e.subject_type === 'member' && people.has(e.subject_id))
     .sort((a, b) => layers.findIndex((l) => l.id === a.level) - layers.findIndex((l) => l.id === b.level) || Number(b.is_primary) - Number(a.is_primary)));
   const layerName = (id: string) => layers.find((l) => l.id === id)?.name ?? '';

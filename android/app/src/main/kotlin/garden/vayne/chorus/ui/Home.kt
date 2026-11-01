@@ -381,7 +381,8 @@ fun FrontCard(
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); now = System.currentTimeMillis() } }
     val since = sinceAt?.let { ago(it, now) }
-    val expanded = Subsystems.expand(model, entries)
+    // the front as switched (D-102): a subsystem shows as itself, not its members
+    val expanded = Subsystems.Expanded(entries, emptyMap())
     val shown = expanded.entries
     val names = { layer: String -> shown.filter { it.level == layer }.mapNotNull { model.subject(it.subjectType, it.subjectId)?.name } }
     Column(Modifier.fillMaxWidth().padding(top = 8.dp).background(p.surface, RoundedCornerShape(22.dp)).padding(12.dp),

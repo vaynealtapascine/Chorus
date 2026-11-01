@@ -125,8 +125,8 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
         else listOf(garden.vayne.chorus.data.MemberSection(null, searched ?: MemberOrdering.ordered(filtered)))
     val shownCount = sections.sumOf { it.members.size }
     val list = rememberLazyListState()
-    // members inside a fronting subsystem read as fronting with it (D-092)
-    val here = remember(model) { Subsystems.expand(model, model.current).entries }
+    // the front as switched (D-102)
+    val here = model.current
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.padding(horizontal = 16.dp), state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {

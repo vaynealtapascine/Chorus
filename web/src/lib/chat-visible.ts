@@ -4,7 +4,6 @@
 import { channels, members, messageById, spaces, type ChannelRow } from './data';
 import { chatPrefs, privateVisible } from './chat-list';
 import { bodyPresence } from './front-view';
-import { expandFront } from './subsystems';
 import type { Projection } from './sync/client';
 
 /** Resolve thread privacy through every ancestor, refusing incomplete or cyclic ancestry. */
@@ -25,8 +24,8 @@ export function privacyChannel(p: Projection, channel: ChannelRow | undefined, b
 export function chatShown(p: Projection, accountId: string, viewingAs: string | null = null): (c: ChannelRow | undefined) => boolean {
   const own = new Set(members(p).map((m) => m.id));
   const switched = bodyPresence(p, accountId);
-  // members inside a fronting subsystem count as here for D-097 (display, D-092); D-098 uses the front as switched
-  const front = expandFront(p, accountId, switched).entries;
+  // the front exactly as switched for both (D-102)
+  const front = switched;
   const hidePrivate = chatPrefs(p.rows.pref ?? {}, accountId).hidePrivate;
   const bySpace = new Map(spaces(p).map((s) => [s.id, s]));
   const byId = new Map(channels(p, undefined, true).map((c) => [c.id, c]));

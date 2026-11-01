@@ -51,6 +51,7 @@
     extra,
     last = true,
     tag,
+    right,
   }: {
     m: MessageRow;
     cont: boolean;
@@ -58,6 +59,8 @@
     last?: boolean;
     /** Beside the name: the author's layer when not in the innermost one, or another system's name. */
     tag?: string;
+    /** Sits on our side: by one of the room's speakers (D-103); else by whoever speaks now. */
+    right?: boolean;
     people: Map<string, MemberRow>;
     dark: boolean;
     lookup: (id: string) => (MessageRow & { channel_name?: string }) | undefined;
@@ -116,7 +119,7 @@
   const showBody = $derived(!m.cw || (cwExpanded ?? cwAutoExpand));
   // the one speaking here writes on the right; this account's other members on the left, named
   // (a message still waiting to sync has no account yet: it's ours)
-  const out = $derived((mine || !m.account_id) && (!speaker || m.authors.includes(speaker)));
+  const out = $derived(right ?? ((mine || !m.account_id) && (!speaker || m.authors.includes(speaker))));
 
   const color = (id: string) => {
     const hex = people.get(id)?.color ?? '#A09184';

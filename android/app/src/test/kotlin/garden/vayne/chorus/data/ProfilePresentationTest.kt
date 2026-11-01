@@ -22,12 +22,14 @@ class ProfilePresentationTest {
         assertNull(ProfilePresentation.frontStatus(model, "nobody"))
     }
 
-    @Test fun aMemberInsideAFrontingSubsystemFrontsWithIt() {
+    @Test fun aMemberInsideAFrontingSubsystemIsNotShownAsFronting() {
         val model = Model(listOf(member("garden"), member("kai")), listOf(Group("g", "Garden", "subsystem", null, null)),
             mapOf("g" to setOf("kai")), listOf(Entry("member", "garden", "front", true)), 100L, emptyList(),
             frontIntervals = listOf(FrontInterval("now", "member", "garden", "front", true, 400L, null)),
             accountPrefs = AccountPrefs(memberSubsystems = mapOf("garden" to "g")))
-        assertEquals(ProfilePresentation.FrontStatus("Fronting", 400L, "garden"), ProfilePresentation.frontStatus(model, "kai"))
+        // D-102: only chat alignment counts a subsystem's members as fronting with it
+        assertNull(ProfilePresentation.frontStatus(model, "kai"))
+        assertEquals(setOf("garden", "kai"), ChatPresentation.aligned(model, listOf("garden")))
         assertEquals(ProfilePresentation.FrontStatus("Fronting", 400L), ProfilePresentation.frontStatus(model, "garden"))
     }
 

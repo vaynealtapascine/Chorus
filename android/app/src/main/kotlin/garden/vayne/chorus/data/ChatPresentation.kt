@@ -16,9 +16,9 @@ object ChatPresentation {
         else -> Folder.Shared
     }
 
-    /** Who is here for [channelId] (or the Body), with everyone inside a fronting subsystem added
-     * as fronting with it (D-092, display only: reads, privacy and authorship use [recorded]). */
-    fun presence(model: Model, channelId: String?): List<Entry> = Subsystems.expand(model, recorded(model, channelId)).entries
+    /** Who is here for [channelId] (or the Body), exactly as switched: a subsystem's members count as
+     * fronting with it only for which side a bubble sits on (D-102, [aligned]). */
+    fun presence(model: Model, channelId: String?): List<Entry> = recorded(model, channelId)
 
     /** The front exactly as switched. */
     fun recorded(model: Model, channelId: String?): List<Entry> {
@@ -56,6 +56,16 @@ object ChatPresentation {
     fun own(message: ChatMessage, accountId: String, speakerId: String?): Boolean =
         speakerId != null && speakerId in message.authors &&
             (message.accountId == accountId || message.accountId == null)
+
+    /** Sits on our side (D-103): ours, and by one of [aligned] (the room's speakers, whoever speaks now
+     * and everyone inside any of them that is a subsystem, D-102). */
+    fun own(message: ChatMessage, accountId: String, aligned: Set<String>): Boolean =
+        (message.accountId == accountId || message.accountId == null) && message.authors.any { it in aligned }
+
+    /** [ids] and the members inside any of them that is a subsystem, recursively (D-092 links). */
+    fun aligned(model: Model, ids: Collection<String>): Set<String> =
+        Subsystems.expand(model, ids.distinct().map { Entry("member", it, "front", false) }).entries
+            .filter { it.subjectType == "member" }.mapTo(HashSet()) { it.subjectId }
 
     /** Never join across an audience, warning, reply, segment, sender, account or date boundary. */
     fun grouped(older: ChatMessage?, newer: ChatMessage?, zone: ZoneId = ZoneId.systemDefault()): Boolean {

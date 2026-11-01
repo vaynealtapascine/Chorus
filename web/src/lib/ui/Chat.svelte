@@ -35,6 +35,7 @@
   import NewChat from './NewChat.svelte';
   import SpacePanel from './SpacePanel.svelte';
   import { chatShown, privacyChannel } from '../chat-visible';
+  import { alignsRight, readSetting, roomSpeakers, settingValue, type SpeakerMode } from '../room-speakers';
   import { editDraft, inputDraft, markupDraft, parseComposer, updateDraft, mentionAt, mentionChoices, replaceSelection, unicodeEmoji, type MentionChoice, type ComposerDraft } from '../chat-composer';
   import { groups } from '../data';
   import { canEditSpace, privateSides, roleIn } from '../chat-manage';
@@ -116,26 +117,30 @@
   const clearedAt = $derived(current ? chatPrefs(projection.rows.pref ?? {}, sync.accountId).hidden.get(current.id) : undefined);
   const visibleMsgs = $derived(lockedOut ? [] : msgs.filter((m) => memberVisible(m, space?.kind, activeMembers, viewingAs) &&
     (clearedAt === undefined || m.occurred_at > clearedAt)));
-  // this account's autoproxy for the channel (D-074): pref `autoproxy:<channel id>`
-  type Autoproxy = 'off' | 'front' | 'latch' | 'member';
+  // this account's speakers for the channel (D-074, D-103): pref `autoproxy:<channel id>`
+  type Autoproxy = SpeakerMode;
   const autoproxyKey = $derived(current ? `autoproxy:${current.id}` : '');
-  const autoproxy = $derived.by((): { mode: Autoproxy; member?: string } => {
+  const autoproxy = $derived.by(() => {
     const rows = projection.rows.pref ?? {};
-    const v = (rows[`${sync.accountId}||${autoproxyKey}`] ?? rows[`||${autoproxyKey}`])?.fields.value as { mode?: string; member?: string } | undefined;
-    const mode = (['off', 'latch', 'member'].includes(v?.mode ?? '') ? v?.mode : 'front') as Autoproxy;
-    return { mode, member: typeof v?.member === 'string' ? v.member : undefined };
+    return readSetting((rows[`${sync.accountId}||${autoproxyKey}`] ?? rows[`||${autoproxyKey}`])?.fields.value);
   });
-  function setAutoproxy(mode: Autoproxy, member?: string) {
-    sync.create('pref.set', sync.accountScope, null, { device: '', key: autoproxyKey, value: member ? { mode, member } : { mode } });
+  function setAutoproxy(mode: Autoproxy, member?: string, chosenMembers: string[] = autoproxy.members) {
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: autoproxyKey, value: settingValue(mode, member, chosenMembers) });
   }
   // the speaker chip before anyone picks: one rule in core (SPEC §5.2)
   // in a private chat only its members of ours speak (D-098; the server refuses anyone else)
   const ownSenders = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId) &&
     (!sides?.mine.length || sides.mine.includes(m.id))));
+  const lastOwnAuthors = $derived(msgs.findLast((m) => m.account_id === sync.accountId && !m.deleted)?.authors ?? []);
+  // the room's speakers (D-103): the composer offers each with a tap; their messages sit on our side
+  const roomSpeakerIds = $derived(roomSpeakers(autoproxy, { fronting: frontingMembers, lastAuthors: lastOwnAuthors,
+    writable: (id) => ownSenders.some((m) => m.id === id) }));
+  // several chosen speakers: the first is the default (core knows one sticky member)
   const defaults = $derived(channelSpeaker(projection, sync.accountId, current?.id ?? '', {
-    mode: autoproxy.mode, member: autoproxy.member ?? null, self_member: self?.id ?? null,
+    mode: autoproxy.mode === 'members' ? (roomSpeakerIds.length ? 'member' : 'front') : autoproxy.mode,
+    member: (autoproxy.mode === 'members' ? roomSpeakerIds[0] : autoproxy.member) ?? null, self_member: self?.id ?? null,
     fronting: frontingMembers,
-    last_authors: msgs.findLast((m) => m.account_id === sync.accountId && !m.deleted)?.authors ?? [],
+    last_authors: lastOwnAuthors,
     members: ownSenders.map((m) => m.id),
   }));
   // the channel's front (D-080/D-085): authorship, @front, per-member reads and chat alerts
@@ -153,6 +158,11 @@
   const speakers = $derived(
     ownSenders.map((m) => ({ member_id: m.id, sigils: m.sigils, proxy_tags: m.proxy_tags })),
   );
+  // who sits on our side: the room's speakers and whoever speaks now, with everyone inside any of
+  // them that is a subsystem (D-102: the only place a subsystem's members count as fronting with it)
+  const alignedIds = $derived(new Set(expandFront(projection, sync.accountId,
+    [...new Set([...roomSpeakerIds, ...(speaker ? [speaker] : [])])].map((id) => ({ subject_type: 'member', subject_id: id, level: 'front', is_primary: false })))
+    .entries.filter((e) => e.subject_type === 'member').map((e) => e.subject_id)));
   const mentionOptions = $derived(mentionChoices([...people.values()].filter((m) => !m.deleted && !m.archived), groups(projection)));
   const names = $derived({
     mentions: Object.fromEntries(
@@ -780,7 +790,8 @@
   });
   // who reads as here, for display: members inside a fronting subsystem come with it (D-092);
   // speakers, reads and visibility keep `fronting`, the front exactly as switched
-  const shownFront = $derived(expandFront(projection, sync.accountId, fronting));
+  // the front exactly as switched (D-102: subsystems expand only for which side a bubble sits on)
+  const shownFront = $derived({ entries: fronting, via: new Map<string, string>() });
   // the conversation's face and words (Figma F5.21 header and info)
   const nameOf = (id: string) => { const m = people.get(id); return m?.display_name ?? m?.name ?? 'Someone'; };
   const systemName = $derived(String(projection.rows.system?.[sync.accountId]?.fields.name ?? 'your system'));
@@ -1131,9 +1142,20 @@
                   <option value="front">Whoever is fronting</option>
                   <option value="latch">Whoever spoke last here</option>
                   <option value="member">Always one member</option>
+                  <option value="members">Chosen members</option>
                   <option value="off">Nobody (pick each time)</option>
                 </select>
               </label>
+              {#if autoproxy.mode === 'members'}
+                <fieldset class="notify speakers-pick" aria-label="Speakers in this channel">
+                  <legend>Speakers here (the first is the default)</legend>
+                  {#each ownSenders as person (person.id)}
+                    <label><input type="checkbox" checked={autoproxy.members.includes(person.id)}
+                      onchange={(e) => setAutoproxy('members', undefined, e.currentTarget.checked ? [...autoproxy.members, person.id] : autoproxy.members.filter((x) => x !== person.id))} />
+                      {person.display_name ?? person.name}</label>
+                  {/each}
+                </fieldset>
+              {/if}
               {#if autoproxy.mode === 'member'}
                 <label class="notify">Always
                   <select aria-label="Sticky speaker" value={autoproxy.member ?? ''} onchange={(e) => setAutoproxy('member', e.currentTarget.value)}>
@@ -1279,6 +1301,7 @@
           {dark}
           lookup={(id) => { const found = messageById(projection, id); return found && memberVisible(found, space?.kind, activeMembers, viewingAs) ? found : undefined; }}
           mine={m.account_id === sync.accountId}
+          right={alignsRight(m, sync.accountId, alignedIds)}
           onreply={() => { replyTo = m; quoting = null; editing = null; editingParts = null; box?.focus(); }}
           onreplyin={() => (replyIn = m)}
           unseen={unseenBy(m).map((id) => people.get(id)?.name ?? '?')}
@@ -1411,6 +1434,17 @@
       </div>
     {/if}
     {#if uploadError}<p class="upload-error" role="alert">{uploadError}</p>{/if}
+    {#if !lockedOut && !editing && roomSpeakerIds.length > 1}
+      <div class="speaker-chips" role="radiogroup" aria-label="Who is speaking">
+        {#each roomSpeakerIds as id (id)}
+          {@const c = color(id)}
+          <button role="radio" aria-checked={id === speaker} class:on={id === speaker} onclick={() => (chosen = id)} style="--ring: {c.ring}">
+            <span class="avatar" style="background: {c.ring}; color: {c.avatar_ink}"><AvatarImage hash={people.get(id)?.avatar_blob} glyph={people.get(id)?.sigils[0] ?? people.get(id)?.name[0] ?? '?'} name={people.get(id)?.name} /></span>
+            {people.get(id)?.display_name ?? people.get(id)?.name ?? '?'}
+          </button>
+        {/each}
+      </div>
+    {/if}
     {#if !lockedOut}
     <div class="composer">
       <input class="file-input" type="file" multiple bind:this={fileInput} onchange={(e) => { addFiles(e.currentTarget.files ?? []); e.currentTarget.value = ''; }} aria-label="Choose attachments" />
@@ -1593,6 +1627,13 @@
   .pending-file input:not([type='checkbox']) { min-width: 10ch; flex: 1; }
   .pending-file button { border: 0; background: none; color: var(--accent); cursor: pointer; }
   .upload-error { color: var(--danger, #b33); font-size: var(--fs-sm); }
+  .speaker-chips { display: flex; gap: 6px; overflow-x: auto; padding: 6px 12px 0; scrollbar-width: none; }
+  .speaker-chips button { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 3px; border: 1px solid var(--line); border-radius: var(--r-full);
+    background: none; color: var(--ink-2); font: inherit; font-size: 13px; cursor: pointer; transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
+  .speaker-chips button.on { border-color: var(--ring); background: var(--accent-soft); color: var(--ink); }
+  .speaker-chips .avatar { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; font-size: 11px; font-weight: 700; }
+  .speakers-pick { display: grid; gap: 2px; border: 0; padding: 0; margin: 0; max-height: 200px; overflow: auto; }
+  .speakers-pick label { display: flex; align-items: center; gap: 6px; }
   .locked { display: grid; justify-items: center; gap: 8px; margin: auto; max-width: 340px; padding: 32px 16px; text-align: center; color: var(--ink-2); }
   .locked p { margin: 0; font-size: var(--fs-sm); color: var(--ink-3); }
   .lock-disc { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--ink-2); }

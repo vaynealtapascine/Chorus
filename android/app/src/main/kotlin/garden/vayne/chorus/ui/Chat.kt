@@ -368,13 +368,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             finally { busy = false }
         }
     }
-    fun setSpeakerDefault(mode: String, memberId: String? = null) {
+    fun setSpeakerDefault(mode: String, memberId: String? = null, members: List<String> = emptyList()) {
         val id = channel?.id ?: return
         if (busy) return
         busy = true; error = null
         actions.launch {
             try {
-                chorus.create("pref.set", null, ChatSpeaker.payload(id, mode, memberId))
+                chorus.create("pref.set", null, ChatSpeaker.payload(id, mode, memberId, members))
                 selectedAuthor = ""
             }
             catch (e: Exception) { error = e.message ?: "Could not save the speaker default." }
@@ -699,6 +699,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         else -> ChatManage.canEditSpace(space?.kind, ChatManage.roleIn(model.spaceRoles, space?.id.orEmpty(), space?.id?.let { directory[it] }, chorus.device?.accountId.orEmpty()))
     }
     fun nameOf(id: String) = model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: privateCards[id]?.name ?: "Someone"
+    // which bubbles sit on our side (D-103): the room's speakers and whoever speaks now, and everyone
+    // inside any of them that is a subsystem (D-102: the only place they count as fronting with it)
+    val alignedIds = remember(model, channel?.id, replySpeakerId, paneSides) {
+        val writable = ChatCompose.members(model, chorus.device?.accountId.orEmpty()).map { it.id }
+            .filter { paneSides?.mine.isNullOrEmpty() || it in paneSides!!.mine }.toSet()
+        ChatPresentation.aligned(model, channel?.id?.let { ChatSpeaker.speakers(model, it, writable) }.orEmpty() + listOfNotNull(replySpeakerId))
+    }
     // a DM with someone you follow: who's fronting there, as far as they share it (FriendFronts)
     val dmPartner = space?.takeIf { it.kind == "dm" }?.let { s -> directory[s.id]?.accounts?.firstOrNull { it.id != chorus.device?.accountId } }
     fun infoTitle(c: garden.vayne.chorus.data.ChatChannel, s: ChatSpace): String = when {
@@ -881,7 +888,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     message.authors.firstOrNull()?.let { it != replySpeakerId && model.member(it) != null } == true
                 else message.accountId != null && message.accountId != chorus.device?.accountId
                 ChatMessageCard(message, model, foreignAuthors, chorus, unseenByMessage[message.id].orEmpty(),
-                    heldMessages[message.id], actingMemberId = replySpeakerId,
+                    heldMessages[message.id], actingMemberId = replySpeakerId, aligned = alignedIds,
                     reactions = model.messageReactions[message.id].orEmpty(),
                     onForward = if (heldMessages[message.id] == null) ({ forwarding = message }) else null,
                     onPin = if (heldMessages[message.id] == null) ({ pin(message) }) else null,
@@ -1050,6 +1057,19 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                     setSpeakerDefault("member", it)
                                 }
                             } }
+                            item { ChatChip("Several members", setting.mode == "members") {
+                                setSpeakerDefault("members", members = setting.members.ifEmpty { listOfNotNull(author?.id ?: ownSenders.firstOrNull()?.id) })
+                            } }
+                        }
+                        if (setting.mode == "members") {
+                            Text("Speakers here (the first is the default)", color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(ownSenders, key = { it.id }) { member ->
+                                    ChatChip(member.shownName, member.id in setting.members) {
+                                        setSpeakerDefault("members", members = if (member.id in setting.members) setting.members - member.id else setting.members + member.id)
+                                    }
+                                }
+                            }
                         }
                         if (setting.mode == "member") {
                             Text("Always speak as", color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
@@ -1075,6 +1095,21 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(alsoSend, { alsoSend = it })
                     Text("Also send to ${threadParentChannel.name}", color = p.ink, fontSize = 14.sp, lineHeight = 20.sp)
+                }
+            }
+            // the room's speakers (D-103): one tap picks who is speaking
+            val roomSpeakers = remember(model, channel.id, ownSenders) { ChatSpeaker.speakers(model, channel.id, ownSenders.mapTo(HashSet()) { it.id }) }
+            if (roomSpeakers.size > 1) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(roomSpeakers, key = { it }) { id ->
+                    val m = model.member(id) ?: return@items
+                    val on = id == author?.id
+                    Row(Modifier.clip(RoundedCornerShape(20.dp)).background(if (on) p.accentSoft else p.surface2)
+                        .selectable(on, role = Role.RadioButton) { selectedAuthor = id }
+                        .heightIn(min = 40.dp).padding(start = 4.dp, end = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ChatAvatar(m, 28.dp)
+                        Text(m.shownName, color = if (on) p.ink else p.ink2, fontSize = 13.sp, lineHeight = 18.sp)
+                    }
                 }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -1452,6 +1487,8 @@ private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
 @Composable
 private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
     chorus: Chorus, unseenBy: List<String>, held: HeldMessage?, actingMemberId: String?, onReply: () -> Unit,
+    /** Authors whose messages sit on our side (D-103); null: just the acting speaker's. */
+    aligned: Set<String>? = null,
     onReplyPrivately: (() -> Unit)?, onEdit: (() -> Unit)?,
     reactions: List<ChatReaction> = emptyList(), onReact: ((String, Boolean) -> Unit)? = null,
     onForward: (() -> Unit)? = null, onDelete: (() -> Unit)? = null, onPin: (() -> Unit)? = null,
@@ -1471,7 +1508,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     }
     val authors = message.authors.map { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
         .joinToString(" & ").ifEmpty { "Someone" }
-    val own = ChatPresentation.own(message, chorus.device?.accountId.orEmpty(), actingMemberId)
+    val own = if (aligned != null) ChatPresentation.own(message, chorus.device?.accountId.orEmpty(), aligned)
+        else ChatPresentation.own(message, chorus.device?.accountId.orEmpty(), actingMemberId)
     val member = message.authors.firstOrNull()?.let(model::member)
     val tone = member?.let { tonesOf(it.color) }
     val presence = ChatPresentation.presence(model, message.channelId).firstOrNull { it.subjectId == member?.id && it.subjectType == "member" }

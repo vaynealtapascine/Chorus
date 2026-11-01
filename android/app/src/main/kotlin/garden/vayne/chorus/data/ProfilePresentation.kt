@@ -12,7 +12,8 @@ object ProfilePresentation {
 
     /** Where [memberId] is in the body's confirmed front right now, or null when they aren't. */
     fun frontStatus(model: Model, memberId: String): FrontStatus? {
-        val expanded = Subsystems.expand(model, ChatPresentation.recorded(model, null))
+        // the front as switched (D-102): no "fronting with" a subsystem on profiles
+        val expanded = Subsystems.Expanded(ChatPresentation.recorded(model, null), emptyMap())
         val entry = expanded.entries
             .filter { it.subjectType == "member" && it.subjectId == memberId }
             .minByOrNull { layerRank(model, it.level) } ?: return null
