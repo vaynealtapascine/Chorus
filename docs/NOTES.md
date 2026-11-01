@@ -761,3 +761,11 @@ was a notification. Now every open checks and the in-app banner handles the perm
 system's confirmation; after one self-update Chorus is the installer of record and later updates
 install silently when the app is left (verified on the emulator: null installer → Allow → silent
 install; then open + Home → silent install).
+
+## Several worktrees share one Cargo target dir (2026-11-01)
+
+`verify.py` builds into `F:\DunBuild\chorus-target` on the owner's PC, and so does every worktree
+(`chorus-ui-redesign`, `chorus-members`, the main checkout). After building another tree, Cargo can
+treat that tree's `chorus-server` artifacts as fresh: clippy then failed with `no profiles in the
+root` although `src/profiles.rs` and its `mod` line were there. `touch` the changed crate's
+`lib.rs` (or give the worktree its own `CARGO_TARGET_DIR`) and run the gate again.

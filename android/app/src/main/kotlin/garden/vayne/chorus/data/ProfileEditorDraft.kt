@@ -7,6 +7,15 @@ import org.json.JSONObject
 data class ProfileEditorDraft(val id: String, val snapshot: String?, val fieldSnapshot: String,
     val values: List<String>, val fields: Map<String, String?>, val bio: RichEditHistory,
     val openingMember: Member? = parseMember(snapshot, id)) {
+    /** A field defined while this draft is open (D-101), added as an empty row. */
+    fun withField(def: ProfileDetail): ProfileEditorDraft {
+        val rows = JSONArray(fieldSnapshot)
+        for (i in 0 until rows.length()) if (rows.getJSONObject(i).getString("id") == def.id) return this
+        rows.put(JSONObject().put("id", def.id).put("name", def.name).put("type", def.type).put("visibility", def.visibility)
+            .put("exists", true).put("value", "").put("default_visibility", JSONObject(def.defaultVisibility)).put("choices", JSONArray(def.choices)))
+        return copy(fieldSnapshot = rows.toString(), values = values + "")
+    }
+
     fun encode(): String = JSONObject().put("id", id).put("snapshot", snapshot ?: JSONObject.NULL)
         .put("fieldSnapshot", fieldSnapshot).put("values", JSONArray(values)).put("fields", JSONObject(fields))
         .put("bio", bio.json()).toString()
@@ -28,21 +37,27 @@ data class ProfileEditorDraft(val id: String, val snapshot: String?, val fieldSn
                 JSONObject().put("name", m.name).put("display_name", m.displayName).put("pronouns", m.pronouns)
                     .put("color", m.color).put("sigils", JSONArray(m.sigils)).put("description", m.description)
                     .put("description_entities", JSONArray(m.descriptionEntities)).put("avatar_blob", m.avatarBlob)
-                    .put("banner_blob", m.bannerBlob).put("birthday", m.birthday).toString()
+                    .put("banner_blob", m.bannerBlob).put("birthday", m.birthday)
+                    .put("visibility", ProfileAudience.parse(m.visibility) ?: JSONObject.NULL)
+                    .put("field_visibility", ProfileAudience.parse(m.fieldVisibility) ?: JSONObject.NULL).toString()
             }
+            val details = model.profileDetails
+            fun row(def: ProfileDetail) = JSONObject().put("id", def.id).put("name", def.name).put("type", def.type)
+                .put("visibility", def.visibility).put("exists", details.definitions.any { it.id == def.id })
+                .put("value", details.value(member?.id, def)).put("default_visibility", JSONObject(def.defaultVisibility))
+                .put("choices", JSONArray(def.choices))
+            // Location and the websites first (D-090), then every other field the editor can show (D-101)
             val fieldSnapshot = JSONArray().also { array ->
-                for ((name, type) in ProfileDetails.slots) {
-                    val def = model.profileDetails.field(account, name, type)
-                    array.put(JSONObject().put("id", def.id).put("name", def.name).put("type", def.type)
-                        .put("visibility", def.visibility).put("exists", model.profileDetails.definitions.any { it.id == def.id })
-                        .put("value", model.profileDetails.value(member?.id, def)))
-                }
+                val slots = ProfileDetails.slots.map { (name, type) -> details.field(account, name, type) }
+                for (def in slots) array.put(row(def))
+                for (def in details.definitions) if (def.type in ProfileDetails.EDITABLE && slots.none { it.id == def.id }) array.put(row(def))
             }
             return ProfileEditorDraft(id, snapshot, fieldSnapshot.toString(),
                 List(fieldSnapshot.length()) { fieldSnapshot.getJSONObject(it).getString("value") },
                 mapOf("name" to member?.name.orEmpty(), "display" to member?.displayName.orEmpty(), "pronouns" to member?.pronouns.orEmpty(),
                     "sigil" to member?.sigils?.firstOrNull().orEmpty(), "color" to (member?.color ?: "#C0694E"),
-                    "birthday" to member?.birthday.orEmpty(), "avatar" to member?.avatarBlob, "banner" to member?.bannerBlob),
+                    "birthday" to member?.birthday.orEmpty(), "avatar" to member?.avatarBlob, "banner" to member?.bannerBlob,
+                    "visibility" to member?.visibility, "field_visibility" to member?.fieldVisibility),
                 RichEditHistory.open(member?.description.orEmpty(), member?.descriptionEntities ?: "[]", MemberCustomization.markup(member)))
         }
     }

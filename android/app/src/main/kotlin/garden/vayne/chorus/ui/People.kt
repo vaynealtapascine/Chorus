@@ -68,6 +68,8 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
     var loadedAccount by remember { mutableStateOf<String?>(null) }
     var requestChoices by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var threadPostId by rememberSaveable { mutableStateOf<String?>(null) }
+    // a followed system's shared member profiles (D-101): account id to its name
+    var friend by rememberSaveable { mutableStateOf<Pair<String, String>?>(null) }
     val reactMember = Reply.speaker(model)?.takeIf { member ->
         member.createdByAccountId == null || member.createdByAccountId == chorus.device?.accountId
     }
@@ -108,6 +110,11 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
             catch (e: Exception) { error = e.message ?: "Could not update this follow." }
             finally { busy = false }
         }
+    }
+
+    friend?.let { (id, name) ->
+        FriendProfiles(chorus, id, name) { friend = null }
+        return
     }
 
     if (threadPostId != null) {
@@ -164,6 +171,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
                         onOpenChat(Spaces.openDm(dev, f.account.id))
                     } }) { Text("Message") }
+                    if (f.status == "active" && f.account.isSystem) TextButton(onClick = { friend = f.account.id to f.account.shownName }) { Text("Members") }
                     TextButton(enabled = !busy, onClick = { action {
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
                         PeopleApi.unfollow(dev, f.id)
@@ -340,6 +348,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
                         onOpenChat(Spaces.openDm(dev, f.account.id))
                     } }) { Text("Message") }
+                    if (f.status == "active" && f.account.isSystem) TextButton(onClick = { friend = f.account.id to f.account.shownName }) { Text("Members") }
                     TextButton(enabled = !busy, onClick = { action {
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
                         PeopleApi.unfollow(dev, f.id)

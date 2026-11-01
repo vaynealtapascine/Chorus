@@ -136,6 +136,11 @@ Website 2 and Website 3 (`url`). Reuse the matching live definition with the sma
 otherwise its ID is UUIDv3 of UTF-8 `chorus.profile:<account-id>:<field-name>` (Java's
 `UUID.nameUUIDFromBytes`, MD5 without an additional namespace). New definitions are private.
 Existing definitions, default visibility and member field-visibility maps remain untouched.
+D-101 gives those maps meaning: `member.visibility` is who may open the profile, and
+`member.field_visibility` maps a part key (`display_name`, `pronouns`, `description`, `birthday`,
+`banner`) or a custom field id to its own audience (unset: the profile's for parts, the field's
+`default_visibility` for fields). Friend reads apply them on the server (`profiles.rs`); shared
+fixture `fixtures/ui_profile_audience.json`.
 At Save, preflight **all changed** field slots before any member/field op, on the replica's
 serial worker. Every reused live ID must have the expected type, even when absent at opening;
 a missing formerly-live ID or a tombstone requires reopening. An absent-at-open ID newly used

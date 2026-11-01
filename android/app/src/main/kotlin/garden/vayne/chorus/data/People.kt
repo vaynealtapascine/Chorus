@@ -128,6 +128,17 @@ object PeopleApi {
     suspend fun view(dev: DeviceRecord, accountId: String): JSONObject =
         Api.call("GET", dev.base, "/accounts/$accountId/view", null, dev.session)
 
+    /** A followed system's members shared with us (D-101); the server decides what's in each. */
+    suspend fun members(dev: DeviceRecord, accountId: String): JSONObject =
+        Api.call("GET", dev.base, "/accounts/$accountId/members", null, dev.session)
+
+    /** One shared member profile, or `null` when it isn't shared with us (or doesn't exist). */
+    suspend fun memberProfile(dev: DeviceRecord, accountId: String, memberId: String): JSONObject? = try {
+        Api.call("GET", dev.base, "/accounts/$accountId/members/$memberId", null, dev.session)
+    } catch (e: ApiException) {
+        if (e.code == "not_found") null else throw e
+    }
+
     /** The server applies current post audience rules before returning these rows. */
     suspend fun posts(dev: DeviceRecord, accountId: String): List<SharedPost> =
         sharedPosts(Api.call("GET", dev.base, "/posts?account=$accountId&limit=5", null, dev.session))
