@@ -42,4 +42,29 @@ class PostThreadsTest {
         assertEquals(emptyList<ThreadReply>(), detail.replies)
         assertEquals(listOf(PostReaction("💜", "june", "June")), detail.reactions)
     }
+
+    @Test fun detailCarriesWhatItAnswersAndHowManyRepliesEachHas() {
+        val detail = PostThreads.parseDetail(JSONObject("""{"id":"reply","text":"Me too","occurred_at":30,"reply_count":2,"authors":["kai"],
+            "author_cards":[{"name":"Kai","color":"#aabbcc"}],
+            "ancestors":[{"id":"root","text":"Hello","occurred_at":10,"reply_count":1,"author_cards":[{"name":"June"}]}],
+            "replies":[{"id":"deeper","text":"Same","occurred_at":40,"reply_count":3}]}"""))
+        assertEquals(listOf("root"), detail.ancestors.map { it.id })
+        assertEquals(1, detail.ancestors.single().replyCount)
+        assertEquals(2, detail.root?.replyCount)
+        assertEquals(listOf("kai"), detail.root?.authorIds)
+        assertEquals("#aabbcc", detail.root?.color)
+        assertEquals(3, detail.replies.single().replyCount)
+        assertEquals(emptyList<ThreadReply>(), PostThreads.parseDetail(JSONObject("""{"replies":[]}""")).ancestors)
+    }
+
+    @Test fun ownParentsGiveContextOfflineOldestFirstAndStopAtAMissingOrLoopingOne() {
+        fun post(id: String, to: String?) = JournalPost(id, "note", listOf("kai"), null, id, 0, null, "private", to, null, emptyList())
+        val model = Model(listOf(Member("kai", "Kai", null, null, "#888888", emptyList(), null, false)),
+            emptyList(), emptyMap(), emptyList(), null, emptyList(),
+            posts = listOf(post("a", null), post("b", "a"), post("c", "b"), post("orphan", "gone"), post("x", "y"), post("y", "x")))
+        assertEquals(listOf("a", "b"), PostThreads.localAncestors(model, "c").map { it.id })
+        assertEquals(1, PostThreads.localAncestors(model, "c").first().replyCount)
+        assertEquals(emptyList<String>(), PostThreads.localAncestors(model, "orphan").map { it.id })
+        assertEquals(listOf("y"), PostThreads.localAncestors(model, "x").map { it.id })
+    }
 }

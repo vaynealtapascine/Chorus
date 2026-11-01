@@ -10,6 +10,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -34,12 +36,18 @@ internal fun JournalModeChoice(label: String, selected: Boolean, onClick: () -> 
  * lock when the audience isn't public and an optional overflow. The full reader keeps its body
  * across the width; foreign callers pass only fields already supplied by filtered APIs. The
  * overflow floats over the card's corner so its 48 dp target never grows the header.
- * An action row last ([endsWithActions]) brings its own air, so the card adds almost none below it. */
+ * An action row last ([endsWithActions]) brings its own air, so the card adds almost none below it.
+ * In a thread, [lineAbove]/[lineBelow] join this avatar to the post it answers and the one answering
+ * it; [wide] gives a compact card the full reader's gutter so that line runs straight into it. */
 @Composable
 internal fun JournalPostFrame(names: String, time: String, audience: String?, full: Boolean = false,
     avatar: @Composable () -> Unit, overflow: (@Composable () -> Unit)? = null, onClick: (() -> Unit)? = null,
-    endsWithActions: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    endsWithActions: Boolean = false, lineAbove: Boolean = false, lineBelow: Boolean = false, wide: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit) {
     val p = LocalChorusPalette.current
+    val inset = if (full || wide) 20.dp else 16.dp
+    val gutter = if (full || wide) 48.dp else 40.dp
+    val top = if (full) 16.dp else 10.dp
     @Composable fun Identity() {
         Row(Modifier.fillMaxWidth().padding(end = if (overflow != null) 36.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
@@ -53,18 +61,24 @@ internal fun JournalPostFrame(names: String, time: String, audience: String?, fu
                 JournalPresentation.audience(audience), Modifier.padding(start = 6.dp).size(14.dp), tint = p.ink3)
         }
     }
-    Box(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClickLabel = "Open post", onClick = onClick) else Modifier)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = if (full) 20.dp else 16.dp).padding(
-            top = if (full) 16.dp else 10.dp, bottom = if (full) 16.dp else if (endsWithActions) 1.dp else 10.dp)) {
+    Box(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClickLabel = "Open post", onClick = onClick) else Modifier)
+        .then(if (lineAbove || lineBelow) Modifier.drawBehind {
+            val x = (inset + gutter / 2).toPx()
+            val width = 2.dp.toPx()
+            if (lineAbove) drawLine(p.line, Offset(x, 0f), Offset(x, (top - 4.dp).toPx()), width)
+            if (lineBelow) drawLine(p.line, Offset(x, (top + 44.dp).toPx()), Offset(x, size.height), width)
+        } else Modifier)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = inset).padding(
+            top = top, bottom = if (full) 16.dp else if (endsWithActions) 1.dp else 10.dp)) {
             if (full) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.width(48.dp)) { avatar() }
+                    Box(Modifier.width(gutter), contentAlignment = Alignment.TopCenter) { avatar() }
                     Column(Modifier.weight(1f)) { Identity() }
                 }
                 Spacer(Modifier.height(8.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
             } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.width(40.dp), contentAlignment = Alignment.TopCenter) { avatar() }
+                Box(Modifier.width(gutter), contentAlignment = Alignment.TopCenter) { avatar() }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Identity()
                     content()

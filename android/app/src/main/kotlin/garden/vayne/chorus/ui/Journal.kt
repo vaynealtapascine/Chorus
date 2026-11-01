@@ -2,6 +2,7 @@ package garden.vayne.chorus.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -20,11 +21,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.text.style.TextOverflow
 import garden.vayne.chorus.designsystem.R
 import garden.vayne.chorus.data.JournalPresentation
@@ -80,6 +85,7 @@ import java.util.Date
 import kotlinx.coroutines.launch
 
 /** Own posts and switches remain readable from the local replica while offline. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     onExternalReplyConsumed: () -> Unit = {}, externalOpenPost: String? = null,
@@ -96,6 +102,10 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     var editing by rememberSaveable { mutableStateOf(false) }
     var profileId by rememberSaveable { mutableStateOf<String?>(null) }
     var threadPostId by rememberSaveable { mutableStateOf<String?>(null) }
+    // the threads under the open one, newline-separated, so back from a reply's thread returns to its parent
+    var threadBack by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(threadPostId) { if (threadPostId == null) threadBack = "" }
+    val threadStack = threadBack.split('\n').filter { it.isNotEmpty() }
     var section by rememberSaveable { mutableStateOf("timeline") }
     var selectedListId by rememberSaveable { mutableStateOf("") }
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
@@ -192,7 +202,9 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         else -> section
     }
     androidx.compose.runtime.SideEffect { if (active) onFocusedRoute(editing || profileId != null || threadPostId != null) }
-    ChorusScene(route, if (editing) 2 else if (profileId != null || threadPostId != null || section != "timeline") 1 else 0) { shown ->
+    val threadDepth = if (threadPostId != null) 1 + threadStack.size else 0
+    ChorusScene(route, if (editing) maxOf(2, threadDepth + 1) else if (profileId != null) maxOf(1, threadDepth + 1)
+        else if (threadPostId != null) threadDepth else if (section != "timeline") 1 else 0) { shown ->
     if (shown.startsWith("profile:")) {
         val id = shown.substringAfter(":")
         BackHandler(active && shown == route) { profileId = null }
@@ -204,17 +216,34 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
 
     if (shown.startsWith("thread:")) {
         val id = shown.substringAfter(":")
-        BackHandler(active && shown == route) { threadPostId = null }
-        JournalThread(chorus, model, id, onClose = { threadPostId = null }, onReply = { replyTo = id; editing = true },
+        val back = {
+            threadPostId = threadStack.lastOrNull()
+            threadBack = threadStack.dropLast(1).joinToString("\n")
+        }
+        BackHandler(active && shown == route) { back() }
+        JournalThread(chorus, model, id, onClose = back, onReply = { replyTo = id; editing = true },
             replyAuthor = author, replyAuthors = mine, onPickAuthor = { authorId = it },
             onQuote = { quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
-            onOpenPost = { threadPostId = it })
+            onOpenPost = { next -> threadBack = (threadStack + id).joinToString("\n"); threadPostId = next })
         return@ChorusScene
     }
 
     if (shown == "write") {
         BackHandler(active && shown == route) { if (!busy) editing = false }
         val bodyFocus = remember { FocusRequester() }
+        // keep the line being typed above the keyboard and toolbar: after each edit (once the field has
+        // laid out the new text), ask the list to show the caret with a line of air below it
+        val caretView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+        var bodyLayout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+        var bodyFocused by remember { mutableStateOf(false) }
+        val air = with(androidx.compose.ui.platform.LocalDensity.current) { 32.dp.toPx() }
+        LaunchedEffect(bodyValue.text, bodyValue.selection) {
+            if (!bodyFocused) return@LaunchedEffect
+            androidx.compose.runtime.withFrameNanos { }
+            val layout = bodyLayout ?: return@LaunchedEffect
+            val caret = layout.getCursorRect(bodyValue.selection.end.coerceIn(0, layout.layoutInput.text.length))
+            caretView.bringIntoView(caret.copy(top = caret.top - air / 2, bottom = caret.bottom + air))
+        }
         // open ready to type, like other apps' composers: focus the empty body and bring up the keyboard
         val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
         LaunchedEffect(Unit) {
@@ -276,10 +305,17 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                     JournalModeChoice("Journal entry", kind == "entry") { if (!busy) kind = "entry" }
                 }
             }
-            Box(Modifier.padding(horizontal = 16.dp)) { JournalAuthorPicker(author, mine) { if (!busy) authorId = it } }
-            LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // once the draft scrolls under the header, a hairline says where it ends
+            val draftList = androidx.compose.foundation.lazy.rememberLazyListState()
+            HorizontalDivider(color = if (draftList.canScrollBackward) p.line else androidx.compose.ui.graphics.Color.Transparent,
+                thickness = .5.dp)
+            LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), state = draftList, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // the post being answered scrolls with the draft, so expanding a long one never hides it
+                replyTo?.let { id -> item(key = "replying") { ReplyContext(model.posts.find { it.id == id }, model) } }
+                item(key = "author") { JournalAuthorPicker(author, mine) { if (!busy) authorId = it } }
                 if (replyTo != null) item {
-                    Text("Replying to a post. Check the audience before posting.", color = p.ink2)
+                    Text("Check the audience before posting.", color = p.ink3, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(start = 52.dp))
                 }
                 if (kind == "entry") item {
                     JournalTextField(title, { title = it }, "Title (optional)", MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold),
@@ -288,7 +324,10 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 item {
                     BasicTextField(bodyValue, { bodyValue = it }, enabled = !busy,
                         modifier = Modifier.fillMaxWidth().padding(start = 52.dp).focusRequester(bodyFocus)
+                            .bringIntoViewRequester(caretView)
+                            .onFocusChanged { bodyFocused = it.isFocused }
                             .semantics { contentDescription = "Post text" },
+                        onTextLayout = { bodyLayout = it },
                         textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.ink, fontSize = 16.sp, lineHeight = 24.sp),
                         cursorBrush = SolidColor(p.accent), minLines = 4,
                         decorationBox = { inner -> Box {
@@ -483,9 +522,11 @@ internal fun JournalChoice(label: String, selected: Boolean, onClick: () -> Unit
 internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, onReply: (JournalPost) -> Unit,
     onThread: ((JournalPost) -> Unit)? = null, onProfile: ((String) -> Unit)? = null, full: Boolean = false,
     showActions: Boolean = true, repostedBy: String? = null, onQuote: ((JournalPost) -> Unit)? = null,
-    onOpenPost: ((String) -> Unit)? = null, extraMenu: List<Pair<String, () -> Unit>> = emptyList()) {
+    onOpenPost: ((String) -> Unit)? = null, extraMenu: List<Pair<String, () -> Unit>> = emptyList(),
+    lineAbove: Boolean = false, inThread: Boolean = false) {
     Column(Modifier.fillMaxWidth()) {
-        JournalPostCardBody(post, model, chorus, onReply, onThread, onProfile, full, showActions, repostedBy, onQuote, onOpenPost, extraMenu)
+        JournalPostCardBody(post, model, chorus, onReply, onThread, onProfile, full, showActions, repostedBy, onQuote, onOpenPost, extraMenu,
+            lineAbove, inThread)
     }
 }
 
@@ -493,14 +534,16 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
 private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus, onReply: (JournalPost) -> Unit,
     onThread: ((JournalPost) -> Unit)?, onProfile: ((String) -> Unit)?, full: Boolean,
     showActions: Boolean, repostedBy: String?, onQuote: ((JournalPost) -> Unit)?,
-    onOpenPost: ((String) -> Unit)?, extraMenu: List<Pair<String, () -> Unit>> = emptyList()) {
+    onOpenPost: ((String) -> Unit)?, extraMenu: List<Pair<String, () -> Unit>> = emptyList(),
+    lineAbove: Boolean = false, inThread: Boolean = false) {
     val p = LocalChorusPalette.current
     // A repost has no text: show the original (one level only) under "X reposted", or say it's gone.
     if (post.repostOf != null && repostedBy == null) {
         val by = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
         val original = model.posts.find { it.id == post.repostOf }?.takeIf { it.repostOf == null }
         if (original == null) RepostUnavailable(by)
-        else JournalPostCardBody(original, model, chorus, onReply, onThread, onProfile, full, showActions, by, onQuote, onOpenPost, extraMenu)
+        else JournalPostCardBody(original, model, chorus, onReply, onThread, onProfile, full, showActions, by, onQuote, onOpenPost, extraMenu,
+            lineAbove, inThread)
         return
     }
     if (repostedBy != null) RepostHeader(repostedBy)
@@ -513,7 +556,7 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
     val names = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
     val open = onThread?.takeIf { !full }?.let { { it(post) } }
     JournalPostFrame(names, compactAgo(post.occurredAt), post.visibility, full, endsWithActions = showActions && !full &&
-        (post.cw == null || revealed), avatar = {
+        (post.cw == null || revealed), lineAbove = lineAbove, avatar = {
         Box {
             Box(Modifier.size(if (full) 48.dp else 40.dp).clip(CircleShape).clickable(enabled = onProfile != null) {
                 if (post.authors.size > 1) authorsOpen = true else post.authors.firstOrNull()?.let { onProfile?.invoke(it) }
@@ -533,7 +576,14 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
             },
             ("Change audience" to { audienceOpen = true }).takeIf { JournalSocial.canEditAudience(post, model, chorus.device?.accountId) }) + extraMenu)
     }, onClick = open) {
-        if (post.replyTo != null) Text("Reply", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+        // in a feed, a reply says whom it answers (tap to read that); a thread already shows it above
+        if (post.replyTo != null && !full && !inThread) {
+            val parent = model.posts.find { it.id == post.replyTo }
+            val to = parent?.authors?.mapNotNull { model.member(it)?.shownName }?.joinToString(" & ")?.takeIf { it.isNotBlank() }
+            Text(if (to != null) "Replying to $to" else "Replying to a post", color = p.ink3, style = MaterialTheme.typography.bodySmall,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = if (onOpenPost == null) Modifier
+                    else Modifier.clickable(onClickLabel = "Open the post this replies to") { onOpenPost(post.replyTo) })
+        }
         if (post.cw != null) Surface(color = p.surface2, shape = RoundedCornerShape(10.dp)) {
             Row(Modifier.fillMaxWidth().clickable { revealed = !revealed }.heightIn(min = 48.dp).padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -567,17 +617,20 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
     if (!full) HorizontalDivider(color = p.line, thickness = .5.dp)
 }
 
-/** Server replies can come from other accounts, while own replies remain available offline. The
- * focused post is larger, followed by when it was written, its counts, a large action row and the
- * replies as compact cards; the reply bar stays pinned and opens the existing composer, so the
- * audience is still chosen there. [replyAuthors] is who may write here (one member for a person
- * account, so no picker is shown). */
+/** A post as a thread, the way Twitter reads one: what it answers sits above it (oldest first, one
+ * avatar line running down into the focused post), then the focused post, larger, with when it was
+ * written, its counts and a large action row, then its replies. Each reply opens as a thread of its
+ * own ("N replies" says when it has more), and back returns here. Server replies can come from
+ * other accounts, while own replies and own parents remain available offline. The reply bar stays
+ * pinned and opens the existing composer, so the audience is still chosen there. [replyAuthors] is
+ * who may write here (one member for a person account, so no picker is shown). */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose: () -> Unit, onReply: () -> Unit,
     replyAuthor: Member? = null, replyAuthors: List<Member> = emptyList(), onPickAuthor: ((String) -> Unit)? = null,
     onQuote: ((JournalPost) -> Unit)? = null, onOpenPost: ((String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
+    val motion = rememberChorusMotion()
     var remote by remember(postId) { mutableStateOf<PostDetail?>(null) }
     var error by remember(postId) { mutableStateOf<String?>(null) }
     var refresh by remember(postId) { mutableStateOf(0) }
@@ -595,27 +648,39 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
         } finally { refreshing = false }
     }
     val replies = PostThreads.merge(local, remote?.replies.orEmpty())
+    val localAncestors = PostThreads.localAncestors(model, postId)
+    // the server's chain reaches other accounts' posts; offline, own parents still give context
+    val ancestors = remote?.ancestors?.takeIf { it.isNotEmpty() } ?: localAncestors
     val reactions = PostReactions.merge(model.postReactions[postId].orEmpty(), remote?.reactions.orEmpty())
     val rootPost = model.posts.find { it.id == postId }
     val foreignRoot = remote?.root?.takeIf { rootPost == null }
     // a post from another account has no local row: describe it with what the server sent
     val focused = rootPost ?: foreignRoot?.let { JournalPost(it.id, "note", emptyList(), it.title, it.text, it.occurredAt,
         it.cw, "server", null, null, emptyList()) }
-    val scroll = androidx.compose.foundation.lazy.rememberLazyListState()
+    val open: (String) -> Unit = { id -> if (id != postId) onOpenPost?.invoke(id) }
+    // opens on the focused post, its context above; parents arriving later keep it in place (keyed)
+    val scroll = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = localAncestors.size)
     Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         Row(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            ChatIconButton(R.drawable.ic_back, "Back to journal", onClose)
-            Text(if (rootPost?.kind == "entry") "Journal entry" else "Post", color = p.ink,
-                style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+            ChatIconButton(R.drawable.ic_back, "Back", onClose)
+            Text(if (rootPost?.kind == "entry") "Journal entry" else if (ancestors.isNotEmpty()) "Thread" else "Post",
+                color = p.ink, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
         }
         // pull down to fetch replies again; own replies are already local
         androidx.compose.material3.pulltorefresh.PullToRefreshBox(refreshing, { refreshing = true; refresh++ }, Modifier.weight(1f)) {
         LazyColumn(Modifier.fillMaxSize(), state = scroll, contentPadding = PaddingValues(bottom = 16.dp)) {
+            itemsIndexed(ancestors, key = { _, it -> "up:${it.id}" }) { i, parent ->
+                Column(Modifier.animateItem(fadeInSpec = if (motion) ChorusMotion.tween(true, ChorusMotion.Gentle) else null,
+                    placementSpec = if (motion) ChorusMotion.settle() else null, fadeOutSpec = null)) {
+                    ThreadReplyCard(parent, chorus, model, replyAuthor?.id, onOpen = { open(parent.id) },
+                        lineAbove = i > 0, lineBelow = true, wide = true, divider = false)
+                }
+            }
             if (rootPost != null) item(key = "root:$postId") {
                 JournalPostCard(rootPost, model, chorus, onReply = { onReply() }, full = true, showActions = false,
-                    onOpenPost = onOpenPost)
+                    onOpenPost = onOpenPost, lineAbove = ancestors.isNotEmpty())
             } else if (foreignRoot != null) item(key = "root:$postId") {
-                ThreadReplyCard(foreignRoot, chorus, model, Reply.speaker(model)?.id, full = true)
+                ThreadReplyCard(foreignRoot, chorus, model, Reply.speaker(model)?.id, full = true, lineAbove = ancestors.isNotEmpty())
             }
             if (focused != null) item(key = "detail:$postId") {
                 val hearts = reactions.count { it.emoji == PostReactions.HEART }
@@ -630,9 +695,10 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
                             JournalPresentation.frontContext(model.frontIntervals, post.occurredAt) { model.member(it)?.shownName }
                         }).joinToString(" · "),
                         color = p.ink3, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 12.dp))
-                    if (hearts > 0 || reposts > 0) {
+                    if (hearts > 0 || reposts > 0 || replies.isNotEmpty()) {
                         HorizontalDivider(color = p.line, thickness = .5.dp)
                         Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            if (replies.isNotEmpty()) DetailStat(replies.size, if (replies.size == 1) "reply" else "replies")
                             if (reposts > 0) DetailStat(reposts, if (reposts == 1) "repost" else "reposts")
                             if (hearts > 0) DetailStat(hearts, if (hearts == 1) "like" else "likes")
                         }
@@ -645,15 +711,63 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
                     HorizontalDivider(color = p.line, thickness = .5.dp)
                 }
             }
-            if (error != null) item { Text(error.orEmpty(), color = p.ink2, style = MaterialTheme.typography.bodySmall,
+            if (error != null) item(key = "error") { Text(error.orEmpty(), color = p.ink2, style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(20.dp)) }
-            if (replies.isEmpty()) item { Text(if (remote == null && error == null) "Loading replies…" else "No replies yet.",
+            if (replies.isEmpty()) item(key = "empty") { Text(if (remote == null && error == null) "Loading replies…" else "No replies yet.",
                 color = p.ink2, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(20.dp)) }
-            items(replies, key = { it.id }) { reply -> Column { ThreadReplyCard(reply, chorus, model, replyAuthor?.id) } }
+            items(replies, key = { it.id }) { reply ->
+                Column(Modifier.animateItem(fadeInSpec = if (motion) ChorusMotion.tween(true, ChorusMotion.Gentle) else null,
+                    placementSpec = if (motion) ChorusMotion.settle() else null, fadeOutSpec = null)) {
+                    // own replies keep the whole action row; others' open as their own thread
+                    val own = model.posts.find { it.id == reply.id }
+                    if (own != null) JournalPostCard(own, model, chorus, onReply = { open(it.id) }, onThread = { open(it.id) },
+                        onQuote = onQuote, onOpenPost = onOpenPost, inThread = true)
+                    else ThreadReplyCard(reply, chorus, model, replyAuthor?.id, onOpen = { open(reply.id) }, actions = true)
+                }
+            }
         }
         }
         HorizontalDivider(color = p.line)
         JournalReplyBar(replyAuthor, replyAuthors, onPickAuthor, onReply)
+    }
+}
+
+/** Above a reply draft: the post it answers, joined to the writer's avatar by the thread line. Long
+ * posts start at three lines; tap to read the rest and tap again to fold it. A post from another
+ * account isn't on this device, so it is only named. */
+@Composable
+private fun ReplyContext(parent: JournalPost?, model: Model) {
+    val p = LocalChorusPalette.current
+    val names = parent?.authors?.mapNotNull { model.member(it)?.shownName }?.joinToString(" & ")?.takeIf { it.isNotBlank() }
+    if (parent == null || names == null) {
+        Text("Replying to a post", color = p.ink3, style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(vertical = 6.dp))
+        return
+    }
+    val motion = rememberChorusMotion()
+    var expanded by rememberSaveable(parent.id) { mutableStateOf(false) }
+    var overflows by remember(parent.id) { mutableStateOf(false) }
+    val foldable = overflows || expanded
+    Row(Modifier.fillMaxWidth().then(if (foldable) Modifier.clickable(
+        onClickLabel = if (expanded) "Show less of the post" else "Show all of the post") { expanded = !expanded } else Modifier)
+        .padding(top = 6.dp).drawBehind {
+        // centred under the 40 dp avatar, down to the author picker's avatar below
+        val x = 20.dp.toPx()
+        drawLine(p.line, androidx.compose.ui.geometry.Offset(x, 44.dp.toPx()), androidx.compose.ui.geometry.Offset(x, size.height),
+            2.dp.toPx())
+    }, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.width(40.dp)) { parent.authors.firstNotNullOfOrNull(model::member)?.let { ChatAvatar(it, 40.dp) } }
+        Column(Modifier.weight(1f).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("$names · ${compactAgo(parent.occurredAt)}", color = p.ink2, style = MaterialTheme.typography.labelLarge,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(parent.cw?.let { "Content warning: $it" } ?: listOfNotNull(parent.title, parent.text.takeIf { it.isNotBlank() })
+                .joinToString(" — "), color = p.ink2, style = MaterialTheme.typography.bodyMedium,
+                maxLines = if (expanded) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis,
+                onTextLayout = { if (!expanded) overflows = it.hasVisualOverflow },
+                modifier = Modifier.animateContentSize(if (motion) ChorusMotion.settle() else androidx.compose.animation.core.snap()))
+            if (foldable) Text(if (expanded) "Show less" else "Show more", color = p.accent, style = MaterialTheme.typography.labelLarge)
+            Text("Replying to $names", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
@@ -694,26 +808,47 @@ private fun JournalReplyBar(author: Member?, authors: List<Member>, onPick: ((St
     }
 }
 
+/** A post from the server's thread (another account's, or context above the focused post). One of our
+ * members shows their own avatar; anyone else, their colour and initial. [actions] adds the action
+ * row with the reply count, which opens the reply as its own thread. */
 @Composable
-private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, member: String?, full: Boolean = false) {
+private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, member: String?, full: Boolean = false,
+    onOpen: (() -> Unit)? = null, lineAbove: Boolean = false, lineBelow: Boolean = false, wide: Boolean = false,
+    divider: Boolean = !full, actions: Boolean = false) {
     val p = LocalChorusPalette.current
+    val ctx = LocalContext.current
     var revealed by rememberSaveable(reply.id) { mutableStateOf(false) }
     val names = reply.authorNames.joinToString(" & ").ifBlank { "Someone" }
-    JournalPostFrame(names, compactAgo(reply.occurredAt), null, full, avatar = {
-        Box(Modifier.size(40.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
-            Text(names.take(1), style = MaterialTheme.typography.titleSmall, color = p.ink2)
-        }
+    val shown = reply.cw == null || revealed
+    JournalPostFrame(names, compactAgo(reply.occurredAt), null, full, onClick = onOpen, lineAbove = lineAbove,
+        lineBelow = lineBelow, wide = wide, endsWithActions = actions && shown, avatar = {
+        val own = reply.authorIds.firstNotNullOfOrNull(model::member)
+        if (own != null) ChatAvatar(own, 40.dp)
+        else Avatar(names.take(1).uppercase(), reply.color ?: "#42A397", 40.dp, avatarBlob = reply.avatarBlob, ring = false)
     }) {
-        if (reply.cw != null) TextButton(onClick = { revealed = !revealed }) {
-            Text("Content warning: ${reply.cw} · ${if (revealed) "Hide" else "Show"}")
+        if (reply.cw != null) Surface(color = p.surface2, shape = RoundedCornerShape(10.dp)) {
+            Row(Modifier.fillMaxWidth().clickable { revealed = !revealed }.heightIn(min = 48.dp).padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Content warning: ${reply.cw}", color = p.ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                Text(if (revealed) "Hide" else "Show", color = p.accent, style = MaterialTheme.typography.labelMedium)
+            }
         }
-        if (reply.cw == null || revealed) {
+        if (shown) {
             if (reply.title != null) Text(reply.title, color = p.ink, fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.titleSmall.copy(fontSize = if (full) 24.sp else 16.sp, lineHeight = if (full) 30.sp else 22.sp))
-            RichBody(reply.text, reply.entities, style = MaterialTheme.typography.bodyMedium.copy(
+            RichBody(reply.text, reply.entities, maxLines = if (full || onOpen == null) Int.MAX_VALUE else 8,
+                onPlainClick = { onOpen?.invoke() }, style = MaterialTheme.typography.bodyMedium.copy(
                 fontSize = if (full) 16.sp else 15.sp, lineHeight = if (full) 24.sp else 21.sp))
             PollCard(chorus, model, reply.id, member, reply.poll, reply.pollTally)
+            if (actions) JournalActions(emptyList(), null, onReply = onOpen, replies = reply.replyCount,
+                onShare = JournalSocial.shareText(reply.title, reply.cw, reply.text).takeIf { it.isNotBlank() }?.let { text ->
+                    { shareJournalText(ctx, reply.title, text) }
+                })
+            // context above the focused post leads into it, so its own count would only repeat it
+            else if (reply.replyCount > 0 && !full && !lineBelow && onOpen != null) Text(
+                if (reply.replyCount == 1) "1 reply" else "${reply.replyCount} replies", color = p.accent,
+                style = MaterialTheme.typography.labelMedium)
         }
     }
-    if (!full) HorizontalDivider(color = p.line, thickness = .5.dp)
+    if (divider) HorizontalDivider(color = p.line, thickness = .5.dp)
 }
