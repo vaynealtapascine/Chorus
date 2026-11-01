@@ -29,7 +29,8 @@ fn seed() -> Connection {
         .unwrap();
     }
     conn.execute("INSERT INTO bucket(id,account_id,name) VALUES (?1,?2,'Close')", params![BUCKET, ALICE]).unwrap();
-    conn.execute("INSERT INTO bucket(id,account_id,name,deleted_at) VALUES (?1,?2,'Old',5)", params![GONE, ALICE]).unwrap();
+    conn.execute("INSERT INTO bucket(id,account_id,name,deleted_at) VALUES (?1,?2,'Old',5)", params![GONE, ALICE])
+        .unwrap();
     for (bucket, who) in [(BUCKET, BOB), (GONE, CAROL), (BUCKET, DAVE)] {
         conn.execute(
             "INSERT INTO bucket_assignment(bucket_id,follower_account_id,added_hlc) VALUES (?1,?2,'1:0:1')",
@@ -39,7 +40,8 @@ fn seed() -> Connection {
     }
     let bucket = json!({"mode": "buckets", "bucket_ids": [BUCKET]});
     let close = bucket.to_string();
-    let parts = json!({"pronouns": {"mode": "private"}, "banner": {"mode": "followers"}, "birthday": bucket}).to_string();
+    let parts =
+        json!({"pronouns": {"mode": "private"}, "banner": {"mode": "followers"}, "birthday": bucket}).to_string();
     for (id, name, visibility, field_visibility, sort) in [
         ("kai", "Kai", r#"{"mode":"followers"}"#.to_string(), parts.clone(), "a"),
         ("nai", "Nairon", close.clone(), "{}".to_string(), "b"),
@@ -51,7 +53,16 @@ fn seed() -> Connection {
             "INSERT INTO member(id,account_id,name,pronouns,description,birthday,avatar_blob,banner_blob,sigils,
                                 visibility,field_visibility,sort_key,short_id,created_at)
              VALUES (?1,?2,?3,'she/her','Hello','2000-01-02',?4,?5,'[\"🌿\"]',?6,?7,?8,?1,0)",
-            params![id, ALICE, name, format!("avatar-{id}"), format!("banner-{id}"), visibility, field_visibility, sort],
+            params![
+                id,
+                ALICE,
+                name,
+                format!("avatar-{id}"),
+                format!("banner-{id}"),
+                visibility,
+                field_visibility,
+                sort
+            ],
         )
         .unwrap();
     }
@@ -93,11 +104,8 @@ fn seed() -> Connection {
         .unwrap();
     }
     // Nairon shares Location with followers on their own profile
-    conn.execute(
-        "UPDATE member SET field_visibility = '{\"loc\":{\"mode\":\"followers\"}}' WHERE id = 'nai'",
-        [],
-    )
-    .unwrap();
+    conn.execute("UPDATE member SET field_visibility = '{\"loc\":{\"mode\":\"followers\"}}' WHERE id = 'nai'", [])
+        .unwrap();
     conn
 }
 

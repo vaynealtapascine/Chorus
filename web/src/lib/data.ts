@@ -44,6 +44,8 @@ export interface FieldDef {
   type: 'text' | 'long_text' | 'number' | 'date' | 'select' | 'multi_select' | 'boolean' | 'url' | 'color';
   options: { choices?: string[] };
   sort_key?: string;
+  /** who sees it on members who haven't chosen (D-101); private when unset */
+  default_visibility?: unknown;
   deleted: boolean;
 }
 
@@ -270,6 +272,7 @@ export function fieldDefs(p: Projection): FieldDef[] {
       type: (str(r.fields.type) ?? 'text') as FieldDef['type'],
       options: (r.fields.options as FieldDef['options']) ?? {},
       sort_key: str(r.fields.sort_key),
+      default_visibility: r.fields.default_visibility,
       deleted: false,
     }))
     .sort((a, b) => (a.sort_key ?? a.name).localeCompare(b.sort_key ?? b.name));

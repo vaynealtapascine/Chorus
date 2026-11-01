@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { core } from '../core';
-  import { buckets, fieldDefs, fieldValues, groupPath, groups, members, membership, type FieldDef, type ProxyTag } from '../data';
+  import { buckets, fieldDefs, fieldValues, groupPath, groups, members, membership, type ProxyTag } from '../data';
   import { router } from '../router.svelte';
   import { sync, type Projection } from '../sync/client';
   import AvatarImage from './AvatarImage.svelte';
+  import ProfileFields from './ProfileFields.svelte';
   import { flushUploads, stageBlob } from '../sync/uploads';
-  import { addFolder, FOLDER_OF, FOLDERS, memberListPrefs, roleColor, rolesOf } from '../member-list';
+  import { addFolder, FOLDER_OF, FOLDERS, memberListPrefs } from '../member-list';
 
   let { projection, id, dark }: { projection: Projection; id: string; dark: boolean } = $props();
 
@@ -38,21 +39,6 @@
   let cropX = $state(0);
   let cropY = $state(0);
   let avatarError = $state('');
-  let bannerError = $state('');
-  async function chooseBanner(e: Event) {
-    const file = (e.currentTarget as HTMLInputElement).files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/') || file.size > 4 * 1024 * 1024) {
-      bannerError = 'Choose an image smaller than 4 MB.';
-      return;
-    }
-    try {
-      const upload = await stageBlob(file, file.type, sync.accountId);
-      set({ banner_blob: upload.hash });
-      if (sync.status === 'live') void flushUploads(sync.device);
-      bannerError = '';
-    } catch (error) { bannerError = String(error); }
-  }
   onDestroy(() => cropBitmap?.close());
   async function chooseAvatar(e: Event) {
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
@@ -101,17 +87,7 @@
   }
 
   const text = (e: Event) => (e.currentTarget as HTMLInputElement).value;
-  const opt = (s: string) => (s.trim() === '' ? null : s.trim());
 
-  // description: edited as markup, stored as plain text + entities (D-041)
-  const descMarkup = $derived(
-    m?.description ? core.toMarkup({ text: m.description, entities: (raw.description_entities as never) ?? [] }) : '',
-  );
-  function saveDescription(e: Event) {
-    const src = text(e);
-    const rich = core.parseMarkup(src);
-    set({ description: rich.text || null, description_entities: rich.entities.length ? rich.entities : null });
-  }
 
   const sigilText = $derived(m?.sigils.join(' ') ?? '');
   const sigilClash = $derived(
@@ -130,25 +106,6 @@
     sync.create(on ? 'group.add_member' : 'group.remove_member', sync.accountScope, gid, { member_id: id });
   }
 
-  function setValue(def: FieldDef, value: unknown) {
-    sync.create('field.set_value', sync.accountScope, null, { member_id: id, field_id: def.id, value });
-  }
-
-  // choice fields (roles, D-100): pick from the field's choices as pills, or add a new choice
-  function toggleChoice(def: FieldDef, chosen: string[], c: string) {
-    if (def.type === 'select') setValue(def, chosen[0] === c ? '' : c);
-    else setValue(def, chosen.includes(c) ? chosen.filter((x) => x !== c) : [...chosen, c]);
-  }
-  function addChoice(def: FieldDef, chosen: string[], input: HTMLInputElement) {
-    const c = input.value.trim();
-    input.value = '';
-    if (!c) return;
-    const choices = def.options.choices ?? [];
-    const existing = choices.find((x) => x.toLowerCase() === c.toLowerCase());
-    if (!existing) sync.create('field.set_def', sync.accountScope, def.id, { options: { ...def.options, choices: [...choices, c] } });
-    const pick = existing ?? c;
-    if (!chosen.includes(pick)) toggleChoice(def, chosen, pick);
-  }
 
   // which Members list folder they sit in (D-100): only sorts the list
   const listPrefs = $derived(memberListPrefs((projection.rows.pref ?? {}) as never, sync.accountId));
@@ -183,15 +140,6 @@
     set({ notify_policy: { ...p, announce: { buckets: [...ids] } } });
   }
 
-  let newField = $state('');
-  let newFieldType = $state<FieldDef['type']>('text');
-  function addField(e: SubmitEvent) {
-    e.preventDefault();
-    if (!newField.trim()) return;
-    const choice = newFieldType === 'select' || newFieldType === 'multi_select';
-    sync.create('field.define', sync.accountScope, sync.newId(), { name: newField.trim(), type: newFieldType, ...(choice ? { options: { choices: [] } } : {}) });
-    newField = '';
-  }
 
   function switchIn() {
     sync.create('front.switch', sync.accountScope, sync.newId(), {
@@ -219,7 +167,7 @@
     </header>
 
     <section>
-      <h2>About</h2>
+      <h2>Name, colour &amp; avatar</h2>
       <div class="fields">
         <div class="wide avatar-picker">
           <label>Avatar <input type="file" accept="image/*" onchange={chooseAvatar} aria-label="Choose member avatar" /></label>
@@ -234,25 +182,18 @@
           {/if}
           {#if avatarError}<p role="alert">{avatarError}</p>{/if}
         </div>
-        <div class="wide avatar-picker">
-          <label>Profile banner <input type="file" accept="image/*" onchange={chooseBanner} aria-label="Choose member banner" /></label>
-          {#if m.banner_blob}<button class="ghost" onclick={() => set({ banner_blob: null })}>Remove banner</button>{/if}
-          {#if bannerError}<p role="alert">{bannerError}</p>{/if}
-        </div>
         <label>Name <input value={m.name} onchange={(e) => set({ name: text(e).trim() || m!.name })} /></label>
-        <label>Display name <input value={m.display_name ?? ''} onchange={(e) => set({ display_name: opt(text(e)) })} /></label>
-        <label>Pronouns <input value={m.pronouns ?? ''} onchange={(e) => set({ pronouns: opt(text(e)) })} /></label>
         <label class="color">Colour <input type="color" value={m.color} onchange={(e) => set({ color: text(e) })} /></label>
-        <label>Birthday <input type="date" value={m.birthday ?? ''} onchange={(e) => set({ birthday: opt(text(e)) })} /></label>
-        <label class="wide">
-          Description <span class="hint">**bold**, *italic*, ||spoiler||, [link](https://…)</span>
-          <textarea rows="4" value={descMarkup} onchange={saveDescription}></textarea>
-        </label>
       </div>
+      <p class="hint">These show wherever {m.name} does: in your chats, and to friends who can open {m.name}'s profile or see them in a shared chat.</p>
     </section>
 
     <section>
-      <h2>Sharing</h2>
+      <ProfileFields {m} {raw} {defs} {values} buckets={sharingBuckets} {set} />
+    </section>
+
+    <section>
+      <h2>Fronting</h2>
       <div class="fields">
         <label class="wide">
           Followers hear when {m.name} fronts
@@ -352,61 +293,6 @@
       </section>
     {/if}
 
-    <section>
-      <h2>Custom fields</h2>
-      <div class="fields">
-        {#each defs as d (d.id)}
-          {@const v = values.get(d.id)}
-          {#if d.type === 'select' || d.type === 'multi_select'}
-            {@const chosen = rolesOf(v)}
-            <div class="wide choice-field" role="group" aria-label={d.name}>
-              <span class="label">{d.name} <span class="hint">{d.type === 'select' ? 'one' : 'any number'}</span></span>
-              <div class="choices">
-                {#each d.options.choices ?? [] as c (c)}
-                  <button type="button" class="choice" class:on={chosen.includes(c)} aria-pressed={chosen.includes(c)} style="--pill: {roleColor(c)}" onclick={() => toggleChoice(d, chosen, c)}>{c}</button>
-                {/each}
-                {#each chosen.filter((c) => !(d.options.choices ?? []).includes(c)) as c (c)}
-                  <button type="button" class="choice on" aria-pressed="true" style="--pill: {roleColor(c)}" onclick={() => toggleChoice(d, chosen, c)}>{c}</button>
-                {/each}
-                <input class="add-choice" placeholder="Add…" aria-label="Add a choice to {d.name}"
-                  onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addChoice(d, chosen, e.currentTarget); } }}
-                  onblur={(e) => addChoice(d, chosen, e.currentTarget)} />
-              </div>
-            </div>
-          {:else}
-          <label class:wide={d.type === 'long_text'}>
-            {d.name}
-            {#if d.type === 'boolean'}
-              <input type="checkbox" checked={v === true} onchange={(e) => setValue(d, (e.currentTarget as HTMLInputElement).checked)} />
-            {:else if d.type === 'long_text'}
-              <textarea rows="3" value={(v as string) ?? ''} onchange={(e) => setValue(d, text(e))}></textarea>
-            {:else}
-              <input
-                type={d.type === 'number' ? 'number' : d.type === 'date' ? 'date' : d.type === 'url' ? 'url' : d.type === 'color' ? 'color' : 'text'}
-                value={(v as string | number) ?? ''}
-                onchange={(e) => setValue(d, d.type === 'number' ? Number(text(e)) : text(e))}
-              />
-            {/if}
-          </label>
-          {/if}
-        {/each}
-      </div>
-      <form class="addfield" onsubmit={addField}>
-        <input bind:value={newField} placeholder="New field, e.g. Role" aria-label="Field name" />
-        <select bind:value={newFieldType} aria-label="Field type">
-          <option value="text">Text</option>
-          <option value="long_text">Long text</option>
-          <option value="multi_select">Several choices (like roles)</option>
-          <option value="select">One choice</option>
-          <option value="number">Number</option>
-          <option value="date">Date</option>
-          <option value="boolean">Yes / no</option>
-          <option value="url">Link</option>
-          <option value="color">Colour</option>
-        </select>
-        <button class="ghost">Add field</button>
-      </form>
-    </section>
 
     <section class="danger">
       {#if m.archived}
@@ -488,7 +374,6 @@
     grid-column: 1 / -1;
   }
   input,
-  textarea,
   select {
     font: inherit;
     font-size: var(--fs-base);
@@ -534,19 +419,6 @@
     align-items: center;
     gap: var(--s-2);
     color: var(--ink);
-  }
-  .choice-field { display: grid; gap: var(--s-2); }
-  .choices { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  .choice { font: inherit; font-size: var(--fs-sm); padding: 2px 10px; border-radius: var(--r-full); cursor: pointer; color: var(--ink-2); background: none; border: 1px dashed var(--line); }
-  .choice.on { color: var(--ink); font-weight: 600; background: color-mix(in srgb, var(--pill) 28%, var(--surface)); border: 1px solid color-mix(in srgb, var(--pill) 55%, transparent); }
-  .add-choice { width: 8em; padding: 2px 10px !important; border-radius: var(--r-full) !important; }
-  .addfield {
-    display: flex;
-    gap: var(--s-2);
-    margin-top: var(--s-4);
-  }
-  .addfield input {
-    flex: 1;
   }
   .primary {
     justify-self: start;

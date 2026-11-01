@@ -172,7 +172,8 @@ pub fn profile(conn: &Connection, viewer: &str, owner: &str, member: &str) -> an
     let mut out = m.card(&v);
     let bio = m.part(&v, "description");
     out["description"] = json!(if bio { m.description.clone() } else { None });
-    out["description_entities"] = if bio && m.description.is_some() { m.description_entities.clone() } else { json!([]) };
+    out["description_entities"] =
+        if bio && m.description.is_some() { m.description_entities.clone() } else { json!([]) };
     out["birthday"] = json!(m.shown(&v, "birthday", &m.birthday));
     out["banner_blob"] = json!(m.shown(&v, "banner", &m.banner_blob));
     let mut st = conn.prepare_cached(
@@ -182,11 +183,19 @@ pub fn profile(conn: &Connection, viewer: &str, owner: &str, member: &str) -> an
     )?;
     let mut fields = Vec::new();
     for r in st.query_map(params![member, owner], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, Option<String>>(2)?, json_of(r.get(3)?), json_of(r.get(4)?)))
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, Option<String>>(1)?,
+            r.get::<_, Option<String>>(2)?,
+            json_of(r.get(3)?),
+            json_of(r.get(4)?),
+        ))
     })? {
         let (id, name, kind, value, default) = r?;
         let audience = m.audience(&id).unwrap_or(default);
-        let empty = value.is_null() || value.as_str().is_some_and(|s| s.trim().is_empty()) || value.as_array().is_some_and(Vec::is_empty);
+        let empty = value.is_null()
+            || value.as_str().is_some_and(|s| s.trim().is_empty())
+            || value.as_array().is_some_and(Vec::is_empty);
         if empty || !v.allows(&audience) {
             continue;
         }
