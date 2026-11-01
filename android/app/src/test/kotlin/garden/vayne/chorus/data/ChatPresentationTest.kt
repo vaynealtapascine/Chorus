@@ -13,6 +13,15 @@ class ChatPresentationTest {
         org.junit.Assert.assertNull(ChatPresentation.activityPreview("\n", " "))
     }
 
+    @Test fun frontLinesAreChronologicalGroupedAndBounded() {
+        fun iv(id: String, at: Long, layer: String = "front") = FrontInterval(id, "member", id, layer, false, at, null)
+        val lines = ChatPresentation.frontEvents(listOf(iv("late", 180000), iv("a", 61000),
+            iv("b", 62000), iv("excluded", 60000), iv("future", 240000)), 60000, 180000,
+            { _, id -> id }, { "fronting" })
+        assertEquals(listOf(61000L, 180000L), lines.map { it.at })
+        assertEquals("a & b started fronting", lines.first().text)
+    }
+
     private val zone = ZoneId.of("UTC")
     private val message = ChatMessage("a", "c", listOf("fox"), "Hello", 1_000, null,
         "all", emptySet(), "me", null, emptyList())

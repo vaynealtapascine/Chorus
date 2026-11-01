@@ -24,7 +24,7 @@ roles), the members of a members' DM or group, and the members a members-only ch
 | 4 | Android: spaces and member lists — people in a space with Add / Remove / role, rename/describe, Leave / Delete; members-only channels and editing a members' DM's people in the channel editor | implemented; gate passed; independent review pending |
 | 5 | Android: private chats, same rules as web | done; reviewed by an independent Sol 6.1 pass, its findings fixed (server re-create bypass, locked retained actions, thread inheritance) |
 | 6 | Android feel (UI7 slice 1, parked on `wip/ui7-slice1`): swipe to reply, double-tap heart, haptics, Draft:/typing previews in the list | implemented; Android compile/lint/JVM and quick offline Android gate passed; independent review pending |
-| 7 | Parity gaps (table below) | done: web jump to latest, unread line, Up to edit, emoji, Files/Links; Android Advanced permissions and slow mode, composer emoji, Quote (whole message), Reply in another chat, Select several to quote or forward a bundle, quotes shown in bubbles, replies to other chats shown. Left: Android front-change lines in the timeline, quoting part of a message on Android |
+| 7 | Parity gaps (table below) | done: web jump to latest, unread line, Up to edit, emoji, Files/Links; Android Advanced permissions and slow mode, composer emoji, Quote (whole message), Reply in another chat, Select several to quote or forward a bundle, quotes shown in bubbles, replies to other chats shown. Android front-change timeline lines and partial-text quoting implemented and verified (2026-11-01). |
 | 8 | Mentions autocomplete on both (members, groups, `@front`) | done (web `chat-composer.ts`; Android `ChatMentions`, which also gives the core composer the names it needs: Android @mentions were plain text before) |
 
 ## Parity matrix (2026-11-01 survey)
@@ -76,3 +76,7 @@ creation; no typing transport or Q21 default changed. Tests cover pull/threshold
 cancel/release/retreat/disabled eligibility, RTL mirroring and preview priority.
 
 Validation: `:app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug --offline` passed (F:/DunBuild/ui8-slice6-android.log). Wrapper `verify.py --quick --offline --android` passed (F:/DunBuild/chorus-verify-Chorus.log, exit 0). No device interaction validation or deployment in this slice.
+
+## Android timeline and partial quote completion (2026-11-01)
+
+Internal chats show the channel-selected front history only; shared/DM spaces do not show front events. Timeline markers respect reverse-list ordering. Partial quotes preserve UTF-16 offsets and expand split surrogate pairs. Channel navigation clears the selection sheet. Tests cover ordering, grouping, bounds, unknown subjects, layers and surrogate ranges. Full `python scripts/verify.py --android` passed, exit 0 (`F:/DunBuild/chorus-implementation-final.log`), after generating web bindings with `scripts/build-web-core.ps1`; the first run lacked those ignored artifacts. Targeted quote/timeline JVM tests passed. No device validation or deployment.

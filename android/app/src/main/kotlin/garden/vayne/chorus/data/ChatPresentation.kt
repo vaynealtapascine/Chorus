@@ -27,6 +27,36 @@ object ChatPresentation {
         return named.entries(front ?: named.bodyId)
     }
 
+    data class FrontEvent(val at: Long, val text: String)
+
+    /**
+     * "Foxglove started fronting" lines for our own chats (web's chat-list.ts frontEvents): switches
+     * that began after [from] and by [to]. Starts in the same minute and layer read as one line.
+     */
+    fun frontEvents(intervals: List<FrontInterval>, from: Long, to: Long, nameOf: (String, String) -> String?,
+        layerName: (String) -> String?): List<FrontEvent> {
+        data class G(val at: Long, val level: String, val names: MutableList<String>)
+        val groups = LinkedHashMap<String, G>()
+        for (iv in intervals.sortedBy { it.startAt }) {
+            if (iv.startAt <= from || iv.startAt > to) continue
+            val name = nameOf(iv.subjectType, iv.subjectId) ?: continue
+            val g = groups.getOrPut("${iv.startAt / 60_000}|${iv.level}") { G(iv.startAt, iv.level, mutableListOf()) }
+            if (name !in g.names) g.names.add(name)
+        }
+        return groups.values.sortedBy { it.at }.map { g ->
+            val layer = (layerName(g.level) ?: g.level).lowercase()
+            val who = if (g.names.size > 2) g.names.dropLast(1).joinToString(", ") + " & " + g.names.last() else g.names.joinToString(" & ")
+            val verb = when {
+                g.level == "cocon" -> "became co-conscious"
+                g.level == "present" -> "came near"
+                layer.endsWith("ing") -> "started $layer"
+                g.level == "front" -> "started fronting"
+                else -> "joined $layer"
+            }
+            FrontEvent(g.at, "$who $verb")
+        }
+    }
+
     fun layer(model: Model, entry: Entry?): String? = entry?.let {
         if (model.namedFronts != null) model.namedFronts.liveLayers.find { layer -> layer.id == it.level }?.name
         else when (it.level) { "front" -> "fronting"; "cocon" -> "co-conscious"; "present" -> "nearby"; else -> null }

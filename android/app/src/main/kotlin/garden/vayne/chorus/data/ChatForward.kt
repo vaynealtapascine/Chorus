@@ -28,9 +28,22 @@ object ChatForward {
         else -> emptyList()
     }
 
+    /** Expand selections to complete Unicode scalar values while retaining UTF-16 wire offsets. */
+    fun safeRange(text: String, part: IntRange?): IntRange {
+        if (part == null || part.isEmpty() || part.first < 0 || part.last >= text.length) return text.indices
+        var start = part.first
+        var end = part.last + 1
+        if (start > 0 && text[start].isLowSurrogate() && text[start - 1].isHighSurrogate()) start--
+        if (end < text.length && text[end - 1].isHighSurrogate() && text[end].isLowSurrogate()) end++
+        return start until end
+    }
+
     /** Quote one whole message (a range over all of it) or several as a bundle, as web writes them. */
-    fun quote(messages: List<ChatMessage>, channelName: String): JSONObject = if (messages.size == 1) messages[0].let { m ->
-        JSONObject().put("message_id", m.id).put("offset", 0).put("length", m.text.length).put("text", m.text)
+    fun quote(messages: List<ChatMessage>, channelName: String, part: IntRange? = null): JSONObject = if (messages.size == 1) messages[0].let { m ->
+        // part: a UTF-16 range of the text (Kotlin string indices are UTF-16, like message offsets)
+        val range = safeRange(m.text, part)
+        val text = if (m.text.isEmpty()) "" else m.text.substring(range.first, range.last + 1)
+        JSONObject().put("message_id", m.id).put("offset", if (m.text.isEmpty()) 0 else range.first).put("length", text.length).put("text", text)
     } else JSONObject().put("items", JSONArray(messages.map { snapshot(it, channelName) }))
 
     /** Several messages forwarded together as one bundle (D-048), oldest first. */

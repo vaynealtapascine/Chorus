@@ -223,6 +223,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var forwarding by remember { mutableStateOf<ChatMessage?>(null) }
     // quote, reply elsewhere and select several (SPEC §5.3, D-048; web parity)
     var quoting by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    // a part of one quoted message (UTF-16 indices); null: all of it
+    var quotePart by remember { mutableStateOf<IntRange?>(null) }
+    var quotePicking by remember { mutableStateOf<ChatMessage?>(null) }
     var replyIn by remember { mutableStateOf<ChatMessage?>(null) }
     var selectedIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var bundleForward by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
@@ -463,7 +466,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         previousChannel = channel?.id
         editingMessageId = null
         selectedIds = emptyList()
-        quoting = emptyList()
+        quoting = emptyList(); quotePart = null; quotePicking = null
         alsoSend = false
         carriedReply = null
         speakerSettingsOpen = false
@@ -886,6 +889,23 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         val listState = snapshot.reading.list
         val newest = messages.lastOrNull()?.id
         // replies to a message in another chat (Reply in…) show it, if we may see that chat
+        // front-change lines between our own chat's messages (web parity, SPEC §5)
+        val frontRevision by chorus.frontHistoryRevision.collectAsState()
+        val timelineFront = ChatSpeaker.frontOf(model, channel.id)
+        val timelineHistory by produceState<garden.vayne.chorus.data.NamedHistory?>(null, timelineFront, frontRevision, space.kind) {
+            value = null
+            if (space.kind == "internal" && timelineFront != null)
+                value = runCatching { chorus.frontHistory(timelineFront) }.getOrNull()
+        }
+        val timelineIntervals = if (model.namedFronts == null) model.frontIntervals else
+            timelineHistory?.takeIf { it.frontId == timelineFront }?.intervals.orEmpty().map {
+                garden.vayne.chorus.data.FrontInterval(it.id, it.presence.subjectType, it.presence.subjectId,
+                    it.presence.layerId, it.presence.isPrimary, it.startAt, it.endAt)
+            }
+        val frontLines = if (space.kind != "internal" || messages.isEmpty()) emptyList() else
+            ChatPresentation.frontEvents(timelineIntervals, messages.first().occurredAt, System.currentTimeMillis(),
+                { type, id -> model.subject(type, id)?.name },
+                { level -> ChatPresentation.layer(model, Entry("member", "", level, false)) })
         val everywhere = remember(model, viewingAs) {
             model.chatMessages.filterKeys { shownNow(it) }.values.flatten().associateBy { it.id }
         }
@@ -910,6 +930,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             itemsIndexed(messages.asReversed(), key = { _, message -> message.id }) { index, message ->
                 val older = messages.getOrNull(messages.lastIndex - index - 1)
                 val newer = messages.getOrNull(messages.lastIndex - index + 1)
+                // who came to the front since the message before (our own chats; after the newest, until now)
+                val linesBefore = if (older == null) emptyList() else frontLines.filter { it.at > older.occurredAt && it.at <= message.occurredAt }
+                val linesAfter = if (newer == null) frontLines.filter { it.at > message.occurredAt } else emptyList()
                 val groupStart = !ChatPresentation.grouped(older, message) || message.id == firstUnread
                 val groupEnd = !ChatPresentation.grouped(message, newer) || newer?.id == firstUnread
                 Column(Modifier.padding(top = if (groupStart) 8.dp else 0.dp)) {
@@ -922,6 +945,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                             modifier = Modifier.background(p.surface, RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 4.dp))
                     }
                 }
+                for (line in linesAfter.asReversed()) FrontLine(line)
                 val canPrivate = if (space.kind == "internal") replySpeakerId != null &&
                     message.authors.firstOrNull()?.let { it != replySpeakerId && model.member(it) != null } == true
                 else message.accountId != null && message.accountId != chorus.device?.accountId
@@ -940,7 +964,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     quoteElsewhere = message.replyTo?.let { id -> everywhere[id]?.takeIf { it.channelId != message.channelId } }
                         ?.let { q -> model.channels.find { it.id == q.channelId }?.name },
                     onReply = { replyTo = message.id; carriedReply = null },
-                    onQuote = if (heldMessages[message.id] == null) ({ quoting = listOf(message); selectedIds = emptyList() }) else null,
+                    onQuote = if (heldMessages[message.id] == null) ({ quotePicking = message; selectedIds = emptyList() }) else null,
                     onReplyIn = if (heldMessages[message.id] == null) ({ replyIn = message }) else null,
                     selecting = selectedIds.isNotEmpty(), selected = message.id in selectedIds,
                     onSelect = if (heldMessages[message.id] == null) ({
@@ -949,6 +973,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     onEdit = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
                         heldMessages[message.id] == null)
                         ({ editingMessageId = message.id }) else null)
+                for (line in linesBefore.asReversed()) FrontLine(line)
                 }
             }
             // F5.7: the parent heads the thread, then how many replies follow
@@ -988,7 +1013,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             Row(Modifier.fillMaxWidth().background(p.surface2).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 ChatIconButton(R.drawable.ic_close, "Cancel selection") { selectedIds = emptyList() }
                 Text("${picked.size} selected", color = p.ink, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                TextButton(enabled = picked.isNotEmpty(), onClick = { quoting = picked; selectedIds = emptyList() }) { Text("Quote") }
+                TextButton(enabled = picked.isNotEmpty(), onClick = { quoting = picked; quotePart = null; selectedIds = emptyList() }) { Text("Quote") }
                 TextButton(enabled = picked.isNotEmpty(), onClick = { bundleForward = picked; selectedIds = emptyList() }) { Text("Forward") }
             }
         }
@@ -1036,9 +1061,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
                     Text(if (quoting.size == 1) "Quote " + quoting[0].authors.joinToString(" & ", transform = ::nameOf) else "Quote ${quoting.size} messages",
                         color = p.accent, fontSize = 13.sp, lineHeight = 18.sp)
-                    Text(quoting.joinToString(" · ") { ChatPresentation.preview(it) }, color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
+                    Text(quotePart?.let { r -> quoting.singleOrNull()?.text?.let { t -> "“" + t.substring(r.first, (r.last + 1).coerceAtMost(t.length)) + "”" } }
+                        ?: quoting.joinToString(" · ") { ChatPresentation.preview(it) }, color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
                 }
-                ChatIconButton(R.drawable.ic_close, "Cancel quote") { quoting = emptyList() }
+                ChatIconButton(R.drawable.ic_close, "Cancel quote") { quoting = emptyList(); quotePart = null }
             }
             val target = messages.find { it.id == replyTo } ?: carriedReply?.takeIf { it.id == replyTo }
             if (target != null) {
@@ -1241,7 +1267,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                     val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
                                         audience, visibleTo.toSet(), space.kind, replyTo = target?.id, attachmentIds = attachmentIds,
                                         accountId = senderAccount,
-                                        quote = quoted.takeIf { it.isNotEmpty() }?.let { q -> ChatForward.quote(q, model.channels.find { it.id == q.first().channelId }?.name ?: channel.name) })
+                                        quote = quoted.takeIf { it.isNotEmpty() }?.let { q -> ChatForward.quote(q, model.channels.find { it.id == q.first().channelId }?.name ?: channel.name, quotePart) })
                                     if (pollOn) payload.put("poll", Polls.draft(pollOptions.toList(), pollMultiple).getOrThrow())
                                     followNext = true
                                     chorus.create("message.send", chorus.newId(), payload, scope = scope)
@@ -1261,7 +1287,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                     visibleTo = emptyList()
                                     replyTo = null
                                     carriedReply = null
-                                    quoting = emptyList()
+                                    quoting = emptyList(); quotePart = null
                                     moreOpen = false
                                 } catch (e: Exception) {
                                     error = e.message ?: "Could not send the message."
@@ -1357,6 +1383,27 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                             Text(spaceLabel(row.space, directory[row.space.id], chorus.device?.accountId.orEmpty()), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1)
                         }
                     }
+                }
+            }
+        }
+    }
+    // Quote: pick a part of the text (long-press to select), or all of it (SPEC §5.3 partial quotes)
+    quotePicking?.let { message ->
+        var picked by remember(message.id) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(message.text)) }
+        ModalBottomSheet(onDismissRequest = { quotePicking = null }, containerColor = p.surface) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Quote", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
+                Text("Select the part to quote, or quote it all.", color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp)
+                BasicTextField(picked, { next -> picked = next.copy(text = message.text) }, readOnly = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.ink),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp).background(p.surface2, RoundedCornerShape(12.dp)).padding(12.dp)
+                        .semantics { contentDescription = "Message text to quote from" })
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { quoting = listOf(message); quotePart = null; quotePicking = null }) { Text("Quote all") }
+                    val sel = picked.selection
+                    Button(enabled = !sel.collapsed, onClick = {
+                        quoting = listOf(message); quotePart = ChatForward.safeRange(message.text, sel.min until sel.max); quotePicking = null
+                    }) { Text("Quote selection") }
                 }
             }
         }
@@ -2030,4 +2077,15 @@ internal suspend fun sendAttachment(chorus: Chorus, ctx: android.content.Context
     if (scope == null) chorus.create(opKind, id, payload)
     else chorus.create(opKind, id, payload, scope = scope)
     return id
+}
+
+/** "Foxglove started fronting · 10:30" between messages in our own chats. */
+@Composable
+private fun FrontLine(line: ChatPresentation.FrontEvent) {
+    val p = LocalChorusPalette.current
+    Box(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+        Text(line.text + " · " + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(line.at)), color = p.ink3,
+            fontSize = 12.sp, lineHeight = 16.sp, textAlign = TextAlign.Center,
+            modifier = Modifier.background(p.surface, RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 4.dp))
+    }
 }
