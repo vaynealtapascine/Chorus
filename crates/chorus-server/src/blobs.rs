@@ -112,6 +112,10 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
              ((f.target_account_id = a.id AND f.follower_account_id = ?2 AND f.status = 'active')
               OR (f.follower_account_id = a.id AND f.target_account_id = ?2 AND f.status IN ('requested','active')))
              WHERE a.avatar_blob = ?1
+           UNION ALL SELECT 1 FROM account a
+             JOIN space_member sm1 ON sm1.account_id = a.id AND sm1.is_present
+             JOIN space_member sm2 ON sm2.space_id = sm1.space_id AND sm2.account_id = ?2 AND sm2.is_present
+             WHERE a.avatar_blob = ?1
            UNION ALL SELECT 1 FROM member m WHERE (m.avatar_blob = ?1 OR m.banner_blob = ?1)
               AND m.account_id = ?2 AND m.deleted_at IS NULL
            UNION ALL SELECT 1 FROM member_group g WHERE g.avatar_blob = ?1 AND g.account_id = ?2 AND g.deleted_at IS NULL

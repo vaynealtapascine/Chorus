@@ -718,3 +718,59 @@ fn a_phone_without_push_asks_for_what_is_new_and_not_its_own() {
     assert!(ids(0, "phone").is_empty());
     assert_eq!(ids(0, "laptop"), ["hi @June"]);
 }
+
+#[test]
+fn chat_and_sender_icons_follow_space_channel_and_dm_rules() {
+    let mut w = W::new();
+    let (a, b, space) = (w.a.clone(), w.b.clone(), w.space.clone());
+    let space_id = space.strip_prefix("space:").unwrap().to_string();
+    let kai_avatar = "a".repeat(64);
+    let chan_avatar = "b".repeat(64);
+    let kai = new_id(NOW as u64, [40; 10]);
+    let june = new_id(NOW as u64, [41; 10]);
+    w.push(
+        &a,
+        "member.create",
+        &format!("account:{a}"),
+        &kai,
+        json!({"name": "Kai", "color": "#EEAA62", "sigils": ["✦"], "avatar_blob": kai_avatar}),
+    );
+    w.push(&b, "member.create", &format!("account:{b}"), &june, json!({"name": "June"}));
+    let mention = json!([{"type": "mention", "offset": 0, "length": 5, "target_type": "member", "target_id": june}]);
+
+    // 1. Single-channel shared space (#general in "Club") uses the space's title and initial disc
+    let m1 = new_id(NOW as u64, [50; 10]);
+    w.push(&a, "message.send", &space, &m1, msg("@June welcome", &[&kai], mention.clone()));
+    notifier::process_due(&w.c, NOW + 1_000_000).unwrap();
+    let items = notifier::list_for(&w.c, &b, None, 0, 10).unwrap()["items"].as_array().unwrap().clone();
+    assert_eq!(items[0]["title"], "Kai · Club");
+    assert_eq!(items[0]["chat"]["title"], "Club");
+    assert_eq!(items[0]["chat"]["glyph"], "C");
+    assert_eq!(items[0]["chat"]["direct"], false);
+    assert!(items[0]["chat"]["color"].as_str().unwrap().starts_with('#'));
+    assert_eq!(items[0]["sender"]["name"], "Kai");
+    assert_eq!(items[0]["sender"]["glyph"], "✦");
+    assert_eq!(items[0]["sender"]["color"], "#EEAA62");
+    assert_eq!(items[0]["sender"]["avatar_blob"], kai_avatar);
+
+    // 2. Second channel with custom avatar_blob and colour carries both space+channel title and channel avatar
+    let spoilers = new_id(NOW as u64, [35; 10]);
+    w.push(
+        &a,
+        "channel.create",
+        &space,
+        &spoilers,
+        json!({"space_id": space_id, "kind": "text", "name": "spoilers", "color": "#8FB8E8", "avatar_blob": chan_avatar}),
+    );
+    let m2 = new_id(NOW as u64, [51; 10]);
+    let mut sp_msg = msg("@June ch4!", &[&kai], mention);
+    sp_msg["channel_id"] = json!(spoilers);
+    w.push(&a, "message.send", &space, &m2, sp_msg);
+    notifier::process_due(&w.c, NOW + 1_000_000).unwrap();
+    let items = notifier::list_for(&w.c, &b, None, 0, 10).unwrap()["items"].as_array().unwrap().clone();
+    assert_eq!(items[0]["chat"]["title"], "Club · #spoilers");
+    assert_eq!(items[0]["chat"]["glyph"], "S");
+    assert_eq!(items[0]["chat"]["color"], "#8FB8E8");
+    assert_eq!(items[0]["chat"]["avatar_blob"], chan_avatar);
+    assert_eq!(items[0]["chat"]["direct"], false);
+}

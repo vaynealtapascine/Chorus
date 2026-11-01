@@ -213,23 +213,15 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
         return Ok(());
     }
     let channel_id = p.get("channel_id").and_then(Value::as_str).unwrap_or_default();
-    type Row = (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>);
-    let (channel_name, space_kind, space_owner, channel_kind, member_ids): Row = conn
-        .query_row(
-            "SELECT c.name, s.kind, s.owner_account_id, c.kind, c.member_ids
-             FROM channel c LEFT JOIN space s ON s.id = c.space_id WHERE c.id = ?1",
-            [channel_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
-        )
-        .optional()?
-        .unwrap_or_default();
-    let is_dm = space_kind.as_deref() == Some("dm");
+    let meta = load_channel_meta(conn, channel_id)?;
+    let is_dm = meta.space_kind.as_deref() == Some("dm");
 
     // why each account should hear about it
     let mut why: BTreeMap<String, &'static str> = BTreeMap::new();
-    if space_kind.as_deref() == Some("internal") && space_owner.as_deref() == Some(author) {
-        let member_dm = (channel_kind.as_deref() == Some("member_dm"))
-            .then(|| member_ids.and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok()).unwrap_or_default());
+    if meta.space_kind.as_deref() == Some("internal") && meta.space_owner.as_deref() == Some(author) {
+        let member_dm = (meta.kind.as_deref() == Some("member_dm")).then(|| {
+            meta.member_ids.as_deref().and_then(|s| serde_json::from_str::<Vec<String>>(s).ok()).unwrap_or_default()
+        });
         if let Some(kind) = own_kind(conn, p, o.time(), author, channel_id, member_dm)? {
             why.insert(author.to_string(), kind);
         }
@@ -246,7 +238,7 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     }
     let others = viewers;
     if others.is_empty() {
-        return queue(conn, o, why, channel_name, now);
+        return queue(conn, o, why, &meta, now);
     }
     if let Some(reply_to) = p.get("reply_to").and_then(Value::as_str) {
         let owner: Option<String> = conn
@@ -285,7 +277,255 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
             why.insert(a.clone(), "message");
         }
     }
-    queue(conn, o, why, channel_name, now)
+    queue(conn, o, why, &meta, now)
+}
+
+/// Steady fallback disc palette matching `web/src/lib/chat-list.ts` (`discColor`).
+const DISCS: [&str; 6] = ["#B99CE8", "#F08C7F", "#EEAA62", "#DCA3CC", "#8FB8E8", "#86BFA5"];
+
+fn disc_color(id: &str) -> &'static str {
+    let mut h: u32 = 0;
+    for u in id.encode_utf16() {
+        h = h.wrapping_mul(31).wrapping_add(u32::from(u));
+    }
+    DISCS[(h as usize) % DISCS.len()]
+}
+
+fn first_glyph(text: &str, general_hash: bool) -> String {
+    let trimmed = text.trim();
+    if general_hash && trimmed.eq_ignore_ascii_case("general") {
+        return "#".into();
+    }
+    trimmed.chars().next().map(|c| c.to_uppercase().collect::<String>()).unwrap_or_else(|| "#".into())
+}
+
+#[derive(Default)]
+struct ChannelMeta {
+    space_id: Option<String>,
+    space_kind: Option<String>,
+    space_owner: Option<String>,
+    space_name: Option<String>,
+    space_icon: Option<String>,
+    space_color: Option<String>,
+    kind: Option<String>,
+    name: Option<String>,
+    icon: Option<String>,
+    color: Option<String>,
+    avatar_blob: Option<String>,
+    parent_message_id: Option<String>,
+    member_ids: Option<String>,
+}
+
+fn load_channel_meta(conn: &Connection, channel_id: &str) -> anyhow::Result<ChannelMeta> {
+    let mut m = conn
+        .query_row(
+            "SELECT c.space_id, s.kind, s.owner_account_id, s.name, s.icon, s.color,
+                    c.kind, c.name, c.icon, c.color, c.avatar_blob, c.parent_message_id, c.member_ids
+             FROM channel c LEFT JOIN space s ON s.id = c.space_id WHERE c.id = ?1",
+            [channel_id],
+            |r| {
+                Ok(ChannelMeta {
+                    space_id: r.get(0)?,
+                    space_kind: r.get(1)?,
+                    space_owner: r.get(2)?,
+                    space_name: r.get(3)?,
+                    space_icon: r.get(4)?,
+                    space_color: r.get(5)?,
+                    kind: r.get(6)?,
+                    name: r.get(7)?,
+                    icon: r.get(8)?,
+                    color: r.get(9)?,
+                    avatar_blob: r.get(10)?,
+                    parent_message_id: r.get(11)?,
+                    member_ids: r.get(12)?,
+                })
+            },
+        )
+        .optional()?
+        .unwrap_or_default();
+    if m.kind.as_deref() == Some("thread")
+        && let Some(parent_msg) = m.parent_message_id.as_deref()
+        && let Some((pname, picon, pcolor, pavatar)) = conn
+            .query_row(
+                "SELECT ch.name, ch.icon, ch.color, ch.avatar_blob
+                 FROM message msg JOIN channel ch ON ch.id = msg.channel_id WHERE msg.id = ?1",
+                [parent_msg],
+                |r| Ok((r.get::<_, Option<String>>(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?
+    {
+        if m.name.as_deref().is_none_or(|n| n.eq_ignore_ascii_case("thread") || n.trim().is_empty()) {
+            m.name = pname;
+        }
+        if m.icon.as_deref().is_none_or(|s| s.trim().is_empty()) {
+            m.icon = picon;
+        }
+        if m.color.is_none() {
+            m.color = pcolor;
+        }
+        if m.avatar_blob.is_none() {
+            m.avatar_blob = pavatar;
+        }
+    }
+    Ok(m)
+}
+
+#[derive(Clone, Default)]
+struct AuthorCard {
+    glyph: Option<String>,
+    color: Option<String>,
+    avatar_blob: Option<String>,
+}
+
+fn author_card(conn: &Connection, member_id: &str) -> anyhow::Result<AuthorCard> {
+    type Row = (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>);
+    let row: Option<Row> = conn
+        .query_row(
+            "SELECT name, display_name, color, json_extract(sigils, '$[0]'), avatar_blob
+             FROM member WHERE id = ?1 AND deleted_at IS NULL",
+            [member_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .optional()?;
+    let Some((name, display, color, sigil, avatar_blob)) = row else {
+        return Ok(AuthorCard::default());
+    };
+    let shown = display.filter(|s| !s.trim().is_empty()).or(name).unwrap_or_default();
+    let glyph = sigil
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| (!shown.trim().is_empty()).then(|| first_glyph(&shown, false)));
+    Ok(AuthorCard { glyph, color, avatar_blob })
+}
+
+fn chat_visual(
+    conn: &Connection,
+    meta: &ChannelMeta,
+    channel_id: &str,
+    recipient: &str,
+    author_account: Option<&str>,
+    who: &str,
+    first_author: &AuthorCard,
+) -> anyhow::Result<(String, Value)> {
+    let clean = |opt: &Option<String>| opt.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let c_icon = clean(&meta.icon);
+    let c_color = clean(&meta.color);
+    let c_avatar = clean(&meta.avatar_blob);
+    let c_name = clean(&meta.name);
+    let s_name = clean(&meta.space_name);
+    let s_icon = clean(&meta.space_icon);
+    let s_color = clean(&meta.space_color);
+    let space_id = meta.space_id.as_deref().unwrap_or(channel_id);
+
+    let (chat_title, glyph, color, avatar_blob, direct, headline) = match meta.space_kind.as_deref() {
+        Some("dm") => {
+            type PeerRow = (Option<String>, Option<String>, Option<String>, String);
+            let peer: Option<PeerRow> = if let Some(sid) = meta.space_id.as_deref() {
+                conn.query_row(
+                    "SELECT a.handle, a.display_name, a.avatar_blob, a.kind
+                     FROM space_member sm JOIN account a ON a.id = sm.account_id
+                     WHERE sm.space_id = ?1 AND sm.is_present AND a.id <> ?2 LIMIT 1",
+                    params![sid, recipient],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )
+                .optional()?
+            } else {
+                None
+            }
+            .or_else(|| {
+                author_account.filter(|a| *a != recipient).and_then(|aid| {
+                    conn.query_row(
+                        "SELECT handle, display_name, avatar_blob, kind FROM account WHERE id = ?1",
+                        [aid],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                    )
+                    .optional()
+                    .ok()
+                    .flatten()
+                })
+            });
+            let (handle, display, acct_avatar, acct_kind) = peer.unwrap_or_default();
+            let display_clean = clean(&display);
+            let handle_clean = clean(&handle);
+            let peer_label = display_clean
+                .clone()
+                .or_else(|| handle_clean.as_ref().map(|h| format!("@{h}")))
+                .unwrap_or_else(|| who.to_string());
+            let glyph_seed = display_clean.or(handle_clean).unwrap_or_else(|| peer_label.clone());
+            let is_person = acct_kind == "person";
+            let avatar = c_avatar
+                .or_else(|| clean(&acct_avatar))
+                .or_else(|| if is_person { first_author.avatar_blob.clone() } else { None });
+            let col = c_color
+                .or_else(|| if is_person { first_author.color.clone() } else { None })
+                .or_else(|| Some(disc_color(space_id).to_string()));
+            let gl = c_icon
+                .or_else(|| if is_person { first_author.glyph.clone() } else { None })
+                .unwrap_or_else(|| first_glyph(&glyph_seed, false));
+            let top = if peer_label == who { who.to_string() } else { format!("{who} · {peer_label}") };
+            (peer_label, gl, col, avatar, true, top)
+        }
+        Some("internal") if meta.kind.as_deref() == Some("member_dm") => {
+            let avatar = c_avatar.or_else(|| first_author.avatar_blob.clone());
+            let col = c_color.or_else(|| first_author.color.clone());
+            let gl = c_icon.or_else(|| first_author.glyph.clone()).unwrap_or_default();
+            (who.to_string(), gl, col, avatar, true, who.to_string())
+        }
+        Some("shared") => {
+            let chan_count: i64 = if let Some(sid) = meta.space_id.as_deref() {
+                conn.query_row(
+                    "SELECT COUNT(*) FROM channel WHERE space_id = ?1 AND kind <> 'thread' AND deleted_at IS NULL",
+                    [sid],
+                    |r| r.get(0),
+                )
+                .unwrap_or(1)
+            } else {
+                1
+            };
+            let is_general = c_name.as_deref().is_none_or(|c| c.eq_ignore_ascii_case("general"));
+            let single_general = chan_count <= 1 && is_general;
+            let label = match (&s_name, &c_name) {
+                (Some(s), _) if single_general => s.clone(),
+                (Some(s), Some(c)) => format!("{s} · #{c}"),
+                (_, Some(c)) => format!("#{c}"),
+                (Some(s), None) => s.clone(),
+                (None, None) => "Chorus".into(),
+            };
+            let top = match (&s_name, &c_name) {
+                (Some(s), _) if single_general => format!("{who} · {s}"),
+                (Some(s), Some(c)) => format!("{who} · {s} #{c}"),
+                (_, Some(c)) => format!("{who} · #{c}"),
+                _ => who.to_string(),
+            };
+            let gl = c_icon.unwrap_or_else(|| {
+                if is_general {
+                    s_icon.unwrap_or_else(|| {
+                        s_name.as_deref().map(|s| first_glyph(s, false)).unwrap_or_else(|| "#".into())
+                    })
+                } else {
+                    c_name.as_deref().map(|c| first_glyph(c, true)).unwrap_or_else(|| "#".into())
+                }
+            });
+            let col = c_color.or(s_color).or_else(|| Some(disc_color(space_id).to_string()));
+            (label, gl, col, c_avatar, false, top)
+        }
+        _ => {
+            let guest = meta.space_owner.as_deref().is_some_and(|o| o != recipient);
+            let label = c_name.as_ref().map(|c| format!("#{c}")).unwrap_or_else(|| "Chorus".into());
+            let top = c_name.as_ref().map(|c| format!("{who} · #{c}")).unwrap_or_else(|| who.to_string());
+            let gl =
+                c_icon.unwrap_or_else(|| c_name.as_deref().map(|c| first_glyph(c, true)).unwrap_or_else(|| "#".into()));
+            let col = c_color.or_else(|| guest.then(|| disc_color(channel_id).to_string()));
+            (label, gl, col, c_avatar, false, top)
+        }
+    };
+    let mut chat = json!({"title": chat_title, "glyph": glyph, "direct": direct});
+    if let Some(c) = color {
+        chat["color"] = json!(c);
+    }
+    if let Some(a) = avatar_blob {
+        chat["avatar_blob"] = json!(a);
+    }
+    Ok((headline, chat))
 }
 
 /// "Own switches from other devices" (§7, off unless `notify_chat.own_switch` is true): queued
@@ -426,7 +666,7 @@ fn queue(
     conn: &Connection,
     o: &Op,
     why: BTreeMap<String, &'static str>,
-    channel_name: Option<String>,
+    meta: &ChannelMeta,
     now: i64,
 ) -> anyhow::Result<()> {
     if why.is_empty() {
@@ -434,21 +674,35 @@ fn queue(
     }
     let p = &o.payload;
     let channel_id = p.get("channel_id").and_then(Value::as_str).unwrap_or_default();
+    let author_ids: Vec<&str> =
+        p.get("authors").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
     let mut authors = Vec::new();
-    for m in p.get("authors").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+    for m in &author_ids {
         authors.push(name_of(conn, m)?.unwrap_or_else(|| "Someone".into()));
     }
     let who = if authors.is_empty() { "Someone".to_string() } else { authors.join(" & ") };
+    let first_author = match author_ids.first() {
+        Some(m) => author_card(conn, m)?,
+        None => AuthorCard::default(),
+    };
+    let mut sender = json!({"name": who});
+    if let Some(g) = &first_author.glyph {
+        sender["glyph"] = json!(g);
+    }
+    if let Some(c) = &first_author.color {
+        sender["color"] = json!(c);
+    }
+    if let Some(a) = &first_author.avatar_blob {
+        sender["avatar_blob"] = json!(a);
+    }
     let text: String = p.get("text").and_then(Value::as_str).unwrap_or_default().chars().take(280).collect();
     for (recipient, kind) in why {
-        let title = match (kind, &channel_name) {
-            ("dm" | "member_dm", _) => who.clone(),
-            (_, Some(c)) => format!("{who} · #{c}"),
-            _ => who.clone(),
-        };
+        let (title, chat) =
+            chat_visual(conn, meta, channel_id, &recipient, o.account_id.as_deref(), &who, &first_author)?;
         let mut payload = json!({
             "t": "message", "kind": kind, "title": title, "text": text,
             "channel_id": channel_id, "message_id": o.entity_id, "scope": o.scope,
+            "chat": chat, "sender": sender,
         });
         // Advanced "reply as mentioned member" (§7): an inline reply speaks as the recipient's
         // member this message names (not one of its authors) instead of whoever is fronting

@@ -9,6 +9,7 @@ import android.content.Intent
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.Person
 import com.google.firebase.messaging.FirebaseMessaging
 import garden.vayne.chorus.MainActivity
 import java.util.Base64
@@ -413,7 +414,13 @@ object Push {
         nm.createNotificationChannel(NotificationChannel(CHANNEL_MESSAGES, "Mentions, replies and DMs", NotificationManager.IMPORTANCE_HIGH))
     }
 
-    internal fun show(ctx: Context, p: JSONObject) {
+    internal fun showAsync(ctx: Context, p: JSONObject, done: () -> Unit = {}) {
+        scope.launch {
+            try { show(ctx, p) } finally { done() }
+        }
+    }
+
+    internal suspend fun show(ctx: Context, p: JSONObject) {
         val kind = p.optString("t")
         if (kind == "sync") {
             SyncWork.enqueue(ctx)
@@ -423,26 +430,87 @@ object Push {
         ensureChannels(ctx)
         val isMessage = kind == "message"
         val highPriority = isMessage || kind == "test"
-        val open = PendingIntent.getActivity(
-            ctx, 0, Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE,
-        )
         val time = p.optJSONObject("time")
         val at = time?.optLong("at", 0L)?.takeIf { it > 0 && time.optString("precision") != "none" }
-        // one notification per followed account (latest state wins); one per message
-        val key = if (isMessage) p.optString("message_id") else p.optString("account_id").ifEmpty { kind.ifEmpty { "chorus" } }
-        val n = NotificationCompat.Builder(ctx, if (highPriority) CHANNEL_MESSAGES else CHANNEL_SWITCHES)
-            .setSmallIcon(garden.vayne.chorus.R.drawable.ic_stat_chorus)
-            .setContentTitle(p.optString("title", "Chorus"))
-            .setContentText(p.optString("text"))
-            .setAutoCancel(true)
-            .setContentIntent(open)
-            .setGroup(if (isMessage) "messages:" + p.optString("channel_id") else "switches:" + key)
-            // the shown time is the fuzzed one the follower may know, never the real switch time
-            .apply { if (at != null) setWhen(at).setShowWhen(true) else setShowWhen(false) }
-            .apply { if (isMessage) Reply.action(ctx, p, key.hashCode())?.let { addAction(it) } }
-            .build()
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+
+        val n = if (isMessage) {
+            val chorus = Chorus.get(ctx)
+            val model = if (chorus.status.value == garden.vayne.chorus.data.Status.Loading && chorus.device != null) {
+                kotlinx.coroutines.withTimeoutOrNull(1_500L) { runCatching { chorus.awaitModel() }.getOrNull() } ?: chorus.model.value
+            } else {
+                chorus.model.value
+            }
+            val spec = NotificationIcons.resolveSpec(p, model)
+            val key = if (spec.channelId.isNotEmpty()) "chat:${spec.channelId}" else p.optString("message_id").ifEmpty { "chorus" }
+            val noteId = key.hashCode()
+            val openIntent = Intent(ctx, MainActivity::class.java)
+                .setAction(MainActivity.ACTION_OPEN_CHAT)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .apply {
+                    if (spec.channelId.isNotEmpty()) putExtra(MainActivity.EXTRA_OPEN_CHANNEL, spec.channelId)
+                    spec.spaceId?.let { putExtra(MainActivity.EXTRA_OPEN_SPACE, it) }
+                }
+            val open = PendingIntent.getActivity(
+                ctx, noteId, openIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val cleanIcon = NotificationIcons.renderChatIcon(ctx, chorus.device, spec)
+            val shortcutId = NotificationIcons.publishConversationShortcut(ctx, spec, cleanIcon, openIntent)
+            val largeIcon = if (shortcutId != null) cleanIcon else NotificationIcons.withChorusBadge(ctx, cleanIcon)
+
+            val group = !spec.direct || !spec.chatTitle.equals(spec.senderName, ignoreCase = true)
+            val self = Person.Builder().setName("You").build()
+            val sender = Person.Builder()
+                .setName(spec.senderName.ifBlank { "Someone" })
+                .setKey("sender:${spec.senderName}")
+                .build()
+            val existing = nm?.activeNotifications?.firstOrNull { it.id == noteId }?.notification
+                ?.let { NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(it) }
+            val style = NotificationCompat.MessagingStyle(self)
+                .setGroupConversation(group)
+                .setConversationTitle(if (group) spec.chatTitle else null)
+            existing?.messages?.takeLast(5)?.forEach { style.addMessage(it) }
+            style.addMessage(p.optString("text"), at ?: System.currentTimeMillis(), sender)
+
+            val builder = NotificationCompat.Builder(ctx, CHANNEL_MESSAGES)
+                .setSmallIcon(garden.vayne.chorus.R.drawable.ic_stat_chorus)
+                .setColor(NotificationIcons.BRAND_COLOR)
+                .setContentTitle(p.optString("title", "Chorus"))
+                .setContentText(p.optString("text"))
+                .setLargeIcon(largeIcon)
+                .setStyle(style)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .setContentIntent(open)
+                .setGroup("messages:${spec.channelId}")
+                .setWhen(at ?: System.currentTimeMillis())
+                .setShowWhen(true)
+            if (shortcutId != null) builder.setShortcutId(shortcutId)
+            Reply.action(ctx, p, noteId)?.let { builder.addAction(it) }
+            noteId to builder.build()
+        } else {
+            val key = p.optString("account_id").ifEmpty { kind.ifEmpty { "chorus" } }
+            val noteId = key.hashCode()
+            val open = PendingIntent.getActivity(
+                ctx,
+                noteId,
+                Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val builder = NotificationCompat.Builder(ctx, if (highPriority) CHANNEL_MESSAGES else CHANNEL_SWITCHES)
+                .setSmallIcon(garden.vayne.chorus.R.drawable.ic_stat_chorus)
+                .setColor(NotificationIcons.BRAND_COLOR)
+                .setContentTitle(p.optString("title", "Chorus"))
+                .setContentText(p.optString("text"))
+                .setAutoCancel(true)
+                .setContentIntent(open)
+                .setGroup("switches:$key")
+                // the shown time is the fuzzed one the follower may know, never the real switch time
+                .apply { if (at != null) setWhen(at).setShowWhen(true) else setShowWhen(false) }
+            noteId to builder.build()
+        }
         if (NotificationManagerCompat.from(ctx).areNotificationsEnabled()) {
-            runCatching { NotificationManagerCompat.from(ctx).notify(key.hashCode(), n) }
+            runCatching { NotificationManagerCompat.from(ctx).notify(n.first, n.second) }
         }
     }
 }

@@ -38,7 +38,15 @@ object PinnedShortcuts {
                         .putExtra(EXTRA_MEMBER_ID, member.id).putExtra(EXTRA_ACCOUNT_ID, account))
                     .build()
             }
-            manager.dynamicShortcuts = shortcuts
+            val existing = manager.dynamicShortcuts
+            val oldMembers = existing.map { it.id }.filter { it.startsWith("member:") }
+            if (oldMembers.isNotEmpty()) manager.removeDynamicShortcuts(oldMembers)
+            if (shortcuts.isNotEmpty()) {
+                val chatIds = existing.map { it.id }.filter { !it.startsWith("member:") }
+                val overflow = (chatIds.size + shortcuts.size) - manager.maxShortcutCountPerActivity
+                if (overflow > 0) manager.removeDynamicShortcuts(chatIds.take(overflow))
+                manager.addDynamicShortcuts(shortcuts)
+            }
             lastKey = key
         } catch (e: Exception) {
             Log.w("ChorusShortcuts", "could not refresh pinned shortcuts", e)

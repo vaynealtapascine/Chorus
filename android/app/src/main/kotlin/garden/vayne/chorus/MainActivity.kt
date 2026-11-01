@@ -80,12 +80,22 @@ import garden.vayne.chorus.ui.ContentSearch
 import garden.vayne.chorus.ui.Journal
 import garden.vayne.chorus.ui.InsightsScreen
 
+private data class OpenChatRequest(val id: Long, val spaceId: String?, val channelId: String)
+
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val ACTION_OPEN_CHAT = "garden.vayne.chorus.OPEN_CHAT"
+        const val EXTRA_OPEN_CHANNEL = "garden.vayne.chorus.OPEN_CHANNEL"
+        const val EXTRA_OPEN_SPACE = "garden.vayne.chorus.OPEN_SPACE"
+    }
+
     private var inviteLink = mutableStateOf<String?>(null)
     private var sharedDraft = mutableStateOf<SharedDraft?>(null)
     private var nextShareId = 0L
     private var newEntryRequest = mutableStateOf<Long?>(null)
     private var nextEntryId = 0L
+    private var openChatRequest = mutableStateOf<OpenChatRequest?>(null)
+    private var nextOpenChatId = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,6 +103,7 @@ class MainActivity : ComponentActivity() {
         inviteLink.value = inviteFrom(intent)
         sharedDraft.value = SharedDraft.from(intent, ++nextShareId)
         if (intent.action == "garden.vayne.chorus.NEW_ENTRY") newEntryRequest.value = ++nextEntryId
+        openChatFrom(intent)?.let { openChatRequest.value = it }
         val chorus = Chorus.get(this)
         SyncWork.schedulePeriodic(this)
         garden.vayne.chorus.data.NotifyCheck.start(this)
@@ -106,7 +117,9 @@ class MainActivity : ComponentActivity() {
         garden.vayne.chorus.data.Updater.schedule(this)
         setContent { InspectionOverrides(intent) { ChorusTheme { App(chorus, inviteLink.value, sharedDraft.value,
             onShareDismissed = { sharedDraft.value = null }, newEntryRequest = newEntryRequest.value,
-            onNewEntryConsumed = { newEntryRequest.value = null }) } } }
+            onNewEntryConsumed = { newEntryRequest.value = null },
+            openChatRequest = openChatRequest.value,
+            onOpenChatConsumed = { openChatRequest.value = null }) } } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -117,6 +130,10 @@ class MainActivity : ComponentActivity() {
         if (intent.action == "garden.vayne.chorus.NEW_ENTRY") {
             sharedDraft.value = null
             newEntryRequest.value = ++nextEntryId
+        }
+        openChatFrom(intent)?.let {
+            sharedDraft.value = null
+            openChatRequest.value = it
         }
     }
 
@@ -141,6 +158,12 @@ class MainActivity : ComponentActivity() {
 
     private fun inviteFrom(i: Intent?): String? =
         i?.takeIf { it.action == Intent.ACTION_VIEW }?.data?.toString()?.takeIf { "/i/" in it }
+
+    private fun openChatFrom(i: Intent?): OpenChatRequest? {
+        val channel = i?.getStringExtra(EXTRA_OPEN_CHANNEL)?.takeIf { it.isNotBlank() } ?: return null
+        val space = i.getStringExtra(EXTRA_OPEN_SPACE)?.takeIf { it.isNotBlank() }
+        return OpenChatRequest(++nextOpenChatId, space, channel)
+    }
 }
 
 private enum class Tab(val label: String, val icon: AppIcon) { Home("Fronting", AppIcon.Front), Chat("Chat", AppIcon.Chat), Journal("Journal", AppIcon.Journal), People("Friends", AppIcon.Friends), Members("Members", AppIcon.Members), More("More", AppIcon.More), History("Front history", AppIcon.History) }
@@ -148,7 +171,8 @@ private enum class Tab(val label: String, val icon: AppIcon) { Home("Fronting", 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
-    onShareDismissed: () -> Unit, newEntryRequest: Long?, onNewEntryConsumed: () -> Unit) {
+    onShareDismissed: () -> Unit, newEntryRequest: Long?, onNewEntryConsumed: () -> Unit,
+    openChatRequest: OpenChatRequest? = null, onOpenChatConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val context = LocalContext.current
     val navPrefs = remember { context.getSharedPreferences("chorus.navigation", 0) }
@@ -213,6 +237,16 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
         tab = Tab.Journal
         onNewEntryConsumed()
+    }
+    LaunchedEffect(openChatRequest?.id, status) {
+        val req = openChatRequest ?: return@LaunchedEffect
+        if (status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
+        chatSpace = req.spaceId ?: model.channels.find { it.id == req.channelId }?.spaceId
+        chatChannel = req.channelId
+        chatSearchHit = null
+        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
+        tab = Tab.Chat
+        onOpenChatConsumed()
     }
     BackHandler(sharedDraft != null || settingsOpen || searchOpen || insightsOpen || frontsOpen) {
         if (sharedDraft != null) onShareDismissed()

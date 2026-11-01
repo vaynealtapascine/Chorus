@@ -299,11 +299,17 @@ never imply eligibility. Raw front/purpose metadata remains private to the ownin
   of the recipient's members the message mentions, never one of its authors) to the push, and the
   reply speaks as that member while they're active.
 
-Android: MessagingStyle notifications with member avatars as `Person`s, grouped per channel;
-inline reply (`RemoteInput`) sends as the current primary fronter (or the member the notification
-mentions, if Advanced "reply as mentioned member" is on) and works offline (queued op).
-Notification channels: Switches, Digests, Mentions, Direct messages, Replies, Channels, System —
-the user can tune each in Android settings too.
+Android: `MessagingStyle` conversation notifications (`data/Push.kt`, `data/NotificationIcons.kt`),
+stacked per channel (`chat:<channel_id>`) and opening directly to that chat when tapped. Each
+message notification carries the icon of the chat or space being messaged — channel `avatar_blob`
+photo, DM peer avatar/disc, shared-space disc, custom channel disc, or soft-teal `#` disc matching
+`ChannelDisc` — resolved from `chat`/`sender` fields in the encrypted push (and `GET /notifications`)
+with a local `Model` fallback so icons appear before sync catches up. On Android 11+ a long-lived
+conversation shortcut places the chat icon at the front of the notification with the small Chorus
+`"O"` badge tinted in Chorus teal in the bottom-right corner (`withChorusBadge` composites the same
+corner badge directly when conversation shortcuts aren't used). Inline reply (`RemoteInput`) sends
+as the current primary fronter (or `reply_as` when Advanced "reply as mentioned member" is on) and
+works offline (queued op).
 
 ## 7a. Implementation (`chorus_core::notify`)
 

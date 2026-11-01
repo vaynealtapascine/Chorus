@@ -61,9 +61,14 @@ object NotifyCheck {
                 .put("text", i.optString("text")).put("time", i.optJSONObject("time") ?: JSONObject())
         }
         "mention", "dm", "reply", "message", "member_dm" -> JSONObject().put("t", "message").put("id", i.optString("id"))
+            .put("kind", i.optString("kind"))
             .put("title", i.text("title") ?: "Chorus").put("text", i.optString("text"))
             .put("channel_id", i.optString("channel_id")).put("message_id", i.optString("message_id"))
-            .put("scope", i.optString("scope")).apply { i.text("reply_as")?.let { put("reply_as", it) } }
+            .put("scope", i.optString("scope")).apply {
+                i.text("reply_as")?.let { put("reply_as", it) }
+                i.optJSONObject("chat")?.let { put("chat", it) }
+                i.optJSONObject("sender")?.let { put("sender", it) }
+            }
         // own switches from another device: shown like a followed account's switch, keyed apart
         "own_switch" -> JSONObject().put("t", "switch").put("id", i.optString("id")).put("account_id", "own")
             .put("title", i.text("title") ?: "Chorus").put("text", i.optString("text"))

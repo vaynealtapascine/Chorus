@@ -841,11 +841,18 @@ pub fn list_for(
         if device.is_some() && p["from_device"].as_str() == device {
             continue;
         }
-        items.push(json!({
+        let mut item = json!({
             "id": id, "kind": kind, "title": p["title"], "text": p["text"],
             "channel_id": p["channel_id"], "message_id": p["message_id"], "scope": p["scope"], "reply_as": p["reply_as"],
             "time": {"at": delivered, "precision": "exact"}, "delivered_at": delivered,
-        }));
+        });
+        if !p["chat"].is_null() {
+            item["chat"] = p["chat"].clone();
+        }
+        if !p["sender"].is_null() {
+            item["sender"] = p["sender"].clone();
+        }
+        items.push(item);
     }
     items.sort_by_key(|i| std::cmp::Reverse(i["delivered_at"].as_i64().unwrap_or(0)));
     items.truncate(limit as usize);

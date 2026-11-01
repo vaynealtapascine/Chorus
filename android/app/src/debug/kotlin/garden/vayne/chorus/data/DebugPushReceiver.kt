@@ -15,6 +15,7 @@ import org.json.JSONObject
 class DebugPushReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val payload = intent.getStringExtra("payload") ?: return
-        Push.show(context.applicationContext, JSONObject(payload))
+        val pending = goAsync()
+        Push.showAsync(context.applicationContext, JSONObject(payload)) { pending.finish() }
     }
 }
