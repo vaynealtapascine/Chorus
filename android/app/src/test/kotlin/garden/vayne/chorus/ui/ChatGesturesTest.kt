@@ -22,6 +22,26 @@ class ChatGesturesTest {
         assertEquals(1, replies)
     }
 
+    @Test fun eitherDirectionReplies() {
+        var replies = 0
+        val swipe = ReplySwipe(kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined), 64f, 128f)
+        swipe.enabled = true; swipe.motion = false; swipe.onReply = { replies++ }
+        swipe.start(); swipe.move(-200f)
+        assertTrue(swipe.armed)
+        assertTrue(swipe.towardEnd)
+        assertTrue(swipe.translation > 0f)
+        assertEquals(1f, swipe.progress, 0f)
+        swipe.end(true)
+        assertEquals(1, replies)
+        // crossing back over the middle follows the finger to the other side
+        swipe.start(); swipe.move(-200f); swipe.move(400f)
+        assertFalse(swipe.towardEnd)
+        assertTrue(swipe.translation < 0f)
+        swipe.end(false)
+        assertEquals(1, replies)
+        assertEquals(0f, swipe.translation, 0f)
+    }
+
     @Test fun rtlMirrorsTheVisualOffsetWithoutChangingTheThreshold() {
         val swipe = ReplySwipe(kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined), 64f, 128f)
         swipe.motion = false; swipe.start(); swipe.move(200f)

@@ -15,6 +15,7 @@
   import AvatarImage from './AvatarImage.svelte';
   import EmojiImage from './EmojiImage.svelte';
   import { sync, type Revision } from '../sync/client';
+  import { swipeReply } from '../swipe-reply';
 
   export type Quote = TextRange;
   export type Forwarded = SnapshotItem;
@@ -109,9 +110,12 @@
   let actionTrigger = $state<HTMLButtonElement>();
   const menuId = $derived(`message-actions-${m.id}`);
   function runAction(action: () => unknown) { actionMenu?.hidePopover(); action(); }
+  /** Where a tap opened the menu; otherwise it hangs from the ⋯ button. */
+  let anchor: { left: number; bottom: number } | null = null;
   function placeActions() {
-    if (!actionMenu || !actionTrigger) return;
-    const r = actionTrigger.getBoundingClientRect();
+    const r = anchor ?? actionTrigger?.getBoundingClientRect();
+    anchor = null;
+    if (!actionMenu || !r) return;
     const box = actionMenu.getBoundingClientRect();
     actionMenu.style.left = `${Math.max(12, Math.min(r.left, innerWidth - box.width - 12))}px`;
     actionMenu.style.top = `${Math.max(12, Math.min(r.bottom + 4, innerHeight - box.height - 12))}px`;
@@ -144,14 +148,17 @@
     e.stopPropagation();
     onjump(target);
   }
-  // where there's no hover, a tap on the bubble shows its time and "edited" (owner, 2026-11-02);
-  // links, buttons and a text selection keep their own clicks
-  let details = $state(false);
+  // where there's no hover, a tap on the bubble opens its actions, which carry the time
+  // (owner, 2026-11-02); links, buttons and a text selection keep their own clicks
   function tapBubble(e: MouseEvent) {
     if ((e.target as Element).closest('a, button, input, textarea, video, audio, [role="button"]')) return;
     if (getSelection()?.isCollapsed === false) return;
-    details = !details;
+    if (selecting) { onselect(); return; }
+    if (!actionMenu || matchMedia('(hover: hover) and (min-width: 641px)').matches) return;
+    anchor = { left: e.clientX, bottom: e.clientY };
+    actionMenu.showPopover();
   }
+  const when = $derived(new Date(m.occurred_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }));
   let body: HTMLElement | undefined = $state();
 
   /** DOM text positions and message offsets are both UTF-16. */
@@ -186,12 +193,14 @@
     {#if thread}<button class="link" onclick={onthread}>Open thread · {thread.replyCount} {thread.replyCount === 1 ? 'reply' : 'replies'}</button>{/if}
   </div></div>
 {:else}
-  <div class="msg-row" class:out class:cont class:last>
+  <div class="msg-row" class:out class:cont class:last use:swipeReply={{ enabled: !heldUntil && !selecting, onreply }}>
+  <span class="swipe-hint" aria-hidden="true"><Icon name="action-reply" size={18} /></span>
+  {#if out}{@render aside()}{/if}
   {#if !out}
     <span class="slot">{#if last}{@const a = m.authors[0] ?? ''}<span class="avatar" style="--ring: {color(a).ring}; --avatar-ink: {color(a).avatar_ink}" title={nameOf(a)}><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></span>{/if}</span>
   {/if}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="msg" class:cont class:self={out} class:pinned={m.pinned} class:selected class:details data-message-id={m.id} onclick={tapBubble}>
+  <div class="msg" class:cont class:self={out} class:pinned={m.pinned} class:selected data-message-id={m.id} onclick={tapBubble}>
     {#if !cont || selecting}
       <div class="head">
         {#if selecting}<button class="select-toggle" aria-label={selected ? 'Deselect message' : 'Select message'} aria-pressed={selected} onclick={onselect}>{selected ? '☑' : '□'}</button>{/if}
@@ -312,14 +321,12 @@
         </button>
       {/if}
     </div>{/if}
-    <div class="meta">
-      {#if unseen.length}<span class="unseen" title="Not seen by {unseen.join(', ')}" aria-label="Not seen by {unseen.join(', ')}">●</span>{/if}
-      <span class="stamp">
-        {#if m.edited}<button class="edited" onclick={toggleHistory} aria-expanded={!!history}>edited</button>{/if}
-        <time datetime={new Date(m.occurred_at).toISOString()}>{time(m.occurred_at)}</time>
-      </span>
-      {#if out}<span class="sent" class:pending={!m.account_id} title={m.account_id ? 'Sent' : 'Waiting to sync'}><Icon name={m.account_id ? 'read' : 'history'} size={14} /></span>{/if}
-    </div>
+    {#if unseen.length || out}
+      <div class="meta">
+        {#if unseen.length}<span class="unseen" title="Not seen by {unseen.join(', ')}" aria-label="Not seen by {unseen.join(', ')}">●</span>{/if}
+        {#if out}<span class="sent" class:pending={!m.account_id} title={m.account_id ? 'Sent' : 'Waiting to sync'}><Icon name={m.account_id ? 'read' : 'history'} size={14} /></span>{/if}
+      </div>
+    {/if}
     {#if palette}
       <div class="palette" role="listbox" aria-label="React">
         {#each PALETTE as e (e)}
@@ -340,6 +347,7 @@
     {#if !heldUntil}
     <button class="action-trigger" bind:this={actionTrigger} popovertarget={menuId} aria-label="Message actions" title="Message actions"><Icon name="more" size={18} /></button>
     <div class="actions" bind:this={actionMenu} id={menuId} popover="auto" ontoggle={(e) => { if (e.newState === 'open') placeActions(); }} role="group" aria-label="Message actions">
+      <p class="when"><time datetime={new Date(m.occurred_at).toISOString()}>{when}</time>{m.edited ? ' · edited' : ''}</p>
       <button onclick={() => runAction(() => (palette = !palette))} title="React" disabled={!speaker}><Icon name="smile" size={20} />React</button>
       <button onclick={() => runAction(onreply)} title="Reply"><Icon name="action-reply" size={20} />Reply</button>
       <button onclick={() => runAction(onreplyin)} title="Reply in another channel"><Icon name="action-reply" size={20} />Reply in another channel</button>
@@ -349,6 +357,7 @@
       <button onclick={() => runAction(onselect)} title={selected ? 'Deselect message' : 'Select for bundle'} aria-label={selected ? 'Deselect message' : 'Select for bundle'}><Icon name="select" size={20} />{selected ? 'Deselect' : 'Select for bundle'}</button>
       <button onclick={() => runAction(onthread)} title={thread ? 'Open thread' : 'Start thread'} aria-label={thread ? 'Open thread' : 'Start thread'}><Icon name="action-thread" size={20} />{thread ? 'Open thread' : 'Start thread'}</button>
       <button onclick={() => runAction(onpin)} title={m.pinned ? 'Unpin' : 'Pin'}><Icon name="action-pin" size={20} />{m.pinned ? 'Unpin' : 'Pin'}</button>
+      {#if m.edited}<button onclick={() => runAction(toggleHistory)} title="What it said before"><Icon name="history" size={20} />{history ? 'Hide edit history' : 'Edit history'}</button>{/if}
       {#if mine}
         <button onclick={() => runAction(onedit)} title="Edit"><Icon name="action-edit" size={20} />Edit</button>
         <button class="delete-action" onclick={() => runAction(ondelete)} title="Delete"><Icon name="delete" size={20} />Delete</button>
@@ -356,13 +365,22 @@
     </div>
     {/if}
   </div>
+  {#if !out}{@render aside()}{/if}
   </div>
 {/if}
+
+<!-- beside the bubble: "edited" always, the time on hover where there is one (owner, 2026-11-02) -->
+{#snippet aside()}
+  <span class="aside" class:bare={!m.edited}>
+    {#if m.edited}<button class="edited" onclick={toggleHistory} aria-expanded={!!history} title="Edit history">edited</button>{/if}
+    <time class="stamp" datetime={new Date(m.occurred_at).toISOString()}>{time(m.occurred_at)}</time>
+  </span>
+{/snippet}
 
 <style>
   /* Bubbles (Figma F5.21): others on the left with their face beside the last of a run, the one
      speaking here on the right; names open a run, time and a sent tick close each bubble. */
-  .msg-row { display: flex; align-items: flex-end; gap: 8px; padding: 2px 64px 2px 0; min-width: 0; }
+  .msg-row { position: relative; display: flex; align-items: flex-end; gap: 8px; padding: 2px 64px 2px 0; min-width: 0; touch-action: pan-y pinch-zoom; }
   .msg-row:not(.cont) { margin-top: 6px; }
   .msg-row.out { justify-content: flex-end; padding: 2px 0 2px 72px; }
   .slot { flex: none; width: 32px; height: 32px; }
@@ -433,16 +451,25 @@
   .thread-avatars { display: flex; }
   .thread-avatar + .thread-avatar { margin-left: -5px; }
   .meta { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: -2px; font-size: 11px; line-height: 14px; color: var(--ink-3); }
-  .meta time { font-size: 11px; }
-  /* the time and "edited" wait for a hover, focus or tap (owner, 2026-11-02): beside the bubble
-     with a mouse, so nothing moves; inside it after a tap on touch and narrow screens */
-  .stamp { display: none; align-items: center; gap: 4px; white-space: nowrap; }
-  .msg.details .stamp, .msg-row:focus-within .stamp { display: inline-flex; }
+  /* beside the bubble (owner, 2026-11-02): "edited" stays in sight; the time waits for a hover or
+     focus with a mouse, so nothing moves, and lives in the actions a tap opens elsewhere */
+  .aside { position: relative; flex: none; display: inline-flex; padding-bottom: 5px; font-size: 11px; line-height: 14px; color: var(--ink-3); }
+  .aside.bare { margin-left: -8px; }
+  .msg-row.out .aside.bare { margin-left: 0; margin-right: -8px; }
+  .stamp { display: none; white-space: nowrap; }
   @media (hover: hover) and (min-width: 641px) {
-    .stamp { display: inline-flex; position: absolute; bottom: 4px; left: calc(100% + 8px); opacity: 0; pointer-events: none; transition: opacity var(--t-fast) var(--ease); }
-    .msg.self .stamp { left: auto; right: calc(100% + 8px); }
-    .msg-row:hover .stamp, .msg-row:focus-within .stamp { opacity: 1; pointer-events: auto; }
+    .stamp { display: block; position: absolute; bottom: 5px; left: calc(100% + 8px); opacity: 0; pointer-events: none; transition: opacity var(--t-fast) var(--ease); }
+    .msg-row.out .stamp { left: auto; right: calc(100% + 8px); }
+    .msg-row:hover .stamp, .msg-row:focus-within .stamp { opacity: 1; }
   }
+  /* swipe either way to reply (touch): the row follows the finger, the reply mark waits behind */
+  .msg-row:global(.swiping) > :not(.swipe-hint), .msg-row:global(.returning) > :not(.swipe-hint) { transform: translateX(var(--swipe, 0px)); }
+  .msg-row:global(.returning) > :not(.swipe-hint) { transition: transform var(--t-base) var(--ease); }
+  .swipe-hint { position: absolute; top: 50%; right: 8px; width: 32px; height: 32px; margin-top: -16px; display: none; place-items: center; border-radius: 50%;
+    background: var(--surface-3); color: var(--accent); opacity: var(--swipe-p, 0); transform: scale(calc(0.5 + 0.5 * var(--swipe-p, 0))); transition: transform var(--t-fast) var(--ease); }
+  .msg-row:global(.toward-end) .swipe-hint { right: auto; left: 8px; }
+  .msg-row:global(.swiping) .swipe-hint, .msg-row:global(.returning) .swipe-hint { display: grid; }
+  .msg-row:global(.armed) .swipe-hint { transform: scale(1.2); }
   .sent { display: inline-grid; color: var(--accent); }
   .sent.pending { color: var(--ink-3); }
   .unseen { color: var(--accent); font-size: 9px; }
@@ -460,6 +487,7 @@
   }
   .actions { position: fixed; inset: auto; margin: 0; width: 280px; max-width: calc(100vw - 24px); max-height: min(70dvh, 560px); overflow-y: auto; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-pop); padding: 6px; }
   .actions:popover-open { display: grid; }
+  .when { margin: 0 0 4px; padding: 6px 12px 8px; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); color: var(--ink-3); }
   .actions button { display: flex; gap: 14px; align-items: center; background: none; border: 0; cursor: pointer; min-height: 44px; padding: 10px 12px; border-radius: 10px; color: var(--ink); text-align: left; font-size: var(--fs-md); }
   .actions button :global(.icon) { color: var(--ink-3); }
   .actions button:hover { background: var(--surface-2); }

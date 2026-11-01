@@ -135,9 +135,6 @@ import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import kotlinx.coroutines.Dispatchers
@@ -1655,6 +1652,13 @@ private fun ChatChip(label: String, selected: Boolean, action: () -> Unit) {
             .clickable(onClick = action).heightIn(min = 48.dp).wrapContentSize(Alignment.Center).padding(horizontal = 12.dp, vertical = 8.dp))
 }
 
+/** The small "edited" beside a bubble, on the side away from the avatar. */
+@Composable
+private fun EditedMark() {
+    Text("edited", color = LocalChorusPalette.current.ink3, fontSize = 11.sp, lineHeight = 14.sp,
+        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp))
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
@@ -1678,8 +1682,6 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
-    // a tap shows the time and edit history; long press is for actions (owner, 2026-11-02)
-    var details by rememberSaveable(message.id) { mutableStateOf(false) }
     val motion = rememberChorusMotion()
     val ring = remember(message.id) { Animatable(0f) }
     LaunchedEffect(flash) {
@@ -1687,8 +1689,6 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
         ring.snapTo(1f)
         if (motion) ring.animateTo(0f, tween(1400)) else { delay(1200); ring.snapTo(0f) }
     }
-    var history by remember(message.id, message.text, message.cw) { mutableStateOf<List<MessageRevision>?>(null) }
-    var historyError by remember(message.id) { mutableStateOf<String?>(null) }
     var showUnseen by rememberSaveable(message.id) { mutableStateOf(false) }
     var cancelBusy by remember(message.id) { mutableStateOf(false) }
     var cancelError by remember(message.id) { mutableStateOf<String?>(null) }
@@ -1720,7 +1720,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     }) else null
     val openActions = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuOpen = true }
     Box(Modifier.fillMaxWidth().swipeToReply(swipe)) {
-    if (swipe.active) ReplySwipeHint(swipe, Modifier.align(Alignment.CenterEnd))
+    if (swipe.active) ReplySwipeHint(swipe)
     Row(Modifier.fillMaxWidth().graphicsLayer { translationX = swipe.translation }.padding(start = if (own) 36.dp else 0.dp),
         horizontalArrangement = if (own) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.Bottom) {
         if (!own) {
@@ -1734,6 +1734,9 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             }
             Spacer(Modifier.width(8.dp))
         }
+        // "edited" stays in sight beside the bubble; the time waits in the actions (owner, 2026-11-02)
+        val edited = held == null && message.edited
+        if (own && edited) EditedMark()
         Box(Modifier.weight(1f, fill = false)) {
         Column(Modifier.widthIn(min = 64.dp, max = 360.dp)
             .then(if (reactions.isNotEmpty()) Modifier.width(IntrinsicSize.Max) else Modifier).heightIn(min = 48.dp)
@@ -1743,8 +1746,9 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             .then(if (settled) Modifier.semantics { customActions = listOf(CustomAccessibilityAction("Reply") { onReply(); true }) } else Modifier)
             .then(if (selected) Modifier.border(2.dp, p.accent, RoundedCornerShape(16.dp))
                 else if (ring.value > 0f) Modifier.border(2.dp, p.accent.copy(alpha = ring.value), RoundedCornerShape(16.dp)) else Modifier)
-            .then(if (interactive) Modifier.combinedClickable(onClick = { if (selecting && onSelect != null) onSelect() else details = !details },
-                onClickLabel = if (details) "Hide time" else "Show time",
+            // a tap or long press opens the actions, which also show the time and edit history (owner, 2026-11-02)
+            .then(if (interactive) Modifier.combinedClickable(onClick = { if (selecting && onSelect != null) onSelect() else menuOpen = true },
+                onClickLabel = "Message actions",
                 onLongClick = if (selecting && onSelect != null) onSelect else openActions,
                 onLongClickLabel = "Message actions", onDoubleClick = heart) else Modifier)
             .padding(horizontal = 11.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -1782,7 +1786,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             }
             if (item.text.isNotBlank() && (message.cw == null || revealed)) RichBody(item.text, item.entities,
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
-                onPlainClick = { if (interactive) { if (selecting && onSelect != null) onSelect() else details = !details } },
+                onPlainClick = { if (interactive) { if (selecting && onSelect != null) onSelect() else menuOpen = true } },
                 onLongClick = if (settled) openActions else null, onDoubleClick = heart)
         }
         // what it quotes: part of one message or a bundle (SPEC §5.3), shown as the snapshot it carries
@@ -1833,36 +1837,13 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
         if (message.cw == null || revealed) {
             if (message.text.isNotBlank() && message.text != message.forward.joinToString("\n") { it.text })
                 RichBody(message.text, message.entities, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
-                    onPlainClick = { if (interactive) { if (selecting && onSelect != null) onSelect() else details = !details } },
+                    onPlainClick = { if (interactive) { if (selecting && onSelect != null) onSelect() else menuOpen = true } },
                     onLongClick = if (settled) openActions else null, onDoubleClick = heart)
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus, authors, message.occurredAt)
             }
             // Same resolved acting speaker as the composer: explicit selection or channel default.
             PollCard(chorus, model, message.id, garden.vayne.chorus.data.Polls.chatMember(model, actingMemberId))
-            if (held == null && message.edited && details) {
-                TextButton(onClick = {
-                    if (history != null) history = null else actions.launch {
-                        try { history = chorus.revisions(message.id); historyError = null }
-                        catch (e: Exception) { historyError = e.message ?: "Could not load edit history." }
-                    }
-                }) { Text(if (history == null) "Edited · View history" else "Hide edit history") }
-                if (historyError != null) Text(historyError.orEmpty(), color = p.danger)
-                history?.forEach { revision ->
-                    var revisionRevealed by rememberSaveable(message.id, revision.rev) {
-                        mutableStateOf(revision.contentWarning == null)
-                    }
-                    Column(Modifier.fillMaxWidth().background(p.surface2).padding(8.dp)) {
-                        Text("${if (revision.original) "Original" else "Edit ${revision.rev}"} · " +
-                            DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(revision.at)),
-                            color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
-                        if (revision.contentWarning != null) Text(
-                            "Content warning: ${revision.contentWarning} · ${if (revisionRevealed) "Hide" else "Show"}",
-                            color = p.accent, modifier = Modifier.clickable { revisionRevealed = !revisionRevealed })
-                        if (revisionRevealed) Text(revision.text, color = p.ink)
-                    }
-                }
-            }
         }
         if (thread != null && thread.replies > 0) Row(Modifier.heightIn(min = 48.dp)
             .then(if (onThread != null) Modifier.clickable(onClickLabel = "Open thread", onClick = onThread) else Modifier),
@@ -1872,26 +1853,25 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             }
             Text(ChatThreads.repliesLabel(thread.replies), color = p.accent, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
         }
-        if (reactions.isNotEmpty() || message.pinned || held != null || details) Row(Modifier.then(if (reactions.isNotEmpty()) Modifier.fillMaxWidth() else Modifier.align(Alignment.End)),
+        if (reactions.isNotEmpty() || message.pinned || held != null) Row(Modifier.then(if (reactions.isNotEmpty()) Modifier.fillMaxWidth() else Modifier.align(Alignment.End)),
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (reactions.isNotEmpty()) ReactionChips(reactions, actingMemberId, Modifier.weight(1f),
                 { id -> model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone" }, onReact.takeIf { held == null })
             if (message.pinned) androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_pin), "Pinned",
                 Modifier.size(14.dp), tint = p.ink3)
-            AnimatedVisibility(details, enter = fadeIn(ChorusMotion.tween(motion, ChorusMotion.Quick)),
-                exit = fadeOut(ChorusMotion.tween(motion, ChorusMotion.Quick))) {
-                Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.occurredAt)) + if (message.edited) " · edited" else "",
-                    color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
-            }
             if (held != null) ChatIcon(R.drawable.ic_history, "Message held for slow mode")
         }
         }
         HeartPop(hearts, Modifier.align(Alignment.Center))
         }
+        if (!own && edited) EditedMark()
     }
     }
     if (menuOpen) Dialog(onDismissRequest = { menuOpen = false }) {
         var allEmoji by remember(message.id) { mutableStateOf(false) }
+        // what it said before (SPEC §5.3), fetched when asked and shown under the message here
+        var history by remember(message.id, message.text, message.cw) { mutableStateOf<List<MessageRevision>?>(null) }
+        var historyError by remember(message.id) { mutableStateOf<String?>(null) }
         Column(Modifier.fillMaxWidth().heightIn(max = 680.dp).verticalScroll(rememberScrollState())
             .semantics { contentDescription = "Message actions" },
             horizontalAlignment = if (own) Alignment.End else Alignment.Start, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1902,6 +1882,25 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 .padding(horizontal = 12.dp, vertical = 8.dp)) {
                 Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp)
                 Text(ChatPresentation.preview(message), color = p.ink, maxLines = 4, fontSize = 15.sp, lineHeight = 20.sp)
+                Text(ChatPresentation.dateLabel(message.occurredAt) + ", " +
+                    DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.occurredAt)) +
+                    if (held == null && message.edited) " · edited" else "", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
+                    modifier = Modifier.padding(top = 2.dp))
+                if (historyError != null) Text(historyError.orEmpty(), color = p.danger, fontSize = 12.sp, lineHeight = 16.sp)
+                history?.forEach { revision ->
+                    var revisionRevealed by rememberSaveable(message.id, revision.rev) {
+                        mutableStateOf(revision.contentWarning == null)
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 6.dp), color = p.line)
+                    Text("${if (revision.original) "Original" else "Edit ${revision.rev}"} · " +
+                        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(revision.at)),
+                        color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+                    if (revision.contentWarning != null) Text(
+                        "Content warning: ${revision.contentWarning} · ${if (revisionRevealed) "Hide" else "Show"}",
+                        color = p.accent, fontSize = 14.sp, lineHeight = 19.sp,
+                        modifier = Modifier.clickable { revisionRevealed = !revisionRevealed }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
+                    if (revisionRevealed) Text(revision.text, color = p.ink, fontSize = 14.sp, lineHeight = 19.sp)
+                }
             }
         Surface(shape = RoundedCornerShape(12.dp), color = p.surface, modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)) {
             Column(Modifier.padding(vertical = 4.dp)) {
@@ -1932,6 +1931,12 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 if (onForward != null) ChatActionRow(R.drawable.ic_forward, "Forward") { menuOpen = false; onForward() }
                 if (onSelect != null) ChatActionRow(R.drawable.ic_check, "Select") { menuOpen = false; onSelect() }
                 if (onEdit != null && (message.cw == null || revealed)) ChatActionRow(R.drawable.ic_edit, "Edit") { menuOpen = false; onEdit() }
+                if (held == null && message.edited) ChatActionRow(R.drawable.ic_history, if (history == null) "Edit history" else "Hide edit history") {
+                    if (history != null) history = null else actions.launch {
+                        try { history = chorus.revisions(message.id); historyError = null }
+                        catch (e: Exception) { historyError = e.message ?: "Could not load edit history." }
+                    }
+                }
                 if (held == null) ChatActionRow(R.drawable.ic_layers, "Select in stage mode") { menuOpen = false; onStage() }
                 if (held == null && unseenBy.isNotEmpty()) ChatActionRow(R.drawable.ic_members, "Not seen by…") { showUnseen = !showUnseen; menuOpen = false }
                 if (onDelete != null) ChatActionRow(R.drawable.ic_delete, "Delete", danger = true) { menuOpen = false; onDelete() }

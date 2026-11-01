@@ -6,6 +6,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -29,10 +30,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
+import kotlin.math.sign
 
-/** Swipe to reply: the bubble follows the finger toward the start with growing resistance. */
+/** Swipe to reply: the bubble follows the finger either way with growing resistance (owner, 2026-11-02: both directions). */
 internal object SwipeReply {
     /** Shown distance (dp) at which a release replies and the tick fires. */
     const val ThresholdDp = 64f
@@ -49,8 +52,10 @@ internal object SwipeReply {
 /** Drag state of one message. The shift is a layer offset, so following the finger never recomposes. */
 @Stable
 internal class ReplySwipe(private val scope: CoroutineScope, private val threshold: Float, private val limit: Float) {
+    /** Toward the start is negative, toward the end positive (before the RTL [sign]). */
     private var shift by mutableStateOf(0f)
     private var returning: Job? = null
+    /** Signed finger travel, positive toward the start. */
     private var finger = 0f
     var enabled = false
     var motion = true
@@ -58,10 +63,12 @@ internal class ReplySwipe(private val scope: CoroutineScope, private val thresho
     var haptic: HapticFeedback? = null
     var onReply: () -> Unit = {}
 
-    /** Pixels the message is moved toward the start, as a signed layer translation. */
+    /** Pixels the message is moved, as a signed layer translation. */
     val translation: Float get() = shift * sign
+    /** Pulled toward the end: the hint waits at the start instead. */
+    val towardEnd: Boolean get() = shift > 0f
     /** 0..1 on the way to the threshold. */
-    val progress: Float get() = (-shift / threshold).coerceIn(0f, 1f)
+    val progress: Float get() = (abs(shift) / threshold).coerceIn(0f, 1f)
     /** Past the threshold: releasing now replies. */
     var armed by mutableStateOf(false); private set
     /** Dragging or springing back; the hint behind the bubble exists only meanwhile. */
@@ -70,16 +77,16 @@ internal class ReplySwipe(private val scope: CoroutineScope, private val thresho
     fun start() {
         returning?.cancel()
         active = true
-        finger = SwipeReply.drag(-shift, limit)
+        finger = -sign(shift) * SwipeReply.drag(abs(shift), limit)
     }
 
     fun move(towardStart: Float) {
-        finger = (finger + towardStart).coerceAtLeast(0f)
-        val pulled = SwipeReply.pull(finger, limit)
+        finger += towardStart
+        val pulled = SwipeReply.pull(abs(finger), limit)
         val crossed = pulled >= threshold
         if (crossed && !armed) haptic?.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         armed = crossed
-        shift = -pulled
+        shift = -sign(finger) * pulled
     }
 
     fun end(release: Boolean) {
@@ -109,7 +116,7 @@ internal fun rememberReplySwipe(enabled: Boolean, onReply: () -> Unit): ReplySwi
     return swipe
 }
 
-/** Only a horizontal drag toward the start is taken; vertical scrolling, taps and long presses stay with their owners. */
+/** Only a horizontal drag is taken; vertical scrolling, taps and long presses stay with their owners. */
 internal fun Modifier.swipeToReply(swipe: ReplySwipe): Modifier = if (!swipe.enabled) this else
     pointerInput(swipe) {
         detectHorizontalDragGestures(onDragStart = { swipe.start() }, onDragEnd = { swipe.end(true) },
@@ -119,12 +126,13 @@ internal fun Modifier.swipeToReply(swipe: ReplySwipe): Modifier = if (!swipe.ena
         }
     }
 
-/** The reply icon waiting behind the bubble: fades and grows with the pull, pops once it is armed. */
+/** The reply icon waiting behind the bubble on the side it leaves: fades and grows with the pull, pops once it is armed. */
 @Composable
-internal fun ReplySwipeHint(swipe: ReplySwipe, modifier: Modifier = Modifier) {
+internal fun BoxScope.ReplySwipeHint(swipe: ReplySwipe) {
     val p = LocalChorusPalette.current
     val pop by animateFloatAsState(if (swipe.armed) 1.2f else 1f, if (swipe.motion) ChorusMotion.pop() else snap(), label = "reply pop")
-    Box(modifier.padding(end = 8.dp).size(32.dp).graphicsLayer {
+    Box(Modifier.align(if (swipe.towardEnd) Alignment.CenterStart else Alignment.CenterEnd)
+        .padding(horizontal = 8.dp).size(32.dp).graphicsLayer {
         val shown = swipe.progress
         alpha = shown
         scaleX = (.5f + .5f * shown) * pop
