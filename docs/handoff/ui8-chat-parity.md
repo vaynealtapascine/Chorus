@@ -18,7 +18,7 @@ roles), the members of a members' DM or group, and the members a members-only ch
 
 | # | Slice | State |
 | --- | --- | --- |
-| 1 | Server: private chats (D-098) — `member_ids` on a DM space's channel must name members of the space's accounts; an account with members listed speaks there only as them (send, forward, edit segments, reactions); author cards include listed members; notifications follow each listed member's DM rule (default: only while they front) | |
+| 1 | Server: private chats (D-098) — `member_ids` on a DM space's channel must name members of the space's accounts; an account with members listed speaks there only as them (send, forward, edit segments, reactions); author cards include listed members; notifications follow each listed member's DM rule (default: only while they front) | done (`perms::private_chat`, `tests/private_chats.rs`) |
 | 2 | Web: spaces and member lists (D-099) — chat info editor: name/description of a shared space, people with Add / Remove / role, Leave / Delete group; channel editor (name, topic, icon, colour, members it is kept to); New chat menu: channel, members' DM or group (picker), shared space, DM with a friend | |
 | 3 | Web: private chats — "Private chat as …" from a DM, lock badge and privacy line, composer locked to the member, list rows titled for each side | |
 | 4 | Android: spaces and member lists — people in a space with Add / Remove / role, rename/describe, Leave / Delete; members-only channels and editing a members' DM's people in the channel editor | |

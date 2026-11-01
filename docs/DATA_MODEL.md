@@ -797,7 +797,12 @@ manager (admin, or a DM participant), or `thread` on the parent's channel for a 
 `channel.*` need `manage`; `message.send`/`forward` need `send`; `message.pin`/`unpin` need `pin`;
 other `message.*` need `view` on your own message and `manage` on someone else's, except
 `message.edit`, which only the message's author may send (D-073); `reaction.*`
-needs `react`; `read.*` needs `view`. A refused op is acked `forbidden` with the reason.
+needs `react`; `read.*` needs `view`. Outside the internal space, a channel whose `member_ids`
+name some of the author account's members is a private chat (D-098, `perms::kept_to`; a thread
+uses its parent's channel): that account's `message.send`/`forward`, edit segments and
+`reaction.*` may only speak as those members; `member_ids` may only name members of accounts in
+the space; and a `channel.set` may change only the author account's own entries in it. This
+applies to the owner too. A refused op is acked `forbidden` with the reason.
 Property-tested against an independent model of these rules in `tests/permissions.rs`.
 
 ## 5. What each device stores

@@ -294,7 +294,8 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
     nobody can leave their home space.
   - `GET /spaces/{id}/authors` returns `{accounts, members}`. `members` holds author cards (name,
     display name, pronouns, colour, sigils, avatar) for other accounts' members who wrote a message
-    everyone in the space can read.
+    everyone in the space can read, or whom a private chat you may view is kept to (D-098, its
+    `member_ids`), while their account is in the space.
   - A space you aren't in is a 404.
 Channel list items also carry nullable `avatar_blob` (D-088). Fetch that hash through the ordinary
 blob endpoint; current channel visibility, including thread-parent privacy, gates image reads.

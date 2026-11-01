@@ -174,6 +174,11 @@ pub fn write_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<O
     {
         return Ok(Some("only its author can edit a message".into()));
     }
+    if kind.as_deref() != Some("internal")
+        && let Some(why) = private_chat(conn, author, o, space)?
+    {
+        return Ok(Some(why));
+    }
     if owner == author {
         return Ok(None);
     }
@@ -233,6 +238,103 @@ pub fn write_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<O
         _ if k.starts_with("attachment.") => None,
         _ => role.is_none().then(|| "only the space's members can do that".into()),
     })
+}
+
+/// D-098: the members of `account` a chat outside the system's own space is kept to (its
+/// `member_ids`, in their order; a thread uses its parent message's channel). Empty: the account
+/// isn't limited there. The internal space's members' DMs stay soft (D-097) and never count.
+pub fn kept_to(conn: &Connection, account: &str, channel: &str) -> rusqlite::Result<Vec<String>> {
+    conn.prepare_cached(
+        "SELECT x.value FROM channel c JOIN space s ON s.id = c.space_id AND s.kind <> 'internal'
+         CROSS JOIN json_each(CASE WHEN json_valid(c.member_ids) THEN c.member_ids ELSE '[]' END) x
+         JOIN member mb ON mb.id = x.value AND mb.account_id = ?1
+         WHERE c.id = coalesce((SELECT pm.channel_id FROM channel t JOIN message pm ON pm.id = t.parent_message_id
+                                WHERE t.id = ?2 AND t.kind = 'thread'), ?2)
+         ORDER BY x.key",
+    )?
+    .query_map(params![account, channel], |r| r.get(0))?
+    .collect()
+}
+
+fn member_account(conn: &Connection, member: &str) -> rusqlite::Result<Option<String>> {
+    conn.prepare_cached("SELECT account_id FROM member WHERE id = ?1")?
+        .query_row([member], |r| r.get(0))
+        .optional()
+        .map(Option::flatten)
+}
+
+fn string_list(v: Option<&Value>) -> Vec<String> {
+    v.and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect()
+}
+
+/// D-098, private chats outside the system's own space: an account whose members a chat is kept
+/// to (`member_ids`) speaks there only as them; `member_ids` names only members of the space's
+/// accounts; and only an account changes which of its own members are listed, so the other side
+/// can't open someone's private chat to the rest of their system. `Some(reason)`: refused.
+fn private_chat(conn: &Connection, author: &str, o: &Op, space: &str) -> anyhow::Result<Option<String>> {
+    let p = &o.payload;
+    let k = o.kind.as_str();
+    if matches!(k, "channel.create" | "channel.set") {
+        let Some(listed) = p.get("member_ids") else { return Ok(None) };
+        let listed = string_list(Some(listed));
+        for id in &listed {
+            // a member not projected yet is left alone, like any early reference
+            if let Some(account) = member_account(conn, id)?
+                && !is_member(conn, &account, space)?
+            {
+                return Ok(Some("a private chat can only name members of the accounts in it".into()));
+            }
+        }
+        if k == "channel.set"
+            && let Some(channel) = o.entity()
+        {
+            let before: Option<String> = conn
+                .prepare_cached("SELECT member_ids FROM channel WHERE id = ?1")?
+                .query_row([channel], |r| r.get(0))
+                .optional()?
+                .flatten();
+            let before = string_list(before.and_then(|s| serde_json::from_str::<Value>(&s).ok()).as_ref());
+            let others = |ids: &[String]| -> rusqlite::Result<std::collections::BTreeSet<String>> {
+                let mut out = std::collections::BTreeSet::new();
+                for id in ids {
+                    if member_account(conn, id)?.as_deref() != Some(author) {
+                        out.insert(id.clone());
+                    }
+                }
+                Ok(out)
+            };
+            if others(&before)? != others(&listed)? {
+                return Ok(Some("only an account changes which of its members a private chat is kept to".into()));
+            }
+        }
+        return Ok(None);
+    }
+    let target = |id: Option<&str>| -> rusqlite::Result<Option<String>> {
+        Ok(match id {
+            Some(m) => message_channel(conn, m)?.map(|(c, _)| c),
+            None => None,
+        })
+    };
+    let channel = match k {
+        "message.send" | "message.forward" => str_of(p, "channel_id").map(str::to_string),
+        "message.edit" => target(str_of(p, "message_id").or_else(|| o.entity()))?,
+        "reaction.add" | "reaction.remove" => {
+            target(str_of(p, "target_id").or_else(|| str_of(p, "message_id")).or_else(|| o.entity()))?
+        }
+        _ => return Ok(None),
+    };
+    let Some(channel) = channel else { return Ok(None) };
+    let kept = kept_to(conn, author, &channel)?;
+    if kept.is_empty() {
+        return Ok(None);
+    }
+    let mut speakers = string_list(p.get("authors"));
+    for s in p.get("segments").and_then(Value::as_array).into_iter().flatten() {
+        speakers.extend(string_list(s.get("authors")));
+    }
+    speakers.extend(str_of(p, "member_id").map(str::to_string));
+    Ok((!speakers.iter().all(|s| kept.contains(s)))
+        .then(|| "this private chat is kept to some of your members: only they can speak here".into()))
 }
 
 /// What `o` refers to in a space other than `space` ("channel" or "message"), if anything.

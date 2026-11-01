@@ -276,6 +276,24 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
         if level == "all" && !why.contains_key(a) && !is_dm && kind_wanted(conn, a, "message")? {
             why.insert(a.clone(), "message");
         }
+        // a private chat kept to some of their members (D-098) pings under those members' DM
+        // rule (default: only while one of them fronts), whatever else it would have been
+        let kept = crate::perms::kept_to(conn, a, channel_id)?;
+        if !kept.is_empty() {
+            why.remove(a);
+            let front = fronting(conn, a, channel_id, o.time())?;
+            let mut wanted = false;
+            for m in &kept {
+                wanted |= match member_rule(conn, a, m, "dms")?.as_str() {
+                    "always" => true,
+                    "fronting" => front.iter().any(|f| f == m),
+                    _ => false,
+                };
+            }
+            if wanted && kind_wanted(conn, a, "member_dm")? {
+                why.insert(a.clone(), "member_dm");
+            }
+        }
     }
     queue(conn, o, why, &meta, now)
 }
@@ -722,6 +740,13 @@ fn queue(
                     break;
                 }
             }
+        }
+        // a private chat (D-098): say whose it is, and an inline reply speaks as them (anyone
+        // else would be refused there)
+        if let Some(m) = crate::perms::kept_to(conn, &recipient, channel_id)?.first() {
+            let name = name_of(conn, m)?.unwrap_or_else(|| "Someone".into());
+            payload["title"] = json!(format!("{title} · for {name}"));
+            payload["reply_as"] = json!(m);
         }
         // your own message: the device it was written on doesn't need the ping
         if o.account_id.as_deref() == Some(recipient.as_str())

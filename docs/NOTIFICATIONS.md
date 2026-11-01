@@ -251,6 +251,7 @@ follower surface to its `surfaces` closure. A mutation that reveals one minute e
 | Mention of a member | on | Per member: "notify me for mentions of Kai: always / only when Kai is fronting or co-con / never". `@front` pings current fronters. |
 | DM (account-to-account) | on | |
 | Member DM (internal) | on for recipients fronting | Per member toggle. |
+| Private chat (D-098) | on while that member is fronting | The member's DM rule; the title says whose it is. |
 | Reply to a post / message | on | |
 | Reactions | off | |
 | Channel messages | per channel: all · mentions · none | Default: internal channels "mentions", shared spaces "mentions", DMs "all". |
@@ -287,6 +288,10 @@ never imply eligibility. Raw front/purpose metadata remains private to the ownin
   `fronting`. The authors of the message never ping themselves. Channel levels apply here too
   (internal channels default to `mentions`), and so does `notify_chat` (with a `member_dm` kind).
   The push skips the device the message was written on. The member editor sets both rules.
+- A private chat in a DM (D-098: a channel whose `member_ids` name some of your members) pings
+  under those members' `dms` rule (default `fronting`) as a `member_dm`, instead of as a DM,
+  mention or reply; a muted channel stays quiet. Its title ends "· for Kai" and `reply_as` is the
+  first listed member, so an inline reply speaks as them (the server refuses anyone else there).
 - Own switches from other devices: off unless `notify_chat.own_switch` is `true` (a checkbox under
   People → Recent). Queued after the 15 s settle; a newer switch replaces a pending one, an undone
   (retracted) switch is dropped, silent switches never ping, and the text is the front as it is at

@@ -254,16 +254,26 @@ fn accounts_in(conn: &Connection, space: &str) -> rusqlite::Result<Vec<Value>> {
 }
 
 /// Author cards for a space the reader (`?2`) is in: its accounts, and the members of *other*
-/// accounts who wrote a message the reader can see (public, in a channel it may view).
-fn public_author_source() -> String {
+/// accounts who wrote a message the reader can see (public, in a channel it may view), or whom a
+/// private chat the reader may view is kept to (D-098: the chat is titled before anyone writes).
+/// Rows are `(member_id, space_id)`; a listed member counts only while their account is in the space.
+/// `space` (an SQL expression) keeps both halves to one space, so neither scans every channel.
+fn public_author_source(space: Option<&str>) -> String {
+    let only = space.map(|s| format!(" AND c.space_id = {s}")).unwrap_or_default();
     format!(
-        "FROM channel c
+        "SELECT au.member_id AS member_id, c.space_id AS space_id FROM channel c
  JOIN message m ON m.channel_id = c.id AND m.deleted_at IS NULL AND {}
  JOIN (SELECT message_id, member_id FROM message_author
        UNION SELECT message_id, member_id FROM message_segment_author) au ON au.message_id = m.id
- JOIN member mb ON mb.id = au.member_id AND mb.deleted_at IS NULL
- WHERE c.deleted_at IS NULL",
-        crate::visibility::visible_message_sql("?2")
+ WHERE c.deleted_at IS NULL{only}
+ UNION
+ SELECT x.value, c.space_id FROM channel c JOIN space s ON s.id = c.space_id AND s.kind <> 'internal'
+ CROSS JOIN json_each(CASE WHEN json_valid(c.member_ids) THEN c.member_ids ELSE '[]' END) x
+ JOIN member lm ON lm.id = x.value
+ JOIN space_member sm ON sm.space_id = c.space_id AND sm.account_id = lm.account_id AND sm.is_present
+ WHERE c.deleted_at IS NULL{only} AND {}",
+        crate::visibility::visible_message_sql("?2"),
+        crate::perms::can_sql("?2", "c.id", "view")
     )
 }
 
@@ -271,11 +281,11 @@ fn public_author_source() -> String {
 pub fn author_avatar_visible(conn: &Connection, viewer: &str, hash: &str) -> rusqlite::Result<bool> {
     conn.query_row(
         &format!(
-            "SELECT EXISTS(SELECT 1 {}
-          AND mb.avatar_blob = ?1 AND mb.account_id != ?2
+            "SELECT EXISTS(SELECT 1 FROM ({}) src JOIN member mb ON mb.id = src.member_id AND mb.deleted_at IS NULL
+          WHERE mb.avatar_blob = ?1 AND mb.account_id != ?2
           AND EXISTS (SELECT 1 FROM scope_access sa
-                      WHERE sa.scope = 'space:' || c.space_id AND sa.account_id = ?2))",
-            public_author_source()
+                      WHERE sa.scope = 'space:' || src.space_id AND sa.account_id = ?2))",
+            public_author_source(None)
         ),
         params![hash, viewer],
         |r| r.get(0),
@@ -288,7 +298,8 @@ pub fn authors(conn: &Connection, me: &str, space: &str) -> Result<Value, SpaceE
     }
     let mut st = conn.prepare_cached(&format!(
         "SELECT DISTINCT mb.id, mb.account_id, mb.name, mb.display_name, mb.pronouns, mb.color, mb.sigils, mb.avatar_blob
-         {} AND c.space_id = ?1 AND mb.account_id != ?2", public_author_source()
+         FROM ({}) src JOIN member mb ON mb.id = src.member_id AND mb.deleted_at IS NULL
+         WHERE src.space_id = ?1 AND mb.account_id != ?2", public_author_source(Some("?1"))
     ))?;
     let members: Vec<Value> = st
         .query_map([space, me], |r| {
