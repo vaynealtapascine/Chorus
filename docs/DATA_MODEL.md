@@ -136,6 +136,11 @@ Website 2 and Website 3 (`url`). Reuse the matching live definition with the sma
 otherwise its ID is UUIDv3 of UTF-8 `chorus.profile:<account-id>:<field-name>` (Java's
 `UUID.nameUUIDFromBytes`, MD5 without an additional namespace). New definitions are private.
 Existing definitions, default visibility and member field-visibility maps remain untouched.
+D-101 gives those maps meaning: `member.visibility` is who may open the profile, and
+`member.field_visibility` maps a part key (`display_name`, `pronouns`, `description`, `birthday`,
+`banner`) or a custom field id to its own audience (unset: the profile's for parts, the field's
+`default_visibility` for fields). Friend reads apply them on the server (`profiles.rs`); shared
+fixture `fixtures/ui_profile_audience.json`.
 At Save, preflight **all changed** field slots before any member/field op, on the replica's
 serial worker. Every reused live ID must have the expected type, even when absent at opening;
 a missing formerly-live ID or a tombstone requires reopening. An absent-at-open ID newly used
@@ -217,7 +222,7 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `follow.request` / `follow.accept` / `follow.set_ceiling` / `follow.set_prefs` / `follow.end` | NOTIFICATIONS.md | LWW-F |
 | `emoji.create` / `emoji.set` / `emoji.delete` / `emoji.restore` | `{name, aliases, category, blob_hash, is_animated}` | LWW-F |
 | `stage.save` / `stage.delete` | stage view definitions | LWW-F |
-| `pref.set` | per-account or per-device preferences (`{scope:'account'|'device', key, value}`). Journal saves are one account pref per post, `bookmark:<post id>` = `true` (null clears): private to the account's own devices, never visible to the post's author (UI7). A member who is a subsystem is `member_subsystem:<member id>` = subsystem group id (D-092) | LWW-F |
+| `pref.set` | per-account or per-device preferences (`{scope:'account'|'device', key, value}`). Journal saves are one account pref per post, `bookmark:<post id>` = `true` (null clears): private to the account's own devices, never visible to the post's author (UI7). A member who is a subsystem is `member_subsystem:<member id>` = subsystem group id (D-092). The Members list (D-100): `members.view` = `{pills, role_field?, bio, banners, flat}`, `member_folders` = ordered `[{id, name}]`, `member_folder:<member id>` = folder id | LWW-F |
 | `admin.*` | invites, device revoke, purge | server-only |
 
 The authoritative list is `CATALOGUE` in `chorus-core/src/op.rs` (kind → table, scope, merge action, settable fields); this table documents it. Every payload type is a Rust struct in `chorus-core` with serde; the JSON Schema for each is

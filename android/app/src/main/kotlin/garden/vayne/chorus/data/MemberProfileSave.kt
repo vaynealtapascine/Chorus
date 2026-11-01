@@ -12,7 +12,8 @@ object MemberProfileSave {
         if (existed) require(latest.member(id)?.let { it.createdByAccountId == null || it.createdByAccountId == account } == true) {
             "This member is no longer available. Cancel and reopen the profile."
         }
-        val changed = MemberCustomization.validateDetails(values, List(fields.length()) { fields.getJSONObject(it).getString("value") })
+        val rows = List(fields.length()) { fields.getJSONObject(it).let { r -> r.getString("name") to r.getString("type") } }
+        val changed = MemberCustomization.validateValues(rows, values, List(fields.length()) { fields.getJSONObject(it).getString("value") })
         val details = latest.profileDetails
         val writes = changed.map { i ->
             val opening = fields.getJSONObject(i)
@@ -42,7 +43,7 @@ object MemberProfileSave {
             if (define) ops.add(ProfileSaveOp("field.define", fieldId, JSONObject().put("name", opening.getString("name"))
                 .put("type", opening.getString("type")).put("default_visibility", JSONObject().put("mode", "private"))))
             ops.add(ProfileSaveOp("field.set_value", null, JSONObject().put("member_id", id).put("field_id", fieldId)
-                .put("value", values[i].trim().ifEmpty { null } ?: JSONObject.NULL)))
+                .put("value", MemberCustomization.jsonValue(opening.getString("type"), values[i]))))
         }
         return ops
     }

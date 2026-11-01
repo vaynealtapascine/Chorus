@@ -541,6 +541,7 @@
         </div>
         <div class="actions">
           {#if f.status === 'active'}<button class="ghost" onclick={() => message(f.account.id)}>Message</button>{/if}
+          {#if f.status === 'active' && f.account.kind === 'system'}<a class="ghost" href="#/people/{encodeURIComponent(f.account.id)}">Members</a>{/if}
           <button class="ghost" onclick={() => unfollow(f.id)}>{f.status === 'requested' ? 'Cancel' : 'Unfollow'}</button>
         </div>
         {#if f.status === 'active' && (sharedPosts[f.account.id]?.length ?? 0) > 0}

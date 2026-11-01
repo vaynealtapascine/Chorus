@@ -92,6 +92,9 @@ Fields: name, display name, pronouns, avatar, banner, colour, description (rich 
 fields (typed: text, long text, number, date, select, multi-select, boolean, colour, URL, member
 reference, rating), pinned post, archived flag, sort key, per-field visibility.
 
+One profile editor (D-101) lists every part with its own audience; friends open a followed
+system's shared member profiles from People and see only what each part is shared with.
+
 Android's staged profile editor gives Location and up to three websites first-class controls,
 persisted as ordinary typed custom fields (D-090). Profile media supports adjustable avatar and
 3:1 banner crops. Save persists the draft; Apply crop changes only the draft. Members opens the

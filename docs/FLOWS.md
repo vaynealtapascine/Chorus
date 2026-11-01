@@ -60,7 +60,7 @@ Existing screens are working but unstyled beyond the tokens; nothing below is lo
 
 | ID   | Flow                                                                                                                     | Platforms | Notes                                  |
 | ---- | ------------------------------------------------------------------------------------------------------------------------ | --------- | -------------------------------------- |
-| F4.1 | Members list: grid/list, search, filter chips (group, state, archived), sort                                             | A, W      |                                        |
+| F4.1 | Members list: grid/list, search, filter chips (group, state, archived), sort                                             | A, W      | D-100: role pills, a bio line and banner rows (Customize); folders to sort people into, or one flat list. |
 | F4.2 | Add / edit a member: basics (name, display name, pronouns, colour, avatar crop, sigils)                                  | A, W      | Auto-save.                             |
 | F4.3 | Member editor sections: proxy tags & sigils, custom fields, privacy (who can see), notifications (always/fronting/never) | A, W      | Privacy choice deserves its own frame. |
 | F4.4 | Groups and subsystems: create, nest, colour, move members                                                                | A, W      |                                        |

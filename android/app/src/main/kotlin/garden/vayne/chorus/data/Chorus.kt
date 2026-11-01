@@ -199,6 +199,30 @@ class Chorus private constructor(private val ctx: Context) {
             out.getJSONObject("op").getString("id")
         }
 
+    /** Import a `pk;export` file (D-005), safe to repeat → how many new items, and PluralKit
+     * member id → our member id so avatars can follow. */
+    suspend fun importPluralkit(exportJson: String): Pair<Int, Map<String, String>> =
+        withContext(dispatcher) {
+            check(_status.value != Status.StorageError) { "The local replica could not be saved." }
+            val r = replica ?: error("not set up")
+            val out = JSONObject(r.importPluralkit(exportJson, accountScope, deviceNow()))
+            try {
+                store.save(r.takeChanges())
+            } catch (e: Exception) {
+                storageFailed(e)
+                throw e
+            }
+            rebuild()
+            refreshHeld(r)
+            sendAll(out.getJSONArray("frames"))
+            syncReady.value = false
+            SyncWork.enqueue(ctx)
+            val rows = JSONObject(r.projection()).optJSONObject("rows")?.optJSONObject("member") ?: JSONObject()
+            out.getInt("added") to rows.keys().asSequence().mapNotNull { id ->
+                rows.optJSONObject(id)?.optJSONObject("fields")?.optString("pk_id")?.takeIf { it.isNotEmpty() }?.let { it to id }
+            }.toMap()
+        }
+
     /** Plan against the live replica and apply on its serial worker, without a sync gap. */
     suspend fun saveMemberProfile(id: String, existed: Boolean, patch: JSONObject, fields: JSONArray, values: List<String>, expectedEditorOwner: String? = null) =
         withContext(dispatcher) {

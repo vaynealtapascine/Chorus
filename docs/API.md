@@ -224,6 +224,11 @@ GET  /android/latest                       the published Android build for in-ap
                                            {version_code, version_name, sha256, size, changelog, url}; 404 if none
 GET  /emoji                                the server-wide custom emoji set
 GET  /accounts/{id}/view                   follower view of another account (privacy-filtered, §5 NOTIFICATIONS)
+GET  /accounts/{id}/members                the members of that account shared with you (D-101): {items:[{id, name,
+                                           display_name, pronouns, color, sigil, avatar_blob}]}, unshared parts null
+GET  /accounts/{id}/members/{member}       one shared profile: the card plus description(+_entities), birthday,
+                                           banner_blob and fields:[{id,name,type,value}] shared with you; 404 alike
+                                           for missing and unshared. Never fronting, history or timestamps.
 GET  /follows                               following + followers ({following:[…], followers:[…]}, open ones)
 POST /follows {target:"@handle"|account_id}  ask to follow (201; 200 with the open follow's id if one exists)
 PUT  /follows/{id}/prefs {…}                 the follower's own prefs (NOTIFICATIONS.md §4)

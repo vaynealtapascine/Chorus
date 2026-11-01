@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { core } from '../core';
-  import { buckets, fieldDefs, fieldValues, groupPath, groups, members, membership, type FieldDef, type ProxyTag } from '../data';
+  import { buckets, fieldDefs, fieldValues, groupPath, groups, members, membership, type ProxyTag } from '../data';
   import { router } from '../router.svelte';
   import { sync, type Projection } from '../sync/client';
   import AvatarImage from './AvatarImage.svelte';
+  import ProfileFields from './ProfileFields.svelte';
   import { flushUploads, stageBlob } from '../sync/uploads';
+  import { addFolder, FOLDER_OF, FOLDERS, memberListPrefs } from '../member-list';
 
   let { projection, id, dark }: { projection: Projection; id: string; dark: boolean } = $props();
 
@@ -37,21 +39,6 @@
   let cropX = $state(0);
   let cropY = $state(0);
   let avatarError = $state('');
-  let bannerError = $state('');
-  async function chooseBanner(e: Event) {
-    const file = (e.currentTarget as HTMLInputElement).files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/') || file.size > 4 * 1024 * 1024) {
-      bannerError = 'Choose an image smaller than 4 MB.';
-      return;
-    }
-    try {
-      const upload = await stageBlob(file, file.type, sync.accountId);
-      set({ banner_blob: upload.hash });
-      if (sync.status === 'live') void flushUploads(sync.device);
-      bannerError = '';
-    } catch (error) { bannerError = String(error); }
-  }
   onDestroy(() => cropBitmap?.close());
   async function chooseAvatar(e: Event) {
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
@@ -100,17 +87,7 @@
   }
 
   const text = (e: Event) => (e.currentTarget as HTMLInputElement).value;
-  const opt = (s: string) => (s.trim() === '' ? null : s.trim());
 
-  // description: edited as markup, stored as plain text + entities (D-041)
-  const descMarkup = $derived(
-    m?.description ? core.toMarkup({ text: m.description, entities: (raw.description_entities as never) ?? [] }) : '',
-  );
-  function saveDescription(e: Event) {
-    const src = text(e);
-    const rich = core.parseMarkup(src);
-    set({ description: rich.text || null, description_entities: rich.entities.length ? rich.entities : null });
-  }
 
   const sigilText = $derived(m?.sigils.join(' ') ?? '');
   const sigilClash = $derived(
@@ -129,8 +106,18 @@
     sync.create(on ? 'group.add_member' : 'group.remove_member', sync.accountScope, gid, { member_id: id });
   }
 
-  function setValue(def: FieldDef, value: unknown) {
-    sync.create('field.set_value', sync.accountScope, null, { member_id: id, field_id: def.id, value });
+
+  // which Members list folder they sit in (D-100): only sorts the list
+  const listPrefs = $derived(memberListPrefs((projection.rows.pref ?? {}) as never, sync.accountId));
+  function setFolder(value: string) {
+    let folder: string | null = value || null;
+    if (value === '__new') {
+      const name = prompt('New folder name')?.trim();
+      if (!name) return;
+      folder = sync.newId();
+      sync.create('pref.set', sync.accountScope, null, { device: '', key: FOLDERS, value: addFolder(listPrefs.folders, folder, name) });
+    }
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: FOLDER_OF + id, value: folder });
   }
 
   // who hears when this member fronts (NOTIFICATIONS.md §2.4; "nobody" hides them from follower views)
@@ -153,14 +140,6 @@
     set({ notify_policy: { ...p, announce: { buckets: [...ids] } } });
   }
 
-  let newField = $state('');
-  let newFieldType = $state<FieldDef['type']>('text');
-  function addField(e: SubmitEvent) {
-    e.preventDefault();
-    if (!newField.trim()) return;
-    sync.create('field.define', sync.accountScope, sync.newId(), { name: newField.trim(), type: newFieldType });
-    newField = '';
-  }
 
   function switchIn() {
     sync.create('front.switch', sync.accountScope, sync.newId(), {
@@ -188,7 +167,7 @@
     </header>
 
     <section>
-      <h2>About</h2>
+      <h2>Name, colour &amp; avatar</h2>
       <div class="fields">
         <div class="wide avatar-picker">
           <label>Avatar <input type="file" accept="image/*" onchange={chooseAvatar} aria-label="Choose member avatar" /></label>
@@ -203,25 +182,18 @@
           {/if}
           {#if avatarError}<p role="alert">{avatarError}</p>{/if}
         </div>
-        <div class="wide avatar-picker">
-          <label>Profile banner <input type="file" accept="image/*" onchange={chooseBanner} aria-label="Choose member banner" /></label>
-          {#if m.banner_blob}<button class="ghost" onclick={() => set({ banner_blob: null })}>Remove banner</button>{/if}
-          {#if bannerError}<p role="alert">{bannerError}</p>{/if}
-        </div>
         <label>Name <input value={m.name} onchange={(e) => set({ name: text(e).trim() || m!.name })} /></label>
-        <label>Display name <input value={m.display_name ?? ''} onchange={(e) => set({ display_name: opt(text(e)) })} /></label>
-        <label>Pronouns <input value={m.pronouns ?? ''} onchange={(e) => set({ pronouns: opt(text(e)) })} /></label>
         <label class="color">Colour <input type="color" value={m.color} onchange={(e) => set({ color: text(e) })} /></label>
-        <label>Birthday <input type="date" value={m.birthday ?? ''} onchange={(e) => set({ birthday: opt(text(e)) })} /></label>
-        <label class="wide">
-          Description <span class="hint">**bold**, *italic*, ||spoiler||, [link](https://…)</span>
-          <textarea rows="4" value={descMarkup} onchange={saveDescription}></textarea>
-        </label>
       </div>
+      <p class="hint">These show wherever {m.name} does: in your chats, and to friends who can open {m.name}'s profile or see them in a shared chat.</p>
     </section>
 
     <section>
-      <h2>Sharing</h2>
+      <ProfileFields {m} {raw} {defs} {values} buckets={sharingBuckets} {set} />
+    </section>
+
+    <section>
+      <h2>Fronting</h2>
       <div class="fields">
         <label class="wide">
           Followers hear when {m.name} fronts
@@ -292,6 +264,21 @@
       <p class="hint">Pings go to your other devices, never the one you wrote on. "Fronting" includes co-con.</p>
     </section>
 
+    <section>
+      <h2>Members list</h2>
+      <div class="fields">
+        <label>
+          Folder
+          <select value={listPrefs.folderOf.get(id) ?? ''} onchange={(e) => { setFolder(text(e)); e.currentTarget.value = listPrefs.folderOf.get(id) ?? ''; }}>
+            <option value="">Not in a folder</option>
+            {#each listPrefs.folders as f (f.id)}<option value={f.id}>{f.name}</option>{/each}
+            <option value="__new">New folder…</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">Folders only sort the Members list; they don't change groups, fronting or who sees what.</p>
+    </section>
+
     {#if gs.length}
       <section>
         <h2>Subsystems &amp; groups</h2>
@@ -306,46 +293,6 @@
       </section>
     {/if}
 
-    <section>
-      <h2>Custom fields</h2>
-      <div class="fields">
-        {#each defs as d (d.id)}
-          {@const v = values.get(d.id)}
-          <label class:wide={d.type === 'long_text'}>
-            {d.name}
-            {#if d.type === 'boolean'}
-              <input type="checkbox" checked={v === true} onchange={(e) => setValue(d, (e.currentTarget as HTMLInputElement).checked)} />
-            {:else if d.type === 'long_text'}
-              <textarea rows="3" value={(v as string) ?? ''} onchange={(e) => setValue(d, text(e))}></textarea>
-            {:else if d.type === 'select'}
-              <select value={(v as string) ?? ''} onchange={(e) => setValue(d, text(e))}>
-                <option value=""></option>
-                {#each d.options.choices ?? [] as c (c)}<option>{c}</option>{/each}
-              </select>
-            {:else}
-              <input
-                type={d.type === 'number' ? 'number' : d.type === 'date' ? 'date' : d.type === 'url' ? 'url' : d.type === 'color' ? 'color' : 'text'}
-                value={(v as string | number) ?? ''}
-                onchange={(e) => setValue(d, d.type === 'number' ? Number(text(e)) : text(e))}
-              />
-            {/if}
-          </label>
-        {/each}
-      </div>
-      <form class="addfield" onsubmit={addField}>
-        <input bind:value={newField} placeholder="New field, e.g. Role" aria-label="Field name" />
-        <select bind:value={newFieldType} aria-label="Field type">
-          <option value="text">Text</option>
-          <option value="long_text">Long text</option>
-          <option value="number">Number</option>
-          <option value="date">Date</option>
-          <option value="boolean">Yes / no</option>
-          <option value="url">Link</option>
-          <option value="color">Colour</option>
-        </select>
-        <button class="ghost">Add field</button>
-      </form>
-    </section>
 
     <section class="danger">
       {#if m.archived}
@@ -427,7 +374,6 @@
     grid-column: 1 / -1;
   }
   input,
-  textarea,
   select {
     font: inherit;
     font-size: var(--fs-base);
@@ -473,14 +419,6 @@
     align-items: center;
     gap: var(--s-2);
     color: var(--ink);
-  }
-  .addfield {
-    display: flex;
-    gap: var(--s-2);
-    margin-top: var(--s-4);
-  }
-  .addfield input {
-    flex: 1;
   }
   .primary {
     justify-self: start;

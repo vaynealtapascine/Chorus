@@ -23,6 +23,9 @@ data class Member(
     val sortKey: String? = null,
     val descriptionEntities: String = "[]",
     val birthday: String? = null,
+    /** Who can open the profile and each part's own audience, as stored JSON text (D-101). */
+    val visibility: String? = null,
+    val fieldVisibility: String? = null,
 ) {
     val shownName: String get() = displayName ?: name
     val glyph: String get() = sigils.firstOrNull() ?: name.take(1).uppercase()
@@ -141,6 +144,10 @@ class Model(
     val spaceRoles: Map<String, String> = emptyMap(),
     /** Rows the Advanced channel permissions need (ChannelPermissions; the server stays the authority). */
     val channelPermissionState: JSONObject = JSONObject(),
+    /** Members list settings, folders and role fields (D-100). */
+    val memberList: MemberListSettings = MemberListSettings(),
+    /** Sharing buckets, id → name, by name (audiences, D-101). */
+    val sharingBuckets: List<Pair<String, String>> = emptyList(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -294,6 +301,8 @@ class Model(
                         } } ?: emptyList(),
                         f.str("created_by_account_id"), f.str("banner_blob"), f.str("pinned_post_id"),
                         f.str("sort_key"), f.optJSONArray("description_entities")?.toString() ?: "[]", f.str("birthday"),
+                        f.opt("visibility")?.takeIf { it != JSONObject.NULL }?.toString(),
+                        f.opt("field_visibility")?.takeIf { it != JSONObject.NULL }?.toString(),
                     )
                 }
                 .sortedWith(compareBy<Member> { it.shownName.lowercase(java.util.Locale.ROOT) }.thenBy { it.id })
@@ -435,7 +444,8 @@ class Model(
                 messageReactions = ChatReactions.fromProjection(p.optJSONObject("sets")), pinnedMessages = pinnedMessages,
                 profileDetails = ProfileDetails.parse(p),
                 spaceRoles = rows(p, "space_member").mapNotNull { (key, f) -> f.str("role")?.let { key to it } }.toMap(),
-                channelPermissionState = ChannelPermissions.snapshot(p))
+                channelPermissionState = ChannelPermissions.snapshot(p), memberList = MemberListPrefs.parse(p, accountId),
+                sharingBuckets = ProfileAudience.buckets(p))
         }
     }
 }

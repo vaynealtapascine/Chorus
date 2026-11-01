@@ -104,6 +104,9 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
     if crate::spaces::author_avatar_visible(conn, account, hash).map_err(internal)? {
         return Ok(true);
     }
+    if crate::profiles::blob_visible(conn, account, hash).map_err(internal)? {
+        return Ok(true);
+    }
     conn.query_row(
         &format!("SELECT EXISTS (
            SELECT 1 FROM custom_emoji e WHERE e.blob_hash = ?1

@@ -52,6 +52,9 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
     var birthday by field("birthday")
     var avatar by nullableField("avatar")
     var banner by nullableField("banner")
+    // who can open the profile, and each part's own audience (D-101), as JSON text
+    var profileAudience by nullableField("visibility")
+    var parts by nullableField("field_visibility")
     val bioEditor = rememberRichEditor(editor, opening.bio, "bio") { draft, history -> draft.copy(bio = history) }
     val bio = bioEditor.value
     var cropPath by rememberSaveable { mutableStateOf<String?>(null) }
@@ -62,7 +65,9 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
     val dirty = name != baseline?.name.orEmpty() || display != baseline?.displayName.orEmpty() ||
         pronouns != baseline?.pronouns.orEmpty() || sigil != baseline?.sigils?.firstOrNull().orEmpty() ||
         color != (baseline?.color ?: "#C0694E") || bioEditor.history.dirty || birthday != baseline?.birthday.orEmpty() ||
-        avatar != baseline?.avatarBlob || banner != baseline?.bannerBlob || values.indices.any { values[it] != fields.getJSONObject(it).getString("value") }
+        avatar != baseline?.avatarBlob || banner != baseline?.bannerBlob || values.indices.any { values[it] != fields.getJSONObject(it).getString("value") } ||
+        ProfileAudience.parse(profileAudience)?.toString() != ProfileAudience.parse(baseline?.visibility)?.toString() && profileAudience != null ||
+        ProfileAudience.parse(parts)?.toString() != ProfileAudience.parse(baseline?.fieldVisibility)?.toString() && parts != null
     fun close() { if (!busy) { if (dirty) discard = true else {
         try { editor.finish(); onDone() } catch (e: Exception) { error = "Could not close this draft. Try again." }
     } } }
@@ -120,7 +125,8 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
                             val f = saved.fields
                             MemberCustomization.patch(baseline, f["name"].orEmpty(), f["display"].orEmpty(), f["pronouns"].orEmpty(), f["sigil"].orEmpty(), f["color"].orEmpty(),
                                 saved.bio.current.text, baselineBio, f["avatar"], f["banner"], f["birthday"].orEmpty(),
-                                names = ChatEdit.names(baseline?.description.orEmpty(), baseline?.descriptionEntities ?: "[]", model), bioDraft = saved.bio.legacyState(), bioDirty = saved.bio.dirty)
+                                names = ChatEdit.names(baseline?.description.orEmpty(), baseline?.descriptionEntities ?: "[]", model), bioDraft = saved.bio.legacyState(), bioDirty = saved.bio.dirty,
+                                visibility = f["visibility"], fieldVisibility = f["field_visibility"])
                         }
                         check(chorus.device?.accountId == account) { "The account changed. Reopen this profile in its account." }
                         chorus.saveMemberProfile(id, baseline != null, patch, fields, saved.values, expectedEditorOwner = owner)
@@ -143,25 +149,76 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(enabled = !busy, onClick = { pickingBanner = false; picker.launch("image/*") }) { Text("Choose avatar") }
                 if (avatar != null) TextButton(enabled = !busy, onClick = { avatar = null }) { Text("Remove avatar") }
-                OutlinedButton(enabled = !busy, onClick = { pickingBanner = true; picker.launch("image/*") }) { Text("Choose banner") }
+            }
+            OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
+                supportingText = { Text("Name, colour and avatar show wherever ${name.ifBlank { "they" }} do: your chats, and friends who can open the profile.") })
+
+            // ─── the profile: every part with its own audience (D-101) ───
+            val liveBuckets = model.sharingBuckets
+            val profileNow = ProfileAudience.of(ProfileAudience.parse(profileAudience))
+            val closed = profileNow.isPrivate(liveBuckets.map { it.first }.toSet())
+            val partsNow = ProfileAudience.parse(parts)
+            fun setPart(key: String, a: Audience?) { parts = ProfileAudience.with(partsNow, key, a).toString() }
+            @Composable fun partChip(key: String, label: String) = AudienceChip(label, ProfileAudience.effective(ProfileAudience.parse(profileAudience), partsNow, key),
+                own = ProfileAudience.own(partsNow, key) != null, buckets = liveBuckets, onChange = { setPart(key, it) },
+                inherit = "Same as profile", limited = closed, enabled = !busy)
+            HorizontalDivider(color = p.line)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Profile", color = p.ink, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text("Who can open it ", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+                AudienceChip("${name.ifBlank { "This member" }}'s profile", profileNow, own = true, buckets = liveBuckets,
+                    onChange = { profileAudience = (it ?: Audience.PRIVATE).toJson().toString() }, enabled = !busy)
+            }
+            Text(if (closed) "Only your system can see this profile right now. Share it with friends, then open up or keep each part below."
+                else "Friends who can open it see each part below that's shared with them.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+            PartHeader("Display name", { partChip("display_name", "Display name") })
+            OutlinedTextField(display, { display = it }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Add a display name", color = p.ink3) })
+            PartHeader("Pronouns", { partChip("pronouns", "Pronouns") })
+            OutlinedTextField(pronouns, { pronouns = it }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Add pronouns", color = p.ink3) })
+            PartHeader("Bio", { partChip("description", "Bio") })
+            RichEditorField(bioEditor, "Bio", enabled = !busy, formatting = true)
+            PartHeader("Birthday", { partChip("birthday", "Birthday") })
+            OutlinedTextField(birthday, { birthday = it }, supportingText = { Text("YYYY-MM-DD, or --MM-DD without a year") },
+                singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
+            PartHeader("Banner", { partChip("banner", "Banner") })
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(enabled = !busy, onClick = { pickingBanner = true; picker.launch("image/*") }) { Text(if (banner == null) "Choose banner" else "Change banner") }
                 if (banner != null) TextButton(enabled = !busy, onClick = { banner = null }) { Text("Remove banner") }
             }
-            Text("Changes stay in this draft until Save. Images queue for upload when connected.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(display, { display = it }, label = { Text("Display name") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(pronouns, { pronouns = it }, label = { Text("Pronouns") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
-            RichEditorField(bioEditor, "Bio", enabled = !busy, formatting = true)
+            var settingsFor by remember { mutableStateOf<String?>(null) }
+            var addingField by rememberSaveable { mutableStateOf(false) }
             for (i in values.indices) {
-                val def = fields.getJSONObject(i)
-                OutlinedTextField(values[i], { value -> values = values.toMutableList().apply { set(i, value) } },
-                    label = { Text(def.getString("name")) }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
-                    supportingText = { Text(if (!def.getBoolean("exists")) "New private field · only our account" else "Existing field privacy is preserved") })
+                val row = fields.getJSONObject(i)
+                val id = row.getString("id")
+                // a field removed since opening only stays while it still holds an unsaved change
+                if (id in model.profileDetails.unavailableIds && values[i] == row.getString("value")) continue
+                // "Website 2" and "3" only once the website before them is filled in (up to three, D-090)
+                if (i in 2 until ProfileDetails.slots.size && !row.getBoolean("exists") && values[i].isBlank() && values[i - 1].isBlank()) continue
+                val live = model.profileDetails.definitions.find { it.id == id }
+                val def = live ?: ProfileDetail(id, row.getString("name"), row.getString("type"), row.optString("visibility", "private"),
+                    row.optJSONObject("default_visibility")?.toString() ?: JSONObject().put("mode", "private").toString(),
+                    row.optJSONArray("choices")?.let { a -> List(a.length()) { a.optString(it) } }.orEmpty())
+                val fallback = ProfileAudience.of(JSONObject(def.defaultVisibility))
+                PartHeader(def.name, {
+                    AudienceChip(def.name, ProfileAudience.own(partsNow, id) ?: fallback, own = ProfileAudience.own(partsNow, id) != null,
+                        buckets = liveBuckets, onChange = { setPart(id, it) }, inherit = "Field default", limited = closed, enabled = !busy)
+                }, onSettings = if (live != null) ({ settingsFor = id }) else null)
+                FieldValueEditor(chorus, def, row.getString("type"), values[i], !busy,
+                    onValue = { value -> values = values.toMutableList().apply { set(i, value) } }, onError = { error = it })
+                if (!row.getBoolean("exists")) Text("New private field · added for every member when you save", color = p.ink3, style = MaterialTheme.typography.bodySmall)
             }
+            TextButton(enabled = !busy, onClick = { addingField = true }) { Text("+ Add a field") }
+            if (addingField) AddFieldDialog(chorus, model, onAdded = { def ->
+                editor.value?.let { editor.change(it.withField(def)) }
+                addingField = false
+            }, onDismiss = { addingField = false })
+            settingsFor?.let { id -> model.profileDetails.definitions.find { it.id == id }?.let { def ->
+                FieldSettingsDialog(chorus, model, def) { settingsFor = null }
+            } ?: run { settingsFor = null } }
+            HorizontalDivider(color = p.line)
             var advanced by rememberSaveable { mutableStateOf(false) }
             TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Hide more details" else "More details") }
             if (advanced) {
-                OutlinedTextField(birthday, { birthday = it }, label = { Text("Birthday") }, supportingText = { Text("YYYY-MM-DD or --MM-DD") },
-                    singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(sigil, { sigil = it }, label = { Text("Representative characters") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
                 ColourField(color, { color = it }, modifier = Modifier.fillMaxWidth(), enabled = !busy)
                 Text("Start a message with one or more members' representative characters, then a space.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
