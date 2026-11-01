@@ -19,3 +19,43 @@ Validation: web-core prerequisite succeeded; full explicit python scripts/verify
 
 2026-11-01 Sol launch lifecycle first slice: external share/new-entry/reply effects defer consumption while send is busy and rerun on completion. This prevents a successful old upload from clearing those queued launches; a failed upload retains its original fields before the launch runs. Write reopens retained explicit co-authors. Send cancellation propagates. Limits: this is not durable Journal storage; implement an account-owned UI-consumed lifecycle using EditorDraftStore next, with suspended-upload/restore/stale-write tests. Chorus.create uses cancellable withContext around serial replica persistence: cancellation can occur after commit, so durable send recovery must reconcile the chosen post ID instead of treating every cancellation as uncommitted. Do not cherry-pick stale WIP. Account switches during uploads and multiple replacement launch intents still need explicit lifecycle coverage; no claim of complete draft safety.
 Validation: explicit full python scripts/verify.py --android passed exit 0 (F:/DunBuild/journal-launch-full.log), with wrapper environment, web-core prerequisite, F: builds and Studio JBR. Existing unit tests/lint only; deterministic lifecycle tests remain outstanding. Concurrent quick wrapper failed on a locked chorus_ffi.dll; full run completed successfully. No web edits or device changes.
+
+2026-11-02 GPT-6-sol durable Android slice (starting HEAD 6dd5e91): the composer now consumes
+`JournalDraftSession` for restore, every field edit, cancel/reopen, external/local launches and
+send. Full immutable `JournalDraft` snapshots use the existing encrypted Store/EditorDraftStore.
+Restore precedes editing/autosave; leased serialized writes reject stale editors and preserve
+accepted pending edits during Activity overlap. Fields include source text/selection, kind/title,
+null default versus ordered explicit author intent, audience bucket IDs, CW/tags/mood, reply/quote,
+poll and ordered URI/alt/spoiler references. Metadata salvage keeps the exact raw original with an
+explicit recovery step; unavailable files remain visible/removable and fail preflight.
+
+Send freezes default authors at Post, validates before and after staging, and guards attachment
+and post creates by expected editor owner on Chorus's serial worker. A durable chosen post ID
+precedes create; the persisted own-account op query reconciles normal success, failure after
+commit, cancellation and restart, including posts absent from live Model because of tombstones.
+Failure/query uncertainty retains the draft; cancellation propagates. Pending launch receipts
+persist before acknowledgement, queue while busy and survive consumption/reconciliation. Existing
+content never silently resets or takes the author of a newly opened profile/reply; context changes
+ask, and shares append with metadata retained. Technical rationale and API traps: NOTES.md,
+“Android Journal draft/send lifecycle”.
+
+Review focus: inspect the UI bindings in Journal.kt/JournalDraftEditor.kt, lease transfer in
+EditorDraftStore, chosen-ID write ordering and noncancellable reconciliation in JournalDraftSession,
+and account guards in Chorus/create + sendAttachment. JournalDraftSessionTest and
+JournalDraftSendTest use deterministic suspended load/write/staging/commit gates, not sleeps.
+Limits: no Compose instrumentation/native visual or real process-kill check; transient picker
+grants can still require reselection; staging can leave harmless orphan upload records; these
+drafts are device-local, with SPEC §6.2 cross-device sync still pending. Seven Gemini web WIP
+files remain untouched/unstaged. Parent should obtain consolidated Opus review of this slice and
+6dd5e91 before continuing remote fidelity/offline feeds and parked web parity work. No delegates,
+push, deploy, system changes or device mutation.
+
+Validation for durable slice: prerequisite `scripts/build-web-core.ps1` passed, followed by
+explicit full `python scripts/verify.py --android --offline`, exit 0 (release Rust simulator/server
+tests, web checks/tests/build/bundle budgets, Android lint and JVM tests), final log
+`F:/DunBuild/journal-durable-final-full.log`. All 23 new JournalDraftSession/JournalDraftSend
+tests pass (19 + 4); existing EditorDraftStore tests and the full Android suite pass too.
+Separate `:app:assembleDebug --offline` passed, exit 0 (`F:/DunBuild/journal-durable-apk.log`);
+APK at `F:/DunBuild/chorus-gradle/app/outputs/apk/debug/app-debug.apk`. All builds use F:,
+Studio JBR and the process-scoped wrapper environment; no quick/full concurrency. Start/handoff
+commit b9ef139 was also gated by the explicit full verifier (`journal-durable-start.log`).

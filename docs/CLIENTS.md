@@ -101,6 +101,18 @@ android/
   failed or cancelled saves retain it. Rich undo has a 32-frame / conservative 1 MiB history bound
   without truncating the current text or original rich data. Formatter source maps are linear;
   rich parsing and draft serialization run off the UI thread.
+  Journal uses a stable account/server-scoped encrypted editor record too: source markup and
+  selection, note/entry/title, ordered explicit authors (distinct from default intent), audience
+  bucket IDs, CW/tags/mood, reply/quote, poll options and URI references with alt/spoiler survive
+  reopening. Restore gates editing/autosave. Activity replacement transfers a writer lease;
+  accepted writes drain before the replacement reads, and old callbacks cannot write afterward.
+  Cancel/Back closes the composer while retaining its draft. Incoming shares append only after
+  review when a draft exists; new-entry/reply/quote launches ask before changing its context,
+  preserving existing text and author choices. Launches queue during posting. Unreadable metadata
+  retains the exact original for recovery; missing file grants retain references and ask for
+  reselection/removal, never silently omit a file. A durable chosen post ID is reconciled against
+  persisted own-account create ops after cancellation/restart, including deleted posts. These
+  editor checkpoints are device-local; cross-device Journal draft sync (SPEC §6.2) remains pending.
   All changed custom-field slots preflight against the latest definitions before any save op;
   incompatible/deleted/rebound definitions ask to cancel and reopen. Metadata/privacy is preserved.
 - Avatar/banner selection copies at most 10 MB into an app-cache draft, decodes with API29

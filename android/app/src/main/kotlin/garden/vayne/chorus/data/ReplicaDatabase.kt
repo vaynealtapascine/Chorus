@@ -27,6 +27,9 @@ interface ReplicaDao {
     @Query("SELECT COUNT(*) FROM ops")
     fun opCount(): Int
 
+    @Query("SELECT EXISTS(SELECT 1 FROM ops WHERE json_extract(json, '$.kind') = 'post.create' AND json_extract(json, '$.scope') = :scope AND json_extract(json, '$.entity_id') = :postId)")
+    fun hasCreatedPost(scope: String, postId: String): Boolean
+
     @Query("SELECT COUNT(*) FROM kv")
     fun valueCount(): Int
 

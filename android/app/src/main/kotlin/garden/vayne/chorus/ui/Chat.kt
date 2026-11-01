@@ -2056,7 +2056,8 @@ internal data class PendingAttachment(val uri: Uri, val name: String, val mime: 
  * attachment; the message that lists it is written right after, and [UploadWork] sends the bytes.
  */
 internal suspend fun sendAttachment(chorus: Chorus, ctx: android.content.Context, a: PendingAttachment,
-    scope: String? = null, opKind: String = "attachment.create"): String {
+    scope: String? = null, opKind: String = "attachment.create", expectedEditorOwner: String? = null): String {
+    check(expectedEditorOwner == null || expectedEditorOwner == chorus.editorOwner) { "The account changed. Reopen this draft in its account." }
     val account = chorus.device?.accountId ?: throw IllegalStateException("Not signed in.")
     val staged = withContext(Dispatchers.IO) {
         val input = ctx.contentResolver.openInputStream(a.uri) ?: throw IllegalStateException("Can't read ${a.name}.")
@@ -2069,8 +2070,7 @@ internal suspend fun sendAttachment(chorus: Chorus, ctx: android.content.Context
     val payload = JSONObject().put("blob_hash", staged.hash).put("filename", a.name).put("mime", staged.mime)
         .put("size", staged.size).put("alt_text", a.alt.trim()).put("is_spoiler", a.spoiler)
     if (thumb != null) payload.put("thumb_blob_hash", thumb.hash)
-    if (scope == null) chorus.create(opKind, id, payload)
-    else chorus.create(opKind, id, payload, scope = scope)
+    chorus.create(opKind, id, payload, scope = scope ?: "account:$account", expectedEditorOwner = expectedEditorOwner)
     return id
 }
 
