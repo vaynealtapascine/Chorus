@@ -15,6 +15,10 @@ export interface PostRow {
   cw?: string;
   visibility: { mode: string; bucket_ids?: string[] };
   reply_to?: string;
+  /** The post this one quotes. */
+  quote_post_id?: string;
+  /** Set on a repost, which has no text of its own. */
+  repost_of?: string;
   deleted: boolean;
 }
 
@@ -35,6 +39,8 @@ export function posts(p: Projection): PostRow[] {
       mood: string(f.mood), tags: Array.isArray(f.tags) ? f.tags.filter((v): v is string => typeof v === 'string') : [],
       cw: string(f.cw), visibility: f.visibility && typeof f.visibility === 'object' ? f.visibility as PostRow['visibility'] : { mode: 'private' },
       reply_to: string(f.reply_to), deleted: f.deleted_at != null,
+      quote_post_id: f.quote && typeof f.quote === 'object' ? string((f.quote as { post_id?: unknown }).post_id) : undefined,
+      repost_of: string(f.repost_of),
     };
   }).sort((a, b) => b.occurred_at - a.occurred_at || b.id.localeCompare(a.id));
 }

@@ -7,7 +7,8 @@
   import { core } from '../core';
   import { members, reactions as allReactions, type MemberRow } from '../data';
   import { canWriteAs, postReaction, posts } from '../posts';
-  import { remoteNames, threadAncestors, threadReplies, type PostDetail, type ThreadItem, type ThreadPost } from '../post-threads';
+  import { quoteView, remoteNames, threadAncestors, threadQuotes, threadReplies, type PostDetail, type ThreadItem, type ThreadPost } from '../post-threads';
+  import QuoteEmbed from './QuoteEmbed.svelte';
   import { apiFetch } from '../http';
   import { apiBase } from '../sync/device';
   import { sync, type Projection } from '../sync/client';
@@ -57,6 +58,13 @@
 
   const ancestors = $derived(threadAncestors(rows, id, detail?.ancestors));
   const replies = $derived(threadReplies(rows, id, detail?.replies ?? []));
+  const quotes = $derived(threadQuotes(rows, id, detail?.quotes ?? []));
+  // Replies or Quotes under the post, like Twitter's tabs; quotes only once there are some
+  let showQuotes = $state(false);
+  $effect(() => { id; showQuotes = false; });
+  const listed = $derived(showQuotes && quotes.length ? quotes : replies);
+  const postById = $derived(new Map(rows.map((post) => [post.id, post])));
+  const quoteFor = (item: ThreadItem) => quoteView(item.local?.quote_post_id ?? item.remote?.quote?.post_id, postById, name, item.remote?.quoted);
   const focused = $derived(own ?? (detail ? detail as ThreadPost : null));
   const focusedNames = $derived(own ? own.authors.map(name).join(' & ') : detail ? remoteNames(detail) : '');
   const reactionLine = $derived((detail?.reactions ?? []).map((r) => `${r.emoji} ${r.member_name}`).join(' · '));
@@ -112,6 +120,7 @@
       {:else}
         {#if post.title}<strong>{post.title}</strong>{/if}
         <div class="text" class:clamp={context}><RichText text={post.text} entities={post.entities ?? []} /></div>
+        {#if quoteFor(item)}<QuoteEmbed quote={quoteFor(item)!} />{/if}
         {#if item.remote}
           <RemotePostPoll {projection} post={item.remote} member={speaker} />
           {#each item.remote.attachments ?? [] as attachment (attachment.id)}<AttachmentView {attachment} />{/each}
@@ -138,6 +147,7 @@
   {#if own}
     <div class="focus" class:joined={ancestors.length > 0}>
       <PostCard {projection} post={own} {people} {dark} reactions={reacts.get(own.id) ?? new Map()} {speaker} inThread
+        quote={quoteView(own.quote_post_id, postById, name, detail?.quoted)}
         replyCount={replies.length} onreply={() => document.getElementById('thread-reply')?.querySelector('textarea')?.focus()}
         onreact={(emoji, add) => react(own.id, emoji, add)} />
     </div>
@@ -148,7 +158,7 @@
   {/if}
 
   {#if focused}
-    <p class="detail">{when(focused.occurred_at)}{#if replies.length}{' · '}<strong>{replies.length}</strong> {replies.length === 1 ? 'reply' : 'replies'}{/if}</p>
+    <p class="detail">{when(focused.occurred_at)}{#if replies.length}{' · '}<strong>{replies.length}</strong> {replies.length === 1 ? 'reply' : 'replies'}{/if}{#if quotes.length}{' · '}<button class="stat" onclick={() => (showQuotes = true)}><strong>{quotes.length}</strong> {quotes.length === 1 ? 'quote' : 'quotes'}</button>{/if}</p>
     {#if reactionLine}<p class="reactions">{reactionLine}</p>{/if}
     <div class="reply-box" id="thread-reply">
       <p class="replying">Replying to <strong>{focusedNames || 'this post'}</strong></p>
@@ -160,11 +170,18 @@
 
   {#if error}<p class="note" role={own ? undefined : 'alert'}>{error}</p>{/if}
 
-  <div class="replies" aria-label="Replies">
-    {#each replies as reply (reply.id)}
+  {#if quotes.length}
+    <div class="tabs" role="tablist" aria-label="Under this post">
+      <button role="tab" aria-selected={!showQuotes} class:on={!showQuotes} onclick={() => (showQuotes = false)}>Replies{replies.length ? ` · ${replies.length}` : ''}</button>
+      <button role="tab" aria-selected={showQuotes} class:on={showQuotes} onclick={() => (showQuotes = true)}>Quotes · {quotes.length}</button>
+    </div>
+  {/if}
+  <div class="replies" aria-label={showQuotes && quotes.length ? 'Quotes' : 'Replies'}>
+    {#each listed as reply (reply.id)}
       <div class="reply">
         {#if reply.local}
-          <PostCard {projection} post={reply.local} {people} {dark} reactions={reacts.get(reply.id) ?? new Map()} {speaker} inThread
+          <PostCard {projection} post={reply.local} {people} {dark} reactions={reacts.get(reply.id) ?? new Map()} {speaker} inThread={listed === replies}
+            quote={quoteFor(reply)}
             replyCount={reply.replyCount} onreply={() => open(reply.id)} onreact={(emoji, add) => react(reply.id, emoji, add)} />
         {:else}
           {@render row(reply, false, false)}
@@ -215,6 +232,11 @@
   .replying { color: var(--ink-3); font-size: var(--fs-sm); }
   .replying strong { color: var(--accent); font-weight: 600; }
   .note { padding: var(--s-4); color: var(--ink-3); font-size: var(--fs-sm); }
+  .stat { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+  .stat:hover { text-decoration: underline; }
+  .tabs { display: flex; gap: 4px; margin: var(--s-3) var(--s-4) var(--s-1); padding: 3px; border-radius: 999px; background: var(--surface-2); justify-self: start; }
+  .tabs button { border: 0; border-radius: 999px; background: none; color: var(--ink-3); padding: 6px 14px; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+  .tabs button.on { background: var(--surface); color: var(--ink); font-weight: 600; }
   .reply { animation: arrive .24s cubic-bezier(.16, 1, .3, 1) both; }
   @keyframes arrive { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) { .row, .focus, .reply { animation: none; } }

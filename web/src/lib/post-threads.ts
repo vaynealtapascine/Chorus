@@ -19,12 +19,17 @@ export interface ThreadPost {
   reply_to?: string | null;
   poll?: unknown;
   poll_tally?: PollTally | null;
+  quote?: { post_id?: string } | null;
+  /** The quoted post, when this reader may read it. */
+  quoted?: ThreadPost | null;
 }
 
 /** The thread view's read: the post, what it answers (oldest first), its replies and reactions. */
 export interface PostDetail extends ThreadPost {
   replies?: ThreadPost[];
   ancestors?: ThreadPost[];
+  /** Posts quoting this one, newest first. */
+  quotes?: ThreadPost[];
   reactions?: { emoji: string; member_id?: string; member_name: string }[];
 }
 
@@ -90,4 +95,31 @@ export function threadAncestors(rows: PostRow[], id: string, remote: ThreadPost[
 /** "Kai & Rin" for a remote post, from its author cards. */
 export function remoteNames(post: ThreadPost): string {
   return (post.author_cards ?? []).map((a) => a.display_name || a.name || '').filter(Boolean).join(' & ') || 'Someone';
+}
+
+/** Posts quoting [id]: the server's plus own ones it hasn't got yet, newest first. Reposts aren't quotes. */
+export function threadQuotes(rows: PostRow[], id: string, remote: ThreadPost[]): ThreadItem[] {
+  const counts = replyCounts(rows);
+  const byId = new Map(rows.filter((post) => !post.deleted).map((post) => [post.id, post]));
+  const items = remote.map((quote) => item(byId.get(quote.id), quote, counts));
+  const known = new Set(items.map((quote) => quote.id));
+  for (const post of byId.values()) if (post.quote_post_id === id && !post.repost_of && !known.has(post.id)) items.push(item(post, undefined, counts));
+  return items.sort((a, b) => b.occurred_at - a.occurred_at || b.id.localeCompare(a.id));
+}
+
+/** What a quote card shows: the device's own copy when it has one, else the server's; `post` is null
+ * when neither is readable, and the card says the quoted post is unavailable. */
+export interface QuoteView {
+  id: string;
+  post: { text: string; title?: string | null; cw?: string | null; entities?: Entity[]; occurred_at: number } | null;
+  names: string;
+}
+
+export function quoteView(quoteId: string | null | undefined, byId: Map<string, PostRow>, name: (memberId: string) => string,
+  remote?: ThreadPost | null): QuoteView | null {
+  if (!quoteId) return null;
+  const local = byId.get(quoteId);
+  if (local && !local.deleted && !local.repost_of) return { id: quoteId, post: local, names: local.authors.map(name).join(' & ') || 'Someone' };
+  if (remote) return { id: quoteId, post: remote, names: remoteNames(remote) };
+  return { id: quoteId, post: null, names: '' };
 }

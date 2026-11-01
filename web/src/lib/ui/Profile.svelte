@@ -5,7 +5,7 @@
   import { sync, type Projection } from '../sync/client';
   import PostCard from './PostCard.svelte';
   import PostComposer from './PostComposer.svelte';
-  import { replyCounts } from '../post-threads';
+  import { quoteView, replyCounts } from '../post-threads';
   import { router } from '../router.svelte';
   import ProfileRelationships from './ProfileRelationships.svelte';
   import AvatarImage from './AvatarImage.svelte';
@@ -17,6 +17,8 @@
   const writeAs = $derived(own ? id : members(projection).find((m) => canWriteAs(projection, m.id, sync.accountId))?.id ?? null);
   const all = $derived(posts(projection));
   const counts = $derived(replyCounts(all));
+  const postById = $derived(new Map(all.map((p) => [p.id, p])));
+  const memberName = (m: string) => people.get(m)?.display_name ?? people.get(m)?.name ?? 'Someone';
   const reacts = $derived(reactions(projection));
   let tab = $state<'posts' | 'replies' | 'highlights' | 'relationships'>('posts');
   const highlighted = $derived(highlightedPostIds(projection, id));
@@ -69,13 +71,13 @@
       <span>{lastFront ? `Last fronted ${new Date(lastFront).toLocaleDateString()}` : 'No front recorded'}</span>
       <span>{messageCount} messages</span>
     </div>
-    {#if pinned}<section class="pinned"><h2>Pinned post</h2><PostCard {projection} post={pinned} {people} {dark} reactions={reacts.get(pinned.id) ?? new Map()} speaker={writeAs} replyCount={counts.get(pinned.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(pinned.id)}`)} onreact={(emoji, add) => react(pinned, emoji, add)} />{#if own}<button onclick={() => pin(null)}>Unpin post</button>{/if}</section>{/if}
+    {#if pinned}<section class="pinned"><h2>Pinned post</h2><PostCard {projection} post={pinned} quote={quoteView(pinned.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(pinned.id) ?? new Map()} speaker={writeAs} replyCount={counts.get(pinned.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(pinned.id)}`)} onreact={(emoji, add) => react(pinned, emoji, add)} />{#if own}<button onclick={() => pin(null)}>Unpin post</button>{/if}</section>{/if}
     {#if writeAs}
       <PostComposer {projection} initialAuthors={[writeAs]} />
     {/if}
     <nav aria-label="Profile sections"><button class:on={tab === 'posts'} onclick={() => (tab = 'posts')}>Posts</button><button class:on={tab === 'replies'} onclick={() => (tab = 'replies')}>Replies</button><button class:on={tab === 'highlights'} onclick={() => (tab = 'highlights')}>Highlights</button><button class:on={tab === 'relationships'} onclick={() => (tab = 'relationships')}>Relationships</button></nav>
     {#if tab === 'relationships'}<ProfileRelationships {projection} {id} {own} />
-    {:else}<div class="list">{#each shown as post (post.id)}<PostCard {projection} {post} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} speaker={writeAs} replyCount={counts.get(post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add) => react(post, emoji, add)} />{#if own}<div class="post-tools">{#if member.pinned_post_id !== post.id}<button onclick={() => pin(post.id)}>Pin to profile</button>{/if}<button onclick={() => highlight(post.id)}>{highlighted.has(post.id) ? 'Remove highlight' : 'Highlight post'}</button></div>{/if}{:else}<p class="empty">No {tab} yet.</p>{/each}</div>{/if}
+    {:else}<div class="list">{#each shown as post (post.id)}<PostCard {projection} {post} quote={quoteView(post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} speaker={writeAs} replyCount={counts.get(post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add) => react(post, emoji, add)} />{#if own}<div class="post-tools">{#if member.pinned_post_id !== post.id}<button onclick={() => pin(post.id)}>Pin to profile</button>{/if}<button onclick={() => highlight(post.id)}>{highlighted.has(post.id) ? 'Remove highlight' : 'Highlight post'}</button></div>{/if}{:else}<p class="empty">No {tab} yet.</p>{/each}</div>{/if}
   {:else}<p>This member is unavailable.</p>{/if}
 </section>
 

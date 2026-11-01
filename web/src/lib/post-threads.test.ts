@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localAncestors, remoteNames, replyCounts, threadAncestors, threadReplies } from './post-threads';
+import { localAncestors, quoteView, remoteNames, replyCounts, threadAncestors, threadQuotes, threadReplies } from './post-threads';
 import type { PostRow } from './posts';
 
 const post = (id: string, reply_to?: string, at = 0, deleted = false): PostRow => ({
@@ -46,5 +46,22 @@ describe('journal threads', () => {
   it('names remote authors from their cards', () => {
     expect(remoteNames({ id: 'p', text: '', occurred_at: 0, author_cards: [{ name: 'june', display_name: 'June' }, { name: 'Rin' }] })).toBe('June & Rin');
     expect(remoteNames({ id: 'p', text: '', occurred_at: 0 })).toBe('Someone');
+  });
+
+  it('lists quotes newest first with own pending ones, never reposts', () => {
+    const rows = [post('orig'), { ...post('mine', undefined, 30), quote_post_id: 'orig' },
+      { ...post('boost', undefined, 40), quote_post_id: 'orig', repost_of: 'orig' }];
+    const items = threadQuotes(rows, 'orig', [{ id: 'theirs', text: 'look', occurred_at: 20 }]);
+    expect(items.map((i) => i.id)).toEqual(['mine', 'theirs']);
+  });
+
+  it("shows a quote from the device, else the server's copy, else as unavailable", () => {
+    const byId = new Map([['orig', post('orig')]]);
+    const name = () => 'Kai';
+    expect(quoteView(undefined, byId, name)).toBeNull();
+    expect(quoteView('orig', byId, name)).toMatchObject({ id: 'orig', names: 'Kai', post: { text: 'orig' } });
+    expect(quoteView('far', byId, name, { id: 'far', text: 'remote', occurred_at: 1, author_cards: [{ name: 'June' }] }))
+      .toMatchObject({ names: 'June', post: { text: 'remote' } });
+    expect(quoteView('gone', byId, name)).toEqual({ id: 'gone', post: null, names: '' });
   });
 });

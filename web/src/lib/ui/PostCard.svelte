@@ -7,8 +7,10 @@
   import type { PostRow } from '../posts';
   import RichText from './RichText.svelte';
   import AvatarImage from './AvatarImage.svelte';
+  import QuoteEmbed from './QuoteEmbed.svelte';
+  import type { QuoteView } from '../post-threads';
 
-  let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection, replyCount = 0, replyToNames, inThread = false }: {
+  let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection, replyCount = 0, replyToNames, inThread = false, quote = null }: {
     post: PostRow; people: Map<string, MemberRow>; dark: boolean;
     reactions: Map<string, string[]>; speaker: string | null; compactEntry?: boolean;
     onreply: () => void; onreact: (emoji: string, add: boolean) => void;
@@ -18,6 +20,8 @@
     replyToNames?: string;
     /** In a thread the post it answers is already shown above it. */
     inThread?: boolean;
+    /** What the post quotes (see `quoteView`). */
+    quote?: QuoteView | null;
     /** Needed to show a poll (D-081); its totals and own votes live in the projection. */
     projection?: Projection;
   } = $props();
@@ -43,6 +47,7 @@
     {#if post.title}<h3 class="display">{post.title}</h3>{/if}
     <div class="body" class:clamped={compactEntry && !bodyExpanded}><RichText text={post.text} entities={post.entities} /></div>
     {#if compactEntry && (post.kind === 'entry' || post.text.length > 280)}<button class="expand" aria-expanded={bodyExpanded} onclick={() => (bodyExpanded = !bodyExpanded)}>{bodyExpanded ? 'Show less' : 'Show more'}</button>{/if}
+    {#if quote}<QuoteEmbed {quote} />{/if}
     {#if poll && projection}<PollCard {projection} parentId={post.id} {poll} member={speaker} />{/if}
     {#if post.mood || post.tags.length}<p class="tags">{#if post.mood}Mood: {post.mood}{/if}{#each post.tags as tag (tag)} <span>#{tag}</span>{/each}</p>{/if}
   {/if}

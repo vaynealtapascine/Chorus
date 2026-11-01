@@ -5,7 +5,7 @@
   import { bodyAuthors } from '../front-view';
   import PostCard from './PostCard.svelte';
   import PostComposer from './PostComposer.svelte';
-  import { replyCounts } from '../post-threads';
+  import { quoteView, replyCounts } from '../post-threads';
   import { router } from '../router.svelte';
   import JournalLists from './JournalLists.svelte';
   import JournalFeeds from './JournalFeeds.svelte';
@@ -17,6 +17,7 @@
   const entries = $derived(posts(projection).filter((p) => !p.deleted));
   const counts = $derived(replyCounts(entries));
   const byId = $derived(new Map(entries.map((p) => [p.id, p])));
+  const postById = $derived(new Map(posts(projection).map((p) => [p.id, p])));
   const reacts = $derived(reactions(projection));
   const channelById = $derived(new Map(channels(projection).map((c) => [c.id, c.name])));
   const pinned = $derived(Object.entries(projection.rows.message ?? {}).filter(([, row]) => row.exists && row.fields.deleted_at == null && typeof row.fields.pinned_at === 'number')
@@ -38,6 +39,7 @@
   const speaker = $derived(actingAs || frontSpeaker || active[0]?.id || null);
   let section = $state<'timeline' | 'lists' | 'feeds'>('timeline');
   const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
+  const memberName = name;
   const frontName = (e: { subject_id: string }) => subjectNames.get(e.subject_id) ?? 'Someone';
   function react(post: PostRow, emoji: string, add: boolean) {
     if (!speaker) return;
@@ -54,7 +56,7 @@
     {#each timeline as item (`${item.kind}:${item.id}`)}
       {#if item.kind === 'post'}
         <!-- replying opens the post's thread, where the reply box shows what it answers -->
-        <PostCard {projection} post={item.post} {people} {dark} reactions={reacts.get(item.post.id) ?? new Map()} {speaker} compactEntry
+        <PostCard {projection} post={item.post} quote={quoteView(item.post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(item.post.id) ?? new Map()} {speaker} compactEntry
           replyCount={counts.get(item.post.id) ?? 0} replyToNames={item.post.reply_to ? byId.get(item.post.reply_to)?.authors.map(name).join(' & ') : undefined}
           onreply={() => router.go(`/journal/post/${encodeURIComponent(item.post.id)}`)} onreact={(emoji, add) => react(item.post, emoji, add)} />
       {:else if item.kind === 'switch'}
