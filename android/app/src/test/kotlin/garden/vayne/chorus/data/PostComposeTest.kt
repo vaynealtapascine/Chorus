@@ -28,7 +28,7 @@ class PostComposeTest {
     }
 
     @Test fun createPreservesBucketAudienceAndQuoteMediaReply() {
-        val p = PostCompose.payload(model.copy(sharingBuckets = listOf("a" to "Friends")), "mine", "entry", "own",
+        val p = PostCompose.payload(Model(model.members, emptyList(), emptyMap(), emptyList(), null, emptyList(), sharingBuckets = listOf("a" to "Friends")), "mine", "entry", "own",
             "**hello**", "Title", "CW", "buckets", "mood", "tag", "parent", markup,
             listOf("photo"), "quoted", listOf("a"))
         assertEquals("a", p.getJSONObject("visibility").getJSONArray("bucket_ids").getString(0))
@@ -111,3 +111,4 @@ class PostComposeTest {
         }
     }
 }
+

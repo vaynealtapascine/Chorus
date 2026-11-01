@@ -27,6 +27,13 @@ data class Audience(val mode: String, val buckets: List<String> = emptyList()) {
 
     fun same(other: Audience): Boolean = mode == other.mode && (mode != "buckets" || buckets.sorted() == other.buckets.sorted())
 
+    /** Incomparable bucket selections may add readers, so warn conservatively. */
+    fun possiblyWidens(previous: Audience): Boolean {
+        val ranks = mapOf("private" to 0, "buckets" to 1, "followers" to 2, "server" to 3)
+        if (mode == "buckets" && previous.mode == "buckets") return buckets.any { it !in previous.buckets }
+        return (ranks[mode] ?: 0) > (ranks[previous.mode] ?: 0)
+    }
+
     companion object {
         val PRIVATE = Audience("private")
     }

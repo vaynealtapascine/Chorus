@@ -122,7 +122,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     val pollOptions = rememberSaveable(saver = PollOptionsSaver) { mutableStateListOf("", "") }
     var pollMultiple by rememberSaveable { mutableStateOf(false) }
     var audience by rememberSaveable { mutableStateOf("private") }
-    var bucketIds by remember { mutableStateOf(emptyList<String>()) }
+    var bucketIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var busy by remember { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     val actions = rememberCoroutineScope()
@@ -360,7 +360,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             }
             HorizontalDivider(color = p.line)
             Column(Modifier.fillMaxWidth().background(p.surface)) {
-                AudienceChip("This post", garden.vayne.chorus.data.Audience(audience, bucketIds), own = true, buckets = model.sharingBuckets, enabled = !busy, onChange = { value ->
+                AudienceChip("This post", garden.vayne.chorus.data.Audience(audience, bucketIds), own = true, buckets = model.sharingBuckets, person = model.isPerson, enabled = !busy, onChange = { value ->
                     value?.let { audience = it.mode; bucketIds = it.buckets }
                 })
                 HorizontalDivider(color = p.line, thickness = .5.dp)

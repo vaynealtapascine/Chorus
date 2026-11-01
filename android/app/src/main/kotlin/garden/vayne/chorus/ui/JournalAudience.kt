@@ -29,12 +29,12 @@ internal fun JournalAudienceDialog(post: JournalPost, model: Model, chorus: Chor
     var choice by remember(post.id) { mutableStateOf(post.audience) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    val widening = choice.mode != "private" && !choice.same(post.audience)
+    val widening = choice.possiblyWidens(post.audience)
     AlertDialog(onDismissRequest = { if (!busy) onDismiss() },
         title = { Text("Who can see this post?") },
         text = { Column {
             AudienceChip("This post", choice, own = true, buckets = model.sharingBuckets,
-                enabled = !busy, onChange = { it?.let { choice = it } })
+                person = model.isPerson, enabled = !busy, onChange = { it?.let { choice = it } })
             if (widening) Text("More people will be able to read this post.", color = p.ink2,
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
             if (error != null) Text(error.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodySmall,

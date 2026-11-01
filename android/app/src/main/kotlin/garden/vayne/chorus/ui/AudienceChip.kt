@@ -21,13 +21,13 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
  *  More, everyone on this server. [onChange] gets `null` for [inherit]. */
 @Composable
 internal fun AudienceChip(label: String, value: Audience, own: Boolean, buckets: List<Pair<String, String>>,
-    onChange: (Audience?) -> Unit, inherit: String? = null, limited: Boolean = false, enabled: Boolean = true) {
+    onChange: (Audience?) -> Unit, inherit: String? = null, limited: Boolean = false, enabled: Boolean = true, person: Boolean = false) {
     val p = LocalChorusPalette.current
     var open by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
     val names = remember(buckets) { buckets.toMap() }
     val private = value.isPrivate(names.keys) || limited
-    val text = value.label(names).let { if (limited && !value.isPrivate(names.keys)) "$it (once shared)" else it }
+    val text = value.label(names).let { if (person && it == "Only us") "Only me" else it }.let { if (limited && !value.isPrivate(names.keys)) "$it (once shared)" else it }
     val choosing = own || inherit == null
     val chosenBuckets = if (choosing && value.mode == "buckets") value.buckets.filter { it in names } else emptyList()
     val shape = RoundedCornerShape(50)
@@ -48,8 +48,8 @@ internal fun AudienceChip(label: String, value: Audience, own: Boolean, buckets:
                     sub?.let { Text(it, color = p.ink3, style = MaterialTheme.typography.bodySmall) }
                 } }, onClick = { pick(); open = false })
             inherit?.let { item(it, null, !own) { onChange(null) } }
-            item("Only us", null, choosing && value.mode == "private") { onChange(Audience.PRIVATE) }
-            item("Friends", "everyone who follows us", choosing && value.mode == "followers") { onChange(Audience("followers")) }
+            item(if (person) "Only me" else "Only us", null, choosing && value.mode == "private") { onChange(Audience.PRIVATE) }
+            item("Friends", if (person) "everyone who follows me" else "everyone who follows us", choosing && value.mode == "followers") { onChange(Audience("followers")) }
             if (buckets.isNotEmpty()) {
                 Text("Only some friends", color = p.ink3, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                 for ((id, name) in buckets) DropdownMenuItem(
