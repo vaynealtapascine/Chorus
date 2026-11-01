@@ -221,6 +221,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var pendingPrivateReply by remember { mutableStateOf<PendingPrivateReply?>(null) }
     var editingMessageId by rememberSaveable { mutableStateOf<String?>(null) }
     var forwarding by remember { mutableStateOf<ChatMessage?>(null) }
+    // quote, reply elsewhere and select several (SPEC §5.3, D-048; web parity)
+    var quoting by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    var replyIn by remember { mutableStateOf<ChatMessage?>(null) }
+    var selectedIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var bundleForward by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var forwardConfirm by remember { mutableStateOf<ChatListRow?>(null) }
     var deleting by remember { mutableStateOf<ChatMessage?>(null) }
     var undoDelete by remember { mutableStateOf<ChatMessage?>(null) }
@@ -457,6 +462,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (previousChannel == channel?.id) return@LaunchedEffect
         previousChannel = channel?.id
         editingMessageId = null
+        selectedIds = emptyList()
+        quoting = emptyList()
         alsoSend = false
         carriedReply = null
         speakerSettingsOpen = false
@@ -568,6 +575,33 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         carriedReply = null; pendingPrivateReply = null; moreOpen = false
     }
     // a snapshot plus copies of its files in the target scope, then the reader follows it there
+    // several messages as one bundle (D-048), each still ours to see when it goes
+    fun forwardBundle(items: List<ChatMessage>, row: ChatListRow) {
+        val live = chorus.model.value
+        val account = chorus.device?.accountId.orEmpty()
+        fun stillHere(m: List<ChatMessage>) = m.all { ChatOrganize.actionMessage(chorus.model.value, it.id, viewingAs, account) == it } &&
+            ChatOrganize.shown(chorus.model.value, viewingAs)(row.channel.id)
+        if (items.isEmpty() || !stillHere(items)) { bundleForward = emptyList(); error = "These messages or that chat are no longer available."; return }
+        val from = live.channels.firstOrNull { it.id == items.first().channelId } ?: return
+        val speaker = replySpeakerId ?: run { error = "Choose who is speaking first."; return }
+        if (busy) return
+        busy = true; error = null
+        actions.launch {
+            try {
+                val scope = "space:${row.space.id}"
+                val ids = items.flatMap { it.attachments }.map { a ->
+                    check(stillHere(items)) { "These messages or that chat are no longer available." }
+                    chorus.newId().also { id -> chorus.create("attachment.create", id, ChatForward.attachmentCopy(a), scope = scope) }
+                }
+                check(stillHere(items)) { "These messages or that chat are no longer available." }
+                chorus.create("message.forward", chorus.newId(), ChatForward.bundle(row.channel.id, speaker, items, from.name, ids), scope = scope)
+                bundleForward = emptyList()
+                openChat(row)
+                followNext = true
+            } catch (e: Exception) { error = e.message ?: "Could not forward the messages." }
+            finally { busy = false }
+        }
+    }
     fun forward(message: ChatMessage, row: ChatListRow) {
         val live = chorus.model.value
         val current = ChatOrganize.actionMessage(live, message.id, viewingAs, chorus.device?.accountId.orEmpty())
@@ -851,6 +885,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         // just out of view: follow it while the reader is at (or near) the bottom, and after sending.
         val listState = snapshot.reading.list
         val newest = messages.lastOrNull()?.id
+        // replies to a message in another chat (Reply in…) show it, if we may see that chat
+        val everywhere = remember(model, viewingAs) {
+            model.chatMessages.filterKeys { shownNow(it) }.values.flatten().associateBy { it.id }
+        }
         LaunchedEffect(newest, readerId, currentPane) {
             if (!currentPane) return@LaunchedEffect
             if (newest != null && ((newest != snapshot.reading.newest && listState.firstVisibleItemIndex <= 2) || followNext))
@@ -898,8 +936,15 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         heldMessages[message.id] == null) ({ deleting = message }) else null,
                     onReact = { emoji, on -> react(message, emoji, on) },
                     showSender = groupStart, showAvatar = groupEnd, onStage = { stageSelection = listOf(message.id); staging = true },
-                    quote = messages.find { it.id == message.replyTo },
+                    quote = message.replyTo?.let { id -> messages.find { it.id == id } ?: everywhere[id] },
+                    quoteElsewhere = message.replyTo?.let { id -> everywhere[id]?.takeIf { it.channelId != message.channelId } }
+                        ?.let { q -> model.channels.find { it.id == q.channelId }?.name },
                     onReply = { replyTo = message.id; carriedReply = null },
+                    onQuote = if (heldMessages[message.id] == null) ({ quoting = listOf(message); selectedIds = emptyList() }) else null,
+                    onReplyIn = if (heldMessages[message.id] == null) ({ replyIn = message }) else null,
+                    selecting = selectedIds.isNotEmpty(), selected = message.id in selectedIds,
+                    onSelect = if (heldMessages[message.id] == null) ({
+                        selectedIds = if (message.id in selectedIds) selectedIds - message.id else selectedIds + message.id }) else null,
                     onReplyPrivately = if (canPrivate) ({ replyPrivately(message) }) else null,
                     onEdit = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
                         heldMessages[message.id] == null)
@@ -938,6 +983,15 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 TextButton(onClick = { delete(gone, restore = true) }) { Text("Undo") }
             }
         }
+        if (selectedIds.isNotEmpty()) {
+            val picked = messages.filter { it.id in selectedIds }
+            Row(Modifier.fillMaxWidth().background(p.surface2).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                ChatIconButton(R.drawable.ic_close, "Cancel selection") { selectedIds = emptyList() }
+                Text("${picked.size} selected", color = p.ink, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                TextButton(enabled = picked.isNotEmpty(), onClick = { quoting = picked; selectedIds = emptyList() }) { Text("Quote") }
+                TextButton(enabled = picked.isNotEmpty(), onClick = { bundleForward = picked; selectedIds = emptyList() }) { Text("Forward") }
+            }
+        }
         // Composer: one line (who's speaking, the text, options, send); options open above it
         Column(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 12.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -961,12 +1015,30 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     else "As " + currentPreview.authors.joinToString(" & ") { model.member(it)?.shownName ?: "Someone" },
                     color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp)
             }
-            val mentionStart = ChatPresentation.frontMentionStart(draft)
-            if (mentionStart != null) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
-                draft = draft.substring(0, mentionStart) + "@front "
-            }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("@front", color = p.accent, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                Text("Channel front when it arrives", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+            // @ suggestions: the channel's front, our members and groups (core turns them into mentions)
+            val mentionQuery = garden.vayne.chorus.data.ChatMentions.typing(draft)
+            val mentionMatches = remember(model, mentionQuery) { mentionQuery?.let { garden.vayne.chorus.data.ChatMentions.matches(model, it) }.orEmpty() }
+            if (mentionMatches.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(mentionMatches, key = { "${it.type}:${it.id}" }) { choice ->
+                    Row(Modifier.clip(RoundedCornerShape(20.dp)).background(p.surface2)
+                        .clickable(onClickLabel = "Mention ${choice.name}") { draft = garden.vayne.chorus.data.ChatMentions.insert(draft, choice) }
+                        .heightIn(min = 40.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        choice.id?.let(model::member)?.let { ChatAvatar(it, 24.dp) }
+                        Text("@" + choice.name, color = p.accent, fontSize = 14.sp, lineHeight = 20.sp)
+                        Text(when (choice.type) { "front" -> "who's fronting"; "group" -> "group"; else -> "" }, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+                    }
+                }
+            }
+            if (quoting.isNotEmpty()) Row(Modifier.fillMaxWidth().background(p.surface2, RoundedCornerShape(10.dp)).padding(start = 12.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ChatIcon(R.drawable.ic_format_quote, tint = p.accent)
+                Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                    Text(if (quoting.size == 1) "Quote " + quoting[0].authors.joinToString(" & ", transform = ::nameOf) else "Quote ${quoting.size} messages",
+                        color = p.accent, fontSize = 13.sp, lineHeight = 18.sp)
+                    Text(quoting.joinToString(" · ") { ChatPresentation.preview(it) }, color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
+                }
+                ChatIconButton(R.drawable.ic_close, "Cancel quote") { quoting = emptyList() }
             }
             val target = messages.find { it.id == replyTo } ?: carriedReply?.takeIf { it.id == replyTo }
             if (target != null) {
@@ -975,7 +1047,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     ChatIcon(R.drawable.ic_reply, tint = p.accent)
                     Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
                         val name = target.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
-                        Text(if (carriedReply?.id == replyTo) "Private reply to $name" else "Reply to $name", color = p.accent, fontSize = 13.sp, lineHeight = 18.sp)
+                        Text(if (carriedReply?.id == replyTo) "Reply to $name · from another chat" else "Reply to $name", color = p.accent, fontSize = 13.sp, lineHeight = 18.sp)
                         Text(ChatPresentation.preview(target), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
                     }
                     ChatIconButton(R.drawable.ic_close, "Cancel reply") { replyTo = null; carriedReply = null }
@@ -1163,9 +1235,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                 try {
                                     val scope = "space:${space.id}"
                                     val attachmentIds = attachments.map { a -> sendAttachment(chorus, ctx, a, scope) }
+                                    // a quote from a chat that has since locked doesn't go
+                                    val quoted = quoting.filter { ChatOrganize.actionMessage(chorus.model.value, it.id, viewingAs, senderAccount) == it }
+                                    check(quoted.size == quoting.size) { "A quoted message is no longer available." }
                                     val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
                                         audience, visibleTo.toSet(), space.kind, replyTo = target?.id, attachmentIds = attachmentIds,
-                                        accountId = senderAccount)
+                                        accountId = senderAccount,
+                                        quote = quoted.takeIf { it.isNotEmpty() }?.let { q -> ChatForward.quote(q, model.channels.find { it.id == q.first().channelId }?.name ?: channel.name) })
                                     if (pollOn) payload.put("poll", Polls.draft(pollOptions.toList(), pollMultiple).getOrThrow())
                                     followNext = true
                                     chorus.create("message.send", chorus.newId(), payload, scope = scope)
@@ -1185,6 +1261,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                     visibleTo = emptyList()
                                     replyTo = null
                                     carriedReply = null
+                                    quoting = emptyList()
                                     moreOpen = false
                                 } catch (e: Exception) {
                                     error = e.message ?: "Could not send the message."
@@ -1281,6 +1358,41 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         }
                     }
                 }
+            }
+        }
+    }
+    replyIn?.let { message ->
+        ModalBottomSheet(onDismissRequest = { replyIn = null }, containerColor = p.surface) {
+            Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+                Text("Reply in…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                for (row in listRows.filter { it.channel.id != message.channelId }) Row(Modifier.fillMaxWidth().clickable {
+                    // the reply carries over and lands in that chat's composer
+                    replyIn = null
+                    selectedSpace = row.space.id; selectedChannel = row.channel.id; conversationOpen = true
+                    pendingPrivateReply = PendingPrivateReply(message, channelId = row.channel.id, speakerId = replySpeakerId)
+                }.heightIn(min = 56.dp).padding(horizontal = 20.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ChannelDisc(if (row.space.kind == "dm") row.channel.copy(name = row.title) else row.channel, size = 40.dp)
+                    Text(row.title, color = p.ink, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 1)
+                }
+            }
+        }
+    }
+    if (bundleForward.isNotEmpty()) ModalBottomSheet(onDismissRequest = { bundleForward = emptyList() }, containerColor = p.surface) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+            Text("Forward ${bundleForward.size} messages to…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            val source = model.spaces.find { s -> s.id == model.channels.find { it.id == bundleForward.first().channelId }?.spaceId }
+            if (source?.kind == "internal" || bundleForward.any { it.visibilityMode != "all" } || ChatOrganize.restricted(model, bundleForward.first().channelId))
+                Text("This shares a snapshot outside where it was written; its audience doesn't follow it.", color = p.ink3, fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp))
+            for (row in listRows.sortedByDescending { it.latest?.occurredAt ?: 0L }) Row(Modifier.fillMaxWidth().clickable(enabled = !busy) {
+                forwardBundle(bundleForward, row)
+            }.heightIn(min = 56.dp).padding(horizontal = 20.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                ChannelDisc(if (row.space.kind == "dm") row.channel.copy(name = row.title) else row.channel, size = 40.dp)
+                Text(row.title, color = p.ink, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 1)
             }
         }
     }
@@ -1493,7 +1605,12 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     reactions: List<ChatReaction> = emptyList(), onReact: ((String, Boolean) -> Unit)? = null,
     onForward: (() -> Unit)? = null, onDelete: (() -> Unit)? = null, onPin: (() -> Unit)? = null,
     thread: ThreadSummary? = null, onThread: (() -> Unit)? = null, interactive: Boolean = true,
-    showSender: Boolean = true, showAvatar: Boolean = true, quote: ChatMessage? = null, onStage: () -> Unit) {
+    showSender: Boolean = true, showAvatar: Boolean = true, quote: ChatMessage? = null, onStage: () -> Unit,
+    /** The replied-to message's chat when it is another one (Reply in…). */
+    quoteElsewhere: String? = null,
+    onQuote: (() -> Unit)? = null, onReplyIn: (() -> Unit)? = null,
+    /** Select several (D-048): while [selecting], a tap picks or drops this message. */
+    selecting: Boolean = false, selected: Boolean = false, onSelect: (() -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
@@ -1549,7 +1666,9 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 topStart = if (!own && !showSender) 6.dp else 16.dp, topEnd = if (own && !showSender) 6.dp else 16.dp,
                 bottomEnd = if (own && showAvatar) 6.dp else 16.dp, bottomStart = if (!own && showAvatar) 6.dp else 16.dp))
             .then(if (settled) Modifier.semantics { customActions = listOf(CustomAccessibilityAction("Reply") { onReply(); true }) } else Modifier)
-            .then(if (interactive) Modifier.combinedClickable(onClick = { menuOpen = true }, onLongClick = openActions,
+            .then(if (selected) Modifier.border(2.dp, p.accent, RoundedCornerShape(16.dp)) else Modifier)
+            .then(if (interactive) Modifier.combinedClickable(onClick = { if (selecting && onSelect != null) onSelect() else menuOpen = true },
+                onLongClick = if (selecting && onSelect != null) onSelect else openActions,
                 onLongClickLabel = "Message actions", onDoubleClick = heart) else Modifier)
             .padding(horizontal = 11.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (showSender) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1563,8 +1682,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             Row(Modifier.fillMaxWidth().background(quoteColor.copy(alpha = .10f), RoundedCornerShape(6.dp))) {
                 Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(quoteColor))
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    Text(quote?.authors?.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
-                        ?: "Reply", color = quoteColor, fontSize = 12.sp, lineHeight = 16.sp)
+                    Text((quote?.authors?.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
+                        ?: "Reply") + (quoteElsewhere?.let { " · in $it" } ?: ""), color = quoteColor, fontSize = 12.sp, lineHeight = 16.sp)
                     Text(if (quote != null) ChatPresentation.preview(quote) else "Message unavailable in this view",
                         color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
                 }
@@ -1586,6 +1705,19 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
                 onPlainClick = { if (interactive && held == null) menuOpen = true },
                 onLongClick = if (settled) openActions else null, onDoubleClick = heart)
+        }
+        // what it quotes: part of one message or a bundle (SPEC §5.3), shown as the snapshot it carries
+        if (message.cw == null || revealed) for (item in message.quote) {
+            val source = item.authors.firstOrNull()?.let(model::member)
+            val tint = source?.let { tonesOf(it.color).name } ?: p.ink3
+            Row(Modifier.fillMaxWidth().background(tint.copy(alpha = .08f), RoundedCornerShape(6.dp))) {
+                Box(Modifier.width(2.dp).heightIn(min = 24.dp).background(tint))
+                Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    if (item.authors.isNotEmpty()) Text(item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" } +
+                        (item.channelName?.let { " · #$it" } ?: ""), color = tint, fontSize = 12.sp, lineHeight = 16.sp)
+                    Text(item.text, color = p.ink2, fontSize = 14.sp, lineHeight = 19.sp, maxLines = 8, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
         if (held != null) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1711,7 +1843,10 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 }
                 if (onPin != null) ChatActionRow(if (message.pinned) R.drawable.ic_unpin else R.drawable.ic_pin,
                     if (message.pinned) "Unpin" else "Pin") { menuOpen = false; onPin() }
+                if (onReplyIn != null) ChatActionRow(R.drawable.ic_reply, "Reply in another chat") { menuOpen = false; onReplyIn() }
+                if (onQuote != null && (message.cw == null || revealed)) ChatActionRow(R.drawable.ic_format_quote, "Quote") { menuOpen = false; onQuote() }
                 if (onForward != null) ChatActionRow(R.drawable.ic_forward, "Forward") { menuOpen = false; onForward() }
+                if (onSelect != null) ChatActionRow(R.drawable.ic_check, "Select") { menuOpen = false; onSelect() }
                 if (onEdit != null && (message.cw == null || revealed)) ChatActionRow(R.drawable.ic_edit, "Edit") { menuOpen = false; onEdit() }
                 if (held == null) ChatActionRow(R.drawable.ic_layers, "Select in stage mode") { menuOpen = false; onStage() }
                 if (held == null && unseenBy.isNotEmpty()) ChatActionRow(R.drawable.ic_members, "Not seen by…") { showUnseen = !showUnseen; menuOpen = false }

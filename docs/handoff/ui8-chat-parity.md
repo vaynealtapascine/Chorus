@@ -24,8 +24,8 @@ roles), the members of a members' DM or group, and the members a members-only ch
 | 4 | Android: spaces and member lists — people in a space with Add / Remove / role, rename/describe, Leave / Delete; members-only channels and editing a members' DM's people in the channel editor | implemented; gate passed; independent review pending |
 | 5 | Android: private chats, same rules as web | done; reviewed by an independent Sol 6.1 pass, its findings fixed (server re-create bypass, locked retained actions, thread inheritance) |
 | 6 | Android feel (UI7 slice 1, parked on `wip/ui7-slice1`): swipe to reply, double-tap heart, haptics, Draft:/typing previews in the list | implemented; Android compile/lint/JVM and quick offline Android gate passed; independent review pending |
-| 7 | Parity gaps (table below) | partly: web gained jump to latest, unread line, Up to edit, emoji picker, Files/Links; Android gained Advanced permissions and slow mode, composer emoji. Still missing on Android: quote (message or selection), reply in another channel, multi-select bundles, front-change lines |
-| 8 | Mentions autocomplete on both (members, groups, `@front`) | web done (`chat-composer.ts`); Android still `@front` only |
+| 7 | Parity gaps (table below) | done: web jump to latest, unread line, Up to edit, emoji, Files/Links; Android Advanced permissions and slow mode, composer emoji, Quote (whole message), Reply in another chat, Select several to quote or forward a bundle, quotes shown in bubbles, replies to other chats shown. Left: Android front-change lines in the timeline, quoting part of a message on Android |
+| 8 | Mentions autocomplete on both (members, groups, `@front`) | done (web `chat-composer.ts`; Android `ChatMentions`, which also gives the core composer the names it needs: Android @mentions were plain text before) |
 
 ## Parity matrix (2026-11-01 survey)
 

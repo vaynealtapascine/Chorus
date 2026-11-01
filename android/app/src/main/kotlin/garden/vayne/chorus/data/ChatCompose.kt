@@ -25,7 +25,7 @@ object ChatCompose {
         }
         val defaults = JSONArray(own.filter { it.id == selectedAuthor }.map { it.id })
         val options = JSONObject().put("segments", model.accountPrefs.segmentParsing)
-        return JSONObject(composer(draft, speakers.toString(), options.toString(), defaults.toString(), ""))
+        return JSONObject(composer(draft, speakers.toString(), options.toString(), defaults.toString(), ChatMentions.names(model).toString()))
     }
 
     fun preview(model: Model, draft: String, selectedAuthor: String?, accountId: String): Preview {
@@ -42,6 +42,7 @@ object ChatCompose {
         replyTo: String? = null,
         attachmentIds: List<String> = emptyList(),
         accountId: String = "",
+        quote: JSONObject? = null,
     ): JSONObject {
         require(draft.isNotBlank() || attachmentIds.isNotEmpty()) { "Write a message first." }
         require(audience in setOf("all", "members", "system_only")) { "Choose who can see this message." }
@@ -66,6 +67,7 @@ object ChatCompose {
         }
         if (attachmentIds.isNotEmpty()) payload.put("attachments", JSONArray(attachmentIds))
         if (replyTo != null) payload.put("reply_to", replyTo)
+        if (quote != null) payload.put("quote", quote)
         if (cw.isNotBlank()) payload.put("cw", cw.trim())
         if (audience == "members") payload.put("visibility", JSONObject().put("mode", "members")
             .put("member_ids", JSONArray(visibleTo.sorted())))

@@ -20,6 +20,28 @@ object ChatForward {
             authors, o.optLong("occurred_at"), o.optJSONArray("entities")?.toString() ?: "[]")
     }
 
+    /** A message's `quote`: `{items: [...]}` (a bundle) or one range `{message_id, offset, length, text}`. */
+    fun quoted(q: JSONObject?): List<ForwardItem> = when {
+        q == null -> emptyList()
+        q.has("items") -> parse(q.optJSONArray("items"))
+        q.optString("message_id").isNotBlank() -> listOf(ForwardItem(q.getString("message_id"), q.optString("text"), null, emptyList(), 0))
+        else -> emptyList()
+    }
+
+    /** Quote one whole message (a range over all of it) or several as a bundle, as web writes them. */
+    fun quote(messages: List<ChatMessage>, channelName: String): JSONObject = if (messages.size == 1) messages[0].let { m ->
+        JSONObject().put("message_id", m.id).put("offset", 0).put("length", m.text.length).put("text", m.text)
+    } else JSONObject().put("items", JSONArray(messages.map { snapshot(it, channelName) }))
+
+    /** Several messages forwarded together as one bundle (D-048), oldest first. */
+    fun bundle(targetChannel: String, speaker: String, messages: List<ChatMessage>, channelName: String,
+        attachmentIds: List<String>): JSONObject = JSONObject()
+        .put("channel_id", targetChannel).put("authors", JSONArray(listOf(speaker)))
+        .put("text", "").put("entities", JSONArray())
+        .put("forward_of_id", messages.first().id)
+        .put("forward_snapshot", JSONArray(messages.sortedBy { it.occurredAt }.map { snapshot(it, channelName) }))
+        .apply { if (attachmentIds.isNotEmpty()) put("attachments", JSONArray(attachmentIds)) }
+
     private fun attachment(a: ChatAttachment): JSONObject = JSONObject().put("id", a.id).put("blob_hash", a.blobHash)
         .put("filename", a.filename).put("mime", a.mime).put("size", a.size).put("alt_text", a.altText)
         .put("is_spoiler", a.spoiler).apply { a.thumbHash?.let { put("thumb_blob_hash", it) } }

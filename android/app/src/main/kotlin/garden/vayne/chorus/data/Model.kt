@@ -77,6 +77,8 @@ data class ChatMessage(
     /** A `message.forward`'s snapshot (D-048). */
     val forward: List<ForwardItem> = emptyList(),
     val pinned: Boolean = false,
+    /** What it quotes (SPEC §5.3): a part of one message, or a bundle of several (D-048). */
+    val quote: List<ForwardItem> = emptyList(),
 )
 data class ChannelWindow(val messages: List<ChatMessage>, val hasOlder: Boolean)
 
@@ -237,7 +239,8 @@ class Model(
                     val row = rows.getJSONObject(index)
                     ChatSegment(row.getInt("offset"), row.getInt("length"), strings(row.optJSONArray("authors")))
                 } } ?: emptyList(),
-                forward = ChatForward.parse(f.optJSONArray("forward_snapshot")), pinned = f.present("pinned_at"))
+                forward = ChatForward.parse(f.optJSONArray("forward_snapshot")), pinned = f.present("pinned_at"),
+                quote = ChatForward.quoted(f.optJSONObject("quote")))
         }
 
         /** Page backward through locally replicated messages without enlarging the chat model. */
