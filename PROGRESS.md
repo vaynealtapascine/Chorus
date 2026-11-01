@@ -30,6 +30,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why
 
 ### UI — Owner's Figma redesign
 
+- [~] UI10 One profile editor, privacy per part, friend profiles (owner, 2026-11-01, D-101). Order: server friend-profile reads + blob access (tests) → web editor → web friend profiles → Android editor → Android friend profiles. Branch `feat/profile-editor` (worktree `F:/DunBuild/chorus-members`, on top of `feat/members-list`).
 - [x] UI9 Customizable Members list (owner, 2026-11-01): role pills, bio line, banner rows, folders, flat view (D-100) on web and Android, plus Android catch-up (group filter chips, Groups sheet, PluralKit import). Branch `feat/members-list` (worktree `F:/DunBuild/chorus-members`). Left for later: Android's member editor still only edits Location/websites among custom fields (roles are edited from the list's long-press menu).
 - [~] UI8 Chat to Telegram polish with web/Android parity, spaces and member lists on both, private member DMs (owner, 2026-11-01). Plan: docs/handoff/ui8-chat-parity.md.
 - [~] UI6 Full Android feature pass: slices 1/2/7/8/9/10 accepted (7/9 after Sol's R1 follow-up and Claude's wrap-up, 2026-10-30). Slices 3/4/5/6/11 remain. See docs/handoff/ui6-implementation.md.
