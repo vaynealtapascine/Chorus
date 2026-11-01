@@ -142,7 +142,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         }
     }
 
-    LaunchedEffect(sharedDraft?.id, chorus.device?.accountId) {
+    LaunchedEffect(sharedDraft?.id, chorus.device?.accountId, busy) {
+        if (busy) return@LaunchedEffect
         val incoming = sharedDraft ?: return@LaunchedEffect
         if (chorus.device == null) return@LaunchedEffect
         selectedAuthors = null; profileId = null; threadPostId = null; replyTo = null
@@ -158,14 +159,16 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         editing = true
         onShareConsumed()
     }
-    LaunchedEffect(externalNewEntry, chorus.device?.accountId) {
+    LaunchedEffect(externalNewEntry, chorus.device?.accountId, busy) {
+        if (busy) return@LaunchedEffect
         if (externalNewEntry == null || chorus.device == null) return@LaunchedEffect
         selectedAuthors = null; profileId = null; threadPostId = null; replyTo = null
         section = "timeline"; kind = "entry"; editing = true
         onExternalNewEntryConsumed()
     }
 
-    LaunchedEffect(externalReplyPost) {
+    LaunchedEffect(externalReplyPost, busy) {
+        if (busy) return@LaunchedEffect
         if (externalReplyPost != null) {
             profileId = null; threadPostId = null
             section = "timeline"
@@ -302,7 +305,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                             bodyValue = TextFieldValue(); title = ""; cw = ""; mood = ""; tags = ""; replyTo = null; quoteOf = null
                             attachments.clear(); selectedAuthors = null
                             editing = false
-                        } catch (e: Exception) { error = e.message ?: "Could not post." }
+                        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                        catch (e: Exception) { error = e.message ?: "Could not post." }
                         finally { busy = false }
                     }
                 }) { Text(if (busy) "Posting…" else "Post") }
@@ -493,7 +497,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 newPosts = false
             }
         }
-        FloatingActionButton(onClick = { selectedAuthors = null; replyTo = null; if (journalTab == "entries") kind = "entry"; editing = true },
+        FloatingActionButton(onClick = { replyTo = null; if (journalTab == "entries") kind = "entry"; editing = true },
             containerColor = p.accent, contentColor = p.onAccent, shape = CircleShape,
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).size(56.dp)) {
             ChatIcon(R.drawable.ic_edit, "Write a post", p.onAccent)
