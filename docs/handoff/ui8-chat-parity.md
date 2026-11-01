@@ -79,4 +79,27 @@ Validation: `:app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug --off
 
 ## Android timeline and partial quote completion (2026-11-01)
 
-Internal chats show the channel-selected front history only; shared/DM spaces do not show front events. Timeline markers respect reverse-list ordering. Partial quotes preserve UTF-16 offsets and expand split surrogate pairs. Channel navigation clears the selection sheet. Tests cover ordering, grouping, bounds, unknown subjects, layers and surrogate ranges. Full `python scripts/verify.py --android` passed, exit 0 (`F:/DunBuild/chorus-implementation-final.log`), after generating web bindings with `scripts/build-web-core.ps1`; the first run lacked those ignored artifacts. Targeted quote/timeline JVM tests passed. No device validation or deployment.
+Internal chats show the channel-selected front history only; shared/DM spaces do not show front events. The initial implementation incorrectly assumed reverseLayout also reversed Column children; corrected by the review follow-up below. Partial quotes preserve UTF-16 offsets and expand split surrogate pairs. Channel navigation clears the selection sheet. Tests cover ordering, grouping, bounds, unknown subjects, layers and surrogate ranges. Full `python scripts/verify.py --android` passed, exit 0 (`F:/DunBuild/chorus-implementation-final.log`), after generating web bindings with `scripts/build-web-core.ps1`; the first run lacked those ignored artifacts. Targeted quote/timeline JVM tests passed. No device validation or deployment.
+
+## Sol review follow-up (2026-11-01)
+
+Opus found a major timeline placement defect: LazyColumn reverses items, not Column children.
+The UI now consumes a pure chronological marker plan: before-message events, message, then
+newest trailing events. Date markers follow the actual event/message sequence across midnight.
+ChatTimelineTest exercises the consumed plan with several events and trailing events.
+Interval conversion and event naming are remembered with model/history dependencies. History
+refresh retains the previous same-identity value; composition keys reset it across account,
+channel, front, space-kind and read-as identity changes. Named co-conscious display wording
+matches the web convention without changing layer eligibility.
+
+Investigation: a deleted selected front is intentionally retained as the channel selection
+(ChatSpeaker.frontOf / web channelFrontId); core effective history excludes unavailable/deleted
+recovery presence and preserves historical intervals. Do not substitute Body or raw saved history.
+Existing core deleted_or_missing_sources_create_gaps_and_restore_without_counting_fallbacks
+covers this rule. Historical deleted-front reads remain supported (FRONTS.md).
+
+Remaining parity gaps, explicitly outside this fix: web timeline still reads legacy Body history;
+group subject naming differs between web and Android. No scope or spec change was made.
+Validation results are recorded below after the gate completes. No push, deployment or device action.
+
+Validation: full `python scripts/verify.py --android` passed (exit 0), using F: build environment and Studio JBR after build-web-core.ps1. Log: `F:/DunBuild/review-full.log`. Explicit targeted Gradle run passed (exit 0; `F:/DunBuild/review-targeted.log`): ChatTimelineTest: 3 tests, 0 failures, 0 errors; ChatQuoteRangeTest: 1 tests, 0 failures, 0 errors; ChatQuotesTest: 3 tests, 0 failures, 0 errors. `git diff --check` passed.

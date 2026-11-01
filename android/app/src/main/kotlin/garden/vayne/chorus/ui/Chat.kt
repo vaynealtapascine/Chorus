@@ -892,20 +892,19 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         // front-change lines between our own chat's messages (web parity, SPEC §5)
         val frontRevision by chorus.frontHistoryRevision.collectAsState()
         val timelineFront = ChatSpeaker.frontOf(model, channel.id)
-        val timelineHistory by produceState<garden.vayne.chorus.data.NamedHistory?>(null, timelineFront, frontRevision, space.kind) {
-            value = null
+        val timelineHistory by androidx.compose.runtime.key(chorus.device?.accountId, channel.id, timelineFront, space.kind, viewingAs) { produceState<garden.vayne.chorus.data.NamedHistory?>(null, frontRevision) {
             if (space.kind == "internal" && timelineFront != null)
                 value = runCatching { chorus.frontHistory(timelineFront) }.getOrNull()
-        }
-        val timelineIntervals = if (model.namedFronts == null) model.frontIntervals else
+        } }
+        val timelineIntervals = remember(model, timelineHistory, timelineFront) { if (model.namedFronts == null) model.frontIntervals else
             timelineHistory?.takeIf { it.frontId == timelineFront }?.intervals.orEmpty().map {
                 garden.vayne.chorus.data.FrontInterval(it.id, it.presence.subjectType, it.presence.subjectId,
                     it.presence.layerId, it.presence.isPrimary, it.startAt, it.endAt)
-            }
-        val frontLines = if (space.kind != "internal" || messages.isEmpty()) emptyList() else
+            } }
+        val frontLines = remember(model, timelineIntervals, messages.firstOrNull()?.occurredAt, space.kind) { if (space.kind != "internal" || messages.isEmpty()) emptyList() else
             ChatPresentation.frontEvents(timelineIntervals, messages.first().occurredAt, System.currentTimeMillis(),
                 { type, id -> model.subject(type, id)?.name },
-                { level -> ChatPresentation.layer(model, Entry("member", "", level, false)) })
+                { level -> ChatPresentation.layer(model, Entry("member", "", level, false)) }) }
         val everywhere = remember(model, viewingAs) {
             model.chatMessages.filterKeys { shownNow(it) }.values.flatten().associateBy { it.id }
         }
@@ -931,21 +930,14 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 val older = messages.getOrNull(messages.lastIndex - index - 1)
                 val newer = messages.getOrNull(messages.lastIndex - index + 1)
                 // who came to the front since the message before (our own chats; after the newest, until now)
-                val linesBefore = if (older == null) emptyList() else frontLines.filter { it.at > older.occurredAt && it.at <= message.occurredAt }
-                val linesAfter = if (newer == null) frontLines.filter { it.at > message.occurredAt } else emptyList()
+                val timelinePlan = ChatPresentation.timelinePlan(older?.occurredAt, message.occurredAt, newer == null, frontLines)
                 val groupStart = !ChatPresentation.grouped(older, message) || message.id == firstUnread
                 val groupEnd = !ChatPresentation.grouped(message, newer) || newer?.id == firstUnread
                 Column(Modifier.padding(top = if (groupStart) 8.dp else 0.dp)) {
                 if (readerName != null && message.id == firstUnread) Text("${unreadCount} unread for $readerName",
                     color = p.accent, fontSize = 12.sp, lineHeight = 16.sp, textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).background(p.surface).padding(vertical = 6.dp))
-                if (older == null || ChatPresentation.day(older.occurredAt) != ChatPresentation.day(message.occurredAt)) {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-                        Text(ChatPresentation.dateLabel(message.occurredAt), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
-                            modifier = Modifier.background(p.surface, RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 4.dp))
-                    }
-                }
-                for (line in linesAfter.asReversed()) FrontLine(line)
+                for (marker in timelinePlan.before) TimelineMarker(marker)
                 val canPrivate = if (space.kind == "internal") replySpeakerId != null &&
                     message.authors.firstOrNull()?.let { it != replySpeakerId && model.member(it) != null } == true
                 else message.accountId != null && message.accountId != chorus.device?.accountId
@@ -973,7 +965,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     onEdit = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
                         heldMessages[message.id] == null)
                         ({ editingMessageId = message.id }) else null)
-                for (line in linesBefore.asReversed()) FrontLine(line)
+                for (marker in timelinePlan.after) TimelineMarker(marker)
                 }
             }
             // F5.7: the parent heads the thread, then how many replies follow
@@ -2087,5 +2079,15 @@ private fun FrontLine(line: ChatPresentation.FrontEvent) {
         Text(line.text + " · " + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(line.at)), color = p.ink3,
             fontSize = 12.sp, lineHeight = 16.sp, textAlign = TextAlign.Center,
             modifier = Modifier.background(p.surface, RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 4.dp))
+    }
+}
+
+@Composable
+private fun TimelineMarker(marker: ChatPresentation.TimelineMarker) {
+    val event = marker.event
+    if (event != null) FrontLine(event)
+    else Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+        Text(ChatPresentation.dateLabel(marker.at), fontSize = 12.sp,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
     }
 }

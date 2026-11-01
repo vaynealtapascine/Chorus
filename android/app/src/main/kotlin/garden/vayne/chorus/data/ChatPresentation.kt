@@ -29,6 +29,28 @@ object ChatPresentation {
 
     data class FrontEvent(val at: Long, val text: String)
 
+    data class TimelineMarker(val at: Long, val event: FrontEvent? = null)
+    data class TimelinePlan(val before: List<TimelineMarker>, val after: List<TimelineMarker>)
+
+    /** Column children stay chronological even in a reverseLayout LazyColumn. */
+    fun timelinePlan(older: Long?, message: Long, newest: Boolean, events: List<FrontEvent>): TimelinePlan {
+        var previous = older
+        fun markers(lines: List<FrontEvent>, includeMessage: Boolean): List<TimelineMarker> = buildList {
+            for (line in lines) {
+                if (previous == null || day(previous!!) != day(line.at)) add(TimelineMarker(line.at))
+                add(TimelineMarker(line.at, line))
+                previous = line.at
+            }
+            if (includeMessage) {
+                if (previous == null || day(previous!!) != day(message)) add(TimelineMarker(message))
+                previous = message
+            }
+        }
+        val before = markers(events.filter { older != null && it.at > older && it.at <= message }, true)
+        val after = markers(if (newest) events.filter { it.at > message } else emptyList(), false)
+        return TimelinePlan(before, after)
+    }
+
     /**
      * "Foxglove started fronting" lines for our own chats (web's chat-list.ts frontEvents): switches
      * that began after [from] and by [to]. Starts in the same minute and layer read as one line.
@@ -47,7 +69,7 @@ object ChatPresentation {
             val layer = (layerName(g.level) ?: g.level).lowercase()
             val who = if (g.names.size > 2) g.names.dropLast(1).joinToString(", ") + " & " + g.names.last() else g.names.joinToString(" & ")
             val verb = when {
-                g.level == "cocon" -> "became co-conscious"
+                g.level == "cocon" || layer == "co-conscious" -> "became co-conscious"
                 g.level == "present" -> "came near"
                 layer.endsWith("ing") -> "started $layer"
                 g.level == "front" -> "started fronting"
