@@ -100,3 +100,70 @@ export function frontEvents(intervals: Interval[], from: number, to: number, nam
     return { at: g.at, text: `${who} ${verb}` };
   });
 }
+
+// ─── pins, members' private chats, cleared chats (D-097; Android's ChatOrganize.kt) ───────────────
+
+export const PINS = 'chat_pins';
+export const HIDE_PRIVATE = 'chat.hide_private';
+export const HIDDEN = 'chat_hidden:';
+
+type PrefRows = Record<string, { fields: Record<string, unknown> } | undefined>;
+
+/** Account-wide chat prefs; a pending local change (empty account id) wins over the stamped row. */
+export function chatPrefs(prefs: PrefRows, accountId: string): { pins: string[]; hidePrivate: boolean; hidden: Map<string, number> } {
+  const value = (key: string) => (prefs[`||${key}`] ?? prefs[`${accountId}||${key}`])?.fields.value;
+  const pins = value(PINS);
+  const hidden = new Map<string, number>();
+  const stamped = new Map<string, unknown>();
+  const pending = new Map<string, unknown>();
+  for (const [k, row] of Object.entries(prefs)) {
+    const [account, device, key] = k.split('|');
+    if (device || (account && account !== accountId) || !key?.startsWith(HIDDEN) || !row) continue;
+    (account ? stamped : pending).set(key.slice(HIDDEN.length), row.fields.value);
+  }
+  for (const [id, at] of new Map([...stamped, ...pending])) if (typeof at === 'number') hidden.set(id, at);
+  return {
+    pins: Array.isArray(pins) ? pins.filter((p): p is string => typeof p === 'string' && !!p) : [],
+    hidePrivate: value(HIDE_PRIVATE) !== false,
+    hidden,
+  };
+}
+
+/** Only DMs between members and channels limited to some members are anyone's private chats. */
+export function isPrivate(channel: { kind: string; member_ids?: string[] }, space: { kind: string } | undefined): boolean {
+  return space?.kind === 'internal' && (channel.kind === 'member_dm' || !!channel.member_ids?.length);
+}
+
+/** Shown while one of its members fronts or is co-conscious, or while reading as one of them. */
+export function privateVisible(
+  channel: { kind: string; member_ids?: string[] },
+  space: { kind: string } | undefined,
+  front: { subject_type: string; subject_id: string; level: string }[],
+  viewingAs: string | null,
+  hidePrivate: boolean,
+): boolean {
+  if (!hidePrivate || !isPrivate(channel, space)) return true;
+  const members = channel.member_ids ?? [];
+  if (viewingAs && members.includes(viewingAs)) return true;
+  return front.some((e) => e.subject_type === 'member' && (e.level === 'front' || e.level === 'cocon') && members.includes(e.subject_id));
+}
+
+/** Pinned (in pin order) first, then the rest by activity. */
+export function orderChats<T extends { id: string; at: number; title: string }>(rows: T[], pins: string[]): T[] {
+  const rank = new Map(pins.map((p, i) => [p, i]));
+  const pinned = rows.filter((r) => rank.has(r.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+  return [...pinned, ...byActivity(rows.filter((r) => !rank.has(r.id)))];
+}
+
+export function togglePin(pins: string[], id: string): string[] {
+  return pins.includes(id) ? pins.filter((p) => p !== id) : [...pins, id];
+}
+
+/** Move one pin to where another is (drag and drop). */
+export function movePin(pins: string[], id: string, onto: string): string[] {
+  const from = pins.indexOf(id), to = pins.indexOf(onto);
+  if (from < 0 || to < 0 || from === to) return pins;
+  const next = [...pins];
+  next.splice(to, 0, ...next.splice(from, 1));
+  return next;
+}

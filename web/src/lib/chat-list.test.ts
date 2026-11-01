@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { byActivity, chatTime, dayLabel, folderOf, frontEvents, hideSpoilers, previewOf } from './chat-list';
+import { byActivity, chatPrefs, chatTime, dayLabel, folderOf, frontEvents, HIDDEN, HIDE_PRIVATE, hideSpoilers, isPrivate, movePin, orderChats, PINS, previewOf, privateVisible, togglePin } from './chat-list';
 import type { ChannelRow, MessageRow, SpaceRow } from './data';
 
 const space = (kind: SpaceRow['kind']): SpaceRow => ({ id: kind, kind, name: kind });
@@ -53,5 +53,42 @@ describe('chat list', () => {
       { at: 60, text: 'Nairon became co-conscious' },
       { at: 70, text: 'Foxglove started steering' },
     ]);
+  });
+});
+
+describe('pins, private chats and cleared chats (D-097)', () => {
+  it('reads the prefs, pending first', () => {
+    const p = chatPrefs({
+      [`a||${PINS}`]: { fields: { value: ['c1', 'c2'] } },
+      [`a||${HIDDEN}c3`]: { fields: { value: 100 } },
+      [`||${HIDDEN}c3`]: { fields: { value: 200 } },
+      [`||${HIDE_PRIVATE}`]: { fields: { value: false } },
+      [`other||${HIDDEN}c4`]: { fields: { value: 5 } },
+    }, 'a');
+    expect(p.pins).toEqual(['c1', 'c2']);
+    expect(p.hidePrivate).toBe(false);
+    expect([...p.hidden]).toEqual([['c3', 200]]);
+    expect(chatPrefs({}, 'a').hidePrivate).toBe(true);
+  });
+  it("shows members' private chats only while one of them is here", () => {
+    const home = { kind: 'internal' };
+    const dm = { kind: 'member_dm', member_ids: ['kai', 'rin'] };
+    const f = (id: string, level = 'front') => [{ subject_type: 'member', subject_id: id, level }];
+    expect(privateVisible(dm, home, f('june'), null, true)).toBe(false);
+    expect(privateVisible(dm, home, f('rin'), null, true)).toBe(true);
+    expect(privateVisible(dm, home, f('kai', 'cocon'), null, true)).toBe(true);
+    expect(privateVisible(dm, home, f('kai', 'present'), null, true)).toBe(false);
+    expect(privateVisible(dm, home, f('june'), 'kai', true)).toBe(true);
+    expect(privateVisible(dm, home, [], null, false)).toBe(true);
+    expect(privateVisible({ kind: 'text' }, home, [], null, true)).toBe(true);
+    expect(isPrivate({ kind: 'text', member_ids: ['kai'] }, { kind: 'shared' })).toBe(false);
+  });
+  it('puts pins first in their order, then by activity', () => {
+    const rows = [{ id: 'a', at: 10, title: 'a' }, { id: 'b', at: 50, title: 'b' }, { id: 'c', at: 30, title: 'c' }, { id: 'd', at: 40, title: 'd' }];
+    expect(orderChats(rows, ['c', 'a']).map((r) => r.id)).toEqual(['c', 'a', 'b', 'd']);
+    expect(togglePin(['a'], 'c')).toEqual(['a', 'c']);
+    expect(togglePin(['a', 'c'], 'a')).toEqual(['c']);
+    expect(movePin(['a', 'b', 'c'], 'c', 'a')).toEqual(['c', 'a', 'b']);
+    expect(movePin(['a', 'b', 'c'], 'a', 'c')).toEqual(['b', 'c', 'a']);
   });
 });

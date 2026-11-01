@@ -21,7 +21,7 @@
   import SpaceRail from './SpaceRail.svelte';
   import ChatFolderRail from './ChatFolderRail.svelte';
   import ChatList from './ChatList.svelte';
-  import { dayLabel, discColor, folderOf, frontEvents, type Folder } from '../chat-list';
+  import { chatPrefs, dayLabel, discColor, folderOf, frontEvents, privateVisible, type Folder } from '../chat-list';
   import AttachmentView from './AttachmentView.svelte';
   import { expandFront } from '../subsystems';
   import Icon from './Icon.svelte';
@@ -52,10 +52,15 @@
       (channelId?.startsWith('space:')
         ? allChannels.find((c) => c.space_id === channelId.slice(6) && !c.archived && c.kind !== 'thread')
         : undefined) ??
+      // nothing asked for: the first chat that isn't someone else's private one (D-097)
+      allChannels.find((c) => !c.archived && c.kind !== 'thread' &&
+        privateVisible(c, ss.find((s) => s.id === c.space_id), fronting, viewingAs, chatPrefs(projection.rows.pref ?? {}, sync.accountId).hidePrivate)) ??
       allChannels.find((c) => !c.archived && c.kind !== 'thread'),
   );
   const space = $derived(ss.find((s) => s.id === current?.space_id) ?? ss[0]);
-  const spaceChannels = $derived(allChannels.filter((c) => c.space_id === space?.id && !c.archived && c.kind !== 'thread'));
+  // members' private chats only while one of them is here (D-097), as in ChatList
+  const spaceChannels = $derived(allChannels.filter((c) => c.space_id === space?.id && !c.archived && c.kind !== 'thread' &&
+    privateVisible(c, space, fronting, viewingAs, chatPrefs(projection.rows.pref ?? {}, sync.accountId).hidePrivate)));
   // only the newest pages are built and in the DOM; scrolling up adds older ones (SPEC §9: pages
   // of 100, and a 50k-message channel's first screen within 150 ms)
   const PAGE = 100;
@@ -93,7 +98,10 @@
   const self = $derived(selfMember(projection));
   let viewingAs = $state<string | null>(null);
   const activeMembers = $derived(activeViewers(fronting));
-  const visibleMsgs = $derived(msgs.filter((m) => memberVisible(m, space?.kind, activeMembers, viewingAs)));
+  // a chat cleared for us (D-097) keeps its earlier messages out of view
+  const clearedAt = $derived(current ? chatPrefs(projection.rows.pref ?? {}, sync.accountId).hidden.get(current.id) : undefined);
+  const visibleMsgs = $derived(msgs.filter((m) => memberVisible(m, space?.kind, activeMembers, viewingAs) &&
+    (clearedAt === undefined || m.occurred_at > clearedAt)));
   // this account's autoproxy for the channel (D-074): pref `autoproxy:<channel id>`
   type Autoproxy = 'off' | 'front' | 'latch' | 'member';
   const autoproxyKey = $derived(current ? `autoproxy:${current.id}` : '');
@@ -924,7 +932,7 @@
 
 <div class="chat" class:with-info={showInfo}>
   <div class="desk-rail"><ChatFolderRail {folder} counts={folderCounts} person={!!self} onfolder={(f) => (folder = f)} {onmenu} /></div>
-  <div class="desk-list"><ChatList {projection} {dark} currentId={current?.id} {folder} {directory} person={!!self} {onswitch}
+  <div class="desk-list"><ChatList {projection} {dark} currentId={current?.id} {folder} {directory} person={!!self} {onswitch} {viewingAs}
     onnewchannel={homeSpace && !self ? newChannelIn : undefined} /></div>
   <aside class="channels" aria-label="Channels">
     <div class="channel-title">Chats <a class="icon-button" href="#/search" aria-label="Search messages"><Icon name="search" size={18} /></a></div>

@@ -3,7 +3,7 @@
   // spaces, newest first, with its last message, time and unread count. Muted chats keep a grey badge.
   import { core } from '../core';
   import { channels, latestMessage, members, spaces, unread, fuzzy, type ChannelRow, type SpaceRow } from '../data';
-  import { byActivity, chatTime, discColor, folderOf, previewOf, type Folder } from '../chat-list';
+  import { chatPrefs, chatTime, discColor, folderOf, HIDDEN, movePin, orderChats, PINS, previewOf, privateVisible, togglePin, type Folder } from '../chat-list';
   import { bodyPresence, frontLayers } from '../front-view';
   import { expandFront } from '../subsystems';
   import { spaceTitle, type SpaceInfo } from '../spaces';
@@ -11,9 +11,9 @@
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
 
-  let { projection, dark, currentId, folder, directory, person, onswitch, onnewchannel }: {
+  let { projection, dark, currentId, folder, directory, person, onswitch, onnewchannel, viewingAs = null }: {
     projection: Projection; dark: boolean; currentId?: string; folder: Folder; directory: Map<string, SpaceInfo>;
-    person: boolean; onswitch: () => void; onnewchannel?: (name: string) => void;
+    person: boolean; onswitch: () => void; onnewchannel?: (name: string) => void; viewingAs?: string | null;
   } = $props();
 
   let query = $state('');
@@ -26,12 +26,28 @@
   interface Row {
     channel: ChannelRow; space: SpaceRow | undefined; folder: Exclude<Folder, 'all'>; title: string; icon: string | null;
     at: number; unread: number; muted: boolean; who: string | null; text: string; disc: { glyph: string; color: string; blob?: string };
+    id: string; pinned: boolean;
   }
+  const organize = $derived(chatPrefs(projection.rows.pref ?? {}, sync.accountId));
   const rows: Row[] = $derived.by(() => {
     const all = channels(projection).filter((c) => !c.archived && c.kind !== 'thread');
     const prefs = projection.rows.pref ?? {};
-    return byActivity(all.map((c) => {
+    // members inside a fronting subsystem count as here (D-092)
+    const front = expandFront(projection, sync.accountId, bodyPresence(projection, sync.accountId)).entries;
+    const list: Row[] = [];
+    for (const c of all) {
       const space = ss.find((s) => s.id === c.space_id);
+      // a member's private chats only while one of them is here (D-097)
+      if (!privateVisible(c, space, front, viewingAs, organize.hidePrivate)) continue;
+      // cleared for us: gone until something newer arrives
+      const cleared = organize.hidden.get(c.id);
+      if (cleared !== undefined && (latestMessage(projection, c.id)?.occurred_at ?? 0) <= cleared) continue;
+      list.push(row(c, space, all, prefs));
+    }
+    return orderChats(list, organize.pins);
+  });
+  function row(c: ChannelRow, space: SpaceRow | undefined, all: ChannelRow[], prefs: NonNullable<Projection['rows']['pref']>): Row {
+    {
       const f = folderOf(c, space);
       const siblings = all.filter((o) => o.space_id === c.space_id).length;
       const title = c.kind === 'member_dm' ? c.name
@@ -49,10 +65,38 @@
       return {
         channel: c, space, folder: f, title, icon: c.kind === 'member_dm' || space?.kind === 'dm' ? null : f === 'internal' ? 'hash' : 'globe',
         at: latest?.occurred_at ?? 0, unread: c.id === currentId ? 0 : unread(projection, c.id, sync.accountId),
-        muted: notify === 'none', who: preview.who, text: preview.text, disc,
+        muted: notify === 'none', who: preview.who, text: preview.text, disc, id: c.id, pinned: organize.pins.includes(c.id),
       };
-    }));
-  });
+    }
+  }
+
+  // ⋯ / right-click: pin, delete (our own space) or clear (a DM with another account, a shared channel)
+  let menuFor = $state<string | null>(null);
+  let dragging = $state<string | null>(null);
+  let dropOn = $state<string | null>(null);
+  function savePins(pins: string[]) {
+    const existing = new Set(channels(projection).map((c) => c.id));
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: PINS, value: [...new Set(pins.filter((p) => existing.has(p)))] });
+  }
+  function remove(r: Row) {
+    menuFor = null;
+    const own = r.space?.kind === 'internal';
+    const what = r.channel.kind === 'member_dm' ? 'this chat' : r.space?.kind === 'dm' ? `your chat with ${r.title}` : `#${r.title}`;
+    if (own) {
+      if (!confirm(`Delete ${what}? It's deleted for everyone in your system, messages and all.`)) return;
+      sync.create('channel.delete', `space:${r.channel.space_id}`, r.channel.id, {});
+    } else {
+      if (!confirm(`Clear ${what}? It leaves your chats and its messages leave your view, on all your devices. It comes back if someone writes again; they keep everything.`)) return;
+      sync.create('pref.set', sync.accountScope, null, { device: '', key: `${HIDDEN}${r.channel.id}`, value: Math.max(Date.now(), r.at) });
+    }
+    if (r.pinned) savePins(organize.pins.filter((p) => p !== r.id));
+    if (r.channel.id === currentId) location.hash = '#/chat';
+  }
+  // pinned chats are arranged by dragging one onto another
+  function drop(onto: string) {
+    if (dragging && dragging !== onto) savePins(movePin(organize.pins, dragging, onto));
+    dragging = null; dropOn = null;
+  }
   const shown = $derived(rows.filter((r) => (folder === 'all' || r.folder === folder) &&
     (!query.trim() || fuzzy(query, `${r.title} ${r.text}`) !== null)));
 
@@ -72,6 +116,8 @@
   }
 </script>
 
+<svelte:window onpointerdown={(e) => { if (menuFor && !(e.target as Element).closest?.('.row-menu, .more')) menuFor = null; }}
+  onkeydown={(e) => { if (e.key === 'Escape') menuFor = null; }} />
 <section class="list" aria-label="Chats">
   <div class="search-row">
     <label class="search"><Icon name="search" size={18} /><input bind:value={query} placeholder="Search" aria-label="Search chats" /></label>
@@ -102,7 +148,13 @@
   {/if}
   <div class="rows">
     {#each shown as r (r.channel.id)}
-      <a class="row" class:on={r.channel.id === currentId} href="#/chat/{r.channel.id}" aria-current={r.channel.id === currentId ? 'page' : undefined}>
+      <div class="row-wrap" class:drop={dropOn === r.id} role="listitem"
+        ondragover={(e) => { if (dragging && r.pinned) { e.preventDefault(); dropOn = r.id; } }}
+        ondragleave={() => { if (dropOn === r.id) dropOn = null; }}
+        ondrop={(e) => { e.preventDefault(); drop(r.id); }}>
+      <a class="row" class:on={r.channel.id === currentId} class:pinned={r.pinned} href="#/chat/{r.channel.id}" aria-current={r.channel.id === currentId ? 'page' : undefined}
+        draggable={r.pinned} ondragstart={(e) => { dragging = r.id; e.dataTransfer?.setData('text/plain', r.id); }} ondragend={() => { dragging = null; dropOn = null; }}
+        oncontextmenu={(e) => { e.preventDefault(); menuFor = r.id; }}>
         <span class="disc" style="background: {core.adaptColor(r.disc.color, dark).ring}; color: {core.adaptColor(r.disc.color, dark).avatar_ink}">
           {#if r.disc.blob}<AvatarImage hash={r.disc.blob} glyph={r.disc.glyph} name={r.title} />{:else}{r.disc.glyph}{/if}
         </span>
@@ -116,10 +168,20 @@
           <span class="bottom">
             {#if r.who}<span class="who">{r.who}:</span>{/if}
             <span class="text">{r.text}</span>
-            {#if r.unread}<span class="badge" class:muted={r.muted}>{r.unread > 999 ? '999+' : r.unread}</span>{/if}
+            {#if r.unread}<span class="badge" class:muted={r.muted}>{r.unread > 999 ? '999+' : r.unread}</span>
+            {:else if r.pinned}<span class="pin" title="Pinned"><Icon name="pin" size={14} /></span>{/if}
           </span>
         </span>
       </a>
+      <button class="more" aria-label="Chat actions for {r.title}" aria-haspopup="menu" aria-expanded={menuFor === r.id}
+        onclick={() => (menuFor = menuFor === r.id ? null : r.id)}><Icon name="more" size={18} /></button>
+      {#if menuFor === r.id}
+        <div class="row-menu" role="menu">
+          <button role="menuitem" onclick={() => { menuFor = null; savePins(togglePin(organize.pins, r.id)); }}><Icon name="pin" size={16} /> {r.pinned ? 'Unpin' : 'Pin to top'}</button>
+          <button role="menuitem" class="danger" onclick={() => remove(r)}><Icon name="delete" size={16} /> {r.space?.kind === 'internal' ? 'Delete chat' : 'Clear chat'}</button>
+        </div>
+      {/if}
+      </div>
     {:else}
       <p class="none">{query.trim() ? 'No chats match.' : 'No chats here yet.'}</p>
     {/each}
@@ -138,6 +200,20 @@
   .compose-panel form { display: flex; gap: 8px; }
   .compose-panel input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 10px; }
   .compose-panel button { border: 0; border-radius: var(--r-full); padding: 6px 14px; background: var(--accent); color: var(--on-accent); font-weight: 600; cursor: pointer; }
+  .row-wrap { position: relative; }
+  .row-wrap.drop { box-shadow: inset 0 2px 0 var(--accent); }
+  .row.pinned { background: var(--surface); }
+  .row.pinned[draggable='true'] { cursor: grab; }
+  .pin { color: var(--ink-3); display: inline-flex; }
+  .more { position: absolute; right: 8px; top: 8px; width: 28px; height: 28px; display: none; place-items: center; border: 0; border-radius: 50%;
+    background: var(--surface-2); color: var(--ink-2); cursor: pointer; }
+  .row-wrap:hover .more, .more[aria-expanded='true'], .more:focus-visible { display: grid; }
+  .row-menu { position: absolute; right: 8px; top: 40px; z-index: 5; display: grid; min-width: 160px; padding: 4px; border-radius: var(--r-md);
+    background: var(--surface-2); box-shadow: 0 8px 24px rgb(0 0 0 / 0.35); }
+  .row-menu button { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 0; border-radius: var(--r-sm); background: none;
+    color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .row-menu button:hover { background: var(--surface-3, var(--surface)); }
+  .row-menu .danger { color: var(--danger); }
   .compose-panel button:disabled { opacity: .5; }
   .compose-panel a { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
   .here { display: flex; align-items: flex-start; gap: 6px; padding: 4px 12px 12px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
@@ -156,7 +232,7 @@
   .row.on { background: var(--accent-soft); }
   .disc { flex: none; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; font-weight: 700; font-size: 20px; }
   .body { flex: 1; min-width: 0; display: grid; gap: 3px; padding: 12px 14px 12px 0; border-bottom: 1px solid var(--line); }
-  .row.on .body, .row:has(+ .row.on) .body { border-bottom-color: transparent; }
+  .row.on .body, .row-wrap:has(+ .row-wrap .row.on) .body { border-bottom-color: transparent; }
   .top, .bottom { display: flex; align-items: center; gap: 5px; min-width: 0; }
   .top { color: var(--ink-3); }
   .title { flex: 1; min-width: 0; color: var(--ink); font-weight: 600; font-size: 15px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
