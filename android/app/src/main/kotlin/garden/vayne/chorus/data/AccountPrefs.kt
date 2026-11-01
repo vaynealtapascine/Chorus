@@ -10,7 +10,13 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
     /** Saved journal posts: `bookmark:<post id>` = true. Private to this account's devices. */
     val bookmarks: Set<String> = emptySet(),
     /** Members who are subsystems: `member_subsystem:<member id>` = the subsystem group's id (D-092). */
-    val memberSubsystems: Map<String, String> = emptyMap()) {
+    val memberSubsystems: Map<String, String> = emptyMap(),
+    /** Pinned chats in their arranged order (`chat_pins`, D-097). */
+    val chatPins: List<String> = emptyList(),
+    /** Members' private chats only while one of them fronts (`chat.hide_private`, on by default). */
+    val hidePrivate: Boolean = true,
+    /** Chats cleared for this account: channel id → when (`chat_hidden:<id>`). */
+    val hiddenChats: Map<String, Long> = emptyMap()) {
     fun isSaved(postId: String): Boolean = postId in bookmarks
 
     /** A channel's chat notifications; DMs default to everything, other channels to mentions (as on web). */
@@ -40,7 +46,10 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
                 value("chat.cw_auto_expand") == true, value("chat.segment_parsing") != false,
                 value("chat.read_per_member") == true, value("share_typing") == true, channelLevels(prefs, accountId),
                 savedPosts(prefs, accountId), keyed(prefs, accountId, MEMBER_SUBSYSTEM).mapNotNull { (member, value) ->
-                    (value as? String)?.takeIf { it.isNotBlank() }?.let { member to it } }.toMap())
+                    (value as? String)?.takeIf { it.isNotBlank() }?.let { member to it } }.toMap(),
+                (value(ChatOrganize.PINS) as? org.json.JSONArray)?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) } }.orEmpty(),
+                value(ChatOrganize.HIDE_PRIVATE) != false,
+                keyed(prefs, accountId, ChatOrganize.HIDDEN).mapNotNull { (channel, at) -> (at as? Number)?.let { channel to it.toLong() } }.toMap())
         }
 
         /** Account-wide (no device) prefs under [prefix], by the rest of the key; a pending local

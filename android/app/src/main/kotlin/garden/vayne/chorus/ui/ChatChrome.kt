@@ -1,6 +1,7 @@
 package garden.vayne.chorus.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -69,16 +70,21 @@ internal fun ChannelDisc(channel: ChatChannel, member: Member? = null, size: Dp 
 }
 
 internal data class ChatListRow(val channel: ChatChannel, val space: ChatSpace, val title: String,
-    val latest: ChatMessage?, val unread: Int, val sender: String? = null, val muted: Boolean = false)
+    val latest: ChatMessage?, val unread: Int, val sender: String? = null, val muted: Boolean = false, val pinned: Boolean = false)
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: String?, reader: String?,
     onOpen: (ChatListRow) -> Unit, onNew: (() -> Unit)?, onSwitch: () -> Unit,
-    onSearch: () -> Unit, modifier: Modifier = Modifier, readerId: String? = null, onNewChannel: (() -> Unit)? = null) {
+    onSearch: () -> Unit, modifier: Modifier = Modifier, readerId: String? = null, onNewChannel: (() -> Unit)? = null,
+    onRowAction: ((ChatListRow, String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     var folder by rememberSaveable { mutableStateOf(ChatPresentation.Folder.All) }
     var menu by remember { mutableStateOf(false) }
     var showReader by remember { mutableStateOf(false) }
+    // the chat whose long-press menu is open (pin, arrange pins, delete or clear)
+    var rowMenu by remember { mutableStateOf<String?>(null) }
+    val pinnedCount = rows.count { it.pinned }
     val system = model.spaces.firstOrNull { it.kind == "internal" }?.name?.takeUnless { it == "Home" }
     Column(modifier.fillMaxHeight().background(p.bg)) {
         Row(Modifier.fillMaxWidth().background(p.surface).padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -93,6 +99,8 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                 DropdownMenu(menu, { menu = false }) {
                     if (onNewChannel != null) DropdownMenuItem(text = { Text("New channel") }, onClick = { menu = false; onNewChannel() })
                     if (onNew != null) DropdownMenuItem(text = { Text("New message") }, onClick = { menu = false; onNew() })
+                    if (onRowAction != null && pinnedCount > 1) DropdownMenuItem(text = { Text("Arrange pinned chats") },
+                        onClick = { menu = false; rows.firstOrNull { it.pinned }?.let { onRowAction(it, "arrange") } })
                     if (!model.isPerson) DropdownMenuItem(text = { Text("Per-member read tracking is in Settings") }, onClick = { menu = false; showReader = true })
                 }
             }
@@ -144,14 +152,21 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
         }
         Box(Modifier.weight(1f)) {
             val filtered = rows.filter { folder == ChatPresentation.Folder.All || ChatPresentation.folder(it.channel, it.space) == folder }
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 88.dp)) {
+            // a chat that moves to the top (pinned, or a new message) is shown, not left just above the
+            // view: lazy lists keep the old first row in place
+            val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+            val first = filtered.firstOrNull()?.channel?.id
+            LaunchedEffect(first) { if (listState.firstVisibleItemIndex <= 1) listState.scrollToItem(0) }
+            LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 88.dp)) {
                 items(filtered, key = { it.channel.id }) { row ->
                     val direct = row.channel.isMemberDm && row.space.kind == "internal"
                     val peer = if (direct) row.channel.memberIds.firstOrNull { it != (readerId ?: ChatSpeaker.pick(model, row.channel.id)) }?.let(model::member) else null
-                    Row(Modifier.fillMaxWidth().background(if (selected == row.channel.id) p.accentSoft else p.bg)
-                        .clickable { onOpen(row) }.heightIn(min = 70.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+                    Box { Row(Modifier.fillMaxWidth().background(if (selected == row.channel.id) p.accentSoft else if (row.pinned) p.surface else p.bg)
+                        .combinedClickable(onClick = { onOpen(row) }, onLongClick = onRowAction?.let { { rowMenu = row.channel.id } },
+                            onLongClickLabel = "Chat actions").heightIn(min = 70.dp).padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ChannelDisc(row.channel, peer)
+                        // an account DM's channel is just "dm": its disc shows the account
+                        ChannelDisc(if (row.space.kind == "dm") row.channel.copy(name = row.title) else row.channel, peer)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 if (row.latest?.id in model.polls.polls) ChatIcon(R.drawable.ic_poll)
@@ -171,8 +186,19 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 if (row.muted) Icon(painterResource(R.drawable.ic_bell_off), "Muted", Modifier.size(16.dp), tint = p.ink3)
                                 if (row.unread > 0) ChatCount(row.unread, !row.muted)
+                                else if (row.pinned) Icon(painterResource(R.drawable.ic_pin), "Pinned", Modifier.size(16.dp), tint = p.ink3)
                             }
                         }
+                    }
+                    if (onRowAction != null) DropdownMenu(rowMenu == row.channel.id, { rowMenu = null }) {
+                        DropdownMenuItem(text = { Text(if (row.pinned) "Unpin" else "Pin to top") }, onClick = { rowMenu = null; onRowAction(row, "pin") },
+                            leadingIcon = { Icon(painterResource(if (row.pinned) R.drawable.ic_unpin else R.drawable.ic_pin), null, Modifier.size(20.dp)) })
+                        if (row.pinned && pinnedCount > 1) DropdownMenuItem(text = { Text("Arrange pinned chats") },
+                            onClick = { rowMenu = null; onRowAction(row, "arrange") })
+                        DropdownMenuItem(text = { Text(if (row.space.kind == "internal") "Delete chat" else "Clear chat", color = p.danger) },
+                            onClick = { rowMenu = null; onRowAction(row, "remove") },
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_delete), null, Modifier.size(20.dp), tint = p.danger) })
+                    }
                     }
                     HorizontalDivider(Modifier.padding(start = 72.dp), color = p.line, thickness = .5.dp)
                 }

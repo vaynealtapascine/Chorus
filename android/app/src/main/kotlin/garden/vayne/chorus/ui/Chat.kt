@@ -136,6 +136,7 @@ import garden.vayne.chorus.data.ChatReaction
 import garden.vayne.chorus.data.ChatReactions
 import garden.vayne.chorus.data.ChatForward
 import garden.vayne.chorus.data.AccountPrefs
+import garden.vayne.chorus.data.ChatOrganize
 import garden.vayne.chorus.data.ChatThreads
 import garden.vayne.chorus.data.ThreadSummary
 import androidx.compose.material3.Checkbox
@@ -369,9 +370,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             finally { busy = false }
         }
     }
+    val clearedAt = channel?.id?.let { model.accountPrefs.hiddenChats[it] }
     val messages = model.chatMessages[channel?.id].orEmpty().filter {
         space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
-            accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
+            accountVisible(it, space.kind, chorus.device?.accountId.orEmpty()) && (clearedAt == null || it.occurredAt > clearedAt)
     }
     // someone from another account spoke here after the cards were fetched: fetch them again (once
     // per new set of speakers, merged so names already shown stay), else they read "Someone" until
@@ -392,6 +394,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         value = messages
         if (c != null && s != null && (infoOpen || expanded)) {
             value = chorus.stageWindow(c.id, 10_000, s.kind, model.current, viewingAs).messages
+                .filter { clearedAt == null || it.occurredAt > clearedAt }
         }
     }
     val readMarks = model.readMarks[channel?.id].orEmpty()
@@ -475,7 +478,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             it.spaceKind == space?.kind && it.viewingAs == viewingAs && it.front == model.current }?.window
         val stageMessages = window?.messages?.filter {
             space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
-                accountVisible(it, space.kind, chorus.device?.accountId.orEmpty())
+                accountVisible(it, space.kind, chorus.device?.accountId.orEmpty()) && (clearedAt == null || it.occurredAt > clearedAt)
         } ?: messages
         ChatStage(chorus, channel, stageMessages, model, foreignAuthors, capturing,
             hasOlder = window?.hasOlder == true, loadingOlder = stageLoading,
@@ -485,12 +488,19 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
 
     val listRows = remember(model, viewingAs, chorus.device?.accountId, directory, foreignAuthors) {
+        val prefs = model.accountPrefs
         model.channels.mapNotNull { candidate ->
             if (candidate.kind == "thread") return@mapNotNull null // threads live under their parent
             val home = model.spaces.find { it.id == candidate.spaceId } ?: return@mapNotNull null
+            // a member's private chats only while one of them is here (D-097)
+            if (!ChatOrganize.privateVisible(candidate, home, model.current, viewingAs, prefs.hidePrivate)) return@mapNotNull null
+            val clearedAt = prefs.hiddenChats[candidate.id]
             val visible = model.chatMessages[candidate.id].orEmpty().filter {
-                memberVisible(it, home.kind, model.current, viewingAs) && accountVisible(it, home.kind, chorus.device?.accountId.orEmpty())
+                memberVisible(it, home.kind, model.current, viewingAs) && accountVisible(it, home.kind, chorus.device?.accountId.orEmpty()) &&
+                    (clearedAt == null || it.occurredAt > clearedAt)
             }
+            // cleared for us: gone until something newer arrives
+            if (clearedAt != null && visible.isEmpty()) return@mapNotNull null
             val reader = if (!model.accountPrefs.readPerMember) "" else viewingAs ?: ReadTracking.readersFor(model, candidate.id, true).firstOrNull().orEmpty()
             val marks = model.readMarks[candidate.id].orEmpty()
             val unread = visible.count { ReadTracking.needsMark(it.occurredAt, it.id, marks, reader) }
@@ -500,7 +510,22 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             val sender = latest?.authors?.joinToString(" & ") { id -> model.member(id)?.shownName ?: foreignAuthors[id]?.name
                 ?: directory[home.id]?.accounts?.find { it.id == latest.accountId }?.shownName ?: "Someone" }
             ChatListRow(candidate, home, title, latest, unread, sender,
-                muted = model.accountPrefs.channelNotify(candidate.id, home.kind) == "none")
+                muted = model.accountPrefs.channelNotify(candidate.id, home.kind) == "none", pinned = candidate.id in prefs.chatPins)
+        }.let { rows -> ChatOrganize.order(rows, prefs.chatPins, { it.channel.id }, { it.latest?.occurredAt ?: 0L }, { it.title }) }
+    }
+    var arrangingPins by rememberSaveable { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<ChatListRow?>(null) }
+    fun savePins(pins: List<String>) {
+        actions.launch {
+            try { chorus.create("pref.set", null, AccountPrefs.payload(ChatOrganize.PINS, ChatOrganize.pinsValue(pins, model.channels.map { it.id }.toSet()))) }
+            catch (e: Exception) { error = e.message ?: "Could not save pinned chats." }
+        }
+    }
+    val rowAction: (ChatListRow, String) -> Unit = { row, action ->
+        when (action) {
+            "pin" -> savePins(ChatOrganize.togglePin(model.accountPrefs.chatPins, row.channel.id))
+            "arrange" -> arrangingPins = true
+            "remove" -> removing = row
         }
     }
     val openChat: (ChatListRow) -> Unit = { row ->
@@ -624,9 +649,12 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val partnerFront = dmPartner?.let { other -> chorus.device?.let { friendViews[garden.vayne.chorus.data.FriendFronts.key(it.accountId, other.id)] } }
         ?.let { garden.vayne.chorus.data.FriendFronts.line(it.frontNames) }
     Row(Modifier.fillMaxSize().background(p.bg).imePadding()) {
-        if (expanded || pane == "list") ChatListPane(model, listRows, if (expanded) channel?.id else null, readerName,
+        if (arrangingPins) ArrangePins(listRows.filter { it.pinned }, if (expanded) Modifier.width(320.dp) else Modifier.weight(1f),
+            { arrangingPins = false }) { savePins(it); arrangingPins = false }
+        else if (expanded || pane == "list") ChatListPane(model, listRows, if (expanded) channel?.id else null, readerName,
             openChat, { spaceAction = "new" },
-            { switchOpen = true }, onSearch, if (expanded) Modifier.width(240.dp) else Modifier.weight(1f), readerId = readerId, onNewChannel = { editChannel = false; channelEditor = true })
+            { switchOpen = true }, onSearch, if (expanded) Modifier.width(240.dp) else Modifier.weight(1f), readerId = readerId,
+            onNewChannel = { editChannel = false; channelEditor = true }, onRowAction = rowAction)
         if (expanded) VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
         if (pane == "info" && !expanded && channel != null && space != null) {
             ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; onSearch() },
@@ -1249,6 +1277,29 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 }
             }) { Text("Leave") } },
             dismissButton = { TextButton(onClick = { spaceAction = "" }) { Text("Cancel") } })
+    }
+    removing?.let { row ->
+        // our own channels and members' DMs are deleted for the system; a DM with another account or a
+        // shared channel is only cleared for us (they keep it; it comes back when someone writes)
+        val own = row.space.kind == "internal"
+        val name = if (row.channel.isMemberDm) "this chat" else if (row.space.kind == "dm") "your chat with ${row.title}" else "#${row.title}"
+        AlertDialog(onDismissRequest = { removing = null },
+            title = { Text(if (own) "Delete $name?" else "Clear $name?") },
+            text = { Text(if (own) "It's deleted for everyone in your system, messages and all." else
+                "It leaves your chats and its messages leave your view, on all your devices. It comes back if someone writes again; they keep everything.") },
+            confirmButton = { TextButton(onClick = {
+                removing = null; error = null
+                actions.launch {
+                    try {
+                        if (own) chorus.create("channel.delete", row.channel.id, JSONObject(), scope = "space:${row.space.id}")
+                        else chorus.create("pref.set", null, AccountPrefs.payload(ChatOrganize.HIDDEN + row.channel.id,
+                            maxOf(System.currentTimeMillis(), row.latest?.occurredAt ?: 0L)))
+                        if (row.channel.id in model.accountPrefs.chatPins) savePins(model.accountPrefs.chatPins - row.channel.id)
+                        if (selectedChannel == row.channel.id) { selectedChannel = ""; conversationOpen = false }
+                    } catch (e: Exception) { error = e.message ?: "Could not remove the chat." }
+                }
+            }) { Text(if (own) "Delete" else "Clear", color = LocalChorusPalette.current.danger) } },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } })
     }
 }
 

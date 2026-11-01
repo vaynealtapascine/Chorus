@@ -253,6 +253,10 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
                     save("share_typing", it)
                 }
                 if (!model.isPerson) {
+                    // D-097: DMs between members and members-only channels, only while one of them is here
+                    SettingToggle("Show members' private chats only while they're fronting", prefs.hidePrivate, !busy) {
+                        save(garden.vayne.chorus.data.ChatOrganize.HIDE_PRIVATE, it)
+                    }
                     SettingToggle("Ping my other devices when the front changes", prefs.chatEnabled("own_switch"), !busy) {
                         save("notify_chat", prefs.withChatKind("own_switch", it))
                     }
