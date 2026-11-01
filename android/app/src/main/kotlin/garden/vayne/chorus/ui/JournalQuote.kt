@@ -16,13 +16,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.JournalPost
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.ThreadReply
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 
 /** A quoted post inside another: a bordered mini card (20 dp avatar, name, three lines of text)
  * that opens the quoted post. A quoted post the replica doesn't hold is named as unavailable
  * rather than guessed at; a content warning is shown instead of the text. */
 @Composable
-internal fun QuoteEmbed(quoted: JournalPost?, model: Model, modifier: Modifier = Modifier, onOpen: (() -> Unit)? = null) {
+internal fun QuoteEmbed(quoted: JournalPost?, model: Model, modifier: Modifier = Modifier, onOpen: (() -> Unit)? = null,
+    names: String? = null) {
     val p = LocalChorusPalette.current
     val shape = RoundedCornerShape(12.dp)
     Column(modifier.fillMaxWidth().clip(shape).border(1.dp, p.line, shape)
@@ -30,7 +32,8 @@ internal fun QuoteEmbed(quoted: JournalPost?, model: Model, modifier: Modifier =
         .padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (quoted == null) Text("Quoted post unavailable", color = p.ink3, style = MaterialTheme.typography.bodySmall)
         else {
-            val names = quoted.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
+            // another account's post names its authors from the server's author cards ([names])
+            val names = names ?: quoted.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 quoted.authors.firstNotNullOfOrNull(model::member)?.let { ChatAvatar(it, 20.dp) }
                 Text(names, color = p.ink, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -42,4 +45,15 @@ internal fun QuoteEmbed(quoted: JournalPost?, model: Model, modifier: Modifier =
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp, lineHeight = 20.sp))
         }
     }
+}
+
+/** The quote inside a thread post: the device's own copy when it has one, else the server's. */
+@Composable
+internal fun ThreadQuote(quotePostId: String, quoted: ThreadReply?, model: Model, onOpen: ((String) -> Unit)?) {
+    val local = model.posts.find { it.id == quotePostId }?.takeIf { it.repostOf == null }
+    val open = onOpen?.let { { it(quotePostId) } }
+    if (local != null || quoted == null) QuoteEmbed(local, model, onOpen = open)
+    else QuoteEmbed(JournalPost(quoted.id, "note", quoted.authorIds, quoted.title, quoted.text, quoted.occurredAt, quoted.cw,
+        "server", null, null, emptyList(), entities = quoted.entities), model, onOpen = open,
+        names = quoted.authorNames.joinToString(" & ").ifBlank { "Someone" })
 }

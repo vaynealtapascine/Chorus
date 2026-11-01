@@ -67,4 +67,17 @@ class PostThreadsTest {
         assertEquals(emptyList<String>(), PostThreads.localAncestors(model, "orphan").map { it.id })
         assertEquals(listOf("y"), PostThreads.localAncestors(model, "x").map { it.id })
     }
+
+    @Test fun detailCarriesQuotesOfThePostAndWhatEachPostQuotes() {
+        val detail = PostThreads.parseDetail(JSONObject("""{"id":"q","text":"Look","occurred_at":30,"quote":{"post_id":"orig"},
+            "quoted":{"id":"orig","text":"Original","occurred_at":10,"author_cards":[{"name":"June"}]},
+            "quotes":[{"id":"q2","text":"Me too","occurred_at":40,"quote":{"post_id":"q"}}],
+            "replies":[{"id":"r","text":"Hm","occurred_at":50,"quote":{"post_id":"gone"}}]}"""))
+        assert(detail.root?.quotePostId == "orig")
+        assertEquals("Original", detail.root?.quoted?.text)
+        assertEquals(listOf("June"), detail.root?.quoted?.authorNames)
+        assertEquals(listOf("q2"), detail.quotes.map { it.id })
+        assertEquals("gone", detail.replies.single().quotePostId)
+        assertEquals(null, detail.replies.single().quoted)
+    }
 }

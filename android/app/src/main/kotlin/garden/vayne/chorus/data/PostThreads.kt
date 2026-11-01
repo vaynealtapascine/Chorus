@@ -11,10 +11,13 @@ data class ThreadReply(val id: String, val authorNames: List<String>, val text: 
     /** The first author's look, from their author card. */
     val color: String? = null, val avatarBlob: String? = null,
     /** Member ids, so a reply by one of ours shows that member's own avatar. */
-    val authorIds: List<String> = emptyList())
-/** A post as a thread view shows it: what it answers ([ancestors], oldest first), its replies and reactions. */
+    val authorIds: List<String> = emptyList(),
+    /** The post this one quotes, and what the server sent of it when this reader may read it. */
+    val quotePostId: String? = null, val quoted: ThreadReply? = null)
+/** A post as a thread view shows it: what it answers ([ancestors], oldest first), its replies,
+ * the posts quoting it and its reactions. */
 data class PostDetail(val replies: List<ThreadReply>, val reactions: List<PostReaction>, val root: ThreadReply? = null,
-    val ancestors: List<ThreadReply> = emptyList())
+    val ancestors: List<ThreadReply> = emptyList(), val quotes: List<ThreadReply> = emptyList())
 
 object PostThreads {
     fun parse(j: JSONObject): List<ThreadReply> {
@@ -35,13 +38,16 @@ object PostThreads {
                 item.getLong("occurred_at"), Polls.parse(item.optJSONObject("poll")), Polls.tally(item.optJSONObject("poll_tally")),
                 item.optJSONArray("entities")?.toString() ?: "[]", item.optInt("reply_count", 0),
                 first?.text("color"), first?.text("avatar_blob"),
-                item.optJSONArray("authors")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) } }.orEmpty())
+                item.optJSONArray("authors")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) } }.orEmpty(),
+                item.optJSONObject("quote")?.text("post_id"),
+                item.optJSONObject("quoted")?.let { parse(JSONObject().put("replies", org.json.JSONArray().put(it))).firstOrNull() })
         } }
     }
 
     fun parseDetail(j: JSONObject): PostDetail = PostDetail(parse(j), PostReactions.fromServer(j),
         if (j.has("id") && j.has("text")) parse(JSONObject().put("replies", org.json.JSONArray().put(j))).firstOrNull() else null,
-        j.optJSONArray("ancestors")?.let { parse(JSONObject().put("replies", it)) }.orEmpty())
+        j.optJSONArray("ancestors")?.let { parse(JSONObject().put("replies", it)) }.orEmpty(),
+        j.optJSONArray("quotes")?.let { parse(JSONObject().put("replies", it)) }.orEmpty())
 
     suspend fun load(dev: DeviceRecord, id: String): PostDetail =
         parseDetail(Api.call("GET", dev.base, "/posts/$id?depth=1", null, dev.session))
@@ -54,8 +60,12 @@ object PostThreads {
         val first = post.authors.firstOrNull()?.let(model::member)
         return ThreadReply(post.id, post.authors.mapNotNull { model.member(it)?.shownName }, post.text,
             post.title, post.cw, post.occurredAt, model.polls.polls[post.id], model.polls.tallies[post.id], post.entities,
-            model.posts.count { it.replyTo == post.id }, first?.color, first?.avatarBlob, post.authors)
+            model.posts.count { it.replyTo == post.id }, first?.color, first?.avatarBlob, post.authors, post.quotePostId)
     }
+
+    /** Own posts quoting [id] (offline, or waiting to sync); reposts aren't quotes. */
+    fun ownQuotes(model: Model, id: String): List<ThreadReply> =
+        model.posts.filter { it.quotePostId == id && it.repostOf == null }.map { local(model, it) }
 
     /** What a post answers, oldest first, from own posts on this device (the server's chain when online). */
     fun localAncestors(model: Model, id: String): List<ThreadReply> {
