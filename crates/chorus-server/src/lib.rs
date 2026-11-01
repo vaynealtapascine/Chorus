@@ -30,6 +30,7 @@ pub mod oplog;
 pub mod perms;
 pub mod polls;
 pub mod posts;
+pub mod profiles;
 pub mod project;
 pub mod purge;
 pub mod push;

@@ -196,6 +196,8 @@ pub fn router(state: AppState) -> Router {
         .route("/spaces/{id}/authors", get(spaces_authors))
         .route("/emoji", get(emoji_list))
         .route("/accounts/{id}/view", get(account_view))
+        .route("/accounts/{id}/members", get(account_members))
+        .route("/accounts/{id}/members/{member}", get(account_member))
         .route(
             "/blobs/{hash}",
             get(blobs::get_blob)
@@ -1613,6 +1615,30 @@ async fn account_view(
     crate::notifier::follower_view(&conn, &me.account_id, &id)?
         .map(Json)
         .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "you don't follow this account".into()))
+}
+
+/// Friend profiles (D-101): the members of an account this one may open.
+async fn account_members(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    Ok(Json(crate::profiles::members(&conn, &me.account_id, &id)?))
+}
+
+/// One friend profile: only the parts and fields shared with this account (D-101).
+async fn account_member(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path((id, member)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    crate::profiles::profile(&conn, &me.account_id, &id, &member)?
+        .map(Json)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "this profile isn't shared with you".into()))
 }
 
 // ─── webhooks (webhooks.rs) ──────────────────────────────────────────────────
