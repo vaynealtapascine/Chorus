@@ -12,6 +12,20 @@ class ChatOrganizeTest {
         ChatChannel(id, space, kind, id, null, members)
     private fun front(vararg ids: String) = ids.map { Entry("member", it, "front", false) }
 
+    @Test fun retainedActionsLoseAccessWhenThePrivateChatLocks() {
+        val kai = Member("kai", "Kai", "Kai", null, "#aabbcc", emptyList(), null, false)
+        val dm = ChatSpace("d", "dm", "Friend")
+        val private = channel("p", "member_dm", listOf("kai"), "d")
+        val message = ChatMessage("m", "p", listOf("kai"), "secret", 42, null, "all", emptySet(), "own", null, emptyList())
+        fun model(here: List<Entry>) = Model(listOf(kai), emptyList(), emptyMap(), here, null, emptyList(),
+            spaces = listOf(dm), channels = listOf(private), chatMessages = mapOf("p" to listOf(message)))
+        assertEquals(message, ChatOrganize.actionMessage(model(front("kai")), "m", null, "own"))
+        assertEquals(null, ChatOrganize.actionMessage(model(front("june")), "m", "kai", "own"))
+        assertEquals(null, ChatOrganize.actionMessage(model(front("kai")), "missing", null, "own"))
+        assertTrue(ChatOrganize.restricted(model(front("kai")), "p"))
+        assertTrue(ChatOrganize.restricted(model(front("kai")), "missing"))
+    }
+
     @Test fun privateChatsShowOnlyWhileOneOfTheirMembersIsHere() {
         val kaiAndRin = channel("dm", "member_dm", listOf("kai", "rin"))
         assertTrue(ChatOrganize.isPrivate(kaiAndRin, home))

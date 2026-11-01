@@ -57,6 +57,29 @@ object ChatOrganize {
         return { ok(it, 0) }
     }
 
+    /** Revalidate retained message actions against today's channel, audience and clear cutoff. */
+    fun actionMessage(model: Model, id: String?, viewingAs: String?, accountId: String): ChatMessage? {
+        if (id == null) return null
+        val message = model.chatMessages.values.asSequence().flatten().firstOrNull { it.id == id } ?: return null
+        if (!shown(model, viewingAs)(message.channelId)) return null
+        val channel = model.channels.firstOrNull { it.id == message.channelId } ?: return null
+        val space = model.spaces.firstOrNull { it.id == channel.spaceId } ?: return null
+        if (!memberVisible(message, space.kind, model.current, viewingAs) || !accountVisible(message, space.kind, accountId)) return null
+        if (model.accountPrefs.hiddenChats[message.channelId]?.let { message.occurredAt <= it } == true) return null
+        return message
+    }
+
+    /** Channel audience restrictions also inherit through threads for outward-forward confirmation. */
+    fun restricted(model: Model, channelId: String): Boolean {
+        var channel = model.channels.firstOrNull { it.id == channelId } ?: return true
+        val seen = HashSet<String>()
+        while (channel.kind == "thread" && seen.add(channel.id)) {
+            val parent = model.searchMessages.firstOrNull { it.id == channel.parentMessageId } ?: return true
+            channel = model.channels.firstOrNull { it.id == parent.channelId } ?: return true
+        }
+        return channel.kind == "thread" || channel.memberIds.isNotEmpty()
+    }
+
     private fun here(front: List<Entry>, members: List<String>) =
         front.any { it.subjectType == "member" && (it.level == "front" || it.level == "cocon") && it.subjectId in members }
 

@@ -139,6 +139,8 @@ class Model(
     val profileDetails: ProfileDetails = ProfileDetails(),
     /** "space id|account id" → that account's role in a shared space (`space.set_role`; D-099). */
     val spaceRoles: Map<String, String> = emptyMap(),
+    /** Rows the Advanced channel permissions need (ChannelPermissions; the server stays the authority). */
+    val channelPermissionState: JSONObject = JSONObject(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -432,7 +434,8 @@ class Model(
                 ReadTracking.marks(p, accountId), frontIntervals, namedFronts, Polls.fromProjection(p), typingNames,
                 messageReactions = ChatReactions.fromProjection(p.optJSONObject("sets")), pinnedMessages = pinnedMessages,
                 profileDetails = ProfileDetails.parse(p),
-                spaceRoles = rows(p, "space_member").mapNotNull { (key, f) -> f.str("role")?.let { key to it } }.toMap())
+                spaceRoles = rows(p, "space_member").mapNotNull { (key, f) -> f.str("role")?.let { key to it } }.toMap(),
+                channelPermissionState = ChannelPermissions.snapshot(p))
         }
     }
 }

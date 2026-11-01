@@ -51,6 +51,6 @@ object ChatForward {
      * internal → anywhere else, or any message that isn't visible to everyone where it was written.
      */
     fun asksFirst(source: ChatSpace, targetSpaceId: String, targetChannel: String, sourceChannel: String,
-        message: ChatMessage): Boolean = targetChannel != sourceChannel &&
-        ((source.kind == "internal" && targetSpaceId != source.id) || message.visibilityMode != "all")
+        message: ChatMessage, restrictedChannel: Boolean = false): Boolean = targetChannel != sourceChannel &&
+        ((source.kind == "internal" && targetSpaceId != source.id) || message.visibilityMode != "all" || restrictedChannel)
 }

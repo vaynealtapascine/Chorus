@@ -36,6 +36,9 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
     val ctx = LocalContext.current
     val actions = rememberCoroutineScope()
     // Compare with the sheet's opening snapshot, never a model refreshed by another device.
+    val baselineGroupName by rememberSaveable(group?.id) { mutableStateOf(group?.name.orEmpty()) }
+    val baselineGroupDescription by rememberSaveable(group?.id) { mutableStateOf(group?.description) }
+    val baselineIcon by rememberSaveable(channel?.id) { mutableStateOf(channel?.icon) }
     val baselineName by rememberSaveable(channel?.id) { mutableStateOf(channel?.name.orEmpty()) }
     val baselineTopic by rememberSaveable(channel?.id) { mutableStateOf(channel?.topic) }
     val baselineColour by rememberSaveable(channel?.id) { mutableStateOf(channel?.color) }
@@ -193,18 +196,18 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
                         try {
                             val id = channel?.id ?: group?.id ?: chorus.newId()
                             if (group != null) {
-                                val changes = ChatManage.spaceChanges(group, name, topic)
+                                val changes = ChatManage.spaceChanges(group.copy(name = baselineGroupName, description = baselineGroupDescription), name, topic)
                                 if (changes.length() > 0) chorus.create("space.set", group.id, changes, scope = "space:${group.id}")
                                 // the group's face is its one chat's: only the picture, icon and colour
                                 if (channel != null) {
-                                    val look = ChannelCompose.update(channel.copy(avatarBlob = baselineAvatar, color = baselineColour),
+                                    val look = ChannelCompose.update(channel.copy(avatarBlob = baselineAvatar, color = baselineColour, icon = baselineIcon),
                                         channel.name, channel.topic.orEmpty(), avatar, colour, icon)
                                     if (look.length() > 0) chorus.create("channel.set", channel.id, look, scope = "space:${group.id}")
                                 }
                             } else {
                                 val payload = if (channel == null) ChannelCompose.create(spaceId, name, topic, avatar, colour, icon, kept)
                                     else ChannelCompose.update(channel.copy(name = baselineName, topic = baselineTopic, avatarBlob = baselineAvatar,
-                                        color = baselineColour, memberIds = baselineMembers), name, topic, avatar, colour, icon,
+                                        color = baselineColour, memberIds = baselineMembers, icon = baselineIcon), name, topic, avatar, colour, icon,
                                         if (internal) kept else channel.memberIds)
                                 if (payload.length() > 0) chorus.create(if (channel == null) "channel.create" else "channel.set",
                                     id, payload, scope = "space:$spaceId")

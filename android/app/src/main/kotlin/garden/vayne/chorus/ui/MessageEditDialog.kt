@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun MessageEditDialog(chorus: Chorus, model: Model, id: String, onDone: () -> Unit) {
+internal fun MessageEditDialog(chorus: Chorus, model: Model, id: String, viewingAs: String? = null, onDone: () -> Unit) {
     val account = chorus.device?.accountId
     val owner = chorus.editorOwner
     val actions = rememberCoroutineScope()
@@ -43,7 +43,7 @@ internal fun MessageEditDialog(chorus: Chorus, model: Model, id: String, onDone:
             (error ?: editor.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }, confirmButton = { TextButton(enabled = !busy && controllers.any { it.value.text.isNotBlank() }, onClick = {
-        val current = model.chatMessages[original.channelId]?.find { it.id == original.id }
+        val current = ChatOrganize.actionMessage(chorus.model.value, original.id, viewingAs, account.orEmpty())
         if (account == null || original.accountId != account || current == null || current.text != original.text ||
             current.entities != original.entities || current.segments != original.segments || current.accountId != account) {
             error = "The message changed. Close Edit and reopen it."
@@ -59,6 +59,9 @@ internal fun MessageEditDialog(chorus: Chorus, model: Model, id: String, onDone:
                     ChatEdit.payload(original, snapshot.parts.map { it.current.text }, ChatEdit.names(original, model), snapshot.parts.map { it.legacyState() })
                 }
                 check(chorus.device?.accountId == account) { "The account changed. Reopen Edit in its account." }
+                check(ChatOrganize.actionMessage(chorus.model.value, original.id, viewingAs, account.orEmpty()) == current) {
+                    "This message is no longer available. Close Edit and reopen it."
+                }
                 chorus.create("message.edit", original.id, payload, scope = "space:${requireNotNull(space) { "Space unavailable" }}", expectedEditorOwner = owner)
                 editor.finish(); onDone()
             } catch (e: kotlinx.coroutines.CancellationException) { throw e }

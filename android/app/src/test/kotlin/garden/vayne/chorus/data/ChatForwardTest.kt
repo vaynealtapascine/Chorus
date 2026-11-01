@@ -33,6 +33,13 @@ class ChatForwardTest {
         assertEquals(listOf(ForwardItem("m1", "hi", "General", listOf("kai"), 5)), items)
     }
 
+    @Test fun asksBeforeLeavingAPrivateChannelEvenWithinTheSameDmSpace() {
+        val dm = ChatSpace("d", "dm", "Friend")
+        assertTrue(ChatForward.asksFirst(dm, "d", "ordinary", "general", message(), restrictedChannel = true))
+        assertTrue(ChatForward.asksFirst(dm, "other", "ordinary", "general", message(), restrictedChannel = true))
+        assertFalse(ChatForward.asksFirst(dm, "d", "general", "general", message(), restrictedChannel = true))
+    }
+
     @Test fun asksBeforeLeavingTheSystemOrAnAudience() {
         val home = ChatSpace("home", "internal", "Home")
         val shared = ChatSpace("s", "shared", "Friends")

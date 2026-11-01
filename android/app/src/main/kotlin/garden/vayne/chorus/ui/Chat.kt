@@ -164,7 +164,7 @@ private data class ChatPaneSnapshot(val channel: garden.vayne.chorus.data.ChatCh
     val parentChannel: garden.vayne.chorus.data.ChatChannel?, val reading: ChatReadingPosition)
 
 /** Local chat view: internal channels, shared spaces and account DMs use the same projection. */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     requestedChannel: String? = null, searchHit: SearchDocument? = null,
@@ -569,16 +569,30 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
     // a snapshot plus copies of its files in the target scope, then the reader follows it there
     fun forward(message: ChatMessage, row: ChatListRow) {
-        val from = channel ?: return
+        val live = chorus.model.value
+        val current = ChatOrganize.actionMessage(live, message.id, viewingAs, chorus.device?.accountId.orEmpty())
+        if (current != message || !ChatOrganize.shown(live, viewingAs)(row.channel.id)) {
+            forwarding = null; forwardConfirm = null; error = "This message or chat is no longer available."
+            return
+        }
+        val from = live.channels.firstOrNull { it.id == message.channelId } ?: return
         val speaker = replySpeakerId ?: run { error = "Choose who is speaking first."; return }
         if (busy) return
         busy = true; error = null
         actions.launch {
             try {
                 val scope = "space:${row.space.id}"
+                fun checkAccess() {
+                    val latest = chorus.model.value
+                    check(ChatOrganize.actionMessage(latest, message.id, viewingAs, chorus.device?.accountId.orEmpty()) == message &&
+                        ChatOrganize.shown(latest, viewingAs)(row.channel.id)) { "This message or chat is no longer available." }
+                }
+                checkAccess()
                 val ids = message.attachments.map { a ->
+                    checkAccess()
                     chorus.newId().also { id -> chorus.create("attachment.create", id, ChatForward.attachmentCopy(a), scope = scope) }
                 }
+                checkAccess()
                 chorus.create("message.forward", chorus.newId(), ChatForward.payload(row.channel.id, speaker, message, from.name, ids), scope = scope)
                 forwarding = null; forwardConfirm = null
                 openChat(row)
@@ -645,7 +659,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             if (syncStatus == Status.Live) garden.vayne.chorus.data.TypingText.label(model, typing[row.channel.id].orEmpty()) else null)
             ?.let { row.channel.id to it }
     }.toMap()
-    val typingLabel = if (syncStatus == Status.Live) garden.vayne.chorus.data.TypingText.label(model, typing[channel?.id].orEmpty()) else null
+    val typingLabel = if (syncStatus == Status.Live && channel?.let { shownNow(it.id) } == true) garden.vayne.chorus.data.TypingText.label(model, typing[channel?.id].orEmpty()) else null
     val chatRoute = if (expanded) "wide/${channel?.id}" else if (infoOpen) "info/${channel?.id}" else if (conversationOpen) "conversation/${channel?.id}" else "list"
     val snapshots = remember { mutableMapOf<String, ChatPaneSnapshot>() }
     val latestRoute by androidx.compose.runtime.rememberUpdatedState(chatRoute)
@@ -1066,6 +1080,15 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 var authorsOpen by remember { mutableStateOf(false) }
+                var emojiOpen by remember { mutableStateOf(false) }
+                // the composer's emoji: the reaction set, tapped into the draft (Android has no custom emoji yet)
+                if (emojiOpen) ModalBottomSheet(onDismissRequest = { emojiOpen = false }, containerColor = p.surface) {
+                    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 24.dp)) {
+                        for (emoji in ChatReactions.QUICK + ChatReactions.MORE) Box(Modifier.size(48.dp).clip(CircleShape)
+                            .clickable(onClickLabel = "Add $emoji") { draft += emoji },
+                            contentAlignment = Alignment.Center) { Text(emoji, fontSize = 26.sp, lineHeight = 30.sp) }
+                    }
+                }
                 Box {
                     Box(Modifier.size(48.dp).clickable(enabled = ownSenders.isNotEmpty() && !model.isPerson) { authorsOpen = true }
                         .semantics { contentDescription = "Send message as ${author?.shownName ?: "choose a sender"}" }, contentAlignment = Alignment.Center) {
@@ -1080,7 +1103,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.ink), maxLines = 4,
                     cursorBrush = SolidColor(p.accent), decorationBox = { inner ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.padding(start = 12.dp, end = 8.dp)) { ChatIcon(R.drawable.ic_emoji) }
+                            Box(Modifier.padding(start = 4.dp).size(40.dp).clip(CircleShape).clickable(onClickLabel = "Add an emoji") { emojiOpen = true },
+                                contentAlignment = Alignment.Center) { ChatIcon(R.drawable.ic_emoji, "Emoji") }
                             Box(Modifier.weight(1f).padding(vertical = 12.dp)) {
                                 if (draft.isEmpty()) Text(if (channel.kind == "thread") "Reply in thread" else "Message",
                                     color = p.ink3, style = MaterialTheme.typography.bodyLarge)
@@ -1190,8 +1214,17 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
     }
     if (switchOpen) Switcher(chorus, model, if (expanded) channel?.id?.let { ChatSpeaker.frontOf(model, it) } else model.namedFronts?.bodyId) { switchOpen = false }
-    editingMessageId?.let { id -> MessageEditDialog(chorus, model, id) { editingMessageId = null } }
-    forwarding?.let { message ->
+    val editableMessage = ChatOrganize.actionMessage(model, editingMessageId, viewingAs, chorus.device?.accountId.orEmpty())
+    val forwardableMessage = ChatOrganize.actionMessage(model, forwarding?.id, viewingAs, chorus.device?.accountId.orEmpty())
+    LaunchedEffect(model, viewingAs, editingMessageId, forwarding?.id, deleting?.id) {
+        if (editingMessageId != null && editableMessage == null) editingMessageId = null
+        if (forwarding != null && forwardableMessage == null) { forwarding = null; forwardConfirm = null }
+        if (deleting != null && ChatOrganize.actionMessage(model, deleting?.id, viewingAs, chorus.device?.accountId.orEmpty()) == null) deleting = null
+    }
+    editingMessageId?.takeIf { editableMessage != null }?.let { id ->
+        MessageEditDialog(chorus, model, id, viewingAs) { editingMessageId = null }
+    }
+    forwarding?.takeIf { forwardableMessage != null }?.let { message ->
         ModalBottomSheet(onDismissRequest = { forwarding = null }, containerColor = p.surface) {
             Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                 Text("Forward to…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
@@ -1202,7 +1235,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     Row(Modifier.fillMaxWidth().clickable(enabled = !busy) {
                         val source = space ?: return@clickable
                         val from = channel ?: return@clickable
-                        if (ChatForward.asksFirst(source, row.space.id, row.channel.id, from.id, message)) forwardConfirm = row
+                        if (ChatForward.asksFirst(source, row.space.id, row.channel.id, from.id, message, ChatOrganize.restricted(model, from.id))) forwardConfirm = row
                         else forward(message, row)
                     }.heightIn(min = 56.dp).padding(horizontal = 20.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1216,13 +1249,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             }
         }
     }
-    forwardConfirm?.let { row ->
+    forwardConfirm?.takeIf { forwardableMessage != null && shownNow(it.channel.id) }?.let { row ->
         AlertDialog(onDismissRequest = { forwardConfirm = null }, title = { Text("Forward outside this chat?") },
             text = { Text("This shares a snapshot of the message with ${row.title}. Its original audience doesn't follow it there.") },
             confirmButton = { TextButton(enabled = !busy, onClick = { forwarding?.let { forward(it, row) } }) { Text("Forward") } },
             dismissButton = { TextButton(onClick = { forwardConfirm = null }) { Text("Cancel") } })
     }
-    deleting?.let { message ->
+    deleting?.takeIf { ChatOrganize.actionMessage(model, it.id, viewingAs, chorus.device?.accountId.orEmpty()) != null }?.let { message ->
         AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Delete this message?") },
             text = { Text("It disappears for everyone in this chat. You can undo right after.") },
             confirmButton = { TextButton(onClick = { deleting = null; delete(message) }) { Text("Delete", color = p.danger) } },

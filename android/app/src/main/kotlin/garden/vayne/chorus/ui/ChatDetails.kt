@@ -208,6 +208,15 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                         onEditGroup = if (groupEditable) ({ editGroup = true }) else null, onChanged = onSpaceChanged,
                         onOpenChannel = onOpenChannel, onLeft = onLeft)
                 }
+                // Advanced (DESIGN §6): who may do what here, and slow mode; only for those who manage it
+                if (space.kind != "dm" && channel.kind != "thread" &&
+                    ChannelPermissions.canManage(model.channelPermissionState, channel, me, directory?.ownerAccountId)) {
+                    var advanced by rememberSaveable(channel.id) { mutableStateOf(false) }
+                    TextButton(onClick = { advanced = !advanced }, modifier = Modifier.padding(top = 8.dp)) {
+                        Text(if (advanced) "Advanced · Hide" else "Advanced · Permissions and slow mode")
+                    }
+                    if (advanced) ChatPermissions(chorus, model, channel, directory, connections)
+                }
             }
         }
     }

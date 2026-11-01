@@ -17,3 +17,12 @@ visible chat-list rows. Manual port from parked UI7, with synchronous drag updat
 spring jobs on re-grab. Five gesture tests and the preview-priority regression pass. Targeted
 Android compile/lint/JVM passed, as did wrapper quick offline gate with Android (exit 0).
 Independent review, demo interactions and slices 7–8 remain; no deployment or owner data changes.
+
+
+Review correction pass (2026-11-01): Android revalidates retained edit/forward source actions
+against current D-098 channel and message visibility, hides overlays immediately when access
+ends, and rechecks the current replica before writes. Restricted channel audiences (including
+thread inheritance) now trigger outward-forward confirmation. Channel/group sheets compare
+icon and group name/description against their opening baseline so unrelated remote edits stay
+untouched. Separate server correction rejects re-create structural/scope bypasses and protects
+foreign member entries on repeated channel.create; focused server regressions passed 5/5.
