@@ -137,6 +137,8 @@ class Model(
     /** message id → reactions (DATA_MODEL `reaction` set). */
     val messageReactions: Map<String, List<ChatReaction>> = emptyMap(),
     val profileDetails: ProfileDetails = ProfileDetails(),
+    /** Members list settings, folders and role fields (D-100). */
+    val memberList: MemberListSettings = MemberListSettings(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -429,7 +431,7 @@ class Model(
                 ChatSpeaker.preferences(p, accountId, channels), lastAuthorsByChannel,
                 ReadTracking.marks(p, accountId), frontIntervals, namedFronts, Polls.fromProjection(p), typingNames,
                 messageReactions = ChatReactions.fromProjection(p.optJSONObject("sets")), pinnedMessages = pinnedMessages,
-                profileDetails = ProfileDetails.parse(p))
+                profileDetails = ProfileDetails.parse(p), memberList = MemberListPrefs.parse(p, accountId))
         }
     }
 }
