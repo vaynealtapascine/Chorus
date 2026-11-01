@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -67,6 +68,10 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
     var refresh by remember { mutableStateOf(0) }
     var loadedAccount by remember { mutableStateOf<String?>(null) }
     var requestChoices by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    // who asked to hear about our members' posts, and who does (D-106)
+    var postAlerts by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    // followed persons' post alerts, asked by account: none · requested · active
+    var personAlerts by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var threadPostId by rememberSaveable { mutableStateOf<String?>(null) }
     // a followed system's shared member profiles (D-101): account id to its name
     var friend by rememberSaveable { mutableStateOf<Pair<String, String>?>(null) }
@@ -91,6 +96,10 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                 runCatching { f.account.id to PeopleApi.followerView(PeopleApi.view(dev, f.account.id)) }.getOrNull()
             }.toMap()
             for ((account, view) in views) FriendFronts.put(dev.accountId, account, view)
+            postAlerts = runCatching { PeopleApi.postAlerts(dev) }.getOrDefault(postAlerts)
+            personAlerts = next.following.filter { it.status == "active" && it.account.kind == "person" }.mapNotNull { f ->
+                runCatching { PeopleApi.personAlerts(dev, f.account.id) }.getOrNull()?.let { f.account.id to it }
+            }.toMap()
             sharedPosts = next.following.filter { it.status == "active" }.mapNotNull { f ->
                 runCatching { f.account.id to PeopleApi.posts(dev, f.account.id) }.getOrNull()
             }.toMap()
@@ -172,6 +181,12 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                         onOpenChat(Spaces.openDm(dev, f.account.id))
                     } }) { Text("Message") }
                     if (f.status == "active" && f.account.isSystem) TextButton(onClick = { friend = f.account.id to f.account.shownName }) { Text("Members") }
+                    personAlerts[f.account.id]?.let { state ->
+                        TextButton(enabled = !busy, onClick = { action {
+                            val dev = checkNotNull(chorus.device) { "Not signed in." }
+                            personAlerts = personAlerts + (f.account.id to PeopleApi.setPersonAlerts(dev, f.account.id, state == "none"))
+                        } }) { Text(when (state) { "active" -> "Post alerts on"; "requested" -> "Alerts requested"; else -> "Get post alerts" }) }
+                    }
                     TextButton(enabled = !busy, onClick = { action {
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
                         PeopleApi.unfollow(dev, f.id)
@@ -221,6 +236,13 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                         } }) { Text("Decline") }
                     }
                 }
+            }
+        }
+        postAlertItems(postAlerts, model, busy) { alert, approve ->
+            action {
+                val dev = checkNotNull(chorus.device) { "Not signed in." }
+                PeopleApi.decidePostAlert(dev, alert.optString("member_id"),
+                    alert.optJSONObject("account")?.optString("id").orEmpty(), approve)
             }
         }
         item {
@@ -282,6 +304,13 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                         } }) { Text("Decline") }
                     }
                 }
+            }
+        }
+        postAlertItems(postAlerts, model, busy) { alert, approve ->
+            action {
+                val dev = checkNotNull(chorus.device) { "Not signed in." }
+                PeopleApi.decidePostAlert(dev, alert.optString("member_id"),
+                    alert.optJSONObject("account")?.optString("id").orEmpty(), approve)
             }
         }
         item {
@@ -349,6 +378,12 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                         onOpenChat(Spaces.openDm(dev, f.account.id))
                     } }) { Text("Message") }
                     if (f.status == "active" && f.account.isSystem) TextButton(onClick = { friend = f.account.id to f.account.shownName }) { Text("Members") }
+                    personAlerts[f.account.id]?.let { state ->
+                        TextButton(enabled = !busy, onClick = { action {
+                            val dev = checkNotNull(chorus.device) { "Not signed in." }
+                            personAlerts = personAlerts + (f.account.id to PeopleApi.setPersonAlerts(dev, f.account.id, state == "none"))
+                        } }) { Text(when (state) { "active" -> "Post alerts on"; "requested" -> "Alerts requested"; else -> "Get post alerts" }) }
+                    }
                     TextButton(enabled = !busy, onClick = { action {
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
                         PeopleApi.unfollow(dev, f.id)
@@ -512,6 +547,32 @@ private fun FollowPresetPicker(label: String, choice: String, onChoice: (String)
                 open = false
                 onChoice(option)
             })
+        }
+    }
+}
+
+/** Post alerts (D-106): requests to hear about one of our members' posts (Allow / Decline), then
+ *  who hears now (Stop, which they aren't told about). Nothing shows until someone asks. */
+private fun LazyListScope.postAlertItems(alerts: List<JSONObject>, model: Model, busy: Boolean,
+    decide: (JSONObject, Boolean) -> Unit) {
+    if (alerts.isEmpty()) return
+    item {
+        Text("Post alerts", color = LocalChorusPalette.current.ink, fontWeight = FontWeight.SemiBold)
+        Text("They hear when that member posts something they can already see.", color = LocalChorusPalette.current.ink2)
+    }
+    for (a in alerts) item(key = "alert:${a.optString("member_id")}:${a.optJSONObject("account")?.optString("id")}") {
+        val p = LocalChorusPalette.current
+        val account = a.optJSONObject("account")
+        val who = account?.optString("display_name")?.takeIf { !account.isNull("display_name") && it.isNotBlank() }
+            ?: account?.optString("handle")?.takeIf { !account.isNull("handle") && it.isNotBlank() }?.let { "@$it" } ?: "Someone"
+        val member = model.member(a.optString("member_id"))?.shownName ?: "a member"
+        val asked = a.optString("status") == "requested"
+        Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
+            Text(if (asked) "$who wants to hear when $member posts" else "$who hears when $member posts", color = p.ink)
+            Row {
+                if (asked) TextButton(enabled = !busy, onClick = { decide(a, true) }) { Text("Allow") }
+                TextButton(enabled = !busy, onClick = { decide(a, false) }) { Text(if (asked) "Decline" else "Stop") }
+            }
         }
     }
 }

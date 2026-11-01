@@ -316,6 +316,25 @@ corner badge directly when conversation shortcuts aren't used). Inline reply (`R
 as the current primary fronter (or `reply_as` when Advanced "reply as mentioned member" is on) and
 works offline (queued op).
 
+## 7b. Post alerts (D-106)
+
+Another account may ask to hear about one member's new posts and journal entries (`PUT
+/accounts/{id}/members/{member}/alerts`), only for a profile it may already open (D-101); a person
+(singlet) has no member pages, so their followers ask by account (`/accounts/{id}/alerts`). The
+member's account hears once (`alert_request`) and answers from Friends: Allow (the asker hears
+`alert_accepted`) or Decline. A no is silent and sticks: the asker keeps seeing "requested" and
+asking again pings nobody; an owner stopping someone's alerts later is the same no. Stored
+server-side in `post_alert` (migration 0017; like follow requests' server half, not ops).
+
+Once allowed, each live `post.create` by that member that is top-level (not a reply or a repost),
+written in the last 24 hours, and readable by the subscriber at that moment (`posts::readable_sql`:
+server-wide, followers, or a bucket they're in) queues one `post` notification per subscriber,
+whichever of its authors they follow: "Kai posted" / "Kai wrote a journal entry", the text (an
+entry's title; a content warning instead of what it covers), and `post_id`. Private posts never
+notify, and nothing in it says who is fronting. It is delivered immediately, which reveals
+nothing the subscriber couldn't already read (`GET /posts/{id}`). Android shows them on their own
+"Post alerts" channel and opens the post; web opens `#/journal/post/<id>`.
+
 ## 7a. Implementation (`chorus_core::notify`)
 
 All of §2–§5 that must agree everywhere is pure core code: `effective_ceiling` (layers + the

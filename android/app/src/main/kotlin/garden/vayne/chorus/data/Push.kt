@@ -48,6 +48,7 @@ object Push {
     const val REGISTRATION_FAILED = "org.unifiedpush.android.connector.REGISTRATION_FAILED"
     const val CHANNEL_SWITCHES = "switches"
     const val CHANNEL_MESSAGES = "messages"
+    const val CHANNEL_POSTS = "posts"
 
     private const val REUPLOAD_INTERVAL_MS = 15 * 60_000L
 
@@ -412,6 +413,7 @@ object Push {
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(NotificationChannel(CHANNEL_SWITCHES, "Switches", NotificationManager.IMPORTANCE_DEFAULT))
         nm.createNotificationChannel(NotificationChannel(CHANNEL_MESSAGES, "Mentions, replies and DMs", NotificationManager.IMPORTANCE_HIGH))
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_POSTS, "Post alerts", NotificationManager.IMPORTANCE_DEFAULT))
     }
 
     internal fun showAsync(ctx: Context, p: JSONObject, done: () -> Unit = {}) {
@@ -489,22 +491,32 @@ object Push {
             Reply.action(ctx, p, noteId)?.let { builder.addAction(it) }
             noteId to builder.build()
         } else {
-            val key = p.optString("account_id").ifEmpty { kind.ifEmpty { "chorus" } }
+            // post alerts (D-106): one per post, opening it; requests and answers open Friends
+            val alert = kind == "post" || kind == "alert"
+            val key = when (kind) {
+                "post" -> "post:${p.optString("post_id")}"
+                "alert" -> "alert:${p.optString("member_id")}:${p.optString("account_id")}"
+                else -> p.optString("account_id").ifEmpty { kind.ifEmpty { "chorus" } }
+            }
             val noteId = key.hashCode()
+            val tap = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP).apply {
+                if (kind == "post") putExtra(MainActivity.EXTRA_OPEN_POST, p.optString("post_id"))
+                if (kind == "alert") putExtra(MainActivity.EXTRA_OPEN_PEOPLE, true)
+            }
             val open = PendingIntent.getActivity(
                 ctx,
                 noteId,
-                Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                tap,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-            val builder = NotificationCompat.Builder(ctx, if (highPriority) CHANNEL_MESSAGES else CHANNEL_SWITCHES)
+            val builder = NotificationCompat.Builder(ctx, if (alert) CHANNEL_POSTS else if (highPriority) CHANNEL_MESSAGES else CHANNEL_SWITCHES)
                 .setSmallIcon(garden.vayne.chorus.R.drawable.ic_stat_chorus)
                 .setColor(NotificationIcons.BRAND_COLOR)
                 .setContentTitle(p.optString("title", "Chorus"))
                 .setContentText(p.optString("text"))
                 .setAutoCancel(true)
                 .setContentIntent(open)
-                .setGroup("switches:$key")
+                .setGroup(if (alert) "posts" else "switches:$key")
                 // the shown time is the fuzzed one the follower may know, never the real switch time
                 .apply { if (at != null) setWhen(at).setShowWhen(true) else setShowWhen(false) }
             noteId to builder.build()

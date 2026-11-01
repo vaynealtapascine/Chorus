@@ -3,7 +3,8 @@
 //! system's own internal space: mentions of a member (or `@front`) and member DMs, each under that
 //! member's rule, pushed to the account's *other* devices only.
 //!
-//! Also, if asked for, the account's own switches made on another device.
+//! Also, if asked for, the account's own switches made on another device; and post alerts
+//! (`post_alerts.rs`, D-106).
 //!
 //! Queued on live ingest of `message.send` and `front.*` (never on rebuild), delivered by the
 //! notifier loop within seconds, as an inbox row plus an encrypted push. In a shared space the
@@ -204,6 +205,12 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
         && matches!(o.payload.get("action").and_then(Value::as_str), Some("switch" | "add" | "remove" | "update"));
     if body_change || matches!(o.kind.as_str(), "front.switch" | "front.add" | "front.remove" | "front.update") {
         return own_switch(conn, o, author, now);
+    }
+    // post alerts (D-106): approved subscribers of its authors who may read it
+    if o.kind == "post.create"
+        && let Some(id) = o.entity_id.as_deref()
+    {
+        return crate::post_alerts::on_post(conn, id, now);
     }
     if o.kind != "message.send" {
         return Ok(());
@@ -768,7 +775,7 @@ fn queue(
 pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Vec<push::Outbound>> {
     let mut st = conn.prepare_cached(
         "SELECT id, recipient_account_id, payload FROM notification
-         WHERE kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch')
+         WHERE kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'post', 'alert_request', 'alert_accepted')
            AND delivered_at IS NULL AND cancelled_at IS NULL AND due_at <= ?1
          ORDER BY due_at, id LIMIT 500",
     )?;
