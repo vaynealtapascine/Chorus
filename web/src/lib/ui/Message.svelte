@@ -52,6 +52,7 @@
     last = true,
     tag,
     right,
+    onjump,
   }: {
     m: MessageRow;
     cont: boolean;
@@ -61,6 +62,8 @@
     tag?: string;
     /** Sits on our side: by one of the room's speakers (D-103); else by whoever speaks now. */
     right?: boolean;
+    /** Show a replied-to, quoted or forwarded original: scroll to it, or open its chat at it. */
+    onjump?: (target: MessageRow) => void;
     people: Map<string, MemberRow>;
     dark: boolean;
     lookup: (id: string) => (MessageRow & { channel_name?: string }) | undefined;
@@ -134,6 +137,21 @@
   let history = $state<Revision[] | null>(null);
   const toggleHistory = () => (history = history ? null : sync.revisions(m.id));
   const replied = $derived(m.reply_to ? lookup(m.reply_to) : undefined);
+  /** The original of a quote or forward, when this reader can see it here. */
+  const original = (id: string | undefined) => (id ? lookup(id) : undefined);
+  function jump(e: MouseEvent, target: MessageRow | undefined) {
+    if (!target || target.deleted || !onjump || (e.target as Element).closest('a')) return;
+    e.stopPropagation();
+    onjump(target);
+  }
+  // where there's no hover, a tap on the bubble shows its time and "edited" (owner, 2026-11-02);
+  // links, buttons and a text selection keep their own clicks
+  let details = $state(false);
+  function tapBubble(e: MouseEvent) {
+    if ((e.target as Element).closest('a, button, input, textarea, video, audio, [role="button"]')) return;
+    if (getSelection()?.isCollapsed === false) return;
+    details = !details;
+  }
   let body: HTMLElement | undefined = $state();
 
   /** DOM text positions and message offsets are both UTF-16. */
@@ -172,7 +190,8 @@
   {#if !out}
     <span class="slot">{#if last}{@const a = m.authors[0] ?? ''}<span class="avatar" style="--ring: {color(a).ring}; --avatar-ink: {color(a).avatar_ink}" title={nameOf(a)}><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></span>{/if}</span>
   {/if}
-  <div class="msg" class:cont class:self={out} class:pinned={m.pinned} class:selected data-message-id={m.id}>
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <div class="msg" class:cont class:self={out} class:pinned={m.pinned} class:selected class:details data-message-id={m.id} onclick={tapBubble}>
     {#if !cont || selecting}
       <div class="head">
         {#if selecting}<button class="select-toggle" aria-label={selected ? 'Deselect message' : 'Select message'} aria-pressed={selected} onclick={onselect}>{selected ? '☑' : '□'}</button>{/if}
@@ -193,10 +212,11 @@
     {/if}
     {#if replied}
       {@const qc = color(replied.authors[0] ?? '')}
-      <div class="reply-quote" style="--q: {qc.name}">
+      <button class="reply-quote" style="--q: {qc.name}" disabled={!onjump || replied.deleted} onclick={(e) => jump(e, replied)}
+        title={onjump && !replied.deleted ? 'Show the message this replies to' : undefined}>
         <span class="q-name">{replied.authors.map(nameOf).join(' & ')}{#if replied.channel_id !== m.channel_id && replied.channel_name}<span class="elsewhere"> · #{replied.channel_name}</span>{/if}</span>
         <span class="snip">{replied.deleted ? 'Deleted message' : replied.cw ? `Content warning: ${replied.cw}` : replied.text.slice(0, 120)}</span>
-      </div>
+      </button>
     {/if}
     {#if m.cw}
       <button class="cw-toggle" aria-expanded={showBody} onclick={() => (cwExpanded = !showBody)}>
@@ -207,17 +227,30 @@
       {#if m.quote}
         {#if 'items' in m.quote}
           {#each m.quote.items as q, i (`${q.message_id}:${i}`)}
-            <blockquote><span>{q.authors.map(nameOf).join(' & ')}{q.channel_name ? ` · #${q.channel_name}` : ''}</span><RichText text={q.text} entities={q.entities} emoji={emojiById} />
+            {@const src = onjump ? original(q.message_id) : undefined}
+            {@const from = `${q.authors.map(nameOf).join(' & ')}${q.channel_name ? ` · #${q.channel_name}` : ''}`}
+            <!-- the header button is the keyboard path; the whole quote answers a pointer -->
+            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+            <blockquote class:jumps={!!src} onclick={(e) => jump(e, src)}>
+              {#if src}<button class="q-src" onclick={(e) => jump(e, src)} title="Show the quoted message">{from}</button>{:else}<span>{from}</span>{/if}
+              <RichText text={q.text} entities={q.entities} emoji={emojiById} />
               {#each q.attachments ?? [] as a (a.id)}<AttachmentView attachment={a} />{/each}
             </blockquote>
           {/each}
         {:else}
-          <blockquote>{m.quote.text}</blockquote>
+          {@const src = onjump ? original(m.quote.message_id) : undefined}
+          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+          <blockquote class:jumps={!!src} onclick={(e) => jump(e, src)}>
+            {#if src}<button class="q-src" onclick={(e) => jump(e, src)} title="Show the quoted message">{src.authors.map(nameOf).join(' & ')}</button>{/if}{m.quote.text}
+          </blockquote>
         {/if}
       {/if}
       {#each m.forward_snapshot ?? [] as f (f.message_id)}
-        <div class="forward">
-          <span class="fwd">Forwarded from {f.authors.map(nameOf).join(' & ')}{f.channel_name ? ` · #${f.channel_name}` : ''}</span>
+        {@const src = onjump ? original(f.message_id) : undefined}
+        {@const from = `Forwarded from ${f.authors.map(nameOf).join(' & ')}${f.channel_name ? ` · #${f.channel_name}` : ''}`}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <div class="forward" class:jumps={!!src} onclick={(e) => jump(e, src)}>
+          {#if src}<button class="fwd q-src" onclick={(e) => jump(e, src)} title="Show the original message">{from}</button>{:else}<span class="fwd">{from}</span>{/if}
           <RichText text={f.text} entities={f.entities} emoji={emojiById} />
           {#each f.attachments ?? [] as a (a.id)}<AttachmentView attachment={a} />{/each}
         </div>
@@ -281,8 +314,10 @@
     </div>{/if}
     <div class="meta">
       {#if unseen.length}<span class="unseen" title="Not seen by {unseen.join(', ')}" aria-label="Not seen by {unseen.join(', ')}">●</span>{/if}
-      {#if m.edited}<button class="edited" onclick={toggleHistory} aria-expanded={!!history}>edited</button>{/if}
-      <time datetime={new Date(m.occurred_at).toISOString()}>{time(m.occurred_at)}</time>
+      <span class="stamp">
+        {#if m.edited}<button class="edited" onclick={toggleHistory} aria-expanded={!!history}>edited</button>{/if}
+        <time datetime={new Date(m.occurred_at).toISOString()}>{time(m.occurred_at)}</time>
+      </span>
       {#if out}<span class="sent" class:pending={!m.account_id} title={m.account_id ? 'Sent' : 'Waiting to sync'}><Icon name={m.account_id ? 'read' : 'history'} size={14} /></span>{/if}
     </div>
     {#if palette}
@@ -327,7 +362,7 @@
 <style>
   /* Bubbles (Figma F5.21): others on the left with their face beside the last of a run, the one
      speaking here on the right; names open a run, time and a sent tick close each bubble. */
-  .msg-row { display: flex; align-items: flex-end; gap: 8px; padding: 2px 56px 2px 0; min-width: 0; }
+  .msg-row { display: flex; align-items: flex-end; gap: 8px; padding: 2px 64px 2px 0; min-width: 0; }
   .msg-row:not(.cont) { margin-top: 6px; }
   .msg-row.out { justify-content: flex-end; padding: 2px 0 2px 72px; }
   .slot { flex: none; width: 32px; height: 32px; }
@@ -359,7 +394,10 @@
   .layer { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
   .tag { display: inline-flex; align-items: center; font-size: 11px; color: var(--ink-3); border: 1px solid var(--line); border-radius: var(--r-full); padding: 0 6px; }
   .pin-tag { border: 0; padding: 0; color: var(--warn); }
-  .reply-quote { display: grid; padding: 4px 10px 4px 9px; border-left: 3px solid var(--q); border-radius: 6px; background: color-mix(in srgb, var(--q) 12%, transparent); font-size: 13px; line-height: 17px; min-width: 0; }
+  .reply-quote { display: grid; padding: 4px 10px 4px 9px; border: 0; border-left: 3px solid var(--q); border-radius: 6px; background: color-mix(in srgb, var(--q) 12%, transparent);
+    font: inherit; font-size: 13px; line-height: 17px; color: inherit; text-align: left; min-width: 0; width: 100%; transition: background var(--t-fast) var(--ease); }
+  .reply-quote:not(:disabled) { cursor: pointer; }
+  .reply-quote:not(:disabled):hover { background: color-mix(in srgb, var(--q) 22%, transparent); }
   .q-name { color: var(--q); font-weight: 600; }
   .snip { color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .elsewhere { font-weight: 400; color: var(--ink-3); }
@@ -369,6 +407,11 @@
   blockquote span { display: block; font-size: var(--fs-xs); color: var(--ink-3); }
   .forward { border-left: 3px solid var(--accent); border-radius: 6px; padding: 4px 10px; margin: 2px 0; display: grid; gap: 2px; background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .fwd { font-size: 12px; color: var(--accent); font-weight: 600; }
+  /* a quote or forward whose original is here: tap it to go there */
+  .jumps { cursor: pointer; }
+  .q-src { display: block; background: none; border: 0; padding: 0; font: inherit; font-size: var(--fs-xs); color: var(--ink-3); text-align: left; cursor: pointer; }
+  .q-src.fwd { font-size: 12px; color: var(--accent); font-weight: 600; }
+  .q-src:hover { text-decoration: underline; }
   .segment { display: grid; gap: 2px; padding: 2px 0 2px 10px; border-left: 2px solid var(--q, var(--line)); margin-top: 2px; }
   .segment-head { display: flex; align-items: center; gap: var(--s-2); font-size: var(--fs-xs); }
   .segment-avatars, .avatars { display: flex; }
@@ -391,6 +434,15 @@
   .thread-avatar + .thread-avatar { margin-left: -5px; }
   .meta { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: -2px; font-size: 11px; line-height: 14px; color: var(--ink-3); }
   .meta time { font-size: 11px; }
+  /* the time and "edited" wait for a hover, focus or tap (owner, 2026-11-02): beside the bubble
+     with a mouse, so nothing moves; inside it after a tap on touch and narrow screens */
+  .stamp { display: none; align-items: center; gap: 4px; white-space: nowrap; }
+  .msg.details .stamp, .msg-row:focus-within .stamp { display: inline-flex; }
+  @media (hover: hover) and (min-width: 641px) {
+    .stamp { display: inline-flex; position: absolute; bottom: 4px; left: calc(100% + 8px); opacity: 0; pointer-events: none; transition: opacity var(--t-fast) var(--ease); }
+    .msg.self .stamp { left: auto; right: calc(100% + 8px); }
+    .msg-row:hover .stamp, .msg-row:focus-within .stamp { opacity: 1; pointer-events: auto; }
+  }
   .sent { display: inline-grid; color: var(--accent); }
   .sent.pending { color: var(--ink-3); }
   .unseen { color: var(--accent); font-size: 9px; }
