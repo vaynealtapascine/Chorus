@@ -111,7 +111,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
     var quoteOf by rememberSaveable { mutableStateOf<String?>(null) }
     var kind by rememberSaveable { mutableStateOf("note") }
-    var selectedAuthors by rememberSaveable { mutableStateOf<List<String>?>(null) }
+    var selectedAuthors by rememberSaveable(chorus.device?.accountId, model.isPerson) { mutableStateOf<List<String>?>(null) }
     var authorId by rememberSaveable { mutableStateOf("") }
     var bodyValue by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
     val body = bodyValue.text
@@ -145,7 +145,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     LaunchedEffect(sharedDraft?.id, chorus.device?.accountId) {
         val incoming = sharedDraft ?: return@LaunchedEffect
         if (chorus.device == null) return@LaunchedEffect
-        profileId = null; threadPostId = null; replyTo = null
+        selectedAuthors = null; profileId = null; threadPostId = null; replyTo = null
         section = "timeline"
         if (incoming.text.isNotBlank()) {
             val text = listOf(body, incoming.text).filter { it.isNotBlank() }.joinToString("\n")
@@ -160,7 +160,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     }
     LaunchedEffect(externalNewEntry, chorus.device?.accountId) {
         if (externalNewEntry == null || chorus.device == null) return@LaunchedEffect
-        profileId = null; threadPostId = null; replyTo = null
+        selectedAuthors = null; profileId = null; threadPostId = null; replyTo = null
         section = "timeline"; kind = "entry"; editing = true
         onExternalNewEntryConsumed()
     }
@@ -171,7 +171,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             section = "timeline"
             replyTo = externalReplyPost; quoteOf = null
             kind = "note"; title = ""; bodyValue = TextFieldValue(); cw = ""; mood = ""; tags = ""
-            attachments.clear()
+            attachments.clear(); selectedAuthors = null
             audience = "server" // the foreign parent author must be able to read this reply
             selectedAuthors = null; authorId = Reply.speaker(model)?.id.orEmpty()
             editing = true
@@ -261,10 +261,10 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 TextButton(enabled = !busy, onClick = { editing = false }) { Text("Cancel") }
                 Text(if (replyTo == null) "Draft" else "Write a reply", color = p.ink3,
                     style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 14.dp))
-                Button(enabled = !busy && author != null && (body.isNotBlank() || attachments.isNotEmpty()), onClick = {
+                Button(enabled = !busy && author != null && (model.isPerson || selectedAuthors?.isEmpty() != true) && (body.isNotBlank() || attachments.isNotEmpty()), onClick = {
                     val dev = chorus.device ?: return@Button
                     val writer = author ?: return@Button
-                    val writingAuthors = selectedAuthors ?: listOf(writer.id)
+                    val writingAuthors = garden.vayne.chorus.data.JournalSelection.authors(model.isPerson, selectedAuthors, writer.id)
                     val picked = attachments.toList()
                     // Snapshot the privacy/authoring choices at Post, before file staging suspends.
                     val writingKind = kind
@@ -283,9 +283,13 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                     busy = true; error = null
                     actions.launch {
                         try {
+                            require(chorus.device?.accountId == dev.accountId) { "Account changed. Please try again." }
+                            PostCompose.validatedAuthors(chorus.model.value, dev.accountId, writingAuthors)
+                            PostCompose.validatedAudience(garden.vayne.chorus.data.Audience(writingAudience, writingBuckets), chorus.model.value.sharingBuckets.map { it.first }.toSet())
                             val attachmentIds = picked.map { a ->
                                 sendAttachment(chorus, ctx, a, opKind = "post.attachment")
                             }
+                            require(chorus.device?.accountId == dev.accountId) { "Account changed. Please try again." }
                             val payload = PostCompose.payload(chorus.model.value, dev.accountId, writingKind, writer.id, writingBody,
                                 writingTitle, writingCw, writingAudience, writingMood, writingTags, writingReply, attachmentIds = attachmentIds, quotePostId = writingQuote, bucketIds = writingBuckets, authorIds = writingAuthors)
                             if (writingPoll != null) payload.put("poll", writingPoll)
@@ -296,7 +300,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                             pollOptions.clear(); pollOptions.addAll(listOf("", ""))
                             if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
                             bodyValue = TextFieldValue(); title = ""; cw = ""; mood = ""; tags = ""; replyTo = null; quoteOf = null
-                            attachments.clear()
+                            attachments.clear(); selectedAuthors = null
                             editing = false
                         } catch (e: Exception) { error = e.message ?: "Could not post." }
                         finally { busy = false }
@@ -457,7 +461,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         }
         Box(Modifier.weight(1f)) {
         if (journalTab == "friends") JournalFriends(chorus, model, onThread = { threadPostId = it }, onReply = {
-            replyTo = it; audience = "server"; editing = true
+            selectedAuthors = null; replyTo = it; audience = "server"; editing = true
         }) else LazyColumn(Modifier.fillMaxSize(), state = feedListState, contentPadding = PaddingValues(bottom = 80.dp)) {
         if (shownEvents.isEmpty()) item {
             Text(if (journalTab == "entries") "No journal entries yet. Start with a few words." else "No posts or switches yet. Write the first note.",
@@ -489,7 +493,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 newPosts = false
             }
         }
-        FloatingActionButton(onClick = { replyTo = null; if (journalTab == "entries") kind = "entry"; editing = true },
+        FloatingActionButton(onClick = { selectedAuthors = null; replyTo = null; if (journalTab == "entries") kind = "entry"; editing = true },
             containerColor = p.accent, contentColor = p.onAccent, shape = CircleShape,
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).size(56.dp)) {
             ChatIcon(R.drawable.ic_edit, "Write a post", p.onAccent)
