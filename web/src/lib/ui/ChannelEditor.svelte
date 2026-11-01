@@ -40,7 +40,7 @@
   const systemName = $derived(String(projection.rows.system?.[sync.accountId]?.fields.name ?? 'your system'));
   const final = $derived<ChannelDraft>({ ...draft, member_ids: what === 'text' && !keptToSome ? [] : draft.member_ids });
   const problem = $derived(group ? (draft.name.trim() ? null : 'Give the group a name.')
-    : draftProblem(final, what) ?? (what === 'text' && keptToSome && !draft.member_ids.length ? 'Choose who it is kept to.' : null));
+    : draftProblem(final, what, spaceKind) ?? (what === 'text' && keptToSome && !draft.member_ids.length ? 'Choose who it is kept to.' : null));
   const disc = $derived(core.adaptColor(final.color ?? discColor(channel?.id ?? 'new'), dark));
   const glyph = $derived(final.icon.trim() || (what === 'text' && channelSlug(final.name) === 'general' ? '#' : (final.name.match(/\p{L}|\p{N}/u)?.[0] ?? '#').toUpperCase()));
 

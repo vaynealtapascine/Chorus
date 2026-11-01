@@ -55,10 +55,11 @@ export function channelSlug(name: string): string {
 }
 
 /** Why the draft can't be saved, or null. */
-export function draftProblem(d: ChannelDraft, kind: 'text' | 'member_dm'): string | null {
+export function draftProblem(d: ChannelDraft, kind: 'text' | 'member_dm', spaceKind = 'internal'): string | null {
   if (!d.name.trim()) return kind === 'member_dm' ? 'Give this chat a name.' : 'Give this channel a name.';
   if (d.name.trim().length > 80) return 'Keep the name within 80 characters.';
-  if (kind === 'member_dm' && d.member_ids.length < 2) return 'A members’ chat needs at least two members.';
+  if (kind === 'member_dm' && spaceKind === 'internal' && d.member_ids.length < 2) return 'A members’ chat needs at least two members.';
+  if (kind === 'member_dm' && spaceKind !== 'internal' && !d.member_ids.length) return 'Choose whose private chat this is.';
   if ([...d.icon].length > 8) return 'An icon is one emoji or a few characters.';
   return null;
 }

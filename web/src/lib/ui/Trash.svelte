@@ -8,7 +8,7 @@
   let kind = $state<TrashKind | 'all'>('all');
   // deleted messages of a private chat that isn't ours to see now stay out (D-097, D-098)
   const chatOk = $derived(chatShown(projection, sync.accountId));
-  const byChannel = $derived(new Map(channels(projection).map((c) => [c.id, c])));
+  const byChannel = $derived(new Map(channels(projection, undefined, true).map((c) => [c.id, c])));
   const all = $derived(trashItems(projection, sync.accountId).filter((item) => item.kind !== 'message' || !item.channelId || chatOk(byChannel.get(item.channelId))));
   const shown = $derived(all.filter((item) =>
     (!channelId || (item.kind === 'message' && item.channelId === channelId)) &&

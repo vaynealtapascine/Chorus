@@ -16,14 +16,14 @@ export function segmentMarkup(message: MessageRow): string[] {
 }
 
 /** Rebuild one edited message without changing which members authored each segment. */
-export function editedSegments(markup: string[], original: Segment[], names: unknown): { rich: Rich; segments: Segment[] } {
+export function editedSegments(markup: string[], original: Segment[], names: unknown, parse: (source: string, index: number) => Rich = (source) => core.parseMarkup(source, names)): { rich: Rich; segments: Segment[] } {
   const entities: Entity[] = [];
   const segments: Segment[] = [];
   let text = '';
   for (const [index, source] of markup.entries()) {
     if (index > 0) text += '\n';
     const offset = text.length;
-    const part = core.parseMarkup(source, names);
+    const part = parse(source, index);
     text += part.text;
     entities.push(...part.entities.map((entity) => ({ ...entity, offset: entity.offset + offset })));
     segments.push({ offset, length: part.text.length, authors: [...original[index].authors] });

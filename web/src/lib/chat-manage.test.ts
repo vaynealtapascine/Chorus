@@ -6,6 +6,12 @@ const ch = (id: string, kind: ChannelRow['kind'], member_ids?: string[], space_i
   ({ id, space_id, kind, name: id, member_ids, archived: false });
 
 describe('chat management', () => {
+  it('allows one-member private DMs while internal member chats still need two', () => {
+    const draft = { ...draftOf(undefined), name: 'Private', member_ids: ['kai'] };
+    expect(draftProblem(draft, 'member_dm', 'dm')).toBeNull();
+    expect(draftProblem(draft, 'member_dm', 'internal')).toBe('A members’ chat needs at least two members.');
+    expect(draftProblem({ ...draft, member_ids: [] }, 'member_dm', 'dm')).toBeTruthy();
+  });
   it('says whose a private chat is on each side', () => {
     const own = (id: string) => id.startsWith('ours:');
     expect(privateSides({ member_ids: ['ours:kai', 'robin'] }, { kind: 'dm' }, own)).toEqual({ mine: ['ours:kai'], theirs: ['robin'] });

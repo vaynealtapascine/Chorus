@@ -464,9 +464,9 @@ export function spaces(p: Projection): SpaceRow[] {
     .sort((a, b) => (a.kind === 'internal' ? -1 : b.kind === 'internal' ? 1 : a.name.localeCompare(b.name)));
 }
 
-export function channels(p: Projection, spaceId?: string): ChannelRow[] {
+export function channels(p: Projection, spaceId?: string, includeDeleted = false): ChannelRow[] {
   return Object.entries((p.rows.channel ?? {}) as Rows)
-    .filter(([, r]) => r.exists && r.fields.deleted_at == null)
+    .filter(([, r]) => r.exists && (includeDeleted || r.fields.deleted_at == null))
     .map(([id, r]) => ({
       id,
       space_id: str(r.fields.space_id) ?? '',

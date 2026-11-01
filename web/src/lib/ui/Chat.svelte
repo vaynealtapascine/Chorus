@@ -6,7 +6,7 @@
   import { activeViewers, memberVisible } from '../hidden';
   import { router } from '../router.svelte';
   import { snapshot } from '../selection';
-  import { editedSegments, segmentMarkup } from '../segments';
+  import { editedSegments, segmentRich } from '../segments';
   import { canWriteAs } from '../posts';
   import { channelFrontChoices, channelFrontId, channelFrontKey, channelReaders, channelSpeaker } from '../channel-front';
   import { typingLabel, typingName } from '../sync/typing';
@@ -34,7 +34,9 @@
   import ChannelEditor from './ChannelEditor.svelte';
   import NewChat from './NewChat.svelte';
   import SpacePanel from './SpacePanel.svelte';
-  import { chatShown } from '../chat-visible';
+  import { chatShown, privacyChannel } from '../chat-visible';
+  import { editDraft, inputDraft, markupDraft, parseComposer, updateDraft, mentionAt, mentionChoices, replaceSelection, unicodeEmoji, type MentionChoice, type ComposerDraft } from '../chat-composer';
+  import { groups } from '../data';
   import { canEditSpace, privateSides, roleIn } from '../chat-manage';
   import { selfMember, type MemberRow } from '../data';
   import { apiBase } from '../sync/device';
@@ -70,7 +72,8 @@
   const spaceChannels = $derived(allChannels.filter((c) => c.space_id === space?.id && !c.archived && c.kind !== 'thread' && shownNow(c)));
   // a private chat in a DM (D-098): whose it is on our side and theirs
   const ownIds = $derived(new Set(members(projection).map((m) => m.id)));
-  const sides = $derived(current && space ? privateSides(current, space, (id) => ownIds.has(id)) : null);
+  const privacyRoot = $derived(privacyChannel(projection, current));
+  const sides = $derived(privacyRoot && space ? privateSides(privacyRoot, space, (id) => ownIds.has(id)) : null);
   // someone's private chat that isn't ours to look at now: its words stay out, and nothing is marked read
   const lockedOut = $derived(!!current && !shownNow(current));
   // only the newest pages are built and in the DOM; scrolling up adds older ones (SPEC §9: pages
@@ -150,9 +153,11 @@
   const speakers = $derived(
     ownSenders.map((m) => ({ member_id: m.id, sigils: m.sigils, proxy_tags: m.proxy_tags })),
   );
+  const mentionOptions = $derived(mentionChoices([...people.values()].filter((m) => !m.deleted && !m.archived), groups(projection)));
   const names = $derived({
     mentions: Object.fromEntries(
-      [...people.values()].filter((m) => !m.deleted).map((m) => [m.name.toLowerCase(), { target_type: 'member', target_id: m.id }]),
+      mentionOptions.flatMap((m) => [m.token, ...(mentionOptions.filter((n) => n.name.toLowerCase() === m.name.toLowerCase()).length === 1 ? [m.name] : [])]
+        .map((token) => [token.toLowerCase(), { target_type: m.type, target_id: m.id || null }])),
     ),
     emoji: Object.fromEntries([
       ...activeEmoji.flatMap((e) => e.aliases.map((alias) => [alias, e.id])),
@@ -161,6 +166,22 @@
   });
 
   let draft = $state('');
+  let draftDoc = $state<ComposerDraft>({ text: '', entities: [] });
+  const draftProvenance = $derived(updateDraft(draftDoc, draft));
+  $effect(() => { draftDoc = draftProvenance; });
+  let editingDocs = $state<ComposerDraft[]>([]);
+  let beforeEdit: ComposerDraft | null = null;
+  const draftKey = (id: string) => `chorus.chat.draft:${sync.accountId}:${id}`;
+  function restoreDraft(id: string | undefined): ComposerDraft {
+    try {
+      const value = JSON.parse(id ? sessionStorage.getItem(draftKey(id)) ?? 'null' : 'null');
+      return value && typeof value.text === 'string' && Array.isArray(value.entities) ? value : { text: '', entities: [] };
+    } catch { return { text: '', entities: [] }; }
+  }
+  function saveDraft(id: string | undefined, value: ComposerDraft) {
+    if (!id) return;
+    try { if (value.text) sessionStorage.setItem(draftKey(id), JSON.stringify(value)); else sessionStorage.removeItem(draftKey(id)); } catch { /* A full browser store must not interrupt typing. */ }
+  }
   let cw = $state('');
   // an optional poll on the next message (Advanced, D-081)
   let pollOn = $state(false);
@@ -179,6 +200,7 @@
   let forwarding = $state<SnapshotItem[] | null>(null);
   let forwardingSensitive = false;
   let quoteSourceSpaceId = '';
+  let quoteSourceChannelId = $state('');
   let quoteSensitive = false;
   let keepQuoteOnNavigation = false;
   let selecting = $state(false);
@@ -212,6 +234,28 @@
   onDestroy(unheld);
   let picking = $state(false);
   let box: HTMLTextAreaElement | undefined = $state();
+  let cursor = $state(0);
+  let selectionEnd = $state(0);
+  let composing = $state(false);
+  let inputSelection: { from: number; to: number; type: string } | null = null;
+  const segmentInputSelections = new Map<number, { from: number; to: number; type: string }>();
+  let mentionIndex = $state(0);
+  let dismissedMention = $state('');
+  const mentionRange = $derived(!editing && !composing ? mentionAt(draft, cursor, selectionEnd) : null);
+  const mentionMatches = $derived(mentionRange && dismissedMention !== `${draft}|${cursor}` ? mentionOptions.filter((m) => m.name.toLowerCase().includes(mentionRange.query)).slice(0, 8) : []);
+  function trackCursor() { const next = box?.selectionStart ?? draft.length; if (next !== cursor) mentionIndex = 0; cursor = next; selectionEnd = box?.selectionEnd ?? cursor; }
+  function insertText(text: string, from = cursor, to = selectionEnd) {
+    const result = replaceSelection(draft, from, to, text);
+    draftDoc = editDraft(draftProvenance, from, to, text);
+    draft = result.text; cursor = selectionEnd = result.cursor;
+    queueMicrotask(() => { box?.focus(); box?.setSelectionRange(result.cursor, result.cursor); });
+  }
+  function insertMention(m: MentionChoice) {
+    if (!mentionRange) return;
+    const from = mentionRange.from;
+    insertText(`@${m.name} `, from, mentionRange.to);
+    draftDoc = { text: draft, entities: [...draftDoc.entities, { type: 'mention', offset: from, length: m.name.length + 1, target_type: m.type, ...(m.id ? { target_id: m.id } : {}) }] };
+  }
   let emojiPicker = $state(false);
   let emojiFile: File | null = $state(null);
   let emojiName = $state('');
@@ -259,7 +303,7 @@
     const before = draft.slice(0, at);
     const match = before.match(/(?:^|\s):([a-z0-9_]{1,32})$/);
     const from = match ? at - match[1].length - 1 : at;
-    draft = `${draft.slice(0, from)}:${name}: ${draft.slice(at)}`;
+    insertText(`:${name}: `, from, box?.selectionEnd ?? at);
     emojiPicker = false;
     queueMicrotask(() => { box?.focus(); box?.setSelectionRange(from + name.length + 3, from + name.length + 3); });
   }
@@ -299,6 +343,13 @@
   let activeChannelId: string | undefined;
   $effect(() => {
     if (current?.id === activeChannelId) return;
+    untrack(() => {
+      saveDraft(activeChannelId, beforeEdit ?? draftProvenance);
+      draftDoc = restoreDraft(current?.id);
+      draft = draftDoc.text;
+      beforeEdit = null;
+      cursor = selectionEnd = draft.length;
+    });
     activeChannelId = current?.id;
     replyTo = editing = forwarding = null;
     if (!keepQuoteOnNavigation) quoting = null;
@@ -318,6 +369,7 @@
     // a reply started elsewhere ("Reply in…", "Reply privately") lands here
     if (current) replyTo = takeReply(current.id, current.space_id);
   });
+  $effect(() => { const value = draftProvenance; const isEditing = editing; untrack(() => { if (activeChannelId && !isEditing) saveDraft(activeChannelId, value); }); });
 
   // a browser tab keeps a window of messages (SYNC §6.5): older history comes over REST, on
   // request, shown read-only above what this device holds
@@ -392,7 +444,9 @@
     }
   }
 
-  const preview: Composed | null = $derived(draft.trim() && !editing ? core.compose(draft, speakers, { segments: parseSegments }, defaultAuthors, names) : null);
+  const preview: Composed | null = $derived(draft.trim() && !editing ? parseComposer(draftProvenance, names, { speakers, options: { segments: parseSegments }, defaults: defaultAuthors }) : null);
+  const retainedAllowed = $derived(!lockedOut && (!quoteSourceChannelId || !quoting || shownNow(allChannels.find((c) => c.id === quoteSourceChannelId))) &&
+    (!replyTo || shownNow(allChannels.find((c) => c.id === replyTo?.channel_id))));
   const messageAuthors = $derived(preview?.authors ?? defaultAuthors);
   let typingDraft: { channel: string; member: string | null; audience: 'all' | 'system' } | null = null;
   let lastTypingDraft = '';
@@ -444,11 +498,11 @@
   }
 
   async function send() {
-    if (!current) return;
+    if (!current || !retainedAllowed) return;
     if (editing) {
       const result = editingParts
-        ? editedSegments(editingParts, editing.segments, names)
-        : { rich: core.parseMarkup(draft, names), segments: [{ offset: 0, length: 0, authors: [...editing.authors] }] };
+        ? editedSegments(editingParts, editing.segments, names, (source, i) => parseComposer(updateDraft(editingDocs[i], source), names).rich)
+        : { rich: parseComposer(draftProvenance, names).rich, segments: [{ offset: 0, length: 0, authors: [...editing.authors] }] };
       if (!result.rich.text.trim()) return;
       if (!editingParts) result.segments[0].length = result.rich.text.length;
       sync.create('message.edit', scope, editing.id, {
@@ -456,7 +510,8 @@
       });
       editing = null;
       editingParts = null;
-      draft = '';
+      draftDoc = beforeEdit ?? { text: '', entities: [] };
+      draft = draftDoc.text; beforeEdit = null;
       return;
     }
     if (!canSend) return;
@@ -516,6 +571,16 @@
   }
 
   function onkey(e: KeyboardEvent) {
+    if (e.isComposing || composing || e.keyCode === 229) return;
+    if (mentionMatches.length) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); mentionIndex = (mentionIndex + (e.key === 'ArrowDown' ? 1 : -1) + mentionMatches.length) % mentionMatches.length; return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(mentionMatches[mentionIndex] ?? mentionMatches[0]); return; }
+      if (e.key === 'Escape') { e.preventDefault(); dismissedMention = `${draft}|${cursor}`; return; }
+    }
+    if (e.key === 'ArrowUp' && !draft && !editing && !replyTo && !quoting && !pending.length && !pollOn && !lockedOut) {
+      const latest = visibleMsgs.findLast((m) => !m.deleted && m.account_id === sync.accountId && (!sides?.mine.length || m.authors.every((id) => sides.mine.includes(id))));
+      if (latest) { e.preventDefault(); startEdit(latest); } return;
+    }
     if (e.key === 'Escape' && (emojiPicker || completion.length)) { emojiPicker = false; e.preventDefault(); return; }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -525,17 +590,20 @@
   }
 
   function cancel() {
-    if (editing) draft = ''; // leaving an edit drops the edited text
+    if (editing) { draftDoc = beforeEdit ?? { text: '', entities: [] }; draft = draftDoc.text; beforeEdit = null; }
     replyTo = quoting = editing = null;
     editingParts = null;
   }
 
   function startEdit(m: MessageRow) {
+    if (!editing) beforeEdit = structuredClone($state.snapshot(draftProvenance));
     editing = m;
-    editingParts = m.segments.length > 1 ? segmentMarkup(m) : null;
+    editingDocs = m.segments.map((segment) => markupDraft(segmentRich(m, segment)));
+    editingParts = m.segments.length > 1 ? editingDocs.map((d) => d.text) : null;
     replyTo = quoting = null;
     // Segment editing keeps each part's authors; a single segment uses the plain composer.
-    draft = editingParts ? '' : core.toMarkup({ text: m.text, entities: m.entities });
+    draftDoc = editingParts ? { text: '', entities: [] } : markupDraft(m);
+    draft = draftDoc.text;
     if (!editingParts) box?.focus();
   }
 
@@ -558,6 +626,7 @@
     quoting = { items: picked.map((m) => snapshot(m, current.name)) };
     forwarding = null;
     quoteSourceSpaceId = current.space_id;
+    quoteSourceChannelId = current.id;
     quoteSensitive = picked.some((m) => !!m.visibility && m.visibility.mode !== 'all');
     replyTo = editing = null;
     editingParts = null;
@@ -580,12 +649,12 @@
   function sharingOutward(targetId: string, targetSpaceId: string, sourceSpaceId: string, sensitive: boolean): boolean {
     if (targetId === current?.id) return false;
     const sourceSpace = ss.find((s) => s.id === sourceSpaceId);
-    return (sourceSpace?.kind === 'internal' && targetSpaceId !== sourceSpaceId) || sensitive;
+    return (sourceSpace?.kind === 'internal' && targetSpaceId !== sourceSpaceId) || sensitive || !!privacyRoot?.member_ids?.length;
   }
 
   function moveQuote(targetId: string) {
     const target = allChannels.find((c) => c.id === targetId && !c.archived);
-    if (!target || !quoting || target.id === current?.id) return;
+    if (!retainedAllowed || !target || !shownNow(target) || !quoting || target.id === current?.id) return;
     if (sharingOutward(target.id, target.space_id, quoteSourceSpaceId, quoteSensitive) &&
         !confirm('This quote shares a snapshot of the selected content with another channel. Continue?')) return;
     keepQuoteOnNavigation = true;
@@ -595,7 +664,7 @@
   function forwardTo(targetId: string) {
     const target = allChannels.find((c) => c.id === targetId);
     const items = forwarding;
-    if (!target || target.archived || !items || !speaker || !current) return;
+    if (lockedOut || !target || !shownNow(target) || target.archived || !items || !speaker || !current) return;
     if (sharingOutward(target.id, target.space_id, current.space_id, forwardingSensitive) &&
         !confirm('This forward shares a snapshot of the selected content with another channel. Continue?')) return;
     const targetScope = scopeOf(target.space_id);
@@ -784,7 +853,13 @@
       return { m, rank: (e ? order.indexOf(e.level) : 99) * 2 + (via ? 1 : 0), layer: e ? `${layerNames.get(e.level)?.toLowerCase() ?? ''}${via ? ` with ${via}` : ''}` : undefined, unread: behind };
     }).sort((a, b) => a.rank - b.rank || nameOf(a.m.id).localeCompare(nameOf(b.m.id)));
   });
-  const roomMedia = $derived(visibleMsgs.flatMap((m) => m.attachments.filter((a) => a.mime.startsWith('image/') && !a.is_spoiler)).reverse());
+  const roomMedia = $derived(visibleMsgs.filter((m) => !m.deleted && !m.cw).flatMap((m) => m.attachments.filter((a) => a.mime.startsWith('image/') && !a.is_spoiler)).reverse());
+  const roomFiles = $derived(visibleMsgs.filter((m) => !m.deleted && !m.cw).flatMap((m) => m.attachments.filter((a) => !a.mime.startsWith('image/') && !a.is_spoiler)).reverse());
+  const roomLinks = $derived(visibleMsgs.filter((m) => !m.deleted && !m.cw).flatMap((m) => m.entities.flatMap((e) => {
+    if (!['url', 'text_link'].includes(e.type) || m.entities.some((s) => s.type === 'spoiler' && s.offset < e.offset + e.length && s.offset + s.length > e.offset)) return [];
+    const url = e.type === 'url' ? m.text.slice(e.offset, e.offset + e.length) : String(e.url ?? '');
+    return /^https?:\/\//i.test(url) ? [{ id: `${m.id}:${e.offset}`, url, label: m.text.slice(e.offset, e.offset + e.length) }] : [];
+  })).reverse());
 
   const grouped = $derived(
     visibleMsgs.map((m, j) => {
@@ -874,7 +949,7 @@
   // projection, so it would see its own mark missing and write it again, a thousand times over
   const marked = new Map<string, string>();
   $effect(() => {
-    if (!current || !visible) return;
+    if (!current || !visible || !atLatest || lockedOut) return;
     const latest = visibleMsgs.findLast((m) => !m.deleted);
     if (!latest) return;
     // the account, and with "track reading per member" whoever is fronting (core decides)
@@ -934,10 +1009,33 @@
   });
 
   let list: HTMLElement | undefined = $state();
+  let atLatest = $state(true);
+  let unreadBoundary = $state(0);
+  let readChannel = '';
+  const pendingUnread = $derived(visibleMsgs.filter((m) => !m.deleted && m.account_id !== sync.accountId && m.occurred_at > unreadBoundary).length);
+  const firstUnread = $derived(visibleMsgs.find((m) => !m.deleted && m.account_id !== sync.accountId && m.occurred_at > unreadBoundary)?.id);
+  $effect(() => {
+    if (current?.id === readChannel) return;
+    readChannel = current?.id ?? '';
+    unreadBoundary = current ? lastRead(projection, current.id, sync.accountId) : 0;
+    atLatest = true;
+  });
+  function jumpLatest() {
+    list?.scrollTo({ top: list.scrollHeight });
+    atLatest = true;
+  }
+  $effect(() => {
+    if (retainedAllowed) return;
+    if (editing) { draftDoc = beforeEdit ?? { text: '', entities: [] }; draft = draftDoc.text; beforeEdit = null; }
+    replyTo = quoting = editing = forwarding = replyIn = null;
+    editingParts = null; selectedIds = new Set(); selecting = false;
+    editingChannel = editingGroup = menuOpen = emojiPicker = false;
+    history = null; older = []; stopTyping();
+  });
   $effect(() => {
     if (focusId) return;
     void msgs.length;
-    queueMicrotask(() => list?.scrollTo({ top: list.scrollHeight }));
+    if (untrack(() => atLatest)) queueMicrotask(() => list?.scrollTo({ top: list.scrollHeight }));
   });
   $effect(() => {
     const id = focusId;
@@ -1129,7 +1227,7 @@
       </div>
     {/if}
 
-    <div class="list" bind:this={list} onscroll={() => { if (list && list.scrollTop < 200) showOlder(); }}>
+    <div class="list" bind:this={list} onscroll={() => { if (!list) return; atLatest = list.scrollHeight - list.scrollTop - list.clientHeight < 80; if (list.scrollTop < 200) showOlder(); }}>
       {#if first}
         <button class="ghost older" onclick={showOlder}>Show older messages ({first})</button>
       {/if}
@@ -1171,6 +1269,7 @@
           <div class="service"><span>{line.text}</span></div>
         {:else if line.kind === 'msg'}
         {@const m = line.m}
+        {#if m.id === firstUnread && unreadBoundary > 0}<div class="service unread-divider"><span>Unread messages</span></div>{/if}
         <Message
           {m}
           cont={line.cont}
@@ -1184,7 +1283,7 @@
           onreplyin={() => (replyIn = m)}
           unseen={unseenBy(m).map((id) => people.get(id)?.name ?? '?')}
           onreplyprivately={(space?.kind === 'internal' ? m.authors[0] !== speaker : m.account_id !== sync.accountId) ? () => void replyPrivately(m) : undefined}
-          onquote={(q) => { quoting = q; forwarding = null; quoteSourceSpaceId = current?.space_id ?? ''; quoteSensitive = !!m.visibility && m.visibility.mode !== 'all'; replyTo = m; editing = null; editingParts = null; box?.focus(); }}
+          onquote={(q) => { quoting = q; forwarding = null; quoteSourceSpaceId = current?.space_id ?? ''; quoteSourceChannelId = current?.id ?? ''; quoteSensitive = !!privacyRoot?.member_ids?.length || !!m.visibility && m.visibility.mode !== 'all'; replyTo = m; editing = null; editingParts = null; box?.focus(); }}
           onedit={() => startEdit(m)}
           ondelete={() => sync.create('message.delete', scope, m.id, {})}
           onrestore={() => sync.create('message.restore', scope, m.id, {})}
@@ -1218,7 +1317,8 @@
         <button class="x" onclick={() => { selecting = false; selectedIds = new Set(); }} aria-label="Cancel selection">✕</button>
       </div>
     {/if}
-    {#if forwarding}
+    {#if !atLatest && !lockedOut}<button class="jump-latest" onclick={jumpLatest} aria-label={`Jump to latest${pendingUnread ? `, ${pendingUnread} unread` : ''}`}>↓ Latest{pendingUnread ? ` · ${pendingUnread}` : ''}</button>{/if}
+    {#if forwarding && !lockedOut}
       <div class="bar">
         Forward {forwarding.length} {forwarding.length === 1 ? 'item' : 'items'} to
         <select onchange={(e) => { forwardTo((e.currentTarget as HTMLSelectElement).value); e.currentTarget.value = ''; }} aria-label="Forward to channel">
@@ -1252,7 +1352,7 @@
         <button onclick={() => (replyIn = null)}>Cancel</button>
       </div>
     {/if}
-    {#if replyTo || quoting || editing}
+    {#if retainedAllowed && (replyTo || quoting || editing)}
       <div class="bar">
         {#if editing}Editing message{:else if quoting}Quoting {#if 'items' in quoting}{quoting.items.length} {quoting.items.length === 1 ? 'message' : 'messages'}{:else}“{quoting.text.slice(0, 60)}”{/if}{:else if replyTo}Replying to {replyTo.authors.map((a) => people.get(a)?.name ?? '?').join(' & ')}{/if}
         {#if quoting}
@@ -1332,9 +1432,12 @@
       </div>{/if}
       <div class="pill">
         {#if !editing}<div class="chip-wrap">
-          <button class="in-pill" onclick={() => (emojiPicker = !emojiPicker)} title="Custom emoji" aria-label="Custom emoji"><Icon name="smile" size={22} /></button>
+          <button class="in-pill" onclick={() => (emojiPicker = !emojiPicker)} title="Emoji" aria-label="Emoji" aria-expanded={emojiPicker}><Icon name="smile" size={22} /></button>
           {#if emojiPicker}
             <div class="picker emoji-pick" role="listbox" aria-label="Custom emoji">
+              <div class="unicode-emoji" aria-label="Unicode emoji">
+                {#each unicodeEmoji as emoji}<button title={emoji} aria-label={`Insert ${emoji}`} onclick={() => { insertText(emoji); emojiPicker = false; }}>{emoji}</button>{/each}
+              </div>
               {#each activeEmoji as e (e.id)}
                 <button onclick={() => insertEmoji(e.name)}><EmojiImage hash={e.blob_hash} name={e.name} /> :{e.name}: <small>{e.category}</small></button>
               {:else}
@@ -1349,19 +1452,34 @@
             {#each editingParts as part, i (i)}
               <label class="segment-edit">
                 <span>{editing.segments[i].authors.map((a) => people.get(a)?.name ?? 'Someone').join(' & ')}</span>
-                <textarea value={part} oninput={(e) => (editingParts![i] = e.currentTarget.value)} onkeydown={onkey} rows="2" aria-label={`Edit segment ${i + 1}`}></textarea>
+                <textarea value={part} onbeforeinput={(e) => segmentInputSelections.set(i, { from: e.currentTarget.selectionStart, to: e.currentTarget.selectionEnd, type: e.inputType })}
+                  oninput={(e) => { editingDocs[i] = inputDraft(editingDocs[i], e.currentTarget.value, segmentInputSelections.get(i) ?? null); segmentInputSelections.delete(i); editingParts![i] = e.currentTarget.value; }} onkeydown={onkey} rows="2" aria-label={`Edit segment ${i + 1}`}></textarea>
               </label>
             {/each}
           {:else}
             <textarea
               bind:this={box}
-              bind:value={draft}
+              value={draft}
               onkeydown={onkey}
+              onbeforeinput={(e) => (inputSelection = { from: e.currentTarget.selectionStart, to: e.currentTarget.selectionEnd, type: e.inputType })}
+              oninput={(e) => { draftDoc = inputDraft(draftProvenance, e.currentTarget.value, inputSelection); inputSelection = null; draft = e.currentTarget.value; trackCursor(); }}
+              onselect={trackCursor}
+              onclick={trackCursor}
+              onkeyup={trackCursor}
+              oncompositionstart={() => (composing = true)}
+              oncompositionend={() => { composing = false; trackCursor(); }}
               onpaste={pasteFiles}
               rows="1"
               placeholder={editing ? 'Edit message' : !current ? '' : 'Message'}
               aria-label="Message"
             ></textarea>
+          {/if}
+          {#if mentionMatches.length}
+            <div class="mention-suggestions" role="listbox" aria-label="Mention suggestions">
+              {#each mentionMatches as mention, i (`${mention.type}:${mention.id}`)}
+                <button class:active={i === mentionIndex} role="option" aria-selected={i === mentionIndex} onclick={() => insertMention(mention)}>@{mention.name}<small>{mention.type}{mention.id ? ` · ${mention.id.slice(-8)}` : ' · current fronters'}</small></button>
+              {/each}
+            </div>
           {/if}
           {#if completion.length && !editing}
             <div class="emoji-suggestions" role="listbox" aria-label="Emoji autocomplete">
@@ -1425,20 +1543,36 @@
           {#each roomMedia.slice(0, 9) as a (a.id)}<div class="media-tile"><AttachmentView attachment={a} /></div>{/each}
         </div>
       {/if}
+      {#if roomFiles.length}
+        <h3>Files · {roomFiles.length}</h3>
+        {#each roomFiles.slice(0, 30) as attachment (attachment.id)}<AttachmentView {attachment} />{/each}
+      {/if}
+      {#if roomLinks.length}
+        <h3>Links · {roomLinks.length}</h3>
+        {#each roomLinks.slice(0, 30) as link (link.id)}<a class="info-link" href={link.url} target="_blank" rel="noopener noreferrer">{link.label}</a>{/each}
+      {/if}
     </aside>
   {/if}
 </div>
 {#if newChat}<NewChat {projection} {dark} onclose={() => (newChat = false)} />{/if}
-{#if editingGroup && space}
+{#if editingGroup && space && !lockedOut}
   <ChannelEditor {projection} {dark} spaceId={space.id} spaceKind={space.kind} group={space}
     channel={spaceChannels.length <= 1 ? spaceChannels[0] : undefined} onclose={() => (editingGroup = false)} />
 {/if}
-{#if editingChannel && current && space}
+{#if editingChannel && current && space && !lockedOut}
   <ChannelEditor {projection} {dark} spaceId={space.id} spaceKind={space.kind} channel={current}
     canDelete={space.kind === 'internal' || canManage || !!sides?.mine.length} onclose={() => (editingChannel = false)} />
 {/if}
 
 <style>
+  .info-link { display: block; overflow-wrap: anywhere; padding: 8px 0; }
+  .unicode-emoji { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+  .unicode-emoji button { font-size: 22px; padding: 7px; justify-content: center; }
+  .mention-suggestions { display: grid; max-height: 240px; overflow: auto; }
+  .mention-suggestions button { display: flex; justify-content: space-between; gap: 12px; text-align: left; padding: 8px; }
+  .mention-suggestions button.active { background: var(--surface-2); outline: 1px solid var(--line); }
+  .mention-suggestions small { color: var(--ink-3); }
+  .jump-latest { align-self: flex-end; margin: 8px 16px; border-radius: 24px; padding: 8px 14px; background: var(--surface-2); }
   .history-message { display: grid; gap: var(--s-2); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
   .history-message button { width: fit-content; font: inherit; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: var(--s-2); cursor: pointer; }
   .history-message p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
