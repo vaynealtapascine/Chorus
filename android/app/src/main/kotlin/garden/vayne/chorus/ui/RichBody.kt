@@ -28,7 +28,7 @@ import org.json.JSONArray
 internal fun RichBody(text: String, entities: String, modifier: Modifier = Modifier,
     maxLines: Int = Int.MAX_VALUE, onOverflow: (Boolean) -> Unit = {},
     style: TextStyle = MaterialTheme.typography.bodyLarge, onPlainClick: () -> Unit = {},
-    onLongClick: (() -> Unit)? = null) {
+    onLongClick: (() -> Unit)? = null, onDoubleClick: (() -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val uri = LocalUriHandler.current
     var revealed by rememberSaveable(text, entities) { mutableStateOf(listOf<Int>()) }
@@ -65,6 +65,7 @@ internal fun RichBody(text: String, entities: String, modifier: Modifier = Modif
     }
     val plainClick by rememberUpdatedState(onPlainClick)
     val longClick by rememberUpdatedState(onLongClick)
+    val doubleClick by rememberUpdatedState(onDoubleClick)
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     fun activate(offset: Int) {
             val spoiler = annotated.getStringAnnotations("spoiler", offset, offset).firstOrNull()?.item?.toIntOrNull()
@@ -84,8 +85,8 @@ internal fun RichBody(text: String, entities: String, modifier: Modifier = Modif
                 activate(annotation.start); true
             }
         }
-    }.pointerInput(annotated, onLongClick != null) {
-        detectTapGestures(onLongPress = if (onLongClick != null) ({ longClick?.invoke() }) else null,
+    }.pointerInput(annotated, onLongClick != null, onDoubleClick != null) {
+        detectTapGestures(onDoubleTap = if (onDoubleClick != null) ({ doubleClick?.invoke() }) else null, onLongPress = if (onLongClick != null) ({ longClick?.invoke() }) else null,
             onTap = { position -> layout?.let { activate(it.getOffsetForPosition(position)) } })
     }, style = style.copy(color = p.ink), maxLines = maxLines, overflow = TextOverflow.Ellipsis,
         onTextLayout = { layout = it; onOverflow(it.hasVisualOverflow) })

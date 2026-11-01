@@ -46,6 +46,13 @@ object ChatPresentation {
     private fun previewText(text: String, entities: String): String =
         RichTextPresentation.prepare(text, entities, emptyList()).text.replace('\n', ' ')
 
+    /** Device-local draft wins over received ephemeral typing. Call only for visibility-filtered rows. */
+    fun activityPreview(draft: String?, typing: String?): String? = when {
+        !draft.isNullOrBlank() -> "Draft: " + draft.replace('\n', ' ').trim()
+        !typing.isNullOrBlank() -> typing
+        else -> null
+    }
+
     fun own(message: ChatMessage, accountId: String, speakerId: String?): Boolean =
         speakerId != null && speakerId in message.authors &&
             (message.accountId == accountId || message.accountId == null)

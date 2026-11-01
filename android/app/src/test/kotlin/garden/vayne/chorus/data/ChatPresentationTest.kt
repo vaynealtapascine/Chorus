@@ -6,6 +6,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ChatPresentationTest {
+    @org.junit.Test fun draftPreviewWinsAndBlankDraftAllowsTyping() {
+        org.junit.Assert.assertEquals("Draft: tea later", ChatPresentation.activityPreview("  tea\nlater  ", "Kai is typing…"))
+        org.junit.Assert.assertEquals("Kai is typing…", ChatPresentation.activityPreview(" ", "Kai is typing…"))
+        org.junit.Assert.assertNull(ChatPresentation.activityPreview(null, null))
+        org.junit.Assert.assertNull(ChatPresentation.activityPreview("\n", " "))
+    }
+
     private val zone = ZoneId.of("UTC")
     private val message = ChatMessage("a", "c", listOf("fox"), "Hello", 1_000, null,
         "all", emptySet(), "me", null, emptyList())

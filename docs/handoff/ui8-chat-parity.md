@@ -23,7 +23,7 @@ roles), the members of a members' DM or group, and the members a members-only ch
 | 3 | Web: private chats — "Private chat as …" from a DM, lock badge and privacy line, composer locked to the member, list rows titled for each side | done (`chat-visible.ts` filters list, pickers, search, Trash, Stage; locked chats show a lock screen) |
 | 4 | Android: spaces and member lists — people in a space with Add / Remove / role, rename/describe, Leave / Delete; members-only channels and editing a members' DM's people in the channel editor | implemented; gate passed; independent review pending |
 | 5 | Android: private chats, same rules as web | implemented; gate passed; independent review pending |
-| 6 | Android feel (UI7 slice 1, parked on `wip/ui7-slice1`): swipe to reply, double-tap heart, haptics, Draft:/typing previews in the list | |
+| 6 | Android feel (UI7 slice 1, parked on `wip/ui7-slice1`): swipe to reply, double-tap heart, haptics, Draft:/typing previews in the list | implemented; Android compile/lint/JVM and quick offline Android gate passed; independent review pending |
 | 7 | Parity gaps (table below) | |
 | 8 | Mentions autocomplete on both (members, groups, `@front`) | |
 
@@ -48,7 +48,7 @@ roles), the members of a members' DM or group, and the members a members-only ch
 | Chat info: members by layer, media | yes | yes, plus Files and Links tabs |
 | Front-change lines in the timeline | yes | **no** |
 | Older history from the server (windowed tab) | yes | n/a (keeps everything) |
-| Swipe to reply, double-tap react, haptics | n/a | parked (slice 6) |
+| Swipe to reply, double-tap react, haptics | n/a | implemented (slice 6), review pending |
 | Edit last message with ↑ | **no** | n/a |
 
 ## Notes for the next agent
@@ -59,3 +59,20 @@ roles), the members of a members' DM or group, and the members a members-only ch
   `space.delete` is a tombstone: both clients already hide deleted spaces.
 - Private chats are `member_dm` channels inside a `dm` space. Internal members' DMs keep their
   soft D-097 behaviour (anyone may speak; `chat.hide_private` can turn hiding off).
+
+## Slice 6 implementation notes
+
+Manually ported the parked gesture UX onto current Android: swipe toward logical start with
+resistance, 64 dp displayed threshold, threshold haptic, cancel-safe release and interruptible
+spring return; double-tap hearts through the current acting-member reaction callback; long-press
+haptic and accessible Reply action. RichBody retains single-tap links/spoilers and supports the
+same double-tap action. Held and noninteractive cards do not acquire gestures. Motion follows
+the existing system/inspection setting; heart feedback is omitted with reduced motion.
+
+Visible list rows show a device-local `Draft:` preview before received typing activity, then the
+normal last-message preview. Reads use the existing durable drafts directly, so typing edits do
+not require a model refresh. Offline typing is suppressed. D-098 filtering still precedes preview
+creation; no typing transport or Q21 default changed. Tests cover pull/threshold/inverse,
+cancel/release/retreat/disabled eligibility, RTL mirroring and preview priority.
+
+Validation: `:app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug --offline` passed (F:/DunBuild/ui8-slice6-android.log). Wrapper `verify.py --quick --offline --android` passed (F:/DunBuild/chorus-verify-Chorus.log, exit 0). No device interaction validation or deployment in this slice.

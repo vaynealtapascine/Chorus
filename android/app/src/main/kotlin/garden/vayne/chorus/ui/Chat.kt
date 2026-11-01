@@ -16,6 +16,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Spacer
@@ -634,6 +640,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         ChatReadingPosition(androidx.compose.foundation.lazy.LazyListState(initial, 0), messages.lastOrNull()?.id)
     }
     val typing by chorus.typing.collectAsState()
+    val listPreviews = listRows.mapNotNull { row ->
+        ChatPresentation.activityPreview(drafts[row.channel.id]?.text?.value,
+            if (syncStatus == Status.Live) garden.vayne.chorus.data.TypingText.label(model, typing[row.channel.id].orEmpty()) else null)
+            ?.let { row.channel.id to it }
+    }.toMap()
     val typingLabel = if (syncStatus == Status.Live) garden.vayne.chorus.data.TypingText.label(model, typing[channel?.id].orEmpty()) else null
     val chatRoute = if (expanded) "wide/${channel?.id}" else if (infoOpen) "info/${channel?.id}" else if (conversationOpen) "conversation/${channel?.id}" else "list"
     val snapshots = remember { mutableMapOf<String, ChatPaneSnapshot>() }
@@ -706,7 +717,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         else if (expanded || pane == "list") ChatListPane(model, listRows, if (expanded) channel?.id else null, readerName,
             openChat, { spaceAction = "new" },
             { switchOpen = true }, onSearch, if (expanded) Modifier.width(240.dp) else Modifier.weight(1f), readerId = readerId,
-            onNewChannel = { editChannel = false; channelEditor = true }, onRowAction = rowAction)
+            onNewChannel = { editChannel = false; channelEditor = true }, onRowAction = rowAction, previews = listPreviews)
         if (expanded) VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
         if (pane == "info" && !expanded && channel != null && space != null && !paneLocked) {
             ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; onSearch() },
@@ -835,8 +846,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             jumpTo = null
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), state = listState, reverseLayout = true,
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), state = listState, reverseLayout = true,
+            contentPadding = PaddingValues(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             itemsIndexed(messages.asReversed(), key = { _, message -> message.id }) { index, message ->
                 val older = messages.getOrNull(messages.lastIndex - index - 1)
                 val newer = messages.getOrNull(messages.lastIndex - index + 1)
@@ -1379,7 +1390,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         if (own) chorus.create("channel.delete", row.channel.id, JSONObject(), scope = "space:${row.space.id}")
                         else chorus.create("pref.set", null, AccountPrefs.payload(ChatOrganize.HIDDEN + row.channel.id,
                             maxOf(System.currentTimeMillis(), row.latest?.occurredAt ?: 0L)))
-                        if (row.channel.id in model.accountPrefs.chatPins) savePins(model.accountPrefs.chatPins - row.channel.id)
+                        if (row.channel.id in model.accountPrefs.chatPins) {
+                            savePins(model.accountPrefs.chatPins - row.channel.id)
+                        }
                         if (selectedChannel == row.channel.id) { selectedChannel = ""; conversationOpen = false }
                     } catch (e: Exception) { error = e.message ?: "Could not remove the chat." }
                 }
@@ -1432,7 +1445,20 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     val layer = ChatPresentation.layer(model, presence)
     var menuOpen by remember(message.id) { mutableStateOf(false) }
     val ctx = LocalContext.current
-    Row(Modifier.fillMaxWidth().padding(start = if (own) 36.dp else 0.dp),
+    val haptic = LocalHapticFeedback.current
+    val settled = interactive && held == null
+    val swipe = rememberReplySwipe(settled) { onReply() }
+    var hearts by remember(message.id) { mutableStateOf(0) }
+    val heart: (() -> Unit)? = if (settled && onReact != null && actingMemberId != null) ({
+        val add = !ChatReactions.chosen(reactions, "❤️", actingMemberId)
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        onReact("❤️", add)
+        if (add) hearts++
+    }) else null
+    val openActions = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuOpen = true }
+    Box(Modifier.fillMaxWidth().swipeToReply(swipe)) {
+    if (swipe.active) ReplySwipeHint(swipe, Modifier.align(Alignment.CenterEnd))
+    Row(Modifier.fillMaxWidth().graphicsLayer { translationX = swipe.translation }.padding(start = if (own) 36.dp else 0.dp),
         horizontalArrangement = if (own) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.Bottom) {
         if (!own) {
             Box(Modifier.width(28.dp), contentAlignment = Alignment.BottomCenter) {
@@ -1445,13 +1471,15 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             }
             Spacer(Modifier.width(8.dp))
         }
-        Column(Modifier.weight(1f, fill = false).widthIn(min = 64.dp, max = 360.dp)
+        Box(Modifier.weight(1f, fill = false)) {
+        Column(Modifier.widthIn(min = 64.dp, max = 360.dp)
             .then(if (reactions.isNotEmpty()) Modifier.width(IntrinsicSize.Max) else Modifier).heightIn(min = 48.dp)
             .background(if (own) p.accentSoft else p.surface2, RoundedCornerShape(
                 topStart = if (!own && !showSender) 6.dp else 16.dp, topEnd = if (own && !showSender) 6.dp else 16.dp,
                 bottomEnd = if (own && showAvatar) 6.dp else 16.dp, bottomStart = if (!own && showAvatar) 6.dp else 16.dp))
-            .then(if (interactive) Modifier.combinedClickable(onClick = { menuOpen = true }, onLongClick = { menuOpen = true },
-                onLongClickLabel = "Message actions") else Modifier)
+            .then(if (settled) Modifier.semantics { customActions = listOf(CustomAccessibilityAction("Reply") { onReply(); true }) } else Modifier)
+            .then(if (interactive) Modifier.combinedClickable(onClick = { menuOpen = true }, onLongClick = openActions,
+                onLongClickLabel = "Message actions", onDoubleClick = heart) else Modifier)
             .padding(horizontal = 11.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (showSender) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp,
@@ -1486,7 +1514,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             if (item.text.isNotBlank() && (message.cw == null || revealed)) RichBody(item.text, item.entities,
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
                 onPlainClick = { if (interactive && held == null) menuOpen = true },
-                onLongClick = if (interactive && held == null) ({ menuOpen = true }) else null)
+                onLongClick = if (settled) openActions else null, onDoubleClick = heart)
         }
         if (held != null) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1523,7 +1551,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             if (message.text.isNotBlank() && message.text != message.forward.joinToString("\n") { it.text })
                 RichBody(message.text, message.entities, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
                     onPlainClick = { if (interactive && held == null) menuOpen = true },
-                    onLongClick = if (interactive && held == null) ({ menuOpen = true }) else null)
+                    onLongClick = if (settled) openActions else null, onDoubleClick = heart)
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus, authors, message.occurredAt)
             }
@@ -1571,6 +1599,9 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             if (held != null) ChatIcon(R.drawable.ic_history, "Message held for slow mode")
         }
         }
+        HeartPop(hearts, Modifier.align(Alignment.Center))
+        }
+    }
     }
     if (menuOpen) Dialog(onDismissRequest = { menuOpen = false }) {
         var allEmoji by remember(message.id) { mutableStateOf(false) }
