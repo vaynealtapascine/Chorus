@@ -138,7 +138,7 @@ Conversation bubbles now group adjacent messages with the same ordered authors/a
 calendar day and five-minute window; CW, reply and segmented messages break groups. Incoming
 names use adapted member colour, with a 28 dp avatar on the final bubble; acting-speaker messages
 align right in teal wash. Dates are centred and times stay inside the bubble. Reply quotes use
-only messages already visible in this view and conceal warned bodies. Long press opens (a tap shows the time and edit history since D-104)
+only messages already visible in this view and conceal warned bodies. A tap or long press opens (D-105; its header carries the date, time and edit history)
 a dimmed native dialog with existing reply/private reply/edit, platform copy, own-account read
 receipts and selection into stage mode. Polls, held-message cancellation and edit history retain
 their existing paths. Presence labels describe the current selected front, not historical presence.
