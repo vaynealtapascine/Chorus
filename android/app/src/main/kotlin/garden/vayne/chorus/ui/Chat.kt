@@ -212,7 +212,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val pollOptions = composer.options
     var pollMultiple by composer.multiple
     var moreOpen by rememberSaveable { mutableStateOf(false) }
-    var speakerSettingsOpen by rememberSaveable { mutableStateOf(false) }
+    // the attach sheet's page: "" for photos and tiles, or "poll", "cw", "audience", "speaker"
+    var attachPage by rememberSaveable { mutableStateOf("") }
+    var editingFile by remember { mutableStateOf<Int?>(null) }
     var followNext by remember { mutableStateOf(false) }
     var audience by composer.audience
     var visibleTo by composer.visibleTo
@@ -259,10 +261,6 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val ctx = LocalContext.current
     // picked files waiting to be sent: staged (copied, hashed) only on send
     val attachments = composer.files
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
-        for (uri in uris) attachments.add(PendingAttachment.of(ctx, uri))
-        if (uris.isNotEmpty()) moreOpen = false
-    }
     LaunchedEffect(chorus.device?.session, model.spaces.map { it.id }, refresh, syncStatus == Status.Live) {
         directory = emptyMap()
         connections = emptyList()
@@ -469,7 +467,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         quoting = emptyList(); quotePart = null; quotePicking = null
         alsoSend = false
         carriedReply = null
-        speakerSettingsOpen = false
+        attachPage = ""; editingFile = null
         infoOpen = false
         staging = false
         capturing = false
@@ -816,7 +814,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     DropdownMenuItem(text = { Text("New chat…") }, onClick = { headerMenu = false; spaceAction = "new" })
                     if (channel != null) DropdownMenuItem(text = { Text("Notifications…") }, onClick = { headerMenu = false; notifyOpen = true })
                     if (channel != null) DropdownMenuItem(text = { Text("Stage mode") }, onClick = { headerMenu = false; stageSelection = emptyList(); staging = true })
-                    DropdownMenuItem(text = { Text("Message options") }, onClick = { headerMenu = false; moreOpen = !moreOpen })
+                    DropdownMenuItem(text = { Text("Message options") }, onClick = { headerMenu = false; attachPage = ""; moreOpen = !moreOpen })
                     if (space?.kind == "internal" && !model.isPerson) {
                         DropdownMenuItem(text = { Text("Read as…") }, onClick = { headerMenu = false; readerOpen = true })
                     }
@@ -1081,107 +1079,106 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 "system_only" -> "Only my system"
                 else -> "Everyone here"
             }
-            for ((i, a) in attachments.withIndex()) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ChatIcon(R.drawable.ic_attach)
-                    Text(a.name, color = p.ink, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1, modifier = Modifier.weight(1f))
-                    ChatChip(if (a.spoiler) "Spoiler ✓" else "Spoiler", a.spoiler) { attachments[i] = a.copy(spoiler = !a.spoiler) }
-                    ChatIconButton(R.drawable.ic_close, "Remove ${a.name}") { attachments.removeAt(i) }
-                }
-                if (a.mime.startsWith("image/")) {
-                    OutlinedTextField(a.alt, { attachments[i] = a.copy(alt = it) }, placeholder = { Text("Describe the image (alt text)") },
-                        modifier = Modifier.fillMaxWidth(), singleLine = true)
-                }
+            if (attachments.isNotEmpty()) AttachmentTray(attachments, onEdit = { editingFile = it }, onRemove = { i ->
+                attachments.getOrNull(i)?.let { DeviceGallery.discard(ctx, it.uri); attachments.removeAt(i) }
+            })
+            editingFile?.let { i -> attachments.getOrNull(i)?.let { i to it } }?.let { (i, a) ->
+                AttachmentEditor(a, onSave = { attachments[i] = it; editingFile = null },
+                    onRemove = { DeviceGallery.discard(ctx, a.uri); attachments.removeAt(i); editingFile = null },
+                    onDismiss = { editingFile = null })
             }
-            if (moreOpen) ModalBottomSheet(onDismissRequest = { moreOpen = false }, containerColor = p.surface) {
-              Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Add to message", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 24.sp)
-                Text("Attach images or files", color = p.accent, fontSize = 14.sp, lineHeight = 20.sp,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { picker.launch("*/*") }.wrapContentSize(Alignment.CenterStart))
-                OutlinedTextField(cw, { cw = it }, placeholder = { Text("Content warning (optional)") },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true)
-                PollDraftFields(pollOn, { pollOn = it }, pollOptions, pollMultiple) { pollMultiple = it }
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    item { ChatChip("Everyone here", audience == "all") { audience = "all" } }
-                    if (space.kind == "internal") item {
-                        ChatChip("Chosen members", audience == "members") { audience = "members" }
-                    }
-                    if (space.kind != "internal") item {
-                        ChatChip("Only my system", audience == "system_only") { audience = "system_only" }
-                    }
-                }
-                if (audience == "members" && space.kind == "internal") {
+            val sheetOptions = buildList {
+                add(AttachOption("poll", "Poll", R.drawable.ic_poll, pollOn) {
+                    PollDraftFields(pollOn, { pollOn = it }, pollOptions, pollMultiple) { pollMultiple = it }
+                })
+                add(AttachOption("cw", "Warning", R.drawable.ic_format_eye_off, cw.isNotBlank()) {
+                    Text("Readers see the warning first and tap to show the message.", color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp)
+                    OutlinedTextField(cw, { cw = it }, label = { Text("Content warning") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    if (cw.isNotBlank()) TextButton(onClick = { cw = "" }) { Text("Remove the warning") }
+                })
+                add(AttachOption("audience", "Who sees", R.drawable.ic_lock, audience != "all") {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(model.active, key = { it.id }) { member ->
-                            ChatChip(member.shownName, member.id in visibleTo) {
-                                visibleTo = if (member.id in visibleTo) visibleTo - member.id else visibleTo + member.id
-                            }
+                        item { ChatChip("Everyone here", audience == "all") { audience = "all" } }
+                        if (space.kind == "internal") item {
+                            ChatChip("Chosen members", audience == "members") { audience = "members" }
+                        }
+                        if (space.kind != "internal") item {
+                            ChatChip("Only my system", audience == "system_only") { audience = "system_only" }
                         }
                     }
-                }
-                if (space.kind != "internal" && audience == "all") {
-                    Text("Everyone in this space can see who is speaking.", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
-                }
-                if (!model.isPerson) {
-                    Text(if (speakerSettingsOpen) "Advanced · Hide speaker default" else "Advanced · Speaker default ›",
-                        color = p.accent, fontSize = 13.sp, lineHeight = 18.sp,
-                        modifier = Modifier.clickable { speakerSettingsOpen = !speakerSettingsOpen }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
-                    if (speakerSettingsOpen) {
-                        val setting = model.speakerDefaults[channel.id] ?: SpeakerDefault()
-                        val fronts = model.namedFronts?.channelChoices.orEmpty()
-                        if (fronts.size > 1) {
-                            val selected = ChatSpeaker.frontOf(model, channel.id)
-                            Text("Front for this channel", color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(fronts, key = { it.id }) { front ->
-                                    ChatChip(front.name.ifBlank { "Body" }, front.id == selected) { setChannelFront(front.id) }
-                                }
-                                if (fronts.none { it.id == selected }) item { ChatChip("Unavailable front", true) {} }
-                            }
-                        }
+                    if (audience == "members" && space.kind == "internal") {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            item { ChatChip("Front", setting.mode == "front") { setSpeakerDefault("front") } }
-                            item { ChatChip("Last speaker", setting.mode == "latch") { setSpeakerDefault("latch") } }
-                            item { ChatChip("Ask me", setting.mode == "off") { setSpeakerDefault("off") } }
-                            item { ChatChip("One member", setting.mode == "member") {
-                                (setting.memberId ?: author?.id ?: ownSenders.firstOrNull()?.id)?.let {
-                                    setSpeakerDefault("member", it)
-                                }
-                            } }
-                            item { ChatChip("Several members", setting.mode == "members") {
-                                setSpeakerDefault("members", members = setting.members.ifEmpty { listOfNotNull(author?.id ?: ownSenders.firstOrNull()?.id) })
-                            } }
-                        }
-                        if (setting.mode == "members") {
-                            Text("Speakers here (the first is the default)", color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(ownSenders, key = { it.id }) { member ->
-                                    ChatChip(member.shownName, member.id in setting.members) {
-                                        setSpeakerDefault("members", members = if (member.id in setting.members) setting.members - member.id else setting.members + member.id)
-                                    }
-                                }
-                            }
-                        }
-                        if (setting.mode == "member") {
-                            Text("Always speak as", color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(ownSenders, key = { it.id }) { member ->
-                                    ChatChip(member.shownName, member.id == setting.memberId) {
-                                        setSpeakerDefault("member", member.id)
-                                    }
+                            items(model.active, key = { it.id }) { member ->
+                                ChatChip(member.shownName, member.id in visibleTo) {
+                                    visibleTo = if (member.id in visibleTo) visibleTo - member.id else visibleTo + member.id
                                 }
                             }
                         }
                     }
-                }
-                TextButton(onClick = { moreOpen = false }, modifier = Modifier.align(Alignment.End)) { Text("Done") }
-              }
+                    if (space.kind != "internal" && audience == "all") {
+                        Text("Everyone in this space can see who is speaking.", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+                    }
+                })
+                // Advanced: who speaks by default here (D-103)
+                if (!model.isPerson) add(AttachOption("speaker", "Speaker", R.drawable.ic_front, false) {
+                    val setting = model.speakerDefaults[channel.id] ?: SpeakerDefault()
+                    val fronts = model.namedFronts?.channelChoices.orEmpty()
+                    if (fronts.size > 1) {
+                        val selected = ChatSpeaker.frontOf(model, channel.id)
+                        Text("Front for this channel", color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(fronts, key = { it.id }) { front ->
+                                ChatChip(front.name.ifBlank { "Body" }, front.id == selected) { setChannelFront(front.id) }
+                            }
+                            if (fronts.none { it.id == selected }) item { ChatChip("Unavailable front", true) {} }
+                        }
+                    }
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        item { ChatChip("Front", setting.mode == "front") { setSpeakerDefault("front") } }
+                        item { ChatChip("Last speaker", setting.mode == "latch") { setSpeakerDefault("latch") } }
+                        item { ChatChip("Ask me", setting.mode == "off") { setSpeakerDefault("off") } }
+                        item { ChatChip("One member", setting.mode == "member") {
+                            (setting.memberId ?: author?.id ?: ownSenders.firstOrNull()?.id)?.let {
+                                setSpeakerDefault("member", it)
+                            }
+                        } }
+                        item { ChatChip("Several members", setting.mode == "members") {
+                            setSpeakerDefault("members", members = setting.members.ifEmpty { listOfNotNull(author?.id ?: ownSenders.firstOrNull()?.id) })
+                        } }
+                    }
+                    if (setting.mode == "members") {
+                        Text("Speakers here (the first is the default)", color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(ownSenders, key = { it.id }) { member ->
+                                ChatChip(member.shownName, member.id in setting.members) {
+                                    setSpeakerDefault("members", members = if (member.id in setting.members) setting.members - member.id else setting.members + member.id)
+                                }
+                            }
+                        }
+                    }
+                    if (setting.mode == "member") {
+                        Text("Always speak as", color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(ownSenders, key = { it.id }) { member ->
+                                ChatChip(member.shownName, member.id == setting.memberId) {
+                                    setSpeakerDefault("member", member.id)
+                                }
+                            }
+                        }
+                    }
+                })
             }
-            if (audience != "all" || cw.isNotBlank() || pollOn) {
-                Text(listOfNotNull(audienceLabel.takeIf { audience != "all" }, "CW: ${cw.trim()}".takeIf { cw.isNotBlank() }, "Poll".takeIf { pollOn })
-                    .joinToString(" · "), color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
+            if (moreOpen) AttachSheet(attachPage, { attachPage = it }, attachments.size, sheetOptions,
+                onAdd = { uris ->
+                    for (uri in uris) attachments.add(PendingAttachment.of(ctx, uri))
+                    moreOpen = false; attachPage = ""
+                },
+                onDismiss = { moreOpen = false; attachPage = "" })
+            // what the message carries besides its text: tap one to change it
+            if (audience != "all" || cw.isNotBlank() || pollOn) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (audience != "all") item { ComposerOptionChip(audienceLabel, R.drawable.ic_lock) { attachPage = "audience"; moreOpen = true } }
+                if (cw.isNotBlank()) item { ComposerOptionChip("CW: ${cw.trim()}", R.drawable.ic_format_eye_off) { attachPage = "cw"; moreOpen = true } }
+                if (pollOn) item { ComposerOptionChip("Poll", R.drawable.ic_poll) { attachPage = "poll"; moreOpen = true } }
             }
             if (channel.kind == "thread" && threadParentChannel != null && threadParent != null) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { alsoSend = !alsoSend },
@@ -1238,7 +1235,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                     color = p.ink3, style = MaterialTheme.typography.bodyLarge)
                                 inner()
                             }
-                            ChatIconButton(R.drawable.ic_attach, "Attachments, poll, content warning and audience") { moreOpen = true }
+                            ChatIconButton(R.drawable.ic_attach, "Attach photos or files, or add a poll, warning or audience") { attachPage = ""; moreOpen = true }
                         }
                     })
                 val canSend = !busy && pendingPrivateReply == null && (draft.isNotBlank() || attachments.isNotEmpty()) &&
@@ -1275,6 +1272,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                     pollOn = false; pollMultiple = false
                                     pollOptions.clear(); pollOptions.addAll(listOf("", ""))
                                     if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
+                                    // the bytes are staged in the upload queue now; our own camera shots can go
+                                    for (a in attachments) DeviceGallery.discard(ctx, a.uri)
                                     attachments.clear()
                                     draft = ""
                                     cw = ""
