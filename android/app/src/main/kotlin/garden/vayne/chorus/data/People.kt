@@ -140,6 +140,33 @@ object PeopleApi {
         if (e.code == "not_found") null else throw e
     }
 
+    /** Post alerts (D-106): ask to hear about one shared member's posts, or stop. The new status. */
+    suspend fun setPostAlerts(dev: DeviceRecord, accountId: String, memberId: String, on: Boolean): String =
+        Api.call(if (on) "PUT" else "DELETE", dev.base, "/accounts/$accountId/members/$memberId/alerts", null, dev.session)
+            .optString("post_alerts", "none")
+
+    /** A followed person's post alerts, by account (a singlet has no member pages); null if not followed. */
+    suspend fun personAlerts(dev: DeviceRecord, accountId: String): String? = try {
+        Api.call("GET", dev.base, "/accounts/$accountId/alerts", null, dev.session).optString("post_alerts", "none")
+    } catch (e: ApiException) {
+        if (e.code == "not_found") null else throw e
+    }
+
+    suspend fun setPersonAlerts(dev: DeviceRecord, accountId: String, on: Boolean): String =
+        Api.call(if (on) "PUT" else "DELETE", dev.base, "/accounts/$accountId/alerts", null, dev.session)
+            .optString("post_alerts", "none")
+
+    /** Who asked about, or hears about, our members' posts (requested or active). */
+    suspend fun postAlerts(dev: DeviceRecord): List<JSONObject> {
+        val items = Api.call("GET", dev.base, "/alerts", null, dev.session).optJSONArray("items") ?: return emptyList()
+        return List(items.length()) { items.getJSONObject(it) }
+    }
+
+    /** Say yes to a request, or no (also stops someone's alerts; they aren't told). */
+    suspend fun decidePostAlert(dev: DeviceRecord, memberId: String, accountId: String, approve: Boolean) {
+        Api.call(if (approve) "PUT" else "DELETE", dev.base, "/alerts/$memberId/$accountId", null, dev.session)
+    }
+
     /** The server applies current post audience rules before returning these rows. */
     suspend fun posts(dev: DeviceRecord, accountId: String): List<SharedPost> =
         sharedPosts(Api.call("GET", dev.base, "/posts?account=$accountId&limit=5", null, dev.session))

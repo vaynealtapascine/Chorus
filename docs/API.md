@@ -229,6 +229,19 @@ GET  /accounts/{id}/members                the members of that account shared wi
 GET  /accounts/{id}/members/{member}       one shared profile: the card plus description(+_entities), birthday,
                                            banner_blob and fields:[{id,name,type,value}] shared with you; 404 alike
                                            for missing and unshared. Never fronting, history or timestamps.
+                                           Another account's profile also says post_alerts: none|requested|active.
+PUT  /accounts/{id}/members/{member}/alerts  ask to hear about that member's new posts (D-106): {post_alerts};
+                                           404 unless you may open the profile; the owner hears once
+DELETE /accounts/{id}/members/{member}/alerts  stop asking / turn alerts off → {post_alerts}
+GET  /accounts/{id}/alerts                 a person you follow, by account (their own member):
+                                           {member_id, post_alerts}; 404 if you don't follow them
+PUT  /accounts/{id}/alerts                 ask about that person's posts → {member_id, post_alerts}
+DELETE /accounts/{id}/alerts               stop asking / turn alerts off → {member_id, post_alerts}
+GET  /alerts                               who asked about, or hears about, your members:
+                                           {items:[{member_id, status: requested|active, created_at, account}]}
+PUT  /alerts/{member}/{account}            say yes (they're told) → 204
+DELETE /alerts/{member}/{account}          say no, or stop their alerts (not told; they keep seeing
+                                           "requested") → 204
 GET  /follows                               following + followers ({following:[…], followers:[…]}, open ones)
 POST /follows {target:"@handle"|account_id}  ask to follow (201; 200 with the open follow's id if one exists)
 PUT  /follows/{id}/prefs {…}                 the follower's own prefs (NOTIFICATIONS.md §4)

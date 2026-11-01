@@ -44,7 +44,7 @@ self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (_) {}
   const tickle = d.t === 'sync';
-  const url = d.channel_id ? '/#/chat/' + d.channel_id : '/#/people';
+  const url = d.channel_id ? '/#/chat/' + d.channel_id : d.post_id ? '/#/journal/post/' + d.post_id : '/#/people';
   e.waitUntil(self.registration.showNotification(tickle ? 'Chorus' : (d.title || 'Chorus'), {
     body: tickle ? 'Something new is waiting in Chorus.' : (d.text || ''),
     tag: d.id || undefined,

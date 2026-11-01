@@ -117,6 +117,7 @@ fn drop_account_rows(conn: &Connection, account: &str) -> anyhow::Result<()> {
         "DELETE FROM api_token WHERE account_id = ?1".into(),
         "DELETE FROM webhook WHERE account_id = ?1".into(),
         "DELETE FROM notification WHERE recipient_account_id = ?1".into(),
+        "DELETE FROM post_alert WHERE subscriber_account_id = ?1 OR owner_account_id = ?1".into(),
         "DELETE FROM follower_front_view WHERE follower_account_id = ?1 OR target_account_id = ?1".into(),
         "DELETE FROM follower_front_log WHERE follower_account_id = ?1 OR target_account_id = ?1".into(),
         "DELETE FROM scope_access WHERE account_id = ?1 OR scope = 'account:' || ?1

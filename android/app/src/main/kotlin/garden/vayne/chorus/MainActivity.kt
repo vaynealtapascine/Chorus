@@ -81,12 +81,16 @@ import garden.vayne.chorus.ui.Journal
 import garden.vayne.chorus.ui.InsightsScreen
 
 private data class OpenChatRequest(val id: Long, val spaceId: String?, val channelId: String)
+/** A tapped post alert (D-106): the post, or (no post) Friends for a request or its answer. */
+private data class OpenPostRequest(val id: Long, val postId: String?)
 
 class MainActivity : ComponentActivity() {
     companion object {
         const val ACTION_OPEN_CHAT = "garden.vayne.chorus.OPEN_CHAT"
         const val EXTRA_OPEN_CHANNEL = "garden.vayne.chorus.OPEN_CHANNEL"
         const val EXTRA_OPEN_SPACE = "garden.vayne.chorus.OPEN_SPACE"
+        const val EXTRA_OPEN_POST = "garden.vayne.chorus.OPEN_POST"
+        const val EXTRA_OPEN_PEOPLE = "garden.vayne.chorus.OPEN_PEOPLE"
     }
 
     private var inviteLink = mutableStateOf<String?>(null)
@@ -96,6 +100,7 @@ class MainActivity : ComponentActivity() {
     private var nextEntryId = 0L
     private var openChatRequest = mutableStateOf<OpenChatRequest?>(null)
     private var nextOpenChatId = 0L
+    private var openPostRequest = mutableStateOf<OpenPostRequest?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -104,6 +109,7 @@ class MainActivity : ComponentActivity() {
         sharedDraft.value = SharedDraft.from(intent, ++nextShareId)
         if (intent.action == "garden.vayne.chorus.NEW_ENTRY") newEntryRequest.value = ++nextEntryId
         openChatFrom(intent)?.let { openChatRequest.value = it }
+        openPostFrom(intent)?.let { openPostRequest.value = it }
         val chorus = Chorus.get(this)
         SyncWork.schedulePeriodic(this)
         garden.vayne.chorus.data.NotifyCheck.start(this)
@@ -119,7 +125,9 @@ class MainActivity : ComponentActivity() {
             onShareDismissed = { sharedDraft.value = null }, newEntryRequest = newEntryRequest.value,
             onNewEntryConsumed = { newEntryRequest.value = null },
             openChatRequest = openChatRequest.value,
-            onOpenChatConsumed = { openChatRequest.value = null }) } } }
+            onOpenChatConsumed = { openChatRequest.value = null },
+            openPostRequest = openPostRequest.value,
+            onOpenPostConsumed = { openPostRequest.value = null }) } } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -134,6 +142,10 @@ class MainActivity : ComponentActivity() {
         openChatFrom(intent)?.let {
             sharedDraft.value = null
             openChatRequest.value = it
+        }
+        openPostFrom(intent)?.let {
+            sharedDraft.value = null
+            openPostRequest.value = it
         }
     }
 
@@ -159,6 +171,12 @@ class MainActivity : ComponentActivity() {
     private fun inviteFrom(i: Intent?): String? =
         i?.takeIf { it.action == Intent.ACTION_VIEW }?.data?.toString()?.takeIf { "/i/" in it }
 
+    private fun openPostFrom(i: Intent?): OpenPostRequest? {
+        val post = i?.getStringExtra(EXTRA_OPEN_POST)?.takeIf { it.isNotBlank() }
+        if (post == null && i?.getBooleanExtra(EXTRA_OPEN_PEOPLE, false) != true) return null
+        return OpenPostRequest(++nextOpenChatId, post)
+    }
+
     private fun openChatFrom(i: Intent?): OpenChatRequest? {
         val channel = i?.getStringExtra(EXTRA_OPEN_CHANNEL)?.takeIf { it.isNotBlank() } ?: return null
         val space = i.getStringExtra(EXTRA_OPEN_SPACE)?.takeIf { it.isNotBlank() }
@@ -172,7 +190,8 @@ private enum class Tab(val label: String, val icon: AppIcon) { Home("Fronting", 
 @Composable
 private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     onShareDismissed: () -> Unit, newEntryRequest: Long?, onNewEntryConsumed: () -> Unit,
-    openChatRequest: OpenChatRequest? = null, onOpenChatConsumed: () -> Unit = {}) {
+    openChatRequest: OpenChatRequest? = null, onOpenChatConsumed: () -> Unit = {},
+    openPostRequest: OpenPostRequest? = null, onOpenPostConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val context = LocalContext.current
     val navPrefs = remember { context.getSharedPreferences("chorus.navigation", 0) }
@@ -247,6 +266,16 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
         tab = Tab.Chat
         onOpenChatConsumed()
+    }
+    LaunchedEffect(openPostRequest?.id, status) {
+        val req = openPostRequest ?: return@LaunchedEffect
+        if (status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
+        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
+        if (req.postId != null) {
+            journalReplyPost = null; journalOpenPost = req.postId
+            tab = Tab.Journal
+        } else tab = Tab.People
+        onOpenPostConsumed()
     }
     BackHandler(sharedDraft != null || settingsOpen || searchOpen || insightsOpen || frontsOpen) {
         if (sharedDraft != null) onShareDismissed()

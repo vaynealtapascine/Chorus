@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
@@ -26,6 +27,7 @@ import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.PeopleApi
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -41,6 +43,10 @@ internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: Stri
     var profile by remember { mutableStateOf<JSONObject?>(null) }
     var missing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // post alerts for the open member (D-106): none · requested · active
+    var alerts by remember(memberId) { mutableStateOf("none") }
+    var alertsBusy by remember(memberId) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     BackHandler { if (memberId != null) memberId = null else onClose() }
     LaunchedEffect(accountId, chorus.device?.session) {
         val dev = chorus.device ?: return@LaunchedEffect
@@ -58,6 +64,7 @@ internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: Stri
         try {
             profile = PeopleApi.memberProfile(dev, accountId, id)
             missing = profile == null
+            alerts = profile?.optString("post_alerts", "none") ?: "none"
             error = null
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Exception) { error = e.message ?: "Could not load this profile." }
@@ -104,6 +111,23 @@ internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: Stri
                             Text(listOfNotNull(m.text("pronouns"), accountName).joinToString(" · "), color = p.ink3)
                         }
                     }
+                    // ask to hear when they post; their system says yes or no (D-106)
+                    if (m.has("post_alerts")) OutlinedButton(enabled = !alertsBusy, onClick = {
+                        val dev = chorus.device ?: return@OutlinedButton
+                        alertsBusy = true
+                        scope.launch {
+                            try { alerts = PeopleApi.setPostAlerts(dev, accountId, id, alerts == "none"); error = null }
+                            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                            catch (e: Exception) { error = e.message ?: "Could not change post alerts." }
+                            finally { alertsBusy = false }
+                        }
+                    }) {
+                        Icon(painterResource(garden.vayne.chorus.designsystem.R.drawable.ic_bell),
+                            null, Modifier.size(18.dp), tint = if (alerts == "active") p.accent else p.ink2)
+                        Spacer(Modifier.width(8.dp))
+                        Text(when (alerts) { "active" -> "Post alerts on"; "requested" -> "Requested · Cancel"; else -> "Get post alerts" }, color = p.ink)
+                    }
+                    if (alerts == "requested") Text("$accountName will see your request.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
                     m.text("description")?.let { Text(it, color = p.ink) }
                     val fields = m.optJSONArray("fields") ?: JSONArray()
                     val birthday = m.text("birthday")

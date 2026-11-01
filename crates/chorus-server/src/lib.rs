@@ -29,6 +29,7 @@ pub mod notifier;
 pub mod oplog;
 pub mod perms;
 pub mod polls;
+pub mod post_alerts;
 pub mod posts;
 pub mod profiles;
 pub mod project;

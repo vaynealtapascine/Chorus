@@ -8,18 +8,39 @@
   import { sync } from '../sync/client';
   import AvatarImage from './AvatarImage.svelte';
   import RichText from './RichText.svelte';
+  import Icon from './Icon.svelte';
 
   let { accountId, memberId, dark }: { accountId: string; memberId?: string; dark: boolean } = $props();
 
   interface Card { id: string; name: string; display_name: string | null; pronouns: string | null; color: string | null; sigil: string | null; avatar_blob: string | null }
   interface Field { id: string; name: string; type: string; value: unknown }
-  interface Full extends Card { description: string | null; description_entities: never[]; birthday: string | null; banner_blob: string | null; fields: Field[] }
+  interface Full extends Card { description: string | null; description_entities: never[]; birthday: string | null; banner_blob: string | null; fields: Field[]; post_alerts?: 'none' | 'requested' | 'active' }
 
   let owner = $state<{ name: string; avatar_blob: string | null } | null>(null);
   let list = $state<Card[] | null>(null);
   let profile = $state<Full | null>(null);
   let error = $state('');
   let missing = $state(false);
+
+  // ask to hear when this member posts; their system says yes or no (D-106)
+  let alertsBusy = $state(false);
+  async function toggleAlerts() {
+    if (!profile || !memberId) return;
+    alertsBusy = true;
+    try {
+      const on = (profile.post_alerts ?? 'none') === 'none';
+      const r = await apiFetch(`${apiBase()}/accounts/${encodeURIComponent(accountId)}/members/${encodeURIComponent(memberId)}/alerts`, {
+        method: on ? 'PUT' : 'DELETE', headers: { authorization: `Bearer ${sync.device?.session ?? ''}` },
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+      profile = { ...profile, post_alerts: j.post_alerts };
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    } finally {
+      alertsBusy = false;
+    }
+  }
 
   async function get(path: string) {
     const r = await apiFetch(`${apiBase()}${path}`, { headers: { authorization: `Bearer ${sync.device?.session ?? ''}` } });
@@ -78,6 +99,14 @@
           <h1 class="display" style="color: {t?.name ?? 'inherit'}">{shownName(profile)}</h1>
           <p class="muted">{[profile.pronouns, owner?.name].filter(Boolean).join(' · ')}</p>
         </div>
+        {#if profile.post_alerts}
+          {@const state = profile.post_alerts}
+          <button class="alerts" class:on={state === 'active'} disabled={alertsBusy} onclick={toggleAlerts}
+            aria-pressed={state !== 'none'} title={state === 'requested' ? `${owner?.name ?? 'They'} will see your request. Tap to cancel it.` : undefined}>
+            <Icon name="bell" size={18} />
+            {state === 'active' ? 'Post alerts on' : state === 'requested' ? 'Requested' : 'Get post alerts'}
+          </button>
+        {/if}
       </header>
       {#if profile.description}<p class="bio"><RichText text={profile.description} entities={profile.description_entities ?? []} /></p>{/if}
       {#if profile.birthday || profile.fields.length}
@@ -134,6 +163,11 @@
   header { display: flex; align-items: center; gap: var(--s-4); }
   .avatar { display: inline-grid; place-items: center; width: 72px; height: 72px; border-radius: 50%; overflow: hidden; flex: none; background: var(--surface-2); box-shadow: 0 0 0 3px var(--ring); font-size: 30px; }
   .avatar.small { width: 44px; height: 44px; font-size: 20px; box-shadow: 0 0 0 2px var(--ring); }
+  header > div { flex: 1; min-width: 0; }
+  .alerts { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 8px 14px; min-height: 40px; border-radius: var(--r-full); border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+  .alerts.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+  .alerts:disabled { opacity: 0.6; cursor: default; }
   .bio { margin: 0; color: var(--ink); white-space: pre-wrap; }
   .fields { display: grid; gap: var(--s-3); margin: 0; padding: var(--s-4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
   .fields div { display: grid; grid-template-columns: minmax(100px, 160px) 1fr; gap: var(--s-3); }

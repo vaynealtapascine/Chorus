@@ -23,4 +23,19 @@ class NotifyCheckTest {
 
         assertNull(NotifyCheck.asPush(JSONObject("""{"id":"n3","kind":"export_ready","delivered_at":11}""")))
     }
+
+    @Test fun postAlertsOpenThePostOrFriends() {
+        val post = NotifyCheck.asPush(JSONObject("""{"id":"n4","kind":"post","title":"Kai posted","text":"hello",
+            "post_id":"p1","account_id":"a1","member_id":"k1","delivered_at":12}"""))!!
+        assertEquals("post", post.getString("t"))
+        assertEquals("p1", post.getString("post_id"))
+        assertEquals("Kai posted", post.getString("title"))
+
+        val asked = NotifyCheck.asPush(JSONObject("""{"id":"n5","kind":"alert_request","title":"alex asked for post alerts",
+            "text":"They'd like to hear when Kai posts.","member_id":"k1","account_id":"a2","delivered_at":13}"""))!!
+        assertEquals("alert", asked.getString("t"))
+        assertEquals("alert_request", asked.getString("kind"))
+        assertEquals("k1", asked.getString("member_id"))
+        assertEquals("alert", NotifyCheck.asPush(JSONObject("""{"id":"n6","kind":"alert_accepted","delivered_at":14}"""))!!.getString("t"))
+    }
 }

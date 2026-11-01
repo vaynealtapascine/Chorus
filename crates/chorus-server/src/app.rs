@@ -198,6 +198,10 @@ pub fn router(state: AppState) -> Router {
         .route("/accounts/{id}/view", get(account_view))
         .route("/accounts/{id}/members", get(account_members))
         .route("/accounts/{id}/members/{member}", get(account_member))
+        .route("/accounts/{id}/members/{member}/alerts", put(alert_request).delete(alert_cancel))
+        .route("/accounts/{id}/alerts", get(person_alerts).put(person_alert_request).delete(person_alert_cancel))
+        .route("/alerts", get(alerts_incoming))
+        .route("/alerts/{member}/{account}", put(alert_approve).delete(alert_decline))
         .route(
             "/blobs/{hash}",
             get(blobs::get_blob)
@@ -1636,9 +1640,132 @@ async fn account_member(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let conn = s.db();
     let me = who(&s, &conn, &headers)?;
-    crate::profiles::profile(&conn, &me.account_id, &id, &member)?
-        .map(Json)
-        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "this profile isn't shared with you".into()))
+    let mut profile = crate::profiles::profile(&conn, &me.account_id, &id, &member)?
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "this profile isn't shared with you".into()))?;
+    // whether this account hears about the member's posts (D-106)
+    if me.account_id != id {
+        profile["post_alerts"] = json!(crate::post_alerts::status(&conn, &me.account_id, &member)?);
+    }
+    Ok(Json(profile))
+}
+
+// ─── post alerts (post_alerts.rs, D-106) ─────────────────────────────────────
+
+impl From<crate::post_alerts::AlertError> for ApiError {
+    fn from(e: crate::post_alerts::AlertError) -> Self {
+        use crate::post_alerts::AlertError;
+        let (s, c) = match &e {
+            AlertError::NotFound => (StatusCode::NOT_FOUND, "not_found"),
+            AlertError::Own => (StatusCode::BAD_REQUEST, "bad_request"),
+            AlertError::Internal(e) => {
+                tracing::error!(error = %e, "internal error");
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal")
+            }
+        };
+        ApiError(s, c, e.to_string())
+    }
+}
+
+/// Ask to hear about a friend's member's new posts; their account answers.
+async fn alert_request(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path((id, member)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let status = crate::post_alerts::request(&conn, &me.account_id, &id, &member, now_ms())?;
+    Ok(Json(json!({"post_alerts": status})))
+}
+
+/// Stop asking, or turn post alerts off.
+async fn alert_cancel(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path((_id, member)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    crate::post_alerts::cancel(&conn, &me.account_id, &member)?;
+    Ok(Json(json!({"post_alerts": crate::post_alerts::status(&conn, &me.account_id, &member)?})))
+}
+
+/// A person you follow: their own member and whether you hear about their posts (404 otherwise).
+fn person_member_of(conn: &Connection, me: &str, id: &str) -> Result<String, ApiError> {
+    crate::post_alerts::person_member(conn, me, id)?
+        .filter(|_| me != id)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "you don't follow this person".into()))
+}
+
+async fn person_alerts(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let member = person_member_of(&conn, &me.account_id, &id)?;
+    let status = crate::post_alerts::status(&conn, &me.account_id, &member)?;
+    Ok(Json(json!({"member_id": member, "post_alerts": status})))
+}
+
+/// Ask to hear about a followed person's posts (their own member).
+async fn person_alert_request(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let member = person_member_of(&conn, &me.account_id, &id)?;
+    let status = crate::post_alerts::request(&conn, &me.account_id, &id, &member, now_ms())?;
+    Ok(Json(json!({"member_id": member, "post_alerts": status})))
+}
+
+async fn person_alert_cancel(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    let member = person_member_of(&conn, &me.account_id, &id)?;
+    crate::post_alerts::cancel(&conn, &me.account_id, &member)?;
+    Ok(Json(json!({"member_id": member, "post_alerts": crate::post_alerts::status(&conn, &me.account_id, &member)?})))
+}
+
+/// Who asked about, or hears about, this account's members.
+async fn alerts_incoming(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    Ok(Json(crate::post_alerts::incoming(&conn, &me.account_id)?))
+}
+
+/// Say yes to a request (the asker is told).
+async fn alert_approve(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path((member, account)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    crate::post_alerts::decide(&conn, &me.account_id, &account, &member, true, now_ms())?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Say no, or stop someone's alerts (they aren't told).
+async fn alert_decline(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path((member, account)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    crate::post_alerts::decide(&conn, &me.account_id, &account, &member, false, now_ms())?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ─── webhooks (webhooks.rs) ──────────────────────────────────────────────────

@@ -829,7 +829,7 @@ pub fn list_for(
     let mut items = switch_items(conn, follower, after, limit)?;
     let mut st = conn.prepare_cached(
         "SELECT id, kind, payload, delivered_at FROM notification
-         WHERE recipient_account_id = ?1 AND kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'export_ready') AND delivered_at > ?3
+         WHERE recipient_account_id = ?1 AND kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'export_ready', 'post', 'alert_request', 'alert_accepted') AND delivered_at > ?3
          ORDER BY delivered_at DESC, id DESC LIMIT ?2",
     )?;
     let rows = st.query_map(params![follower, limit, after], |r| {
@@ -851,6 +851,12 @@ pub fn list_for(
         }
         if !p["sender"].is_null() {
             item["sender"] = p["sender"].clone();
+        }
+        // post alerts (D-106): the post, or whose alerts were asked for or granted
+        for key in ["post_id", "member_id", "account_id"] {
+            if !p[key].is_null() {
+                item[key] = p[key].clone();
+            }
         }
         items.push(item);
     }

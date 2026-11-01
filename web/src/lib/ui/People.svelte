@@ -48,10 +48,14 @@
   }
   interface Note {
     id: string;
-    kind: 'switch' | 'mention' | 'dm' | 'reply' | 'message' | 'member_dm' | 'own_switch';
+    kind: 'switch' | 'mention' | 'dm' | 'reply' | 'message' | 'member_dm' | 'own_switch' | 'post' | 'alert_request' | 'alert_accepted';
     text: string;
     title?: string;
     channel_id?: string;
+    /** Post alerts (D-106): the new post, or whose alerts were asked for or granted. */
+    post_id?: string;
+    member_id?: string;
+    account_id?: string;
     time: { at: number | null; precision: Precision; part?: Part | null };
     account?: { handle: string | null; display_name: string | null };
   }
@@ -69,6 +73,29 @@
   pushActive().then((on) => (pushOn = on));
   let following = $state<FollowRow[]>([]);
   let followers = $state<FollowRow[]>([]);
+  /** Who asked to hear about our members' posts, and who does (D-106). */
+  interface Alert { member_id: string; status: 'requested' | 'active'; account: Person }
+  let alerts = $state<Alert[]>([]);
+  const memberName = (id: string) => { const m = members(projection).find((x) => x.id === id); return m?.display_name ?? m?.name ?? 'a member'; };
+  /** A followed person's post alerts, by account (a singlet has no member pages to ask from). */
+  let personAlerts = $state<Record<string, 'none' | 'requested' | 'active'>>({});
+  async function togglePersonAlerts(account: string) {
+    try {
+      const on = (personAlerts[account] ?? 'none') === 'none';
+      const j = await api(`/accounts/${encodeURIComponent(account)}/alerts`, { method: on ? 'PUT' : 'DELETE' });
+      personAlerts = { ...personAlerts, [account]: j.post_alerts };
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+  async function decideAlert(a: Alert, approve: boolean) {
+    try {
+      await api(`/alerts/${encodeURIComponent(a.member_id)}/${encodeURIComponent(a.account.id)}`, { method: approve ? 'PUT' : 'DELETE' });
+      await load();
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
   let target = $state('');
   let error = $state('');
   let busy = $state(false);
@@ -142,6 +169,7 @@
       const j = await api('/follows');
       following = j.following;
       followers = j.followers;
+      alerts = (await api('/alerts').catch(() => ({ items: alerts }))).items;
       await loadViews();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -168,8 +196,17 @@
         /* older server or temporarily offline */
       }
     }
+    const nextAlerts: Record<string, 'none' | 'requested' | 'active'> = {};
+    for (const f of following.filter((x) => x.status === 'active' && x.account.kind === 'person')) {
+      try {
+        nextAlerts[f.account.id] = (await api(`/accounts/${encodeURIComponent(f.account.id)}/alerts`)).post_alerts;
+      } catch {
+        /* an older server */
+      }
+    }
     views = next;
     sharedPosts = nextPosts;
+    personAlerts = nextAlerts;
     const j = await api('/notifications');
     const fresh = (j.items as Note[]).filter((n) => !seenNotes.has(n.id));
     // a desktop notification for anything new while this page is open (not on first load)
@@ -363,6 +400,23 @@
     </ul>
   {/if}
 
+  {#if alerts.length}
+    <h2>Post alerts</h2>
+    <p class="hint">They hear when that member posts something they can already see.</p>
+    <ul>
+      {#each alerts as a (`${a.member_id}:${a.account.id}`)}
+        <li class="card">
+          <span class="person-avatar"><AvatarImage hash={a.account.avatar_blob} glyph={(a.account.display_name ?? a.account.handle ?? '?')[0]} name={name(a.account)} /></span>
+          <div class="who"><strong>{name(a.account)}</strong><span>{a.status === 'requested' ? 'wants to hear' : 'hears'} when {memberName(a.member_id)} posts</span></div>
+          <div class="actions">
+            {#if a.status === 'requested'}<button class="primary" onclick={() => decideAlert(a, true)}>Allow</button>{/if}
+            <button class="ghost" onclick={() => decideAlert(a, false)}>{a.status === 'requested' ? 'Decline' : 'Stop'}</button>
+          </div>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
   <h2>Followers</h2>
   {#if isSystem}<p class="hint">Delay hides <em>when</em> you switched as it happens; fuzzing hides the exact time afterwards.</p>
   {:else}<p class="hint">They see the posts you share with followers.</p>{/if}
@@ -489,6 +543,10 @@
           <strong>{noteTitle(n)}</strong>
           {#if n.kind !== 'switch' && n.channel_id}
             <a href="#/chat/{n.channel_id}">{n.text}</a>
+          {:else if n.post_id}
+            <a href="#/journal/post/{encodeURIComponent(n.post_id)}">{n.text}</a>
+          {:else if n.kind === 'alert_accepted' && n.account_id && n.member_id && following.some((f) => f.account.id === n.account_id && f.account.kind === 'system')}
+            <a href="#/people/{encodeURIComponent(n.account_id)}/{encodeURIComponent(n.member_id)}">{n.text}</a>
           {:else}
             <span>{n.text}</span>
           {/if}
@@ -542,6 +600,13 @@
         <div class="actions">
           {#if f.status === 'active'}<button class="ghost" onclick={() => message(f.account.id)}>Message</button>{/if}
           {#if f.status === 'active' && f.account.kind === 'system'}<a class="ghost" href="#/people/{encodeURIComponent(f.account.id)}">Members</a>{/if}
+          {#if personAlerts[f.account.id]}
+            {@const state = personAlerts[f.account.id]}
+            <button class="ghost" aria-pressed={state !== 'none'} onclick={() => togglePersonAlerts(f.account.id)}
+              title={state === 'requested' ? 'They will see your request. Click to cancel it.' : 'Hear when they post'}>
+              {state === 'active' ? 'Post alerts on' : state === 'requested' ? 'Alerts requested' : 'Get post alerts'}
+            </button>
+          {/if}
           <button class="ghost" onclick={() => unfollow(f.id)}>{f.status === 'requested' ? 'Cancel' : 'Unfollow'}</button>
         </div>
         {#if f.status === 'active' && (sharedPosts[f.account.id]?.length ?? 0) > 0}
