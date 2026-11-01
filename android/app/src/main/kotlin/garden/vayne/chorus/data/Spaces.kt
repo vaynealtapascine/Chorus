@@ -58,6 +58,11 @@ object Spaces {
         Api.post(dev.base, "/spaces", JSONObject().put("kind", "dm")
             .put("accounts", JSONArray(listOf(accountId))), dev.session).getString("id")
 
+    /** Bring connected accounts into a shared space (its owner only; D-099). */
+    suspend fun add(dev: DeviceRecord, spaceId: String, accounts: List<String>) {
+        Api.post(dev.base, "/spaces/$spaceId/members", JSONObject().put("accounts", JSONArray(accounts)), dev.session)
+    }
+
     suspend fun leave(dev: DeviceRecord, spaceId: String) {
         Api.call("DELETE", dev.base, "/spaces/$spaceId/members/me", null, dev.session)
     }

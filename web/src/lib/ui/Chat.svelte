@@ -57,7 +57,8 @@
   const current = $derived(
     allChannels.find((c) => c.id === channelId) ??
       (channelId?.startsWith('space:')
-        ? allChannels.find((c) => c.space_id === channelId.slice(6) && !c.archived && c.kind !== 'thread')
+        ? allChannels.find((c) => c.space_id === channelId.slice(6) && !c.archived && c.kind !== 'thread' && !c.member_ids?.length) ??
+          allChannels.find((c) => c.space_id === channelId.slice(6) && !c.archived && c.kind !== 'thread')
         : undefined) ??
       // nothing asked for: the first chat that isn't someone else's private one (D-097, D-098)
       allChannels.find((c) => !c.archived && c.kind !== 'thread' && shownNow(c)) ??

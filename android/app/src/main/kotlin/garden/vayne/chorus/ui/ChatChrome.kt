@@ -70,7 +70,9 @@ internal fun ChannelDisc(channel: ChatChannel, member: Member? = null, size: Dp 
 }
 
 internal data class ChatListRow(val channel: ChatChannel, val space: ChatSpace, val title: String,
-    val latest: ChatMessage?, val unread: Int, val sender: String? = null, val muted: Boolean = false, val pinned: Boolean = false)
+    val latest: ChatMessage?, val unread: Int, val sender: String? = null, val muted: Boolean = false, val pinned: Boolean = false,
+    /** A private chat in a DM (D-098), or a channel kept to some of our members (D-097): a lock, not a globe or #. */
+    val private: Boolean = false)
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -170,6 +172,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 if (row.latest?.id in model.polls.polls) ChatIcon(R.drawable.ic_poll)
+                                else if (row.private) ChatIcon(R.drawable.ic_lock, "Private")
                                 else if (row.space.kind != "internal") ChatIcon(R.drawable.ic_globe)
                                 else if (row.channel.parentMessageId != null) ChatIcon(R.drawable.ic_reply)
                                 else if (!direct) Text("#", color = p.ink3, fontSize = 16.sp, lineHeight = 22.sp)

@@ -22,7 +22,9 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
 @Composable
 fun ColumnScope.DirectMessagePicker(
     members: List<Member>, accounts: List<SpaceAccount>, busy: Boolean, online: Boolean, error: String?,
-    onMembers: (Member, List<Member>) -> Unit, onAccount: (Member, SpaceAccount) -> Unit,
+    onMembers: (Member, List<Member>) -> Unit, onAccount: (Member, SpaceAccount, Boolean) -> Unit,
+    /** Offer "Private to <sender>" for a DM with an account (D-098); not for a singlet. */
+    privateChats: Boolean = true,
 ) {
     val p = LocalChorusPalette.current
     val keyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
@@ -30,6 +32,7 @@ fun ColumnScope.DirectMessagePicker(
     var senderId by rememberSaveable { mutableStateOf<String?>(null) }
     var choosingSender by rememberSaveable { mutableStateOf(false) }
     var recipients by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var keepPrivate by rememberSaveable { mutableStateOf(false) }
     val sender = members.find { it.id == senderId }
     val pickingSender = choosingSender || sender == null
     val shown = remember(members, query) { members.filter { m ->
@@ -61,9 +64,20 @@ fun ColumnScope.DirectMessagePicker(
         if (shown.isEmpty()) item { Text("No matching members", color = p.ink3, modifier = Modifier.padding(vertical = 16.dp)) }
         if (!pickingSender) {
             item { Text("Connected accounts", color = p.ink3, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(vertical = 12.dp)) }
+            if (privateChats && sender != null) item(key = "private") {
+                Row(Modifier.fillMaxWidth().toggleable(keepPrivate, enabled = !busy, role = Role.Switch) { keepPrivate = it }
+                    .heightIn(min = 56.dp).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Private to ${sender.shownName}", color = p.ink)
+                        Text("Only ${sender.shownName} sees and writes in it, while fronting or co-conscious.",
+                            color = p.ink3, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(keepPrivate, onCheckedChange = null)
+                }
+            }
             items(connected, key = { "account:${it.id}" }) { account ->
-                TextButton(enabled = !busy && online, onClick = { sender?.let { onAccount(it, account) } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Text(account.shownName, modifier = Modifier.fillMaxWidth())
+                TextButton(enabled = !busy && online, onClick = { sender?.let { onAccount(it, account, keepPrivate && privateChats) } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text((if (keepPrivate && privateChats) "🔒 " else "") + account.shownName, modifier = Modifier.fillMaxWidth())
                 }
             }
             if (connected.isEmpty()) item { Text(if (online) "Connect with an account in Friends to message them." else "Connect to load account recipients. Member DMs work offline.", color = p.ink3, modifier = Modifier.padding(vertical = 12.dp)) }

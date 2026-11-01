@@ -99,12 +99,32 @@ internal fun SendAsSheet(model: Model, channelId: String, members: List<Member>,
 internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace, model: Model, messages: List<ChatMessage>,
     library: List<ChatMessage>, directory: SpaceInfo?, onSearch: () -> Unit, onClose: (() -> Unit)? = null,
     notifyLevel: String = "mentions", onNotify: (String) -> Unit = {},
-    onShowMessage: (String) -> Unit = {}, modifier: Modifier = Modifier) {
+    onShowMessage: (String) -> Unit = {}, modifier: Modifier = Modifier,
+    title: String = channel.name, subtitle: String? = null, connections: List<SpaceAccount> = emptyList(),
+    foreign: Map<String, ForeignAuthor> = emptyMap(), speakerId: String? = null,
+    onSpaceChanged: () -> Unit = {}, onOpenChannel: (String) -> Unit = {}, onLeft: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val presence = ChatPresentation.presence(model, channel.id)
-    val members = if (space.kind == "internal") model.active.filter { !channel.isMemberDm || it.id in channel.memberIds } else emptyList()
+    // a members' chat, or a channel kept to some members, lists just them (D-097, D-099)
+    val members = if (space.kind == "internal") model.active.filter { channel.memberIds.isEmpty() || it.id in channel.memberIds } else emptyList()
     var editChannel by rememberSaveable(channel.id) { mutableStateOf(false) }
-    if (editChannel) ChannelEditor(chorus, model, space.id, channel, { editChannel = false }, { _, _ -> editChannel = false })
+    var editGroup by rememberSaveable(channel.id) { mutableStateOf(false) }
+    val me = chorus.device?.accountId.orEmpty()
+    val role = ChatManage.roleIn(model.spaceRoles, space.id, directory, me)
+    val groupEditable = ChatManage.canEditSpace(space.kind, role)
+    val spaceChats = model.channels.filter { it.spaceId == space.id && it.kind != "thread" }
+    val ownPrivate = ChatManage.sides(channel, space, model.members.mapTo(HashSet()) { it.id })?.mine?.isNotEmpty() == true
+    // who may edit this chat: our own space's chats, a group's for its managers, our private chat in a DM
+    val channelEditable = channel.kind != "thread" && when (space.kind) {
+        "internal" -> !model.isPerson
+        "dm" -> channel.kind == "member_dm" && ownPrivate
+        else -> groupEditable
+    }
+    val asGroup = groupEditable && spaceChats.size <= 1
+    if (editChannel) ChannelEditor(chorus, model, space.id, channel, { editChannel = false }, { _, _ -> editChannel = false },
+        canDelete = space.kind == "internal" || groupEditable || ownPrivate)
+    if (editGroup) ChannelEditor(chorus, model, space.id, spaceChats.singleOrNull(), { editGroup = false }, { _, _ -> editGroup = false },
+        group = space)
     var tab by rememberSaveable(channel.id) { mutableStateOf("members") }
     var shown by remember(channel.id, tab) { mutableStateOf(60) }
     var viewing by remember(channel.id) { mutableStateOf<ChatFileItem?>(null) }
@@ -117,9 +137,10 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
             else Text("Chat info", color = p.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 12.dp))
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            ChannelDisc(channel, size = 72.dp)
-            Text(channel.name, color = p.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
-            val kind = when { space.kind == "dm" || channel.isMemberDm -> "Direct"; space.kind == "internal" -> "Internal"; else -> "Shared · ${space.name}" }
+            ChannelDisc(channel.copy(name = title), size = 72.dp)
+            Text(title, color = p.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+            val kind = subtitle ?: when { space.kind == "dm" || channel.isMemberDm -> "Direct"; space.kind == "internal" -> "Internal"
+                spaceChats.size <= 1 -> "Group"; else -> "Shared · ${space.name}" }
             val count = when {
                 space.kind == "internal" && !model.isPerson -> "${members.size} ${if (members.size == 1) "member" else "members"}"
                 directory != null && space.kind != "internal" -> "${directory.accounts.size} ${if (directory.accounts.size == 1) "account" else "accounts"}"
@@ -130,7 +151,8 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                 if (notifyLevel == "none") InfoAction(R.drawable.ic_bell, "Unmute") { onNotify(model.accountPrefs.defaultNotify(space.kind)) }
                 else InfoAction(R.drawable.ic_bell_off, "Mute") { onNotify("none") }
                 InfoAction(R.drawable.ic_search, "Search", onSearch)
-                if (channel.kind != "thread") InfoAction(R.drawable.ic_edit, "Edit") { editChannel = true }
+                if (asGroup) InfoAction(R.drawable.ic_edit, "Edit") { editGroup = true }
+                else if (channelEditable) InfoAction(R.drawable.ic_edit, "Edit") { editChannel = true }
             }
             channel.topic?.takeIf { it.isNotBlank() }?.let { topic ->
                 Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {
@@ -182,9 +204,9 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                 } else if (space.kind == "internal") {
                     Text("Private to your account", color = p.ink3, fontSize = 13.sp)
                 } else {
-                    for (account in directory?.accounts.orEmpty()) Text(account.shownName, color = p.ink,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp))
-                    if (directory == null) Text("Space details are unavailable offline.", color = p.ink3, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
+                    ChatSpacePanel(chorus, model, space, channel, directory, connections, foreign, speakerId,
+                        onEditGroup = if (groupEditable) ({ editGroup = true }) else null, onChanged = onSpaceChanged,
+                        onOpenChannel = onOpenChannel, onLeft = onLeft)
                 }
             }
         }

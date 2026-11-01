@@ -27,6 +27,16 @@ class ChannelComposeTest {
         assertEquals("Changed on another device", saved.topic)
         assertEquals("b".repeat(64), saved.avatarBlob)
     }
+    @Test fun membersAndIconAreWrittenOnlyWhenTheyChange() {
+        val kept = ChannelCompose.create("s", "garden", "", null, icon = " 🌱 ", memberIds = listOf("violet", "nairon", "violet"))
+        assertEquals("[\"nairon\",\"violet\"]", kept.getJSONArray("member_ids").toString())
+        assertEquals("🌱", kept.getString("icon"))
+        assertFalse(ChannelCompose.create("s", "garden", "", null).has("member_ids"))
+        val baseline = ChatChannel("c", "s", "text", "garden", null, listOf("nairon", "violet"), icon = "🌱")
+        assertEquals(0, ChannelCompose.update(baseline, "garden", "", null, memberIds = listOf("violet", "nairon")).length())
+        assertTrue(ChannelCompose.update(baseline, "garden", "", null, memberIds = emptyList()).isNull("member_ids"))
+        assertTrue(ChannelCompose.update(baseline, "garden", "", null, icon = "").isNull("icon"))
+    }
     @Test fun imageLessCreateWorksOnOlderServersAndImageFeatureNeedsCapability() {
         assertFalse(ChannelCompose.create("s", "Garden", "", null).has("avatar_blob"))
         assertFalse(ChannelCompose.supportsImages(JSONObject("""{"version":"0.1.0"}""")))

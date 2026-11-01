@@ -28,6 +28,21 @@ class ChatOrganizeTest {
         assertTrue(ChatOrganize.isPrivate(channel("art", members = listOf("kai")), home))
     }
 
+    @Test fun aPrivateChatInADmShowsOnlyWhileOurMemberInItIsHereAsSwitched() {
+        val dm = ChatSpace("d", "dm", "dm")
+        val chat = channel("p", "member_dm", listOf("kai", "robin"), space = "d")
+        val own = setOf("kai", "june")
+        assertFalse(ChatOrganize.privateVisible(chat, dm, front("june"), null, true, own))
+        assertTrue(ChatOrganize.privateVisible(chat, dm, front("kai"), null, true, own))
+        assertTrue(ChatOrganize.privateVisible(chat, dm, listOf(Entry("member", "kai", "cocon", false)), null, true, own))
+        // not by "Read as", not with hiding turned off, not through a fronting subsystem (display only, D-092)
+        assertFalse(ChatOrganize.privateVisible(chat, dm, front("june"), "kai", true, own))
+        assertFalse(ChatOrganize.privateVisible(chat, dm, front("june"), null, false, own))
+        assertFalse(ChatOrganize.privateVisible(chat, dm, front("kai"), null, true, own, switched = front("june")))
+        // the other side (nobody of theirs listed) sees it as any DM
+        assertTrue(ChatOrganize.privateVisible(chat, dm, emptyList(), null, true, setOf("robin-self")))
+    }
+
     @Test fun pinsComeFirstInTheirOrderThenTheRestByActivity() {
         data class R(val id: String, val at: Long)
         val rows = listOf(R("a", 10), R("b", 50), R("c", 30), R("d", 40))

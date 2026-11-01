@@ -21,11 +21,44 @@ object ChatOrganize {
     fun isPrivate(channel: ChatChannel, space: ChatSpace): Boolean =
         space.kind == "internal" && (channel.kind == "member_dm" || channel.memberIds.isNotEmpty())
 
-    fun privateVisible(channel: ChatChannel, space: ChatSpace, front: List<Entry>, viewingAs: String?, hidePrivate: Boolean): Boolean {
+    /**
+     * A private chat in a DM kept to some of our members (D-098; [own] says who is ours) shows only
+     * while one of them is here by the front exactly as switched ([switched]), never by "Read as",
+     * whatever `chat.hide_private` says.
+     */
+    fun privateVisible(channel: ChatChannel, space: ChatSpace, front: List<Entry>, viewingAs: String?, hidePrivate: Boolean,
+        own: Set<String>? = null, switched: List<Entry> = front): Boolean {
+        val mine = own?.let { ChatManage.sides(channel, space, it)?.mine }
+        if (!mine.isNullOrEmpty()) return here(switched, mine)
         if (!hidePrivate || !isPrivate(channel, space)) return true
         if (viewingAs != null && viewingAs in channel.memberIds) return true
-        return front.any { it.subjectType == "member" && (it.level == "front" || it.level == "cocon") && it.subjectId in channel.memberIds }
+        return here(front, channel.memberIds)
     }
+
+    /**
+     * Which chats may be looked at right now, by channel id (lists, pickers, search): [privateVisible]
+     * bound to the model. A thread is as visible as the channel its parent message is in.
+     */
+    fun shown(model: Model, viewingAs: String? = null): (String?) -> Boolean {
+        val own = model.members.mapTo(HashSet()) { it.id }
+        val spaces = model.spaces.associateBy { it.id }
+        val channels = model.channels.associateBy { it.id }
+        val messageChannel = model.searchMessages.associate { it.id to it.channelId }
+        fun ok(id: String?, depth: Int): Boolean {
+            val c = channels[id ?: return false] ?: return false
+            if (c.kind == "thread" && depth < 4) {
+                val home = c.parentMessageId?.let { messageChannel[it] }
+                return home != null && ok(home, depth + 1)
+            }
+            if (c.kind == "thread") return false
+            val space = spaces[c.spaceId] ?: return false
+            return privateVisible(c, space, model.current, viewingAs, model.accountPrefs.hidePrivate, own)
+        }
+        return { ok(it, 0) }
+    }
+
+    private fun here(front: List<Entry>, members: List<String>) =
+        front.any { it.subjectType == "member" && (it.level == "front" || it.level == "cocon") && it.subjectId in members }
 
     /** Still cleared: nothing newer than when it was cleared. */
     fun cleared(clearedAt: Long?, latestAt: Long?): Boolean = clearedAt != null && (latestAt ?: 0L) <= clearedAt

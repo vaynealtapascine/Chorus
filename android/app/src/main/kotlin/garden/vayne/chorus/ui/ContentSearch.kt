@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import garden.vayne.chorus.data.ChatOrganize
 import garden.vayne.chorus.data.LocalSearch
 import garden.vayne.chorus.data.CoreMessageSearch
 import garden.vayne.chorus.data.MessageSearchResult
@@ -102,10 +103,12 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
         finally { loading = false }
     }
     val known = results.mapTo(HashSet()) { it.id }
-    val shown = if (section == "Switches") results else results + remote.filter { doc ->
+    // members' private chats and private chats in DMs only while theirs are here (D-097, D-098)
+    val chatOk = remember(model) { ChatOrganize.shown(model) }
+    val shown = (if (section == "Switches") results else results + remote.filter { doc ->
         doc.id !in known && (section != "Posts" || parsed.from == null ||
             doc.authors.any { it == parsed.from } || doc.authorNames.any { it.contains(parsed.from, ignoreCase = true) })
-    }
+    }).filter { doc -> doc.channelId == null || chatOk(doc.channelId) }
 
     fun loadMore() {
         val next = cursor ?: return
