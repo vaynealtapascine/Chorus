@@ -167,7 +167,8 @@ pub fn reply_count(conn: &Connection, viewer: &str, parent: &str) -> rusqlite::R
 /// them (an unreadable one ends the chain, as `reply_to` is hidden there), at most 20 up.
 pub fn ancestors(conn: &Connection, viewer: &str, item: &Value) -> anyhow::Result<Vec<Value>> {
     let mut chain = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    // a looping chain never lists the post above itself
+    let mut seen: std::collections::HashSet<String> = item["id"].as_str().map(str::to_string).into_iter().collect();
     let mut next = item["reply_to"].as_str().map(str::to_string);
     while let Some(id) = next {
         if chain.len() >= 20 || !seen.insert(id.clone()) {
