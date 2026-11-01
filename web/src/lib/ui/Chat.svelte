@@ -1067,8 +1067,31 @@
   });
   $effect(() => {
     if (!focusId || (!visibleMsgs.some((m) => m.id === focusId) && history?.id !== focusId)) return;
-    queueMicrotask(() => list?.querySelector(`[data-message-id="${CSS.escape(focusId)}"]`)?.scrollIntoView({ block: 'center' }));
+    const id = focusId;
+    queueMicrotask(() => {
+      const el = list?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`);
+      el?.scrollIntoView({ block: 'center' });
+      if (el) flash(el);
+    });
   });
+  /** A moment's ring around the message a jump landed on. */
+  function flash(el: HTMLElement) {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const accent = getComputedStyle(el).getPropertyValue('--accent').trim() || '#42A397';
+    el.animate([{ boxShadow: `0 0 0 3px ${accent}` }, { boxShadow: '0 0 0 3px transparent' }], { duration: 1400, easing: 'ease-out' });
+  }
+  /** The message a reply, quote or forward points at: here, scroll to it; elsewhere, open its chat at it. */
+  function showMessage(target: MessageRow) {
+    if (target.channel_id === current?.id) {
+      const el = list?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(target.id)}"]`);
+      if (el) {
+        el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+        flash(el);
+        return;
+      }
+    }
+    location.hash = `#/chat/${target.channel_id}/${target.id}`;
+  }
 </script>
 
 {#snippet pollFor(id: string)}
@@ -1324,6 +1347,7 @@
           heldUntil={held[m.id]?.until}
           oncancelheld={() => sync.cancelHeld(m.id)}
           onreact={(emoji, on) => react(m, emoji, on)}
+          onjump={showMessage}
           extra={pollFor}
         />
         {/if}

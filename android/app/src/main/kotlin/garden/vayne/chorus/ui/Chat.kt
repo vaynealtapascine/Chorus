@@ -135,6 +135,11 @@ import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
@@ -180,8 +185,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var conversationOpen by rememberSaveable { mutableStateOf(false) }
     var switchOpen by remember { mutableStateOf(false) }
     var headerMenu by remember { mutableStateOf(false) }
-    // a message to bring into view (from chat info), consumed by the list
+    // a message to bring into view (from chat info, a reply or a quote), consumed by the list
     var jumpTo by remember { mutableStateOf<String?>(null) }
+    var flashId by remember { mutableStateOf<String?>(null) }
     val expanded = LocalConfiguration.current.screenWidthDp >= 840
     var selectedSpace by rememberSaveable { mutableStateOf("") }
     var selectedChannel by rememberSaveable { mutableStateOf("") }
@@ -921,8 +927,20 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             if (!currentPane) return@LaunchedEffect
             val id = jumpTo ?: return@LaunchedEffect
             val at = messages.asReversed().indexOfFirst { it.id == id }
-            if (at >= 0) listState.animateScrollToItem(at)
+            // a third of the way up, not against the composer
+            if (at >= 0) { listState.animateScrollToItem(at, -listState.layoutInfo.viewportSize.height / 3); flashId = id }
             jumpTo = null
+        }
+        LaunchedEffect(flashId) { if (flashId != null) { delay(1600); flashId = null } }
+        // a reply's, quote's or forward's original (owner, 2026-11-02): scroll to it here, or open its chat at it
+        fun showMessage(id: String) {
+            when (val where = garden.vayne.chorus.data.ChatJump.channelOf(id, messages, everywhere)) {
+                null -> android.widget.Toast.makeText(ctx, "That message isn't available here.", android.widget.Toast.LENGTH_SHORT).show()
+                channel.id -> jumpTo = id
+                else -> model.channels.find { it.id == where }?.let { c ->
+                    selectedSpace = c.spaceId; selectedChannel = c.id; jumpTo = id
+                }
+            }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(Modifier.fillMaxSize(), state = listState, reverseLayout = true,
@@ -965,7 +983,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     onReplyPrivately = if (canPrivate) ({ replyPrivately(message) }) else null,
                     onEdit = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
                         heldMessages[message.id] == null)
-                        ({ editingMessageId = message.id }) else null)
+                        ({ editingMessageId = message.id }) else null,
+                    onJump = ::showMessage, flash = message.id == flashId)
                 for (marker in timelinePlan.after) TimelineMarker(marker)
                 }
             }
@@ -1651,10 +1670,23 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     quoteElsewhere: String? = null,
     onQuote: (() -> Unit)? = null, onReplyIn: (() -> Unit)? = null,
     /** Select several (D-048): while [selecting], a tap picks or drops this message. */
-    selecting: Boolean = false, selected: Boolean = false, onSelect: (() -> Unit)? = null) {
+    selecting: Boolean = false, selected: Boolean = false, onSelect: (() -> Unit)? = null,
+    /** Show a replied-to, quoted or forwarded original by its message id. */
+    onJump: ((String) -> Unit)? = null,
+    /** Just jumped to: a moment's ring. */
+    flash: Boolean = false) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
+    // a tap shows the time and edit history; long press is for actions (owner, 2026-11-02)
+    var details by rememberSaveable(message.id) { mutableStateOf(false) }
+    val motion = rememberChorusMotion()
+    val ring = remember(message.id) { Animatable(0f) }
+    LaunchedEffect(flash) {
+        if (!flash) return@LaunchedEffect
+        ring.snapTo(1f)
+        if (motion) ring.animateTo(0f, tween(1400)) else { delay(1200); ring.snapTo(0f) }
+    }
     var history by remember(message.id, message.text, message.cw) { mutableStateOf<List<MessageRevision>?>(null) }
     var historyError by remember(message.id) { mutableStateOf<String?>(null) }
     var showUnseen by rememberSaveable(message.id) { mutableStateOf(false) }
@@ -1709,8 +1741,10 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 topStart = if (!own && !showSender) 6.dp else 16.dp, topEnd = if (own && !showSender) 6.dp else 16.dp,
                 bottomEnd = if (own && showAvatar) 6.dp else 16.dp, bottomStart = if (!own && showAvatar) 6.dp else 16.dp))
             .then(if (settled) Modifier.semantics { customActions = listOf(CustomAccessibilityAction("Reply") { onReply(); true }) } else Modifier)
-            .then(if (selected) Modifier.border(2.dp, p.accent, RoundedCornerShape(16.dp)) else Modifier)
-            .then(if (interactive) Modifier.combinedClickable(onClick = { if (selecting && onSelect != null) onSelect() else menuOpen = true },
+            .then(if (selected) Modifier.border(2.dp, p.accent, RoundedCornerShape(16.dp))
+                else if (ring.value > 0f) Modifier.border(2.dp, p.accent.copy(alpha = ring.value), RoundedCornerShape(16.dp)) else Modifier)
+            .then(if (interactive) Modifier.combinedClickable(onClick = { if (selecting && onSelect != null) onSelect() else details = !details },
+                onClickLabel = if (details) "Hide time" else "Show time",
                 onLongClick = if (selecting && onSelect != null) onSelect else openActions,
                 onLongClickLabel = "Message actions", onDoubleClick = heart) else Modifier)
             .padding(horizontal = 11.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -1722,7 +1756,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
         if (message.replyTo != null) {
             val quoted = quote?.authors?.firstOrNull()?.let(::author)
             val quoteColor = quoted?.let { tonesOf(it.color).name } ?: p.accent
-            Row(Modifier.fillMaxWidth().background(quoteColor.copy(alpha = .10f), RoundedCornerShape(6.dp))) {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(quoteColor.copy(alpha = .10f))
+                .then(if (quote != null && onJump != null && interactive) Modifier.clickable(onClickLabel = "Show the message this replies to") { onJump(quote.id) } else Modifier)) {
                 Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(quoteColor))
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                     Text((quote?.authors?.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
@@ -1735,7 +1770,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
         for (item in message.forward) {
             val source = item.authors.firstOrNull()?.let(::author)
             val sourceColor = source?.let { tonesOf(it.color).name } ?: p.accent
-            Row(Modifier.fillMaxWidth().background(sourceColor.copy(alpha = .10f), RoundedCornerShape(6.dp))) {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(sourceColor.copy(alpha = .10f))
+                .then(if (onJump != null && interactive) Modifier.clickable(onClickLabel = "Show the original message") { onJump(item.messageId) } else Modifier)) {
                 Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(sourceColor))
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                     Text("Forwarded from " + item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
@@ -1746,14 +1782,15 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             }
             if (item.text.isNotBlank() && (message.cw == null || revealed)) RichBody(item.text, item.entities,
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
-                onPlainClick = { if (interactive && held == null) menuOpen = true },
+                onPlainClick = { if (interactive) { if (selecting && onSelect != null) onSelect() else details = !details } },
                 onLongClick = if (settled) openActions else null, onDoubleClick = heart)
         }
         // what it quotes: part of one message or a bundle (SPEC §5.3), shown as the snapshot it carries
         if (message.cw == null || revealed) for (item in message.quote) {
             val source = item.authors.firstOrNull()?.let(::author)
             val tint = source?.let { tonesOf(it.color).name } ?: p.ink3
-            Row(Modifier.fillMaxWidth().background(tint.copy(alpha = .08f), RoundedCornerShape(6.dp))) {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(tint.copy(alpha = .08f))
+                .then(if (onJump != null && interactive) Modifier.clickable(onClickLabel = "Show the quoted message") { onJump(item.messageId) } else Modifier)) {
                 Box(Modifier.width(2.dp).heightIn(min = 24.dp).background(tint))
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                     if (item.authors.isNotEmpty()) Text(item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" } +
@@ -1796,20 +1833,20 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
         if (message.cw == null || revealed) {
             if (message.text.isNotBlank() && message.text != message.forward.joinToString("\n") { it.text })
                 RichBody(message.text, message.entities, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
-                    onPlainClick = { if (interactive && held == null) menuOpen = true },
+                    onPlainClick = { if (interactive) { if (selecting && onSelect != null) onSelect() else details = !details } },
                     onLongClick = if (settled) openActions else null, onDoubleClick = heart)
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus, authors, message.occurredAt)
             }
             // Same resolved acting speaker as the composer: explicit selection or channel default.
             PollCard(chorus, model, message.id, garden.vayne.chorus.data.Polls.chatMember(model, actingMemberId))
-            if (held == null && message.edited) {
+            if (held == null && message.edited && details) {
                 TextButton(onClick = {
                     if (history != null) history = null else actions.launch {
                         try { history = chorus.revisions(message.id); historyError = null }
                         catch (e: Exception) { historyError = e.message ?: "Could not load edit history." }
                     }
-                }) { Text(if (history == null) "(edited) · View history" else "Hide edit history") }
+                }) { Text(if (history == null) "Edited · View history" else "Hide edit history") }
                 if (historyError != null) Text(historyError.orEmpty(), color = p.danger)
                 history?.forEach { revision ->
                     var revisionRevealed by rememberSaveable(message.id, revision.rev) {
@@ -1835,13 +1872,17 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             }
             Text(ChatThreads.repliesLabel(thread.replies), color = p.accent, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
         }
-        Row(Modifier.then(if (reactions.isNotEmpty()) Modifier.fillMaxWidth() else Modifier.align(Alignment.End)),
+        if (reactions.isNotEmpty() || message.pinned || held != null || details) Row(Modifier.then(if (reactions.isNotEmpty()) Modifier.fillMaxWidth() else Modifier.align(Alignment.End)),
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (reactions.isNotEmpty()) ReactionChips(reactions, actingMemberId, Modifier.weight(1f),
                 { id -> model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone" }, onReact.takeIf { held == null })
             if (message.pinned) androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_pin), "Pinned",
                 Modifier.size(14.dp), tint = p.ink3)
-            Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.occurredAt)), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+            AnimatedVisibility(details, enter = fadeIn(ChorusMotion.tween(motion, ChorusMotion.Quick)),
+                exit = fadeOut(ChorusMotion.tween(motion, ChorusMotion.Quick))) {
+                Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.occurredAt)) + if (message.edited) " · edited" else "",
+                    color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+            }
             if (held != null) ChatIcon(R.drawable.ic_history, "Message held for slow mode")
         }
         }
