@@ -182,6 +182,39 @@ pub fn ancestors(conn: &Connection, viewer: &str, item: &Value) -> anyhow::Resul
     Ok(chain)
 }
 
+/// A quoting post carries what it quotes (`quoted`) when this viewer may read that post; otherwise
+/// only the quoted id remains and clients say it's unavailable. One level: the quoted post's own
+/// quote and replies aren't followed.
+pub fn attach_quoted(conn: &Connection, viewer: &str, item: &mut Value) -> anyhow::Result<()> {
+    let Some(id) = item["quote"]["post_id"].as_str().map(str::to_string) else { return Ok(()) };
+    if let Some(mut quoted) = one(conn, viewer, &id)? {
+        if let Some(fields) = quoted.as_object_mut() {
+            fields.remove("quote");
+            fields.remove("reactions");
+        }
+        item["quoted"] = quoted;
+    }
+    Ok(())
+}
+
+/// Posts quoting `id` that this viewer may read, newest first (a thread view's Quotes). Reposts
+/// aren't quotes.
+pub fn quotes(conn: &Connection, viewer: &str, id: &str) -> anyhow::Result<Vec<Value>> {
+    let readable = readable_sql("?1");
+    let sql = format!(
+        "SELECT {COLUMNS} FROM post p WHERE json_valid(p.quote) AND json_extract(p.quote,'$.post_id')=?2
+         AND p.repost_of_id IS NULL AND p.deleted_at IS NULL AND {readable}
+         ORDER BY p.occurred_at DESC,p.id DESC LIMIT 50"
+    );
+    let mut st = conn.prepare(&sql)?;
+    let mut rows = st.query_map(params![viewer, id], row)?.collect::<Result<Vec<_>, _>>()?;
+    for item in &mut rows {
+        hide_unreadable_links(conn, viewer, item)?;
+        item["reply_count"] = json!(reply_count(conn, viewer, item["id"].as_str().unwrap_or(""))?);
+    }
+    Ok(rows)
+}
+
 #[derive(Default, Deserialize)]
 pub struct PostSearch {
     pub q: String,

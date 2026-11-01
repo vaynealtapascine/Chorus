@@ -316,6 +316,12 @@ async fn cross_account_replies_require_a_readable_parent_and_reach_its_author() 
     assert!(ack.error.is_none(), "{:?}", ack.error);
     let reply = reply.unwrap();
     let reply_id = reply.op.entity_id.unwrap();
+    let mut quoting = make(4, "server");
+    quoting.payload = json!({"kind":"note","authors":["bob"],"text":"Quoting Alice","entities":[],
+        "visibility":{"mode":"server"},"quote":{"post_id":"server"}});
+    let (ack, quote) = ingest::accept(&conn, &session, quoting, now, false).unwrap();
+    assert!(ack.error.is_none(), "{:?}", ack.error);
+    let quote_id = quote.unwrap().op.entity_id.unwrap();
     let owner_replies = posts::replies(&conn, ALICE, "server", 1).unwrap();
     assert!(owner_replies.iter().any(|p| p["id"] == reply_id));
     let follower_replies = posts::replies(&conn, BOB, "server", 1).unwrap();
@@ -341,6 +347,13 @@ async fn cross_account_replies_require_a_readable_parent_and_reach_its_author() 
         let chain: Vec<&str> = reply["ancestors"].as_array().unwrap().iter().filter_map(|a| a["id"].as_str()).collect();
         assert_eq!(chain, ["server"]);
         assert_eq!(reply["reply_count"], 0);
+        // the quote lists under the post it quotes, and carries that post's content
+        let quotes: Vec<&str> = body["quotes"].as_array().unwrap().iter().filter_map(|q| q["id"].as_str()).collect();
+        assert_eq!(quotes, [quote_id.as_str()]);
+        let one = base.replace("/posts/server?depth=1", &format!("/posts/{quote_id}"));
+        let quoting: Value = client.get(&one).bearer_auth(session).send().await.unwrap().json().await.unwrap();
+        assert_eq!(quoting["quoted"]["id"], "server");
+        assert_eq!(quoting["quoted"]["text"], body["text"]);
     }
     server.abort();
     let _ = server.await;

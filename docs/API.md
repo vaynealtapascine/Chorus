@@ -201,6 +201,8 @@ GET  /posts?author=&kind=&before=&limit=
 GET  /posts/{id}                           with replies ?depth=
                                            + reply_count on it and each reply, and ancestors (what it
                                            answers, oldest first; ends at the first unreadable parent)
+                                           + quotes (readable posts quoting it, newest first) and, on
+                                           every post it returns, quoted (the quoted post, if readable)
 GET  /posts/{id}/revisions                 {items:[{rev,title,text,entities,at}]}, same read rule as the post
   Device-session reads now return posts visible to the caller: own posts, server-visible posts,
   posts shared with active followers, and posts for an assigned, live bucket. `account=` narrows

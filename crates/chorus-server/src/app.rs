@@ -1245,8 +1245,26 @@ async fn post_one(
     } else {
         item["reply_count"] = json!(crate::posts::reply_count(&conn, &p.account_id, &id)?);
     }
+    let mut quotes = crate::posts::quotes(&conn, &p.account_id, &id)?;
+    if own_only {
+        quotes.retain(|q| q["account_id"].as_str() == Some(p.account_id.as_str()));
+    }
+    // every post the thread shows brings what it quotes, under the same read rule
+    let viewer = p.account_id.as_str();
+    let quoted = |post: &mut serde_json::Value| -> anyhow::Result<()> {
+        crate::posts::attach_quoted(&conn, viewer, post)?;
+        if own_only && post["quoted"]["account_id"].as_str().is_some_and(|a| a != viewer) {
+            post.as_object_mut().map(|o| o.remove("quoted"));
+        }
+        Ok(())
+    };
+    quoted(&mut item)?;
+    for post in ancestors.iter_mut().chain(replies.iter_mut()).chain(quotes.iter_mut()) {
+        quoted(post)?;
+    }
     item["replies"] = json!(replies);
     item["ancestors"] = json!(ancestors);
+    item["quotes"] = json!(quotes);
     Ok(Json(item))
 }
 
