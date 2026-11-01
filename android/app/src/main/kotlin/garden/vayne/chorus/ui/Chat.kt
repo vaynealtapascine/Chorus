@@ -1667,9 +1667,11 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     }
     val authors = message.authors.map { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
         .joinToString(" & ").ifEmpty { "Someone" }
+    // another account's members come from the space's author cards (their picture, colour and sigil)
+    fun author(id: String) = model.member(id) ?: foreignAuthors[id]?.member
     val own = if (aligned != null) ChatPresentation.own(message, chorus.device?.accountId.orEmpty(), aligned)
         else ChatPresentation.own(message, chorus.device?.accountId.orEmpty(), actingMemberId)
-    val member = message.authors.firstOrNull()?.let(model::member)
+    val member = message.authors.firstOrNull()?.let(::author)
     val tone = member?.let { tonesOf(it.color) }
     val presence = ChatPresentation.presence(model, message.channelId).firstOrNull { it.subjectId == member?.id && it.subjectType == "member" }
     val layer = ChatPresentation.layer(model, presence)
@@ -1719,7 +1721,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             if (layer != null) Text(layer, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
         }
         if (message.replyTo != null) {
-            val quoted = quote?.authors?.firstOrNull()?.let(model::member)
+            val quoted = quote?.authors?.firstOrNull()?.let(::author)
             val quoteColor = quoted?.let { tonesOf(it.color).name } ?: p.accent
             Row(Modifier.fillMaxWidth().background(quoteColor.copy(alpha = .10f), RoundedCornerShape(6.dp))) {
                 Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(quoteColor))
@@ -1732,7 +1734,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             }
         }
         for (item in message.forward) {
-            val source = item.authors.firstOrNull()?.let(model::member)
+            val source = item.authors.firstOrNull()?.let(::author)
             val sourceColor = source?.let { tonesOf(it.color).name } ?: p.accent
             Row(Modifier.fillMaxWidth().background(sourceColor.copy(alpha = .10f), RoundedCornerShape(6.dp))) {
                 Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(sourceColor))
@@ -1750,7 +1752,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
         }
         // what it quotes: part of one message or a bundle (SPEC §5.3), shown as the snapshot it carries
         if (message.cw == null || revealed) for (item in message.quote) {
-            val source = item.authors.firstOrNull()?.let(model::member)
+            val source = item.authors.firstOrNull()?.let(::author)
             val tint = source?.let { tonesOf(it.color).name } ?: p.ink3
             Row(Modifier.fillMaxWidth().background(tint.copy(alpha = .08f), RoundedCornerShape(6.dp))) {
                 Box(Modifier.width(2.dp).heightIn(min = 24.dp).background(tint))
@@ -1830,7 +1832,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             .then(if (onThread != null) Modifier.clickable(onClickLabel = "Open thread", onClick = onThread) else Modifier),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
-                for (id in thread.lastRepliers) model.member(id)?.let { ChatAvatar(it, 20.dp) }
+                for (id in thread.lastRepliers) author(id)?.let { ChatAvatar(it, 20.dp) }
             }
             Text(ChatThreads.repliesLabel(thread.replies), color = p.accent, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
         }

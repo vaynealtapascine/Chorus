@@ -15,8 +15,8 @@ data class SharedPost(val id: String, val kind: String, val title: String?, val 
     val entities: String = "[]")
 data class SharedFront(val names: List<String>, val time: String)
 data class SharedStats(val days: Int, val members: List<Pair<String, Int>>)
-/** Someone a followed account shows as fronting, with their colour when shared. */
-data class SharedMember(val name: String, val color: String?)
+/** Someone a followed account shows as fronting, with their colour, sigil and picture when shared. */
+data class SharedMember(val name: String, val color: String?, val glyph: String? = null, val avatarBlob: String? = null)
 /** [fronts]: additional fronts the followed account granted (D-084), as (name, revealed names). */
 data class FollowerView(val frontNames: List<String>, val history: List<SharedFront>?, val stats: SharedStats?,
     val fronts: List<Pair<String, List<String>>> = emptyList(), val front: List<SharedMember> = emptyList())
@@ -93,7 +93,8 @@ object PeopleApi {
         val front = j.optJSONArray("entries")?.let { entries -> (0 until entries.length()).mapNotNull { i ->
             entries.optJSONObject(i)?.takeIf { it.optString("level") == "front" }?.let { e ->
                 e.optString("name").takeIf { it.isNotBlank() && it != "null" }?.let { name ->
-                    SharedMember(name, e.optString("color").takeIf { e.has("color") && !e.isNull("color") && it.isNotBlank() })
+                    fun shared(key: String) = e.optString(key).takeIf { e.has(key) && !e.isNull(key) && it.isNotBlank() }
+                    SharedMember(name, shared("color"), shared("glyph"), shared("avatar_blob"))
                 }
             }
         } } ?: emptyList()

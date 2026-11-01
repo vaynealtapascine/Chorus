@@ -307,7 +307,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                             verticalArrangement = Arrangement.spacedBy(if (style == "transcript" || style == "discord") 1.dp else 4.dp)) {
                             if (style in setOf("chorus", "discord", "bubbles", "card")) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 val lead = message.authors.firstOrNull()
-                                val member = lead?.let(model::member)
+                                val member = lead?.let { model.member(it) ?: foreignAuthors[it]?.member }
                                 val concealed = blurAvatars || (lead != null && lead in plan.names)
                                 Avatar(if (concealed) "•" else member?.glyph ?: "?",
                                     if (concealed) "#A09184" else member?.color ?: "#A09184",
