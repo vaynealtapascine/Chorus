@@ -2,6 +2,9 @@ package garden.vayne.chorus.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
+import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -67,6 +70,7 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
     var quietFrom by rememberSaveable { mutableStateOf("23:00") }
     var quietTo by rememberSaveable { mutableStateOf("08:00") }
     val keepEverything by chorus.keepEverything.collectAsState()
+    val connStatus by chorus.status.collectAsState()
     val files by chorus.fileProgress.collectAsState()
     val recheck by chorus.recheckProgress.collectAsState()
     val issues by chorus.syncIssues.collectAsState()
@@ -74,6 +78,15 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
     var syncError by remember { mutableStateOf<String?>(null) }
     var deviceError by remember { mutableStateOf<String?>(null) }
     var spaceUsed by remember { mutableStateOf<Long?>(null) }
+    var pushStatus by remember { mutableStateOf<garden.vayne.chorus.data.Push.Status?>(null) }
+    var pushBusy by remember { mutableStateOf(false) }
+    var pushNote by remember { mutableStateOf<String?>(null) }
+    var osNotificationsOn by remember { mutableStateOf(NotificationManagerCompat.from(ctx).areNotificationsEnabled()) }
+
+    LaunchedEffect(chorus, connStatus) {
+        osNotificationsOn = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
+        pushStatus = runCatching { garden.vayne.chorus.data.Push.status(ctx, chorus) }.getOrNull()
+    }
 
     LaunchedEffect(chorus, files?.done == files?.total) {
         spaceUsed = runCatching { chorus.spaceUsedBytes() }.getOrNull()
@@ -197,6 +210,37 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Notifications", color = p.ink, fontWeight = FontWeight.SemiBold)
+                if (!osNotificationsOn) {
+                    Text("Notifications are turned off for Chorus in Android settings.", color = p.danger)
+                    TextButton(onClick = {
+                        runCatching {
+                            ctx.startActivity(
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    }) { Text("Open Android notification settings") }
+                }
+                pushStatus?.let { st ->
+                    val how = when (st.delivery) {
+                        "fcm" -> "Delivered instantly via Firebase."
+                        "distributor" -> "Delivered via ${st.distributor?.let { garden.vayne.chorus.data.Push.distributorLabel(ctx, it) } ?: "UnifiedPush"}."
+                        else -> "Checked every few minutes in the background."
+                    }
+                    Text(how, color = p.ink2)
+                }
+                TextButton(enabled = !pushBusy, onClick = {
+                    pushBusy = true; pushNote = null
+                    actions.launch {
+                        try {
+                            osNotificationsOn = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
+                            pushNote = garden.vayne.chorus.data.Push.sendTest(ctx)
+                            pushStatus = runCatching { garden.vayne.chorus.data.Push.status(ctx, chorus) }.getOrNull()
+                        } finally { pushBusy = false }
+                    }
+                }) { Text(if (pushBusy) "Sending…" else "Send a test notification") }
+                if (pushNote != null) Text(pushNote.orEmpty(), color = p.ink2)
                 SettingToggle("Mentions", prefs.chatEnabled("mention"), !busy) {
                     save("notify_chat", prefs.withChatKind("mention", it))
                 }
@@ -249,6 +293,25 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Advanced", color = p.ink, fontWeight = FontWeight.SemiBold)
+                pushStatus?.takeIf { it.fcmConfigured && it.distributors.isNotEmpty() }?.let { st ->
+                    Text("Push delivery on this device", color = p.ink2)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        val options = buildList {
+                            add("fcm" to "Firebase")
+                            for (pkg in st.distributors) add("distributor:$pkg" to garden.vayne.chorus.data.Push.distributorLabel(ctx, pkg))
+                        }
+                        for ((value, label) in options) {
+                            val selected = if (st.choice.startsWith("distributor:")) st.choice == value else value == "fcm"
+                            TextButton(enabled = !pushBusy, onClick = {
+                                pushBusy = true; pushNote = null
+                                actions.launch {
+                                    try { pushStatus = garden.vayne.chorus.data.Push.chooseMode(ctx, value) }
+                                    finally { pushBusy = false }
+                                }
+                            }) { Text("${if (selected) "✓ " else ""}$label") }
+                        }
+                    }
+                }
                 SettingToggle("Show when we're typing in shared chats", prefs.shareTyping, !busy) {
                     save("share_typing", it)
                 }

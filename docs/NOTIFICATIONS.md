@@ -17,13 +17,16 @@ Two families:
 - Payloads are encrypted with **RFC 8291 (Web Push encryption)** using keys the app registered, so
   ntfy only relays ciphertext. Payload ≤ 3 KB: the rendered, already-filtered notification. If it
   would be larger, the server sends a **tickle** (`{"t":"sync"}`) and the app syncs, then renders.
-- **FCM** (D-096): a phone with Google Play services and no UnifiedPush distributor registers
-  `fcm:<registration token>` as its endpoint (when `/server` lists the `fcm` capability). The
+- **FCM** (D-096): by default on Android, a phone with Google Play services and a Firebase-enabled
+  build registers `fcm:<registration token>` as its endpoint (when `/server` lists the `fcm`
+  capability), even if a UnifiedPush distributor app is also installed (UnifiedPush can still be
+  chosen explicitly in Settings → Advanced, and is used automatically on Google-free phones). The
   server sends the same RFC 8291 record as one base64url data field `c` through the FCM HTTP v1
   API (`fcm.rs`, OAuth with the operator's service account, high priority, 1-day TTL), so Google
-  relays only ciphertext. A plaintext over 2700 bytes becomes a tickle (FCM's 4 KB cap). The
-  operator's Firebase config is build input, not source: `~/selfhost/fcm/google-services.json`
-  (or `-Pchorus.fcmConfig` / `CHORUS_FCM_CONFIG`); a build without it has no FCM.
+  relays only ciphertext. A plaintext over 2700 bytes becomes a tickle (FCM's 4 KB cap), which
+  prompts the phone to pull from `GET /notifications?after=`. The operator's Firebase config is
+  build input, not source: `~/selfhost/fcm/google-services.json` (or `-Pchorus.fcmConfig` /
+  `CHORUS_FCM_CONFIG`); a build without it has no FCM.
 - **Without push** (no distributor app, D-096): the Android app looks every 5 minutes
   (`NotifyCheck`, a self-rebooking WorkManager job; the 15-minute background sync looks too) at
   `GET /notifications?after=<last seen>` and shows what the server delivered since, exactly as the

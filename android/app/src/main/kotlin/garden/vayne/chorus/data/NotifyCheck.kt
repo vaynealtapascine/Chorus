@@ -23,16 +23,32 @@ object NotifyCheck {
 
     /** One look. The first one only notes where "new" starts, so history doesn't pour in. */
     suspend fun run(ctx: Context) {
-        val chorus = Chorus.get(ctx.applicationContext)
-        val dev = chorus.device ?: return
-        if (Push.registered(chorus)) return
+        val app = ctx.applicationContext
+        val chorus = Chorus.get(app)
+        chorus.awaitDevice() ?: return
         val cursor = chorus.setting(CURSOR)?.toLongOrNull()
-        val items = Api.call("GET", dev.base, "/notifications?after=${cursor ?: 0}", null, dev.session)
-            .optJSONArray("items") ?: return
+        if (Push.registered(chorus)) {
+            if (cursor == null) pull(app, chorus, null, show = false)
+            return
+        }
+        pull(app, chorus, cursor, show = cursor != null && !inForeground())
+    }
+
+    /** An oversized push arrived as `{"t":"sync"}`: fetch and show what the server just delivered. */
+    suspend fun onTickle(ctx: Context) {
+        val app = ctx.applicationContext
+        val chorus = Chorus.get(app)
+        chorus.awaitDevice() ?: return
+        val cursor = chorus.setting(CURSOR)?.toLongOrNull() ?: (System.currentTimeMillis() - 120_000L)
+        pull(app, chorus, cursor, show = !inForeground())
+    }
+
+    private suspend fun pull(ctx: Context, chorus: Chorus, cursor: Long?, show: Boolean) {
+        val items = chorus.authedCall("GET", "/notifications?after=${cursor ?: 0}").optJSONArray("items") ?: return
         val fresh = (0 until items.length()).map { items.getJSONObject(it) }.sortedBy { it.optLong("delivered_at") }
-        val newest = fresh.maxOfOrNull { it.optLong("delivered_at") } ?: return
-        if (cursor != null && !inForeground()) fresh.mapNotNull(::asPush).forEach { Push.show(ctx, it) }
-        chorus.putSetting(CURSOR, newest.toString())
+        val newest = fresh.maxOfOrNull { it.optLong("delivered_at") } ?: System.currentTimeMillis()
+        if (show) fresh.mapNotNull(::asPush).forEach { Push.show(ctx, it) }
+        if (fresh.isNotEmpty() || cursor == null) chorus.putSetting(CURSOR, newest.toString())
     }
 
     /** A listed notification as the push payload [Push.show] knows. */

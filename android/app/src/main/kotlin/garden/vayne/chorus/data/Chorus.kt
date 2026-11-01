@@ -463,6 +463,27 @@ class Chorus private constructor(private val ctx: Context) {
     /** The signed-in device, after the replica has loaded. */
     suspend fun awaitDevice(): DeviceRecord? = withContext(dispatcher) { device }
 
+    /** A signed-in REST call, renewing an expired or rejected session once. */
+    suspend fun authedCall(method: String, path: String, body: JSONObject? = null): JSONObject {
+        val dev = withContext(dispatcher) {
+            var d = device ?: throw ApiException("Not signed in.", "unauthenticated")
+            if (d.expiresAt <= System.currentTimeMillis() + 60_000 && renewSession()) {
+                d = device ?: throw ApiException("Not signed in.", "unauthenticated")
+            }
+            d
+        }
+        return try {
+            Api.call(method, dev.base, path, body, dev.session)
+        } catch (e: ApiException) {
+            if (e.code != "unauthenticated") throw e
+            val fresh = withContext(dispatcher) {
+                if (!renewSession()) throw e
+                device ?: throw e
+            }
+            Api.call(method, fresh.base, path, body, fresh.session)
+        }
+    }
+
     /** Create a one-use invite for another device, renewing the signed session if needed. */
     suspend fun deviceInvite(): String = withContext(dispatcher) {
         var dev = device ?: error("not set up")

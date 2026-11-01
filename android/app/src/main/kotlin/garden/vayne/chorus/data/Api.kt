@@ -33,7 +33,9 @@ object Api {
 
     suspend fun call(method: String, base: String, path: String, body: JSONObject?, bearer: String? = null): JSONObject =
         withContext(Dispatchers.IO) {
-            val req = Request.Builder().url("$base/api/v1$path").method(method, body?.toString()?.toRequestBody(JSON))
+            val payload = body?.toString()?.toRequestBody(JSON)
+                ?: if (method == "POST" || method == "PUT") "".toRequestBody(null) else null
+            val req = Request.Builder().url("$base/api/v1$path").method(method, payload)
             if (bearer != null) req.header("Authorization", "Bearer $bearer")
             http.newCall(req.build()).execute().use { r ->
                 val text = r.body?.string().orEmpty()

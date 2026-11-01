@@ -20,12 +20,16 @@ object Fcm {
     const val DISTRIBUTOR = "fcm"
     private const val TAG = "ChorusFcm"
 
+    /** Whether this build carries a Firebase configuration (`google-services.json`). */
+    fun configured(ctx: Context): Boolean =
+        FirebaseApp.getApps(ctx).isNotEmpty() || runCatching { FirebaseApp.initializeApp(ctx) }.getOrNull() != null
+
     /** This phone's registration token, or null (no Firebase in this build, no Play services). */
     suspend fun token(ctx: Context): String? {
-        if (FirebaseApp.getApps(ctx).isEmpty()) return null
+        if (!configured(ctx)) return null
         return suspendCancellableCoroutine { cont ->
             FirebaseMessaging.getInstance().token.addOnCompleteListener { t ->
-                if (!t.isSuccessful) Log.i(TAG, "no FCM token", t.exception)
+                if (!t.isSuccessful) Log.w(TAG, "no FCM token", t.exception)
                 cont.resume(if (t.isSuccessful) t.result else null)
             }
         }
@@ -34,8 +38,10 @@ object Fcm {
 
 /** Receives FCM's callbacks (registered in the manifest). */
 class FcmService : FirebaseMessagingService() {
-    /** A new token (first start, data cleared, rotated): register it again. */
-    override fun onNewToken(token: String) = Push.ensure(applicationContext)
+    /** A new token (first start, data cleared, rotated): finish registering before the service stops. */
+    override fun onNewToken(token: String) {
+        runBlocking { Push.onNewFcmToken(applicationContext, token) }
+    }
 
     override fun onMessageReceived(message: RemoteMessage) {
         val record = message.data["c"] ?: return

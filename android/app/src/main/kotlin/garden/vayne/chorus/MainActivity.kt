@@ -123,6 +123,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         Chorus.get(this).setForeground(true)
+        garden.vayne.chorus.data.Push.ensure(this)
         // every open looks for a newer build (CLIENTS.md §5a); the banner offers it
         garden.vayne.chorus.data.Updater.onOpen(this)
     }
