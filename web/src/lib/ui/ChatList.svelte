@@ -213,7 +213,8 @@
 </section>
 
 <style>
-  .list { display: flex; flex-direction: column; min-height: 0; background: var(--bg); border-right: 1px solid var(--line); }
+  /* min-width: 0 keeps a long "here now" strip (big subsystems) from widening the list past its column */
+  .list { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; background: var(--bg); border-right: 1px solid var(--line); }
   .search-row { display: flex; align-items: center; gap: 8px; padding: 12px 8px 12px 12px; }
   .search { flex: 1; display: flex; align-items: center; gap: 8px; height: 37px; padding: 0 12px; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-3); }
   .search:focus-within { box-shadow: 0 0 0 2px var(--accent); }
@@ -240,7 +241,7 @@
   .row-menu .danger { color: var(--danger); }
   .compose-panel button:disabled { opacity: .5; }
   .compose-panel a { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
-  .here { display: flex; align-items: flex-start; gap: 6px; padding: 4px 12px 12px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+  .here { min-width: 0; display: flex; align-items: flex-start; gap: 6px; padding: 4px 12px 12px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
   .here-one { flex: none; width: 64px; display: grid; justify-items: center; gap: 4px; border: 0; background: none; color: var(--ink-2); cursor: pointer; padding: 0; font: inherit; }
   .ring { width: 60px; height: 60px; border-radius: 50%; display: grid; place-items: center; border: 2px solid transparent; }
   .ring.front { border-color: var(--accent); }

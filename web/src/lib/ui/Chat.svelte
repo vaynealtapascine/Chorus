@@ -1860,7 +1860,7 @@
   /* desktop (Figma F5.21): folder rail, chat list, conversation and, when open, info */
   @media (min-width: 1024px) {
     .chat { grid-template-columns: 76px 344px minmax(0, 1fr); height: 100dvh; }
-    .desk-rail, .desk-list { display: grid; min-height: 0; }
+    .desk-rail, .desk-list { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; min-width: 0; }
     .desk-rail > :global(*), .desk-list > :global(*) { min-height: 0; }
     .chat .channels { display: none; }
   }
