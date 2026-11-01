@@ -1233,7 +1233,20 @@ async fn post_one(
     if own_only {
         own_replies(&mut replies, &p.account_id);
     }
+    // the thread view's context above a reply, under the same read rule (API.md §3)
+    let mut ancestors = crate::posts::ancestors(&conn, &p.account_id, &item)?;
+    if own_only {
+        // the chain ends at the first parent from another account, as own replies do
+        let own = |a: &serde_json::Value| a["account_id"].as_str() == Some(p.account_id.as_str());
+        let keep = ancestors.iter().rev().take_while(|a| own(a)).count();
+        ancestors.drain(..ancestors.len() - keep);
+        set_own_counts(&mut replies);
+        item["reply_count"] = json!(replies.len());
+    } else {
+        item["reply_count"] = json!(crate::posts::reply_count(&conn, &p.account_id, &id)?);
+    }
     item["replies"] = json!(replies);
+    item["ancestors"] = json!(ancestors);
     Ok(Json(item))
 }
 
@@ -1253,6 +1266,18 @@ async fn post_revisions(
 }
 
 /// API tokens read only their own account's posts: drop other accounts' replies (and theirs).
+/// An own-only view counts only the replies it shows (deeper levels keep the server's count).
+fn set_own_counts(replies: &mut [serde_json::Value]) {
+    for r in replies.iter_mut() {
+        if let Some(n) = r.get("replies").and_then(|v| v.as_array()).filter(|a| !a.is_empty()).map(Vec::len) {
+            r["reply_count"] = json!(n);
+        }
+        if let Some(inner) = r.get_mut("replies").and_then(|v| v.as_array_mut()) {
+            set_own_counts(inner);
+        }
+    }
+}
+
 fn own_replies(replies: &mut Vec<serde_json::Value>, account: &str) {
     replies.retain(|r| r["account_id"].as_str() == Some(account));
     for r in replies.iter_mut() {

@@ -333,6 +333,14 @@ async fn cross_account_replies_require_a_readable_parent_and_reach_its_author() 
     for session in ["alice-session", "bob-session"] {
         let body: Value = client.get(&base).bearer_auth(session).send().await.unwrap().json().await.unwrap();
         assert!(body["replies"].as_array().unwrap().iter().any(|p| p["id"] == reply_id));
+        // a thread view's counts and context: the root knows its replies, the reply its parent
+        assert_eq!(body["reply_count"], body["replies"].as_array().unwrap().len());
+        assert_eq!(body["ancestors"], json!([]));
+        let one = base.replace("/posts/server?depth=1", &format!("/posts/{reply_id}"));
+        let reply: Value = client.get(&one).bearer_auth(session).send().await.unwrap().json().await.unwrap();
+        let chain: Vec<&str> = reply["ancestors"].as_array().unwrap().iter().filter_map(|a| a["id"].as_str()).collect();
+        assert_eq!(chain, ["server"]);
+        assert_eq!(reply["reply_count"], 0);
     }
     server.abort();
     let _ = server.await;

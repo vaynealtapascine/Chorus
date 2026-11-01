@@ -149,9 +149,36 @@ pub fn replies(conn: &Connection, viewer: &str, parent: &str, depth: usize) -> a
     let mut rows = st.query_map(params![viewer, parent], row)?.collect::<Result<Vec<_>, _>>()?;
     for item in &mut rows {
         hide_unreadable_links(conn, viewer, item)?;
-        item["replies"] = json!(replies(conn, viewer, item["id"].as_str().unwrap_or(""), depth - 1)?);
+        let id = item["id"].as_str().unwrap_or("").to_string();
+        item["reply_count"] = json!(reply_count(conn, viewer, &id)?);
+        item["replies"] = json!(replies(conn, viewer, &id, depth - 1)?);
     }
     Ok(rows)
+}
+
+/// How many replies to `parent` this viewer may read (a thread view's "N replies").
+pub fn reply_count(conn: &Connection, viewer: &str, parent: &str) -> rusqlite::Result<i64> {
+    let readable = readable_sql("?1");
+    let sql = format!("SELECT count(*) FROM post p WHERE p.reply_to_id=?2 AND p.deleted_at IS NULL AND {readable}");
+    conn.query_row(&sql, params![viewer, parent], |r| r.get(0))
+}
+
+/// What a reply answers, oldest first: its parent, the parent's parent… while this viewer may read
+/// them (an unreadable one ends the chain, as `reply_to` is hidden there), at most 20 up.
+pub fn ancestors(conn: &Connection, viewer: &str, item: &Value) -> anyhow::Result<Vec<Value>> {
+    let mut chain = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut next = item["reply_to"].as_str().map(str::to_string);
+    while let Some(id) = next {
+        if chain.len() >= 20 || !seen.insert(id.clone()) {
+            break;
+        }
+        let Some(parent) = one(conn, viewer, &id)? else { break };
+        next = parent["reply_to"].as_str().map(str::to_string);
+        chain.push(parent);
+    }
+    chain.reverse();
+    Ok(chain)
 }
 
 #[derive(Default, Deserialize)]
