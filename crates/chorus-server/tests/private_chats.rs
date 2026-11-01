@@ -325,3 +325,127 @@ fn the_system_hears_under_the_members_dm_rule_and_replies_as_them() {
     w.ok(&l, "message.send", &scope, &m5, say(&chat, &[&kai], "yes"));
     assert_eq!(w.payload_of_last().unwrap()["kind"], "dm");
 }
+
+#[test]
+fn recreating_a_channel_cannot_remove_peer_privacy_or_reroute_a_thread() {
+    let mut w = W::new();
+    let (l, r, scope, dm) = (w.lanterns.clone(), w.robin.clone(), w.scope(), w.dm.clone());
+    let kai = w.member(&l, "Kai");
+    let june = w.member(&l, "June");
+    let robin = w.member(&r, "Robin");
+    let chat = w.id();
+    w.ok(
+        &l,
+        "channel.create",
+        &scope,
+        &chat,
+        json!({"space_id": dm, "kind": "member_dm", "name": "Kai", "member_ids": [kai]}),
+    );
+    // A new op id must not turn create's LWW upsert into a way to clear the peer's entries.
+    assert!(
+        w.refused(
+            &r,
+            "channel.create",
+            &scope,
+            &chat,
+            json!({"space_id": dm, "kind": "member_dm", "name": "open", "member_ids": []})
+        )
+        .contains("only an account")
+    );
+    let m = w.id();
+    w.refused(&l, "message.send", &scope, &m, say(&chat, &[&june], "still private"));
+    // Repeated creates that omit the list leave it alone, and each account may change its own entries.
+    w.ok(&r, "channel.create", &scope, &chat, json!({"space_id": dm, "kind": "member_dm", "name": "renamed"}));
+    w.ok(
+        &r,
+        "channel.create",
+        &scope,
+        &chat,
+        json!({"space_id": dm, "kind": "member_dm", "name": "both", "member_ids": [kai, robin]}),
+    );
+    let m = w.id();
+    w.refused(&l, "message.send", &scope, &m, say(&chat, &[&june], "still private after rename"));
+    let open = w.id();
+    w.ok(&r, "channel.create", &scope, &open, json!({"space_id": dm, "kind": "text", "name": "open"}));
+    let parent = w.id();
+    w.ok(&r, "message.send", &scope, &parent, say(&open, &[&robin], "public parent"));
+    // Omit member_ids but change kind: kept_to would now follow the unrestricted parent.
+    w.refused(
+        &r,
+        "channel.create",
+        &scope,
+        &chat,
+        json!({"space_id": dm, "kind": "thread", "parent_message_id": parent, "name": "open"}),
+    );
+    let private_parent = w.id();
+    w.ok(&l, "message.send", &scope, &private_parent, say(&chat, &[&kai], "private parent"));
+    let thread = w.id();
+    w.ok(
+        &r,
+        "channel.create",
+        &scope,
+        &thread,
+        json!({"space_id": dm, "kind": "thread", "parent_message_id": private_parent, "name": "Thread"}),
+    );
+    w.refused(
+        &r,
+        "channel.create",
+        &scope,
+        &thread,
+        json!({"space_id": dm, "kind": "thread", "parent_message_id": parent, "name": "Rerouted"}),
+    );
+    w.refused(&r, "channel.create", &scope, &thread, json!({"space_id": dm, "kind": "text", "name": "Detached"}));
+    let m = w.id();
+    w.refused(&l, "message.send", &scope, &m, say(&thread, &[&june], "thread still private"));
+    let m = w.id();
+    w.ok(&l, "message.send", &scope, &m, say(&thread, &[&kai], "Kai is allowed"));
+    // Structural fields are already create-only on set.
+    for payload in [json!({"kind": "thread"}), json!({"parent_message_id": parent}), json!({"space_id": dm})] {
+        w.refused(&r, "channel.set", &scope, &chat, payload);
+    }
+}
+
+#[test]
+fn early_channel_fields_and_matching_creates_still_converge_without_moving_scopes() {
+    let mut w = W::new();
+    let (l, r, scope, dm) = (w.lanterns.clone(), w.robin.clone(), w.scope(), w.dm.clone());
+    let kai = w.member(&l, "Kai");
+    let chat = w.id();
+    // A set can wait in the log for the first create; the guard must not mistake it for a recreation.
+    w.ok(&l, "channel.set", &scope, &chat, json!({"name": "early"}));
+    w.ok(
+        &r,
+        "channel.create",
+        &scope,
+        &chat,
+        json!({"space_id": dm, "kind": "member_dm", "name": "Kai", "member_ids": [kai]}),
+    );
+    w.ok(
+        &r,
+        "channel.create",
+        &scope,
+        &chat,
+        json!({"space_id": dm, "kind": "member_dm", "name": "matching", "member_ids": [kai]}),
+    );
+    let other_space = w.id();
+    let other_scope = format!("space:{other_space}");
+    ingest::grant(&w.c, &l, &other_scope).unwrap();
+    w.ok(&l, "space.create", &other_scope, &other_space, json!({"kind": "internal"}));
+    // Even an internal space's owner cannot reuse an existing DM id to move its channel.
+    w.refused(
+        &l,
+        "channel.create",
+        &other_scope,
+        &chat,
+        json!({"space_id": other_space, "kind": "member_dm", "name": "moved"}),
+    );
+    w.refused(
+        &l,
+        "channel.create",
+        &other_scope,
+        &chat,
+        json!({"kind": "member_dm", "name": "wrong scope without space_id"}),
+    );
+    let actual: String = w.c.query_row("SELECT space_id FROM channel WHERE id = ?1", [&chat], |r| r.get(0)).unwrap();
+    assert_eq!(actual, dm);
+}

@@ -285,14 +285,15 @@ fn private_chat(conn: &Connection, author: &str, o: &Op, space: &str) -> anyhow:
                 return Ok(Some("a private chat can only name members of the accounts in it".into()));
             }
         }
-        if k == "channel.set"
-            && let Some(channel) = o.entity()
-        {
-            let before: Option<String> = conn
+        if let Some(channel) = o.entity() {
+            let before: Option<Option<String>> = conn
                 .prepare_cached("SELECT member_ids FROM channel WHERE id = ?1")?
                 .query_row([channel], |r| r.get(0))
-                .optional()?
-                .flatten();
+                .optional()?;
+            // Create is a field-level LWW upsert too. A fresh op id targeting an existing
+            // channel must preserve the peer's entries exactly as a set would. A first create
+            // may still name either side, and an omitted list does not write this field.
+            let Some(before) = before else { return Ok(None) };
             let before = string_list(before.and_then(|s| serde_json::from_str::<Value>(&s).ok()).as_ref());
             let others = |ids: &[String]| -> rusqlite::Result<std::collections::BTreeSet<String>> {
                 let mut out = std::collections::BTreeSet::new();
@@ -361,6 +362,28 @@ fn foreign_space(conn: &Connection, o: &Op, space: &str) -> anyhow::Result<Optio
         // a channel is created in the op's space: `space_id` may only repeat it
         if str_of(p, "space_id").is_some_and(|s| s != space) {
             return Ok(Some("channel"));
+        }
+        if let Some(id) = o.entity() {
+            let existing: Option<(Option<String>, Option<String>, Option<String>)> = conn
+                .prepare_cached("SELECT space_id, kind, parent_message_id FROM channel WHERE id = ?1")?
+                .query_row([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .optional()?;
+            if let Some((home, kind, parent)) = existing {
+                if home.as_deref().is_some_and(|home| home != space) {
+                    return Ok(Some("channel"));
+                }
+                // These are create-only fields on channel.set. Recreating the same id must
+                // not move a channel across scopes or redirect a private thread to an open
+                // parent (or turn a private channel into such a thread). Missing fields are
+                // untouched by the core's LWW fold; matching repeated creates remain valid.
+                for (key, before) in [("space_id", home), ("kind", kind), ("parent_message_id", parent)] {
+                    if let Some(after) = p.get(key)
+                        && after.as_str() != before.as_deref()
+                    {
+                        return Ok(Some("channel (its structural fields are create-only)"));
+                    }
+                }
+            }
         }
         match str_of(p, "parent_message_id") {
             Some(parent) => ("message", message_space(parent)?),

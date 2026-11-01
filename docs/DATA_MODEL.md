@@ -801,7 +801,7 @@ needs `react`; `read.*` needs `view`. Outside the internal space, a channel whos
 name some of the author account's members is a private chat (D-098, `perms::kept_to`; a thread
 uses its parent's channel): that account's `message.send`/`forward`, edit segments and
 `reaction.*` may only speak as those members; `member_ids` may only name members of accounts in
-the space; and a `channel.set` may change only the author account's own entries in it. This
+the space; and a `channel.set` or repeated `channel.create` against an existing channel may change only the author account's own entries in it. Existing channels keep their create-only structural fields (`space_id`, `kind`, `parent_message_id`); ingest checks their stored scope rather than trusting the incoming scope. This
 applies to the owner too. A refused op is acked `forbidden` with the reason.
 Property-tested against an independent model of these rules in `tests/permissions.rs`.
 
