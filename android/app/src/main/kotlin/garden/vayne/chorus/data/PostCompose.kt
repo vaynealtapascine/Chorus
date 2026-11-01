@@ -6,6 +6,17 @@ import uniffi.chorus_ffi.parseMarkup
 
 /** Build the same post.create shape as the web composer, with rich text parsed by chorus_core. */
 object PostCompose {
+    fun validatedAuthors(model: Model, accountId: String, ids: List<String>): List<String> {
+        val ordered = ids.distinct()
+        val eligible = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }.map { it.id }.toSet()
+        require(ordered.isNotEmpty()) { "Choose who is writing." }
+        require(ordered.all { it in eligible }) { "Choose only your active members to write as." }
+        return ordered
+    }
+
+    fun toggleAuthor(ids: List<String>, id: String): List<String> =
+        if (id in ids) ids.filterNot { it == id } else ids + id
+
     fun payload(
         model: Model, accountId: String, kind: String, authorId: String, body: String,
         title: String, cw: String, audience: String, mood: String, tags: String,
@@ -14,16 +25,15 @@ object PostCompose {
         attachmentIds: List<String> = emptyList(),
         quotePostId: String? = null,
         bucketIds: List<String> = emptyList(),
+        authorIds: List<String> = listOf(authorId),
     ): JSONObject {
         require(kind in setOf("note", "entry")) { "Choose a post type." }
         val selectedAudience = validatedAudience(Audience(audience, bucketIds), model.sharingBuckets.map { it.first }.toSet())
         require(body.isNotBlank() || attachmentIds.isNotEmpty()) { "Write a post or attach a file first." }
-        require(model.active.any { it.id == authorId && (it.createdByAccountId == null || it.createdByAccountId == accountId) }) {
-            "Choose one of your members to write as."
-        }
+        val authors = validatedAuthors(model, accountId, authorIds)
         val rich = JSONObject(markup(body, ""))
         require(rich.getString("text").isNotBlank() || attachmentIds.isNotEmpty()) { "Write a post or attach a file first." }
-        val result = JSONObject().put("kind", kind).put("authors", JSONArray().put(authorId))
+        val result = JSONObject().put("kind", kind).put("authors", JSONArray(authors))
             .put("title", title.trim().takeIf { kind == "entry" && it.isNotBlank() } ?: JSONObject.NULL)
             .put("text", rich.getString("text")).put("entities", rich.getJSONArray("entities"))
             .put("mood", mood.trim().ifBlank { null } ?: JSONObject.NULL)

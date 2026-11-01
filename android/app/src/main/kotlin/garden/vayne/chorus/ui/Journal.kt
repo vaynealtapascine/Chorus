@@ -111,6 +111,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
     var quoteOf by rememberSaveable { mutableStateOf<String?>(null) }
     var kind by rememberSaveable { mutableStateOf("note") }
+    var selectedAuthors by rememberSaveable { mutableStateOf<List<String>?>(null) }
     var authorId by rememberSaveable { mutableStateOf("") }
     var bodyValue by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
     val body = bodyValue.text
@@ -172,7 +173,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             kind = "note"; title = ""; bodyValue = TextFieldValue(); cw = ""; mood = ""; tags = ""
             attachments.clear()
             audience = "server" // the foreign parent author must be able to read this reply
-            authorId = Reply.speaker(model)?.id.orEmpty()
+            selectedAuthors = null; authorId = Reply.speaker(model)?.id.orEmpty()
             editing = true
             onExternalReplyConsumed()
         }
@@ -210,8 +211,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         val id = shown.substringAfter(":")
         BackHandler(active && shown == route) { profileId = null }
         MemberProfile(chorus, model, id, onClose = { profileId = null },
-            onWrite = { authorId = id; replyTo = null; editing = true },
-            onReply = { postId -> authorId = id; replyTo = postId; editing = true }, onOpenProfile = { profileId = it })
+            onWrite = { selectedAuthors = null; authorId = id; replyTo = null; editing = true },
+            onReply = { postId -> selectedAuthors = null; authorId = id; replyTo = postId; editing = true }, onOpenProfile = { profileId = it })
         return@ChorusScene
     }
 
@@ -222,9 +223,9 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             threadBack = threadStack.dropLast(1).joinToString("\n")
         }
         BackHandler(active && shown == route) { back() }
-        JournalThread(chorus, model, id, onClose = back, onReply = { replyTo = id; editing = true },
-            replyAuthor = author, replyAuthors = mine, onPickAuthor = { authorId = it },
-            onQuote = { quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
+        JournalThread(chorus, model, id, onClose = back, onReply = { selectedAuthors = null; replyTo = id; editing = true },
+            replyAuthor = author, replyAuthors = mine, onPickAuthor = { selectedAuthors = null; authorId = it },
+            onQuote = { selectedAuthors = null; quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
             onOpenPost = { next -> threadBack = (threadStack + id).joinToString("\n"); threadPostId = next })
         return@ChorusScene
     }
@@ -263,6 +264,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 Button(enabled = !busy && author != null && (body.isNotBlank() || attachments.isNotEmpty()), onClick = {
                     val dev = chorus.device ?: return@Button
                     val writer = author ?: return@Button
+                    val writingAuthors = selectedAuthors ?: listOf(writer.id)
                     val picked = attachments.toList()
                     // Snapshot the privacy/authoring choices at Post, before file staging suspends.
                     val writingKind = kind
@@ -284,8 +286,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                             val attachmentIds = picked.map { a ->
                                 sendAttachment(chorus, ctx, a, opKind = "post.attachment")
                             }
-                            val payload = PostCompose.payload(model, dev.accountId, writingKind, writer.id, writingBody,
-                                writingTitle, writingCw, writingAudience, writingMood, writingTags, writingReply, attachmentIds = attachmentIds, quotePostId = writingQuote, bucketIds = writingBuckets)
+                            val payload = PostCompose.payload(chorus.model.value, dev.accountId, writingKind, writer.id, writingBody,
+                                writingTitle, writingCw, writingAudience, writingMood, writingTags, writingReply, attachmentIds = attachmentIds, quotePostId = writingQuote, bucketIds = writingBuckets, authorIds = writingAuthors)
                             if (writingPoll != null) payload.put("poll", writingPoll)
                             val postId = chorus.newId()
                             justPosted = postId
@@ -314,7 +316,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), state = draftList, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // the post being answered scrolls with the draft, so expanding a long one never hides it
                 replyTo?.let { id -> item(key = "replying") { ReplyContext(model.posts.find { it.id == id }, model) } }
-                item(key = "author") { JournalAuthorPicker(author, mine) { if (!busy) authorId = it } }
+                item(key = "author") { if (!model.isPerson) JournalAuthorsPicker(selectedAuthors ?: listOfNotNull(author?.id), mine, !busy) { selectedAuthors = it } }
                 if (replyTo != null) item {
                     Text("Check the audience before posting.", color = p.ink3, style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(start = 52.dp))
@@ -381,7 +383,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     if (shown == "lists") {
         JournalLists(chorus, model, selectedListId, onSelect = { selectedListId = it },
             onTimeline = { section = "timeline" },
-            onReply = { replyTo = it; editing = true },
+            onReply = { selectedAuthors = null; replyTo = it; editing = true },
             onThread = { threadPostId = it })
         return@ChorusScene
     }
@@ -391,8 +393,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     }
     if (shown == "saved") {
         BackHandler(active && shown == route) { section = "timeline" }
-        JournalSaved(chorus, model, onBack = { section = "timeline" }, onReply = { replyTo = it; editing = true },
-            onThread = { threadPostId = it }, onQuote = { quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
+        JournalSaved(chorus, model, onBack = { section = "timeline" }, onReply = { selectedAuthors = null; replyTo = it; editing = true },
+            onThread = { threadPostId = it }, onQuote = { selectedAuthors = null; quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
             onProfile = { profileId = it })
         return@ChorusScene
     }
@@ -466,9 +468,9 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 placementSpec = if (motion) ChorusMotion.settle() else null,
                 fadeOutSpec = if (motion) ChorusMotion.tween(true, ChorusMotion.Quick) else null)) {
             if (event.post != null) JournalPostCard(event.post, model, chorus,
-                onReply = { replyTo = it.id; editing = true },
+                onReply = { selectedAuthors = null; replyTo = it.id; editing = true },
                 onThread = { threadPostId = it.id },
-                onQuote = { quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
+                onQuote = { selectedAuthors = null; quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
                 onOpenPost = { threadPostId = it },
                 onProfile = { profileId = it })
             // a switch is a quiet marker in the timeline, aligned with the post avatars

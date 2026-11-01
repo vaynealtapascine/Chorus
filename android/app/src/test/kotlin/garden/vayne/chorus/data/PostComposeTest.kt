@@ -14,6 +14,20 @@ class PostComposeTest {
         """{"text":"hello","entities":[{"type":"bold","offset":0,"length":5}]}"""
     }
 
+    @Test fun pickerOrderFlowsThroughPayloadAndRejectsStaleSelection() {
+        val members = Model.parse(org.json.JSONObject("""{"rows":{"member":{"a":{"exists":true,"fields":{"name":"A","created_by_account_id":"mine"}},"b":{"exists":true,"fields":{"name":"B","created_by_account_id":"mine"}}}}}"""), "mine")
+        var ids = listOf("b")
+        ids = PostCompose.toggleAuthor(ids, "a")
+        val payload = PostCompose.payload(members, "mine", "note", "b", "**hello**", "", "", "private", "", "",
+            markup = markup, authorIds = ids + "b")
+        assertEquals("[\"b\",\"a\"]", payload.getJSONArray("authors").toString())
+        assertEquals(listOf("a"), PostCompose.toggleAuthor(ids, "b"))
+        for (invalid in listOf(emptyList(), listOf("missing"), listOf("own", "foreign"))) {
+            assertTrue(runCatching { PostCompose.validatedAuthors(model, "mine", invalid) }.isFailure)
+        }
+        assertTrue(runCatching { PostCompose.validatedAuthors(model, "mine", ids) }.isFailure)
+    }
+
     @Test fun entryKeepsCoreRichTextAudienceReplyAndTags() {
         val p = PostCompose.payload(model, "mine", "entry", "own", "**hello**", "Title", "Sensitive", "followers",
             "bright", "#day, notes", "parent", markup, listOf("photo", "notes-file"))

@@ -6,6 +6,13 @@ import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class JournalModelTest {
+    @Test fun malformedStoredAudienceFailsClosed() {
+        for (value in listOf("null", "[]", "42", "{\"mode\":\"unknown\"}", "{\"mode\":true}")) {
+            val projection = JSONObject("""{"rows":{"post":{"p":{"exists":true,"fields":{"kind":"note","text":"x","visibility":$value}}}}}""")
+            assertEquals(Audience.PRIVATE, Model.parse(projection, "mine").posts.single().audience)
+        }
+    }
+
     @Test fun localProjectionKeepsOfflinePostAndDropsTombstone() {
         val p = JSONObject("""{"rows":{"member":{"m":{"exists":true,"fields":{"name":"Kai","created_by_account_id":"mine"}}},"post":{"new":{"exists":true,"fields":{"kind":"entry","authors":["m"],"title":"Day","text":"Hello","occurred_at":120,"cw":"Sensitive","visibility":{"mode":"followers"},"tags":["notes"]}},"old":{"exists":true,"fields":{"kind":"note","text":"Gone","occurred_at":100,"deleted_at":150}}}}}""")
         val model = Model.parse(p, "mine")
