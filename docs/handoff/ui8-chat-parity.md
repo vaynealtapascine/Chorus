@@ -103,3 +103,10 @@ group subject naming differs between web and Android. No scope or spec change wa
 Validation results are recorded below after the gate completes. No push, deployment or device action.
 
 Validation: full `python scripts/verify.py --android` passed (exit 0), using F: build environment and Studio JBR after build-web-core.ps1. Log: `F:/DunBuild/review-full.log`. Explicit targeted Gradle run passed (exit 0; `F:/DunBuild/review-targeted.log`): ChatTimelineTest: 3 tests, 0 failures, 0 errors; ChatQuoteRangeTest: 1 tests, 0 failures, 0 errors; ChatQuotesTest: 3 tests, 0 failures, 0 errors. `git diff --check` passed.
+
+## Opus acceptance and minor follow-up resolutions (2026-11-01)
+
+Opus Foxglove accepted UI8 chat at `45675dc` with two bounded follow-up fixes in `Chat.kt`:
+
+1. `TimelineMarker` date branch restored `p.ink3` text colour, `16.sp` `lineHeight` and the `p.surface` `RoundedCornerShape(20.dp)` pill background matching `FrontLine` and pre-`45675dc` date pills.
+2. `timelineHistory` `produceState` loader rethrows `CancellationException` and preserves the previous `value` on failed refresh rather than overwriting with `null`, keeping `key(chorus.device?.accountId, channel.id, timelineFront, space.kind, viewingAs)` intact so history never leaks across account, channel, front, space-kind or `viewingAs` changes.

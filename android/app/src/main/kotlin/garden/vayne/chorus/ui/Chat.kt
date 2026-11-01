@@ -893,8 +893,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         val frontRevision by chorus.frontHistoryRevision.collectAsState()
         val timelineFront = ChatSpeaker.frontOf(model, channel.id)
         val timelineHistory by androidx.compose.runtime.key(chorus.device?.accountId, channel.id, timelineFront, space.kind, viewingAs) { produceState<garden.vayne.chorus.data.NamedHistory?>(null, frontRevision) {
-            if (space.kind == "internal" && timelineFront != null)
-                value = runCatching { chorus.frontHistory(timelineFront) }.getOrNull()
+            if (space.kind == "internal" && timelineFront != null) {
+                try { value = chorus.frontHistory(timelineFront) }
+                catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (_: Exception) {}
+            }
         } }
         val timelineIntervals = remember(model, timelineHistory, timelineFront) { if (model.namedFronts == null) model.frontIntervals else
             timelineHistory?.takeIf { it.frontId == timelineFront }?.intervals.orEmpty().map {
@@ -2086,8 +2089,11 @@ private fun FrontLine(line: ChatPresentation.FrontEvent) {
 private fun TimelineMarker(marker: ChatPresentation.TimelineMarker) {
     val event = marker.event
     if (event != null) FrontLine(event)
-    else Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-        Text(ChatPresentation.dateLabel(marker.at), fontSize = 12.sp,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+    else {
+        val p = LocalChorusPalette.current
+        Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+            Text(ChatPresentation.dateLabel(marker.at), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
+                modifier = Modifier.background(p.surface, RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 4.dp))
+        }
     }
 }
