@@ -91,6 +91,7 @@ data class JournalPost(
     val repostOf: String? = null,
     /** `post.create` `quote.post_id`: the post a quote post embeds. */
     val quotePostId: String? = null,
+    val audience: Audience = Audience(visibility),
 )
 
 data class MemberList(val id: String, val name: String, val description: String?, val memberIds: Set<String>)
@@ -412,7 +413,7 @@ class Model(
                     f.optJSONObject("visibility")?.str("mode") ?: "private", f.str("reply_to"),
                     f.str("mood"), strings(f.optJSONArray("tags")), postReactions[id].orEmpty(),
                     files(f.optJSONArray("attachments"), attachments), f.optJSONArray("entities")?.toString() ?: "[]",
-                    f.str("repost_of"), (f.opt("quote") as? JSONObject)?.str("post_id")) }
+                    f.str("repost_of"), (f.opt("quote") as? JSONObject)?.str("post_id"), ProfileAudience.of(f.opt("visibility"))) }
                 .sortedWith(compareByDescending<JournalPost> { it.occurredAt }.thenByDescending { it.id })
             val listItems = HashMap<String, MutableSet<String>>()
             p.optJSONObject("sets")?.optJSONObject("member_list_item")?.let { set ->

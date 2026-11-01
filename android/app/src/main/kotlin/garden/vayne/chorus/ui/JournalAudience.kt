@@ -26,29 +26,25 @@ import kotlinx.coroutines.launch
 internal fun JournalAudienceDialog(post: JournalPost, model: Model, chorus: Chorus, onDismiss: () -> Unit) {
     val p = LocalChorusPalette.current
     val scope = rememberCoroutineScope()
-    var choice by remember(post.id) { mutableStateOf(post.visibility) }
+    var choice by remember(post.id) { mutableStateOf(post.audience) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    val widening = JournalPresentation.widens(post.visibility, choice)
+    val widening = choice.mode != "private" && !choice.same(post.audience)
     AlertDialog(onDismissRequest = { if (!busy) onDismiss() },
         title = { Text("Who can see this post?") },
         text = { Column {
-            for (mode in JournalPresentation.AUDIENCES) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                .selectable(selected = choice == mode, enabled = !busy, role = Role.RadioButton) { choice = mode },
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                RadioButton(selected = choice == mode, onClick = null, enabled = !busy)
-                Text(JournalPresentation.audience(mode, model.isPerson), color = p.ink)
-            }
+            AudienceChip("This post", choice, own = true, buckets = model.sharingBuckets,
+                enabled = !busy, onChange = { it?.let { choice = it } })
             if (widening) Text("More people will be able to read this post.", color = p.ink2,
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
             if (error != null) Text(error.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 8.dp))
         } },
-        confirmButton = { TextButton(enabled = !busy && choice != post.visibility && choice in JournalPresentation.AUDIENCES, onClick = {
+        confirmButton = { TextButton(enabled = !busy && !choice.same(post.audience), onClick = {
             busy = true; error = null
             scope.launch {
                 try {
-                    chorus.create("post.set_visibility", post.id, PostCompose.visibilityPayload(choice))
+                    chorus.create("post.set_visibility", post.id, PostCompose.visibilityPayload(choice, model.sharingBuckets.map { it.first }.toSet()))
                     onDismiss()
                 } catch (e: kotlinx.coroutines.CancellationException) { throw e }
                 catch (_: Exception) { error = "Could not change the audience. Try again." }

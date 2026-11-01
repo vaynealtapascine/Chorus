@@ -122,6 +122,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     val pollOptions = rememberSaveable(saver = PollOptionsSaver) { mutableStateListOf("", "") }
     var pollMultiple by rememberSaveable { mutableStateOf(false) }
     var audience by rememberSaveable { mutableStateOf("private") }
+    var bucketIds by remember { mutableStateOf(emptyList<String>()) }
     var busy by remember { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     val actions = rememberCoroutineScope()
@@ -269,6 +270,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                     val writingTitle = title
                     val writingCw = cw
                     val writingAudience = audience
+                    val writingBuckets = bucketIds
                     val writingMood = mood
                     val writingTags = tags
                     val writingReply = replyTo
@@ -283,7 +285,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                                 sendAttachment(chorus, ctx, a, opKind = "post.attachment")
                             }
                             val payload = PostCompose.payload(model, dev.accountId, writingKind, writer.id, writingBody,
-                                writingTitle, writingCw, writingAudience, writingMood, writingTags, writingReply, attachmentIds = attachmentIds, quotePostId = writingQuote)
+                                writingTitle, writingCw, writingAudience, writingMood, writingTags, writingReply, attachmentIds = attachmentIds, quotePostId = writingQuote, bucketIds = writingBuckets)
                             if (writingPoll != null) payload.put("poll", writingPoll)
                             val postId = chorus.newId()
                             justPosted = postId
@@ -358,7 +360,9 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             }
             HorizontalDivider(color = p.line)
             Column(Modifier.fillMaxWidth().background(p.surface)) {
-                JournalAudiencePicker(audience, model.isPerson) { if (!busy) audience = it }
+                AudienceChip("This post", garden.vayne.chorus.data.Audience(audience, bucketIds), own = true, buckets = model.sharingBuckets, enabled = !busy, onChange = { value ->
+                    value?.let { audience = it.mode; bucketIds = it.buckets }
+                })
                 HorizontalDivider(color = p.line, thickness = .5.dp)
                 JournalFormatToolbar(bodyValue, !busy) { bodyValue = it; bodyFocus.requestFocus() }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {

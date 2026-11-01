@@ -27,6 +27,17 @@ class PostComposeTest {
         })
     }
 
+    @Test fun createPreservesBucketAudienceAndQuoteMediaReply() {
+        val p = PostCompose.payload(model.copy(sharingBuckets = listOf("a" to "Friends")), "mine", "entry", "own",
+            "**hello**", "Title", "CW", "buckets", "mood", "tag", "parent", markup,
+            listOf("photo"), "quoted", listOf("a"))
+        assertEquals("a", p.getJSONObject("visibility").getJSONArray("bucket_ids").getString(0))
+        assertEquals("buckets", p.getJSONObject("visibility").getString("mode"))
+        assertEquals("quoted", p.getJSONObject("quote").getString("post_id"))
+        assertEquals("parent", p.getString("reply_to"))
+        assertEquals("photo", p.getJSONArray("attachments").getString(0))
+    }
+
     @Test fun foreignMemberCannotBeUsedAsOwnPostAuthor() {
         var rejected = false
         try { PostCompose.payload(model, "mine", "note", "foreign", "**hello**", "", "", "server", "", "", markup = markup) }

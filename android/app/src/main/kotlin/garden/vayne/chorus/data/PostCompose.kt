@@ -13,9 +13,10 @@ object PostCompose {
         markup: (String, String) -> String = ::parseMarkup,
         attachmentIds: List<String> = emptyList(),
         quotePostId: String? = null,
+        bucketIds: List<String> = emptyList(),
     ): JSONObject {
         require(kind in setOf("note", "entry")) { "Choose a post type." }
-        require(audience in setOf("private", "followers", "server")) { "Choose an audience." }
+        val selectedAudience = validatedAudience(Audience(audience, bucketIds), model.sharingBuckets.map { it.first }.toSet())
         require(body.isNotBlank() || attachmentIds.isNotEmpty()) { "Write a post or attach a file first." }
         require(model.active.any { it.id == authorId && (it.createdByAccountId == null || it.createdByAccountId == accountId) }) {
             "Choose one of your members to write as."
@@ -28,7 +29,7 @@ object PostCompose {
             .put("mood", mood.trim().ifBlank { null } ?: JSONObject.NULL)
             .put("tags", JSONArray(tags.split(',').map { it.trim().removePrefix("#") }.filter { it.isNotBlank() }))
             .put("cw", cw.trim().ifBlank { null } ?: JSONObject.NULL)
-            .put("visibility", JSONObject().put("mode", audience))
+            .put("visibility", selectedAudience.toJson())
         if (replyTo != null) result.put("reply_to", replyTo)
         if (quotePostId != null) result.put("quote", JSONObject().put("post_id", quotePostId))
         if (attachmentIds.isNotEmpty()) result.put("attachments", JSONArray(attachmentIds))
@@ -40,6 +41,17 @@ object PostCompose {
         require(audience in JournalPresentation.AUDIENCES) { "Choose an audience." }
         return JSONObject().put("visibility", JSONObject().put("mode", audience))
     }
+
+    fun validatedAudience(value: Audience, liveBuckets: Set<String>): Audience {
+        require(value.mode in setOf("private", "followers", "buckets", "server")) { "Choose an audience." }
+        require(value.mode != "buckets" || (value.buckets.isNotEmpty() && value.buckets.all { it.isNotBlank() && it in liveBuckets })) {
+            "Choose existing buckets before sharing."
+        }
+        return value
+    }
+
+    fun visibilityPayload(value: Audience, liveBuckets: Set<String>): JSONObject =
+        JSONObject().put("visibility", validatedAudience(value, liveBuckets).toJson())
 
     /** A repost is a text-less note that points at the original; it stays in the reposter's own
      * system unless a wider audience is chosen. Undoing it deletes (tombstones) this post. */
