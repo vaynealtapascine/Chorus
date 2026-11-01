@@ -1,0 +1,38 @@
+{
+  "_doc": "Members list prefs (D-100), shared by web member-list.test.ts and Android MemberListPrefsTest. Pref rows are keyed account|device|key; a pending row (empty account) wins over the stamped one; device rows and other accounts are ignored; a member filed in a deleted folder is not in a folder.",
+  "account": "acc",
+  "prefs": {
+    "acc||members.view": { "exists": true, "fields": { "value": { "pills": "first", "role_field": "f-role", "bio": false, "flat": true, "banners": "yes" } } },
+    "acc||member_folders": { "exists": true, "fields": { "value": [
+      { "id": "f1", "name": "Littles" },
+      { "id": "f2", "name": "  " },
+      { "id": "f1", "name": "Duplicate" },
+      { "name": "No id" },
+      "junk"
+    ] } },
+    "acc||member_folder:m1": { "exists": true, "fields": { "value": "f1" } },
+    "||member_folder:m1": { "exists": true, "fields": { "value": "f2" } },
+    "acc||member_folder:m2": { "exists": true, "fields": { "value": "f1" } },
+    "||member_folder:m2": { "exists": true, "fields": { "value": null } },
+    "acc||member_folder:m3": { "exists": true, "fields": { "value": "gone" } },
+    "other||member_folder:m4": { "exists": true, "fields": { "value": "f1" } },
+    "acc|dev|member_folder:m5": { "exists": true, "fields": { "value": "f1" } },
+    "acc||member_folder:m6": { "exists": true, "fields": { "value": "f1" } }
+  },
+  "view": { "pills": "first", "role_field": "f-role", "bio": false, "banners": true, "flat": true },
+  "folders": [ { "id": "f1", "name": "Littles" }, { "id": "f2", "name": "Folder" } ],
+  "folder_of": { "m1": "f2", "m6": "f1" },
+  "default_view": { "pills": "all", "bio": true, "banners": true, "flat": false },
+  "roles": [
+    { "value": ["Host", " Protector ", "Host", "", 3], "roles": ["Host", "Protector"] },
+    { "value": "Gatekeeper", "roles": ["Gatekeeper"] },
+    { "value": "caretaker, little; ,little", "roles": ["caretaker", "little"] },
+    { "value": 7, "roles": [] },
+    { "value": null, "roles": [] }
+  ],
+  "bio": [
+    { "text": "\n  \n  Hi,   I'm Kai.\nSecond line", "line": "Hi, I'm Kai." },
+    { "text": "   ", "line": null },
+    { "text": null, "line": null }
+  ]
+}

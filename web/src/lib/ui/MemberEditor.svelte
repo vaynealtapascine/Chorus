@@ -6,6 +6,7 @@
   import { sync, type Projection } from '../sync/client';
   import AvatarImage from './AvatarImage.svelte';
   import { flushUploads, stageBlob } from '../sync/uploads';
+  import { addFolder, FOLDER_OF, FOLDERS, memberListPrefs, roleColor, rolesOf } from '../member-list';
 
   let { projection, id, dark }: { projection: Projection; id: string; dark: boolean } = $props();
 
@@ -133,6 +134,35 @@
     sync.create('field.set_value', sync.accountScope, null, { member_id: id, field_id: def.id, value });
   }
 
+  // choice fields (roles, D-100): pick from the field's choices as pills, or add a new choice
+  function toggleChoice(def: FieldDef, chosen: string[], c: string) {
+    if (def.type === 'select') setValue(def, chosen[0] === c ? '' : c);
+    else setValue(def, chosen.includes(c) ? chosen.filter((x) => x !== c) : [...chosen, c]);
+  }
+  function addChoice(def: FieldDef, chosen: string[], input: HTMLInputElement) {
+    const c = input.value.trim();
+    input.value = '';
+    if (!c) return;
+    const choices = def.options.choices ?? [];
+    const existing = choices.find((x) => x.toLowerCase() === c.toLowerCase());
+    if (!existing) sync.create('field.set_def', sync.accountScope, def.id, { options: { ...def.options, choices: [...choices, c] } });
+    const pick = existing ?? c;
+    if (!chosen.includes(pick)) toggleChoice(def, chosen, pick);
+  }
+
+  // which Members list folder they sit in (D-100): only sorts the list
+  const listPrefs = $derived(memberListPrefs((projection.rows.pref ?? {}) as never, sync.accountId));
+  function setFolder(value: string) {
+    let folder: string | null = value || null;
+    if (value === '__new') {
+      const name = prompt('New folder name')?.trim();
+      if (!name) return;
+      folder = sync.newId();
+      sync.create('pref.set', sync.accountScope, null, { device: '', key: FOLDERS, value: addFolder(listPrefs.folders, folder, name) });
+    }
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: FOLDER_OF + id, value: folder });
+  }
+
   // who hears when this member fronts (NOTIFICATIONS.md §2.4; "nobody" hides them from follower views)
   const announce = $derived.by(() => {
     const p = raw.notify_policy as { announce?: unknown } | undefined;
@@ -158,7 +188,8 @@
   function addField(e: SubmitEvent) {
     e.preventDefault();
     if (!newField.trim()) return;
-    sync.create('field.define', sync.accountScope, sync.newId(), { name: newField.trim(), type: newFieldType });
+    const choice = newFieldType === 'select' || newFieldType === 'multi_select';
+    sync.create('field.define', sync.accountScope, sync.newId(), { name: newField.trim(), type: newFieldType, ...(choice ? { options: { choices: [] } } : {}) });
     newField = '';
   }
 
@@ -292,6 +323,21 @@
       <p class="hint">Pings go to your other devices, never the one you wrote on. "Fronting" includes co-con.</p>
     </section>
 
+    <section>
+      <h2>Members list</h2>
+      <div class="fields">
+        <label>
+          Folder
+          <select value={listPrefs.folderOf.get(id) ?? ''} onchange={(e) => { setFolder(text(e)); e.currentTarget.value = listPrefs.folderOf.get(id) ?? ''; }}>
+            <option value="">Not in a folder</option>
+            {#each listPrefs.folders as f (f.id)}<option value={f.id}>{f.name}</option>{/each}
+            <option value="__new">New folder…</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">Folders only sort the Members list; they don't change groups, fronting or who sees what.</p>
+    </section>
+
     {#if gs.length}
       <section>
         <h2>Subsystems &amp; groups</h2>
@@ -311,17 +357,29 @@
       <div class="fields">
         {#each defs as d (d.id)}
           {@const v = values.get(d.id)}
+          {#if d.type === 'select' || d.type === 'multi_select'}
+            {@const chosen = rolesOf(v)}
+            <div class="wide choice-field" role="group" aria-label={d.name}>
+              <span class="label">{d.name} <span class="hint">{d.type === 'select' ? 'one' : 'any number'}</span></span>
+              <div class="choices">
+                {#each d.options.choices ?? [] as c (c)}
+                  <button type="button" class="choice" class:on={chosen.includes(c)} aria-pressed={chosen.includes(c)} style="--pill: {roleColor(c)}" onclick={() => toggleChoice(d, chosen, c)}>{c}</button>
+                {/each}
+                {#each chosen.filter((c) => !(d.options.choices ?? []).includes(c)) as c (c)}
+                  <button type="button" class="choice on" aria-pressed="true" style="--pill: {roleColor(c)}" onclick={() => toggleChoice(d, chosen, c)}>{c}</button>
+                {/each}
+                <input class="add-choice" placeholder="Add…" aria-label="Add a choice to {d.name}"
+                  onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addChoice(d, chosen, e.currentTarget); } }}
+                  onblur={(e) => addChoice(d, chosen, e.currentTarget)} />
+              </div>
+            </div>
+          {:else}
           <label class:wide={d.type === 'long_text'}>
             {d.name}
             {#if d.type === 'boolean'}
               <input type="checkbox" checked={v === true} onchange={(e) => setValue(d, (e.currentTarget as HTMLInputElement).checked)} />
             {:else if d.type === 'long_text'}
               <textarea rows="3" value={(v as string) ?? ''} onchange={(e) => setValue(d, text(e))}></textarea>
-            {:else if d.type === 'select'}
-              <select value={(v as string) ?? ''} onchange={(e) => setValue(d, text(e))}>
-                <option value=""></option>
-                {#each d.options.choices ?? [] as c (c)}<option>{c}</option>{/each}
-              </select>
             {:else}
               <input
                 type={d.type === 'number' ? 'number' : d.type === 'date' ? 'date' : d.type === 'url' ? 'url' : d.type === 'color' ? 'color' : 'text'}
@@ -330,6 +388,7 @@
               />
             {/if}
           </label>
+          {/if}
         {/each}
       </div>
       <form class="addfield" onsubmit={addField}>
@@ -337,6 +396,8 @@
         <select bind:value={newFieldType} aria-label="Field type">
           <option value="text">Text</option>
           <option value="long_text">Long text</option>
+          <option value="multi_select">Several choices (like roles)</option>
+          <option value="select">One choice</option>
           <option value="number">Number</option>
           <option value="date">Date</option>
           <option value="boolean">Yes / no</option>
@@ -474,6 +535,11 @@
     gap: var(--s-2);
     color: var(--ink);
   }
+  .choice-field { display: grid; gap: var(--s-2); }
+  .choices { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .choice { font: inherit; font-size: var(--fs-sm); padding: 2px 10px; border-radius: var(--r-full); cursor: pointer; color: var(--ink-2); background: none; border: 1px dashed var(--line); }
+  .choice.on { color: var(--ink); font-weight: 600; background: color-mix(in srgb, var(--pill) 28%, var(--surface)); border: 1px solid color-mix(in srgb, var(--pill) 55%, transparent); }
+  .add-choice { width: 8em; padding: 2px 10px !important; border-radius: var(--r-full) !important; }
   .addfield {
     display: flex;
     gap: var(--s-2);

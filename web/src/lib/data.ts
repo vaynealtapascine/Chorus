@@ -41,7 +41,7 @@ export interface GroupRow {
 export interface FieldDef {
   id: string;
   name: string;
-  type: 'text' | 'long_text' | 'number' | 'date' | 'select' | 'boolean' | 'url' | 'color';
+  type: 'text' | 'long_text' | 'number' | 'date' | 'select' | 'multi_select' | 'boolean' | 'url' | 'color';
   options: { choices?: string[] };
   sort_key?: string;
   deleted: boolean;

@@ -26,7 +26,7 @@
   const pinned = $derived(all.find((post) => post.id === member?.pinned_post_id && !post.deleted));
   const custom = $derived(fieldDefs(projection).map((def) => ({
     name: def.name, value: fieldValues(projection).get(id)?.get(def.id),
-  })).filter((field) => field.value !== undefined && field.value !== null && field.value !== ''));
+  })).filter((field) => field.value !== undefined && field.value !== null && field.value !== '' && !(Array.isArray(field.value) && !field.value.length)));
   const shownValue = (value: unknown) => Array.isArray(value) ? value.join(', ') : typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value);
   const now = Date.now();
   const timeZone = $derived(typeof projection.rows.system?.[sync.accountId]?.fields.timezone === 'string' ? projection.rows.system[sync.accountId].fields.timezone as string : undefined);
