@@ -1,0 +1,61 @@
+# UI8 — Chat to Telegram polish, web/Android parity, spaces and private chats
+
+Owner request, 2026-11-01 (claude-opus-5.5): *"Get the chat experience to Telegram-levels of polish
+and make sure Android and web have feature-parity. Make it possible to make and edit spaces and
+member lists on both. Let a system member have private DMs with somebody without letting other
+members in the same system see it or talk there. Polish the experience so I end up preferring it
+over Telegram."*
+
+Read with: `docs/SPEC.md` §5, `docs/DATA_MODEL.md` §4.4, `docs/NOTIFICATIONS.md` §7, D-097,
+D-098 (private chats), D-099 (spaces and member lists). Work happens on `main` in the main
+checkout (the UI7 worktree branch is behind main). Gate: `CHORUS_TREE=<this checkout>` with
+`pwsh -File F:/DunBuild/chorus-verify.ps1 [--android]`.
+
+"Member lists" is read as **who is in a chat**: the accounts in a shared space (add, remove,
+roles), the members of a members' DM or group, and the members a members-only channel is kept to.
+
+## Slices
+
+| # | Slice | State |
+| --- | --- | --- |
+| 1 | Server: private chats (D-098) — `member_ids` on a DM space's channel must name members of the space's accounts; an account with members listed speaks there only as them (send, forward, edit segments, reactions); author cards include listed members; notifications follow each listed member's DM rule (default: only while they front) | |
+| 2 | Web: spaces and member lists (D-099) — chat info editor: name/description of a shared space, people with Add / Remove / role, Leave / Delete group; channel editor (name, topic, icon, colour, members it is kept to); New chat menu: channel, members' DM or group (picker), shared space, DM with a friend | |
+| 3 | Web: private chats — "Private chat as …" from a DM, lock badge and privacy line, composer locked to the member, list rows titled for each side | |
+| 4 | Android: spaces and member lists — people in a space with Add / Remove / role, rename/describe, Leave / Delete; members-only channels and editing a members' DM's people in the channel editor | |
+| 5 | Android: private chats, same rules as web | |
+| 6 | Android feel (UI7 slice 1, parked on `wip/ui7-slice1`): swipe to reply, double-tap heart, haptics, Draft:/typing previews in the list | |
+| 7 | Parity gaps (table below) | |
+| 8 | Mentions autocomplete on both (members, groups, `@front`) | |
+
+## Parity matrix (2026-11-01 survey)
+
+| Feature | Web | Android |
+| --- | --- | --- |
+| Reply / reply privately / threads / pins / reactions / edit+history / delete+undo | yes | yes |
+| Reply in another channel | yes (select) | **no** |
+| Quote message or selection; quote/forward a multi-message bundle | yes | **no** |
+| Forward | select box | sheet |
+| Emoji in composer | custom only, no Unicode picker | **icon does nothing** |
+| Mentions autocomplete | **no** | `@front` only |
+| Channel create | name only | editor (name, topic, image, colour) |
+| Channel edit | **no** | yes |
+| Members' DM / group create | Reply privately only | picker |
+| Shared space create | People page | New chat sheet |
+| Add / remove people, rename space, delete group | **no** | **no** |
+| Roles, channel permissions, slow mode | yes | **no** (Advanced) |
+| Jump to latest with unread count | **no** | yes |
+| Unread divider | **no** | per-member only |
+| Chat info: members by layer, media | yes | yes, plus Files and Links tabs |
+| Front-change lines in the timeline | yes | **no** |
+| Older history from the server (windowed tab) | yes | n/a (keeps everything) |
+| Swipe to reply, double-tap react, haptics | n/a | parked (slice 6) |
+| Edit last message with ↑ | **no** | n/a |
+
+## Notes for the next agent
+
+- `space.set` (name, description, icon, colour) is an ordinary op for the owner and admins of a
+  shared space; `space.leave` with another account's id, written by the owner, ends that account's
+  access (`project::space_access`); `POST /spaces/{id}/members` adds connected accounts (owner).
+  `space.delete` is a tombstone: both clients already hide deleted spaces.
+- Private chats are `member_dm` channels inside a `dm` space. Internal members' DMs keep their
+  soft D-097 behaviour (anyone may speak; `chat.hide_private` can turn hiding off).
