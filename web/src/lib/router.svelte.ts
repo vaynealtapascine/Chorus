@@ -1,6 +1,6 @@
 // A tiny hash router: #/, #/members, #/members/<id>. Keeps URLs shareable between devices.
 export interface Route {
-  name: 'home' | 'members' | 'member' | 'history' | 'chat' | 'trash' | 'people' | 'stage' | 'data' | 'search' | 'insights' | 'journal' | 'profile' | 'post-stage' | 'more' | 'settings' | 'computer' | 'fronts';
+  name: 'home' | 'members' | 'member' | 'history' | 'chat' | 'trash' | 'people' | 'stage' | 'data' | 'search' | 'insights' | 'journal' | 'profile' | 'post-stage' | 'post' | 'more' | 'settings' | 'computer' | 'fronts';
   id?: string;
   messageId?: string;
 }
@@ -11,6 +11,7 @@ function parse(hash: string): Route {
   if (parts[0] === 'members' && parts[1]) return { name: 'member', id: decodeURIComponent(parts[1]) };
   if (parts[0] === 'members') return { name: 'members' };
   if (parts[0] === 'profile' && parts[1]) return { name: 'profile', id: decodeURIComponent(parts[1]) };
+  if (parts[0] === 'journal' && parts[1] === 'post' && parts[2]) return { name: 'post', id: decodeURIComponent(parts[2]) };
   if (parts[0] === 'journal') return { name: 'journal' };
   if (parts[0] === 'stage-post' && parts[1]) return { name: 'post-stage', id: decodeURIComponent(parts[1]) };
   if (parts[0] === 'more') return { name: 'more' };

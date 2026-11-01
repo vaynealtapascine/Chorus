@@ -2,7 +2,7 @@
   import { core } from '../core';
   import { members, reactions, type MemberRow } from '../data';
   import { feedCandidates, feedContext, filterFeed, savedFeeds } from '../feeds';
-  import { canWriteAs, postReaction, type PostRow } from '../posts';
+  import { canWriteAs, postReaction, posts, type PostRow } from '../posts';
   import { sync, type Projection } from '../sync/client';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
@@ -10,8 +10,8 @@
   import type { Entity } from '../core';
   import AttachmentView from './AttachmentView.svelte';
   import PostCard from './PostCard.svelte';
-  import PostComposer from './PostComposer.svelte';
-  import PostReplies from './PostReplies.svelte';
+  import { replyCounts } from '../post-threads';
+  import { router } from '../router.svelte';
   import RemotePostPoll from './RemotePostPoll.svelte';
   import type { PollTally } from '../polls';
   import RichText from './RichText.svelte';
@@ -23,6 +23,7 @@
   const configured = $derived(!!projection.front_systems?.[sync.accountId]);
   const named = $derived.by(() => { projection.front_systems; return configured ? sync.frontHistory() : null; });
   const candidates = $derived(feedCandidates(projection, Date.now(), configured ? named?.effective.intervals ?? [] : undefined));
+  const counts = $derived(replyCounts(posts(projection)));
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
   const reacts = $derived(reactions(projection));
   const speaker = $derived(members(projection).find((m) => canWriteAs(projection, m.id, sync.accountId))?.id ?? null);
@@ -32,7 +33,6 @@
   let query = $state('');
   let saveError = $state('');
   let copied = $state(false);
-  let replyTo = $state<PostRow | null>(null);
   // who can open this feed (SPEC §6.4): the filter is shared, each reader sees only posts they can read
   let sharing = $state<'private' | 'followers'>('private');
   const filtersByFronting = (q: string | null) => /(^|[\s(-])fronting:/i.test(q ?? '');
@@ -164,11 +164,9 @@
   {/if}
   {#if query.trim() && !preview.error}
     <div class="preview"><h2>Preview · newest {preview.rows.length} matches</h2>
-      {#if replyTo}<p>Replying to a feed post <button onclick={() => (replyTo = null)}>Cancel</button></p><PostComposer {projection} initialAuthors={speaker ? [speaker] : []} replyTo={replyTo.id} onsent={() => (replyTo = null)} />{/if}
       {#each preview.rows as result (`${result.item.kind}:${result.id}`)}
         {#if result.post}
-          <PostCard {projection} post={result.post} {people} {dark} reactions={reacts.get(result.post.id) ?? new Map()} {speaker} onreply={() => (replyTo = result.post ?? null)} onreact={(emoji, add) => react(result.post!, emoji, add)} />
-          <PostReplies {projection} speaker={speaker} postId={result.post.id} />
+          <PostCard {projection} post={result.post} {people} {dark} reactions={reacts.get(result.post.id) ?? new Map()} {speaker} replyCount={counts.get(result.post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(result.post!.id)}`)} onreact={(emoji, add) => react(result.post!, emoji, add)} />
         {:else if result.message}
           <article class="message"><p class="muted">#{result.channelName} · {new Date(result.occurred_at).toLocaleString()}</p>
             {#if result.message.cw}<details><summary>Content warning: {result.message.cw}</summary><p><RichText text={result.message.text} entities={result.message.entities} /></p>{#each result.message.attachments as attachment (attachment.id)}<AttachmentView {attachment} />{/each}</details>

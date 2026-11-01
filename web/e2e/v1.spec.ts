@@ -279,14 +279,21 @@ test('a post with a reply and a reaction across accounts', async () => {
   await shared.locator('form.composer').getByRole('button', { name: 'Reply', exact: true }).click();
   await expect(shared.getByLabel('Post text')).toBeHidden();
 
-  // the author sees both through the post's thread
+  // the author sees both on the post's thread page, the reply under a box that says what it answers
   await go(stars.page, 'journal');
-  const thread = stars.page.locator('article.post', { hasText: text }).locator('xpath=following-sibling::div[contains(@class, "thread")][1]');
+  await stars.page.locator('article.post', { hasText: text }).getByTitle('Open the thread').click();
+  const thread = stars.page.getByRole('region', { name: 'Post thread' });
+  await expect(thread.getByText(/Replying to/)).toBeVisible();
   await expect(async () => {
-    await thread.getByRole('button', { name: /View replies|Refresh replies/ }).first().click();
+    await thread.getByRole('button', { name: 'Refresh' }).click();
     await expect(thread.getByText(reply)).toBeVisible({ timeout: 2_000 });
     await expect(thread.getByText('💜 Robin')).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
+  // the friend's reply opens as a thread of its own, with the post it answers above it
+  await thread.locator('article.row', { hasText: reply }).getByTitle('Open this post').click();
+  await expect(thread.locator('.ancestors')).toContainText(text);
+  await stars.page.goBack();
+  await expect(thread.getByText(reply)).toBeVisible();
 });
 
 test('search finds messages and posts', async () => {

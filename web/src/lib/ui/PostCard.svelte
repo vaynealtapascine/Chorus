@@ -8,10 +8,16 @@
   import RichText from './RichText.svelte';
   import AvatarImage from './AvatarImage.svelte';
 
-  let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection }: {
+  let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection, replyCount = 0, replyToNames, inThread = false }: {
     post: PostRow; people: Map<string, MemberRow>; dark: boolean;
     reactions: Map<string, string[]>; speaker: string | null; compactEntry?: boolean;
     onreply: () => void; onreact: (emoji: string, add: boolean) => void;
+    /** Replies to this post, shown on its Reply button. */
+    replyCount?: number;
+    /** Who the post it answers is by, when that post is on this device. */
+    replyToNames?: string;
+    /** In a thread the post it answers is already shown above it. */
+    inThread?: boolean;
     /** Needed to show a poll (D-081); its totals and own votes live in the projection. */
     projection?: Projection;
   } = $props();
@@ -28,10 +34,10 @@
   <div class="top">
     <span class="avatar" aria-hidden="true"><AvatarImage hash={lead?.avatar_blob} glyph={lead?.sigils[0] ?? name(post.authors[0] ?? '')[0]} name={name(post.authors[0] ?? '')} /></span>
     <div class="meta"><span class="authors">{#each post.authors as id, i (id)}{#if i} &amp; {/if}<a href="#/profile/{id}">{name(id)}</a>{/each}</span>
-      <span class="when">{post.kind === 'entry' ? 'Entry' : 'Note'} · {new Date(post.occurred_at).toLocaleString()}</span></div>
+      <span class="when">{post.kind === 'entry' ? 'Entry' : 'Note'} · <a href="#/journal/post/{encodeURIComponent(post.id)}" title="Open the thread">{new Date(post.occurred_at).toLocaleString()}</a></span></div>
     {#if post.visibility.mode !== 'private'}<span class="visibility">{post.visibility.mode === 'buckets' ? 'selected buckets' : post.visibility.mode}</span>{/if}
   </div>
-  {#if post.reply_to}<p class="reply-ref">↪ Reply</p>{/if}
+  {#if post.reply_to && !inThread}<a class="reply-ref" href="#/journal/post/{encodeURIComponent(post.reply_to)}">Replying to {replyToNames ?? 'a post'}</a>{/if}
   {#if post.cw}<button class="cw" aria-expanded={expanded} onclick={() => (expanded = !expanded)}>Content warning: {post.cw} · {expanded ? 'Hide' : 'Show'}</button>{/if}
   {#if !post.cw || expanded}
     {#if post.title}<h3 class="display">{post.title}</h3>{/if}
@@ -41,7 +47,7 @@
     {#if post.mood || post.tags.length}<p class="tags">{#if post.mood}Mood: {post.mood}{/if}{#each post.tags as tag (tag)} <span>#{tag}</span>{/each}</p>{/if}
   {/if}
   <div class="actions">
-    <button onclick={onreply}>Reply</button>
+    <button onclick={onreply} aria-label={replyCount ? `Reply (${replyCount} ${replyCount === 1 ? 'reply' : 'replies'})` : 'Reply'}>Reply{replyCount ? ` · ${replyCount}` : ''}</button>
     <a href="#/stage-post/{post.id}">Stage</a>
     {#each PALETTE as emoji (emoji)}
       {@const selected = speaker ? (reactions.get(emoji) ?? []).includes(speaker) : false}
@@ -57,6 +63,10 @@
   .meta { display: grid; min-width: 0; }
   .authors a { color: var(--author); text-decoration: none; font-weight: 600; }
   .when, .reply-ref, .tags, .visibility { color: var(--ink-3); font-size: var(--fs-xs); }
+  .when a { color: inherit; text-decoration: none; }
+  .reply-ref { text-decoration: none; }
+  .when a:hover, .reply-ref:hover { text-decoration: underline; }
+  .reply-ref { justify-self: start; }
   .visibility { margin-left: auto; }
   h3, p { margin: 0; }
   .clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }

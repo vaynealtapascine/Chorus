@@ -5,7 +5,8 @@
   import { bodyAuthors } from '../front-view';
   import PostCard from './PostCard.svelte';
   import PostComposer from './PostComposer.svelte';
-  import PostReplies from './PostReplies.svelte';
+  import { replyCounts } from '../post-threads';
+  import { router } from '../router.svelte';
   import JournalLists from './JournalLists.svelte';
   import JournalFeeds from './JournalFeeds.svelte';
 
@@ -14,6 +15,8 @@
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
   const subjectNames = $derived(new Map([...members(projection).map((m) => [m.id, m.display_name ?? m.name] as [string, string]), ...groups(projection).map((g) => [g.id, g.name] as [string, string])]));
   const entries = $derived(posts(projection).filter((p) => !p.deleted));
+  const counts = $derived(replyCounts(entries));
+  const byId = $derived(new Map(entries.map((p) => [p.id, p])));
   const reacts = $derived(reactions(projection));
   const channelById = $derived(new Map(channels(projection).map((c) => [c.id, c.name])));
   const pinned = $derived(Object.entries(projection.rows.message ?? {}).filter(([, row]) => row.exists && row.fields.deleted_at == null && typeof row.fields.pinned_at === 'number')
@@ -33,7 +36,6 @@
   const frontSpeaker = $derived(bodyAuthors(projection, sync.accountId)[0]);
   let actingAs = $state('');
   const speaker = $derived(actingAs || frontSpeaker || active[0]?.id || null);
-  let replyTo = $state<PostRow | null>(null);
   let section = $state<'timeline' | 'lists' | 'feeds'>('timeline');
   const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
   const frontName = (e: { subject_id: string }) => subjectNames.get(e.subject_id) ?? 'Someone';
@@ -47,13 +49,14 @@
   <header><h1 class="display">Journal</h1><label>React as <select bind:value={actingAs} aria-label="React as member"><option value="">Current front</option>{#each active as person (person.id)}<option value={person.id}>{person.display_name ?? person.name}</option>{/each}</select></label></header>
   <nav aria-label="Journal sections"><button class:on={section === 'timeline'} onclick={() => (section = 'timeline')}>Timeline</button><button class:on={section === 'lists'} onclick={() => (section = 'lists')}>Lists</button><button class:on={section === 'feeds'} onclick={() => (section = 'feeds')}>Feeds</button></nav>
   {#if section === 'lists'}<JournalLists {projection} {dark} />{:else if section === 'feeds'}<JournalFeeds {projection} {dark} />{:else}
-  {#if replyTo}<p class="replying">Replying to {replyTo.authors.map(name).join(' & ')} <button onclick={() => (replyTo = null)}>Cancel</button></p>{/if}
-  {#key replyTo?.id}<PostComposer {projection} initialAuthors={speaker ? [speaker] : []} replyTo={replyTo?.id} onsent={() => (replyTo = null)} />{/key}
+  <PostComposer {projection} initialAuthors={speaker ? [speaker] : []} />
   <div class="timeline">
     {#each timeline as item (`${item.kind}:${item.id}`)}
       {#if item.kind === 'post'}
-        <PostCard {projection} post={item.post} {people} {dark} reactions={reacts.get(item.post.id) ?? new Map()} {speaker} compactEntry onreply={() => (replyTo = item.post)} onreact={(emoji, add) => react(item.post, emoji, add)} />
-        <PostReplies {projection} speaker={speaker} postId={item.post.id} />
+        <!-- replying opens the post's thread, where the reply box shows what it answers -->
+        <PostCard {projection} post={item.post} {people} {dark} reactions={reacts.get(item.post.id) ?? new Map()} {speaker} compactEntry
+          replyCount={counts.get(item.post.id) ?? 0} replyToNames={item.post.reply_to ? byId.get(item.post.reply_to)?.authors.map(name).join(' & ') : undefined}
+          onreply={() => router.go(`/journal/post/${encodeURIComponent(item.post.id)}`)} onreact={(emoji, add) => react(item.post, emoji, add)} />
       {:else if item.kind === 'switch'}
         <div class="event"><span class="event-icon">◌</span><span>{item.sw.retracted ? 'Undone switch' : `Front: ${item.sw.fronting.map(frontName).join(' & ') || 'no one'}`}</span><time>{new Date(item.at).toLocaleString()}</time></div>
       {:else}
@@ -91,7 +94,5 @@
   .event { display: flex; gap: var(--s-3); align-items: center; padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink-2); }
   .event-icon { color: var(--accent); }
   time { margin-left: auto; color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; }
-  .replying { color: var(--ink-3); font-size: var(--fs-sm); }
-  .replying button { color: var(--accent); border: 0; background: none; cursor: pointer; }
   .empty { color: var(--ink-3); }
 </style>

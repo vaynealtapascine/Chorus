@@ -14,6 +14,7 @@
   import Search from './lib/ui/Search.svelte';
   import Insights from './lib/ui/Insights.svelte';
   import Journal from './lib/ui/Journal.svelte';
+  import PostThread from './lib/ui/PostThread.svelte';
   import Profile from './lib/ui/Profile.svelte';
   import PostStage from './lib/ui/PostStage.svelte';
   import More from './lib/ui/More.svelte';
@@ -73,7 +74,7 @@
   const tabs = $derived(person
     ? [{ path: '/journal', name: 'journal', label: 'Journal', icon: 'journal' }, ...allTabs.filter((t) => !['members', 'home'].includes(t.name))]
     : allTabs);
-  const active = $derived(['member', 'profile'].includes(router.route.name) ? 'members' :
+  const active = $derived(['member', 'profile'].includes(router.route.name) ? 'members' : router.route.name === 'post' ? 'journal' :
     router.route.name === 'stage' ? 'chat' : ['history', 'fronts'].includes(router.route.name) ? 'home' :
     ['insights', 'data', 'trash', 'settings', 'computer', 'search', 'post-stage'].includes(router.route.name) ? 'more' : router.route.name);
   const account = $derived(projection?.rows.account?.[sync.accountId]?.fields);
@@ -96,7 +97,7 @@
     }
     return current.filter((e) => e.layer_id === 'front').map((e) => subjects.get(e.subject_id)?.name).filter(Boolean).join(' & ') || 'No one fronting';
   });
-  const routeTitle = $derived(({ home: person ? 'Home' : 'Fronting', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', chat: 'Chat', people: 'Friends', history: 'Front history', fronts: 'Fronts', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
+  const routeTitle = $derived(({ home: person ? 'Home' : 'Fronting', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', post: 'Post', chat: 'Chat', people: 'Friends', history: 'Front history', fronts: 'Fronts', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
 </script>
 
 {#if status === 'no-device'}
@@ -115,7 +116,7 @@
         {/each}
       </nav>
       <nav class="desktop-tools" aria-label="Your tools">
-        {#if !person}<a href="#/journal" class:on={router.route.name === 'journal'} aria-current={router.route.name === 'journal' ? 'page' : undefined}><Icon name="journal" />Journal</a>{/if}
+        {#if !person}<a href="#/journal" class:on={router.route.name === 'journal' || router.route.name === 'post'} aria-current={router.route.name === 'journal' ? 'page' : undefined}><Icon name="journal" />Journal</a>{/if}
         <a href="#/search"><Icon name="search" />Search</a>
         <a href="#/settings"><Icon name="settings" />Settings</a>
       </nav>
@@ -153,6 +154,8 @@
         <Profile {projection} id={router.route.id} {dark} />
       {:else if router.route.name === 'journal'}
         <Journal {projection} {dark} />
+      {:else if router.route.name === 'post' && router.route.id}
+        <PostThread {projection} id={router.route.id} {dark} />
       {:else if router.route.name === 'post-stage' && router.route.id}
         <PostStage {projection} id={router.route.id} />
       {:else if router.route.name === 'more'}
