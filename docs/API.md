@@ -586,3 +586,18 @@ Same-account other devices receive it. Cross-account delivery requires a non-int
 Internal typing stays own-account even when a channel has guests. Typing is never persisted,
 exported, sent through notifications, SSE or webhooks, or replayed. HTTP push/pull fallback
 ignores typing (the current router does not implement those fallback routes).
+
+### UI11b search view (D-110)
+
+`GET /search/messages` additionally accepts `current=true` and `channel_id=<exact id>`.
+Current view uses chronological newest-first ordering and rechecks current permissions, Body
+front/private chats, inherited thread parents, message audience and clear cutoffs before paging.
+Each item is a rich message with `context_before` and `context_after` (one visible message or
+null). Context is chronological in the same channel and ignores the search terms. Cursors bind
+the scope/query; only returned visible anchors can appear. It exposes no raw match totals or
+hidden rank scores. Existing non-current search remains compatible. `channel_id` is an exact
+additional restriction, intersecting `in:` rather than broadening it.
+
+`GET /search/posts` additionally accepts `saved=true`, narrowing through this account's
+account-wide `bookmark:<id> = true` preferences before paging and the ordinary live post audience
+check. Cursors bind this flag. Saved preferences grant no post/blob access.

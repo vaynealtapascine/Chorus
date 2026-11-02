@@ -402,3 +402,17 @@ Everything below exists; Basic shows only the starred items (DESIGN.md §6 has t
 - **v1** = milestones M0–M12 in PROGRESS.md.
 - **Later** = L1–L6. The schema already reserves `kind`/fields so they don't need migrations of
   existing data.
+
+### UI11b scoped search (D-110)
+
+Both clients offer This chat, All chats, Journal and Saved. This chat stays inside the open
+conversation and searches that exact channel even when `in:` names another one. All chats uses
+the current recorded Body front, without a Read as override. Journal searches posts/entries/
+replies only; Saved narrows those posts to the account's private bookmarks. Existing switch
+search remains separately available. Reuse rich message and post cards, including CW/spoilers.
+Each message hit includes its nearest visible predecessor and successor in the same channel,
+ordered by `(occurred_at,id)`. Hidden/deleted messages produce no placeholders, gap counts,
+anchors or blobs. Apply current channel permissions, inherited thread-parent restrictions,
+member audience, private-chat availability and clear cutoffs before pagination or result counts.
+Front/permission changes immediately invalidate retained pages and context. Offline results
+cover the permitted local replica; foreign posts need live audience validation.

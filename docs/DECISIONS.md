@@ -122,6 +122,8 @@ default the owner has not contradicted; these may be revisited if implementation
 
 | D-108 | **WASM transfer budget: 500 KB gzipped (owner, 2026-11-02), superseding SPEC §9's 300 KB.** Owner approved the increase while implementing safe rich-text post editing on web. Keep the 200 KB gzipped initial JavaScript budget and all other performance requirements. Verification enforces 500 × 1024 bytes for WASM assets. | Owner explicit instruction during UI11a; GPT-6-sol |
 
+| D-110 | **Scoped search (UI11b, owner approved, 2026-11-02).** Web and Android offer This chat (in-place, exact channel), All chats (only chats available to the current recorded Body front), Journal (notes/entries/replies, no chat or switch matches) and Saved (bookmarked readable posts). Keep existing switch search as a separate scope. Search message cards reuse the chat renderer and show at most one independently visible chronological neighbor before and after, ordered by occurred time then id, skipping hidden/deleted neighbors without placeholders or gap counts. Journal results reuse post cards. Current-front message search filters permission, space, inherited thread-parent audience, private-chat availability, members-only audience and clear cutoff before counting/paging; no Read as override. Use visible chronological anchors, never hidden FTS-rank statistics. Recheck every request and drop stale async pages after scope/front/permission/session changes. Own local replica results work offline; shared posts require a live server audience check. No new op kind/schema, no follower-front reveal grants. | Owner authorization; GPT-6-sol |
+
 ## Versions
 
 Pin here as they are adopted (tool/library → version → date → why).
@@ -154,3 +156,4 @@ Pin here as they are adopted (tool/library → version → date → why).
 | Server allocator and SQLite build | mimalloc 0.1.52 (`default-features = false`), the server binary's `#[global_allocator]`; bundled SQLite built with `LIBSQLITE3_FLAGS="-DSQLITE_DEFAULT_MEMSTATUS=0 -USQLITE_ENABLE_MEMORY_MANAGEMENT"` (`.cargo/config.toml`) | 2026-09-25 | R26: a 1M-op rebuild spent a third of its time in glibc malloc/free and SQLite's memory-statistics mutex. Both are drop-in: no API or data change. mimalloc builds its C source with the `cc` crate (MSVC on Windows). NOTES.md 2026-09-25. |
 | http-body | 1.1.0 (already in the tree through axum) | 2026-09-26 | R35: `drain.rs` implements `http_body::Body` for the request body it watches, to keep axum's size hint. |
 | Android test libs | org.json 20240303 (testImplementation) | 2026-09-23 | Android's org.json is a stub in JVM tests. From Maven Central (google() is scoped to Google groups). |
+

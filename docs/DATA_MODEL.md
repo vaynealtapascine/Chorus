@@ -930,3 +930,7 @@ pushes (SYNC.md §7.3), and are projected in their old order. What the bundle ca
 - **Server-scope ops** (custom emoji) stay with the old server.
 - **Devices.** The import prints a one-time device invite instead. The round trip is tested
   (`tests/import.rs`): the same ops, CSV tables and files.
+
+D-110 search adds read-only scopes and visible context, without changing sync delivery, the op
+catalogue, projections or schema. Bookmarks remain ordinary account-scoped `pref.set` values;
+a bookmark never grants post, author or blob access. Current-front search pages are ephemeral.

@@ -187,3 +187,21 @@ were fixed on `feat/links` after merging this branch (with main's web Journal wo
   `Character.isAlphabetic` or a Nd/Nl/No number, which is core's `char::is_alphanumeric` (and the
   web's `\p{Alphabetic}\p{N}`). `fixtures/ui_post_edit.json` gains ², Ⅰ and U+0345 appended and
   prepended. Remaining limit: Android's Unicode tables can lag Rust's for newly assigned characters.
+
+## UI11a deployed / UI11b started (2026-11-02)
+
+Parent deployed combined UI11a + D-109 from `521c7d2ff03b2988d9d0d9759373b7f2114b621f`
+at 06:41 UTC using the existing `chorus-linux-521c7d2.tar.gz`; Android **0.1.688**.
+Server healthy, migration 0018 applied, FCM active. Verified backup:
+`/opt/chorus/backups/before-521c7d2/chorus-20261102-064135-c4c073a7`;
+pre-migration backup `/opt/chorus/backups/pre-migrate-1793601704018.db`.
+Parent fast-forwarded the unoccupied main ref from `743ae2e` to `521c7d2`.
+The other main checkout remains `feat/chat-slices` and must remain untouched.
+
+UI11b implementation started by GPT-6-sol in the initially clean deployed source checkout
+`F:/DunBuild/chorus-avatars`, branch `feat/links`. No new checkout, deployment or subagents.
+The interrupted alternate fixes in `C:/Users/pcuser/.t3/worktrees/Chorus/t3-e1bf1254`
+are outside this task and must remain untouched. Owner authorized UI11b behavior/spec changes.
+Next: implement clear web/Android scopes, canonical full cards and one independently visible
+neighbor each side; test front/permission changes and hidden-result/count/cursor/blob safety.
+UI11c stays pending until UI11b independent parent review and deployment.
