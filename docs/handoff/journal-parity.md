@@ -73,6 +73,15 @@ adopted; its unused `threadItemAttachments` dropped) shows the 1–4+ image grid
 a viewer and file rows on own posts, server thread rows and shared feeds. `journal-social.ts`
 mirrors Android's `JournalSocial` (tests in `journal-social.test.ts`). Parents build one
 `socialIndex` per list and pass `social`/`saved`; a card without them hides repost/save.
-Remaining web gaps, in order: Our system / Friends / Journals tabs plus a Saved view (slice 3);
-composer attachments, quote posts, local drafts and the "React as"/author default (slice 4);
-change-audience on own posts.
+Slices 3–6 (all deployed web-only, each demo-checked on F:/DunBuild/ui8-demo): 3 tabs (Our system,
+Friends, Journals, Saved, Lists, Feeds; `JournalFriends`/`FriendPostCard`/`friends-feed.ts`); 4
+composer files as `post.attachment` rows, Quote via `journal-compose.svelte.ts`, tab-kept drafts
+(`journal-draft.ts`, sessionStorage; CLIENTS.md §4.2) and null author intent; 5 Change audience
+(`PostAudienceDialog`, `possiblyWidens`) and the composer's AudienceChip; 6 the thread's focused own
+post uses `PostCard full` (time · date · audience, counts, large icon row).
+
+Still different from Android (next, in order): another account's focused post in a thread still
+uses the older thread row (no large action row; hearts via the reply box only); a "new posts" pill
+when the timeline grows while scrolled; the composer is inline rather than Android's sheet/FAB (a
+deliberate desktop difference, not a gap); Android's "posting as"/offline subtitle under the
+Journal title; friends' posts aren't kept offline on either client (server read).

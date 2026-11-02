@@ -20,7 +20,7 @@
   import { journalCompose } from '../journal-compose.svelte';
   import { router } from '../router.svelte';
 
-  let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection, replyCount = 0, replyToNames, inThread = false, quote = null, social, saved, repostedBy }: {
+  let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection, replyCount = 0, replyToNames, inThread = false, quote = null, social, saved, repostedBy, full = false, quoteCount = 0, onquotes }: {
     post: PostRow; people: Map<string, MemberRow>; dark: boolean;
     reactions: Map<string, string[]>; speaker: string | null; compactEntry?: boolean;
     onreply: () => void; onreact: (emoji: string, add: boolean) => void;
@@ -40,6 +40,11 @@
     saved?: Set<string>;
     /** Shown above a reposted original: who reposted it. */
     repostedBy?: string;
+    /** A thread's focused post (Android's `full`): larger, whole, with its time, counts and a large action row. */
+    full?: boolean;
+    /** Posts quoting this one, for the focused post's counts; [onquotes] lists them. */
+    quoteCount?: number;
+    onquotes?: () => void;
   } = $props();
   const HEART = '💜';
   const NAME_NOTICE = 'chorus.journal.name-notice';
@@ -64,6 +69,9 @@
   const ownRepost = $derived(social && speaker ? repostBy(social, post.id, speaker) : undefined);
   const isSaved = $derived(saved?.has(post.id) ?? false);
   const share = $derived(shareText(post.title, post.cw, post.text));
+  const detailTime = $derived(new Date(post.occurred_at).toLocaleTimeString(undefined, { timeStyle: 'short' }) + ' · ' +
+    new Date(post.occurred_at).toLocaleDateString(undefined, { dateStyle: 'medium' }));
+  const iconSize = $derived(full ? 22 : 18);
   const threadHref = $derived(`#/journal/post/${encodeURIComponent(post.id)}`);
   const audienceLabel = $derived(post.visibility.mode === 'private' ? 'Only your system' : post.visibility.mode === 'followers' ? 'Followers'
     : post.visibility.mode === 'buckets' ? 'Selected buckets' : 'Everyone on this server');
@@ -118,23 +126,23 @@
   }
 </script>
 
-<article class="post" data-post-id={post.id} style="--author: {color.name}; --avatar-bg: {color.ring}; --avatar-ink: {color.avatar_ink}; --tint: {color.tint}">
+<article class="post" class:full data-post-id={post.id} style="--author: {color.name}; --avatar-bg: {color.ring}; --avatar-ink: {color.avatar_ink}; --tint: {color.tint}">
   {#if repostedBy}<p class="reposted"><Icon name="repost" size={14} />{repostedBy} reposted</p>{/if}
   <div class="frame">
     <a class="avatar" href="#/profile/{post.authors[0] ?? ''}" aria-label="{name(post.authors[0] ?? '')}’s profile"><AvatarImage hash={lead?.avatar_blob} glyph={lead?.sigils[0] ?? name(post.authors[0] ?? '')[0]} name={name(post.authors[0] ?? '')} /></a>
-    <div class="main">
-      <div class="identity">
+    <div class="identity">
         <span class="authors">{#each post.authors as id, i (id)}{#if i} &amp; {/if}<a href="#/profile/{id}">{name(id)}</a>{/each}</span>
         <span class="when">· <a href={threadHref} title={fullTimestamp(post.occurred_at)}><time datetime={new Date(post.occurred_at).toISOString()}>{shortAgo(post.occurred_at)}</time></a></span>
         {#if post.visibility.mode === 'private' || post.visibility.mode === 'followers'}<span class="lock" title={audienceLabel} role="img" aria-label={audienceLabel}><Icon name="lock" size={14} /></span>
         {:else if post.visibility.mode === 'buckets'}<span class="audience">{audienceLabel}</span>{/if}
-      </div>
+    </div>
+    <div class="main">
       {#if post.reply_to && !inThread}<a class="reply-ref" href="#/journal/post/{encodeURIComponent(post.reply_to)}">Replying to {replyToNames ?? 'a post'}</a>{/if}
       {#if post.cw}<button class="cw" aria-expanded={expanded} onclick={() => (expanded = !expanded)}><span>Content warning: {post.cw}</span><span class="cw-toggle">{expanded ? 'Hide' : 'Show'}</span></button>{/if}
       {#if !post.cw || expanded}
         {#if post.title}<h3 class="display">{post.title}</h3>{/if}
-        {#if post.text}<div class="body" class:clamped={compactEntry && !bodyExpanded}><RichText text={post.text} entities={post.entities} /></div>{/if}
-        {#if compactEntry && (post.kind === 'entry' || post.text.length > 280)}
+        {#if post.text}<div class="body" class:clamped={compactEntry && !full && !bodyExpanded}><RichText text={post.text} entities={post.entities} /></div>{/if}
+        {#if compactEntry && !full && (post.kind === 'entry' || post.text.length > 280)}
           {#if post.kind === 'entry' && !bodyExpanded}<a class="expand" href={threadHref}>Show more</a>
           {:else}<button class="expand" aria-expanded={bodyExpanded} onclick={() => (bodyExpanded = !bodyExpanded)}>{bodyExpanded ? 'Show less' : 'Show more'}</button>{/if}
         {/if}
@@ -144,19 +152,30 @@
         {#if post.attachments?.length}<PostMedia attachments={post.attachments} who={names} occurredAt={post.occurred_at} />{/if}
         {#if poll && projection}<PollCard {projection} parentId={post.id} {poll} member={speaker} />{/if}
         {#if quote}<QuoteEmbed {quote} />{/if}
-        <div class="actions">
-          <button class="act" onclick={onreply} aria-label={replyCount ? `Reply (${replyCount} ${replyCount === 1 ? 'reply' : 'replies'})` : 'Reply'}><Icon name="reply" size={18} />{#if replyCount}<span>{replyCount}</span>{/if}</button>
+        {#if full}
+          <p class="detail-time">{detailTime} · {audienceLabel}</p>
+          {#if replyCount || reposts || quoteCount || hearts.length}
+            <p class="stats">
+              {#if replyCount}<span><strong>{replyCount}</strong> {replyCount === 1 ? 'reply' : 'replies'}</span>{/if}
+              {#if reposts}<span><strong>{reposts}</strong> {reposts === 1 ? 'repost' : 'reposts'}</span>{/if}
+              {#if quoteCount}<button class="stat" onclick={onquotes}><strong>{quoteCount}</strong> {quoteCount === 1 ? 'quote' : 'quotes'}</button>{/if}
+              {#if hearts.length}<span title={reactedBy || undefined}><strong>{hearts.length}</strong> {hearts.length === 1 ? 'like' : 'likes'}</span>{/if}
+            </p>
+          {/if}
+        {/if}
+        <div class="actions" class:large={full}>
+          <button class="act" onclick={onreply} aria-label={replyCount ? `Reply (${replyCount} ${replyCount === 1 ? 'reply' : 'replies'})` : 'Reply'}><Icon name="reply" size={iconSize} />{#if replyCount && !full}<span>{replyCount}</span>{/if}</button>
           {#if social}
             <span class="pop-anchor">
-              <button class="act" class:on={!!ownRepost} disabled={!speaker} aria-haspopup="menu" aria-expanded={repostMenu} aria-label={ownRepost ? 'Reposted; open repost options' : 'Repost'} onclick={() => (repostMenu = !repostMenu)}><Icon name="repost" size={18} />{#if reposts}<span>{reposts}</span>{/if}</button>
+              <button class="act" class:on={!!ownRepost} disabled={!speaker} aria-haspopup="menu" aria-expanded={repostMenu} aria-label={ownRepost ? 'Reposted; open repost options' : 'Repost'} onclick={() => (repostMenu = !repostMenu)}><Icon name="repost" size={iconSize} />{#if reposts && !full}<span>{reposts}</span>{/if}</button>
               {#if repostMenu}<div class="menu" role="menu" use:outside={() => (repostMenu = false)}><button role="menuitem" onclick={repost}><Icon name="repost" size={18} />{ownRepost ? 'Undo repost' : 'Repost'}</button><button role="menuitem" onclick={quotePost}><Icon name="edit" size={18} />Quote</button></div>{/if}
             </span>
           {/if}
           <button class="act heart" class:on={hearted} disabled={!speaker} title={reactedBy || undefined}
             aria-label={speaker ? `${hearted ? 'Remove heart' : 'Heart'} as ${name(speaker)}${hearts.length ? ` (${hearts.length})` : ''}` : `${hearts.length} hearts`}
-            onclick={heart}><Icon name={hearted ? 'heart-filled' : 'heart'} size={18} />{#if hearts.length}<span>{hearts.length}</span>{/if}</button>
-          {#if saved}<button class="act" class:on={isSaved} aria-pressed={isSaved} aria-label={isSaved ? 'Remove from saved' : 'Save'} onclick={toggleSave}><Icon name={isSaved ? 'bookmark-filled' : 'bookmark'} size={18} /></button>{/if}
-          {#if share}<button class="act last" aria-label="Share" onclick={shareOut}><Icon name="share" size={18} /></button>{/if}
+            onclick={heart}><Icon name={hearted ? 'heart-filled' : 'heart'} size={iconSize} />{#if hearts.length && !full}<span>{hearts.length}</span>{/if}</button>
+          {#if saved}<button class="act" class:on={isSaved} aria-pressed={isSaved} aria-label={isSaved ? 'Remove from saved' : 'Save'} onclick={toggleSave}><Icon name={isSaved ? 'bookmark-filled' : 'bookmark'} size={iconSize} /></button>{/if}
+          {#if share}<button class="act last" aria-label="Share" onclick={shareOut}><Icon name="share" size={iconSize} /></button>{/if}
           {#if notice}<span class="notice" role="status">{notice}</span>{/if}
         </div>
       {/if}
@@ -184,7 +203,24 @@
 <style>
   .post { padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--line); min-width: 0; }
   .reposted { display: flex; align-items: center; gap: 6px; margin: 0 0 6px 28px; color: var(--ink-3); font-size: var(--fs-xs); font-weight: 600; }
-  .frame { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; }
+  /* compact: the avatar column runs beside the post; full: avatar and names, then the post at full width */
+  .frame { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 12px; row-gap: 4px; }
+  .frame > .avatar { grid-row: 1 / span 2; }
+  .frame > .identity { grid-column: 2; grid-row: 1; }
+  .frame > .main { grid-column: 2; grid-row: 2; }
+  .full { padding: 16px 20px; }
+  .full .frame { grid-template-columns: 48px minmax(0, 1fr); row-gap: 12px; align-items: center; }
+  .full .frame > .avatar { grid-row: 1; width: 48px; height: 48px; }
+  .full .frame > .main { grid-column: 1 / -1; gap: 8px; }
+  .full .body { font-size: 16px; line-height: 24px; }
+  .full h3 { font-size: 24px; line-height: 30px; }
+  .detail-time { color: var(--ink-3); font-size: var(--fs-sm); margin-top: 4px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
+  .stats strong { color: var(--ink); font-weight: 700; }
+  .stat { border: 0; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+  .stat:hover { text-decoration: underline; }
+  .actions.large { margin: 0; padding: 4px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .actions.large .act { min-height: 44px; }
   .avatar { display: inline-grid; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; background: var(--avatar-bg); color: var(--avatar-ink); place-items: center; font-weight: 700; text-decoration: none; }
   .main { display: grid; gap: 4px; min-width: 0; align-content: start; }
   .identity { display: flex; align-items: center; gap: 4px; min-width: 0; padding-right: 36px; line-height: 20px; }

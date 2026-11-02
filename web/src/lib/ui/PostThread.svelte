@@ -149,7 +149,8 @@
 
   {#if own}
     <div class="focus" class:joined={ancestors.length > 0}>
-      <PostCard {projection} post={own} {people} {dark} reactions={reacts.get(own.id) ?? new Map()} {speaker} {social} {saved} inThread
+      <PostCard {projection} post={own} {people} {dark} reactions={reacts.get(own.id) ?? new Map()} {speaker} {social} {saved} inThread full
+        quoteCount={quotes.length} onquotes={() => (showQuotes = true)}
         quote={quoteView(own.quote_post_id, postById, name, detail?.quoted)}
         replyCount={replies.length} onreply={() => document.getElementById('thread-reply')?.querySelector('textarea')?.focus()}
         onreact={(emoji, add) => react(own.id, emoji, add)} />
@@ -161,8 +162,8 @@
   {/if}
 
   {#if focused}
-    <p class="detail">{when(focused.occurred_at)}{#if replies.length}{' · '}<strong>{replies.length}</strong> {replies.length === 1 ? 'reply' : 'replies'}{/if}{#if quotes.length}{' · '}<button class="stat" onclick={() => (showQuotes = true)}><strong>{quotes.length}</strong> {quotes.length === 1 ? 'quote' : 'quotes'}</button>{/if}</p>
-    {#if reactionLine}<p class="reactions">{reactionLine}</p>{/if}
+    {#if !own}<p class="detail">{when(focused.occurred_at)}{#if replies.length}{' · '}<strong>{replies.length}</strong> {replies.length === 1 ? 'reply' : 'replies'}{/if}{#if quotes.length}{' · '}<button class="stat" onclick={() => (showQuotes = true)}><strong>{quotes.length}</strong> {quotes.length === 1 ? 'quote' : 'quotes'}</button>{/if}</p>
+    {#if reactionLine}<p class="reactions">{reactionLine}</p>{/if}{/if}
     <div class="reply-box" id="thread-reply">
       <p class="replying">Replying to <strong>{focusedNames || 'this post'}</strong></p>
       <!-- another account's reader must be able to read the reply, so it starts server-wide -->
