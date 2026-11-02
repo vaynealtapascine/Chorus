@@ -241,9 +241,15 @@ pub fn write_denied(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<O
 }
 
 /// D-098: the members of `account` a chat outside the system's own space is kept to (its
-/// `member_ids`, in their order; a thread uses its parent message's channel). Empty: the account
-/// isn't limited there. The internal space's members' DMs stay soft (D-097) and never count.
+/// `member_ids`, in their order; a thread uses its parent message's channel), then everyone inside
+/// any of them who is a subsystem ([with_parts]). Empty: the account isn't limited there. The
+/// internal space's members' DMs stay soft (D-097) and never count.
 pub fn kept_to(conn: &Connection, account: &str, channel: &str) -> rusqlite::Result<Vec<String>> {
+    let listed = listed_in(conn, account, channel)?;
+    with_parts(conn, account, listed)
+}
+
+fn listed_in(conn: &Connection, account: &str, channel: &str) -> rusqlite::Result<Vec<String>> {
     conn.prepare_cached(
         "SELECT x.value FROM channel c JOIN space s ON s.id = c.space_id AND s.kind <> 'internal'
          CROSS JOIN json_each(CASE WHEN json_valid(c.member_ids) THEN c.member_ids ELSE '[]' END) x
@@ -254,6 +260,36 @@ pub fn kept_to(conn: &Connection, account: &str, channel: &str) -> rusqlite::Res
     )?
     .query_map(params![account, channel], |r| r.get(0))?
     .collect()
+}
+
+/// A chat with a member who is a subsystem (D-092) includes everyone inside them, recursively
+/// (owner, 2026-11-02): the `member_subsystem:<id>` account pref names their subsystem group, and
+/// its present, active members are inside. One with someone inside never reaches the subsystem.
+fn with_parts(conn: &Connection, account: &str, mut ids: Vec<String>) -> rusqlite::Result<Vec<String>> {
+    if ids.is_empty() {
+        return Ok(ids);
+    }
+    let mut inside = conn.prepare_cached(
+        "SELECT gm.member_id FROM pref p
+         JOIN member_group g ON g.id = json_extract(p.value, '$') AND g.account_id = ?1
+              AND g.kind = 'subsystem' AND g.deleted_at IS NULL
+         JOIN group_membership gm ON gm.group_id = g.id AND gm.is_present
+         JOIN member m ON m.id = gm.member_id AND m.account_id = ?1 AND m.archived_at IS NULL AND m.deleted_at IS NULL
+         WHERE p.account_id = ?1 AND p.device_id = '' AND p.key = 'member_subsystem:' || ?2
+         ORDER BY gm.member_id",
+    )?;
+    let mut i = 0;
+    while i < ids.len() {
+        let found: Vec<String> =
+            inside.query_map(params![account, ids[i]], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        for id in found {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        i += 1;
+    }
+    Ok(ids)
 }
 
 fn member_account(conn: &Connection, member: &str) -> rusqlite::Result<Option<String>> {

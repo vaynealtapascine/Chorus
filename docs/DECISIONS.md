@@ -122,6 +122,8 @@ default the owner has not contradicted; these may be revisited if implementation
 
 | D-108 | **WASM transfer budget: 500 KB gzipped (owner, 2026-11-02), superseding SPEC §9's 300 KB.** Owner approved the increase while implementing safe rich-text post editing on web. Keep the 200 KB gzipped initial JavaScript budget and all other performance requirements. Verification enforces 500 × 1024 bytes for WASM assets. | Owner explicit instruction during UI11a; GPT-6-sol |
 
+| D-110 | **A members' chat with a subsystem includes everyone inside it (owner, 2026-11-02).** A DM between members (D-097) or a private chat with another account (D-098) that lists a member who is a subsystem (D-092) is also everyone's inside them, recursively: it shows while any of them fronts or is co-conscious (or is read as), lists them in Chat info, and they may speak there. Never upward: a chat with someone inside doesn't include their subsystem. The server applies it to D-098's speaker rule and DM pings (`perms::kept_to` follows `member_subsystem:` prefs to the subsystem group's present, active members). Android implements the client side (`Subsystems.including`); web still lists only who is named. Supersedes D-102 for chats only. | Owner request; claude-opus-5.5 |
+
 ## Versions
 
 Pin here as they are adopted (tool/library → version → date → why).

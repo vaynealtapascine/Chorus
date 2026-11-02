@@ -535,7 +535,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             if (candidate.kind == "thread") return@mapNotNull null // threads live under their parent
             val home = model.spaces.find { it.id == candidate.spaceId } ?: return@mapNotNull null
             // a member's private chats only while one of them is here (D-097, D-098)
-            if (!ChatOrganize.privateVisible(candidate, home, model.current, viewingAs, prefs.hidePrivate, ownIds)) return@mapNotNull null
+            if (!ChatOrganize.privateVisible(candidate, home, model.current, viewingAs, prefs.hidePrivate, ownIds,
+                    inside = { garden.vayne.chorus.data.Subsystems.including(model, it) })) return@mapNotNull null
             val clearedAt = prefs.hiddenChats[candidate.id]
             val visible = model.chatMessages[candidate.id].orEmpty().filter {
                 memberVisible(it, home.kind, model.current, viewingAs) && accountVisible(it, home.kind, chorus.device?.accountId.orEmpty()) &&

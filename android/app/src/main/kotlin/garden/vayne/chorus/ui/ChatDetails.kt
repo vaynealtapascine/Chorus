@@ -105,8 +105,10 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
     onSpaceChanged: () -> Unit = {}, onOpenChannel: (String) -> Unit = {}, onLeft: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val presence = ChatPresentation.presence(model, channel.id)
-    // a members' chat, or a channel kept to some members, lists just them (D-097, D-099)
-    val members = if (space.kind == "internal") model.active.filter { channel.memberIds.isEmpty() || it.id in channel.memberIds } else emptyList()
+    // a members' chat, or a channel kept to some members, lists just them (D-097, D-099), with
+    // everyone inside a subsystem among them
+    val included = remember(model, channel.memberIds) { garden.vayne.chorus.data.Subsystems.including(model, channel.memberIds).toSet() }
+    val members = if (space.kind == "internal") model.active.filter { channel.memberIds.isEmpty() || it.id in included } else emptyList()
     var editChannel by rememberSaveable(channel.id) { mutableStateOf(false) }
     var editGroup by rememberSaveable(channel.id) { mutableStateOf(false) }
     val me = chorus.device?.accountId.orEmpty()
