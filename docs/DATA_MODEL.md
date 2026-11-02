@@ -931,7 +931,7 @@ pushes (SYNC.md §7.3), and are projected in their old order. What the bundle ca
 - **Devices.** The import prints a one-time device invite instead. The round trip is tested
   (`tests/import.rs`): the same ops, CSV tables and files.
 
-D-112 search adds read-only scopes and visible context, without changing sync delivery, the op
+D-114 search adds read-only scopes and visible context, without changing sync delivery, the op
 catalogue, projections or schema. Bookmarks remain ordinary account-scoped `pref.set` values;
 a bookmark never grants post, author or blob access. Current-front search pages are ephemeral.
 
@@ -943,7 +943,7 @@ blob references; clients retain an explicit invalid flag rather than interpretin
 unrestricted list. SQL NULL remains the absent membership value.
 
 
-UI11b/main integration (D-110 + D-112): current search validates the entire stored channel
+UI11b/main integration (D-110 + D-114): current search validates the entire stored channel
 membership array before any expansion, then expands its own listed members with the same
 `perms::with_parts` relation used by `kept_to`, including internal member chats. Only present,
 active members of a live linked subsystem group are added, recursively and never upward. A

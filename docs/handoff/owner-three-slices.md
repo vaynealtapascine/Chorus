@@ -485,9 +485,10 @@ stay BEFORE expansion; valid listed members must use the merged semantics. At in
 - Add server/web/native search/context/ancestor/blob tests for recursive inside membership,
   removal/archive/deletion, malformed mixed lists and the never-upward case; retain recorded
   Body-front-only search semantics under the new membership relation.
-- Decision-ID collision (resolved by the integration below): scoped search was originally this
-  branch's D-110 and is now D-112. Main's D-110 remains subsystem chat expansion; D-111 stays
-  reserved for archived chats. All active search references use D-112.
+- Decision-ID collision (resolved by the integration below, then the 2026-11-03 coordination
+  correction): scoped search was originally this branch's D-110, used D-112 at the first main
+  integration, and is now D-114. Preserve UI12's D-111 archives, D-112 reply trail and D-113
+  folders. Main's D-110 remains subsystem chat expansion. Active search references use D-114.
 
 These are integration requirements from the owner's latest relay, not features merged into this
 four-finding patch. No other thread was contacted and no deployment tools were run.
@@ -537,10 +538,11 @@ merged with `--no-commit --no-ff` onto `feat/links` at
 merge. This section supersedes the earlier instruction to perform that specific merge.
 
 The three textual conflicts were resolved by keeping both board entries, preserving main's
-D-110 subsystem decision verbatim and renumbering scoped search to D-112, and combining
+D-110 subsystem decision verbatim and renumbering scoped search (then D-112, now D-114), and combining
 Android's strict `invalidMembership` rejection with main's `inside` callback. All search spec,
-API, model, client, design, sync, source and board references now use D-112. The historical
-D-110 collision description above is retained as history; D-111 is still reserved.
+API, model, client, design, sync, source and board references now use D-114. The historical
+D-110 collision description above is retained as history. At that integration D-111 was
+reserved; the later UI12 decision IDs are preserved by the D-114 correction below.
 
 Main's UI12a changes are present: ChorusSheet, ordered Journal coauthors, full photos/tags,
 switch hairlines, spoiler bars/dark content colours and private-chat labels. Its subsystem
@@ -606,3 +608,118 @@ source, check for any subsequently advanced main (especially D-111/reply stack/f
 potential new decision numbers), then build matching platform libraries/artifacts and handle
 verified backup/deployment and browser/phone smoke checks. UI11c remains gated. No deployment,
 packaging, shared staging/PC selfhost writes or other-checkout/main-ref changes were performed.
+
+
+### Parent final review correction (2026-11-03)
+
+Independent combined review cleared the four prior findings and subsystem integration.
+One remaining Android issue: strict audience string parsing crashed Model.parse for mixed
+member_ids on historical messages, including outside the newest-100 display window. Both
+search documents and local cards now use the existing defensive string-only audience reader,
+matching canonical server filtering. Regression covers current and 150-newer-message windows
+and verifies that no-front access remains denied. The parent's full gate **failed** before
+Android at the existing 50k nonempty-front sparse search budget: **156.0942 ms > 150 ms**
+(empty-front sparse 54.4328 ms). Log: `F:/DunBuild/chorus-ui11b-parent-final.log`.
+The independent reviewer also observed package-only 156/163 ms. These failures are retained
+as evidence and are not waived; the Android correction and search performance correction
+must pass a new full gate together.
+
+### UI11b performance robustness follow-up (GPT-6-sol, 2026-11-03)
+
+Baseline `80bec59`, only existing `feat/links` in `F:/DunBuild/chorus-avatars`. Preserved the
+parent's uncommitted Model/SearchVisibilityTest changes above. The targeted native
+SearchVisibilityTest suite passes (8 tests, no failures/errors/skips), including the new
+0/150-newer-message regression (`F:/DunBuild/chorus-ui11b-robust-android.log`).
+
+The hit SQL and its canonical pre-LIMIT privacy predicates are unchanged. The repeated cost
+was in context: a second full-channel SQL audience pass even for dense results. Context now
+seeks from the visible anchor with the existing `(channel_id, occurred_at, id)` index, in either
+direction, and takes the first independently visible row. It has **no candidate cap**. Channel,
+ancestor, token ownership, tombstone and clear-cutoff guards still apply; audience decisions
+use the canonical point-read helper, cached per distinct raw audience only for this immutable
+request. Public and own-account answers are distinct, so sharing JSON between accounts cannot
+grant foreign system/member asides. Cutoffs are cached per channel for the same request.
+
+A found neighbor also proves the reverse edge: no visible message is between those anchors.
+Caching both edges prevents rescanning the same sparse interval for consecutive hits. Dense
+pages no longer materialize an entire visible channel timeline. Cards, rich payloads, literal
+message audiences, current Body front, subsystem channel eligibility and cursor logic remain
+unchanged. The cache is discarded at request end; there is no new persistent visibility state,
+schema, dependency, index, migration or privacy grant.
+
+Expanded `tests/search.rs` compares SQL hits and indexed context with canonical point reads for
+malformed/mixed/nonarray audiences, repeated JSON on both accounts, device/token reads,
+cutoffs including the exact timestamp, equal-time id ordering, forward/reverse reuse and both
+ends of a channel. The unchanged 50k/150 ms benchmark now asserts every dense and nonempty-front
+sparse context id as well as all hits, page/cursor behavior and arbitrarily long hidden gaps.
+
+Test setup finding: the existing legacy space author-card SQL assumes syntactically valid
+`message.visibility` JSON. A manually corrupted raw value such as `{` still fails closed in
+the canonical/SQL selectors but can make the separate space author-card query error. The
+selector regression retains that raw-invalid case separately; rich-context cases cover valid
+JSON with malformed audience shapes/types. This pre-existing author-card limitation is not
+changed by this bounded performance correction.
+
+Final package release `cargo test -p chorus-server --release --test search -- --nocapture`
+passes all 9 tests. First-screen times: **68.4467 ms empty-front sparse / 81.6265 ms nonempty-front
+sparse / 60.0437 ms dense**, with the unchanged 150 ms limit. Log:
+`F:/DunBuild/chorus-ui11b-robust-package-final.log` (binary `search-65219cc9d57bfc7c.exe`).
+An earlier optimization run measured 68.05/98.0921/54.8136 ms and exposed the test setup's
+raw-invalid JSON/legacy author-card limitation described above; it was not a passing suite.
+The final package run fixes that test setup and passes all the expanded context assertions.
+
+Remaining performance limits: hit SQL still examines matching indexed candidates, and a seek
+may traverse an arbitrarily long hidden interval. Audience-cache memory grows with distinct
+raw audience values examined in that request. This is not a constant-time search guarantee for
+larger histories; it removes duplicate interval work and repeated parsing for equal audiences.
+
+The full gate's workspace release build also passes the same search regression:
+**56.9299 ms empty-front sparse / 103.7008 ms nonempty-front sparse / 61.1084 ms dense**.
+Both build modes retain the 150 ms bound and all exact hit/context/cursor assertions.
+Workspace evidence: `F:/DunBuild/chorus-ui11b-robust-full.log`
+(binary `search-612d2eda150e474f.exe`); no performance rerun was used
+to turn the failed parent gate into a pass.
+
+Full `python scripts/verify.py --android --offline` **passed** with no quick wrapper or waived
+failure. Log: `F:/DunBuild/chorus-ui11b-robust-full.log`. Includes documentation/fmt/workspace
+clippy, full release workspace/convergence/simulator/HTTP tests, WASM build, Svelte diagnostics
+(0 errors/warnings), **266 web tests + 1 existing skip**, production budgets (**190 KB JS /
+300 KB WASM gzipped**), Android lint and **366 app + 7 bridge JVM tests** (zero JVM
+failures/errors/skips). Environment was process-only: dot-source `F:/DunBuild/chorus-env.ps1`,
+Studio JBR, F: Cargo/Gradle caches, `CARGO_INCREMENTAL=0`; `RUST_TEST_NOCAPTURE=1` records the
+workspace benchmark inside the actual full gate. Android's malformed-audience regression is
+included in that complete pass. This combined correction is ready for parent review/commit
+handback; main remained `0ac29cc4d7340a7fd3a66781812ffabaf593477c`.
+
+No packaging, deployment, shared staging, other-checkout/main-ref
+changes, subagents or UI11c work. Parent independent review and phone/browser smoke checks
+remain required before parent builds and deploys matching artifacts.
+
+### Coordination / decision-ID correction (2026-11-03)
+
+Owner relayed concurrent UI12 work on `ui12` in `F:/DunBuild/chorus-af`: D-111 archived
+chats, D-112 reply-jump trail, D-113 custom folders. Read-only inspection of the committed
+`073e928` decision doc and current file confirmed D-111/D-112; folders had not yet added
+D-113 to the inspected doc, so preserve that owner-reserved ID too. D-114 was unused in the
+inspected decision sets. Renumbered only this branch's scoped-search decision and references
+to **D-114**, with the original D-110 → intermediate D-112 history documented. No behavior
+change, UI12 merge or edit to that checkout. Parent must reconcile later UI12 behavior in a
+separate integration, including archive/search semantics.
+
+Owner reports the main `0ac29cc` deployment failed in packing under Git Bash GNU tar: ns2 is
+unchanged; PC app/android staging contains .698. These are coordination reports, not a new
+implementation-agent deployment or staging verification. Parent will use Windows tar and
+rebuild the APK after independent review. This agent does not package/deploy or touch shared
+staging. A fresh full `python scripts/verify.py --android --offline` after the reference-only
+correction **passed** with the same documented process-only environment and no quick wrapper.
+Final log: `F:/DunBuild/chorus-ui11b-robust-renumber-full.log`. Final workspace first-screen
+measurements: **53.9161 ms empty-front sparse / 83.6258 ms nonempty-front sparse / 52.9911 ms
+dense**, with the unchanged 150 ms assertions. The earlier full-gate 56.9299/103.7008/61.1084 ms
+measurements and final package 68.4467/81.6265/60.0437 ms remain recorded above. Both complete
+full gates passed; the second was required by the decision-reference correction, not by a
+performance failure. The final pass includes documentation/fmt/clippy, full release workspace,
+WASM, zero Svelte diagnostics, 266 web tests + 1 existing skip, 190/300 KB JS/WASM gzip budgets,
+Android lint and the unchanged 366 app + 7 bridge JVM tests (no JVM failures/errors/skips).
+No new code or test change followed the first full pass, except the source-comment decision ID.
+Parent independent context-SQL/cache review and phone/browser checks remain pending before
+parent builds and deploys matching artifacts. Main remains `0ac29cc`; no UI12 merge was made.

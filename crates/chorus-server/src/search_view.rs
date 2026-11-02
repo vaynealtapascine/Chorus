@@ -1,4 +1,4 @@
-//! Ephemeral current-front read view for scoped search (D-112), never a sync grant.
+//! Ephemeral current-front read view for scoped search (D-114), never a sync grant.
 use crate::api_data::{DataError, Principal};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
@@ -11,7 +11,9 @@ pub struct CurrentView<'a> {
     channels: HashMap<String, bool>,
     authors: HashMap<String, Value>,
     selection: Option<(String, String, String)>,
-    neighbors: HashMap<String, Vec<(i64, String)>>,
+    neighbors: HashMap<(String, bool), Option<String>>,
+    audiences: HashMap<String, (bool, bool)>,
+    cutoffs: HashMap<String, Option<i64>>,
     cards: HashMap<String, Value>,
 }
 impl<'a> CurrentView<'a> {
@@ -32,6 +34,8 @@ impl<'a> CurrentView<'a> {
             authors: HashMap::new(),
             selection: None,
             neighbors: HashMap::new(),
+            audiences: HashMap::new(),
+            cutoffs: HashMap::new(),
             cards: HashMap::new(),
         })
     }
@@ -54,28 +58,40 @@ impl<'a> CurrentView<'a> {
         if !self.channel(&channel, seen)? {
             return Ok(false);
         }
-        let cutoff: Option<i64> = self.conn.query_row(
+        if self.cutoff(&channel)?.is_some_and(|t| at <= t) {
+            return Ok(false);
+        }
+        Ok(self.audience(&owner, visibility.as_deref()))
+    }
+    fn cutoff(&mut self, channel: &str) -> Result<Option<i64>, DataError> {
+        if let Some(cutoff) = self.cutoffs.get(channel) {
+            return Ok(*cutoff);
+        }
+        let cutoff = self.conn.query_row(
             "SELECT CAST(value AS INTEGER) FROM pref WHERE account_id=?1 AND device_id='' AND key='chat_hidden:'||?2 AND json_type(value) IN ('integer','real')",
             params![self.p.account_id,channel], |r| r.get(0)).optional()?;
-        if cutoff.is_some_and(|t| at <= t) {
-            return Ok(false);
+        self.cutoffs.insert(channel.to_string(), cutoff);
+        Ok(cutoff)
+    }
+    /// The view is immutable for one request. Parse each distinct stored audience once, keeping
+    /// public and own-account answers separate so identical JSON cannot grant foreign asides.
+    fn audience(&mut self, owner: &str, raw: Option<&str>) -> bool {
+        let Some(raw) = raw else { return true };
+        if let Some((public, own)) = self.audiences.get(raw) {
+            return *public || (owner == self.p.account_id && *own);
         }
-        let v = visibility.as_deref().map(serde_json::from_str::<Value>).transpose().ok().flatten();
-        if visibility.is_some() && v.is_none() {
-            return Ok(false);
-        }
-        Ok(match v.as_ref().and_then(|v| v["mode"].as_str()) {
-            None => visibility.is_none(),
-            Some("all") => true,
-            Some("system_only") => owner == self.p.account_id,
-            Some("members") => {
-                owner == self.p.account_id
-                    && v.as_ref()
-                        .and_then(|v| v["member_ids"].as_array())
-                        .is_some_and(|ids| ids.iter().filter_map(Value::as_str).any(|id| self.front.contains(id)))
-            }
+        let v = serde_json::from_str::<Value>(raw).ok();
+        let public = v.as_ref().is_some_and(|v| v["mode"] == "all");
+        let own = match v.as_ref().and_then(|v| v["mode"].as_str()) {
+            Some("all" | "system_only") => true,
+            Some("members") => v
+                .as_ref()
+                .and_then(|v| v["member_ids"].as_array())
+                .is_some_and(|ids| ids.iter().filter_map(Value::as_str).any(|id| self.front.contains(id))),
             _ => false,
-        })
+        };
+        self.audiences.insert(raw.to_string(), (public, own));
+        public || (owner == self.p.account_id && own)
     }
     fn channel(&mut self, id: &str, seen: &mut HashSet<String>) -> Result<bool, DataError> {
         if let Some(ok) = self.channels.get(id) {
@@ -224,32 +240,57 @@ impl<'a> CurrentView<'a> {
         Ok(s)
     }
     pub fn neighbor(&mut self, m: &Value, after: bool) -> Result<Option<Value>, DataError> {
-        let channel = m["channel_id"].as_str().unwrap_or_default();
-        if !self.neighbors.contains_key(channel) {
-            let (channels, front, cutoffs) = self.selection()?;
-            let predicate = message_sql("?1", "?2", "?3", "?4", "?5");
-            let sql = format!(
-                "SELECT m.occurred_at,m.id FROM message m WHERE m.channel_id=?6 AND {predicate} ORDER BY m.occurred_at,m.id"
-            );
-            let mut st = self.conn.prepare(&sql)?;
-            let rows = st
-                .query_map(params![self.p.account_id, channels, front, cutoffs, !self.p.is_device(), channel], |r| {
-                    Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
-                })?
-                .collect::<Result<Vec<_>, _>>()?;
-            self.neighbors.insert(channel.to_string(), rows);
+        let anchor = m["id"].as_str().unwrap_or_default();
+        let key = (anchor.to_string(), after);
+        if let Some(id) = self.neighbors.get(&key).cloned() {
+            return id.map(|id| self.card(&id)).transpose().map(Option::flatten);
         }
-        let rows = &self.neighbors[channel];
-        let anchor = (m["occurred_at"].as_i64().unwrap_or_default(), m["id"].as_str().unwrap_or_default().to_string());
-        let Ok(i) = rows.binary_search(&anchor) else { return Ok(None) };
-        let index = if after { i.checked_add(1) } else { i.checked_sub(1) };
-        let id = index.and_then(|i| rows.get(i)).map(|(_, id)| id.clone());
+        let channel = m["channel_id"].as_str().unwrap_or_default();
+        if !self.message(anchor)? {
+            return Ok(None);
+        }
+        let cutoff = self.cutoff(channel)?;
+        // Seek on message_channel_time rather than reading the entire channel for dense hits.
+        // There is no candidate LIMIT: skip arbitrarily many hidden rows before taking one
+        // visible neighbor. Channel/ancestor checks above and row guards match message_inner.
+        let (op, direction) = if after { (">", "ASC") } else { ("<", "DESC") };
+        let sql = format!(
+            "SELECT m.id,m.account_id,m.visibility FROM message m
+             WHERE m.channel_id=?1 AND (m.occurred_at,m.id){op}(?2,?3) AND m.deleted_at IS NULL
+               AND (?4=0 OR m.account_id=?5) AND (?6 IS NULL OR m.occurred_at>?6)
+             ORDER BY m.occurred_at {direction},m.id {direction}"
+        );
+        let mut st = self.conn.prepare_cached(&sql)?;
+        let mut rows = st.query(params![
+            channel,
+            m["occurred_at"].as_i64().unwrap_or_default(),
+            anchor,
+            !self.p.is_device(),
+            self.p.account_id,
+            cutoff,
+        ])?;
+        let mut id = None;
+        while let Some(row) = rows.next()? {
+            let owner = row.get_ref(1)?.as_str().map_err(anyhow::Error::from)?;
+            let visibility = row.get_ref(2)?.as_str_or_null().map_err(anyhow::Error::from)?;
+            if self.audience(owner, visibility) {
+                id = Some(row.get::<_, String>(0)?);
+                break;
+            }
+        }
+        // No visible row lies between these two anchors, so the reverse edge is also known.
+        // This avoids scanning the same sparse interval twice for adjacent search hits.
+        if let Some(id) = &id {
+            self.neighbors.insert((id.clone(), !after), Some(anchor.to_string()));
+        }
+        self.neighbors.insert(key, id.clone());
         id.map(|id| self.card(&id)).transpose().map(Option::flatten)
     }
 }
 
 /// Equivalent to CurrentView::message after channel/ancestor validation. CASE keeps malformed
-/// JSON fail-closed without evaluating json_extract on invalid input. Used for hits AND context.
+/// JSON fail-closed without evaluating json_extract on invalid input. Context seeks use the
+/// canonical guard above; tests compare both paths, including malformed stored audiences.
 pub fn message_sql(account: &str, channels: &str, front: &str, cutoffs: &str, token: &str) -> String {
     format!(
         r#"m.deleted_at IS NULL AND m.channel_id IN (SELECT value FROM json_each({channels}))

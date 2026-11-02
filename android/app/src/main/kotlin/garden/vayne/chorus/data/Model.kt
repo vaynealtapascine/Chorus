@@ -226,8 +226,6 @@ class Model(
 
         private fun strings(a: JSONArray?): List<String> = if (a == null) emptyList() else List(a.length()) { a.getString(it) }
 
-        private fun stringSet(a: JSONArray?): Set<String> = strings(a).toSet()
-
         private fun files(ids: JSONArray?, attachments: Map<String, JSONObject>): List<ChatAttachment> =
             if (ids == null) emptyList() else (0 until ids.length()).mapNotNull { i ->
                 val id = ids.optString(i)
@@ -242,7 +240,7 @@ class Model(
             val visibility = f.optJSONObject("visibility")
             return ChatMessage(id, f.str("channel_id").orEmpty(), strings(f.optJSONArray("authors")), f.str("text").orEmpty(),
                 f.optLong("occurred_at"), f.str("cw"), visibility?.optString("mode")?.ifEmpty { "all" } ?: "all",
-                stringSet(visibility?.optJSONArray("member_ids")), f.str("account_id"), f.str("reply_to"),
+                SearchVisibility.strings(visibility?.optJSONArray("member_ids")).toSet(), f.str("account_id"), f.str("reply_to"),
                 files(f.optJSONArray("attachments"), attachments), edited,
                 f.optJSONArray("entities")?.toString() ?: "[]",
                 f.optJSONArray("segments")?.let { rows -> (0 until rows.length()).map { index ->
@@ -407,7 +405,7 @@ class Model(
                         (0 until entities.length()).any { entities.optJSONObject(it)?.str("type") in listOf("url", "text_link") }
                     } ?: false, pinned = f.present("pinned_at"), accountId = f.str("account_id"),
                     visibilityMode = if(!f.present("visibility")) "all" else f.optJSONObject("visibility")?.str("mode") ?: "invalid",
-                    visibleMemberIds = stringSet(f.optJSONObject("visibility")?.optJSONArray("member_ids")))
+                    visibleMemberIds = SearchVisibility.strings(f.optJSONObject("visibility")?.optJSONArray("member_ids")).toSet())
             }
             val latestOwn = HashMap<String, Triple<Long, String, List<String>>>()
             for ((id, fields) in messageRows) {

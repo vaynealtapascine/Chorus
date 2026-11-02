@@ -124,12 +124,17 @@ default the owner has not contradicted; these may be revisited if implementation
 
 | D-110 | **A members' chat with a subsystem includes everyone inside it (owner, 2026-11-02).** A DM between members (D-097) or a private chat with another account (D-098) that lists a member who is a subsystem (D-092) is also everyone's inside them, recursively: it shows while any of them fronts or is co-conscious (or is read as), lists them in Chat info, and they may speak there. Never upward: a chat with someone inside doesn't include their subsystem. The server applies it to D-098's speaker rule and DM pings (`perms::kept_to` follows `member_subsystem:` prefs to the subsystem group's present, active members). Android implements the client side (`Subsystems.including`); web still lists only who is named. Supersedes D-102 for chats only. | Owner request; claude-opus-5.5 |
 
-| D-112 | **Scoped search (UI11b, owner approved, 2026-11-02).** Web and Android offer This chat (in-place, exact channel), All chats (only chats available to the current recorded Body front), Journal (notes/entries/replies, no chat or switch matches) and Saved (bookmarked readable posts). Keep existing switch search as a separate scope. Search message cards reuse the chat renderer and show at most one independently visible chronological neighbor before and after, ordered by occurred time then id, skipping hidden/deleted neighbors without placeholders or gap counts. Journal results reuse post cards. Current-front message search filters permission, space, inherited thread-parent audience, private-chat availability, members-only audience and clear cutoff before counting/paging; no Read as override. Use visible chronological anchors, never hidden FTS-rank statistics. Recheck every request and drop stale async pages after scope/front/permission/session changes. Own local replica results work offline; shared posts require a live server audience check. No new op kind/schema, no follower-front reveal grants. | Owner authorization; GPT-6-sol |
+| D-114 | **Scoped search (UI11b, owner approved, 2026-11-02).** Web and Android offer This chat (in-place, exact channel), All chats (only chats available to the current recorded Body front), Journal (notes/entries/replies, no chat or switch matches) and Saved (bookmarked readable posts). Keep existing switch search as a separate scope. Search message cards reuse the chat renderer and show at most one independently visible chronological neighbor before and after, ordered by occurred time then id, skipping hidden/deleted neighbors without placeholders or gap counts. Journal results reuse post cards. Current-front message search filters permission, space, inherited thread-parent audience, private-chat availability, members-only audience and clear cutoff before counting/paging; no Read as override. Use visible chronological anchors, never hidden FTS-rank statistics. Recheck every request and drop stale async pages after scope/front/permission/session changes. Own local replica results work offline; shared posts require a live server audience check. No new op kind/schema, no follower-front reveal grants. | Owner authorization; GPT-6-sol |
 
-UI11b scoped search was originally numbered D-110 on its unmerged branch. During integration
-with main `0ac29cc` it became **D-112**, preserving both settled decisions without changing their
-meaning. D-110 remains subsystem chats; D-111 is reserved for the concurrent archived-chat slice.
-Web now also applies D-110 to chat/search eligibility; its info labels still name the listed members.
+UI11b scoped search was originally numbered D-110 on its unmerged branch, then D-112 during
+integration with main `0ac29cc`. On 2026-11-03 the owner requested **D-114** after concurrent
+UI12 work claimed D-111 (archived chats), D-112 (reply-jump trail) and D-113 (custom folders).
+Read-only inspection of `ui12` at `073e928` in `F:/DunBuild/chorus-af` confirmed the committed
+D-111/D-112 records; the owner's coordination update reserves D-113 for folders. D-114 was
+unused in both decision sets. This renumbers the scoped-search record/references only, with
+no behavior change or UI12 merge. Preserve UI12's IDs and D-110 subsystem chats. Authorized by
+the owner's 2026-11-03 coordination instruction; recorded by GPT-6-sol.
+Web also applies D-110 to chat/search eligibility; its info labels still name the listed members.
 
 ## Versions
 

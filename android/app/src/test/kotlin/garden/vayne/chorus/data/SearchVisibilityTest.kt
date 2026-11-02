@@ -7,6 +7,29 @@ import org.junit.Test
 import kotlinx.coroutines.runBlocking
 
 class SearchVisibilityTest {
+    @Test fun malformedHistoricalMessageAudienceDoesNotAbortModelRebuild() {
+        for (newerCount in listOf(0, 150)) {
+            val p=JSONObject(java.io.File(System.getProperty("chorus.fixtures"),"ui_search.json").readText()).getJSONObject("projection")
+            val messages=p.getJSONObject("rows").getJSONObject("message")
+            val old=messages.getJSONObject("m-match")
+            old.getJSONObject("fields").put("visibility",JSONObject().put("mode","members").put("member_ids",JSONArray().put("rin").put(42)))
+            for (i in 1..newerCount) {
+                val row=JSONObject(old.toString())
+                row.getJSONObject("fields").put("occurred_at",10000+i).put("visibility",JSONObject().put("mode","all"))
+                messages.put("new-$i",row)
+            }
+            p.put("fronts",JSONObject())
+            val model=Model.parse(p,"account")
+            val hit=model.searchMessages.first {it.id=="m-match"}
+            assertEquals(setOf("rin"),hit.visibleMemberIds)
+            assertFalse(SearchVisibility(model,"account").document(hit))
+            if (newerCount == 0) {
+                assertEquals(setOf("rin"),model.chatMessages.getValue("c").first {it.id=="m-match"}.visibleMemberIds)
+            } else {
+                assertFalse(model.chatMessages.getValue("c").any {it.id=="m-match"})
+            }
+        }
+    }
     @Test fun subsystemSearchMatchesSharedEligibilityAndContextFixtures() {
         val fixture=JSONObject(java.io.File(System.getProperty("chorus.fixtures"),"ui_search_subsystems.json").readText())
         val cases=fixture.getJSONArray("cases")

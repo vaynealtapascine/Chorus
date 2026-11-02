@@ -849,5 +849,6 @@ members. Keep listed-member ownership even after member deletion; otherwise an e
 with only a deleted own entry can accidentally become unrestricted. Expanded parts still require
 live group membership and active/nondeleted members. Shared `ui_search_subsystems.json` runs
 against Rust canonical/SQL/FTS/context, web and Android; blob GET/HEAD additionally recheck nested
-thread ancestry and membership/archive revocations. D-112 is the renumbered search decision;
-main's D-110 is unchanged and D-111 remains reserved. No new dependency, schema or op kind.
+thread ancestry and membership/archive revocations. Scoped search is now D-114 (the initial
+integration used D-112; renumbered again 2026-11-03 to preserve UI12's D-111/D-112/D-113).
+Main's D-110 is unchanged. No new dependency, schema or op kind.

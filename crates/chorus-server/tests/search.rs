@@ -523,6 +523,17 @@ fn sparse_current_view_50k_first_screen_stays_within_budget() {
         assert_eq!(page["items"].as_array().unwrap().len(), 25);
         assert_eq!(page["items"][0]["id"], if dense { "m00049999" } else { "m00048000" });
         assert_eq!(page["next_cursor"].is_string(), dense);
+        for (i, item) in page["items"].as_array().unwrap().iter().enumerate() {
+            let at = if dense { 49_999 - i } else { 48_000 - i * 2000 };
+            assert_eq!(item["id"], format!("m{at:08}"));
+            let before = if dense { at.checked_sub(1) } else { at.checked_sub(2000) };
+            assert_eq!(item["context_before"]["id"].as_str().map(str::to_string), before.map(|i| format!("m{i:08}")));
+            let after = if dense { at + 1 } else { at + 2000 };
+            assert_eq!(
+                item["context_after"]["id"].as_str().map(str::to_string),
+                (after < 50_000).then(|| format!("m{after:08}"))
+            );
+        }
         eprintln!("50k nonempty front, dense={dense}: {elapsed:?}");
         if !cfg!(debug_assertions) {
             assert!(elapsed < std::time::Duration::from_millis(150), "shared DB held for {elapsed:?}, dense={dense}");
@@ -535,18 +546,24 @@ fn sql_current_selection_agrees_with_guard_for_malformed_audiences_and_cutoffs()
     use chorus_server::search_view::{CurrentView, message_sql};
     let conn = seed();
     for (i, visibility) in [
-        "{",
         "null",
         "[]",
         r#"{"mode":"unknown"}"#,
         r#"{"mode":"members","member_ids":{}}"#,
         r#"{"mode":"members","member_ids":[true,42,"rose"]}"#,
+        r#"{"mode":"members","member_ids":[42]}"#,
+        r#"{"mode":"members","member_ids":["42"]}"#,
+        r#"{"mode":"system_only"}"#,
         r#"{"mode":"all"}"#,
     ]
     .iter()
     .enumerate()
     {
-        conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text,visibility) VALUES (?1,?2,?3,?3,200,'needle',?4)",params![format!("malformed{i}"),CHANNEL,ALICE,visibility]).unwrap();
+        // Repeated JSON across accounts must not share an own-account audience decision.
+        // Equal timestamps exercise the id half of the chronological seek in both directions.
+        for owner in [ALICE, BOB] {
+            conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text,visibility) VALUES (?1,?2,?3,?3,200,'needle',?4)",params![format!("malformed{i}-{owner}"),CHANNEL,owner,visibility]).unwrap();
+        }
     }
     let ids = conn
         .prepare("SELECT id FROM message")
@@ -556,36 +573,73 @@ fn sql_current_selection_agrees_with_guard_for_malformed_audiences_and_cutoffs()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     for account in [ALICE, BOB] {
+        let owner = api_data::Principal::owner(account);
+        let token = api_data::create_token(&conn, &owner, "context", &["read:messages".into()], 0).unwrap();
+        let token = api_data::principal(&conn, token["token"].as_str().unwrap(), 0, 0).unwrap();
         for front in [false, true] {
             if front {
                 conn.execute("INSERT OR REPLACE INTO front_interval(id,account_id,subject_type,subject_id,level,is_primary,position,start_at,start_switch_id,start_tz_offset_min) VALUES ('live',?1,'member','rose','front',1,0,0,'switch',0)",[ALICE]).unwrap();
             }
-            for cutoff in [0, 125] {
+            for cutoff in [0, 125, 200] {
                 conn.execute(
                     "INSERT OR REPLACE INTO pref(account_id,device_id,key,value,hlc) VALUES (?1,'',?2,?3,'1')",
                     params![account, format!("chat_hidden:{CHANNEL}"), cutoff.to_string()],
                 )
                 .unwrap();
-                let p = api_data::Principal::owner(account);
-                let mut view = CurrentView::new(&conn, &p).unwrap();
-                let (channels, front, cutoffs) = view.selection().unwrap();
-                let sql = format!(
-                    "SELECT m.id FROM message m WHERE {} ORDER BY m.id",
-                    message_sql("?1", "?2", "?3", "?4", "?5")
-                );
-                let got = conn
-                    .prepare(&sql)
-                    .unwrap()
-                    .query_map(params![account, channels, front, cutoffs, false], |r| r.get::<_, String>(0))
-                    .unwrap()
-                    .collect::<Result<Vec<_>, _>>()
-                    .unwrap();
-                let mut want = ids.iter().filter(|id| view.message(id).unwrap()).cloned().collect::<Vec<_>>();
-                want.sort();
-                assert_eq!(got, want);
+                for p in [&owner, &token] {
+                    let mut view = CurrentView::new(&conn, p).unwrap();
+                    let (channels, front, cutoffs) = view.selection().unwrap();
+                    let sql = format!(
+                        "SELECT m.id FROM message m WHERE {} ORDER BY m.id",
+                        message_sql("?1", "?2", "?3", "?4", "?5")
+                    );
+                    let got = conn
+                        .prepare(&sql)
+                        .unwrap()
+                        .query_map(params![account, channels, front, cutoffs, !p.is_device()], |r| {
+                            r.get::<_, String>(0)
+                        })
+                        .unwrap()
+                        .collect::<Result<Vec<_>, _>>()
+                        .unwrap();
+                    let mut want = ids.iter().filter(|id| view.message(id).unwrap()).cloned().collect::<Vec<_>>();
+                    want.sort();
+                    assert_eq!(got, want);
+                    let mut cards = want.iter().map(|id| view.card(id).unwrap().unwrap()).collect::<Vec<_>>();
+                    cards.sort_by_key(|m| (m["occurred_at"].as_i64().unwrap(), m["id"].as_str().unwrap().to_string()));
+                    // Start a fresh view so the first seek performs audience checks itself. Revisit
+                    // both ways to exercise reverse-edge reuse and cached absent end neighbors.
+                    let mut context = CurrentView::new(&conn, p).unwrap();
+                    for i in (0..cards.len()).rev().chain(0..cards.len()) {
+                        for after in [false, true] {
+                            let index = if after { i.checked_add(1) } else { i.checked_sub(1) };
+                            let expected = index.and_then(|i| cards.get(i)).map(|m| m["id"].clone());
+                            let actual = context.neighbor(&cards[i], after).unwrap().map(|m| m["id"].clone());
+                            assert_eq!(
+                                actual,
+                                expected,
+                                "context account={account}, token={}, front={front}, cutoff={cutoff}, after={after}",
+                                !p.is_device()
+                            );
+                        }
+                    }
+                }
             }
         }
     }
+    // Syntactically invalid JSON is also fail-closed in both selectors. Keep this separate
+    // from rich-card context: the legacy space author-card projection assumes valid JSON.
+    conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text,visibility) VALUES ('invalid-json',?1,?2,?2,201,'needle','{')", params![CHANNEL, ALICE]).unwrap();
+    let p = api_data::Principal::owner(ALICE);
+    let mut view = CurrentView::new(&conn, &p).unwrap();
+    assert!(!view.message("invalid-json").unwrap());
+    let (channels, front, cutoffs) = view.selection().unwrap();
+    let sql = format!(
+        "SELECT count(*) FROM message m WHERE m.id='invalid-json' AND {}",
+        message_sql("?1", "?2", "?3", "?4", "?5")
+    );
+    let selected: i64 = conn.query_row(&sql, params![ALICE, channels, front, cutoffs, false], |r| r.get(0)).unwrap();
+    assert_eq!(selected, 0);
 }
 
 #[test]
