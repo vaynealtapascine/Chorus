@@ -14,6 +14,7 @@ Rules (short form):
 
 ## Now
 
+- **In progress:** UI12 — claude-opus-5.5, 2026-11-02 (owner: in sequence on `main`, commit and deploy after each; Astra works in another worktree, so message their thread before every deploy). UI12a Android UI/UX batch → UI12b archived chats → UI12c reply jump stack → UI12d custom chat folders (Figma F5.25). Next concrete step: UI12a items in order (spoiler bars and dark-mode content colour first).
 - **In progress:** M7.2 Journal web/Android parity — claude-opus-5.5, 2026-11-02 (owner: implement in sequence, deploy after each slice). Worktree `F:/DunBuild/chorus-journal`, branch `feat/journal-parity` (from main). Slices: 1 Android drafts (deployed 0.1.675) · 2 web post card + media + repost/heart/save/share · 3 web Our system/Friends/Journals tabs + Saved · 4 web composer (attachments, quote, local drafts). Deploy from this worktree with `deploy-linux.ps1 [-Android] -NoBuild` after building web there: the main checkout holds Gemini's web WIP and `F:/DunBuild/chorus-avatars` holds the chat session's uncommitted slice 4.
 - **In progress:** UI11a merge — claude-opus-5.5, 2026-11-02: Sol's `t3/journal-singlet-search-privacy` merged into `feat/links` (F:/DunBuild/chorus-avatars) with the links slice (D-109); fixing the re-review's three open findings (swap rebuild drops retained legacy post history; in-place rebuild clears a post whose source ops are all missing; Android mention boundaries vs core) before one combined deploy.
 - **In progress:** UI7 — claude-opus-5.5, 2026-10-30. Owner request: wrap up UI6 batch 2, then Android polish to Telegram-level chat and Twitter-class Journal posting, friendly motion, remaining Figma features, subsystems throughout; ship in slices that each update the owner's phone (deploy.ps1 -Android). Worktree `F:/DunBuild/chorus-ui-redesign`, branch `feat/figma-ui-redesign`; main is fast-forwarded at each deploy.
@@ -30,6 +31,11 @@ Rules (short form):
 Legend: `[x]` done · `[~]` in progress · `[ ]` to do · `[-]` dropped (say why in log)
 
 ### UI — Owner's Figma redesign
+
+- [~] UI12a Android UI/UX batch (owner, 2026-11-02): solid spoiler bars, composer avatar shows who writes, ordered co-authors drawer, sheet drag resistance, dark-mode content colour, post media fits on open, switch hairlines, tags last, no informational menu items, subsystem DMs include submembers, "• member" on direct DMs.
+- [ ] UI12b Archived chats (owner, 2026-11-02): hidden from the list, listed from Chat's overflow, unarchived by a new message, still searched.
+- [ ] UI12c Reply jump stack (owner, 2026-11-02): jump-to-latest first returns to where each reply jump started.
+- [ ] UI12d Custom chat folders (owner, 2026-11-02; Figma F5.25): own folders with chosen chats, hide default folders.
 
 - [x] UI11a Owner journal/singlet slice (2026-11-02, D-107/D-108); docs/handoff/owner-three-slices.md.
 - [ ] UI11b Owner search slice — begin only after UI11a independent review and deployment.
