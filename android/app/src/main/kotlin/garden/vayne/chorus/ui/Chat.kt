@@ -845,7 +845,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                     Text(if (pins.size > 1) "Pinned message ${pinStep % pins.size + 1} of ${pins.size}" else "Pinned message",
                         color = p.accent, fontSize = 12.sp, lineHeight = 16.sp)
-                    Text(ChatPresentation.preview(shown), color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1)
+                    Text(spoilerPreview(ChatPresentation.preview(shown)), color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1)
                 }
                 ChatIcon(R.drawable.ic_pin, tint = p.ink3)
             }
@@ -1074,8 +1074,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
                     Text(if (quoting.size == 1) "Quote " + quoting[0].authors.joinToString(" & ", transform = ::nameOf) else "Quote ${quoting.size} messages",
                         color = p.accent, fontSize = 13.sp, lineHeight = 18.sp)
-                    Text(quotePart?.let { r -> quoting.singleOrNull()?.text?.let { t -> "“" + t.substring(r.first, (r.last + 1).coerceAtMost(t.length)) + "”" } }
-                        ?: quoting.joinToString(" · ") { ChatPresentation.preview(it) }, color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
+                    Text(spoilerPreview(quotePart?.let { r -> quoting.singleOrNull()?.text?.let { t -> "“" + t.substring(r.first, (r.last + 1).coerceAtMost(t.length)) + "”" } }
+                        ?: quoting.joinToString(" · ") { ChatPresentation.preview(it) }), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
                 }
                 ChatIconButton(R.drawable.ic_close, "Cancel quote") { quoting = emptyList(); quotePart = null }
             }
@@ -1087,7 +1087,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
                         val name = target.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
                         Text(if (carriedReply?.id == replyTo) "Reply to $name · from another chat" else "Reply to $name", color = p.accent, fontSize = 13.sp, lineHeight = 18.sp)
-                        Text(ChatPresentation.preview(target), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
+                        Text(spoilerPreview(ChatPresentation.preview(target)), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
                     }
                     ChatIconButton(R.drawable.ic_close, "Cancel reply") { replyTo = null; carriedReply = null }
                 }
@@ -1381,7 +1381,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                 Text("Forward to…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-                Text(ChatPresentation.preview(message), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2,
+                Text(spoilerPreview(ChatPresentation.preview(message)), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2,
                     modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp))
                 for (row in listRows.sortedByDescending { it.latest?.occurredAt ?: 0L }) {
                     Row(Modifier.fillMaxWidth().clickable(enabled = !busy) {
@@ -1772,7 +1772,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                     Text((quote?.authors?.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
                         ?: "Reply") + (quoteElsewhere?.let { " · in $it" } ?: ""), color = quoteColor, fontSize = 12.sp, lineHeight = 16.sp)
-                    Text(if (quote != null) ChatPresentation.preview(quote) else "Message unavailable in this view",
+                    Text(spoilerPreview(if (quote != null) ChatPresentation.preview(quote) else "Message unavailable in this view"),
                         color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
                 }
             }
@@ -1889,7 +1889,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
             Column(Modifier.widthIn(min = 120.dp, max = 300.dp).background(if (own) p.accentSoft else p.surface2, RoundedCornerShape(16.dp))
                 .padding(horizontal = 12.dp, vertical = 8.dp)) {
                 Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp)
-                Text(ChatPresentation.preview(message), color = p.ink, maxLines = 4, fontSize = 15.sp, lineHeight = 20.sp)
+                Text(spoilerPreview(ChatPresentation.preview(message)), color = p.ink, maxLines = 4, fontSize = 15.sp, lineHeight = 20.sp)
                 Text(ChatPresentation.dateLabel(message.occurredAt) + ", " +
                     DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.occurredAt)) +
                     if (held == null && message.edited) " · edited" else "", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,

@@ -183,7 +183,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                             val sender = row.sender
                             val special = previews[row.channel.id]
                             val preview = ChatPresentation.preview(row.latest, model.polls.polls[row.latest?.id])
-                            Text(special ?: listOfNotNull(sender?.takeIf { it.isNotBlank() }, preview).joinToString(": "),
+                            Text(spoilerPreview(special ?: listOfNotNull(sender?.takeIf { it.isNotBlank() }, preview).joinToString(": ")),
                                 color = if (special != null) p.accent else p.ink3, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
