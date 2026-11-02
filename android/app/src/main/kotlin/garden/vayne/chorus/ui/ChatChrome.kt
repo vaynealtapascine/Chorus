@@ -72,7 +72,10 @@ internal fun ChannelDisc(channel: ChatChannel, member: Member? = null, size: Dp 
 internal data class ChatListRow(val channel: ChatChannel, val space: ChatSpace, val title: String,
     val latest: ChatMessage?, val unread: Int, val sender: String? = null, val muted: Boolean = false, val pinned: Boolean = false,
     /** A private chat in a DM (D-098), or a channel kept to some of our members (D-097): a lock, not a globe or #. */
-    val private: Boolean = false)
+    val private: Boolean = false,
+    /** Whose a private chat with another account is on our side ("• Fox"), so one member's chat with
+     * someone isn't mistaken for another's. */
+    val whose: String? = null)
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -84,7 +87,6 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
     val p = LocalChorusPalette.current
     var folder by rememberSaveable { mutableStateOf(ChatPresentation.Folder.All) }
     var menu by remember { mutableStateOf(false) }
-    var showReader by remember { mutableStateOf(false) }
     // the chat whose long-press menu is open (pin, arrange pins, delete or clear)
     var rowMenu by remember { mutableStateOf<String?>(null) }
     val pinnedCount = rows.count { it.pinned }
@@ -104,12 +106,9 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                     if (onNew != null) DropdownMenuItem(text = { Text("New message") }, onClick = { menu = false; onNew() })
                     if (onRowAction != null && pinnedCount > 1) DropdownMenuItem(text = { Text("Arrange pinned chats") },
                         onClick = { menu = false; rows.firstOrNull { it.pinned }?.let { onRowAction(it, "arrange") } })
-                    if (!model.isPerson) DropdownMenuItem(text = { Text("Per-member read tracking is in Settings") }, onClick = { menu = false; showReader = true })
                 }
             }
         }
-        if (showReader) Text("Each member keeps their own read position when per-member read tracking is enabled.",
-            color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(16.dp))
         if (!model.isPerson) {
             val presence = ChatPresentation.presence(model, selected).filter { it.subjectType == "member" }
             Column(Modifier.fillMaxWidth().background(p.surface)) {
@@ -178,12 +177,14 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                                 else if (row.channel.parentMessageId != null) ChatIcon(R.drawable.ic_reply)
                                 else if (!direct) Text("#", color = p.ink3, fontSize = 16.sp, lineHeight = 22.sp)
                                 Text(row.title, color = p.ink, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                row.whose?.let { Text("• $it", color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)) }
                             }
                             val sender = row.sender
                             val special = previews[row.channel.id]
                             val preview = ChatPresentation.preview(row.latest, model.polls.polls[row.latest?.id])
-                            Text(special ?: listOfNotNull(sender?.takeIf { it.isNotBlank() }, preview).joinToString(": "),
+                            Text(spoilerPreview(special ?: listOfNotNull(sender?.takeIf { it.isNotBlank() }, preview).joinToString(": ")),
                                 color = if (special != null) p.accent else p.ink3, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {

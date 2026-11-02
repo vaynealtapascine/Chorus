@@ -13,7 +13,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import garden.vayne.chorus.data.Status
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.layout.PaddingValues
@@ -566,7 +565,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         return
     }
 
-    val ownIds = remember(model.members) { model.members.mapTo(HashSet()) { it.id } }
+    val ownIds = model.knownMemberIds
     // names for other accounts' members a private chat is kept to (D-098), from those DMs' author cards
     var privateCards by remember { mutableStateOf<Map<String, ForeignAuthor>>(emptyMap()) }
     val needCards = model.channels.filter { c -> c.kind == "member_dm" && c.memberIds.any { it !in ownIds } &&
@@ -586,7 +585,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             if (candidate.kind == "thread") return@mapNotNull null // threads live under their parent
             val home = model.spaces.find { it.id == candidate.spaceId } ?: return@mapNotNull null
             // a member's private chats only while one of them is here (D-097, D-098)
-            if (!ChatOrganize.privateVisible(candidate, home, model.current, viewingAs, prefs.hidePrivate, ownIds)) return@mapNotNull null
+            if (!ChatOrganize.privateVisible(candidate, home, model.current, viewingAs, prefs.hidePrivate, ownIds,
+                    inside = { garden.vayne.chorus.data.Subsystems.including(model, it) })) return@mapNotNull null
             val clearedAt = prefs.hiddenChats[candidate.id]
             val visible = model.chatMessages[candidate.id].orEmpty().filter {
                 memberVisible(it, home.kind, model.current, viewingAs) && accountVisible(it, home.kind, chorus.device?.accountId.orEmpty()) &&
@@ -609,7 +609,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 ?: directory[home.id]?.accounts?.find { it.id == latest.accountId }?.shownName ?: "Someone" }
             ChatListRow(candidate, home, title, latest, unread, sender,
                 muted = model.accountPrefs.channelNotify(candidate.id, home.kind) == "none", pinned = candidate.id in prefs.chatPins,
-                private = sides != null || (home.kind == "internal" && candidate.kind == "text" && candidate.memberIds.isNotEmpty()))
+                private = sides != null || (home.kind == "internal" && candidate.kind == "text" && candidate.memberIds.isNotEmpty()),
+                whose = sides?.mine?.mapNotNull { model.member(it)?.shownName }?.joinToString(" & ")?.ifEmpty { null })
         }.let { rows -> ChatOrganize.order(rows, prefs.chatPins, { it.channel.id }, { it.latest?.occurredAt ?: 0L }, { it.title }) }
     }
     var arrangingPins by rememberSaveable { mutableStateOf(false) }
@@ -902,7 +903,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                     Text(if (pins.size > 1) "Pinned message ${pinStep % pins.size + 1} of ${pins.size}" else "Pinned message",
                         color = p.accent, fontSize = 12.sp, lineHeight = 16.sp)
-                    Text(ChatPresentation.preview(shown), color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1)
+                    Text(spoilerPreview(ChatPresentation.preview(shown)), color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1)
                 }
                 ChatIcon(R.drawable.ic_pin, tint = p.ink3)
             }
@@ -1135,8 +1136,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
                     Text(if (quoting.size == 1) "Quote " + quoting[0].authors.joinToString(" & ", transform = ::nameOf) else "Quote ${quoting.size} messages",
                         color = p.accent, fontSize = 13.sp, lineHeight = 18.sp)
-                    Text(quotePart?.let { r -> quoting.singleOrNull()?.text?.let { t -> "“" + t.substring(r.first, (r.last + 1).coerceAtMost(t.length)) + "”" } }
-                        ?: quoting.joinToString(" · ") { ChatPresentation.preview(it) }, color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
+                    Text(spoilerPreview(quotePart?.let { r -> quoting.singleOrNull()?.text?.let { t -> "“" + t.substring(r.first, (r.last + 1).coerceAtMost(t.length)) + "”" } }
+                        ?: quoting.joinToString(" · ") { ChatPresentation.preview(it) }), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
                 }
                 ChatIconButton(R.drawable.ic_close, "Cancel quote") { quoting = emptyList(); quotePart = null }
             }
@@ -1148,7 +1149,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
                         val name = target.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
                         Text(if (carriedReply?.id == replyTo) "Reply to $name · from another chat" else "Reply to $name", color = p.accent, fontSize = 13.sp, lineHeight = 18.sp)
-                        Text(ChatPresentation.preview(target), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
+                        Text(spoilerPreview(ChatPresentation.preview(target)), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
                     }
                     ChatIconButton(R.drawable.ic_close, "Cancel reply") { replyTo = null; carriedReply = null }
                 }
@@ -1288,7 +1289,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 var authorsOpen by remember { mutableStateOf(false) }
                 var emojiOpen by remember { mutableStateOf(false) }
                 // the composer's emoji: the reaction set, tapped into the draft (Android has no custom emoji yet)
-                if (emojiOpen) ModalBottomSheet(onDismissRequest = { emojiOpen = false }, containerColor = p.surface) {
+                if (emojiOpen) ChorusSheet(onDismissRequest = { emojiOpen = false }, containerColor = p.surface) {
                     FlowRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 24.dp)) {
                         for (emoji in ChatReactions.QUICK + ChatReactions.MORE) Box(Modifier.size(48.dp).clip(CircleShape)
                             .clickable(onClickLabel = "Add $emoji") { draft += emoji },
@@ -1395,8 +1396,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         val readers = remember(model.active, readerQuery) {
             model.active.filter { member -> listOf(member.shownName, member.name, *member.sigils.toTypedArray()).any { it.contains(readerQuery.trim(), ignoreCase = true) } }
         }
-        ModalBottomSheet(onDismissRequest = { readerOpen = false }, containerColor = p.surface,
-            sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ChorusSheet(onDismissRequest = { readerOpen = false }, containerColor = p.surface,
+            skipPartiallyExpanded = true) {
             InspectionDialogContent {
                 Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f).imePadding().padding(horizontal = 20.dp)) {
                     Text("Read as…", style = MaterialTheme.typography.titleLarge)
@@ -1438,11 +1439,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         MessageEditDialog(chorus, model, id, viewingAs) { editingMessageId = null }
     }
     forwarding?.takeIf { forwardableMessage != null }?.let { message ->
-        ModalBottomSheet(onDismissRequest = { forwarding = null }, containerColor = p.surface) {
+        ChorusSheet(onDismissRequest = { forwarding = null }, containerColor = p.surface) {
             Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                 Text("Forward to…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-                Text(ChatPresentation.preview(message), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2,
+                Text(spoilerPreview(ChatPresentation.preview(message)), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2,
                     modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp))
                 for (row in listRows.sortedByDescending { it.latest?.occurredAt ?: 0L }) {
                     Row(Modifier.fillMaxWidth().clickable(enabled = !busy) {
@@ -1465,7 +1466,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     // Quote: pick a part of the text (long-press to select), or all of it (SPEC §5.3 partial quotes)
     quotePicking?.let { message ->
         var picked by remember(message.id) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(message.text)) }
-        ModalBottomSheet(onDismissRequest = { quotePicking = null }, containerColor = p.surface) {
+        ChorusSheet(onDismissRequest = { quotePicking = null }, containerColor = p.surface) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Quote", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
                 Text("Select the part to quote, or quote it all.", color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp)
@@ -1484,7 +1485,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
     }
     replyIn?.let { message ->
-        ModalBottomSheet(onDismissRequest = { replyIn = null }, containerColor = p.surface) {
+        ChorusSheet(onDismissRequest = { replyIn = null }, containerColor = p.surface) {
             Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                 Text("Reply in…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -1501,7 +1502,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             }
         }
     }
-    if (bundleForward.isNotEmpty()) ModalBottomSheet(onDismissRequest = { bundleForward = emptyList() }, containerColor = p.surface) {
+    if (bundleForward.isNotEmpty()) ChorusSheet(onDismissRequest = { bundleForward = emptyList() }, containerColor = p.surface) {
         Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             Text("Forward ${bundleForward.size} messages to…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -1550,8 +1551,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         })
     if (spaceAction == "new") {
         var choice by rememberSaveable { mutableStateOf("choose") }
-        ModalBottomSheet(onDismissRequest = { directRequest?.cancel(); spaceAction = "" }, containerColor = p.surface,
-            sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ChorusSheet(onDismissRequest = { directRequest?.cancel(); spaceAction = "" }, containerColor = p.surface,
+            skipPartiallyExpanded = true) {
             InspectionDialogContent {
                 Column(Modifier.fillMaxWidth().then(if (choice == "direct") Modifier.fillMaxHeight(0.9f) else Modifier)
                     .imePadding().then(if (choice == "direct") Modifier else Modifier.verticalScroll(rememberScrollState()))
@@ -1833,7 +1834,7 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                     Text((quote?.authors?.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: message.authorCards[it]?.name ?: "Someone" }
                         ?: "Reply") + (quoteElsewhere?.let { " · in $it" } ?: ""), color = quoteColor, fontSize = 12.sp, lineHeight = 16.sp)
-                    Text(if (quote != null) ChatPresentation.preview(quote) else "Message unavailable in this view",
+                    Text(spoilerPreview(if (quote != null) ChatPresentation.preview(quote) else "Message unavailable in this view"),
                         color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
                 }
             }
@@ -1951,7 +1952,7 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
             Column(Modifier.widthIn(min = 120.dp, max = 300.dp).background(if (own) p.accentSoft else p.surface2, RoundedCornerShape(16.dp))
                 .padding(horizontal = 12.dp, vertical = 8.dp)) {
                 Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp)
-                Text(ChatPresentation.preview(message), color = p.ink, maxLines = 4, fontSize = 15.sp, lineHeight = 20.sp)
+                Text(spoilerPreview(ChatPresentation.preview(message)), color = p.ink, maxLines = 4, fontSize = 15.sp, lineHeight = 20.sp)
                 Text(ChatPresentation.dateLabel(message.occurredAt) + ", " +
                     DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.occurredAt)) +
                     if (held == null && message.edited) " · edited" else "", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,

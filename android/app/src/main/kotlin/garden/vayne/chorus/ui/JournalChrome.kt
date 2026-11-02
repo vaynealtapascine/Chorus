@@ -135,22 +135,3 @@ internal fun JournalAudiencePicker(audience: String, person: Boolean, onChoose: 
         }
     }
 }
-
-@Composable
-internal fun JournalAuthorsPicker(ids: List<String>, mine: List<Member>, enabled: Boolean, onChoose: (List<String>) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        TextButton(enabled = enabled, onClick = { open = true }) {
-            Text(ids.map { id -> mine.find { it.id == id }?.shownName ?: "Unavailable member" }
-                .joinToString(" & ").ifBlank { "Choose who is writing" })
-        }
-        DropdownMenu(open, { open = false }) {
-            for (id in garden.vayne.chorus.data.JournalSelection.unavailable(ids, mine.map { it.id }.toSet())) DropdownMenuItem(
-                text = { Text("Remove unavailable member") },
-                onClick = { onChoose(ids.filterNot { it == id }) })
-            for (member in mine) DropdownMenuItem(
-                text = { Text((if (member.id in ids) "✓ " else "") + member.shownName) },
-                onClick = { onChoose(garden.vayne.chorus.data.PostCompose.toggleAuthor(ids, member.id)) })
-        }
-    }
-}

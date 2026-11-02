@@ -509,6 +509,26 @@ async fn private_chat_attachment_rechecks_recipient_front_even_with_a_retained_h
     );
     {
         let conn = s.state.db.lock().unwrap();
+        for (member, group, part) in
+            [("bob-garden", "garden-group", "bob-nested"), ("bob-nested", "nested-group", "bob-member")]
+        {
+            conn.execute("INSERT INTO member(id,account_id,name,created_at) VALUES (?1,'bob',?1,0)", [member]).unwrap();
+            conn.execute(
+                "INSERT INTO member_group(id,account_id,name,kind,created_at) VALUES (?1,'bob',?1,'subsystem',0)",
+                [group],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO group_membership(group_id,member_id,added_hlc) VALUES (?1,?2,'1')",
+                rusqlite::params![group, part],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO pref(account_id,device_id,key,value,hlc) VALUES ('bob','',?1,?2,'1')",
+                rusqlite::params![format!("member_subsystem:{member}"), serde_json::json!(group).to_string()],
+            )
+            .unwrap();
+        }
         conn.execute("INSERT INTO member(id,account_id,name,created_at) VALUES ('bob-member','bob','Bob',0)", [])
             .unwrap();
         conn.execute(
@@ -521,10 +541,12 @@ async fn private_chat_attachment_rechecks_recipient_front_even_with_a_retained_h
                 .unwrap();
             conn.execute("INSERT INTO space_member(space_id,account_id,role,joined_hlc) VALUES ('private-space',?1,'member','1')",[account]).unwrap();
         }
-        conn.execute("INSERT INTO channel(id,space_id,kind,name,member_ids,created_at) VALUES ('private-channel','private-space','member_dm','Private','[\"bob-member\"]',0)",[]).unwrap();
+        conn.execute("INSERT INTO channel(id,space_id,kind,name,member_ids,created_at) VALUES ('private-channel','private-space','member_dm','Private','[\"bob-garden\"]',0)",[]).unwrap();
         conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text) VALUES ('private-message','private-channel','alice','alice-device',1,'photo')",[]).unwrap();
+        conn.execute("INSERT INTO channel(id,space_id,kind,name,parent_message_id,created_at) VALUES ('private-thread','private-space','thread','Thread','private-message',0)",[]).unwrap();
+        conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text) VALUES ('private-thread-message','private-thread','alice','alice-device',2,'thread photo')",[]).unwrap();
         conn.execute("INSERT INTO attachment(id,account_id,blob_hash,mime,created_at) VALUES ('private-photo','alice',?1,'image/png',0)",[&blob]).unwrap();
-        conn.execute("INSERT INTO item_attachment(owner_type,owner_id,attachment_id,position) VALUES ('message','private-message','private-photo',0)",[]).unwrap();
+        conn.execute("INSERT INTO item_attachment(owner_type,owner_id,attachment_id,position) VALUES ('message','private-thread-message','private-photo',0)",[]).unwrap();
     }
     assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 404);
     {
@@ -532,17 +554,55 @@ async fn private_chat_attachment_rechecks_recipient_front_even_with_a_retained_h
         conn.execute("INSERT INTO front_interval(id,account_id,subject_type,subject_id,level,is_primary,position,start_at,start_switch_id,start_tz_offset_min) VALUES ('bob-live','bob','member','bob-member','front',1,0,0,'switch',0)",[]).unwrap();
     }
     assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 200);
-    {
-        let conn = s.state.db.lock().unwrap();
-        conn.execute("UPDATE channel SET kind='text',member_ids='[\"bob-member\",42]' WHERE id='private-channel'", [])
-            .unwrap();
-    }
-    for method in [reqwest::Method::GET, reqwest::Method::HEAD] {
-        assert_eq!(client.request(method, &url).bearer_auth("bob-token").send().await.unwrap().status(), 404);
-    }
-    {
-        let conn = s.state.db.lock().unwrap();
-        conn.execute("UPDATE channel SET member_ids='[\"bob-member\"]' WHERE id='private-channel'", []).unwrap();
+    // Each revocation independently hides the retained hash through inherited thread privacy.
+    for (deny, restore) in [
+        (
+            "UPDATE group_membership SET removed_hlc='2' WHERE member_id='bob-member'",
+            "UPDATE group_membership SET removed_hlc=NULL WHERE member_id='bob-member'",
+        ),
+        (
+            "UPDATE member SET archived_at=3 WHERE id='bob-member'",
+            "UPDATE member SET archived_at=NULL WHERE id='bob-member'",
+        ),
+        (
+            "UPDATE member SET deleted_at=3 WHERE id='bob-member'",
+            "UPDATE member SET deleted_at=NULL WHERE id='bob-member'",
+        ),
+        (
+            "UPDATE member SET archived_at=3 WHERE id='bob-nested'",
+            "UPDATE member SET archived_at=NULL WHERE id='bob-nested'",
+        ),
+        (
+            "UPDATE member_group SET deleted_at=3 WHERE id='nested-group'",
+            "UPDATE member_group SET deleted_at=NULL WHERE id='nested-group'",
+        ),
+        (
+            "UPDATE channel SET member_ids='[\"bob-garden\",42]' WHERE id='private-channel'",
+            "UPDATE channel SET member_ids='[\"bob-garden\"]' WHERE id='private-channel'",
+        ),
+        (
+            "UPDATE channel SET archived_at=3 WHERE id='private-channel'",
+            "UPDATE channel SET archived_at=NULL WHERE id='private-channel'",
+        ),
+        (
+            "UPDATE channel SET archived_at=3 WHERE id='private-thread'",
+            "UPDATE channel SET archived_at=NULL WHERE id='private-thread'",
+        ),
+        (
+            "UPDATE channel SET member_ids='[\"bob-member\"]' WHERE id='private-channel'; UPDATE front_interval SET subject_id='bob-garden' WHERE id='bob-live'",
+            "UPDATE channel SET member_ids='[\"bob-garden\"]' WHERE id='private-channel'; UPDATE front_interval SET subject_id='bob-member' WHERE id='bob-live'",
+        ),
+    ] {
+        s.state.db.lock().unwrap().execute_batch(deny).unwrap();
+        for method in [reqwest::Method::GET, reqwest::Method::HEAD] {
+            assert_eq!(
+                client.request(method, &url).bearer_auth("bob-token").send().await.unwrap().status(),
+                404,
+                "{deny}"
+            );
+        }
+        s.state.db.lock().unwrap().execute_batch(restore).unwrap();
+        assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 200, "{restore}");
     }
     {
         s.state.db.lock().unwrap().execute("UPDATE front_interval SET end_at=2 WHERE id='bob-live'", []).unwrap();

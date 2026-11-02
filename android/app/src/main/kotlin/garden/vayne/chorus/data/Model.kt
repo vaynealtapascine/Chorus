@@ -157,7 +157,10 @@ class Model(
     /** Retain tombstones for rejecting stale network search cards without hydrating their bodies. */
     val deletedMessageIds: Set<String> = emptySet(),
     val deletedPostIds: Set<String> = emptySet(),
+    /** Keep ownership after deletion so a private external chat never becomes unrestricted. */
+    val deletedMemberIds: Set<String> = emptySet(),
 ) {
+    val knownMemberIds: Set<String> = members.mapTo(HashSet()) { it.id }.apply { addAll(deletedMemberIds) }
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
 
@@ -473,7 +476,8 @@ class Model(
                 channelPermissionState = ChannelPermissions.snapshot(p), memberList = MemberListPrefs.parse(p, accountId),
                 sharingBuckets = ProfileAudience.buckets(p),
                 deletedMessageIds = rows(p, "message").filter {it.second.present("deleted_at")}.mapTo(HashSet()) {it.first},
-                deletedPostIds = rows(p, "post").filter {it.second.present("deleted_at")}.mapTo(HashSet()) {it.first})
+                deletedPostIds = rows(p, "post").filter {it.second.present("deleted_at")}.mapTo(HashSet()) {it.first},
+                deletedMemberIds = rows(p, "member").filter {it.second.present("deleted_at")}.mapTo(HashSet()) {it.first})
         }
     }
 }

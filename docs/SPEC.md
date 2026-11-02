@@ -403,7 +403,7 @@ Everything below exists; Basic shows only the starred items (DESIGN.md §6 has t
 - **Later** = L1–L6. The schema already reserves `kind`/fields so they don't need migrations of
   existing data.
 
-### UI11b scoped search (D-110)
+### UI11b scoped search (D-112)
 
 Both clients offer This chat, All chats, Journal and Saved. This chat stays inside the open
 conversation and searches that exact channel even when `in:` names another one. All chats uses

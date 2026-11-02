@@ -151,12 +151,13 @@ export function privateVisible(
   hidePrivate: boolean,
   own?: (memberId: string) => boolean,
   switched: FrontEntry[] = front,
+  inside: (ids: string[]) => string[] = ids => ids,
 ): boolean {
   if (channel.invalid_membership) return false;
   const mine = own && privateSides(channel, space, own)?.mine;
-  if (mine?.length) return hereIn(switched, mine);
+  if (mine?.length) return hereIn(switched, inside(mine));
   if (!hidePrivate || !isPrivate(channel, space)) return true;
-  const members = channel.member_ids ?? [];
+  const members = inside(channel.member_ids ?? []);
   if (viewingAs && members.includes(viewingAs)) return true;
   return hereIn(front, members);
 }

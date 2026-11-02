@@ -1,3 +1,4 @@
+import { chatMembers } from './subsystems';
 import { channels, spaces, members, messageById, type MessageRow } from './data';
 import { bodyPresence } from './front-view';
 import { activeViewers, memberVisible } from './hidden';
@@ -12,6 +13,7 @@ export function searchView(p: Projection, account: string, ancestors: ReadonlyMa
   const ss = new Map(spaces(p).map(s => [s.id, s]));
   const front = bodyPresence(p, account), active = activeViewers(front);
   const own = new Set(members(p).map(m => m.id));
+  const inside = chatMembers(p, account);
   const prefs = chatPrefs(p.rows.pref ?? {}, account);
   // A known local tombstone/malformed row must never fall back to an older network card.
   function localOrAncestor(id: string): MessageRow | undefined {
@@ -38,7 +40,7 @@ export function searchView(p: Projection, account: string, ancestors: ReadonlyMa
     }
     if (c.kind === 'thread') {
       if (!c.parent_message_id || !view(localOrAncestor(c.parent_message_id), seen)) return false;
-    } else if (!privateVisible(c, s, front, null, true, id => own.has(id), front)) return false;
+    } else if (!privateVisible(c, s, front, null, true, id => own.has(id), front, inside)) return false;
     const cutoff = prefs.hidden.get(c.id);
     if (cutoff != null && m.occurred_at <= cutoff) return false;
     const raw = p.rows.message?.[m.id]?.fields.visibility ?? m.visibility;

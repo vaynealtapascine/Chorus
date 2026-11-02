@@ -1,4 +1,4 @@
-//! Ephemeral current-front read view for scoped search (D-110), never a sync grant.
+//! Ephemeral current-front read view for scoped search (D-112), never a sync grant.
 use crate::api_data::{DataError, Principal};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
@@ -124,18 +124,22 @@ impl<'a> CurrentView<'a> {
             };
         } else if ok {
             let internal_private = space_kind == "internal" && (kind == "member_dm" || !listed.is_empty());
-            let own =
-                listed
-                    .into_iter()
-                    .filter(|id| {
-                        self.conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM member WHERE id=?1 AND account_id=?2 AND deleted_at IS NULL)",
-                params![id,self.p.account_id], |r| r.get::<_,bool>(0)).unwrap_or(false)
-                    })
-                    .collect::<Vec<_>>();
+            let own = listed
+                .into_iter()
+                .filter(|id| {
+                    self.conn
+                        .query_row(
+                            "SELECT EXISTS(SELECT 1 FROM member WHERE id=?1 AND account_id=?2)",
+                            params![id, self.p.account_id],
+                            |r| r.get::<_, bool>(0),
+                        )
+                        .unwrap_or(false)
+                })
+                .collect::<Vec<_>>();
             // Search always uses the recorded current front, regardless of the chat-list toggle.
             if internal_private || !own.is_empty() {
-                ok = own.iter().any(|m| self.front.contains(m));
+                let included = crate::perms::with_parts(self.conn, &self.p.account_id, own)?;
+                ok = included.iter().any(|m| self.front.contains(m));
             }
         }
         self.channels.insert(id.to_string(), ok);

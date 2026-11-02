@@ -628,3 +628,130 @@ fn malformed_channel_membership_never_becomes_unrestricted() {
         assert!(CurrentView::new(&conn, &p).unwrap().message("public").unwrap());
     }
 }
+
+/// Same fixture as web/Android: canonical point reads, optimized SQL, FTS paging and context
+/// must agree after every subsystem/archive mutation. No front or message audience expansion.
+#[test]
+fn subsystem_search_fixture_matches_canonical_sql_and_context() {
+    use chorus_server::search::{self, MessageQuery};
+    use chorus_server::search_view::{CurrentView, message_sql};
+    let f: Value = serde_json::from_str(include_str!("../../../fixtures/ui_search_subsystems.json")).unwrap();
+    for case in f["cases"].as_array().unwrap() {
+        let mut projection = f["projection"].clone();
+        for (table, rows) in case["rows"].as_object().unwrap() {
+            for (id, fields) in rows.as_object().unwrap() {
+                if projection["rows"][table][id].is_null() {
+                    projection["rows"][table][id] = serde_json::json!({"fields":{}});
+                }
+                for (key, value) in fields.as_object().unwrap() {
+                    projection["rows"][table][id]["fields"][key] = value.clone();
+                }
+            }
+        }
+        for (key, value) in case["sets"].as_object().unwrap() {
+            projection["sets"]["group_membership"][key] = value.clone();
+        }
+        let mut conn = db::open_memory().unwrap();
+        db::migrate(&mut conn).unwrap();
+        for account in ["account", "other"] {
+            conn.execute("INSERT INTO account(id,kind,created_at) VALUES (?1,'system',0)", [account]).unwrap();
+            conn.execute("INSERT INTO device(id,account_id,short_id,name,platform,public_key,created_at) VALUES (?1,?1,?1,?1,'cli','test',0)", [account]).unwrap();
+        }
+        let rows = &projection["rows"];
+        for (id, row) in rows["space"].as_object().unwrap() {
+            let fields = &row["fields"];
+            conn.execute(
+                "INSERT INTO space(id,kind,owner_account_id,created_at) VALUES (?1,?2,?3,0)",
+                params![id, fields["kind"].as_str(), fields["created_by_account_id"].as_str()],
+            )
+            .unwrap();
+            conn.execute("INSERT INTO scope_access(account_id,scope) VALUES ('account',?1)", [format!("space:{id}")])
+                .unwrap();
+            conn.execute(
+                "INSERT INTO space_member(space_id,account_id,role,joined_hlc) VALUES (?1,'account','member','1')",
+                [id],
+            )
+            .unwrap();
+        }
+        for (id, row) in rows["member"].as_object().unwrap() {
+            let fields = &row["fields"];
+            conn.execute("INSERT INTO member(id,account_id,name,created_at,archived_at,deleted_at) VALUES (?1,'account',?1,0,?2,?3)", params![id,fields["archived_at"].as_i64(),fields["deleted_at"].as_i64()]).unwrap();
+        }
+        for (id, row) in rows["member_group"].as_object().unwrap() {
+            let fields = &row["fields"];
+            conn.execute("INSERT INTO member_group(id,account_id,name,kind,created_at,deleted_at) VALUES (?1,'account',?1,?2,0,?3)", params![id,fields["kind"].as_str(),fields["deleted_at"].as_i64()]).unwrap();
+        }
+        for (id, row) in rows["pref"].as_object().unwrap() {
+            let key = id.split('|').nth(2).unwrap();
+            conn.execute(
+                "INSERT INTO pref(account_id,device_id,key,value,hlc) VALUES ('account','',?1,?2,'1')",
+                params![key, row["fields"]["value"].to_string()],
+            )
+            .unwrap();
+        }
+        for (key, present) in projection["sets"]["group_membership"].as_object().unwrap() {
+            let (group, member) = key.split_once('|').unwrap();
+            let member: Value = serde_json::from_str(member).unwrap();
+            conn.execute(
+                "INSERT INTO group_membership(group_id,member_id,added_hlc,removed_hlc) VALUES (?1,?2,'1',CASE WHEN ?3 THEN NULL ELSE '2' END)",
+                params![group, member["member_id"].as_str(), present.as_bool()],
+            )
+            .unwrap();
+        }
+        for (id, row) in rows["channel"].as_object().unwrap() {
+            let fields = &row["fields"];
+            let members = fields.get("member_ids").map(Value::to_string);
+            conn.execute("INSERT INTO channel(id,space_id,kind,name,parent_message_id,member_ids,created_at,archived_at) VALUES (?1,?2,?3,?1,?4,?5,0,?6)",params![id,fields["space_id"].as_str(),fields["kind"].as_str(),fields["parent_message_id"].as_str(),members,fields["archived_at"].as_i64()]).unwrap();
+        }
+        for (id, row) in rows["message"].as_object().unwrap() {
+            let fields = &row["fields"];
+            let visibility = fields.get("visibility").map(Value::to_string);
+            conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text,visibility) VALUES (?1,?2,'account','account',?3,?4,?5)",params![id,fields["channel_id"].as_str(),fields["occurred_at"].as_i64(),fields["text"].as_str(),visibility]).unwrap();
+        }
+        conn.execute_batch("INSERT INTO message_fts(rowid,text,cw) SELECT rowid,text,'' FROM message").unwrap();
+        for id in case["front"].as_array().unwrap() {
+            conn.execute("INSERT INTO front_interval(id,account_id,subject_type,subject_id,level,is_primary,position,start_at,start_switch_id,start_tz_offset_min) VALUES (?1,'account','member',?1,?2,1,0,0,'switch',0)",params![id.as_str(),case["level"].as_str()]).unwrap();
+        }
+        let principal = api_data::Principal::owner("account");
+        let mut view = CurrentView::new(&conn, &principal).unwrap();
+        let mut canonical = rows["message"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .filter(|id| view.message(id).unwrap())
+            .cloned()
+            .collect::<Vec<_>>();
+        canonical.sort();
+        assert_eq!(serde_json::json!(canonical), case["visible"], "canonical: {}", case["name"]);
+        let (channels, front, cutoffs) = view.selection().unwrap();
+        let sql =
+            format!("SELECT m.id FROM message m WHERE {} ORDER BY m.id", message_sql("?1", "?2", "?3", "?4", "?5"));
+        let selected = conn
+            .prepare(&sql)
+            .unwrap()
+            .query_map(params!["account", channels, front, cutoffs, false], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(serde_json::json!(selected), case["visible"], "SQL: {}", case["name"]);
+        let page =
+            search::messages(&conn, &principal, &MessageQuery { q: "needle".into(), ..Default::default() }).unwrap();
+        let mut hits = page["items"].as_array().unwrap().iter().map(|m| m["id"].as_str().unwrap()).collect::<Vec<_>>();
+        hits.sort();
+        assert_eq!(serde_json::json!(hits), case["visible"], "FTS: {}", case["name"]);
+        assert!(page["next_cursor"].is_null());
+        let context = page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["id"] == "hit")
+            .map(|m| {
+                [&m["context_before"], m, &m["context_after"]]
+                    .iter()
+                    .filter_map(|m| m["id"].as_str())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        assert_eq!(serde_json::json!(context), case["context"], "context: {}", case["name"]);
+    }
+}

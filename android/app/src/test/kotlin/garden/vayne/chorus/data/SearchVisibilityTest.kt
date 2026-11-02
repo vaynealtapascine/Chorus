@@ -7,6 +7,37 @@ import org.junit.Test
 import kotlinx.coroutines.runBlocking
 
 class SearchVisibilityTest {
+    @Test fun subsystemSearchMatchesSharedEligibilityAndContextFixtures() {
+        val fixture=JSONObject(java.io.File(System.getProperty("chorus.fixtures"),"ui_search_subsystems.json").readText())
+        val cases=fixture.getJSONArray("cases")
+        for(i in 0 until cases.length()) {
+            val c=cases.getJSONObject(i)
+            val p=JSONObject(fixture.getJSONObject("projection").toString())
+            val changes=c.getJSONObject("rows")
+            val rows=p.getJSONObject("rows")
+            for(table in changes.keys()) {
+                val target=rows.optJSONObject(table) ?: JSONObject().also { rows.put(table,it) }
+                val updates=changes.getJSONObject(table)
+                for(id in updates.keys()) {
+                    val row=target.optJSONObject(id) ?: JSONObject().put("exists",true).put("fields",JSONObject()).also { target.put(id,it) }
+                    val fields=row.getJSONObject("fields")
+                    val values=updates.getJSONObject(id)
+                    for(key in values.keys()) fields.put(key,values.get(key))
+                }
+            }
+            val membership=p.getJSONObject("sets").getJSONObject("group_membership")
+            val sets=c.getJSONObject("sets")
+            for(key in sets.keys()) membership.put(key,sets.get(key))
+            p.getJSONObject("fronts").getJSONObject("account").put("current",JSONArray().apply {
+                for(id in SearchVisibility.strings(c.getJSONArray("front"))) put(JSONObject().put("subject_type","member").put("subject_id",id).put("level",c.getString("level")))
+            })
+            val model=Model.parse(p,"account")
+            val view=SearchVisibility(model,"account")
+            assertEquals(c.getString("name"),SearchVisibility.strings(c.getJSONArray("visible")),model.searchMessages.filter(view::document).map {it.id}.sorted())
+            val hit=Model.parse(fixture.getJSONObject("projection"),"account").searchMessages.first {it.id=="hit"}
+            assertEquals(c.getString("name"),SearchVisibility.strings(c.getJSONArray("context")),view.context(hit))
+        }
+    }
     @Test fun malformedChannelMembershipNeverBecomesAnUnrestrictedLocalChat() {
         for(raw in listOf("[\"rin\",42]","[42]","{}","\"rin\"")) {
             val p=JSONObject(java.io.File(System.getProperty("chorus.fixtures"),"ui_search.json").readText()).getJSONObject("projection")

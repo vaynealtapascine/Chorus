@@ -6,7 +6,7 @@ import org.json.JSONObject
 /** Current-front view bound once per model, reused for each match and each neighbor. */
 class SearchVisibility(private val model: Model, private val account: String, private val channel: String? = null, private val ancestors: Map<String,ChatMessage> = emptyMap()) {
     private val byId=model.searchMessages.associateBy {it.id}
-    private val own=model.members.mapTo(HashSet()) {it.id}
+    private val own=model.knownMemberIds
     private val channels = model.channels.associateBy { it.id }
     private val spaces = model.spaces.associateBy { it.id }
     fun document(d: SearchDocument): Boolean = (channel == null || d.channelId == channel) &&
@@ -24,7 +24,7 @@ class SearchVisibility(private val model: Model, private val account: String, pr
             val p = parent?.let { it.card ?: ChatMessage(it.id,it.channelId.orEmpty(),it.authors,it.text,it.occurredAt,it.cw,
                 it.visibilityMode,it.visibleMemberIds,it.accountId,null,emptyList()) } ?: ancestors[c.parentMessageId] ?: return false
             if (!visible(p,seen)) return false
-        } else if (!ChatOrganize.privateVisible(c,s,model.current,null,true,own)) return false
+        } else if (!ChatOrganize.privateVisible(c,s,model.current,null,true,own,inside = { Subsystems.including(model,it) })) return false
         if(c.kind != "thread" && !ChannelPermissions.canView(model.channelPermissionState,c,account)) return false
         if (model.accountPrefs.hiddenChats[c.id]?.let { m.occurredAt <= it } == true) return false
         if (m.visibilityMode !in listOf("all","system_only","members")) return false

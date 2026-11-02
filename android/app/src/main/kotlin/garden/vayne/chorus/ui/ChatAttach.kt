@@ -51,12 +51,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -202,8 +200,8 @@ internal fun AttachSheet(page: String, onPage: (String) -> Unit, already: Int, o
         if (uri != null) { if (ok) onAdd(listOf(uri)) else DeviceGallery.discard(ctx, uri) }
     }
     // fully open: the tiles under the grid must show without a drag
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = p.surface,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ChorusSheet(onDismissRequest = onDismiss, containerColor = p.surface,
+        skipPartiallyExpanded = true) {
         val option = options.find { it.key == page }
         if (option == null) Column(Modifier.fillMaxWidth()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {

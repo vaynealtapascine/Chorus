@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { beforeAll, expect, it, vi } from 'vitest';
 vi.mock('./router.svelte', () => ({router:{go:vi.fn()}}));
 import { core, loadCore } from './core';
-import { messageById } from './data';
+import { channels, messageById } from './data';
+import { chatShown } from './chat-visible';
 import { searchView, contextMessages, searchAncestors } from './search-view';
 import { SearchIndex, JournalIndex, parseSearch } from './search';
 import { savedPosts } from './journal-social';
@@ -137,5 +138,28 @@ it('malformed channel membership fails closed in hits, neighbors and thread ance
   expect(view(hit)).toBe(false);
   expect(view(messageById(p,'thread-message'))).toBe(false);
   expect(contextMessages(hit,Object.keys(p.rows.message).map(id=>messageById(p,id)!),view)).toEqual([]);
+ }
+});
+
+const subsystemFixture=JSON.parse(readFileSync(new URL('../../../fixtures/ui_search_subsystems.json',import.meta.url),'utf8'));
+for(const c of subsystemFixture.cases) it(`subsystem search: ${c.name}`,()=>{
+ const p=structuredClone(subsystemFixture.projection) as Projection;
+ for(const [table,rows] of Object.entries(c.rows) as [string,Record<string,Record<string,unknown>>][]) {
+  p.rows[table] ??= {};
+  for(const [id,fields] of Object.entries(rows)) p.rows[table][id]={exists:true,fields:{...p.rows[table][id]?.fields,...fields}};
+ }
+ Object.assign(p.sets.group_membership,c.sets);
+ p.fronts.account.current=c.front.map((id:string)=>({subject_type:'member',subject_id:id,level:c.level,is_primary:false}));
+ const all=Object.keys(p.rows.message).map(id=>messageById(p,id)!);
+ const visible=searchView(p,'account');
+ expect(all.filter(visible).map(m=>m.id).sort()).toEqual(c.visible);
+ expect(contextMessages(messageById(p,'hit')!,all,visible).map(m=>m.id)).toEqual(c.context);
+ const hits=new SearchIndex(p).find(core.searchParse('needle'),30,100).filter(h=>visible(messageById(p,h.id)));
+ expect(hits.map(h=>h.id).sort()).toEqual(c.visible);
+ // Keep the normal guarded jump usable for newly eligible subsystem members, too.
+ if(c.name==='nested active member includes subsystem chats and thread ancestors') {
+  const shown=chatShown(p,'account');
+  expect(shown(channels(p).find(c=>c.id==='root'))).toBe(true);
+  expect(shown(channels(p).find(c=>c.id==='private-dm'))).toBe(true);
  }
 });

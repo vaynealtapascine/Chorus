@@ -485,9 +485,9 @@ stay BEFORE expansion; valid listed members must use the merged semantics. At in
 - Add server/web/native search/context/ancestor/blob tests for recursive inside membership,
   removal/archive/deletion, malformed mixed lists and the never-upward case; retain recorded
   Body-front-only search semantics under the new membership relation.
-- Resolve the decision-ID collision: this branch's D-110 is scoped search; main's D-110 is
-  subsystem chat expansion, and D-111 is reserved by forthcoming archived-chat work. Renumber
-  references consistently during the parent merge instead of silently losing either decision.
+- Decision-ID collision (resolved by the integration below): scoped search was originally this
+  branch's D-110 and is now D-112. Main's D-110 remains subsystem chat expansion; D-111 stays
+  reserved for archived chats. All active search references use D-112.
 
 These are integration requirements from the owner's latest relay, not features merged into this
 four-finding patch. No other thread was contacted and no deployment tools were run.
@@ -527,3 +527,82 @@ All four findings are committed for parent review in the implementation commit f
 smoke checks remain the parent's work; the isolated task head must not be deployed before that
 integration. No schema/op-kind/dependency/version change or data migration. No deployment or
 packaging/staging write was performed; UI11c remains gated.
+
+
+## UI11b main integration — GPT-6-sol, 2026-11-02
+
+Integrated source is pinned to committed main `0ac29cc4d7340a7fd3a66781812ffabaf593477c`,
+merged with `--no-commit --no-ff` onto `feat/links` at
+`ea317fba882418ce2646506518df914f90571b39`. No separate start commit was made in the open
+merge. This section supersedes the earlier instruction to perform that specific merge.
+
+The three textual conflicts were resolved by keeping both board entries, preserving main's
+D-110 subsystem decision verbatim and renumbering scoped search to D-112, and combining
+Android's strict `invalidMembership` rejection with main's `inside` callback. All search spec,
+API, model, client, design, sync, source and board references now use D-112. The historical
+D-110 collision description above is retained as history; D-111 is still reserved.
+
+Main's UI12a changes are present: ChorusSheet, ordered Journal coauthors, full photos/tags,
+switch hairlines, spoiler bars/dark content colours and private-chat labels. Its subsystem
+speaker/notification expansion and private_chats regression remain intact. No archive/reply
+stack/custom-folder implementation is present in this pinned main snapshot. Current search
+continues to exclude archived channels and inherited threads on server/web/native. Later
+main commits must be reconciled by the parent before deployment; do not silently assume this
+merge contains them.
+
+Search canonical guards now reuse `perms::with_parts` after strict array validation, for
+internal and external private channels. Optimized SQL selection/context inherit the same
+allowed-channel result. Web and native eligibility apply the same recursive downward relation;
+normal guarded chat jumps/lists agree. Do not expand the actual Body front or message-level
+member audiences. Explicit ownership of listed members is retained after tombstones (native
+Model now retains deleted member IDs); deleting the last own listed member cannot turn an
+external private channel into an unrestricted one. Added subsystem parts must remain active,
+nondeleted, present in a live linked subsystem group. Never expand upward.
+
+Shared `fixtures/ui_search_subsystems.json` has 23 cases consumed by Rust canonical reads,
+SQL/FTS/context, web and Android: nested/co-conscious members, present exclusion, never upward,
+member/group removal/archive/deletion, link clearing, cycles, malformed mixed/nonarray lists,
+archive/clear inheritance, literal message audiences and retained root ownership. HTTP blob
+GET/HEAD cases independently revoke a retained hash through nested membership, thread parents,
+member/group deletion, malformed lists, archives and never-upward access. Existing native
+request identity/disconnect/query ABA, latest/send history-to-live and target-scoped ancestry
+controllers were preserved; their regressions remain in the full suite.
+
+Targeted checks passed: server search/private_chats/blobs (25 tests), web search-view cases,
+and Android SearchVisibilityTest. The 50k package-release search timings were 74/106/83 ms
+(sparse/nonempty front/dense), under the unchanged 150 ms requirement. These targeted runs
+preceded the final two retained-ownership fixture cases; the full gate covers those too.
+Full `python scripts/verify.py --android --offline` **passed**; final evidence follows below.
+Process-only environment: dot-source `F:/DunBuild/chorus-env.ps1`, Studio JBR,
+`GRADLE_USER_HOME=F:/DunBuild/gradle`, existing F: Cargo/Gradle build dirs and
+`CARGO_INCREMENTAL=0`. No quick wrapper. Full log: `F:/DunBuild/chorus-ui11b-merge-full.log`.
+
+No packaging, deployment, shared chorus-linux or PC app/android write, device installation,
+service/system-setting change, other-checkout or main-ref mutation, subagent or UI11c work.
+Parent independently reviews the combined implementation, checks any newly advanced main,
+builds matching WASM/native libraries and release artifacts, takes the verified backup and
+deploys. Phone/browser smoke checks remain pending (keyboard/Back/scroll, latest/send from
+history, live arrivals, pending-page front changes, nested-membership revocation, media and
+Journal author ordering). UI11c remains gated on that review and deployment.
+
+
+### Final integration gate / commit handback
+
+Full `python scripts/verify.py --android --offline` passed, with no quick wrapper or waived
+failure. Includes documentation checks, fmt/clippy, release workspace tests/convergence/HTTP,
+all 23 shared subsystem cases in canonical/SQL/FTS/context, WASM build, Svelte diagnostics
+(0 errors/warnings), **266 web tests + 1 existing skip**, production budgets (**190 KB JS /
+300 KB WASM gz**), Android lint and **365 app + 7 bridge JVM tests** (zero failures/errors/skips
+in the JVM XML reports). Log: `F:/DunBuild/chorus-ui11b-merge-full.log`. The full workspace's
+50k search budget regression passed without changing its 150 ms bound. The final 35-case web
+search-view suite and native SearchVisibilityTest also passed independently with the two new
+tombstone-ownership cases (`chorus-ui11b-merge-web-final.log`, `...-android-final.log`).
+
+Main still resolved to `0ac29cc4d7340a7fd3a66781812ffabaf593477c` at the final gate / before
+commit; no later committed main was chased. The merge commit has first parent
+`ea317fba882418ce2646506518df914f90571b39` and second parent that exact main. No WIP remains.
+The board is ready for parent review. The parent must independently re-review this combined
+source, check for any subsequently advanced main (especially D-111/reply stack/folders and
+potential new decision numbers), then build matching platform libraries/artifacts and handle
+verified backup/deployment and browser/phone smoke checks. UI11c remains gated. No deployment,
+packaging, shared staging/PC selfhost writes or other-checkout/main-ref changes were performed.

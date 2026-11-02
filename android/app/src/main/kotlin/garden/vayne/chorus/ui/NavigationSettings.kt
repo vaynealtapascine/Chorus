@@ -42,7 +42,7 @@ internal fun NavigationSettings(selected: List<String>, person: Boolean, onChang
     }
     if (open) {
         var draft by rememberSaveable { mutableStateOf(selected) }
-        ModalBottomSheet(onDismissRequest = { open = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ChorusSheet(onDismissRequest = { open = false }, skipPartiallyExpanded = true) {
 
             InspectionDialogContent {
                 Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),

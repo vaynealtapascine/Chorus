@@ -472,7 +472,7 @@ Measured 2026-09-25 (headless Chromium, remote box, minified build, three runs):
   (merge/skip/duplicate), then import as one batch of ops (idempotent: op ids derived from
   `uuidv5(pk_id + field)` so re-importing doesn't duplicate).
 
-D-110 scoped search is shared by web and Android: current-chat in-place search, All chats for
+D-112 scoped search is shared by web and Android: current-chat in-place search, All chats for
 the recorded Body front, Journal posts/entries/replies and Saved bookmarked posts. Rich message
 cards include up to one independently visible neighbor on each side, even outside search terms.
 Local replicas work offline; other accounts' posts require a live audience check. Scope/front/

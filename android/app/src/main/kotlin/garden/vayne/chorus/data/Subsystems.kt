@@ -41,6 +41,19 @@ object Subsystems {
         return model.active.filter { it.id != memberId && it.id in model.membership[group.id].orEmpty() }
     }
 
+    /** [ids] followed by everyone inside any of them who is a subsystem, recursively, each once: who a
+     * members' chat with a subsystem includes (owner, 2026-11-02). Never upward: a chat with
+     * someone inside doesn't include their subsystem. The server keeps D-098 chats the same way. */
+    fun including(model: Model, ids: List<String>): List<String> {
+        val out = ids.distinct().toMutableList()
+        var i = 0
+        while (i < out.size) {
+            for (part in parts(model, out[i])) if (part.id !in out) out.add(part.id)
+            i++
+        }
+        return out
+    }
+
     /** Subsystem members [memberId] is directly inside, for "Part of Garden". */
     fun containers(model: Model, memberId: String): List<Member> = model.accountPrefs.memberSubsystems.keys
         .filter { it != memberId }.mapNotNull(model::member).filter { !it.archived && parts(model, it.id).any { p -> p.id == memberId } }

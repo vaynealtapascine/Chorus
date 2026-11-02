@@ -2,6 +2,7 @@
   // The desktop chat list (Figma F5.21): search, who is here now, then every conversation across
   // spaces, newest first, with its last message, time and unread count. Muted chats keep a grey badge.
   import { core } from '../core';
+  import { chatMembers } from '../subsystems';
   import { channels, latestMessage, members, spaces, unread, fuzzy, type ChannelRow, type MemberRow, type SpaceRow } from '../data';
   import { chatPrefs, chatTime, discColor, folderOf, HIDDEN, movePin, orderChats, PINS, previewOf, privateVisible, togglePin, type Folder } from '../chat-list';
   import { bodyPresence, frontLayers } from '../front-view';
@@ -50,12 +51,13 @@
     // members inside a fronting subsystem count as here (D-092)
     const switched = bodyPresence(projection, sync.accountId);
     const front = switched;
+    const inside = chatMembers(projection, sync.accountId);
     const own = new Set(members(projection).map((m) => m.id));
     const list: Row[] = [];
     for (const c of all) {
       const space = ss.find((s) => s.id === c.space_id);
       // a member's private chats only while one of them is here (D-097)
-      if (!privateVisible(c, space, front, viewingAs, organize.hidePrivate, (m) => own.has(m), switched)) continue;
+      if (!privateVisible(c, space, front, viewingAs, organize.hidePrivate, (m) => own.has(m), switched, inside)) continue;
       // cleared for us: gone until something newer arrives
       const cleared = organize.hidden.get(c.id);
       if (cleared !== undefined && (latestMessage(projection, c.id)?.occurred_at ?? 0) <= cleared) continue;

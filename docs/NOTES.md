@@ -836,3 +836,18 @@ replace a changed row rather than mutating its fields in place under an existing
 Blob GET/HEAD now return the same missing response for unreadable hashes. Upload ownership
 failures still use 403. Search grants nothing to blobs; a recipient's message reference is checked
 against their current front/channel view, while uploaders retain existing account-owned access.
+
+
+### 2026-11-02 — UI11b integration with subsystem chats
+
+Main `0ac29cc` added recursive `perms::with_parts` to D-098's `kept_to`. Search must call that
+same helper after strict membership validation, rather than call `kept_to` (which intentionally
+skips internal spaces) or expand the current front (which would grant upward access). Native
+SearchVisibility supplies `Subsystems.including`; web binds a downward membership walker per
+projection for search, chat jumps and the list. Message-level audiences still use literal front
+members. Keep listed-member ownership even after member deletion; otherwise an external chat
+with only a deleted own entry can accidentally become unrestricted. Expanded parts still require
+live group membership and active/nondeleted members. Shared `ui_search_subsystems.json` runs
+against Rust canonical/SQL/FTS/context, web and Android; blob GET/HEAD additionally recheck nested
+thread ancestry and membership/archive revocations. D-112 is the renumbered search decision;
+main's D-110 is unchanged and D-111 remains reserved. No new dependency, schema or op kind.

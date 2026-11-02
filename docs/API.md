@@ -186,7 +186,7 @@ GET  /search/messages?q=&tz=&in=&from=&before=&after=&has=&limit=&cursor=
   ms) parameters still narrow the search. Pages contain 1–100
   results (default 100). Pass `next_cursor` back with the same search and filters to continue;
   a null cursor means the results are exhausted. Results are ordered by occurred time then id, newest first, and pass the current-front
-  channel/message view (D-110). Cursors carry no corpus-dependent FTS rank. API tokens need
+  channel/message view (D-112). Cursors carry no corpus-dependent FTS rank. API tokens need
   `read:messages`; device sessions inherit access.
 GET  /pins?channel=
 GET  /search/posts?q=&account=&kind=&before=&after=&limit=&cursor=
@@ -587,7 +587,7 @@ Internal typing stays own-account even when a channel has guests. Typing is neve
 exported, sent through notifications, SSE or webhooks, or replayed. HTTP push/pull fallback
 ignores typing (the current router does not implement those fallback routes).
 
-### UI11b search view (D-110)
+### UI11b search view (D-112)
 
 `GET /search/messages` additionally accepts `current=true` and `channel_id=<exact id>`.
 All searches use chronological newest-first ordering and rechecks current permissions, Body
@@ -602,6 +602,6 @@ additional restriction, intersecting `in:` rather than broadening it.
 account-wide `bookmark:<id> = true` preferences before paging and the ordinary live post audience
 check. Cursors bind this flag. Saved preferences grant no post/blob access.
 
-D-110: blob GET/HEAD return the same 404 for missing and unreadable hashes; a hash retained
+D-112: blob GET/HEAD return the same 404 for missing and unreadable hashes; a hash retained
 from a search card does not bypass current recipient-front/channel permission checks. Upload
 ownership failures remain 403. Uploaders retain their existing own-file access.

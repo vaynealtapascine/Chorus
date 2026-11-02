@@ -17,6 +17,11 @@ object PostCompose {
     fun toggleAuthor(ids: List<String>, id: String): List<String> =
         if (id in ids) ids.filterNot { it == id } else ids + id
 
+    /** Co-authors stay in the order chosen; the first is the main author. */
+    fun moveAuthor(ids: List<String>, from: Int, to: Int): List<String> =
+        if (from !in ids.indices || to !in ids.indices || from == to) ids
+        else ids.toMutableList().apply { add(to, removeAt(from)) }
+
     fun payload(
         model: Model, accountId: String, kind: String, authorId: String, body: String,
         title: String, cw: String, audience: String, mood: String, tags: String,

@@ -931,7 +931,7 @@ pushes (SYNC.md §7.3), and are projected in their old order. What the bundle ca
 - **Devices.** The import prints a one-time device invite instead. The round trip is tested
   (`tests/import.rs`): the same ops, CSV tables and files.
 
-D-110 search adds read-only scopes and visible context, without changing sync delivery, the op
+D-112 search adds read-only scopes and visible context, without changing sync delivery, the op
 catalogue, projections or schema. Bookmarks remain ordinary account-scoped `pref.set` values;
 a bookmark never grants post, author or blob access. Current-front search pages are ephemeral.
 
@@ -941,3 +941,15 @@ still accepts legacy ops without rewriting them. Current-front reads treat a non
 persisted membership as unavailable, including through thread ancestors, context and known-hash
 blob references; clients retain an explicit invalid flag rather than interpreting it as an empty
 unrestricted list. SQL NULL remains the absent membership value.
+
+
+UI11b/main integration (D-110 + D-112): current search validates the entire stored channel
+membership array before any expansion, then expands its own listed members with the same
+`perms::with_parts` relation used by `kept_to`, including internal member chats. Only present,
+active members of a live linked subsystem group are added, recursively and never upward. A
+listed member's ownership survives their tombstone, so deleting a listed member cannot turn a
+restricted external chat into an unrestricted one. Explicit list entries keep their existing
+meaning. The recorded Body front and message-level `visibility.member_ids` are never expanded.
+Canonical point reads, SQL pre-limit selection, context, inherited thread parents and blob
+reads use this relation. At integrated main `0ac29cc`, archived channels and their descendants
+remain excluded from current search; forthcoming D-111 archive behavior is outside this merge.

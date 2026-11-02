@@ -35,6 +35,22 @@ class SubsystemsTest {
         assertEquals(listOf("s", "s2"), Subsystems.unlinkedGroups(m).map { it.id })
     }
 
+    @Test fun aChatWithASubsystemIncludesEveryoneInsideButNotUpward() {
+        val m = model()
+        assertEquals(listOf("garden", "kai", "wren", "moss"), Subsystems.including(m, listOf("garden")))
+        assertEquals(listOf("wren", "fox", "moss"), Subsystems.including(m, listOf("wren", "fox")))
+        assertEquals(listOf("moss"), Subsystems.including(m, listOf("moss")))
+        val home = ChatSpace("h", "internal", "Home")
+        val dm = ChatChannel("c", "h", "member_dm", "Garden & Fox", null, memberIds = listOf("garden", "fox"))
+        val inside = { ids: List<String> -> Subsystems.including(m, ids) }
+        val front = { id: String -> listOf(Entry("member", id, "front", true)) }
+        assertTrue(ChatOrganize.privateVisible(dm, home, front("moss"), null, true, inside = inside))
+        assertTrue(ChatOrganize.privateVisible(dm, home, emptyList(), "kai", true, inside = inside))
+        // a chat with someone inside doesn't reach the subsystem
+        val mossDm = dm.copy(memberIds = listOf("moss", "fox"))
+        assertFalse(ChatOrganize.privateVisible(mossDm, home, front("garden"), null, true, inside = inside))
+    }
+
     @Test fun aMemberCannotEndUpInsideThemselves() {
         val m = model()
         assertTrue(Subsystems.wouldLoop(m, "garden", "garden"))

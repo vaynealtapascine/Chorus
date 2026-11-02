@@ -1,3 +1,4 @@
+import { chatMembers } from './subsystems';
 // Which chats this account may look at right now (D-097 members' private chats, D-098 private
 // chats in DMs), for every place that lists chats or their messages: the chat list, pickers and
 // search. One rule, chat-list.ts `privateVisible`; this binds it to a projection.
@@ -23,6 +24,7 @@ export function privacyChannel(p: Projection, channel: ChannelRow | undefined, b
 
 export function chatShown(p: Projection, accountId: string, viewingAs: string | null = null): (c: ChannelRow | undefined) => boolean {
   const own = new Set(members(p).map((m) => m.id));
+  const inside = chatMembers(p, accountId);
   const switched = bodyPresence(p, accountId);
   // the front exactly as switched for both (D-102)
   const front = switched;
@@ -32,7 +34,7 @@ export function chatShown(p: Projection, accountId: string, viewingAs: string | 
   const shown = (channel: ChannelRow | undefined): boolean => {
     const c = privacyChannel(p, channel, byId);
     if (!c || !bySpace.has(c.space_id)) return false;
-    return privateVisible(c, bySpace.get(c.space_id), front, viewingAs, hidePrivate, (m) => own.has(m), switched);
+    return privateVisible(c, bySpace.get(c.space_id), front, viewingAs, hidePrivate, (m) => own.has(m), switched, inside);
   };
   return (c) => shown(c);
 }

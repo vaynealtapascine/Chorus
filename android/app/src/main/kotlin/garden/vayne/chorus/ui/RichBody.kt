@@ -19,8 +19,26 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.lerp
+import garden.vayne.chorus.designsystem.ChorusPalette
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import org.json.JSONArray
+
+/** A hidden spoiler is one solid bar: its placeholder glyphs share the background's opaque colour. */
+internal fun spoilerBar(p: ChorusPalette): SpanStyle = lerp(p.surface3, p.ink3, .45f).let { SpanStyle(color = it, background = it) }
+
+/** Plain previews keep [garden.vayne.chorus.data.RichTextPresentation]'s ▪ placeholders; draw each
+ * hidden run (with the spaces between its words) as a solid bar instead of squares. */
+@Composable
+internal fun spoilerPreview(text: String): AnnotatedString {
+    val p = LocalChorusPalette.current
+    return remember(text, p) {
+        buildAnnotatedString {
+            append(text)
+            Regex("▪+(?:\\s+▪+)*").findAll(text).forEach { addStyle(spoilerBar(p), it.range.first, it.range.last + 1) }
+        }
+    }
+}
 
 /** Render the core's entities rather than reparsing Markdown. Hidden spoiler characters are
  * replaced before accessibility/selection sees them; links inside hidden spoilers cannot open. */
@@ -43,7 +61,7 @@ internal fun RichBody(text: String, entities: String, modifier: Modifier = Modif
                 val covered = r.start in prepared.hidden
                 if (r.type == "spoiler") {
                     addStringAnnotation("spoiler", r.start.toString(), r.start, r.end)
-                    if (covered) addStyle(SpanStyle(color = p.ink3, background = p.surface3), r.start, r.end)
+                    if (covered) addStyle(spoilerBar(p), r.start, r.end)
                 } else if (!covered) {
                     val span = when (r.type) {
                         "bold" -> SpanStyle(fontWeight = FontWeight.Bold)

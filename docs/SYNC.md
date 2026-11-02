@@ -563,8 +563,14 @@ Found so far: files uploaded after the last backup were lost by a restore (fixed
 and a finished blob sent again by another account was refused, which stalled the web upload
 queue for good (fixed: API.md §5).
 
-D-110: search does not broaden replica scopes. Local offline results use the latest confirmed +
+D-112: search does not broaden replica scopes. Local offline results use the latest confirmed +
 pending replica and recorded front, including permissions already received. Online-only foreign
 post results are discarded on query/scope/session/projection changes; they are not persisted as
 new grants. Revocation on a disconnected device takes effect once the existing sync repair
 receives it, as for chat; search does not claim remote revocations can arrive offline.
+
+
+The UI11b/main integration also shares `fixtures/ui_search_subsystems.json` across Rust server
+canonical/optimized SQL/FTS/context, web SearchVisibility and native SearchVisibility tests.
+It checks the D-110 membership relation under D-112's literal recorded-Body search view; it
+creates no new sync scope or follower-front grant.
