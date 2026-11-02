@@ -102,32 +102,43 @@ export function frontEvents(intervals: Interval[], from: number, to: number, nam
   });
 }
 
-// ─── pins, members' private chats, cleared chats (D-097; Android's ChatOrganize.kt) ───────────────
+// ─── pins, members' private chats, cleared and archived chats (D-097, D-111; Android's ChatOrganize.kt)
 
 export const PINS = 'chat_pins';
 export const HIDE_PRIVATE = 'chat.hide_private';
 export const HIDDEN = 'chat_hidden:';
+export const ARCHIVED = 'chat_archived:';
 
 type PrefRows = Record<string, { fields: Record<string, unknown> } | undefined>;
 
 /** Account-wide chat prefs; a pending local change (empty account id) wins over the stamped row. */
-export function chatPrefs(prefs: PrefRows, accountId: string): { pins: string[]; hidePrivate: boolean; hidden: Map<string, number> } {
+export function chatPrefs(prefs: PrefRows, accountId: string): { pins: string[]; hidePrivate: boolean; hidden: Map<string, number>; archived: Map<string, number> } {
   const value = (key: string) => (prefs[`||${key}`] ?? prefs[`${accountId}||${key}`])?.fields.value;
   const pins = value(PINS);
-  const hidden = new Map<string, number>();
-  const stamped = new Map<string, unknown>();
-  const pending = new Map<string, unknown>();
-  for (const [k, row] of Object.entries(prefs)) {
-    const [account, device, key] = k.split('|');
-    if (device || (account && account !== accountId) || !key?.startsWith(HIDDEN) || !row) continue;
-    (account ? stamped : pending).set(key.slice(HIDDEN.length), row.fields.value);
-  }
-  for (const [id, at] of new Map([...stamped, ...pending])) if (typeof at === 'number') hidden.set(id, at);
+  // per-chat timestamps under a prefix: channel id → when; a pending null clears a stamped one
+  const stampsUnder = (prefix: string) => {
+    const out = new Map<string, number>();
+    const stamped = new Map<string, unknown>();
+    const pending = new Map<string, unknown>();
+    for (const [k, row] of Object.entries(prefs)) {
+      const [account, device, key] = k.split('|');
+      if (device || (account && account !== accountId) || !key?.startsWith(prefix) || !row) continue;
+      (account ? stamped : pending).set(key.slice(prefix.length), row.fields.value);
+    }
+    for (const [id, at] of new Map([...stamped, ...pending])) if (typeof at === 'number') out.set(id, at);
+    return out;
+  };
   return {
     pins: Array.isArray(pins) ? pins.filter((p): p is string => typeof p === 'string' && !!p) : [],
     hidePrivate: value(HIDE_PRIVATE) !== false,
-    hidden,
+    hidden: stampsUnder(HIDDEN),
+    archived: stampsUnder(ARCHIVED),
   };
+}
+
+/** Still archived (D-111): nothing newer than when it was archived; a new message brings it back. */
+export function stillArchived(archivedAt: number | undefined, latestAt: number | undefined): boolean {
+  return archivedAt !== undefined && (latestAt ?? 0) <= archivedAt;
 }
 
 /** Only DMs between members and channels limited to some members are anyone's private chats. */

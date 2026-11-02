@@ -75,7 +75,9 @@ internal data class ChatListRow(val channel: ChatChannel, val space: ChatSpace, 
     val private: Boolean = false,
     /** Whose a private chat with another account is on our side ("• Fox"), so one member's chat with
      * someone isn't mistaken for another's. */
-    val whose: String? = null)
+    val whose: String? = null,
+    /** Archived (`chat_archived:`), with nothing newer since: listed under Archived chats. */
+    val archived: Boolean = false)
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -89,13 +91,21 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
     var menu by remember { mutableStateOf(false) }
     // the chat whose long-press menu is open (pin, arrange pins, delete or clear)
     var rowMenu by remember { mutableStateOf<String?>(null) }
-    val pinnedCount = rows.count { it.pinned }
+    // archived chats wait under "Archived chats" (overflow menu) until a new message brings them back
+    var showArchived by rememberSaveable { mutableStateOf(false) }
+    val archivedRows = rows.filter { it.archived }
+    val archiveView = showArchived && archivedRows.isNotEmpty()
+    androidx.activity.compose.BackHandler(archiveView) { showArchived = false }
+    val listed = if (archiveView) archivedRows else rows.filter { !it.archived }
+    val pinnedCount = listed.count { it.pinned }
     val system = model.spaces.firstOrNull { it.kind == "internal" }?.name?.takeUnless { it == "Home" }
     Column(modifier.fillMaxHeight().background(p.bg)) {
-        Row(Modifier.fillMaxWidth().background(p.surface).padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().background(p.surface).padding(start = if (archiveView) 4.dp else 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (archiveView) ChatIconButton(R.drawable.ic_back, "Back to chats") { showArchived = false }
             Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
-                Text("Chats", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
-                Text(listOfNotNull(system, reader?.let { "reading as $it" }).joinToString(" · ").ifEmpty { "Your conversations" },
+                Text(if (archiveView) "Archived chats" else "Chats", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (archiveView) "A new message brings a chat back"
+                    else listOfNotNull(system, reader?.let { "reading as $it" }).joinToString(" · ").ifEmpty { "Your conversations" },
                     color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
             }
             ChatIconButton(R.drawable.ic_search, "Search chats", onSearch)
@@ -105,11 +115,13 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                     if (onNewChannel != null) DropdownMenuItem(text = { Text("New channel") }, onClick = { menu = false; onNewChannel() })
                     if (onNew != null) DropdownMenuItem(text = { Text("New message") }, onClick = { menu = false; onNew() })
                     if (onRowAction != null && pinnedCount > 1) DropdownMenuItem(text = { Text("Arrange pinned chats") },
-                        onClick = { menu = false; rows.firstOrNull { it.pinned }?.let { onRowAction(it, "arrange") } })
+                        onClick = { menu = false; listed.firstOrNull { it.pinned }?.let { onRowAction(it, "arrange") } })
+                    if (!archiveView && archivedRows.isNotEmpty()) DropdownMenuItem(text = { Text("Archived chats (${archivedRows.size})") },
+                        onClick = { menu = false; showArchived = true })
                 }
             }
         }
-        if (!model.isPerson) {
+        if (!model.isPerson && !archiveView) {
             val presence = ChatPresentation.presence(model, selected).filter { it.subjectType == "member" }
             Column(Modifier.fillMaxWidth().background(p.surface)) {
                 LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -139,10 +151,10 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                 }
             }
         }
-        ScrollableTabRow(folder.ordinal, containerColor = p.surface, contentColor = p.accent, edgePadding = 8.dp,
+        if (!archiveView) ScrollableTabRow(folder.ordinal, containerColor = p.surface, contentColor = p.accent, edgePadding = 8.dp,
             indicator = { positions -> TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(positions[folder.ordinal]), color = p.accent) }) {
             for (candidate in ChatPresentation.Folder.entries) {
-                val inFolder = rows.filter { candidate == ChatPresentation.Folder.All || ChatPresentation.folder(it.channel, it.space) == candidate }
+                val inFolder = listed.filter { candidate == ChatPresentation.Folder.All || ChatPresentation.folder(it.channel, it.space) == candidate }
                 Tab(selected = folder == candidate, onClick = { folder = candidate }, text = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(candidate.label, fontSize = 13.sp, lineHeight = 18.sp, color = if (folder == candidate) p.ink else p.ink3)
@@ -153,7 +165,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
             }
         }
         Box(Modifier.weight(1f)) {
-            val filtered = rows.filter { folder == ChatPresentation.Folder.All || ChatPresentation.folder(it.channel, it.space) == folder }
+            val filtered = listed.filter { archiveView || folder == ChatPresentation.Folder.All || ChatPresentation.folder(it.channel, it.space) == folder }
             // a chat that moves to the top (pinned, or a new message) is shown, not left just above the
             // view: lazy lists keep the old first row in place
             val listState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -201,6 +213,9 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                             leadingIcon = { Icon(painterResource(if (row.pinned) R.drawable.ic_unpin else R.drawable.ic_pin), null, Modifier.size(20.dp)) })
                         if (row.pinned && pinnedCount > 1) DropdownMenuItem(text = { Text("Arrange pinned chats") },
                             onClick = { rowMenu = null; onRowAction(row, "arrange") })
+                        DropdownMenuItem(text = { Text(if (row.archived) "Unarchive" else "Archive") },
+                            onClick = { rowMenu = null; onRowAction(row, "archive") },
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_archive), null, Modifier.size(20.dp)) })
                         DropdownMenuItem(text = { Text(if (row.space.kind == "internal") "Delete chat" else "Clear chat", color = p.danger) },
                             onClick = { rowMenu = null; onRowAction(row, "remove") },
                             leadingIcon = { Icon(painterResource(R.drawable.ic_delete), null, Modifier.size(20.dp), tint = p.danger) })
@@ -213,13 +228,13 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                     if (onNewChannel != null) TextButton(onClick = onNewChannel) { Text("Create a channel") }
                     if (onNew != null) TextButton(onClick = onNew) { Text("Start a chat") }
                 } }
-                if (folder == ChatPresentation.Folder.Shared || folder == ChatPresentation.Folder.Direct) item {
+                if (!archiveView && (folder == ChatPresentation.Folder.Shared || folder == ChatPresentation.Folder.Direct)) item {
                     Text(if (folder == ChatPresentation.Folder.Shared) "Shared spaces include other systems. Messages show who is speaking; system asides stay inside your system."
                         else "One-to-one chats between your members and with other accounts.", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
                         modifier = Modifier.padding(24.dp))
                 }
             }
-            if (onNew != null) ExtendedFloatingActionButton(onClick = onNew, containerColor = p.accent, contentColor = p.onAccent,
+            if (onNew != null && !archiveView) ExtendedFloatingActionButton(onClick = onNew, containerColor = p.accent, contentColor = p.onAccent,
                 shape = CircleShape, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
                 icon = { ChatIcon(R.drawable.ic_edit, "New chat or channel", p.onAccent) }, text = { Text("New chat") })
         }

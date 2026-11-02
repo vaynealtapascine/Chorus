@@ -124,6 +124,8 @@ default the owner has not contradicted; these may be revisited if implementation
 
 | D-110 | **A members' chat with a subsystem includes everyone inside it (owner, 2026-11-02).** A DM between members (D-097) or a private chat with another account (D-098) that lists a member who is a subsystem (D-092) is also everyone's inside them, recursively: it shows while any of them fronts or is co-conscious (or is read as), lists them in Chat info, and they may speak there. Never upward: a chat with someone inside doesn't include their subsystem. The server applies it to D-098's speaker rule and DM pings (`perms::kept_to` follows `member_subsystem:` prefs to the subsystem group's present, active members). Android implements the client side (`Subsystems.including`); web still lists only who is named. Supersedes D-102 for chats only. | Owner request; claude-opus-5.5 |
 
+| D-111 | **Archived chats (owner request, 2026-11-02).** A chat's long-press menu (web: its ⋯ menu) offers Archive; Chat's overflow menu (web: a bar above the list) offers "Archived chats (N)" while there are any, where each can be opened or unarchived. The account pref `chat_archived:<channel>` = when (the later of now and its latest message; null unarchives), like D-097's `chat_hidden:`, so it reaches the system's devices with no server change. A chat stays archived only while nothing newer than that has arrived: a new message puts it back in the list by itself, on every device. Archived chats leave the list and folder counts but are still found by search, and their notifications are unchanged. Android and web. | Owner request; claude-opus-5.5 |
+
 ## Versions
 
 Pin here as they are adopted (tool/library → version → date → why).

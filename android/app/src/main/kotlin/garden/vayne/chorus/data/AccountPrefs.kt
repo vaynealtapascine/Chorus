@@ -16,7 +16,9 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
     /** Members' private chats only while one of them fronts (`chat.hide_private`, on by default). */
     val hidePrivate: Boolean = true,
     /** Chats cleared for this account: channel id → when (`chat_hidden:<id>`). */
-    val hiddenChats: Map<String, Long> = emptyMap()) {
+    val hiddenChats: Map<String, Long> = emptyMap(),
+    /** Archived chats: channel id → when (`chat_archived:<id>`); a newer message brings one back. */
+    val archivedChats: Map<String, Long> = emptyMap()) {
     fun isSaved(postId: String): Boolean = postId in bookmarks
 
     /** A channel's chat notifications; DMs default to everything, other channels to mentions (as on web). */
@@ -49,7 +51,8 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
                     (value as? String)?.takeIf { it.isNotBlank() }?.let { member to it } }.toMap(),
                 (value(ChatOrganize.PINS) as? org.json.JSONArray)?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) } }.orEmpty(),
                 value(ChatOrganize.HIDE_PRIVATE) != false,
-                keyed(prefs, accountId, ChatOrganize.HIDDEN).mapNotNull { (channel, at) -> (at as? Number)?.let { channel to it.toLong() } }.toMap())
+                keyed(prefs, accountId, ChatOrganize.HIDDEN).mapNotNull { (channel, at) -> (at as? Number)?.let { channel to it.toLong() } }.toMap(),
+                keyed(prefs, accountId, ChatOrganize.ARCHIVED).mapNotNull { (channel, at) -> (at as? Number)?.let { channel to it.toLong() } }.toMap())
         }
 
         /** Account-wide (no device) prefs under [prefix], by the rest of the key; a pending local

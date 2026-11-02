@@ -3,7 +3,7 @@
   // spaces, newest first, with its last message, time and unread count. Muted chats keep a grey badge.
   import { core } from '../core';
   import { channels, latestMessage, members, spaces, unread, fuzzy, type ChannelRow, type MemberRow, type SpaceRow } from '../data';
-  import { chatPrefs, chatTime, discColor, folderOf, HIDDEN, movePin, orderChats, PINS, previewOf, privateVisible, togglePin, type Folder } from '../chat-list';
+  import { ARCHIVED, chatPrefs, chatTime, discColor, folderOf, HIDDEN, movePin, orderChats, PINS, previewOf, privateVisible, stillArchived, togglePin, type Folder } from '../chat-list';
   import { bodyPresence, frontLayers } from '../front-view';
   import { authorCards, spaceTitle, type SpaceInfo } from '../spaces';
   import { privateSides } from '../chat-manage';
@@ -42,6 +42,8 @@
     channel: ChannelRow; space: SpaceRow | undefined; folder: Exclude<Folder, 'all'>; title: string; icon: string | null;
     at: number; unread: number; muted: boolean; who: string | null; text: string; disc: { glyph: string; color: string; blob?: string };
     id: string; pinned: boolean;
+    /** archived for us (D-111) with nothing newer since: listed under Archived chats */
+    stowed: boolean;
   }
   const organize = $derived(chatPrefs(projection.rows.pref ?? {}, sync.accountId));
   const rows: Row[] = $derived.by(() => {
@@ -89,6 +91,7 @@
         channel: c, space, folder: f, title, icon: sides ? 'lock' : c.kind === 'member_dm' || space?.kind === 'dm' ? null : f === 'internal' ? (c.member_ids?.length ? 'lock' : 'hash') : 'globe',
         at: latest?.occurred_at ?? 0, unread: c.id === currentId ? 0 : unread(projection, c.id, sync.accountId),
         muted: notify === 'none', who: preview.who, text: preview.text, disc, id: c.id, pinned: organize.pins.includes(c.id),
+        stowed: stillArchived(organize.archived.get(c.id), latest?.occurred_at),
       };
     }
   }
@@ -115,13 +118,22 @@
     if (r.pinned) savePins(organize.pins.filter((p) => p !== r.id));
     if (r.channel.id === currentId) location.hash = '#/chat';
   }
+  // archiving is when, so a newer message brings the chat back on every device (D-111)
+  function archive(r: Row) {
+    menuFor = null;
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: `${ARCHIVED}${r.channel.id}`, value: r.stowed ? null : Math.max(Date.now(), r.at) });
+  }
+  let showArchived = $state(false);
+  const archivedCount = $derived(rows.filter((r) => r.stowed).length);
+  const archiveView = $derived(showArchived && archivedCount > 0);
   // pinned chats are arranged by dragging one onto another
   function drop(onto: string) {
     if (dragging && dragging !== onto) savePins(movePin(organize.pins, dragging, onto));
     dragging = null; dropOn = null;
   }
-  const shown = $derived(rows.filter((r) => (folder === 'all' || r.folder === folder) &&
-    (!query.trim() || fuzzy(query, `${r.title} ${r.text}`) !== null)));
+  // a search looks through archived chats too
+  const shown = $derived(rows.filter((r) => (query.trim() ? fuzzy(query, `${r.title} ${r.text}`) !== null
+    : archiveView ? r.stowed : !r.stowed && (folder === 'all' || r.folder === folder))));
 
   // who is here now: the Body's presence, innermost layer first
   const layers = $derived(frontLayers(projection, sync.accountId));
@@ -155,7 +167,12 @@
       <a href="#/people" onclick={() => (composing = false)}>Message a friend…</a>
     </div>
   {/if}
-  {#if !person && here.length}
+  {#if archiveView}
+    <button class="archive-bar" onclick={() => (showArchived = false)}><Icon name="back" size={18} /> Archived chats <span>A new message brings a chat back</span></button>
+  {:else if archivedCount && !query.trim()}
+    <button class="archive-bar" onclick={() => (showArchived = true)}><Icon name="archive" size={18} /> Archived chats ({archivedCount})</button>
+  {/if}
+  {#if !person && here.length && !archiveView}
     <div class="here" aria-label="Here now">
       {#each here as e (e.subject_id)}
         {@const m = people.get(e.subject_id)!}
@@ -202,6 +219,7 @@
       {#if menuFor === r.id}
         <div class="row-menu" role="menu">
           <button role="menuitem" onclick={() => { menuFor = null; savePins(togglePin(organize.pins, r.id)); }}><Icon name="pin" size={16} /> {r.pinned ? 'Unpin' : 'Pin to top'}</button>
+          <button role="menuitem" onclick={() => archive(r)}><Icon name="archive" size={16} /> {r.stowed ? 'Unarchive' : 'Archive'}</button>
           <button role="menuitem" class="danger" onclick={() => remove(r)}><Icon name="delete" size={16} /> {r.space?.kind === 'internal' ? 'Delete chat' : 'Clear chat'}</button>
         </div>
       {/if}
@@ -225,6 +243,10 @@
   .compose-panel form { display: flex; gap: 8px; }
   .compose-panel input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 10px; }
   .compose-panel button { border: 0; border-radius: var(--r-full); padding: 6px 14px; background: var(--accent); color: var(--on-accent); font-weight: 600; cursor: pointer; }
+  .archive-bar { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 8px 12px; border: 0; border-radius: var(--r-md);
+    background: var(--surface); color: var(--ink-2); font: inherit; font-size: var(--fs-sm); cursor: pointer; text-align: left; }
+  .archive-bar:hover { background: var(--surface-2); color: var(--ink); }
+  .archive-bar span { color: var(--ink-3); margin-left: auto; font-size: 12px; }
   .row-wrap { position: relative; }
   .row-wrap.drop { box-shadow: inset 0 2px 0 var(--accent); }
   .row.pinned { background: var(--surface); }

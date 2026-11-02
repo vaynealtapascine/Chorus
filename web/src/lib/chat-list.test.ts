@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { byActivity, chatPrefs, chatTime, dayLabel, folderOf, frontEvents, HIDDEN, HIDE_PRIVATE, hideSpoilers, isPrivate, movePin, orderChats, PINS, previewOf, privateVisible, togglePin } from './chat-list';
+import { ARCHIVED, byActivity, chatPrefs, stillArchived, chatTime, dayLabel, folderOf, frontEvents, HIDDEN, HIDE_PRIVATE, hideSpoilers, isPrivate, movePin, orderChats, PINS, previewOf, privateVisible, togglePin } from './chat-list';
 import type { ChannelRow, MessageRow, SpaceRow } from './data';
 
 const space = (kind: SpaceRow['kind']): SpaceRow => ({ id: kind, kind, name: kind });
@@ -69,6 +69,18 @@ describe('pins, private chats and cleared chats (D-097)', () => {
     expect(p.hidePrivate).toBe(false);
     expect([...p.hidden]).toEqual([['c3', 200]]);
     expect(chatPrefs({}, 'a').hidePrivate).toBe(true);
+  });
+  it('keeps a chat archived until something newer arrives (D-111)', () => {
+    const p = chatPrefs({
+      [`a||${ARCHIVED}c1`]: { fields: { value: 100 } },
+      [`a||${ARCHIVED}c2`]: { fields: { value: 200 } },
+      [`||${ARCHIVED}c2`]: { fields: { value: null } },
+    }, 'a');
+    expect([...p.archived]).toEqual([['c1', 100]]);
+    expect(stillArchived(100, 100)).toBe(true);
+    expect(stillArchived(100, undefined)).toBe(true);
+    expect(stillArchived(100, 101)).toBe(false);
+    expect(stillArchived(undefined, 5)).toBe(false);
   });
   it("shows members' private chats only while one of them is here", () => {
     const home = { kind: 'internal' };

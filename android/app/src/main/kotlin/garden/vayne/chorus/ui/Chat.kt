@@ -560,7 +560,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             ChatListRow(candidate, home, title, latest, unread, sender,
                 muted = model.accountPrefs.channelNotify(candidate.id, home.kind) == "none", pinned = candidate.id in prefs.chatPins,
                 private = sides != null || (home.kind == "internal" && candidate.kind == "text" && candidate.memberIds.isNotEmpty()),
-                whose = sides?.mine?.mapNotNull { model.member(it)?.shownName }?.joinToString(" & ")?.ifEmpty { null })
+                whose = sides?.mine?.mapNotNull { model.member(it)?.shownName }?.joinToString(" & ")?.ifEmpty { null },
+                archived = ChatOrganize.archived(prefs.archivedChats[candidate.id], latest?.occurredAt))
         }.let { rows -> ChatOrganize.order(rows, prefs.chatPins, { it.channel.id }, { it.latest?.occurredAt ?: 0L }, { it.title }) }
     }
     var arrangingPins by rememberSaveable { mutableStateOf(false) }
@@ -576,6 +577,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             "pin" -> savePins(ChatOrganize.togglePin(model.accountPrefs.chatPins, row.channel.id))
             "arrange" -> arrangingPins = true
             "remove" -> removing = row
+            // archiving is when, so a newer message brings the chat back on every device (D-111)
+            "archive" -> actions.launch {
+                val value: Any = if (row.archived) org.json.JSONObject.NULL
+                    else ChatOrganize.archiveAt(System.currentTimeMillis(), row.latest?.occurredAt)
+                try { chorus.create("pref.set", null, AccountPrefs.payload(ChatOrganize.ARCHIVED + row.channel.id, value)) }
+                catch (e: Exception) { error = e.message ?: "Could not archive this chat." }
+            }
         }
     }
     val openChat: (ChatListRow) -> Unit = { row ->

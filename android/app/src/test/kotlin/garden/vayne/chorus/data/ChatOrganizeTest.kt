@@ -73,4 +73,19 @@ class ChatOrganizeTest {
         assertFalse(ChatOrganize.cleared(100, 101))
         assertFalse(ChatOrganize.cleared(null, 5))
     }
+
+    @Test fun anArchivedChatComesBackWithANewMessage() {
+        assertTrue(ChatOrganize.archived(100, 100))
+        assertTrue(ChatOrganize.archived(100, null))
+        assertFalse(ChatOrganize.archived(100, 101))
+        assertFalse(ChatOrganize.archived(null, 5))
+        // a latest message stamped ahead of this clock still counts as already seen
+        assertEquals(120L, ChatOrganize.archiveAt(100, 120))
+        assertEquals(100L, ChatOrganize.archiveAt(100, 90))
+        val prefs = AccountPrefs.fromProjection(org.json.JSONObject("""{"rows":{"pref":{
+            "acct||chat_archived:c1":{"exists":true,"fields":{"value":100}},
+            "acct||chat_archived:c2":{"exists":true,"fields":{"value":200}},
+            "||chat_archived:c2":{"exists":true,"fields":{"value":null}}}}}"""), "acct")
+        assertEquals(mapOf("c1" to 100L), prefs.archivedChats)
+    }
 }

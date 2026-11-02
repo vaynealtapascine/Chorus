@@ -10,12 +10,15 @@ import org.json.JSONArray
  *   of their members fronts or is co-conscious, or while reading as one of them (`chat.hide_private`,
  *   on unless turned off);
  * - a chat cleared "for us" (`chat_hidden:<channel>` = when) stays out of the list, and its older
- *   messages out of view, until something newer arrives.
+ *   messages out of view, until something newer arrives;
+ * - an archived chat (`chat_archived:<channel>` = when) is listed under Archived chats instead,
+ *   until a message newer than that arrives; search still finds it.
  */
 object ChatOrganize {
     const val PINS = "chat_pins"
     const val HIDE_PRIVATE = "chat.hide_private"
     const val HIDDEN = "chat_hidden:"
+    const val ARCHIVED = "chat_archived:"
 
     /** Only DMs between members and channels limited to some members are anyone's private chats. */
     fun isPrivate(channel: ChatChannel, space: ChatSpace): Boolean =
@@ -85,6 +88,12 @@ object ChatOrganize {
 
     private fun here(front: List<Entry>, members: List<String>) =
         front.any { it.subjectType == "member" && (it.level == "front" || it.level == "cocon") && it.subjectId in members }
+
+    /** Still archived: nothing newer than when it was archived (a new message brings it back). */
+    fun archived(archivedAt: Long?, latestAt: Long?): Boolean = archivedAt != null && (latestAt ?: 0L) <= archivedAt
+
+    /** When to archive a chat: now, or its latest message if that is (by clock skew) later. */
+    fun archiveAt(now: Long, latestAt: Long?): Long = maxOf(now, latestAt ?: 0L)
 
     /** Still cleared: nothing newer than when it was cleared. */
     fun cleared(clearedAt: Long?, latestAt: Long?): Boolean = clearedAt != null && (latestAt ?: 0L) <= clearedAt
