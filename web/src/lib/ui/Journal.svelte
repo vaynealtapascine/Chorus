@@ -57,7 +57,7 @@
     {#each timeline as item (`${item.kind}:${item.id}`)}
       {#if item.kind === 'post'}
         <!-- replying opens the post's thread, where the reply box shows what it answers -->
-        <PostCard {projection} post={item.post} quote={quoteView(item.post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(item.post.id) ?? new Map()} {speaker} compactEntry
+        <PostCard {projection} post={item.post} quote={quoteView(item.post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(item.post.id) ?? new Map()} {speaker}
           replyCount={counts.get(item.post.id) ?? 0} replyToNames={item.post.reply_to ? byId.get(item.post.reply_to)?.authors.map(name).join(' & ') : undefined}
           onreply={() => router.go(`/journal/post/${encodeURIComponent(item.post.id)}`)} onreact={(emoji, add) => react(item.post, emoji, add)} />
       {:else if item.kind === 'switch'}

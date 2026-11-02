@@ -531,7 +531,9 @@ CREATE INDEX message_author_member ON message_author(member_id);
 -- every version of an *edited* message (unedited ones have no rows: their row is their only
 -- version), from chorus_core::revisions: the fold of its send and edits after each op in HLC
 -- order, so the last equals the message. Post history now uses post_revision_diff (D-107)
--- below; legacy post_revision rows are retained only if source ops are unavailable to compact.
+-- below; legacy post_revision rows are retained if any source version cannot be reconstructed
+-- with matching clock/time/title/text/entities. Later edits and rebuild preserve them too.
+-- Their old schema omitted CW, so the read API conservatively gates unknown warning state.
 -- Both are read by GET …/revisions under the current item's read rule.
 CREATE TABLE message_revision (
   message_id TEXT NOT NULL, rev INTEGER NOT NULL,

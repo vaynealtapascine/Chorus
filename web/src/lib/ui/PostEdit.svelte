@@ -9,6 +9,7 @@
   const original = core.toMarkup({ text: baseline.text, entities: baseline.entities });
   let editor = openPostEdit({ text: baseline.text, entities: baseline.entities });
   let selection: [number, number] | undefined;
+  let inputType: string | undefined;
   let body = $state(original);
   let title = $state(baseline.title ?? '');
   let cw = $state(baseline.cw ?? '');
@@ -26,9 +27,9 @@
 </script>
 <form onsubmit={save} aria-label="Edit post">
   {#if post.kind === 'entry'}<label>Title <input bind:value={title} /></label>{/if}
-  <label>Post text <textarea value={body} rows="8" onbeforeinput={(e) => { selection = [e.currentTarget.selectionStart, e.currentTarget.selectionEnd]; }} oninput={(e) => {
+  <label>Post text <textarea value={body} rows="8" onbeforeinput={(e) => { selection = [e.currentTarget.selectionStart, e.currentTarget.selectionEnd]; inputType = e.inputType; }} oninput={(e) => {
     const next = e.currentTarget.value;
-    editor = updatePostEdit(editor, next, selection?.[0], selection?.[1]); body = next; selection = undefined;
+    editor = updatePostEdit(editor, next, selection?.[0], selection?.[1], inputType, e.currentTarget.selectionStart); body = next; selection = undefined; inputType = undefined;
   }}></textarea></label>
   <label>Content warning <input bind:value={cw} /></label>
   {#if error}<p role="alert">{error}</p>{/if}

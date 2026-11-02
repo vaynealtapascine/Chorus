@@ -15,9 +15,9 @@
   import QuoteEmbed from './QuoteEmbed.svelte';
   import type { QuoteView } from '../post-threads';
 
-  let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection, replyCount = 0, replyToNames, inThread = false, quote = null }: {
+  let { post, people, dark, reactions, speaker, full = false, onreply, onreact, projection, replyCount = 0, replyToNames, inThread = false, quote = null }: {
     post: PostRow; people: Map<string, MemberRow>; dark: boolean;
-    reactions: Map<string, string[]>; speaker: string | null; compactEntry?: boolean;
+    reactions: Map<string, string[]>; speaker: string | null; full?: boolean;
     onreply: () => void; onreact: (emoji: string, add: boolean) => void;
     /** Replies to this post, shown on its Reply button. */
     replyCount?: number;
@@ -35,7 +35,7 @@
   let bodyExpanded = $state(false);
   let editing = $state(false);
   const preview = $derived(postPreview(post.text, post.entities));
-  const body = $derived(compactEntry && !bodyExpanded ? preview : post);
+  const body = $derived(!full && !bodyExpanded ? preview : post);
   const own = $derived(projection && post.authors.some((id) => canWriteAs(projection, id, sync.accountId)));
   const PALETTE = ['💜', '👍', '🥹', '🎉'];
   const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
@@ -55,8 +55,8 @@
   {#if post.cw}<button class="cw" aria-expanded={expanded} onclick={() => (expanded = !expanded)}>Content warning: {post.cw} · {expanded ? 'Hide' : 'Show'}</button>{/if}
   {#if !post.cw || expanded}
     {#if post.title}<h3 class="display">{post.title}</h3>{/if}
-    <div class="body"><RichText text={body.text} entities={body.entities} />{#if compactEntry && !bodyExpanded && preview.truncated}…{/if}</div>
-    {#if compactEntry && preview.truncated}<button class="expand" aria-expanded={bodyExpanded} onclick={() => (bodyExpanded = !bodyExpanded)}>{bodyExpanded ? 'Show less' : 'Show more'}</button>{/if}
+    <div class="body"><RichText text={body.text} entities={body.entities} />{#if !full && !bodyExpanded && preview.truncated}…{/if}</div>
+    {#if !full && preview.truncated}<button class="expand" aria-expanded={bodyExpanded} onclick={() => (bodyExpanded = !bodyExpanded)}>{bodyExpanded ? 'Show less' : 'Show more'}</button>{/if}
     {#if quote}<QuoteEmbed {quote} />{/if}
     {#if poll && projection}<PollCard {projection} parentId={post.id} {poll} member={speaker} />{/if}
     {#if post.mood || post.tags.length}<p class="tags">{#if post.mood}Mood: {post.mood}{/if}{#each post.tags as tag (tag)} <span>#{tag}</span>{/each}</p>{/if}

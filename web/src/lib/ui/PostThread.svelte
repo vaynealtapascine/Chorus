@@ -147,7 +147,7 @@
 
   {#if own}
     <div class="focus" class:joined={ancestors.length > 0}>
-      <PostCard {projection} post={own} {people} {dark} reactions={reacts.get(own.id) ?? new Map()} {speaker} inThread
+      <PostCard {projection} post={own} {people} {dark} reactions={reacts.get(own.id) ?? new Map()} {speaker} inThread full
         quote={quoteView(own.quote_post_id, postById, name, detail?.quoted)}
         replyCount={replies.length} onreply={() => document.getElementById('thread-reply')?.querySelector('textarea')?.focus()}
         onreact={(emoji, add) => react(own.id, emoji, add)} />
@@ -182,7 +182,7 @@
     {#each listed as reply (reply.id)}
       <div class="reply">
         {#if reply.local}
-          <PostCard {projection} post={reply.local} {people} {dark} reactions={reacts.get(reply.id) ?? new Map()} {speaker} inThread={listed === replies}
+          <PostCard {projection} post={reply.local} {people} {dark} reactions={reacts.get(reply.id) ?? new Map()} {speaker} inThread={listed === replies} full
             quote={quoteFor(reply)}
             replyCount={reply.replyCount} onreply={() => open(reply.id)} onreact={(emoji, add) => react(reply.id, emoji, add)} />
         {:else}

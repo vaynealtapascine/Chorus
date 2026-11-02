@@ -252,7 +252,7 @@ pub fn post_revisions(conn: &Connection, post: &Value) -> Result<Value, DataErro
     if !compact.is_empty() {
         return Ok(json!({"items": compact}));
     }
-    let current = json!({"rev": 0, "title": post["title"], "text": post["text"], "entities": post["entities"], "at": post["occurred_at"]});
+    let current = json!({"rev": 0, "title": post["title"], "text": post["text"], "entities": post["entities"], "cw": post["cw"], "at": post["occurred_at"]});
     versions(conn, "post", id, current)
 }
 

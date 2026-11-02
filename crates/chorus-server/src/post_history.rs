@@ -65,6 +65,20 @@ fn apply(state: &mut Map<String, Value>, delta: Delta) -> anyhow::Result<()> {
 }
 
 pub fn write(conn: &Connection, id: &str, versions: &[Revision]) -> anyhow::Result<()> {
+    let legacy = legacy(conn, id)?;
+    // A nonempty fold is not proof that every source op survived an import. Check each
+    // retained version's contents and clock before replacing it, including on later edits.
+    let mut candidates = versions.iter();
+    let complete = legacy.iter().all(|(hlc, item)| {
+        candidates.any(|r| {
+            let fields = version(r.rev.into(), &r.fields, r.at);
+            r.hlc.to_string() == *hlc
+                && fields["title"] == item["title"]
+                && fields["text"] == item["text"]
+                && fields["entities"] == item["entities"]
+                && r.at == item["at"].as_i64().unwrap_or_default()
+        })
+    });
     conn.execute("DELETE FROM post_revision_diff WHERE post_id = ?1", [id])?;
     let mut previous = Map::new();
     for r in versions {
@@ -74,7 +88,7 @@ pub fn write(conn: &Connection, id: &str, versions: &[Revision]) -> anyhow::Resu
         previous.clone_from(&r.fields);
     }
     // Only after the complete replacement is stored, within the caller's transaction.
-    if !versions.is_empty() {
+    if !versions.is_empty() && complete {
         conn.execute("DELETE FROM post_revision WHERE post_id = ?1", [id])?;
     }
     Ok(())
@@ -82,21 +96,58 @@ pub fn write(conn: &Connection, id: &str, versions: &[Revision]) -> anyhow::Resu
 
 pub fn read(conn: &Connection, id: &str) -> anyhow::Result<Vec<Value>> {
     let mut st =
-        conn.prepare_cached("SELECT rev,delta,edited_at FROM post_revision_diff WHERE post_id = ?1 ORDER BY rev")?;
-    let rows = st.query_map([id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?)))?;
+        conn.prepare_cached("SELECT rev,delta,edited_at,hlc FROM post_revision_diff WHERE post_id = ?1 ORDER BY rev")?;
+    let rows = st.query_map([id], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, String>(3)?))
+    })?;
     let mut state = Map::new();
     let mut out = Vec::new();
     for row in rows {
-        let (rev, change, at) = row?;
+        let (rev, change, at, hlc) = row?;
         apply(&mut state, serde_json::from_str(&change)?)?;
-        out.push(json!({"rev":rev,"title":state.get("title"),"text":state.get("text").unwrap_or(&json!("")),
-            "entities":state.get("entities").unwrap_or(&json!([])),"cw":state.get("cw"),"at":at}));
+        out.push((hlc, version(rev, &state, at)));
     }
-    Ok(out)
+    let legacy = legacy(conn, id)?;
+    if !legacy.is_empty() {
+        // Prefer the lossless retained row at a shared clock; include new/offline edits too.
+        let clocks: std::collections::HashSet<_> = legacy.iter().map(|(hlc, _)| hlc).collect();
+        out.retain(|(hlc, _)| !clocks.contains(hlc));
+        out.extend(legacy);
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        for (rev, (_, item)) in out.iter_mut().enumerate() {
+            item["rev"] = json!(rev);
+            if item["cw"].as_str().is_none_or(str::is_empty) {
+                item["cw"] = json!("Earlier version · content warning unavailable");
+            }
+        }
+    }
+    Ok(out.into_iter().map(|(_, item)| item).collect())
+}
+
+fn version(rev: i64, state: &Map<String, Value>, at: i64) -> Value {
+    json!({"rev":rev,"title":state.get("title"),"text":state.get("text").unwrap_or(&json!("")),
+        "entities":state.get("entities").unwrap_or(&json!([])),"cw":state.get("cw"),"at":at})
+}
+
+fn legacy(conn: &Connection, id: &str) -> anyhow::Result<Vec<(String, Value)>> {
+    let mut st = conn.prepare_cached(
+        "SELECT rev,title,text,entities,edited_at,hlc FROM post_revision WHERE post_id=?1 ORDER BY rev",
+    )?;
+    let rows = st.query_map([id], |r| {
+        let entities: String = r.get(3)?;
+        Ok((
+            r.get(5)?,
+            json!({"rev":r.get::<_, i64>(0)?,"title":r.get::<_, Option<String>>(1)?,
+            "text":r.get::<_, String>(2)?,"entities":serde_json::from_str::<Value>(&entities).unwrap_or(json!([])),
+            // The old schema did not record CW. Never silently expose those versions.
+            "cw":"Earlier version · content warning unavailable","at":r.get::<_, i64>(4)?}),
+        ))
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 /// Pre-migration backup is performed by the normal migration caller. Rebuild from the log
-/// first; if a legacy/imported database has no source ops, retain its legacy rows losslessly.
+/// first; if a legacy/imported database lacks any source content, retain its rows losslessly.
 pub fn backfill(conn: &Connection) -> anyhow::Result<()> {
     let mut st = conn.prepare("SELECT DISTINCT post_id FROM post_revision")?;
     let ids = st.query_map([], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;

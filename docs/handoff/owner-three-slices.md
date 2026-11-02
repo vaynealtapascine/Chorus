@@ -109,3 +109,59 @@ profile visibility/blob, target-write and cross-client rich-edit/Unicode cases a
 
 UI11a is implemented and committed for independent parent review. UI11b/UI11c remain pending;
 start UI11b only after parent review fixes and deployment of UI11a. No deployment was performed.
+
+## Independent review fixes (2026-11-02)
+
+Follow-up to base `66cec2917c2f3674d8c3d780708b1d3778647786`, implementing the parent's six
+findings without deployment or changing the approved scope:
+
+- Legacy compaction checks every retained version's clock, time, title, text and entities against
+  the reconstructed fold before deleting anything. Missing middle ops and same-count content
+  mismatches retain legacy rows. Reads merge retained versions with source-derived/new edits,
+  preferring the retained contents at shared clocks. Later writes repeat the completeness check;
+  rebuild leaves legacy rows for that check instead of clearing them up front. Legacy CW was
+  never stored, so retained histories (including uncertain reconstructed versions) receive an
+  explicit, collapsed "content warning unavailable" gate. Unedited history carries current CW.
+- Web post editing records beforeinput type/selection and validates the actual replacement,
+  including collapsed backward/forward deletions and UTF-16 lengths of supplementary characters
+  and emoji sequences. Ambiguous input without a valid range discards identity provenance rather
+  than guessing by equal text. The mention boundary rule follows core's Unicode token lexer;
+  shared web/Android fixtures cover preceding letters, supplementary letters/digits, hyphens,
+  dots, underscores and punctuation. Selected identical retyping remains new input.
+- Every PostCard defaults to a 300-Unicode-character preview with Show more, covering profile
+  Posts/Replies/Highlights/pins, Journal, Lists and local feed previews. Thread detail cards
+  explicitly request full text. Remote preview cards already use PostPreviewBody.
+- Singlet self editors hide switching, front-sharing, member chat-notification rules,
+  system membership/folders/proxy controls and archive/trash. Android hides system-only More
+  details (including Archive). Ingest refuses live person member archive/delete even before
+  self creation arrives, while retaining profile edits, posting, recovery and historical restore
+  replay. Existing system member lifecycle controls remain available (D-003/D-093).
+
+Regression coverage: `tests/posts.rs` exercises migration with missing middle/all source ops and
+same-count text/title/entity mismatches, repeat reads, later edits, rebuild and warned unedited
+posts. `tests/ingest.rs` covers person archive/delete before and after creation, continued editing
+and posting, and system lifecycle operations. `post-edit.test.ts` covers distinct IDs on repeated
+emoji, forward/backward deletion of supplementary characters and whole emoji sequences, plus
+the expanded `ui_post_edit.json` consumed by Android's PostEditingTest. `JournalReview.test.ts`
+renders timeline/default/detail cards, profile pins/posts, Lists and the singlet/system editors.
+
+Reproduction against the base implementation: 11 web regression failures
+(`F:/DunBuild/chorus-ui11a-reproduce-web.log`); person lifecycle rejection fails
+(`chorus-ui11a-reproduce-rust.log`); missing-middle migration reports zero retained rows instead
+of three and unedited history returns null CW (`chorus-ui11a-reproduce-posts.log`, same directory).
+Fixed targeted suites pass: 24 server integration tests, 28 web cases and Android's shared
+PostEditingTest fixture (14 vectors). Initial full gate passed at
+`F:/DunBuild/chorus-ui11a-review-start.log`.
+
+Final full `python scripts/verify.py --android --offline` passed with the documented process-only
+environment: documentation checks, fmt/clippy, release workspace tests/convergence, WASM build,
+Svelte check (0 errors/warnings), web tests (204 passed, 1 existing skip), production build and
+budgets (175 KB JS / 300 KB WASM gzipped), Android lint and JVM unit tests. Full log:
+`F:/DunBuild/chorus-ui11a-review-final.log`. No quick wrapper was used.
+
+Remaining limits: these fixes cannot recover legacy rows already deleted by an earlier migration
+without a backup. Unknown legacy CW stays conservatively gated, and ambiguous browser rewrites
+without a valid replacement range drop atomic identities instead of assigning them to the wrong
+occurrence. No deployment, browser/native smoke check or device installation was performed.
+Parent still independently re-reviews, builds matching platform libraries, deploys and performs
+device checks before UI11b/UI11c.

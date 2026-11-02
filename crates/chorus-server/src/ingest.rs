@@ -96,6 +96,14 @@ pub fn accept(
     if !allowed {
         return Ok((AckResult::err(o.id, "forbidden", format!("{} not writable", o.scope), false), None));
     }
+    // D-003: a person's only member is their writing identity, never an archivable/deletable
+    // system member. Check account kind even if this op arrives before the member projection.
+    if !preserved
+        && matches!(o.kind.as_str(), "member.archive" | "member.delete")
+        && conn.query_row("SELECT kind = 'person' FROM account WHERE id = ?1", [&author], |r| r.get::<_, bool>(0))?
+    {
+        return Ok((AckResult::err(o.id, "forbidden", "a person's self profile must stay active".into(), false), None));
+    }
     if !preserved && let Some(why) = crate::fronts::write_denied(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
     }

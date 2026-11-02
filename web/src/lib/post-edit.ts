@@ -17,15 +17,40 @@ export function openPostEdit(original: Rich): PostEditState {
 
 /** Retain only characters outside the actual input replacement. Selection bounds disambiguate
  * identical tokens; newly typed/retyped characters can never acquire an old target id. */
-export function updatePostEdit(state: PostEditState, markup: string, start?: number, end?: number): PostEditState {
+export function updatePostEdit(state: PostEditState, markup: string, start?: number, end?: number, inputType?: string, caret?: number): PostEditState {
   const old = state.markup;
-  let prefix = 0;
-  const maxPrefix = start ?? Math.min(old.length, markup.length);
-  while (prefix < maxPrefix && prefix < markup.length && old[prefix] === markup[prefix]) prefix++;
-  let suffix = 0;
-  const maxSuffix = end == null ? old.length - prefix : old.length - end;
-  while (suffix < maxSuffix && suffix < old.length - prefix && suffix < markup.length - prefix && old[old.length - suffix - 1] === markup[markup.length - suffix - 1]) suffix++;
-  return { ...state, markup, origins: [...state.origins.slice(0, prefix), ...Array<number>(markup.length - prefix - suffix).fill(-1), ...(suffix ? state.origins.slice(-suffix) : [])] };
+  const removed = old.length - markup.length;
+  if (start === end && start != null && removed > 0) {
+    if (inputType?.endsWith('Backward')) start -= removed;
+    else if (inputType?.endsWith('Forward')) end = start + removed;
+    else start = undefined;
+    // The resulting caret confirms the browser's actual deletion, including whole graphemes.
+    if (caret != null && caret !== start) start = undefined;
+  }
+  if (start != null && end != null && start >= 0 && end >= start && end <= old.length) {
+    const inserted = markup.length - (old.length - (end - start));
+    if (inserted >= 0 && markup.slice(0, start) === old.slice(0, start) && markup.slice(start + inserted) === old.slice(end)) {
+      return { ...state, markup, origins: [...state.origins.slice(0, start), ...Array<number>(inserted).fill(-1), ...state.origins.slice(end)] };
+    }
+  }
+  // Missing beforeinput / IME rewrites / undo: text equality cannot prove occurrence identity.
+  return { ...state, markup, origins: Array<number>(markup.length).fill(-1) };
+}
+
+/** Same token boundaries as core's mention lexer and native RichTextEdit. */
+function wholeMention(text: string, start: number, length: number): boolean {
+  const word = (c: string) => /[\p{Alphabetic}\p{N}]/u.test(c);
+  const before = Array.from(text.slice(Math.max(0, start - 2), start)).at(-1);
+  if (before && word(before)) return false;
+  const originalEnd = start + length;
+  let end = originalEnd;
+  while (end < text.length) {
+    const c = String.fromCodePoint(text.codePointAt(end)!);
+    if (!word(c) && !'_.-'.includes(c)) break;
+    end += c.length;
+  }
+  while (end > originalEnd && '.-'.includes(text[end - 1])) end--;
+  return end === originalEnd;
 }
 
 export function parsePostEdit(state: PostEditState): Rich {
@@ -39,7 +64,7 @@ export function parsePostEdit(state: PostEditState): Rich {
     const starts = positions.get(e.offset);
     if (starts?.length !== 1) continue;
     const at = starts[0];
-    if (e.type === 'mention' && /[\p{L}\p{N}_]/u.test(parsed.text[at + e.length] ?? '')) continue;
+    if (e.type === 'mention' && !wholeMention(parsed.text, at, e.length)) continue;
     if (Array.from({ length: e.length }, (_, i) => positions.get(e.offset + i)?.length === 1 && positions.get(e.offset + i)?.[0] === at + i).some((v) => !v)) continue;
     if (parsed.text.slice(at, at + e.length) !== state.original.text.slice(e.offset, e.offset + e.length)) continue;
     if (parsed.entities.some((n) => ['code', 'pre', 'mention', 'custom_emoji'].includes(n.type) && n.offset < at + e.length && n.offset + n.length > at)) continue;
