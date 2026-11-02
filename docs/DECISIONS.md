@@ -119,6 +119,8 @@ default the owner has not contradicted; these may be revisited if implementation
 
 | D-107 | **Journal/singlet slice (owner approved, 2026-11-02).** Notes, entries and replies can be edited with history; server-derived post history uses a base plus compact text/field diffs, without rewriting any append-only ops. Timeline previews stop at 300 Unicode characters, preserving formatting ranges; detail remains complete. Repost uses a rectangular repeat icon, switch uses opposing arrows. Singlets can post and reach their full self-profile editor, including avatar, colour and every custom field. Relationships have individual audiences (private, followers, selected buckets, server) and can link any on-server member/fragment/singlet whose profile the author can see, or an external label. Shared reads require the source profile, relationship audience and target profile all to allow the reader; missing/hidden targets omit the relationship completely. Existing visible-member rules apply, with no history/fronting/blob grants implied by a relationship. | Owner request; GPT-6-sol |
 
+| D-108 | **WASM transfer budget: 500 KB gzipped (owner, 2026-11-02), superseding SPEC §9's 300 KB.** Owner approved the increase while implementing safe rich-text post editing on web. Keep the 200 KB gzipped initial JavaScript budget and all other performance requirements. Verification enforces 500 × 1024 bytes for WASM assets. | Owner explicit instruction during UI11a; GPT-6-sol |
+
 ## Versions
 
 Pin here as they are adopted (tool/library → version → date → why).

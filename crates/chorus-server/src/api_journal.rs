@@ -50,6 +50,24 @@ pub fn profile(conn: &Connection, p: &Principal, member_id: &str) -> Result<Opti
             }))
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    let mut safe_relationships = Vec::new();
+    for mut link in relationships {
+        if link["to_kind"] != "external" {
+            let Some(mid) = crate::profiles::target_member(
+                conn,
+                link["to_kind"].as_str().unwrap_or_default(),
+                link["to_id"].as_str().unwrap_or_default(),
+            )?
+            else {
+                continue;
+            };
+            let Some(card) = crate::profiles::visible_card(conn, &p.account_id, &mid)? else { continue };
+            link["to_name"] = card["display_name"].as_str().map_or_else(|| card["name"].clone(), |n| json!(n));
+            // A label stored for a linked target must never override its filtered name.
+            link["to_label"] = Value::Null;
+        }
+        safe_relationships.push(link);
+    }
     let stats = conn.query_row(
         "SELECT count(*), coalesce(sum(p.kind = 'entry'), 0), coalesce(sum(p.kind = 'note'), 0),
                 min(p.occurred_at), max(p.occurred_at)
@@ -86,7 +104,7 @@ pub fn profile(conn: &Connection, p: &Principal, member_id: &str) -> Result<Opti
     } else {
         None
     };
-    Ok(Some(json!({"member": member, "relationships": relationships, "stats": stats, "highlights": highlights})))
+    Ok(Some(json!({"member": member, "relationships": safe_relationships, "stats": stats, "highlights": highlights})))
 }
 
 /// `GET /lists` (`read:posts`): the account's member lists with their members.

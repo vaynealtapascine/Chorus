@@ -109,6 +109,9 @@ pub fn accept(
     if !preserved && let Some(why) = foreign_speaker(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
     }
+    if !preserved && !crate::profiles::relationship_write_allowed(conn, &author, &o)? {
+        return Ok((AckResult::err(o.id, "forbidden", "relationship target unavailable".into(), false), None));
+    }
     // channel permissions (perms.rs, D-047)
     if !preserved && let Some(why) = crate::perms::write_denied(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
@@ -264,6 +267,11 @@ fn store_and_project(
 fn foreign_item(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
     let Some(spec) = op::spec(&o.kind) else { return Ok(None) };
     let table = match (spec.table, spec.action) {
+        ("relationship", op::Action::Set | op::Action::Delete) => "relationship",
+        (
+            "post",
+            op::Action::Append | op::Action::Revise | op::Action::Set | op::Action::Delete | op::Action::Restore,
+        ) => "post",
         ("message" | "attachment", op::Action::Append) | ("attachment", op::Action::Set) => spec.table,
         _ => return Ok(None),
     };

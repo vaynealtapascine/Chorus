@@ -248,6 +248,10 @@ pub fn revisions(conn: &Connection, p: &Principal, id: &str) -> Result<Option<Va
 /// `GET /posts/{id}/revisions` (the caller checked the post is readable): its versions.
 pub fn post_revisions(conn: &Connection, post: &Value) -> Result<Value, DataError> {
     let id = post["id"].as_str().unwrap_or_default();
+    let compact = crate::post_history::read(conn, id)?;
+    if !compact.is_empty() {
+        return Ok(json!({"items": compact}));
+    }
     let current = json!({"rev": 0, "title": post["title"], "text": post["text"], "entities": post["entities"], "at": post["occurred_at"]});
     versions(conn, "post", id, current)
 }

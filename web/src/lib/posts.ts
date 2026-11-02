@@ -20,6 +20,7 @@ export interface PostRow {
   /** Set on a repost, which has no text of its own. */
   repost_of?: string;
   deleted: boolean;
+  edited?: boolean;
 }
 
 const string = (value: unknown) => typeof value === 'string' && value.length ? value : undefined;
@@ -39,6 +40,7 @@ export function posts(p: Projection): PostRow[] {
       mood: string(f.mood), tags: Array.isArray(f.tags) ? f.tags.filter((v): v is string => typeof v === 'string') : [],
       cw: string(f.cw), visibility: f.visibility && typeof f.visibility === 'object' ? f.visibility as PostRow['visibility'] : { mode: 'private' },
       reply_to: string(f.reply_to), deleted: f.deleted_at != null,
+      edited: (row.edits ?? 0) > 0,
       quote_post_id: f.quote && typeof f.quote === 'object' ? string((f.quote as { post_id?: unknown }).post_id) : undefined,
       repost_of: string(f.repost_of),
     };

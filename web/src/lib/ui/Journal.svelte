@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { channels, groups, members, reactions, type MemberRow } from '../data';
+  import { channels, groups, members, reactions, selfMember, type MemberRow } from '../data';
   import { canWriteAs, postReaction, posts, type PostRow } from '../posts';
   import { sync, type Projection } from '../sync/client';
   import { bodyAuthors } from '../front-view';
@@ -12,6 +12,7 @@
 
   import Icon from './Icon.svelte';
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
+  const self = $derived(selfMember(projection));
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
   const subjectNames = $derived(new Map([...members(projection).map((m) => [m.id, m.display_name ?? m.name] as [string, string]), ...groups(projection).map((g) => [g.id, g.name] as [string, string])]));
   const entries = $derived(posts(projection).filter((p) => !p.deleted));
@@ -48,7 +49,7 @@
 </script>
 
 <div class="journal-layout"><section class="journal">
-  <header><h1 class="display">Journal</h1><label>React as <select bind:value={actingAs} aria-label="React as member"><option value="">Current front</option>{#each active as person (person.id)}<option value={person.id}>{person.display_name ?? person.name}</option>{/each}</select></label></header>
+  <header><h1 class="display">Journal</h1>{#if self}<a href="#/profile/{self.id}">My profile</a>{:else}<label>React as <select bind:value={actingAs} aria-label="React as member"><option value="">Current front</option>{#each active as person (person.id)}<option value={person.id}>{person.display_name ?? person.name}</option>{/each}</select></label>{/if}</header>
   <nav aria-label="Journal sections"><button class:on={section === 'timeline'} onclick={() => (section = 'timeline')}>Timeline</button><button class:on={section === 'lists'} onclick={() => (section = 'lists')}>Lists</button><button class:on={section === 'feeds'} onclick={() => (section = 'feeds')}>Feeds</button></nav>
   {#if section === 'lists'}<JournalLists {projection} {dark} />{:else if section === 'feeds'}<JournalFeeds {projection} {dark} />{:else}
   <PostComposer {projection} initialAuthors={speaker ? [speaker] : []} />
@@ -70,8 +71,8 @@
 </section>
 <aside class="journal-context" aria-label="Journal shortcuts">
   <a class="context-search" href="#/search"><Icon name="search" size={18} />Search posts and members</a>
-  <section><h2>Your journal</h2><button onclick={() => (section = 'timeline')}><Icon name="journal" size={18} />System timeline</button><button onclick={() => (section = 'feeds')}><Icon name="layers" size={18} />Your feeds</button><button onclick={() => (section = 'lists')}><Icon name="members" size={18} />Member lists</button></section>
-  <section><h2>Writing together</h2><p>Choose who's speaking before posting. The audience on each post controls who can read it.</p><a href="#/settings">Privacy and preferences</a></section>
+  <section><h2>Your journal</h2><button onclick={() => (section = 'timeline')}><Icon name="journal" size={18} />{self ? 'My timeline' : 'System timeline'}</button><button onclick={() => (section = 'feeds')}><Icon name="layers" size={18} />Your feeds</button><button onclick={() => (section = 'lists')}><Icon name="members" size={18} />Member lists</button></section>
+  <section><h2>{self ? 'Sharing your posts' : 'Writing together'}</h2><p>{self ? 'The audience on each post controls who can read it.' : 'Choose who is speaking before posting. The audience on each post controls who can read it.'}</p><a href="#/settings">Privacy and preferences</a></section>
 </aside></div>
 
 <style>

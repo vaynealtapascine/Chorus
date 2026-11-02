@@ -25,6 +25,13 @@ pub fn parse_markup(src: &str, names_json: &str) -> Result<String, JsError> {
     wrap(api::parse_markup(src, names_json))
 }
 
+/// Source trace only; the web editor uses the ordinary parser for the rich value. Names never
+/// change the emitted plain text or its source offsets, so no resolver JSON is needed here.
+#[wasm_bindgen(js_name = markupSources)]
+pub fn markup_sources(src: &str) -> Vec<u32> {
+    chorus_core::text::parse_mapped(src, &chorus_core::text::NoNames).1
+}
+
 #[wasm_bindgen(js_name = toMarkup)]
 pub fn to_markup(rich_json: &str) -> Result<String, JsError> {
     wrap(api::to_markup(rich_json))

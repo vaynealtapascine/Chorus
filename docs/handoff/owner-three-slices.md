@@ -41,3 +41,71 @@ only reduces the **derived** post-history duplication, not the authoritative log
 Base version plus forward text splices and changed fields reconstructs history on the server;
 large replacements may be stored as whole field values when smaller. Rebuild regenerates
 these diffs. No new full-history text index or blob grant is created.
+
+Migration 0018 regenerates existing derived histories from source ops inside the migration
+transaction, then clears only those legacy rows successfully replaced. A database missing
+source ops retains its legacy rows and endpoint fallback rather than losing history. SQLite
+freelist pages are reusable; this does not shrink the database file or run VACUUM. Very large
+rewrites and entity arrays can still approach full-version size. Reading history reconstructs
+all its versions on demand; retention is unchanged and no pagination was added in this slice.
+
+## UI11a implementation and review map
+
+- `crates/chorus-server/src/post_history.rs`: linear common-prefix/suffix text splices, changed
+  fields, UTF-8 boundaries, migration/backfill and reconstruction. `project.rs` writes it;
+  `messages.rs` reads after the existing post read check in `app.rs`. `tests/posts.rs` covers
+  long-entry savings, title/CW clearing, migration, rebuild, unchanged ops and forged edits.
+- `profiles.rs`: reuse Viewer/member profile rules for target cards and each shared relationship;
+  live bucket/follow and target visibility rechecked per read. Target cards carry no history,
+  fronting or timestamps. `api_journal.rs` filters the own-profile REST bundle too.
+  `ingest.rs` rejects foreign post/relationship mutations and unavailable relationship targets.
+  `tests/profiles.rs` covers bucket and target revocation, private blobs, singlets and fragments.
+- Web `PostCard`, `PostEdit`, `PostHistory`, `PostPreviewBody`, `ProfileRelationships`, friend
+  profiles and singlet Journal/Settings shortcuts. Android counterparts in `ui/Journal.kt`,
+  `PostEditing.kt`, `ProfileRelationships.kt`, `FriendProfiles.kt`, `People.kt`, `MemberEditor.kt`.
+- Post edit source provenance preserves existing mention/emoji occurrences; native reuses the
+  state-based rich editor, including formatting and undo. Web gets source offsets from core as
+  a typed array, parses rich text through core, and tracks each input replacement. Shared
+  `fixtures/ui_post_edit.json` covers duplicate labels and identical selected retyping.
+- Owner explicitly raised the WASM limit to **500 KB gzipped** (D-108). JS stays **200 KB**.
+  `verify.py` enforces both. Core only builds source maps for mapped reads; normal parses avoid
+  that extra allocation. No dependency/version changes.
+
+## Validation and deployment prerequisites
+
+Initial full `python scripts/verify.py --android --offline` passed after regenerating stale
+ignored UniFFI Kotlin bindings from the host library. The initial checkout lacked usable web
+dependencies; `npm ci --prefer-offline` installed the pinned lockfile packages before validating
+the implementation. Process-only Windows build environment: dot-source
+`F:/DunBuild/chorus-env.ps1`; Android Studio JBR; `GRADLE_USER_HOME=F:/DunBuild/gradle`.
+Never use the old wrapper's implicit `--quick` for the final gate.
+
+Parent: independently review, fix/commit, then deploy `scripts/deploy-linux.ps1 -Android` with
+the normal pre-migration backup. Regenerate matching web WASM and Android native libraries /
+bindings (`scripts/build-web-core.ps1`, `scripts/build-android-core.ps1`) before publishing.
+This implementation agent has not deployed, installed on a device, changed services/settings,
+or run live browser/native visual checks. Owner-phone smoke checks should cover singlet
+posting/profile photo/colour/typed fields; note/entry/reply editing + history/CW gates; offline
+edit then reconnect; 299/300/301-character previews; and bucket/target revocation.
+
+The new post-edit dialog drafts stay in memory until Save; existing saved posts and queued
+edit ops are durable. Closing the editor discards its unsaved changes. History requires a
+connection; it does not silently fall back to a potentially stale local history. Shared target
+cards require a connection when choosing them; own members remain available offline. Existing
+op replicas retain identities already known to their account; revocation prevents future reads
+and does not erase the append-only record. Repost/switch icon overrides are intentional D-107
+changes to the original Figma assets (`web/public/icons/swap.svg`, native `ic_switch_arrows`
+and `ic_repost`); preserve them when re-exporting design assets.
+
+## Final implementation gate (2026-11-02)
+
+Passed full `python scripts/verify.py --android --offline` with the process-only Windows build
+wrapper environment (no `--quick`): token/projection/API documentation checks, cargo fmt and
+workspace clippy, full release workspace tests/convergence/simulators, WASM build, Svelte check
+(0 errors/warnings), web tests (181 passed, 1 existing skip), production web build and bundle
+budgets (about 175 KB JS / 300 KB WASM gzipped), Android lint and JVM unit tests. Final log on
+this machine: `F:/DunBuild/chorus-owner-final.log`. Targeted codec/property, migration/rebuild,
+profile visibility/blob, target-write and cross-client rich-edit/Unicode cases also passed.
+
+UI11a is implemented and committed for independent parent review. UI11b/UI11c remain pending;
+start UI11b only after parent review fixes and deployment of UI11a. No deployment was performed.

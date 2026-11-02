@@ -381,7 +381,7 @@ never an erase, and a device evicting old data locally to save space deletes not
 | Scroll history | 60 fps; pages of 100 messages; virtualised |
 | Member search over 500 members | ≤ 16 ms per keystroke |
 | Android cold start to front card | ≤ 1 s |
-| Web initial JS | ≤ 200 KB gz (routes lazy-loaded; wasm core loaded async, ≤ 300 KB gz) |
+| Web initial JS | ≤ 200 KB gz (routes lazy-loaded; wasm core loaded async, ≤ 500 KB gz, D-108) |
 | Server op ingestion | ≥ 2 000 ops/s sustained on the owner's PC |
 | Reconnect after 7 days offline with 5 000 queued local ops | fully synced ≤ 10 s |
 | Rebuild all projections from a 1M-op log | ≤ 60 s |

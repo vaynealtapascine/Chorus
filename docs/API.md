@@ -203,7 +203,7 @@ GET  /posts/{id}                           with replies ?depth=
                                            answers, oldest first; ends at the first unreadable parent)
                                            + quotes (readable posts quoting it, newest first) and, on
                                            every post it returns, quoted (the quoted post, if readable)
-GET  /posts/{id}/revisions                 {items:[{rev,title,text,entities,at}]}, same read rule as the post
+GET  /posts/{id}/revisions                 {items:[{rev,title,text,entities,cw,at}]}, same read rule as the post
   D-107: reconstructed from compact server-kept diffs. Deleted/unreadable posts return 404;
   history does not grant access to prior attachments or broaden the post's audience.
   Device-session reads now return posts visible to the caller: own posts, server-visible posts,

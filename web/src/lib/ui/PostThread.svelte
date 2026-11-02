@@ -21,6 +21,7 @@
   import PostComposer from './PostComposer.svelte';
   import RemotePostPoll from './RemotePostPoll.svelte';
   import RichText from './RichText.svelte';
+  import PostHistory from './PostHistory.svelte';
 
   let { projection, id, dark }: { projection: Projection; id: string; dark: boolean } = $props();
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
@@ -155,6 +156,7 @@
     <div class="focus remote" class:joined={ancestors.length > 0}>
       {@render row({ id: detail.id, occurred_at: detail.occurred_at, remote: detail, replyCount: replies.length }, false, false)}
     </div>
+    <PostHistory id={detail.id} />
   {/if}
 
   {#if focused}

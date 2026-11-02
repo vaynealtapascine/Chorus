@@ -182,3 +182,68 @@ fn blobs_follow_the_profile_and_the_banner_part() {
     assert!(!profiles::blob_visible(&conn, BOB, "avatar-fox").unwrap());
     assert!(!profiles::blob_visible(&conn, CAROL, "banner-nai").unwrap());
 }
+
+#[test]
+fn relationship_audience_and_target_must_both_allow_each_reader() {
+    let conn = seed();
+    conn.execute("INSERT INTO relationship_type(id,account_id,name) VALUES ('friend',?1,'Friend')", [ALICE]).unwrap();
+    for (id, target, audience) in [
+        ("shared", "amy", json!({"mode":"buckets","bucket_ids":[BUCKET]})),
+        ("hidden-target", "fox", json!({"mode":"server"})),
+        ("private-link", "amy", json!({"mode":"private"})),
+    ] {
+        conn.execute(
+            "INSERT INTO relationship(id,account_id,from_member_id,to_kind,to_id,type_id,note,visibility,created_at)
+            VALUES (?1,?2,'kai','member',?3,'friend','secret note',?4,0)",
+            params![id, ALICE, target, audience.to_string()],
+        )
+        .unwrap();
+    }
+    let bob = profiles::profile(&conn, BOB, ALICE, "kai").unwrap().unwrap();
+    assert_eq!(bob["relationships"].as_array().unwrap().len(), 1);
+    assert_eq!(bob["relationships"][0]["target"]["name"], "Amarynthe");
+    let carol = profiles::profile(&conn, CAROL, ALICE, "kai").unwrap().unwrap();
+    assert!(carol["relationships"].as_array().unwrap().is_empty());
+    assert!(!bob.to_string().contains("fox"));
+    assert!(!profiles::blob_visible(&conn, BOB, "avatar-fox").unwrap());
+    let targets = profiles::targets(&conn, BOB).unwrap();
+    assert!(!targets.to_string().contains("Foxglove"));
+    conn.execute("UPDATE member SET visibility='{\"mode\":\"private\"}' WHERE id='amy'", []).unwrap();
+    assert!(
+        profiles::profile(&conn, BOB, ALICE, "kai").unwrap().unwrap()["relationships"].as_array().unwrap().is_empty()
+    );
+    conn.execute("UPDATE member SET visibility='{\"mode\":\"server\"}' WHERE id='amy'", []).unwrap();
+    conn.execute("UPDATE bucket SET deleted_at=9 WHERE id=?1", [BUCKET]).unwrap();
+    assert!(
+        profiles::profile(&conn, BOB, ALICE, "kai").unwrap().unwrap()["relationships"].as_array().unwrap().is_empty()
+    );
+}
+
+#[test]
+fn relationship_writes_link_visible_singlets_but_refuse_hidden_targets_and_foreign_sources() {
+    use chorus_core::id::new_id;
+    use chorus_server::ingest;
+    let conn = seed();
+    for account in [ALICE, BOB] {
+        ingest::grant(&conn, account, &format!("account:{account}")).unwrap();
+    }
+    conn.execute("UPDATE account SET kind='person' WHERE id=?1", [BOB]).unwrap();
+    conn.execute("INSERT INTO member(id,account_id,name,is_self,visibility,created_at) VALUES ('bob',?1,'Bob',1,'{\"mode\":\"server\"}',0)", [BOB]).unwrap();
+    let write = |author: &str, n: u8, from: &str, kind: &str, to: &str| {
+        ingest::server_op(
+            &conn,
+            author,
+            "relationship.set",
+            &format!("account:{author}"),
+            Some(&new_id(1, [n; 10])),
+            json!({"from_member_id":from,"to_kind":kind,"to_id":to,"type_id":new_id(1,[99;10]),"visibility":{"mode":"private"}}),
+            1_790_000_000_000 + n as i64,
+        )
+    };
+    assert!(write(ALICE, 1, "kai", "member", "bob").is_ok());
+    assert!(write(ALICE, 2, "kai", "account", BOB).is_ok());
+    assert!(write(BOB, 3, "bob", "member", "nai").is_ok(), "Bob can open this bucket-shared fragment");
+    assert!(write(BOB, 4, "bob", "member", "fox").is_err());
+    assert!(write(BOB, 5, "bob", "member", "missing").is_err());
+    assert!(write(BOB, 6, "kai", "member", "bob").is_err(), "the source must be one's own");
+}

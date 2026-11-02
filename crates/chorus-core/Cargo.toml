@@ -11,7 +11,7 @@ authors.workspace = true
 workspace = true
 
 [features]
-# Native editor source maps; deliberately not linked into the size-bounded WASM API.
+# Editor source maps, shared by native and web post editing (D-107); WASM stays budget-gated.
 editor = []
 
 [dependencies]

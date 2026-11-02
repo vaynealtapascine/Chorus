@@ -12,6 +12,70 @@ use serde_json::Value;
 use serde_json::json;
 mod common;
 
+#[test]
+fn compact_post_history_migrates_and_rebuilds_without_rewriting_ops() {
+    let mut conn = db::open_memory().unwrap();
+    db::migrate(&mut conn).unwrap();
+    for account in [ALICE, BOB] {
+        conn.execute("INSERT INTO account(id,kind,created_at) VALUES (?1,'person',0)", [account]).unwrap();
+        ingest::grant(&conn, account, &format!("account:{account}")).unwrap();
+    }
+    let scope = format!("account:{ALICE}");
+    let id = new_id(1, [42; 10]);
+    let text = "🪴 garden ".repeat(4000);
+    let now = 1_790_000_000_000;
+    ingest::server_op(&conn, ALICE, "post.create", &scope, Some(&id), json!({"kind":"entry","authors":[],"title":"Day","text":text,"entities":[],"cw":"warning","visibility":{"mode":"private"}}), now).unwrap();
+    for n in 1..=10 {
+        ingest::server_op(
+            &conn,
+            ALICE,
+            "post.edit",
+            &scope,
+            Some(&id),
+            json!({"post_id":id,"title":null,"text":format!("{text}{n}"),"entities":[],"cw":null}),
+            now + n,
+        )
+        .unwrap();
+    }
+    let current = posts::one(&conn, ALICE, &id).unwrap().unwrap();
+    let history = chorus_server::messages::post_revisions(&conn, &current).unwrap();
+    assert_eq!(history["items"].as_array().unwrap().len(), 11);
+    assert_eq!(history["items"][0]["cw"], "warning");
+    assert_eq!(history["items"][10]["text"], current["text"]);
+    assert_eq!(history["items"][10]["title"], Value::Null);
+    assert_eq!(conn.query_row("SELECT count(*) FROM post_revision", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    let bytes: i64 = conn.query_row("SELECT sum(length(delta)) FROM post_revision_diff", [], |r| r.get(0)).unwrap();
+    assert!(bytes < text.len() as i64 * 2, "history duplicated the full entry: {bytes}");
+    assert!(posts::one(&conn, BOB, &id).unwrap().is_none());
+    let original_ops = chorus_server::exports::ops_jsonl(&conn, ALICE).unwrap();
+    // Exercise migration of an actual pre-0018 derived history, with the same permanent log.
+    for item in history["items"].as_array().unwrap() {
+        conn.execute("INSERT INTO post_revision(post_id,rev,title,text,entities,edited_at,hlc) VALUES (?1,?2,?3,?4,'[]',?5,'1:0:1')",
+            params![id,item["rev"].as_i64(),item["title"].as_str(),item["text"].as_str(),item["at"].as_i64()]).unwrap();
+    }
+    conn.execute_batch("DROP TABLE post_revision_diff; UPDATE server_meta SET value='17' WHERE key='schema_version'")
+        .unwrap();
+    db::migrate(&mut conn).unwrap();
+    assert_eq!(chorus_server::messages::post_revisions(&conn, &current).unwrap(), history);
+    assert_eq!(chorus_server::exports::ops_jsonl(&conn, ALICE).unwrap(), original_ops);
+    chorus_server::project::rebuild(&mut conn).unwrap();
+    assert_eq!(chorus_server::messages::post_revisions(&conn, &current).unwrap(), history);
+    assert_eq!(chorus_server::exports::ops_jsonl(&conn, ALICE).unwrap(), original_ops);
+    assert!(
+        ingest::server_op(
+            &conn,
+            BOB,
+            "post.edit",
+            &format!("account:{BOB}"),
+            Some(&id),
+            json!({"post_id":id,"text":"forged","entities":[]}),
+            now + 20
+        )
+        .is_err()
+    );
+    assert_eq!(posts::one(&conn, ALICE, &id).unwrap().unwrap()["text"], current["text"]);
+}
+
 const ALICE: &str = "0192f8c2-0000-7000-8000-0000000000a1";
 const BOB: &str = "0192f8c2-0000-7000-8000-0000000000b2";
 const CAROL: &str = "0192f8c2-0000-7000-8000-0000000000c3";

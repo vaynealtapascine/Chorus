@@ -4,7 +4,7 @@ import org.json.JSONObject
 
 data class RelationshipType(val id: String, val name: String, val inverseName: String?, val symmetric: Boolean)
 data class MemberRelationship(val id: String, val fromMemberId: String, val toKind: String,
-    val toId: String?, val toLabel: String?, val typeId: String, val note: String?)
+    val toId: String?, val toLabel: String?, val typeId: String, val note: String?, val visibility: String = "{\"mode\":\"private\"}")
 data class ProfileLink(val id: String, val type: String, val target: String, val note: String?)
 
 /** Account-local relationship rows and their profile labels. */
@@ -13,12 +13,12 @@ object LocalRelationships {
         .put("name", name).put("inverse_name", if (symmetric) name else inverseName ?: JSONObject.NULL)
         .put("is_symmetric", symmetric)
 
-    fun linkPayload(fromMemberId: String, typeId: String, toMemberId: String?, toLabel: String?, note: String?): JSONObject =
+    fun linkPayload(fromMemberId: String, typeId: String, toMemberId: String?, toLabel: String?, note: String?, audience: Audience = Audience.PRIVATE): JSONObject =
         JSONObject().put("from_member_id", fromMemberId)
             .put("to_kind", if (toMemberId != null) "member" else "external")
             .put("to_id", toMemberId ?: JSONObject.NULL).put("to_label", toLabel ?: JSONObject.NULL)
             .put("type_id", typeId).put("note", note ?: JSONObject.NULL)
-            .put("visibility", JSONObject().put("mode", "private"))
+            .put("visibility", audience.toJson())
 
     fun types(p: JSONObject): List<RelationshipType> = rows(p, "relationship_type").mapNotNull { (id, f) ->
         val name = f.optString("name").takeIf { it.isNotBlank() } ?: return@mapNotNull null
@@ -32,7 +32,7 @@ object LocalRelationships {
         val toId = f.string("to_id")
         val toLabel = f.string("to_label")
         if (toId == null && toLabel == null) return@mapNotNull null
-        MemberRelationship(id, from, kind, toId, toLabel, type, f.string("note"))
+        MemberRelationship(id, from, kind, toId, toLabel, type, f.string("note"), f.optJSONObject("visibility")?.toString() ?: "{\"mode\":\"private\"}")
     }
 
     fun forMember(model: Model, memberId: String): List<ProfileLink> {

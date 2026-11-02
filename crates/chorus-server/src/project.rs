@@ -394,6 +394,9 @@ fn write_revisions(
     if revisions.is_empty() {
         return Ok(());
     }
+    if table == "post" {
+        return crate::post_history::write(conn, id, revisions);
+    }
     exec(conn, &format!("DELETE FROM {table}_revision WHERE {table}_id = ?1"), [id])?;
     let text = |r: &chorus_core::revisions::Revision, k: &str| -> Option<String> {
         r.fields.get(k).filter(|v| !v.is_null()).map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string))
@@ -1491,6 +1494,7 @@ pub(crate) const DERIVED: &[&str] = &[
     "post",
     "post_author",
     "post_revision",
+    "post_revision_diff",
     "highlight",
     "relationship_type",
     "relationship",

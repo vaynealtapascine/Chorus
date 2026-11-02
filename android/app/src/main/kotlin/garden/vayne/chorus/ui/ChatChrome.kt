@@ -132,7 +132,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                             Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
                                 Canvas(Modifier.fillMaxSize()) { drawCircle(p.line, radius = size.minDimension / 2 - 1.dp.toPx(),
                                     style = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())))) }
-                                ChatIcon(R.drawable.ic_swap, "Switch who's here", p.accent)
+                                ChatIcon(R.drawable.ic_switch_arrows, "Switch who's here", p.accent)
                             }
                             Text("Switch", color = p.accent, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 4.dp))
                         }

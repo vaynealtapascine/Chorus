@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import { core } from '../core';
-  import { buckets, members } from '../data';
+  import { buckets, members, selfMember } from '../data';
   import { canWriteAs } from '../posts';
   import { sync, type Projection } from '../sync/client';
   import { bodyAuthors } from '../front-view';
@@ -14,7 +14,7 @@
   let authors = $state<string[]>([]);
   let initialized = $state(false);
   $effect(() => {
-    if (!initialized) { authors = initialAuthors.length ? [...initialAuthors] : frontAuthors(); visibility = defaultVisibility; initialized = true; }
+    if (!initialized) { authors = initialAuthors.length ? [...initialAuthors] : selfMember(projection) ? [selfMember(projection)!.id] : frontAuthors(); visibility = defaultVisibility; initialized = true; }
   });
   let kind = $state<'note' | 'entry'>('note');
   let title = $state('');
@@ -79,7 +79,7 @@
         <label><input type="checkbox" bind:checked={pollMultiple} /> Allow more than one choice</label>
       {/if}
     </div></details>
-    <label class="audience"><Icon name="lock" size={14} /><span class="sr-label">Visible to</span><select aria-label="Visible to" bind:value={visibility}><option value="private">Only our system</option>{#if availableBuckets.length}<option value="buckets">Selected buckets</option>{/if}<option value="followers">Followers</option><option value="server">Everyone on server</option></select></label>
+    <label class="audience"><Icon name="lock" size={14} /><span class="sr-label">Visible to</span><select aria-label="Visible to" bind:value={visibility}><option value="private">{selfMember(projection) ? 'Only me' : 'Only our system'}</option>{#if availableBuckets.length}<option value="buckets">Selected buckets</option>{/if}<option value="followers">Followers</option><option value="server">Everyone on server</option></select></label>
     <button class="primary" disabled={!authors.length || !body.trim() || (visibility === 'buckets' && !bucketIds.length)}>{replyTo ? 'Reply' : 'Post'}</button>
   </div>
   {#if visibility === 'buckets'}<div class="authors" aria-label="Visible buckets">{#each availableBuckets as bucket (bucket.id)}<label class:on={bucketIds.includes(bucket.id)}><input type="checkbox" checked={bucketIds.includes(bucket.id)} onchange={() => toggleBucket(bucket.id)} />{bucket.name}</label>{/each}</div>{/if}

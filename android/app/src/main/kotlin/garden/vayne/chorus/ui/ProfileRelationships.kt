@@ -12,6 +12,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +25,9 @@ import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.LocalRelationships
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.Api
+import garden.vayne.chorus.data.Audience
+import garden.vayne.chorus.data.ProfileAudience
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -34,8 +38,24 @@ internal fun ProfileRelationships(chorus: Chorus, model: Model, memberId: String
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     val links = LocalRelationships.forMember(model, memberId)
-    val candidates = model.active.filter { it.id != memberId &&
-        (it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId) }
+    var remote by remember(memberId) { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var targetError by remember { mutableStateOf<String?>(null) }
+    var refresh by remember { mutableStateOf(0) }
+    LaunchedEffect(memberId, chorus.device?.session, refresh) {
+        remote = emptyList()
+        try {
+            val dev = checkNotNull(chorus.device)
+            val rows = Api.call("GET", dev.base, "/relationship-targets", null, dev.session).getJSONArray("items")
+            remote = List(rows.length()) { i -> rows.getJSONObject(i).let { row -> row.getString("id") to
+                row.optString("display_name").takeUnless { row.isNull("display_name") || it.isBlank() }.orEmpty().ifBlank { row.optString("name") } } }
+            targetError = null
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { targetError = "Connect to load shared profiles." }
+    }
+    val candidates = (model.active.filter { it.id != memberId &&
+        (it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId) }.map { it.id to it.shownName } + remote)
+        .distinctBy { it.first }.filter { it.first != memberId }
+    var audience by remember(memberId) { mutableStateOf(Audience.PRIVATE) }
     var typeId by rememberSaveable(memberId) { mutableStateOf("") }
     var targetId by rememberSaveable(memberId) { mutableStateOf("") }
     var external by rememberSaveable(memberId) { mutableStateOf(false) }
@@ -47,7 +67,7 @@ internal fun ProfileRelationships(chorus: Chorus, model: Model, memberId: String
     var busy by remember { mutableStateOf(false) }
     var error by rememberSaveable(memberId) { mutableStateOf<String?>(null) }
     val chosenType = model.relationshipTypes.find { it.id == typeId } ?: model.relationshipTypes.firstOrNull()
-    val chosenTarget = candidates.find { it.id == targetId } ?: candidates.firstOrNull()
+    val chosenTarget = candidates.find { it.first == targetId } ?: candidates.firstOrNull()
 
     fun write(kind: String, id: String, payload: JSONObject, after: () -> Unit = {}) {
         if (busy) return
@@ -64,8 +84,14 @@ internal fun ProfileRelationships(chorus: Chorus, model: Model, memberId: String
         for (link in links) Row(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween) {
             Column(Modifier.weight(1f)) {
-                Text("${link.type} · ${link.target}", color = p.ink)
+                val raw = model.relationships.find { it.id == link.id }
+                val target = raw?.takeIf { it.fromMemberId == memberId && it.toKind == "member" }?.toId
+                    ?.let { id -> candidates.find { it.first == id }?.second } ?: link.target
+                Text("${link.type} · $target", color = p.ink)
                 if (link.note != null) Text(link.note, color = p.ink2)
+                if (raw != null) AudienceChip("Relationship", ProfileAudience.of(ProfileAudience.parse(raw.visibility)), true,
+                    model.sharingBuckets, onChange = { a -> write("relationship.set", link.id,
+                        JSONObject().put("visibility", (a ?: Audience.PRIVATE).toJson())) }, enabled = !busy)
             }
             TextButton(enabled = !busy, onClick = { write("relationship.delete", link.id, JSONObject()) }) {
                 Text("Remove")
@@ -92,19 +118,21 @@ internal fun ProfileRelationships(chorus: Chorus, model: Model, memberId: String
                     label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 else if (candidates.isEmpty()) Text("Add another member to link a relationship.", color = p.ink2)
                 else LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(candidates, key = { it.id }) { member ->
-                        JournalChoice(member.shownName, member.id == chosenTarget?.id) { targetId = member.id }
+                    items(candidates, key = { it.first }) { member ->
+                        JournalChoice(member.second, member.first == chosenTarget?.first) { targetId = member.first }
                     }
                 }
                 OutlinedTextField(note, { note = it.take(300) }, label = { Text("Note (optional)") },
                     modifier = Modifier.fillMaxWidth())
-                Text("Relationships are private to this account.", color = p.ink2)
+                targetError?.let { Text(it, color = p.ink2); TextButton(onClick = { refresh++ }) { Text("Refresh shared profiles") } }
+                AudienceChip("New relationship", audience, true, model.sharingBuckets,
+                    onChange = { audience = it ?: Audience.PRIVATE }, enabled = !busy)
                 TextButton(enabled = !busy && chosenType != null && (if (external) label.isNotBlank() else chosenTarget != null),
                     onClick = {
                         val type = chosenType ?: return@TextButton
-                        val target = if (external) null else chosenTarget?.id
+                        val target = if (external) null else chosenTarget?.first
                         write("relationship.set", chorus.newId(), LocalRelationships.linkPayload(memberId, type.id,
-                            target, label.trim().takeIf { external && it.isNotBlank() }, note.trim().ifBlank { null })) {
+                            target, label.trim().takeIf { external && it.isNotBlank() }, note.trim().ifBlank { null }, audience)) {
                             label = ""; note = ""
                         }
                     }) { Text("Add relationship") }

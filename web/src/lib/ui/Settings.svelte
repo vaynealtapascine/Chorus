@@ -86,6 +86,7 @@
 
 <section class="settings">
   <h1 class="display">Settings</h1>
+  {#if selfMember(projection)}<a href="#/profile/{selfMember(projection)!.id}">My profile · photo, colour and fields</a>{/if}
   <p class="muted">Changes save on this device and sync with your account.</p>
   <section class="card">
     <h2>Appearance</h2>
