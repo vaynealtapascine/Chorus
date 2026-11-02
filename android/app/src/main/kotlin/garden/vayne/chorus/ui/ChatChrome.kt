@@ -84,7 +84,6 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
     val p = LocalChorusPalette.current
     var folder by rememberSaveable { mutableStateOf(ChatPresentation.Folder.All) }
     var menu by remember { mutableStateOf(false) }
-    var showReader by remember { mutableStateOf(false) }
     // the chat whose long-press menu is open (pin, arrange pins, delete or clear)
     var rowMenu by remember { mutableStateOf<String?>(null) }
     val pinnedCount = rows.count { it.pinned }
@@ -104,12 +103,9 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                     if (onNew != null) DropdownMenuItem(text = { Text("New message") }, onClick = { menu = false; onNew() })
                     if (onRowAction != null && pinnedCount > 1) DropdownMenuItem(text = { Text("Arrange pinned chats") },
                         onClick = { menu = false; rows.firstOrNull { it.pinned }?.let { onRowAction(it, "arrange") } })
-                    if (!model.isPerson) DropdownMenuItem(text = { Text("Per-member read tracking is in Settings") }, onClick = { menu = false; showReader = true })
                 }
             }
         }
-        if (showReader) Text("Each member keeps their own read position when per-member read tracking is enabled.",
-            color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(16.dp))
         if (!model.isPerson) {
             val presence = ChatPresentation.presence(model, selected).filter { it.subjectType == "member" }
             Column(Modifier.fillMaxWidth().background(p.surface)) {
