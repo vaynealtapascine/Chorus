@@ -15,6 +15,8 @@
   import type { QuoteView } from '../post-threads';
   import { bookmarkPayload, repostBy, repostPayload, shareText, type SocialIndex } from '../journal-social';
   import { entryMeta, fullTimestamp, shortAgo } from '../journal-presentation';
+  import { journalCompose } from '../journal-compose.svelte';
+  import { router } from '../router.svelte';
 
   let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection, replyCount = 0, replyToNames, inThread = false, quote = null, social, saved, repostedBy }: {
     post: PostRow; people: Map<string, MemberRow>; dark: boolean;
@@ -79,6 +81,12 @@
     if (ownRepost) sync.create('post.delete', sync.accountScope, ownRepost.id, {});
     else sync.create('post.create', sync.accountScope, sync.newId(), repostPayload(speaker, post.id));
   }
+  function quotePost() {
+    repostMenu = false;
+    // the Journal's composer takes the post and focuses; quoting is its own post with its own audience
+    journalCompose.quote = post.id;
+    router.go('/journal');
+  }
   function toggleSave() {
     // saving is a private account pref: it syncs to this account's devices and never reaches the author
     sync.create('pref.set', sync.accountScope, null, bookmarkPayload(post.id, !isSaved));
@@ -136,7 +144,7 @@
           {#if social}
             <span class="pop-anchor">
               <button class="act" class:on={!!ownRepost} disabled={!speaker} aria-haspopup="menu" aria-expanded={repostMenu} aria-label={ownRepost ? 'Reposted; open repost options' : 'Repost'} onclick={() => (repostMenu = !repostMenu)}><Icon name="repost" size={18} />{#if reposts}<span>{reposts}</span>{/if}</button>
-              {#if repostMenu}<div class="menu" role="menu" use:outside={() => (repostMenu = false)}><button role="menuitem" onclick={repost}><Icon name="repost" size={18} />{ownRepost ? 'Undo repost' : 'Repost'}</button></div>{/if}
+              {#if repostMenu}<div class="menu" role="menu" use:outside={() => (repostMenu = false)}><button role="menuitem" onclick={repost}><Icon name="repost" size={18} />{ownRepost ? 'Undo repost' : 'Repost'}</button><button role="menuitem" onclick={quotePost}><Icon name="edit" size={18} />Quote</button></div>{/if}
             </span>
           {/if}
           <button class="act heart" class:on={hearted} disabled={!speaker} title={reactedBy || undefined}

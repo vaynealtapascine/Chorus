@@ -8,6 +8,7 @@
   import { quoteView } from '../post-threads';
   import { repostOriginal, savedList, savedPosts, socialIndex } from '../journal-social';
   import JournalFriends from './JournalFriends.svelte';
+  import { journalCompose } from '../journal-compose.svelte';
   import { router } from '../router.svelte';
   import JournalLists from './JournalLists.svelte';
   import JournalFeeds from './JournalFeeds.svelte';
@@ -45,6 +46,8 @@
   let section = $state<(typeof SECTIONS)[number][0]>('timeline');
   const shownTimeline = $derived(section === 'entries' ? timeline.filter((item) => item.kind === 'post' && item.post.kind === 'entry') : timeline);
   const savedPostsList = $derived(savedList(entries, saved));
+  // a card's Quote opens the composer, which lives on the timeline
+  $effect(() => { if (journalCompose.quote && section !== 'timeline' && section !== 'entries') section = 'timeline'; });
   const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
   const memberName = name;
   const frontName = (e: { subject_id: string }) => subjectNames.get(e.subject_id) ?? 'Someone';
