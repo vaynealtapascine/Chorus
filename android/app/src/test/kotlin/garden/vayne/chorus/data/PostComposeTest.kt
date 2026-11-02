@@ -14,6 +14,23 @@ class PostComposeTest {
         """{"text":"hello","entities":[{"type":"bold","offset":0,"length":5}]}"""
     }
 
+    @Test fun pickerOrderFlowsThroughPayloadAndRejectsStaleSelection() {
+        val members = Model.parse(org.json.JSONObject("""{"rows":{"member":{"a":{"exists":true,"fields":{"name":"A","created_by_account_id":"mine"}},"b":{"exists":true,"fields":{"name":"B","created_by_account_id":"mine"}}}}}"""), "mine")
+        var ids = listOf("b")
+        ids = PostCompose.toggleAuthor(ids, "a")
+        val payload = PostCompose.payload(members, "mine", "note", "b", "**hello**", "", "", "private", "", "",
+            markup = markup, authorIds = ids + "b")
+        assertEquals("[\"b\",\"a\"]", payload.getJSONArray("authors").toString())
+        assertEquals(listOf("a"), PostCompose.toggleAuthor(ids, "b"))
+        assertEquals(listOf("c", "a", "b"), PostCompose.moveAuthor(listOf("a", "b", "c"), 2, 0))
+        assertEquals(listOf("b", "a", "c"), PostCompose.moveAuthor(listOf("a", "b", "c"), 0, 1))
+        assertEquals(listOf("a", "b"), PostCompose.moveAuthor(listOf("a", "b"), 0, 5))
+        for (invalid in listOf(emptyList(), listOf("missing"), listOf("own", "foreign"))) {
+            assertTrue(runCatching { PostCompose.validatedAuthors(model, "mine", invalid) }.isFailure)
+        }
+        assertTrue(runCatching { PostCompose.validatedAuthors(model, "mine", ids) }.isFailure)
+    }
+
     @Test fun entryKeepsCoreRichTextAudienceReplyAndTags() {
         val p = PostCompose.payload(model, "mine", "entry", "own", "**hello**", "Title", "Sensitive", "followers",
             "bright", "#day, notes", "parent", markup, listOf("photo", "notes-file"))
@@ -25,6 +42,17 @@ class PostComposeTest {
         assertEquals(listOf("photo", "notes-file"), (0 until p.getJSONArray("attachments").length()).map {
             p.getJSONArray("attachments").getString(it)
         })
+    }
+
+    @Test fun createPreservesBucketAudienceAndQuoteMediaReply() {
+        val p = PostCompose.payload(Model(model.members, emptyList(), emptyMap(), emptyList(), null, emptyList(), sharingBuckets = listOf("a" to "Friends")), "mine", "entry", "own",
+            "**hello**", "Title", "CW", "buckets", "mood", "tag", "parent", markup,
+            listOf("photo"), "quoted", listOf("a"))
+        assertEquals("a", p.getJSONObject("visibility").getJSONArray("bucket_ids").getString(0))
+        assertEquals("buckets", p.getJSONObject("visibility").getString("mode"))
+        assertEquals("quoted", p.getJSONObject("quote").getString("post_id"))
+        assertEquals("parent", p.getString("reply_to"))
+        assertEquals("photo", p.getJSONArray("attachments").getString(0))
     }
 
     @Test fun foreignMemberCannotBeUsedAsOwnPostAuthor() {
@@ -100,3 +128,4 @@ class PostComposeTest {
         }
     }
 }
+

@@ -1,6 +1,7 @@
 package garden.vayne.chorus.designsystem
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.Shapes
@@ -70,7 +71,11 @@ fun ChorusTheme(content: @Composable () -> Unit) {
     )
     CompositionLocalProvider(LocalChorusPalette provides p, LocalChorusDark provides dark,
         LocalChorusAppearance provides Appearance(mode) { next -> mode = next; prefs.edit().putString("theme", next.name).apply() }) {
+        // Compose's content colour is black outside a Surface; the app draws on bare backgrounds,
+        // so text and icons without an explicit colour would vanish in dark mode
         MaterialTheme(colorScheme = scheme, typography = typography,
-            shapes = Shapes(small = RoundedCornerShape(10.dp), medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(22.dp)), content = content)
+            shapes = Shapes(small = RoundedCornerShape(10.dp), medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(22.dp))) {
+            CompositionLocalProvider(LocalContentColor provides p.ink, content = content)
+        }
     }
 }

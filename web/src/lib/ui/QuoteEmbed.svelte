@@ -3,7 +3,7 @@
   import type { QuoteView } from '../post-threads';
   import RichText from './RichText.svelte';
 
-  let { quote }: { quote: QuoteView } = $props();
+  let { quote, gone = 'Quoted post unavailable' }: { quote: QuoteView; gone?: string } = $props();
 </script>
 
 {#if quote.post}
@@ -13,7 +13,7 @@
     {:else}{#if quote.post.title}<strong class="title">{quote.post.title}</strong>{/if}<span class="text"><RichText text={quote.post.text} entities={quote.post.entities ?? []} /></span>{/if}
   </a>
 {:else}
-  <p class="quote gone">Quoted post unavailable</p>
+  <p class="quote gone">{gone}</p>
 {/if}
 
 <style>

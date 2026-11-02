@@ -1,4 +1,5 @@
 import type { Entity } from './core';
+import { attachmentRowsOf, type AttachmentRow } from './data';
 import type { Projection } from './sync/client';
 
 export interface PostRow {
@@ -19,6 +20,8 @@ export interface PostRow {
   quote_post_id?: string;
   /** Set on a repost, which has no text of its own. */
   repost_of?: string;
+  /** Linked image and file attachments from `post.attachment` rows. */
+  attachments?: AttachmentRow[];
   deleted: boolean;
   edited?: boolean;
 }
@@ -27,6 +30,7 @@ const string = (value: unknown) => typeof value === 'string' && value.length ? v
 
 /** Typed journal rows from the current delta-updated projection. */
 export function posts(p: Projection): PostRow[] {
+  const attachmentRows = p.rows.attachment;
   return Object.entries(p.rows.post ?? {}).filter(([, row]) => row.exists).map(([id, row]) => {
     const f = row.fields;
     return {
@@ -43,6 +47,7 @@ export function posts(p: Projection): PostRow[] {
       edited: (row.edits ?? 0) > 0,
       quote_post_id: f.quote && typeof f.quote === 'object' ? string((f.quote as { post_id?: unknown }).post_id) : undefined,
       repost_of: string(f.repost_of),
+      attachments: attachmentRowsOf(attachmentRows, f.attachments),
     };
   }).sort((a, b) => b.occurred_at - a.occurred_at || b.id.localeCompare(a.id));
 }

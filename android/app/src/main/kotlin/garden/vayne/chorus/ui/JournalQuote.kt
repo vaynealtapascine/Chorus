@@ -24,13 +24,13 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
  * rather than guessed at; a content warning is shown instead of the text. */
 @Composable
 internal fun QuoteEmbed(quoted: JournalPost?, model: Model, modifier: Modifier = Modifier, onOpen: (() -> Unit)? = null,
-    names: String? = null) {
+    names: String? = null, gone: String = "Quoted post unavailable") {
     val p = LocalChorusPalette.current
     val shape = RoundedCornerShape(12.dp)
     Column(modifier.fillMaxWidth().clip(shape).border(1.dp, p.line, shape)
         .then(if (onOpen != null && quoted != null) Modifier.clickable(onClickLabel = "Open quoted post", onClick = onOpen) else Modifier)
         .padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (quoted == null) Text("Quoted post unavailable", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+        if (quoted == null) Text(gone, color = p.ink3, style = MaterialTheme.typography.bodySmall)
         else {
             // another account's post names its authors from the server's author cards ([names])
             val names = names ?: quoted.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
@@ -49,11 +49,12 @@ internal fun QuoteEmbed(quoted: JournalPost?, model: Model, modifier: Modifier =
 
 /** The quote inside a thread post: the device's own copy when it has one, else the server's. */
 @Composable
-internal fun ThreadQuote(quotePostId: String, quoted: ThreadReply?, model: Model, onOpen: ((String) -> Unit)?) {
+internal fun ThreadQuote(quotePostId: String, quoted: ThreadReply?, model: Model, onOpen: ((String) -> Unit)?,
+    gone: String = "Quoted post unavailable") {
     val local = model.posts.find { it.id == quotePostId }?.takeIf { it.repostOf == null }
     val open = onOpen?.let { { it(quotePostId) } }
-    if (local != null || quoted == null) QuoteEmbed(local, model, onOpen = open)
+    if (local != null || quoted == null) QuoteEmbed(local, model, onOpen = open, gone = gone)
     else QuoteEmbed(JournalPost(quoted.id, "note", quoted.authorIds, quoted.title, quoted.text, quoted.occurredAt, quoted.cw,
         "server", null, null, emptyList(), entities = quoted.entities), model, onOpen = open,
-        names = quoted.authorNames.joinToString(" & ").ifBlank { "Someone" })
+        names = quoted.authorNames.joinToString(" & ").ifBlank { "Someone" }, gone = gone)
 }

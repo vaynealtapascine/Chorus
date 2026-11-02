@@ -1,0 +1,469 @@
+{
+  "projection": {
+    "rows": {
+      "space": {
+        "s": {
+          "exists": true,
+          "fields": {
+            "kind": "internal",
+            "name": "System",
+            "created_by_account_id": "account"
+          },
+          "clocks": {}
+        },
+        "shared": {
+          "exists": true,
+          "fields": {
+            "kind": "shared",
+            "name": "Shared",
+            "created_by_account_id": "other",
+            "roles": [
+              {
+                "id": "custom",
+                "perms": []
+              }
+            ]
+          },
+          "clocks": {}
+        }
+      },
+      "member": {
+        "kai": {
+          "exists": true,
+          "fields": {
+            "name": "kai",
+            "created_by_account_id": "account"
+          },
+          "clocks": {}
+        },
+        "rin": {
+          "exists": true,
+          "fields": {
+            "name": "rin",
+            "created_by_account_id": "account"
+          },
+          "clocks": {}
+        }
+      },
+      "space_member": {
+        "shared|account": {
+          "exists": true,
+          "fields": {
+            "role": "custom",
+            "is_present": true
+          },
+          "clocks": {}
+        }
+      },
+      "channel": {
+        "c": {
+          "exists": true,
+          "fields": {
+            "space_id": "s",
+            "kind": "text",
+            "name": "general"
+          },
+          "clocks": {}
+        },
+        "private": {
+          "exists": true,
+          "fields": {
+            "space_id": "s",
+            "kind": "member_dm",
+            "member_ids": [
+              "rin"
+            ],
+            "name": "private"
+          },
+          "clocks": {}
+        },
+        "denied": {
+          "exists": true,
+          "fields": {
+            "space_id": "shared",
+            "kind": "text",
+            "name": "denied"
+          },
+          "clocks": {}
+        },
+        "thread": {
+          "exists": true,
+          "fields": {
+            "space_id": "s",
+            "kind": "thread",
+            "parent_message_id": "c-hidden",
+            "name": "thread"
+          },
+          "clocks": {}
+        },
+        "shared-root": {
+          "exists": true,
+          "fields": {
+            "space_id": "shared",
+            "kind": "text",
+            "name": "shared-root"
+          },
+          "clocks": {}
+        },
+        "shared-thread": {
+          "exists": true,
+          "fields": {
+            "space_id": "shared",
+            "kind": "thread",
+            "name": "shared-thread",
+            "parent_message_id": "shared-parent"
+          },
+          "clocks": {}
+        }
+      },
+      "channel_permission": {
+        "denied|account|account": {
+          "exists": true,
+          "fields": {
+            "deny": [
+              "view"
+            ],
+            "allow": []
+          },
+          "clocks": {}
+        },
+        "shared-root|account|account": {
+          "exists": true,
+          "fields": {
+            "allow": [
+              "view"
+            ],
+            "deny": []
+          },
+          "clocks": {}
+        }
+      },
+      "message": {
+        "b-before": {
+          "exists": true,
+          "fields": {
+            "channel_id": "c",
+            "account_id": "account",
+            "text": "needle b-before",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "visibility": {
+              "mode": "all"
+            }
+          },
+          "clocks": {}
+        },
+        "c-hidden": {
+          "exists": true,
+          "fields": {
+            "channel_id": "c",
+            "account_id": "account",
+            "text": "needle c-hidden",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "visibility": {
+              "mode": "members",
+              "member_ids": [
+                "rin"
+              ]
+            }
+          },
+          "clocks": {}
+        },
+        "m-match": {
+          "exists": true,
+          "fields": {
+            "channel_id": "c",
+            "account_id": "account",
+            "text": "needle m-match",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "visibility": {
+              "mode": "all"
+            }
+          },
+          "clocks": {}
+        },
+        "n-hidden": {
+          "exists": true,
+          "fields": {
+            "channel_id": "c",
+            "account_id": "account",
+            "text": "needle n-hidden",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "visibility": {
+              "mode": "members",
+              "member_ids": [
+                "rin"
+              ]
+            }
+          },
+          "clocks": {}
+        },
+        "z-after": {
+          "exists": true,
+          "fields": {
+            "channel_id": "c",
+            "account_id": "account",
+            "text": "needle z-after",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "visibility": {
+              "mode": "all"
+            }
+          },
+          "clocks": {}
+        },
+        "private-message": {
+          "exists": true,
+          "fields": {
+            "channel_id": "private",
+            "account_id": "account",
+            "text": "needle private-message",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "visibility": {
+              "mode": "all"
+            }
+          },
+          "clocks": {}
+        },
+        "thread-message": {
+          "exists": true,
+          "fields": {
+            "channel_id": "thread",
+            "account_id": "account",
+            "text": "needle thread-message",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "visibility": {
+              "mode": "all"
+            }
+          },
+          "clocks": {}
+        },
+        "denied-message": {
+          "exists": true,
+          "fields": {
+            "channel_id": "denied",
+            "account_id": "account",
+            "text": "needle denied-message",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "visibility": {
+              "mode": "all"
+            }
+          },
+          "clocks": {}
+        },
+        "deleted": {
+          "exists": true,
+          "fields": {
+            "channel_id": "c",
+            "account_id": "account",
+            "text": "needle deleted",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "visibility": {
+              "mode": "all"
+            },
+            "deleted_at": 30
+          },
+          "clocks": {}
+        },
+        "malformed": {
+          "exists": true,
+          "fields": {
+            "channel_id": "c",
+            "account_id": "account",
+            "text": "needle malformed",
+            "occurred_at": 20,
+            "authors": [
+              "kai"
+            ],
+            "visibility": {}
+          },
+          "clocks": {}
+        },
+        "shared-parent": {
+          "exists": true,
+          "fields": {
+            "channel_id": "shared-root",
+            "account_id": "account",
+            "text": "needle shared-parent",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "visibility": {
+              "mode": "all"
+            }
+          },
+          "clocks": {}
+        },
+        "shared-thread-message": {
+          "exists": true,
+          "fields": {
+            "channel_id": "shared-thread",
+            "account_id": "account",
+            "text": "needle shared-thread-message",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "visibility": {
+              "mode": "all"
+            }
+          },
+          "clocks": {}
+        }
+      },
+      "post": {
+        "note": {
+          "exists": true,
+          "fields": {
+            "kind": "note",
+            "account_id": "account",
+            "text": "garden note",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "reply_to": null
+          },
+          "clocks": {}
+        },
+        "entry": {
+          "exists": true,
+          "fields": {
+            "kind": "entry",
+            "account_id": "account",
+            "text": "garden entry",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "reply_to": null
+          },
+          "clocks": {}
+        },
+        "reply": {
+          "exists": true,
+          "fields": {
+            "kind": "note",
+            "account_id": "account",
+            "text": "garden reply",
+            "authors": [
+              "kai"
+            ],
+            "entities": [],
+            "occurred_at": 20,
+            "reply_to": "note"
+          },
+          "clocks": {}
+        }
+      },
+      "pref": {
+        "account||bookmark:entry": {
+          "exists": true,
+          "fields": {
+            "value": true
+          },
+          "clocks": {}
+        }
+      }
+    },
+    "sets": {},
+    "fronts": {}
+  },
+  "cases": [
+    {
+      "name": "kai current front hides rin audience and private chat",
+      "front": [
+        "kai"
+      ],
+      "visible": [
+        "b-before",
+        "m-match",
+        "z-after",
+        "shared-parent",
+        "shared-thread-message"
+      ],
+      "context": [
+        "b-before",
+        "m-match",
+        "z-after"
+      ]
+    },
+    {
+      "name": "rin front reveals each independently readable neighbor and parent thread",
+      "front": [
+        "rin"
+      ],
+      "visible": [
+        "b-before",
+        "c-hidden",
+        "m-match",
+        "n-hidden",
+        "z-after",
+        "private-message",
+        "thread-message",
+        "shared-parent",
+        "shared-thread-message"
+      ],
+      "context": [
+        "c-hidden",
+        "m-match",
+        "n-hidden"
+      ]
+    },
+    {
+      "name": "empty front fails closed on private content",
+      "front": [],
+      "visible": [
+        "b-before",
+        "m-match",
+        "z-after",
+        "shared-parent",
+        "shared-thread-message"
+      ],
+      "context": [
+        "b-before",
+        "m-match",
+        "z-after"
+      ]
+    }
+  ]
+}

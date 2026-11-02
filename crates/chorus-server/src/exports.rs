@@ -374,6 +374,16 @@ pub fn sqlite_copy(source: &Connection, account: &str, work_dir: &Path) -> anyho
     // push endpoints and keys are delivery credentials, not the account's data
     target.execute("UPDATE device SET push_endpoint = NULL, push_p256dh = NULL, push_auth = NULL", [])?;
     copy_owned_rows(source, &target, "op", AUTHORED_OPS, account)?;
+    // retained legacy history of this account's posts (D-107) that no op can rebuild; only for
+    // posts the copied log creates, so the export's rebuild has nothing stranded
+    copy_owned_rows(
+        source,
+        &target,
+        "post_revision",
+        "post_id IN (SELECT id FROM post WHERE account_id=?1)
+         AND post_id IN (SELECT entity_id FROM op WHERE kind='post.create' AND status='applied' AND account_id=?1)",
+        account,
+    )?;
     project::rebuild(&mut target)?;
     for spec in CSV {
         let view = match spec.name {

@@ -449,3 +449,59 @@ fn early_channel_fields_and_matching_creates_still_converge_without_moving_scope
     let actual: String = w.c.query_row("SELECT space_id FROM channel WHERE id = ?1", [&chat], |r| r.get(0)).unwrap();
     assert_eq!(actual, dm);
 }
+
+/// A private chat with a member who is a subsystem (D-092) includes everyone inside them,
+/// recursively; one with someone inside doesn't include the subsystem (owner, 2026-11-02).
+#[test]
+fn a_subsystem_s_chat_includes_who_is_inside_it() {
+    let mut w = W::new();
+    let (l, scope, dm) = (w.lanterns.clone(), w.scope(), w.dm.clone());
+    let acct = format!("account:{l}");
+    let garden = w.member(&l, "Garden");
+    let moss = w.member(&l, "Moss");
+    let fern = w.member(&l, "Fern");
+    let june = w.member(&l, "June");
+    // Garden is a subsystem with Moss inside; Moss is one too, with Fern inside
+    for (who, name) in [(&garden, "Garden"), (&moss, "Moss")] {
+        let group = w.id();
+        w.ok(&l, "group.create", &acct, &group, json!({"name": name, "kind": "subsystem", "can_front": false}));
+        let inside = if who == &garden { &moss } else { &fern };
+        w.ok(&l, "group.add_member", &acct, &group, json!({"member_id": inside}));
+        let pref = w.id();
+        w.ok(
+            &l,
+            "pref.set",
+            &acct,
+            &pref,
+            json!({"device": "", "key": format!("member_subsystem:{who}"), "value": group}),
+        );
+    }
+    let gardens = w.id();
+    w.ok(
+        &l,
+        "channel.create",
+        &scope,
+        &gardens,
+        json!({"space_id": dm, "kind": "member_dm", "name": "Garden", "member_ids": [garden]}),
+    );
+    for who in [&garden, &moss, &fern] {
+        let m = w.id();
+        w.ok(&l, "message.send", &scope, &m, say(&gardens, &[who], "inside"));
+    }
+    let m = w.id();
+    assert!(w.refused(&l, "message.send", &scope, &m, say(&gardens, &[&june], "outside")).contains("private chat"));
+    let ferns = w.id();
+    w.ok(
+        &l,
+        "channel.create",
+        &scope,
+        &ferns,
+        json!({"space_id": dm, "kind": "member_dm", "name": "Fern", "member_ids": [fern]}),
+    );
+    let m = w.id();
+    w.ok(&l, "message.send", &scope, &m, say(&ferns, &[&fern], "just me"));
+    for who in [&garden, &moss] {
+        let m = w.id();
+        assert!(w.refused(&l, "message.send", &scope, &m, say(&ferns, &[who], "parent")).contains("private chat"));
+    }
+}

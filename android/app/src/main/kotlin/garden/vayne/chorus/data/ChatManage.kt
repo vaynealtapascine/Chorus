@@ -18,7 +18,8 @@ object ChatManage {
         return Sides(mine, theirs)
     }
 
-    /** Threads inherit the parent channel's speaker restriction as well as visibility. */
+    /** Threads inherit the parent channel's speaker restriction as well as visibility. Our side
+     * includes everyone inside a listed subsystem, as the server does. */
     fun inheritedSides(channel: ChatChannel, model: Model, own: Set<String>): Sides? {
         var current = channel
         val seen = HashSet<String>()
@@ -27,6 +28,7 @@ object ChatManage {
             current = model.channels.firstOrNull { it.id == parent.channelId } ?: return null
         }
         return sides(current, model.spaces.firstOrNull { it.id == current.spaceId }, own)
+            ?.let { it.copy(mine = Subsystems.including(model, it.mine)) }
     }
 
     /** Our private chat in this DM as [member] alone, if there is one. */

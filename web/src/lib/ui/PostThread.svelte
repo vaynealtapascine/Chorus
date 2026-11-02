@@ -14,7 +14,8 @@
   import { sync, type Projection } from '../sync/client';
   import { bodyAuthors } from '../front-view';
   import { router } from '../router.svelte';
-  import AttachmentView from './AttachmentView.svelte';
+  import PostMedia from './PostMedia.svelte';
+  import { savedPosts, socialIndex } from '../journal-social';
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
   import PostCard from './PostCard.svelte';
@@ -27,6 +28,8 @@
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
   const rows = $derived(posts(projection));
   const reacts = $derived(allReactions(projection));
+  const social = $derived(socialIndex(rows));
+  const saved = $derived(savedPosts(projection.rows.pref ?? {}, sync.accountId));
   const active = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
   const speaker = $derived(bodyAuthors(projection, sync.accountId)[0] || active[0]?.id || null);
   const own = $derived(rows.find((post) => post.id === id && !post.deleted));
@@ -124,8 +127,8 @@
         {#if quoteFor(item)}<QuoteEmbed quote={quoteFor(item)!} />{/if}
         {#if item.remote}
           <RemotePostPoll {projection} post={item.remote} member={speaker} />
-          {#each item.remote.attachments ?? [] as attachment (attachment.id)}<AttachmentView {attachment} />{/each}
         {/if}
+        {#if !item.local && item.remote?.attachments?.length}<PostMedia attachments={item.remote.attachments} who={itemNames(item)} occurredAt={post.occurred_at} />{/if}
       {/if}
       {#if !context && item.replyCount}<a class="count" href="#/journal/post/{encodeURIComponent(item.id)}">{count(item.replyCount)}</a>{/if}
     </div>
@@ -147,7 +150,8 @@
 
   {#if own}
     <div class="focus" class:joined={ancestors.length > 0}>
-      <PostCard {projection} post={own} {people} {dark} reactions={reacts.get(own.id) ?? new Map()} {speaker} inThread full
+      <PostCard {projection} post={own} {people} {dark} reactions={reacts.get(own.id) ?? new Map()} {speaker} {social} {saved} inThread full
+        quoteCount={quotes.length} onquotes={() => (showQuotes = true)}
         quote={quoteView(own.quote_post_id, postById, name, detail?.quoted)}
         replyCount={replies.length} onreply={() => document.getElementById('thread-reply')?.querySelector('textarea')?.focus()}
         onreact={(emoji, add) => react(own.id, emoji, add)} />
@@ -160,8 +164,8 @@
   {/if}
 
   {#if focused}
-    <p class="detail">{when(focused.occurred_at)}{#if replies.length}{' · '}<strong>{replies.length}</strong> {replies.length === 1 ? 'reply' : 'replies'}{/if}{#if quotes.length}{' · '}<button class="stat" onclick={() => (showQuotes = true)}><strong>{quotes.length}</strong> {quotes.length === 1 ? 'quote' : 'quotes'}</button>{/if}</p>
-    {#if reactionLine}<p class="reactions">{reactionLine}</p>{/if}
+    {#if !own}<p class="detail">{when(focused.occurred_at)}{#if replies.length}{' · '}<strong>{replies.length}</strong> {replies.length === 1 ? 'reply' : 'replies'}{/if}{#if quotes.length}{' · '}<button class="stat" onclick={() => (showQuotes = true)}><strong>{quotes.length}</strong> {quotes.length === 1 ? 'quote' : 'quotes'}</button>{/if}</p>
+    {#if reactionLine}<p class="reactions">{reactionLine}</p>{/if}{/if}
     <div class="reply-box" id="thread-reply">
       <p class="replying">Replying to <strong>{focusedNames || 'this post'}</strong></p>
       <!-- another account's reader must be able to read the reply, so it starts server-wide -->
@@ -182,7 +186,7 @@
     {#each listed as reply (reply.id)}
       <div class="reply">
         {#if reply.local}
-          <PostCard {projection} post={reply.local} {people} {dark} reactions={reacts.get(reply.id) ?? new Map()} {speaker} inThread={listed === replies} full
+          <PostCard {projection} post={reply.local} {people} {dark} reactions={reacts.get(reply.id) ?? new Map()} {speaker} {social} {saved} inThread={listed === replies}
             quote={quoteFor(reply)}
             replyCount={reply.replyCount} onreply={() => open(reply.id)} onreact={(emoji, add) => react(reply.id, emoji, add)} />
         {:else}

@@ -29,11 +29,15 @@ import kotlinx.coroutines.withContext
 
 /** A post's attachments: images share one rounded 16:9 grid (1 full width, 2 side by side, 3 a
  * large left tile with two stacked, 4 a 2×2, more show "+N" on the last), 2 dp apart; any other
- * file keeps its file row below. [who]/[at] caption the full-screen viewer. */
+ * file keeps its file row below. An opened post ([full]) shows each photo whole instead, uncropped.
+ * [who]/[at] caption the full-screen viewer. */
 @Composable
-internal fun JournalMedia(attachments: List<ChatAttachment>, chorus: Chorus, who: String = "", at: Long = 0L) {
+internal fun JournalMedia(attachments: List<ChatAttachment>, chorus: Chorus, who: String = "", at: Long = 0L, full: Boolean = false) {
     val images = attachments.filter { it.mime.startsWith("image/") }
-    if (images.isNotEmpty()) MediaGrid(images, chorus, who, at)
+    if (images.isNotEmpty()) {
+        if (full) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { for (image in images) WholeImage(image, chorus, who, at) }
+        else MediaGrid(images, chorus, who, at)
+    }
     for (file in attachments) if (!file.mime.startsWith("image/")) ChatAttachmentView(file, chorus, who, at)
 }
 
@@ -68,6 +72,46 @@ private fun MediaGrid(images: List<ChatAttachment>, chorus: Chorus, who: String,
     if (single != null && single.altText.isNotBlank()) Text(single.altText, color = LocalChorusPalette.current.ink3,
         style = MaterialTheme.typography.bodySmall)
     viewing?.let { MediaViewer(it, chorus, who, at, null, onClose = { viewing = null }) }
+}
+
+/** One photo at its own shape, full width unless that would make it taller than most of the screen
+ * (then as tall as allowed), so all of it shows. Spoilers stay covered until tapped. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun WholeImage(a: ChatAttachment, chorus: Chorus, who: String, at: Long) {
+    val p = LocalChorusPalette.current
+    val ctx = LocalContext.current
+    var covered by rememberSaveable(a.id) { mutableStateOf(a.spoiler) }
+    var viewing by remember { mutableStateOf(false) }
+    val bitmap by produceState<Bitmap?>(null, a.blobHash, chorus.device?.session, covered) {
+        value = if (covered) null else withContext(Dispatchers.IO) {
+            Blobs.image(ctx.applicationContext, a.blobHash, chorus.device, maxPx = 2048)
+                ?: a.thumbHash?.let { Blobs.image(ctx.applicationContext, it, chorus.device) }
+        }
+    }
+    val image = bitmap
+    val tallest = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * .7f
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val ratio = image?.let { it.width.toFloat() / it.height.coerceAtLeast(1) }?.coerceIn(.2f, 5f) ?: (16f / 9f)
+        val height = minOf(maxWidth / ratio, tallest)
+        val width = minOf(maxWidth, height * ratio)
+        Box(Modifier.size(width, height).clip(RoundedCornerShape(12.dp)).background(p.surface3).combinedClickable(
+            onClickLabel = if (covered) "Reveal spoiler image" else "Open photo",
+            onClick = { if (covered) covered = false else if (image != null) viewing = true },
+            onLongClick = if (a.spoiler && !covered) ({ covered = true }) else null,
+            onLongClickLabel = "Hide image").semantics { contentDescription = if (covered) "Spoiler image" else a.altText.ifBlank { a.filename } },
+            contentAlignment = Alignment.Center) {
+            when {
+                covered -> Text("Spoiler · tap to reveal", color = p.ink2, style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(8.dp))
+                image == null -> Text("Loading, or unavailable offline.", color = p.ink3, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(8.dp))
+                else -> Image(image.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            }
+        }
+    }
+    if (a.altText.isNotBlank()) Text(a.altText, color = p.ink3, style = MaterialTheme.typography.bodySmall)
+    if (viewing) MediaViewer(a, chorus, who, at, null, onClose = { viewing = false })
 }
 
 /** One photo cell outside a post's own grid (the profile's Media tab), opening the full-screen viewer. */

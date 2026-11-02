@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,7 +60,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.Chorus
-import garden.vayne.chorus.data.UploadWork
 import garden.vayne.chorus.data.JournalPost
 import garden.vayne.chorus.data.Member
 import garden.vayne.chorus.data.JournalSocial
@@ -93,13 +91,55 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     onShareConsumed: () -> Unit = {}, externalNewEntry: Long? = null,
     onExternalNewEntryConsumed: () -> Unit = {}, active: Boolean = true,
     onFocusedRoute: (Boolean) -> Unit = {}, externalOpenProfile: String? = null,
-    onExternalProfileConsumed: () -> Unit = {}) {
+    onExternalProfileConsumed: () -> Unit = {}, onSearch: (String) -> Unit = {}) {
+    val owner = chorus.editorOwner
+    val account = chorus.device?.accountId
+    if (owner.isBlank() || account == null) return
+    val session = remember(owner) { garden.vayne.chorus.data.JournalDraftSession(chorus.editorDrafts,
+        owner, { chorus.editorOwner }, chorus::newId, { chorus.journalPostCommitted(account, it) }) }
+    val draftState by session.state.collectAsState()
+    LaunchedEffect(session) { session.restore() }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    androidx.compose.runtime.DisposableEffect(session, lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) session.checkpoint()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer); session.detach() }
+    }
+    if (!draftState.loaded) {
+        val retry = rememberCoroutineScope()
+        Column(Modifier.padding(24.dp)) {
+            Text(draftState.error ?: "Restoring your Journal draft…")
+            if (draftState.error != null) TextButton(onClick = { retry.launch { session.restore() } }) { Text("Retry") }
+        }
+        return
+    }
+    androidx.compose.runtime.key(owner, session) {
+        JournalLoaded(chorus, model, session, externalReplyPost, onExternalReplyConsumed,
+            externalOpenPost, onExternalOpenConsumed, sharedDraft, onShareConsumed,
+            externalNewEntry, onExternalNewEntryConsumed, active, onFocusedRoute,
+            externalOpenProfile, onExternalProfileConsumed, onSearch)
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.chorus.data.JournalDraftSession,
+    externalReplyPost: String?, onExternalReplyConsumed: () -> Unit, externalOpenPost: String?,
+    onExternalOpenConsumed: () -> Unit, sharedDraft: SharedDraft?, onShareConsumed: () -> Unit,
+    externalNewEntry: Long?, onExternalNewEntryConsumed: () -> Unit, active: Boolean,
+    onFocusedRoute: (Boolean) -> Unit, externalOpenProfile: String?, onExternalProfileConsumed: () -> Unit, onSearch: (String) -> Unit) {
+    val draftState by session.state.collectAsState()
+    fun <T> field(get: (garden.vayne.chorus.data.JournalDraft) -> T,
+        set: garden.vayne.chorus.data.JournalDraft.(T) -> garden.vayne.chorus.data.JournalDraft) =
+        JournalField({ get(session.state.value.draft) }) { value -> session.edit { set(value) } }
     val p = LocalChorusPalette.current
     val connection by chorus.status.collectAsState()
-    var editorOptions by rememberSaveable { mutableStateOf(false) }
+    var editorOptions by field({ it.advanced }) { copy(advanced = it) }
     var journalTab by rememberSaveable { mutableStateOf("system") }
     var feedMenu by remember { mutableStateOf(false) }
-    var editing by rememberSaveable { mutableStateOf(false) }
+    var editing by field({ it.editing }) { copy(editing = it) }
     var profileId by rememberSaveable { mutableStateOf<String?>(null) }
     var threadPostId by rememberSaveable { mutableStateOf<String?>(null) }
     // the threads under the open one, newline-separated, so back from a reply's thread returns to its parent
@@ -108,30 +148,43 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     val threadStack = threadBack.split('\n').filter { it.isNotEmpty() }
     var section by rememberSaveable { mutableStateOf("timeline") }
     var selectedListId by rememberSaveable { mutableStateOf("") }
-    var replyTo by rememberSaveable { mutableStateOf<String?>(null) }
-    var quoteOf by rememberSaveable { mutableStateOf<String?>(null) }
-    var kind by rememberSaveable { mutableStateOf("note") }
-    var authorId by rememberSaveable { mutableStateOf("") }
-    var bodyValue by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
+    var replyTo by field({ it.reply }) { copy(reply = it) }
+    var quoteOf by field({ it.quote }) { copy(quote = it) }
+    var kind by field({ it.kind }) { copy(kind = it) }
+    var selectedAuthors by field({ it.authors }) { copy(authors = it) }
+    val authorId = draftState.draft.authorHint
+    var composition by remember { mutableStateOf<TextRange?>(null) }
+    var bodyValue by field({ TextFieldValue(it.body, TextRange(it.selectionStart, it.selectionEnd), composition) }) {
+        composition = it.composition
+        copy(body = it.text, selectionStart = it.selection.start, selectionEnd = it.selection.end)
+    }
     val body = bodyValue.text
-    var title by rememberSaveable { mutableStateOf("") }
-    var cw by rememberSaveable { mutableStateOf("") }
-    var mood by rememberSaveable { mutableStateOf("") }
-    var tags by rememberSaveable { mutableStateOf("") }
-    var pollOn by rememberSaveable { mutableStateOf(false) }
-    val pollOptions = rememberSaveable(saver = PollOptionsSaver) { mutableStateListOf("", "") }
-    var pollMultiple by rememberSaveable { mutableStateOf(false) }
-    var audience by rememberSaveable { mutableStateOf("private") }
-    var busy by remember { mutableStateOf(false) }
-    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var title by field({ it.title }) { copy(title = it) }
+    var cw by field({ it.cw }) { copy(cw = it) }
+    var mood by field({ it.mood }) { copy(mood = it) }
+    var tags by field({ it.tags }) { copy(tags = it) }
+    var pollOn by field({ it.poll }) { copy(poll = it) }
+    var pollOptions by field({ it.options }) { copy(options = it) }
+    var pollMultiple by field({ it.multiple }) { copy(multiple = it) }
+    var audience by field({ it.audience }) { copy(audience = it) }
+    var bucketIds by field({ it.buckets }) { copy(buckets = it) }
+    val busy = draftState.busy
+    var error by JournalField({ draftState.error }, session::report)
     val actions = rememberCoroutineScope()
     val ctx = LocalContext.current
-    val attachments = rememberSaveable(saver = AttachmentDraftSaver) { mutableStateListOf<PendingAttachment>() }
+    var attachments by field({ it.files.map { file -> file.pending() } }) { copy(files = it.map { file -> file.durable() }) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
-        for (uri in uris) attachments.add(PendingAttachment.of(ctx, uri))
+        for (uri in uris) try { attachments = attachments + PendingAttachment.of(ctx, uri) }
+        catch (e: Exception) { error = "Could not attach this file: ${e.message}" }
+    }
+    val missingFiles by produceState(emptyList<String>(), draftState.draft.files) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            draftState.draft.files.filterNot { it.readable(ctx) }.map { it.name }
+        }
     }
     val mine = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId }
-    val author = mine.find { it.id == authorId } ?: Reply.speaker(model)?.takeIf { it in mine } ?: mine.firstOrNull()
+    val author = selectedAuthors?.firstOrNull()?.let { id -> mine.find { it.id == id } }
+        ?: mine.find { it.id == authorId } ?: Reply.speaker(model)?.takeIf { it in mine } ?: mine.firstOrNull()
 
     LaunchedEffect(externalOpenProfile) {
         if (externalOpenProfile != null) {
@@ -140,42 +193,43 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         }
     }
 
-    LaunchedEffect(sharedDraft?.id, chorus.device?.accountId) {
+    var receiptRetry by remember { mutableStateOf(0) }
+    LaunchedEffect(sharedDraft?.id, receiptRetry) {
         val incoming = sharedDraft ?: return@LaunchedEffect
-        if (chorus.device == null) return@LaunchedEffect
-        profileId = null; threadPostId = null; replyTo = null
-        section = "timeline"
-        if (incoming.text.isNotBlank()) {
-            val text = listOf(body, incoming.text).filter { it.isNotBlank() }.joinToString("\n")
-            bodyValue = TextFieldValue(text, TextRange(text.length))
+        val files = incoming.uris.map { uri ->
+            try { PendingAttachment.of(ctx, uri).durable() }
+            catch (_: Exception) { garden.vayne.chorus.data.JournalDraftFile(uri.toString(), "Unavailable shared file", "application/octet-stream") }
         }
-        for (uri in incoming.uris) {
-            try { attachments.add(PendingAttachment.of(ctx, uri)) }
-            catch (_: Exception) { error = "One shared file could not be opened. Please attach it again." }
-        }
-        editing = true
-        onShareConsumed()
+        if (session.receive(garden.vayne.chorus.data.JournalLaunch("share:${incoming.id}", "share", incoming.text, files))) onShareConsumed()
     }
-    LaunchedEffect(externalNewEntry, chorus.device?.accountId) {
-        if (externalNewEntry == null || chorus.device == null) return@LaunchedEffect
-        profileId = null; threadPostId = null; replyTo = null
-        section = "timeline"; kind = "entry"; editing = true
-        onExternalNewEntryConsumed()
+    LaunchedEffect(externalNewEntry, receiptRetry) {
+        if (externalNewEntry == null) return@LaunchedEffect
+        if (session.receive(garden.vayne.chorus.data.JournalLaunch("entry:$externalNewEntry", "entry"))) onExternalNewEntryConsumed()
     }
-
-    LaunchedEffect(externalReplyPost) {
-        if (externalReplyPost != null) {
-            profileId = null; threadPostId = null
-            section = "timeline"
-            replyTo = externalReplyPost; quoteOf = null
-            kind = "note"; title = ""; bodyValue = TextFieldValue(); cw = ""; mood = ""; tags = ""
-            attachments.clear()
-            audience = "server" // the foreign parent author must be able to read this reply
-            authorId = Reply.speaker(model)?.id.orEmpty()
-            editing = true
-            onExternalReplyConsumed()
+    LaunchedEffect(externalReplyPost, receiptRetry) {
+        if (externalReplyPost == null) return@LaunchedEffect
+        if (session.receive(garden.vayne.chorus.data.JournalLaunch("reply:$externalReplyPost", "reply", post = externalReplyPost, audience = "server"))) onExternalReplyConsumed()
+    }
+    fun launchDraft(type: String, post: String? = null, author: String? = null, audience: String? = null) {
+        session.enqueue(garden.vayne.chorus.data.JournalLaunch(chorus.newId(), type, post = post, author = author, audience = audience))
+    }
+    val pendingLaunch = draftState.draft.launches.firstOrNull()
+    LaunchedEffect(pendingLaunch?.id, busy, draftState.draft.occupied) {
+        if (pendingLaunch != null && !busy && !draftState.draft.occupied) {
+            session.resolveLaunch(true); profileId = null; threadPostId = null; section = "timeline"
         }
     }
+    if (pendingLaunch != null && !busy && draftState.draft.occupied) AlertDialog(
+        onDismissRequest = { session.resolveLaunch(false) }, title = { Text("You have a Journal draft") },
+        text = { Text(when (pendingLaunch.kind) {
+            "share" -> "Add the shared text and files to this draft? Your author choices and other details will stay."
+            "entry" -> "Continue this draft as a journal entry? Your text, author choices and other details will stay."
+            "reply" -> "Use this draft for the new reply? Your text and author choices will stay. Check the reply and audience before posting."
+            "quote" -> "Use this draft to quote the selected post? Your text and author choices will stay."
+            else -> "Continue your saved draft?"
+        }) }, confirmButton = { TextButton(onClick = {
+            session.resolveLaunch(true); profileId = null; threadPostId = null; section = "timeline"
+        }) { Text("Use draft") } }, dismissButton = { TextButton(onClick = { session.resolveLaunch(false); editing = true }) { Text("Keep draft") } })
 
     LaunchedEffect(externalOpenPost) {
         if (externalOpenPost != null) {
@@ -209,8 +263,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         val id = shown.substringAfter(":")
         BackHandler(active && shown == route) { profileId = null }
         MemberProfile(chorus, model, id, onClose = { profileId = null },
-            onWrite = { authorId = id; replyTo = null; editing = true },
-            onReply = { postId -> authorId = id; replyTo = postId; editing = true }, onOpenProfile = { profileId = it })
+            onWrite = { launchDraft("write", author = id) },
+            onReply = { postId -> launchDraft("reply", postId, id) }, onOpenProfile = { profileId = it })
         return@ChorusScene
     }
 
@@ -221,9 +275,9 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             threadBack = threadStack.dropLast(1).joinToString("\n")
         }
         BackHandler(active && shown == route) { back() }
-        JournalThread(chorus, model, id, onClose = back, onReply = { replyTo = id; editing = true },
-            replyAuthor = author, replyAuthors = mine, onPickAuthor = { authorId = it },
-            onQuote = { quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
+        JournalThread(chorus, model, id, onClose = back, onReply = { launchDraft("reply", id) },
+            replyAuthor = author, replyAuthors = mine, onPickAuthor = { if (!draftState.draft.occupied) selectedAuthors = listOf(it) else error = "Open your draft to change its authors." },
+            onQuote = { launchDraft("quote", it.id) },
             onOpenPost = { next -> threadBack = (threadStack + id).joinToString("\n"); threadPostId = next })
         return@ChorusScene
     }
@@ -259,43 +313,24 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 TextButton(enabled = !busy, onClick = { editing = false }) { Text("Cancel") }
                 Text(if (replyTo == null) "Draft" else "Write a reply", color = p.ink3,
                     style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 14.dp))
-                Button(enabled = !busy && author != null && (body.isNotBlank() || attachments.isNotEmpty()), onClick = {
+                Button(enabled = !busy && draftState.draft.recovery == null && author != null && (model.isPerson || selectedAuthors?.isEmpty() != true) && (body.isNotBlank() || attachments.isNotEmpty()), onClick = {
                     val dev = chorus.device ?: return@Button
-                    val writer = author ?: return@Button
-                    val picked = attachments.toList()
-                    // Snapshot the privacy/authoring choices at Post, before file staging suspends.
-                    val writingKind = kind
-                    val writingBody = body
-                    val writingTitle = title
-                    val writingCw = cw
-                    val writingAudience = audience
-                    val writingMood = mood
-                    val writingTags = tags
-                    val writingReply = replyTo
-                    val writingQuote = quoteOf
-                    val writingPoll = if (pollOn) Polls.draft(pollOptions.toList(), pollMultiple).getOrElse {
-                        error = it.message; return@Button
-                    } else null
-                    busy = true; error = null
                     actions.launch {
-                        try {
-                            val attachmentIds = picked.map { a ->
-                                sendAttachment(chorus, ctx, a, opKind = "post.attachment")
-                            }
-                            val payload = PostCompose.payload(model, dev.accountId, writingKind, writer.id, writingBody,
-                                writingTitle, writingCw, writingAudience, writingMood, writingTags, writingReply, attachmentIds = attachmentIds, quotePostId = writingQuote)
-                            if (writingPoll != null) payload.put("poll", writingPoll)
-                            val postId = chorus.newId()
-                            justPosted = postId
-                            chorus.create("post.create", postId, payload)
-                            pollOn = false; pollMultiple = false
-                            pollOptions.clear(); pollOptions.addAll(listOf("", ""))
-                            if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
-                            bodyValue = TextFieldValue(); title = ""; cw = ""; mood = ""; tags = ""; replyTo = null; quoteOf = null
-                            attachments.clear()
-                            editing = false
-                        } catch (e: Exception) { error = e.message ?: "Could not post." }
-                        finally { busy = false }
+                        val postId = session.send(prepare = { garden.vayne.chorus.data.JournalDraftSend.snapshot(chorus.model.value, dev.accountId, it) }, validate = { draft ->
+                            validateJournalDraft(chorus, ctx, session.owner, dev.accountId, draft)
+                        }, stage = { draft ->
+                            draft.files.map { file -> sendAttachment(chorus, ctx, file.pending(),
+                                scope = "account:${dev.accountId}", opKind = "post.attachment", expectedEditorOwner = session.owner) }
+                        }, create = { draft, id, files ->
+                            val live = chorus.model.value
+                            val authors = draft.authors.orEmpty()
+                            val payload = PostCompose.payload(live, dev.accountId, draft.kind, authors.first(), draft.body,
+                                draft.title, draft.cw, draft.audience, draft.mood, draft.tags, draft.reply, attachmentIds = files,
+                                quotePostId = draft.quote, bucketIds = draft.buckets, authorIds = authors)
+                            if (draft.poll) payload.put("poll", Polls.draft(draft.options, draft.multiple).getOrThrow())
+                            chorus.create("post.create", id, payload, scope = "account:${dev.accountId}", expectedEditorOwner = session.owner)
+                        })
+                        if (postId != null) justPosted = postId
                     }
                 }) { Text(if (busy) "Posting…" else "Post") }
             }
@@ -312,7 +347,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
             LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), state = draftList, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // the post being answered scrolls with the draft, so expanding a long one never hides it
                 replyTo?.let { id -> item(key = "replying") { ReplyContext(model.posts.find { it.id == id }, model) } }
-                item(key = "author") { JournalAuthorPicker(author, mine) { if (!busy) authorId = it } }
+                item(key = "author") { JournalAuthorsPicker(selectedAuthors ?: listOfNotNull(author?.id), mine, !busy) { selectedAuthors = it } }
                 if (replyTo != null) item {
                     Text("Check the audience before posting.", color = p.ink3, style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(start = 52.dp))
@@ -344,21 +379,36 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 }
                 if (attachments.isNotEmpty()) item {
                     Box(Modifier.padding(start = 52.dp)) {
-                        JournalAttachments(attachments, !busy, onChange = { index, file -> attachments[index] = file },
-                            onRemove = { index -> attachments.removeAt(index) })
+                        JournalAttachments(attachments, !busy, onChange = { index, file -> attachments = attachments.mapIndexed { i, old -> if (i == index) file else old } },
+                            onRemove = { index -> attachments = attachments.filterIndexed { i, _ -> i != index } })
                     }
                 }
                 if (editorOptions && !busy) {
                     item { OutlinedTextField(cw, { cw = it }, label = { Text("Content warning (optional)") }, modifier = Modifier.fillMaxWidth()) }
                     item { OutlinedTextField(mood, { mood = it }, label = { Text("Mood (optional)") }, modifier = Modifier.fillMaxWidth()) }
                     item { OutlinedTextField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, modifier = Modifier.fillMaxWidth()) }
-                    item { Column { PollDraftFields(pollOn, { pollOn = it }, pollOptions, pollMultiple) { pollMultiple = it } } }
+                    item { Column { JournalPollDraftFields(pollOn, { pollOn = it }, pollOptions, { pollOptions = it }, pollMultiple) { pollMultiple = it } } }
                 }
-                if (error != null) item { Text(error.orEmpty(), color = p.danger) }
+                if (draftState.draft.recovery != null) item {
+                    Text("Some saved draft details could not be read. Review the recovered content, authors and audience before posting.", color = p.danger)
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(draftState.draft.recovery.orEmpty(), color = p.ink2, style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = { try { session.keepRecoveredCopy() } catch (e: Exception) { error = e.message } }) {
+                        Text("Keep original copy and use recovered draft")
+                    }
+                }
+                if (missingFiles.isNotEmpty()) item { Text("Unavailable files: ${missingFiles.joinToString()}. Attach them again or remove their references. Your text and file details are kept.", color = p.danger) }
+                if (error != null) item {
+                    Text(error.orEmpty(), color = p.danger)
+                    TextButton(enabled = !busy, onClick = { session.checkpoint(); receiptRetry++ }) { Text("Retry saving draft") }
+                }
             }
             HorizontalDivider(color = p.line)
             Column(Modifier.fillMaxWidth().background(p.surface)) {
-                JournalAudiencePicker(audience, model.isPerson) { if (!busy) audience = it }
+                AudienceChip("This post", garden.vayne.chorus.data.Audience(audience, bucketIds), own = true, buckets = model.sharingBuckets, person = model.isPerson, enabled = !busy, onChange = { value ->
+                    value?.let { audience = it.mode; bucketIds = it.buckets }
+                })
                 HorizontalDivider(color = p.line, thickness = .5.dp)
                 JournalFormatToolbar(bodyValue, !busy) { bodyValue = it; bodyFocus.requestFocus() }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -377,7 +427,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     if (shown == "lists") {
         JournalLists(chorus, model, selectedListId, onSelect = { selectedListId = it },
             onTimeline = { section = "timeline" },
-            onReply = { replyTo = it; editing = true },
+            onReply = { launchDraft("reply", it) },
             onThread = { threadPostId = it })
         return@ChorusScene
     }
@@ -387,8 +437,8 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     }
     if (shown == "saved") {
         BackHandler(active && shown == route) { section = "timeline" }
-        JournalSaved(chorus, model, onBack = { section = "timeline" }, onReply = { replyTo = it; editing = true },
-            onThread = { threadPostId = it }, onQuote = { quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
+        JournalSaved(chorus, model, onBack = { section = "timeline" }, onReply = { launchDraft("reply", it) },
+            onThread = { threadPostId = it }, onQuote = { launchDraft("quote", it.id) },
             onProfile = { profileId = it })
         return@ChorusScene
     }
@@ -431,9 +481,11 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                     else author?.let { "Posting as ${it.shownName}" } ?: "Your system’s stories", color = p.ink3,
                     style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            ChatIconButton(R.drawable.ic_search, "Search Journal") { onSearch("Posts") }
             Box {
                 ChatIconButton(R.drawable.ic_more, "Journal options") { feedMenu = true }
                 DropdownMenu(feedMenu, { feedMenu = false }) {
+                    DropdownMenuItem(text = { Text("Search saved posts") }, onClick = {feedMenu=false;onSearch("Saved")})
                     DropdownMenuItem(text = { Text("Saved") }, onClick = { feedMenu = false; section = "saved" })
                     DropdownMenuItem(text = { Text("Lists") }, onClick = { feedMenu = false; section = "lists" })
                     DropdownMenuItem(text = { Text("Feeds") }, onClick = { feedMenu = false; section = "feeds" })
@@ -451,7 +503,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         }
         Box(Modifier.weight(1f)) {
         if (journalTab == "friends") JournalFriends(chorus, model, onThread = { threadPostId = it }, onReply = {
-            replyTo = it; audience = "server"; editing = true
+            launchDraft("reply", it, audience = "server")
         }) else LazyColumn(Modifier.fillMaxSize(), state = feedListState, contentPadding = PaddingValues(bottom = 80.dp)) {
         if (shownEvents.isEmpty()) item {
             Text(if (journalTab == "entries") "No journal entries yet. Start with a few words." else "No posts or switches yet. Write the first note.",
@@ -462,17 +514,20 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 placementSpec = if (motion) ChorusMotion.settle() else null,
                 fadeOutSpec = if (motion) ChorusMotion.tween(true, ChorusMotion.Quick) else null)) {
             if (event.post != null) JournalPostCard(event.post, model, chorus,
-                onReply = { replyTo = it.id; editing = true },
+                onReply = { launchDraft("reply", it.id) },
                 onThread = { threadPostId = it.id },
-                onQuote = { quoteOf = it.id; replyTo = null; kind = "note"; editing = true },
+                onQuote = { launchDraft("quote", it.id) },
                 onOpenPost = { threadPostId = it },
                 onProfile = { profileId = it })
-            // a switch is a quiet marker in the timeline, aligned with the post avatars
+            // a switch is a quiet marker in the timeline, aligned with the post avatars; a hairline
+            // runs on after it so it never reads as a post
             else Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) { ChatIcon(R.drawable.ic_switch_arrows, tint = p.ink3) }
                 Text(event.switchLabel.orEmpty() + " · " + compactAgo(event.at), color = p.ink3,
-                    style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false))
+                Box(Modifier.weight(1f).height(1.dp).background(p.line))
             }
             }
         }
@@ -483,7 +538,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
                 newPosts = false
             }
         }
-        FloatingActionButton(onClick = { replyTo = null; if (journalTab == "entries") kind = "entry"; editing = true },
+        FloatingActionButton(onClick = { if (draftState.draft.occupied) editing = true else launchDraft(if (journalTab == "entries") "entry" else "write") },
             containerColor = p.accent, contentColor = p.onAccent, shape = CircleShape,
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).size(56.dp)) {
             ChatIcon(R.drawable.ic_edit, "Write a post", p.onAccent)
@@ -606,14 +661,15 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
                 style = MaterialTheme.typography.labelLarge, modifier = Modifier.clickable {
                     expanded = !expanded
                 }.heightIn(min = 32.dp).wrapContentHeight(Alignment.CenterVertically))
-            if (post.kind == "entry") Text(JournalPresentation.entryMeta(post.text, post.tags), color = p.ink3,
+            if (post.kind == "entry") Text(JournalPresentation.entryMeta(post.text, emptyList()), color = p.ink3,
                 style = MaterialTheme.typography.bodySmall)
             post.mood?.let { Text(it, color = p.ink2, style = MaterialTheme.typography.bodySmall) }
-            if (post.kind != "entry" && post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
-                style = MaterialTheme.typography.bodySmall)
-            JournalMedia(post.attachments, chorus, names, post.occurredAt)
+            JournalMedia(post.attachments, chorus, names, post.occurredAt, full = full)
             PollCard(chorus, model, post.id, Reply.speaker(model)?.id)
             post.quotePostId?.let { id -> ThreadQuote(id, quoted, model, onOpenPost) }
+            // tags close the post, after its media, poll and quote, just above the actions
+            if (post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
+                style = MaterialTheme.typography.bodySmall)
             if (showActions) JournalPostActions(post, model, chorus, onReply = { (onThread ?: onReply)(post) }, onQuote = onQuote)
         }
     }

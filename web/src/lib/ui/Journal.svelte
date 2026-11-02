@@ -5,7 +5,10 @@
   import { bodyAuthors } from '../front-view';
   import PostCard from './PostCard.svelte';
   import PostComposer from './PostComposer.svelte';
-  import { quoteView, replyCounts } from '../post-threads';
+  import { quoteView } from '../post-threads';
+  import { repostOriginal, savedList, savedPosts, socialIndex } from '../journal-social';
+  import JournalFriends from './JournalFriends.svelte';
+  import { journalCompose } from '../journal-compose.svelte';
   import { router } from '../router.svelte';
   import JournalLists from './JournalLists.svelte';
   import JournalFeeds from './JournalFeeds.svelte';
@@ -16,7 +19,8 @@
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
   const subjectNames = $derived(new Map([...members(projection).map((m) => [m.id, m.display_name ?? m.name] as [string, string]), ...groups(projection).map((g) => [g.id, g.name] as [string, string])]));
   const entries = $derived(posts(projection).filter((p) => !p.deleted));
-  const counts = $derived(replyCounts(entries));
+  const social = $derived(socialIndex(posts(projection)));
+  const saved = $derived(savedPosts(projection.rows.pref ?? {}, sync.accountId));
   const byId = $derived(new Map(entries.map((p) => [p.id, p])));
   const postById = $derived(new Map(posts(projection).map((p) => [p.id, p])));
   const reacts = $derived(reactions(projection));
@@ -38,7 +42,13 @@
   const frontSpeaker = $derived(bodyAuthors(projection, sync.accountId)[0]);
   let actingAs = $state('');
   const speaker = $derived(actingAs || frontSpeaker || active[0]?.id || null);
-  let section = $state<'timeline' | 'lists' | 'feeds'>('timeline');
+  // Android's tabs (Our system, Friends, Journals), then what Android keeps in its menu
+  const SECTIONS = [['timeline', 'Our system'], ['friends', 'Friends'], ['entries', 'Journals'], ['saved', 'Saved'], ['lists', 'Lists'], ['feeds', 'Feeds']] as const;
+  let section = $state<(typeof SECTIONS)[number][0]>('timeline');
+  const shownTimeline = $derived(section === 'entries' ? timeline.filter((item) => item.kind === 'post' && item.post.kind === 'entry') : timeline);
+  const savedPostsList = $derived(savedList(entries, saved));
+  // a card's Quote opens the composer, which lives on the timeline
+  $effect(() => { if (journalCompose.quote && section !== 'timeline' && section !== 'entries') section = 'timeline'; });
   const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
   const memberName = name;
   const frontName = (e: { subject_id: string }) => subjectNames.get(e.subject_id) ?? 'Someone';
@@ -50,29 +60,45 @@
 
 <div class="journal-layout"><section class="journal">
   <header><h1 class="display">Journal</h1>{#if self}<a href="#/profile/{self.id}">My profile</a>{:else}<label>React as <select bind:value={actingAs} aria-label="React as member"><option value="">Current front</option>{#each active as person (person.id)}<option value={person.id}>{person.display_name ?? person.name}</option>{/each}</select></label>{/if}</header>
-  <nav aria-label="Journal sections"><button class:on={section === 'timeline'} onclick={() => (section = 'timeline')}>Timeline</button><button class:on={section === 'lists'} onclick={() => (section = 'lists')}>Lists</button><button class:on={section === 'feeds'} onclick={() => (section = 'feeds')}>Feeds</button></nav>
-  {#if section === 'lists'}<JournalLists {projection} {dark} />{:else if section === 'feeds'}<JournalFeeds {projection} {dark} />{:else}
+  <a href="#/search/saved">Search saved posts</a>
+  <nav aria-label="Journal sections">{#each SECTIONS as [id, label] (id)}<button class:on={section === id} aria-current={section === id ? 'page' : undefined} onclick={() => (section = id)}>{label}</button>{/each}</nav>
+  {#if section === 'lists'}<JournalLists {projection} {dark} />{:else if section === 'feeds'}<JournalFeeds {projection} {dark} />
+  {:else if section === 'friends'}<JournalFriends {projection} {speaker} speakerName={speaker ? name(speaker) : ''} {dark} />
+  {:else if section === 'saved'}
+  <div class="timeline">
+    {#each savedPostsList as post (post.id)}
+      <PostCard {projection} {post} quote={quoteView(post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} {speaker} compactEntry
+        {social} {saved} replyCount={social.replies.get(post.id) ?? 0} replyToNames={post.reply_to ? byId.get(post.reply_to)?.authors.map(name).join(' & ') : undefined}
+        onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add) => react(post, emoji, add)} />
+    {:else}<p class="empty">Nothing saved yet. Save a post with its bookmark to read it later; only your system sees what you save.</p>{/each}
+  </div>
+  {:else}
   <PostComposer {projection} initialAuthors={speaker ? [speaker] : []} />
   <div class="timeline">
-    {#each timeline as item (`${item.kind}:${item.id}`)}
+    {#each shownTimeline as item (`${item.kind}:${item.id}`)}
       {#if item.kind === 'post'}
+        {@const original = item.post.repost_of ? repostOriginal(social, item.post) : item.post}
+        {@const by = item.post.repost_of ? item.post.authors.map(name).join(' & ') || 'Someone' : undefined}
+        {#if !original}<p class="repost-gone">{by} reposted a post that’s no longer available</p>
+        {:else}
         <!-- replying opens the post's thread, where the reply box shows what it answers -->
-        <PostCard {projection} post={item.post} quote={quoteView(item.post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(item.post.id) ?? new Map()} {speaker}
-          replyCount={counts.get(item.post.id) ?? 0} replyToNames={item.post.reply_to ? byId.get(item.post.reply_to)?.authors.map(name).join(' & ') : undefined}
-          onreply={() => router.go(`/journal/post/${encodeURIComponent(item.post.id)}`)} onreact={(emoji, add) => react(item.post, emoji, add)} />
+        <PostCard {projection} post={original} quote={quoteView(original.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(original.id) ?? new Map()} {speaker} compactEntry
+          {social} {saved} repostedBy={by} replyCount={social.replies.get(original.id) ?? 0} replyToNames={original.reply_to ? byId.get(original.reply_to)?.authors.map(name).join(' & ') : undefined}
+          onreply={() => router.go(`/journal/post/${encodeURIComponent(original.id)}`)} onreact={(emoji, add) => react(original, emoji, add)} />
+        {/if}
       {:else if item.kind === 'switch'}
         <div class="event"><span class="event-icon">◌</span><span>{item.sw.retracted ? 'Undone switch' : `Front: ${item.sw.fronting.map(frontName).join(' & ') || 'no one'}`}</span><time>{new Date(item.at).toLocaleString()}</time></div>
       {:else}
         <div class="event"><span class="event-icon">⌁</span><span>Pinned in #{channelById.get(item.pin.channelId) ?? 'channel'}: {item.pin.text.slice(0, 120)}</span><time>{new Date(item.at).toLocaleString()}</time></div>
       {/if}
-    {:else}<p class="empty">No posts or switches yet. Write the first note above.</p>{/each}
+    {:else}<p class="empty">{section === 'entries' ? 'No journal entries yet. Start with a few words.' : 'No posts or switches yet. Write the first note above.'}</p>{/each}
   </div>
   {/if}
 </section>
 <aside class="journal-context" aria-label="Journal shortcuts">
-  <a class="context-search" href="#/search"><Icon name="search" size={18} />Search posts and members</a>
-  <section><h2>Your journal</h2><button onclick={() => (section = 'timeline')}><Icon name="journal" size={18} />{self ? 'My timeline' : 'System timeline'}</button><button onclick={() => (section = 'feeds')}><Icon name="layers" size={18} />Your feeds</button><button onclick={() => (section = 'lists')}><Icon name="members" size={18} />Member lists</button></section>
-  <section><h2>{self ? 'Sharing your posts' : 'Writing together'}</h2><p>{self ? 'The audience on each post controls who can read it.' : 'Choose who is speaking before posting. The audience on each post controls who can read it.'}</p><a href="#/settings">Privacy and preferences</a></section>
+  <a class="context-search" href="#/search/posts"><Icon name="search" size={18} />Search Journal</a>
+  <section><h2>Your journal</h2><button onclick={() => (section = 'timeline')}><Icon name="journal" size={18} />{self ? 'My timeline' : 'System timeline'}</button><button onclick={() => (section = 'friends')}><Icon name="friends" size={18} />Friends’ posts</button><button onclick={() => (section = 'saved')}><Icon name="bookmark" size={18} />Saved posts</button><button onclick={() => (section = 'feeds')}><Icon name="layers" size={18} />Your feeds</button><button onclick={() => (section = 'lists')}><Icon name="members" size={18} />Member lists</button></section>
+  <section><h2>{self ? 'Sharing your posts' : 'Writing together'}</h2><p>{self ? 'The audience on each post controls who can read it.' : "Choose who's speaking before posting. The audience on each post controls who can read it."}</p><a href="#/settings">Privacy and preferences</a></section>
 </aside></div>
 
 <style>
@@ -85,17 +111,19 @@
   .journal-context button, .context-search { display: flex; align-items: center; gap: 10px; border: 0; background: none; color: var(--ink-2); padding: 8px 0; text-align: left; font-size: var(--fs-sm); cursor: pointer; }
   .journal-context .context-search { background: var(--surface-2); border-radius: 999px; padding: 12px 16px; color: var(--ink-3); }
   @media (max-width: 1279px) { .journal-layout { grid-template-columns: minmax(0, 1fr); } .journal-context { display: none; } }
-  .journal { max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); }
+  .journal { max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); align-content: start; min-width: 0; }
   header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s-3); }
   h1, p { margin: 0; }
-  nav { display: flex; gap: var(--s-2); border-bottom: 1px solid var(--line); }
-  nav button { border: 0; background: none; padding: var(--s-2) var(--s-3); cursor: pointer; color: var(--ink); }
-  nav button.on { border-bottom: 2px solid var(--accent); font-weight: 600; }
+  nav { display: flex; gap: var(--s-2); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  nav button { flex: none; border: 0; background: none; padding: var(--s-2) var(--s-3); cursor: pointer; color: var(--ink-3); white-space: nowrap; }
+  nav button.on { border-bottom: 2px solid var(--accent); font-weight: 600; color: var(--ink); }
   header label { color: var(--ink-3); font-size: var(--fs-sm); }
   select { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: var(--s-2); }
   .timeline { display: grid; gap: 0; border-top: 1px solid var(--line); }
-  .event { display: flex; gap: var(--s-3); align-items: center; padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink-2); }
-  .event-icon { color: var(--accent); }
+  /* a switch or pin is a quiet marker in the timeline, aligned with the post avatars */
+  .event { display: flex; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
+  .event-icon { width: 40px; flex: none; text-align: center; color: var(--accent); }
   time { margin-left: auto; color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; }
-  .empty { color: var(--ink-3); }
+  .empty { margin: 0; padding: 20px 16px; color: var(--ink-3); }
+  .repost-gone { margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
 </style>

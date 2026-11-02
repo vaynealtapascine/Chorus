@@ -146,6 +146,18 @@ fn legacy(conn: &Connection, id: &str) -> anyhow::Result<Vec<(String, Value)>> {
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// Posts with retained legacy history but no `post.create` left in the op log. A rebuild can't
+/// bring such a post back, so its history would be stranded (the post reads as missing):
+/// rebuilds refuse while any exist instead of losing them.
+pub fn stranded(conn: &Connection) -> anyhow::Result<Vec<String>> {
+    let mut st = conn.prepare(
+        "SELECT DISTINCT r.post_id FROM post_revision r WHERE NOT EXISTS
+           (SELECT 1 FROM op o WHERE o.entity_id = r.post_id AND o.kind = 'post.create' AND o.status = 'applied')
+         ORDER BY r.post_id",
+    )?;
+    Ok(st.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?)
+}
+
 /// Pre-migration backup is performed by the normal migration caller. Rebuild from the log
 /// first; if a legacy/imported database lacks any source content, retain its rows losslessly.
 pub fn backfill(conn: &Connection) -> anyhow::Result<()> {

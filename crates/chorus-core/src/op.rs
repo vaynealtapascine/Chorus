@@ -598,6 +598,12 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
         }
         "channel.create" | "channel.set" => {
             one_of("kind", &["text", "thread", "member_dm"], false)?;
+            if let Some(v) = p.get("member_ids")
+                && !v.is_null()
+                && !v.as_array().is_some_and(|ids| ids.iter().all(Value::is_string))
+            {
+                return bad("member_ids must be a list of member ids or null");
+            }
             if let Some(v) = p.get("avatar_blob")
                 && !v.is_null()
                 && !v.as_str().is_some_and(|s| {
@@ -940,6 +946,21 @@ mod tests {
         // an edit without its text can't be bounds-checked, only shape-checked
         let edit = op("message.edit", &space, json!({"entities": [{"type": "x_new_kind", "offset": 9, "length": 1}]}));
         assert!(matches!(validate_new(&edit), Ok(Known::Yes(_))));
+    }
+
+    #[test]
+    fn new_channel_membership_requires_strings_but_legacy_ops_still_replay() {
+        let space = format!("space:{}", new_id(1, [3; 10]));
+        for kind in ["channel.create", "channel.set"] {
+            for ids in [json!(["rose", 42]), json!([42]), json!({}), json!("rose")] {
+                let o = op(kind, &space, json!({"member_ids":ids}));
+                assert!(validate(&o).is_ok(), "legacy replay");
+                assert!(validate_new(&o).is_err(), "{kind}: {ids}");
+            }
+            for ids in [Value::Null, json!([]), json!(["rose"])] {
+                assert!(validate_new(&op(kind, &space, json!({"member_ids":ids}))).is_ok());
+            }
+        }
     }
 
     #[test]

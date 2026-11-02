@@ -101,6 +101,18 @@ android/
   failed or cancelled saves retain it. Rich undo has a 32-frame / conservative 1 MiB history bound
   without truncating the current text or original rich data. Formatter source maps are linear;
   rich parsing and draft serialization run off the UI thread.
+  Journal uses a stable account/server-scoped encrypted editor record too: source markup and
+  selection, note/entry/title, ordered explicit authors (distinct from default intent), audience
+  bucket IDs, CW/tags/mood, reply/quote, poll options and URI references with alt/spoiler survive
+  reopening. Restore gates editing/autosave. Activity replacement transfers a writer lease;
+  accepted writes drain before the replacement reads, and old callbacks cannot write afterward.
+  Cancel/Back closes the composer while retaining its draft. Incoming shares append only after
+  review when a draft exists; new-entry/reply/quote launches ask before changing its context,
+  preserving existing text and author choices. Launches queue during posting. Unreadable metadata
+  retains the exact original for recovery; missing file grants retain references and ask for
+  reselection/removal, never silently omit a file. A durable chosen post ID is reconciled against
+  persisted own-account create ops after cancellation/restart, including deleted posts. These
+  editor checkpoints are device-local; cross-device Journal draft sync (SPEC §6.2) remains pending.
   All changed custom-field slots preflight against the latest definitions before any save op;
   incompatible/deleted/rebound definitions ask to cancel and reopen. Metadata/privacy is preserved.
 - Avatar/banner selection copies at most 10 MB into an app-cache draft, decodes with API29
@@ -145,6 +157,12 @@ android/
 - `https://chorus.<domain>/i/<code>` (App Links) and `chorus://invite/<code>` → onboarding.
 - `chorus://switch?member=<id>&mode=replace|add|remove` (for Tasker/NFC; confirmation toast).
 - `chorus://c/<channel>/<message>`, `chorus://m/<member>`, `chorus://p/<post>`.
+- Shared links (D-109): `https://chorus.<domain>/post/<id>` and `/message/<id>` ("Copy link" in a
+  message's actions and behind a post's Share) open the post in Journal or the message's chat at it
+  (only where `ChatOrganize.actionMessage` lets this reader see it now). Inside the app every rich
+  text hands such links to `LocalChorusLinks` instead of the browser, and a chat message shows what
+  it links to under its text (`ChatLinkEmbeds`, `data/ChorusLinks.kt`). The web app does the same
+  (`share-links.ts`, `LinkEmbeds.svelte`; the server's SPA fallback serves it at those paths).
 - **Share target**: text/images/files → pick "Post as…" or "Send to channel…".
 - **App shortcuts**: static "Switch…", "Switch out", "New entry"; dynamic: top 4 pinned members.
 
@@ -272,6 +290,15 @@ more than 10 s), and a `429` on a write, or a read still limited, throws `RateLi
 message is fit to show ("… Try again in N seconds."). Blob uploads wait at least that long before
 resuming. Blob reads (`AvatarImage`, `AttachmentView`, `EmojiImage`) use plain `fetch`: the
 server doesn't count them.
+
+Journal composer drafts (M7.2) follow the chat composer's precedent: one draft per account and
+composer context (the main composer, or a thread's reply box) in `sessionStorage`, so a draft
+survives reloads and navigation in that tab but not closing it (Android keeps its Journal draft in
+the encrypted replica store; SPEC §6.2's cross-device draft sync is pending on both). A draft keeps
+text, kind/title, CW/mood/tags, audience and buckets, authors (`null` = follow the current front
+until someone picks, as on Android), quote and poll. Files can't be stored, so the draft records how
+many were left and says they need attaching again. A post's files are `post.attachment` rows in the
+account scope; chat's `attachment.create` belongs to a space and is rejected there.
 
 ### 4.3 Offline window
 
@@ -444,3 +471,10 @@ Measured 2026-09-25 (headless Chromium, remote box, minified build, three runs):
 - Preview screen: counts, conflicts with existing members (match by `pk_id` then name), choices
   (merge/skip/duplicate), then import as one batch of ops (idempotent: op ids derived from
   `uuidv5(pk_id + field)` so re-importing doesn't duplicate).
+
+D-114 scoped search is shared by web and Android: current-chat in-place search, All chats for
+the recorded Body front, Journal posts/entries/replies and Saved bookmarked posts. Rich message
+cards include up to one independently visible neighbor on each side, even outside search terms.
+Local replicas work offline; other accounts' posts require a live audience check. Scope/front/
+permission/session changes invalidate retained remote results and pagination. Counts refer only
+to displayed visible matches. Windowed replicas may omit older context offline.

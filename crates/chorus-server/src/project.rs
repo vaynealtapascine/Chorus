@@ -1457,6 +1457,11 @@ fn read_state_scan(
 // ─── rebuild ─────────────────────────────────────────────────────────────────
 
 /// Tables `rebuild` clears (everything derived from the op log).
+/// Derived tables that may also hold rows no op can rebuild (legacy post history whose source
+/// ops are gone, D-107): a rebuild keeps them, and `post_history::write` drops them only once a
+/// complete reconstruction from the log replaces them.
+const RETAINED: &[&str] = &["post_revision"];
+
 pub(crate) const DERIVED: &[&str] = &[
     "system",
     "member",
@@ -1680,7 +1685,7 @@ pub fn rebuild_swap_timed(
             src.execute_batch("PRAGMA ignore_check_constraints = ON; BEGIN")?;
             for (name, sql) in &tables {
                 let shadow = virtuals.iter().any(|v| name.starts_with(&format!("{v}_")));
-                if DERIVED.contains(&name.as_str())
+                if (DERIVED.contains(&name.as_str()) && !RETAINED.contains(&name.as_str()))
                     || shadow
                     || sql.to_ascii_uppercase().starts_with("CREATE VIRTUAL TABLE")
                 {
@@ -1726,6 +1731,10 @@ pub fn rebuild_swap_timed(
             let check: String = out.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
             ensure!(check == "ok", "the rebuilt database fails its check: {check}");
             for (name, want) in &copied {
+                // a complete reconstruction legitimately replaces retained rows
+                if RETAINED.contains(&name.as_str()) {
+                    continue;
+                }
                 let got: i64 = out.query_row(&format!("SELECT count(*) FROM \"{name}\""), [], |r| r.get(0))?;
                 ensure!(got == *want, "{name} lost rows in the rebuild ({got} of {want})");
             }
@@ -1788,11 +1797,20 @@ pub fn rebuild_timed(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time
 
 fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Duration)) -> anyhow::Result<u64> {
     let tx = conn.transaction()?;
+    // before anything is cleared: a post whose ops are all gone would vanish, stranding the
+    // legacy history only this database still holds; refuse and change nothing
+    let stranded = crate::post_history::stranded(&tx)?;
+    anyhow::ensure!(
+        stranded.is_empty(),
+        "{} post(s) keep edit history but have no post.create left in the op log ({}); a rebuild would drop them.          Nothing was changed: restore their ops from a backup first",
+        stranded.len(),
+        stranded.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+    );
     let t = std::time::Instant::now();
     for t in DERIVED {
         // Incomplete/imported logs may not contain the source of retained legacy history.
         // post_history::write clears it only after checking a complete reconstruction.
-        if *t == "post_revision" {
+        if RETAINED.contains(t) {
             continue;
         }
         tx.execute(&format!("DELETE FROM {t}"), [])?;

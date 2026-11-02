@@ -51,6 +51,8 @@ class Store(private val ctx: Context) {
     /** All ops for `CoreReplica.restore`. Stable order makes startup reproducible. */
     fun opsJson(): String = dao.opJson().joinToString(prefix = "[", postfix = "]")
 
+    internal fun hasCreatedPost(accountId: String, postId: String): Boolean = dao.hasCreatedPost("account:$accountId", postId)
+
     /** Persist `{"ops": […], "removed"?: […], "meta"?: …, "hlc_last": "…"}` from the Rust replica. */
     fun save(changesJson: String) {
         val changes = JSONObject(changesJson)

@@ -59,7 +59,7 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
     reposts: Int = 0, reposted: Boolean = false, onRepost: (() -> Unit)? = null,
     onUndoRepost: (() -> Unit)? = null, onQuote: (() -> Unit)? = null,
     saved: Boolean = false, onBookmark: (() -> Unit)? = null, onShare: (() -> Unit)? = null,
-    readersSeeName: Boolean = true, large: Boolean = false) {
+    readersSeeName: Boolean = true, large: Boolean = false, onCopyLink: (() -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val notice = LocalContext.current.getSharedPreferences("chorus.journal", 0)
     var who by remember { mutableStateOf(false) }
@@ -116,9 +116,21 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
             PopIcon(if (saved) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark, saved, tint, icon)
         }
     }
-    if (onShare != null) actions += "share" to {
-        ActionButton(null, p.ink3, "Share", large, onClick = onShare) {
-            Icon(painterResource(R.drawable.ic_share), null, Modifier.size(icon), tint = p.ink3)
+    // with a link to copy (D-109), Share opens a small menu: Copy link, then the system's Share
+    if (onShare != null || onCopyLink != null) actions += "share" to {
+        var shareMenu by remember { mutableStateOf(false) }
+        Box {
+            ActionButton(null, p.ink3, "Share", large, onClick = { if (onCopyLink != null) shareMenu = true else onShare?.invoke() }) {
+                Icon(painterResource(R.drawable.ic_share), null, Modifier.size(icon), tint = p.ink3)
+            }
+            DropdownMenu(shareMenu, { shareMenu = false }) {
+                DropdownMenuItem(text = { Text("Copy link") },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_copy), null, Modifier.size(20.dp), tint = p.ink2) },
+                    onClick = { shareMenu = false; onCopyLink?.invoke() })
+                if (onShare != null) DropdownMenuItem(text = { Text("Share…") },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_share), null, Modifier.size(20.dp), tint = p.ink2) },
+                    onClick = { shareMenu = false; onShare() })
+            }
         }
     }
     // every action but the last gets an equal cell and the last is only its own target wide, so
@@ -263,6 +275,7 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
         onShare = JournalSocial.shareText(post.title, post.cw, post.text).takeIf { it.isNotBlank() }?.let { text ->
             { shareJournalText(ctx, post.title, text) }
         },
+        onCopyLink = chorus.device?.base?.let { base -> { copyLink(ctx, garden.vayne.chorus.data.ChorusLinks.linkTo(base, "post", post.id)) } },
         // saving is a private account pref: it syncs to this account's devices and never reaches the author
         saved = model.accountPrefs.isSaved(post.id),
         onBookmark = if (foreign) null else ({ write("Could not update your saved posts. Try again.") {
@@ -276,6 +289,12 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
             }
         } }, readersSeeName = foreign || post.visibility != "private", large = large)
     if (error != null) Text(error.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodySmall)
+}
+
+/** Copy a link to a post or message (D-109): it opens the thing, and shows it as a preview in a chat. */
+internal fun copyLink(ctx: Context, link: String) {
+    val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Link", link))
 }
 
 /** Hand plain post text to the Android share sheet; nothing else leaves the app. The content

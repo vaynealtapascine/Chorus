@@ -119,29 +119,6 @@ internal fun JournalTextField(value: String, onChange: (String) -> Unit, hint: S
 }
 
 @Composable
-internal fun JournalAuthorPicker(author: Member?, mine: List<Member>, onChoose: (String) -> Unit) {
-    val p = LocalChorusPalette.current
-    var open by remember { mutableStateOf(false) }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (author != null) ChatAvatar(author, 40.dp)
-        Box(Modifier.weight(1f)) {
-            Row(Modifier.clickable { open = true }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-              Row(Modifier.background(p.accentSoft, CircleShape).padding(horizontal = 10.dp, vertical = 6.dp),
-                  verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(author?.let { "Posting as ${it.shownName}" } ?: "Choose who is writing", color = p.accent,
-                    style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_chevron_down), null, Modifier.size(16.dp), tint = p.accent)
-              }
-            }
-            DropdownMenu(open, { open = false }) {
-                for (member in mine) DropdownMenuItem(text = { Text(member.shownName) }, leadingIcon = { ChatAvatar(member, 32.dp) },
-                    onClick = { onChoose(member.id); open = false })
-            }
-        }
-    }
-}
-
-@Composable
 internal fun JournalAudiencePicker(audience: String, person: Boolean, onChoose: (String) -> Unit) {
     val p = LocalChorusPalette.current
     var open by remember { mutableStateOf(false) }

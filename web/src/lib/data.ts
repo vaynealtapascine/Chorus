@@ -340,6 +340,7 @@ export interface ChannelRow {
   parent_message_id?: string;
   /** A member DM's members; a channel kept to some members; a private chat's people (D-098). */
   member_ids?: string[];
+  invalid_membership?: boolean;
   icon?: string;
   color?: string;
   /** Representative image (D-088), a blob hash. */
@@ -478,6 +479,7 @@ export function channels(p: Projection, spaceId?: string, includeDeleted = false
       topic: str(r.fields.topic),
       category: str(r.fields.category),
       parent_message_id: str(r.fields.parent_message_id),
+      invalid_membership: r.fields.member_ids != null && (!Array.isArray(r.fields.member_ids) || !r.fields.member_ids.every((m: unknown) => typeof m === 'string')),
       member_ids: Array.isArray(r.fields.member_ids) ? r.fields.member_ids.filter((m): m is string => typeof m === 'string') : undefined,
       icon: str(r.fields.icon),
       color: str(r.fields.color),
@@ -607,6 +609,31 @@ function buildOrder(rows: Record<string, MessageRecord>): Map<string, string[]> 
   return order;
 }
 
+export function attachmentRowsOf(attachmentRows: unknown, ids: unknown): AttachmentRow[] {
+  if (!Array.isArray(ids) || !ids.length || !attachmentRows || typeof attachmentRows !== 'object') return [];
+  const table = attachmentRows as Rows;
+  const out: AttachmentRow[] = [];
+  for (const rawId of ids) {
+    if (typeof rawId !== 'string' || !rawId) continue;
+    const a = table[rawId];
+    if (!a?.exists) continue;
+    const f = a.fields;
+    const blob_hash = str(f.blob_hash);
+    if (!blob_hash) continue;
+    out.push({
+      id: rawId,
+      blob_hash,
+      thumb_blob_hash: str(f.thumb_blob_hash),
+      filename: str(f.filename) ?? 'file',
+      mime: str(f.mime) ?? 'application/octet-stream',
+      size: Number(f.size ?? 0),
+      alt_text: str(f.alt_text) ?? '',
+      is_spoiler: f.is_spoiler === true,
+    });
+  }
+  return out;
+}
+
 function messageRow(p: Projection, id: string): MessageRow | undefined {
   const r = ((p.rows.message ?? {}) as Record<string, MessageRecord>)[id];
   if (!r?.exists) return undefined;
@@ -615,18 +642,6 @@ function messageRow(p: Projection, id: string): MessageRow | undefined {
   if (!cache) builtRows.set(attachmentRows, (cache = new WeakMap()));
   const hit = cache.get(r);
   if (hit) return hit;
-  const attachment = (aid: string): AttachmentRow | null => {
-    const a = (attachmentRows as Rows)[aid];
-    if (!a?.exists) return null;
-    const f = a.fields;
-    const blob_hash = str(f.blob_hash);
-    if (!blob_hash) return null;
-    return {
-      id: aid, blob_hash, thumb_blob_hash: str(f.thumb_blob_hash), filename: str(f.filename) ?? 'file',
-      mime: str(f.mime) ?? 'application/octet-stream', size: Number(f.size ?? 0),
-      alt_text: str(f.alt_text) ?? '', is_spoiler: f.is_spoiler === true,
-    };
-  };
   const f = r.fields;
   const authors = Array.isArray(f.authors) ? (f.authors as string[]) : [];
   const text = typeof f.text === 'string' ? f.text : '';
@@ -649,7 +664,7 @@ function messageRow(p: Projection, id: string): MessageRow | undefined {
     reply_to: str(f.reply_to),
     quote: f.quote && typeof f.quote === 'object' ? (f.quote as QuoteValue) : undefined,
     forward_snapshot: Array.isArray(f.forward_snapshot) ? (f.forward_snapshot as MessageRow['forward_snapshot']) : undefined,
-    attachments: Array.isArray(f.attachments) ? (f.attachments as string[]).map(attachment).filter((a): a is AttachmentRow => !!a) : [],
+    attachments: attachmentRowsOf(attachmentRows, f.attachments),
   };
   cache.set(r, m);
   return m;

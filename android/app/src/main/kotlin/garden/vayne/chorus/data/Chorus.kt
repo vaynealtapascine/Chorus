@@ -160,6 +160,11 @@ class Chorus private constructor(private val ctx: Context) {
 
     fun newId(): String = newId(System.currentTimeMillis().toULong(), bytes())
 
+    /** Same serial worker as create: cancellation of withContext may lose its return AFTER
+     * SQLite committed. Inspect durable ops, including tombstoned posts, never just live Model. */
+    suspend fun journalPostCommitted(accountId: String, postId: String): Boolean =
+        withContext(dispatcher) { store.hasCreatedPost(accountId, postId) }
+
     private fun bytes(): ByteArray = ByteArray(10).also { random.nextBytes(it) }
 
     private fun deviceNow(): String = JSONObject()
@@ -196,6 +201,7 @@ class Chorus private constructor(private val ctx: Context) {
             sendAll(out.getJSONArray("frames"))
             syncReady.value = false
             SyncWork.enqueue(ctx)
+            if (kind == "post.create" && (payload.optJSONArray("attachments")?.length() ?: 0) > 0) UploadWork.enqueue(ctx)
             out.getJSONObject("op").getString("id")
         }
 
@@ -398,6 +404,14 @@ class Chorus private constructor(private val ctx: Context) {
 
     /** The projection as last applied (store thread only). */
     private var projectionCache: JSONObject? = null
+
+    suspend fun searchCards(ids: Set<String>): Map<String, ChatMessage> = withContext(dispatcher) {
+        projectionCache?.let { Model.messageCards(it, ids) }.orEmpty()
+    }
+
+    suspend fun searchWindow(channel:String, target:String, view:SearchVisibility):List<ChatMessage> = withContext(dispatcher) {
+        projectionCache?.let {Model.channelWindow(it,channel,100,target,view::message).messages}.orEmpty()
+    }
 
     /** Older Stage rows come from the same local projection as Chat, on the store thread. */
     suspend fun stageWindow(channelId: String, limit: Int, spaceKind: String, front: List<Entry>,

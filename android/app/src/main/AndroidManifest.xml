@@ -58,6 +58,9 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="chorus.vayne.garden" android:pathPrefix="/i/" />
+                <!-- shared links to a post or a message (D-109) -->
+                <data android:scheme="https" android:host="chorus.vayne.garden" android:pathPrefix="/post/" />
+                <data android:scheme="https" android:host="chorus.vayne.garden" android:pathPrefix="/message/" />
             </intent-filter>
             <!-- Chorus Home invites (D-071): chorus://<lan ip>:<port>/i/<code>#pin=…, from the QR -->
             <intent-filter>

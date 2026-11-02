@@ -9,8 +9,8 @@ data class MessageSearchResult(val items: List<SearchDocument>, val raw: String 
     val validQuery: Boolean = false)
 
 /** The replica's message candidates, serialized once per model; core owns all search semantics. */
-class CoreMessageSearch(model: Model) {
-    private val docs = model.searchMessages
+class CoreMessageSearch(model: Model, allowed: (SearchDocument) -> Boolean = { true }) {
+    private val docs = model.searchMessages.filter(allowed)
     private val candidates: String
 
     init {

@@ -905,3 +905,158 @@ fn profile_customization_round_trips_privately_through_reads_export_and_rebuild(
     chorus_server::project::rebuild(&mut c).unwrap();
     assert_eq!(before, chorus_server::api_reads::member(&c, &owner, &member).unwrap().unwrap());
 }
+
+/// A post with three versions whose legacy (pre-0018) history the log can only partly rebuild:
+/// `missing_middle` drops the middle edit's op, `no_ops` drops all of the post's ops.
+fn legacy_post(conn: &mut Connection, corruption: &str) -> (String, Value) {
+    db::migrate(conn).unwrap();
+    conn.execute("INSERT INTO account(id,kind,created_at) VALUES (?1,'person',0)", [ALICE]).unwrap();
+    let scope = format!("account:{ALICE}");
+    ingest::grant(conn, ALICE, &scope).unwrap();
+    let id = new_id(1, [44; 10]);
+    for (n, text) in ["first", "middle", "third"].iter().enumerate() {
+        let payload = if n == 0 {
+            json!({"kind":"entry","authors":[],"text":text,"entities":[],"title":"Day","cw":"warning"})
+        } else {
+            json!({"post_id":id,"text":text,"entities":[]})
+        };
+        let kind = if n == 0 { "post.create" } else { "post.edit" };
+        ingest::server_op(conn, ALICE, kind, &scope, Some(&id), payload, 1_790_000_000_000 + n as i64).unwrap();
+    }
+    legacy_history(conn, &id);
+    let current = posts::one(conn, ALICE, &id).unwrap().unwrap();
+    match corruption {
+        "missing_middle" => conn
+            .execute("DELETE FROM op WHERE entity_id=?1 AND json_extract(payload,'$.text')='middle'", [&id])
+            .unwrap(),
+        "no_ops" => conn.execute("DELETE FROM op WHERE entity_id=?1", [&id]).unwrap(),
+        _ => unreachable!(),
+    };
+    conn.execute_batch("DROP TABLE post_revision_diff; UPDATE server_meta SET value='17' WHERE key='schema_version'")
+        .unwrap();
+    db::migrate(conn).unwrap();
+    (id, current)
+}
+
+fn retained(conn: &Connection, id: &str) -> i64 {
+    conn.query_row("SELECT count(*) FROM post_revision WHERE post_id=?1", [id], |r| r.get(0)).unwrap()
+}
+
+/// The production rebuild (`chorus-server rebuild`) builds a fresh file and swaps it in: it must
+/// carry retained legacy history the log can't rebuild, every time, and through later edits.
+#[test]
+fn swap_rebuild_keeps_retained_legacy_history() {
+    let dir = common::http_test_dir("swap-history");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("chorus.db");
+    let mut conn = db::open(&path).unwrap();
+    let (id, current) = legacy_post(&mut conn, "missing_middle");
+    let history = chorus_server::messages::post_revisions(&conn, &current).unwrap();
+    assert_eq!(history["items"].as_array().unwrap().len(), 3);
+    assert_eq!(history["items"][1]["text"], "middle");
+    drop(conn);
+    for _ in 0..2 {
+        chorus_server::project::rebuild_swap(&path).unwrap();
+        let conn = db::open(&path).unwrap();
+        assert_eq!(retained(&conn, &id), 3);
+        assert_eq!(chorus_server::messages::post_revisions(&conn, &current).unwrap(), history, "swap lost history");
+    }
+    // a later edit, then another swap: the retained versions stay, the edit joins them
+    let conn = db::open(&path).unwrap();
+    let scope = format!("account:{ALICE}");
+    ingest::server_op(
+        &conn,
+        ALICE,
+        "post.edit",
+        &scope,
+        Some(&id),
+        json!({"post_id":id,"text":"fourth","entities":[]}),
+        1_790_000_000_009,
+    )
+    .unwrap();
+    let current = posts::one(&conn, ALICE, &id).unwrap().unwrap();
+    let edited = chorus_server::messages::post_revisions(&conn, &current).unwrap();
+    assert_eq!(edited["items"].as_array().unwrap().len(), 4);
+    drop(conn);
+    chorus_server::project::rebuild_swap(&path).unwrap();
+    let conn = db::open(&path).unwrap();
+    assert_eq!(chorus_server::messages::post_revisions(&conn, &current).unwrap(), edited);
+    drop(conn);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A post whose ops are all gone can't come back from the log: both rebuilds refuse before
+/// changing anything, so the post and the history only this database holds stay readable.
+#[test]
+fn rebuilds_refuse_to_strand_a_posts_retained_history() {
+    let mut conn = db::open_memory().unwrap();
+    let (id, current) = legacy_post(&mut conn, "no_ops");
+    let history = chorus_server::messages::post_revisions(&conn, &current).unwrap();
+    let err = chorus_server::project::rebuild(&mut conn).unwrap_err().to_string();
+    assert!(err.contains("no post.create") && err.contains(&id), "{err}");
+    assert!(posts::one(&conn, ALICE, &id).unwrap().is_some(), "the post is still readable");
+    assert_eq!(retained(&conn, &id), 3);
+    assert_eq!(chorus_server::messages::post_revisions(&conn, &current).unwrap(), history);
+
+    let dir = common::http_test_dir("swap-stranded");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("chorus.db");
+    let mut file = db::open(&path).unwrap();
+    let (id, _) = legacy_post(&mut file, "no_ops");
+    drop(file);
+    let err = chorus_server::project::rebuild_swap(&path).unwrap_err().to_string();
+    assert!(err.contains("no post.create"), "{err}");
+    assert!(!path.with_extension("db.rebuild").exists(), "the half-built file is gone");
+    assert!(!chorus_server::project::set_aside_path(&path).exists(), "nothing was swapped");
+    let file = db::open(&path).unwrap();
+    assert!(posts::one(&file, ALICE, &id).unwrap().is_some());
+    assert_eq!(retained(&file, &id), 3);
+    drop(file);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The account's SQLite export rebuilds from its ops; retained history of its posts goes with it.
+#[test]
+fn sqlite_export_carries_retained_legacy_history() {
+    let mut conn = db::open_memory().unwrap();
+    let (id, current) = legacy_post(&mut conn, "missing_middle");
+    let history = chorus_server::messages::post_revisions(&conn, &current).unwrap();
+    let dir = common::http_test_dir("export-history");
+    let bytes = chorus_server::exports::sqlite_copy(&conn, ALICE, &dir).unwrap();
+    let path = dir.join("exported.sqlite");
+    std::fs::write(&path, bytes).unwrap();
+    let exported = db::open(&path).unwrap();
+    assert_eq!(retained(&exported, &id), 3);
+    assert_eq!(chorus_server::messages::post_revisions(&exported, &current).unwrap(), history);
+    drop(exported);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn saved_search_rechecks_post_audience_and_does_not_expose_hidden_rank() {
+    let mut conn = db::open_memory().unwrap();
+    db::migrate(&mut conn).unwrap();
+    for account in [ALICE, BOB] {
+        conn.execute("INSERT INTO account(id,kind,created_at) VALUES (?1,'person',0)", [account]).unwrap();
+    }
+    for (id, mode, at) in [("saved", "server", 20), ("unsaved", "server", 30), ("hidden", "private", 40)] {
+        conn.execute("INSERT INTO post(id,account_id,kind,text,entities,visibility,occurred_at,device_id) VALUES (?1,?2,'note','garden','[]',?3,?4,?2)",params![id,ALICE,format!("{{\"mode\":\"{mode}\"}}"),at]).unwrap();
+        conn.execute("INSERT INTO post_fts(rowid,title,text,tags) SELECT rowid,'',text,'' FROM post WHERE id=?1", [id])
+            .unwrap();
+    }
+    for id in ["saved", "hidden"] {
+        conn.execute(
+            "INSERT INTO pref(account_id,device_id,key,value,hlc) VALUES (?1,'',?2,'true','1')",
+            params![BOB, format!("bookmark:{id}")],
+        )
+        .unwrap();
+    }
+    let q = posts::PostSearch { q: "garden".into(), saved: true, limit: Some(1), ..Default::default() };
+    let bob = api_data::Principal::owner(BOB);
+    let page = posts::search(&conn, &bob, &q).unwrap();
+    assert_eq!(page["items"].as_array().unwrap().len(), 1);
+    assert_eq!(page["items"][0]["id"], "saved");
+    assert!(page["next_cursor"].is_null());
+    conn.execute("UPDATE post SET visibility='{\"mode\":\"private\"}' WHERE id='saved'", []).unwrap();
+    assert_eq!(posts::search(&conn, &bob, &q).unwrap()["items"], json!([]));
+}

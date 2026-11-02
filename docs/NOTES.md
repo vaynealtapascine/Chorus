@@ -769,3 +769,86 @@ install; then open + Home → silent install).
 treat that tree's `chorus-server` artifacts as fresh: clippy then failed with `no profiles in the
 root` although `src/profiles.rs` and its `mod` line were there. `touch` the changed crate's
 `lib.rs` (or give the worktree its own `CARGO_TARGET_DIR`) and run the gate again.
+
+## Android Journal draft/send lifecycle (2026-11-02)
+
+- `JournalDraftSession` is the UI's actual edit/restore/launch/send path, not a parallel helper.
+  One stable `EditorDraftStore` key uses the existing `editorOwner` (server + account), purpose
+  `journal-composer`, and a deterministic UUID reference. Its immutable source snapshot includes
+  every composer field and ordered attachment URI/alt/spoiler references. No Room schema/version
+  change or new dependency. The Activity Bundle no longer holds the Journal body/files/poll.
+- A writer lease is claimed before loading. `EditorDraftStore` accepts and submits work under
+  the same lock, draining previously accepted writes before the new load; future callbacks from
+  the previous Activity cannot write. Dropping old *pending* writes on lease transfer would lose
+  the last keystrokes. Marker checkpoints reserve their revision before suspension, so a later
+  incoming launch cannot be overwritten by a late-submitted older snapshot. ON_STOP/disposal
+  joins an exact checkpoint; ordinary typing coalesces on the encrypted store worker.
+- `Chorus.create` runs `CoreReplica.create` + `store.save(takeChanges())` on the serial store
+  dispatcher. SQLite save is atomic, but cancellable `withContext` can throw after that commit.
+  Journal persists its chosen post ID *before* create, then queries the persisted op log on the
+  same dispatcher (`journalPostCommitted`). Match `kind`, account `scope`, and `entity_id`, not
+  the op ID and not live Model posts (which omit deleted posts). Own-account ops are retained
+  under D-043. A committed draft is consumed; an uncommitted one is retained. A failed query
+  leaves the marker and blocks editing until retry/reopen can reconcile. No post is deleted as
+  cleanup. UploadWork is scheduled within the create worker for posts with files, before its
+  cancellable return. Startup/reconnect also rebooks pending uploads as before.
+- Default-author *intent* stays null in storage; an explicit empty list stays empty. At Post,
+  `JournalDraftSend.snapshot` resolves defaults once, so a front change during staging cannot
+  reattribute a send. The real UI invokes the tested preflight both before and after staging:
+  active own authors, current buckets, body/type, poll, and readable file references. Attachment
+  create and post create carry `expectedEditorOwner` to the serial worker and explicit account
+  scope. Staged bytes or attachment ops can remain unreferenced after failure; no user data is
+  purged. Cancellation is rethrown after noncancellable reconciliation, never converted to success.
+- Incoming launch receipts checkpoint before the external owner is told they were consumed.
+  Pending launches survive sends and restart. The last 64 unique share/new-entry event IDs are
+  retained across consumption/send to avoid duplicated shares after retry/Intent redelivery;
+  reply IDs name a post and intentionally remain repeatable. An existing draft requires an
+  explicit context-change choice, preserving its text, coauthors and other metadata. Share text
+  concatenation preserves whitespace. UI effects only run after restore.
+- Codec salvage is per field. Invalid metadata blocks sending and carries the exact original
+  record inside `recovery`; review saves that original under `journal-recovery` before clearing
+  the blocker. Invalid type/audience values normalize only in the salvaged copy, avoiding nested
+  recovery growth on repeated restarts. Read failure leaves editing disabled with Retry. Lost
+  picker/share URI grants retain their metadata; users can inspect alt/spoiler, remove references
+  and select files again. This slice does not copy picked bytes before Send or add persistable
+  grant assumptions. It does not implement cross-device draft sync (still SPEC §6.2 work).
+- Deterministic JVM tests exercise the lifecycle used by Compose with the actual draft store,
+  latches/CompletableDeferred gates, real core markup preflight, and injected stage/commit reads.
+  They do not prove native IME/layout behavior or SQLite/device process-kill behavior. No device,
+  deployment, push, service, dependency or parked web-file changes were made.
+
+### 2026-11-02 — UI11b search privacy adapters
+
+FTS bm25 depends on the entire indexed corpus, including unreadable rows. Even after SQL audience
+filtering, putting that score in an opaque base64 cursor can expose hidden-corpus changes. Search
+now sorts chronologically; cursors contain only a visible anchor and no corpus-dependent score.
+The score field is the constant zero for wire compatibility. Search candidate filtering occurs
+before limiting/paging, not by trimming a page afterwards. Context independently checks visibility
+and walks past unreadable rows without exposing their ids or how many were skipped.
+
+Android's old SearchDocument omitted message visibility/account metadata; checking only a chat's
+availability was insufficient. Preserve those fields and bind the existing canonical chat/member
+rules per model before core matching/limits and before every rich-card/context render. Read full
+message cards on demand on the store worker instead of adding all history payloads to Model.parse.
+Web typed row caches depend on immutable projection row replacement: regression fixtures must
+replace a changed row rather than mutating its fields in place under an existing cached identity.
+
+Blob GET/HEAD now return the same missing response for unreadable hashes. Upload ownership
+failures still use 403. Search grants nothing to blobs; a recipient's message reference is checked
+against their current front/channel view, while uploaders retain existing account-owned access.
+
+
+### 2026-11-02 — UI11b integration with subsystem chats
+
+Main `0ac29cc` added recursive `perms::with_parts` to D-098's `kept_to`. Search must call that
+same helper after strict membership validation, rather than call `kept_to` (which intentionally
+skips internal spaces) or expand the current front (which would grant upward access). Native
+SearchVisibility supplies `Subsystems.including`; web binds a downward membership walker per
+projection for search, chat jumps and the list. Message-level audiences still use literal front
+members. Keep listed-member ownership even after member deletion; otherwise an external chat
+with only a deleted own entry can accidentally become unrestricted. Expanded parts still require
+live group membership and active/nondeleted members. Shared `ui_search_subsystems.json` runs
+against Rust canonical/SQL/FTS/context, web and Android; blob GET/HEAD additionally recheck nested
+thread ancestry and membership/archive revocations. Scoped search is now D-114 (the initial
+integration used D-112; renumbered again 2026-11-03 to preserve UI12's D-111/D-112/D-113).
+Main's D-110 is unchanged. No new dependency, schema or op kind.

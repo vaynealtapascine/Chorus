@@ -3,7 +3,8 @@
   import { canWriteAs, postReaction, posts, type PostRow } from '../posts';
   import { sync, type Projection } from '../sync/client';
   import PostCard from './PostCard.svelte';
-  import { quoteView, replyCounts } from '../post-threads';
+  import { quoteView } from '../post-threads';
+  import { savedPosts, socialIndex } from '../journal-social';
   import { router } from '../router.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
@@ -15,10 +16,11 @@
   let selected = $state('');
   const list = $derived(lists.find((row) => row.id === selected) ?? lists[0]);
   const selectedMembers = $derived(items.get(list?.id ?? '') ?? new Set<string>());
-  const counts = $derived(replyCounts(posts(projection)));
+  const social = $derived(socialIndex(posts(projection)));
+  const saved = $derived(savedPosts(projection.rows.pref ?? {}, sync.accountId));
   const postById = $derived(new Map(posts(projection).map((p) => [p.id, p])));
   const memberName = (m: string) => byId.get(m)?.display_name ?? byId.get(m)?.name ?? 'Someone';
-  const timeline = $derived(posts(projection).filter((post) => !post.deleted && post.authors.some((id) => selectedMembers.has(id))));
+  const timeline = $derived(posts(projection).filter((post) => !post.deleted && !post.repost_of && post.authors.some((id) => selectedMembers.has(id))));
   const speaker = $derived(people.find((m) => canWriteAs(projection, m.id, sync.accountId))?.id ?? null);
   let name = $state('');
   let description = $state('');
@@ -53,7 +55,7 @@
     <div class="list-head"><div><h2>{list.name}</h2>{#if list.description}<p>{list.description}</p>{/if}</div>
       <button onclick={() => { sync.create('list.delete', sync.accountScope, list.id, {}); selected = ''; }}>Delete list</button></div>
     <fieldset><legend>Members</legend><div class="members">{#each people as member (member.id)}<label><input type="checkbox" checked={selectedMembers.has(member.id)} onchange={() => toggle(member.id)} /> {member.display_name ?? member.name}</label>{/each}</div></fieldset>
-    <div class="timeline">{#each timeline as post (post.id)}<PostCard {projection} {post} quote={quoteView(post.quote_post_id, postById, memberName)} people={byId} {dark} reactions={reacts.get(post.id) ?? new Map()} {speaker} replyCount={counts.get(post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add) => react(post, emoji, add)} />{:else}<p class="muted">No posts from these members yet.</p>{/each}</div>
+    <div class="timeline">{#each timeline as post (post.id)}<PostCard {projection} {post} quote={quoteView(post.quote_post_id, postById, memberName)} people={byId} {dark} reactions={reacts.get(post.id) ?? new Map()} {speaker} {social} {saved} replyCount={social.replies.get(post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add) => react(post, emoji, add)} />{:else}<p class="muted">No posts from these members yet.</p>{/each}</div>
   {:else}<p class="muted">Create a list to start collecting posts.</p>{/if}
 </section>
 

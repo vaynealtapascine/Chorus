@@ -217,6 +217,8 @@ pub fn quotes(conn: &Connection, viewer: &str, id: &str) -> anyhow::Result<Vec<V
 
 #[derive(Default, Deserialize)]
 pub struct PostSearch {
+    #[serde(default)]
+    pub saved: bool,
     pub q: String,
     /// Only this account's posts.
     pub account: Option<String>,
@@ -230,6 +232,8 @@ pub struct PostSearch {
 /// Where a page of post search results ended; it only continues the same search.
 #[derive(serde::Serialize, Deserialize)]
 struct SearchCursor {
+    #[serde(default)]
+    saved: bool,
     q: String,
     account: Option<String>,
     kind: Option<String>,
@@ -263,7 +267,8 @@ pub fn search(
             let bad = || DataError::Bad("invalid cursor".into());
             let c: SearchCursor =
                 serde_json::from_slice(&URL_SAFE_NO_PAD.decode(raw).map_err(|_| bad())?).map_err(|_| bad())?;
-            if c.q != q
+            if c.saved != query.saved
+                || c.q != q
                 || c.account != query.account
                 || c.kind != query.kind
                 || c.before != query.before
@@ -279,14 +284,15 @@ pub fn search(
     let limit = query.limit.unwrap_or(100).clamp(1, 100);
     let readable = readable_sql("?1");
     let sql = format!(
-        "WITH hits AS (SELECT {COLUMNS}, bm25(post_fts) AS score
+        "WITH hits AS (SELECT {COLUMNS}, 0.0 AS score
            FROM post_fts JOIN post p ON p.rowid = post_fts.rowid
            WHERE post_fts MATCH ?2 AND p.deleted_at IS NULL AND {readable}
              AND (?3 = 0 OR p.account_id = ?1)
              AND (?4 IS NULL OR p.account_id = ?4)
              AND (?5 IS NULL OR p.kind = ?5)
              AND (?6 IS NULL OR p.occurred_at < ?6)
-             AND (?7 IS NULL OR p.occurred_at > ?7))
+             AND (?7 IS NULL OR p.occurred_at > ?7)
+             AND (?12=0 OR EXISTS(SELECT 1 FROM pref WHERE account_id=?1 AND device_id='' AND key='bookmark:'||p.id AND value='true')))
          SELECT * FROM hits WHERE (?8 IS NULL OR score > ?8 OR
            (score = ?8 AND (occurred_at < ?9 OR (occurred_at = ?9 AND id < ?10))))
          ORDER BY score, occurred_at DESC, id DESC LIMIT ?11"
@@ -305,6 +311,7 @@ pub fn search(
             cursor.as_ref().map(|c| c.occurred_at),
             cursor.as_ref().map(|c| c.id.as_str()),
             (limit + 1) as i64,
+            query.saved,
         ],
         |r| Ok((row(r)?, r.get::<_, f64>(SCORE)?)),
     );
@@ -323,6 +330,7 @@ pub fn search(
         rows.truncate(limit);
         let (last, score) = rows.last().expect("a paged search has a last row");
         let anchor = SearchCursor {
+            saved: query.saved,
             q: q.to_string(),
             account: query.account.clone(),
             kind: query.kind.clone(),

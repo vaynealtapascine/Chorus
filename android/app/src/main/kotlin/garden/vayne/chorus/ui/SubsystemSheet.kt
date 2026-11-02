@@ -49,7 +49,7 @@ internal fun SubsystemSheet(chorus: Chorus, model: Model, member: Member, onDism
             finally { busy = false }
         }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = p.surface) {
+    ChorusSheet(onDismissRequest = onDismiss, containerColor = p.surface) {
         Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).padding(bottom = 16.dp)) {
             Text(if (group == null) "Make $name a subsystem" else "Inside $name", color = p.ink, fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 20.dp))

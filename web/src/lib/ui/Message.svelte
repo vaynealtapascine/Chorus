@@ -9,6 +9,7 @@
   import { core } from '../core';
   import Icon from './Icon.svelte';
   import type { EmojiRow, MemberRow, MessageRow, SnapshotItem, TextRange, ThreadSummary } from '../data';
+  import type { PostRow } from '../posts';
   import { segmentRich } from '../segments';
   import RichText from './RichText.svelte';
   import AttachmentView from './AttachmentView.svelte';
@@ -16,12 +17,15 @@
   import EmojiImage from './EmojiImage.svelte';
   import { sync, type Revision } from '../sync/client';
   import { swipeReply } from '../swipe-reply';
+  import { linkTo } from '../share-links';
+  import LinkEmbeds from './LinkEmbeds.svelte';
 
   export type Quote = TextRange;
   export type Forwarded = SnapshotItem;
 
   let {
     m,
+    readOnly = false,
     cont,
     people,
     dark,
@@ -54,8 +58,11 @@
     tag,
     right,
     onjump,
+    postOf,
+    embedLookup,
   }: {
     m: MessageRow;
+    readOnly?: boolean;
     cont: boolean;
     /** The last of a run from the same authors: it carries their face (Figma F5.21). */
     last?: boolean;
@@ -65,6 +72,9 @@
     right?: boolean;
     /** Show a replied-to, quoted or forwarded original: scroll to it, or open its chat at it. */
     onjump?: (target: MessageRow) => void;
+    /** What its links point at (D-109): the replica's posts, and messages this reader may see here. */
+    postOf?: (id: string) => PostRow | undefined;
+    embedLookup?: (id: string) => (MessageRow & { channel_name?: string }) | undefined;
     people: Map<string, MemberRow>;
     dark: boolean;
     lookup: (id: string) => (MessageRow & { channel_name?: string }) | undefined;
@@ -151,6 +161,7 @@
   // where there's no hover, a tap on the bubble opens its actions, which carry the time
   // (owner, 2026-11-02); links, buttons and a text selection keep their own clicks
   function tapBubble(e: MouseEvent) {
+    if (readOnly) return;
     if ((e.target as Element).closest('a, button, input, textarea, video, audio, [role="button"]')) return;
     if (getSelection()?.isCollapsed === false) return;
     if (selecting) { onselect(); return; }
@@ -193,7 +204,7 @@
     {#if thread}<button class="link" onclick={onthread}>Open thread · {thread.replyCount} {thread.replyCount === 1 ? 'reply' : 'replies'}</button>{/if}
   </div></div>
 {:else}
-  <div class="msg-row" class:out class:cont class:last use:swipeReply={{ enabled: !heldUntil && !selecting, onreply }}>
+  <div class="msg-row" class:out class:cont class:last use:swipeReply={{ enabled: !readOnly && !heldUntil && !selecting, onreply }}>
   <span class="swipe-hint" aria-hidden="true"><Icon name="action-reply" size={18} /></span>
   {#if out}{@render aside()}{/if}
   {#if !out}
@@ -282,6 +293,7 @@
       {:else if m.text}
         <span class="selectable text" data-message-offset="0"><RichText text={m.text} entities={m.entities} emoji={emojiById} /></span>
       {/if}
+      {#if postOf && embedLookup && m.entities.length}<LinkEmbeds text={m.text} entities={m.entities} lookup={embedLookup} {postOf} {nameOf} {onjump} />{/if}
       {#if m.attachments.length && !m.forward_snapshot?.some((f) => f.attachments?.length)}
         <div class="attachments">{#each m.attachments as a (a.id)}<AttachmentView attachment={a} />{/each}</div>
       {/if}
@@ -301,7 +313,7 @@
         <div class="reacts">
           {#each [...reacts] as [emoji, who] (emoji)}
             {@const mine = !!speaker && who.includes(speaker)}
-            <button class="react" class:mine onclick={() => onreact(emoji, !mine)} title={who.map(nameOf).join(', ')}>
+            <button class="react" class:mine disabled={readOnly} onclick={() => onreact(emoji, !mine)} title={who.map(nameOf).join(', ')}>
               {#if emoji.startsWith('custom:') && emojiById.has(emoji.slice(7))}
                 {@const custom = emojiById.get(emoji.slice(7))!}
                 <EmojiImage hash={custom.blob_hash} name={custom.name} />
@@ -344,7 +356,7 @@
       </p>
     {/if}
     <!-- a held message isn't sent yet: only Cancel, nothing covering it (narrow screens) -->
-    {#if !heldUntil}
+    {#if !heldUntil && !readOnly}
     <button class="action-trigger" bind:this={actionTrigger} popovertarget={menuId} aria-label="Message actions" title="Message actions"><Icon name="more" size={18} /></button>
     <div class="actions" bind:this={actionMenu} id={menuId} popover="auto" ontoggle={(e) => { if (e.newState === 'open') placeActions(); }} role="group" aria-label="Message actions">
       <p class="when"><time datetime={new Date(m.occurred_at).toISOString()}>{when}</time>{m.edited ? ' · edited' : ''}</p>
@@ -354,6 +366,7 @@
       {#if onreplyprivately}<button onclick={() => runAction(onreplyprivately)} title="Reply privately"><Icon name="chat" size={20} />Reply privately</button>{/if}
       <button onclick={() => runAction(quote)} title="Quote (select text first to quote part)"><Icon name="copy" size={20} />Quote selection or message</button>
       <button onclick={() => runAction(() => onforward(selectedRange() ?? undefined))} title="Forward selection or message"><Icon name="forward" size={20} />Forward</button>
+      <button onclick={() => runAction(() => navigator.clipboard?.writeText(linkTo(location.origin, { kind: 'message', id: m.id })))} title="Copy a link to this message: it shows as a preview in a chat"><Icon name="copy" size={20} />Copy link</button>
       <button onclick={() => runAction(onselect)} title={selected ? 'Deselect message' : 'Select for bundle'} aria-label={selected ? 'Deselect message' : 'Select for bundle'}><Icon name="select" size={20} />{selected ? 'Deselect' : 'Select for bundle'}</button>
       <button onclick={() => runAction(onthread)} title={thread ? 'Open thread' : 'Start thread'} aria-label={thread ? 'Open thread' : 'Start thread'}><Icon name="action-thread" size={20} />{thread ? 'Open thread' : 'Start thread'}</button>
       <button onclick={() => runAction(onpin)} title={m.pinned ? 'Unpin' : 'Pin'}><Icon name="action-pin" size={20} />{m.pinned ? 'Unpin' : 'Pin'}</button>
@@ -372,7 +385,7 @@
 <!-- beside the bubble: "edited" always, the time on hover where there is one (owner, 2026-11-02) -->
 {#snippet aside()}
   <span class="aside" class:bare={!m.edited}>
-    {#if m.edited}<button class="edited" onclick={toggleHistory} aria-expanded={!!history} title="Edit history">edited</button>{/if}
+    {#if m.edited}{#if readOnly}<span class="edited">edited</span>{:else}<button class="edited" onclick={toggleHistory} aria-expanded={!!history} title="Edit history">edited</button>{/if}{/if}
     <time class="stamp" datetime={new Date(m.occurred_at).toISOString()}>{time(m.occurred_at)}</time>
   </span>
 {/snippet}
