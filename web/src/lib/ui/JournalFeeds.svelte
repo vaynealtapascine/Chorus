@@ -9,8 +9,10 @@
   import type { AttachmentRow } from '../data';
   import type { Entity } from '../core';
   import AttachmentView from './AttachmentView.svelte';
+  import PostMedia from './PostMedia.svelte';
   import PostCard from './PostCard.svelte';
-  import { quoteView, replyCounts } from '../post-threads';
+  import { quoteView } from '../post-threads';
+  import { savedPosts, socialIndex } from '../journal-social';
   import { router } from '../router.svelte';
   import RemotePostPoll from './RemotePostPoll.svelte';
   import type { PollTally } from '../polls';
@@ -23,7 +25,8 @@
   const configured = $derived(!!projection.front_systems?.[sync.accountId]);
   const named = $derived.by(() => { projection.front_systems; return configured ? sync.frontHistory() : null; });
   const candidates = $derived(feedCandidates(projection, Date.now(), configured ? named?.effective.intervals ?? [] : undefined));
-  const counts = $derived(replyCounts(posts(projection)));
+  const social = $derived(socialIndex(posts(projection)));
+  const saved = $derived(savedPosts(projection.rows.pref ?? {}, sync.accountId));
   const postById = $derived(new Map(posts(projection).map((p) => [p.id, p])));
   const memberName = (m: string) => people.get(m)?.display_name ?? people.get(m)?.name ?? 'Someone';
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
@@ -155,9 +158,9 @@
         {#each sharedItems as post (post.id)}
           <article class="message"><p class="muted">{byline(post)} · {new Date(post.occurred_at).toLocaleString()}</p>
             {#if post.cw}<details><summary>Content warning: {post.cw}</summary>{#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
-                  <RemotePostPoll {projection} post={post} member={speaker} />{#each post.attachments ?? [] as attachment (attachment.id)}<AttachmentView {attachment} />{/each}</details>
+                  <RemotePostPoll {projection} post={post} member={speaker} />{#if post.attachments?.length}<PostMedia attachments={post.attachments} who={byline(post)} occurredAt={post.occurred_at} />{/if}</details>
             {:else}{#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
-                  <RemotePostPoll {projection} post={post} member={speaker} />{#each post.attachments ?? [] as attachment (attachment.id)}<AttachmentView {attachment} />{/each}{/if}
+                  <RemotePostPoll {projection} post={post} member={speaker} />{#if post.attachments?.length}<PostMedia attachments={post.attachments} who={byline(post)} occurredAt={post.occurred_at} />{/if}{/if}
           </article>
         {:else}<p class="muted">Nothing in this feed that you can read yet.</p>{/each}
         {#if sharedCursor}<button onclick={() => showShared(openShared!, true)}>Load more</button>{/if}
@@ -168,7 +171,7 @@
     <div class="preview"><h2>Preview · newest {preview.rows.length} matches</h2>
       {#each preview.rows as result (`${result.item.kind}:${result.id}`)}
         {#if result.post}
-          <PostCard {projection} post={result.post} quote={quoteView(result.post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(result.post.id) ?? new Map()} {speaker} replyCount={counts.get(result.post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(result.post!.id)}`)} onreact={(emoji, add) => react(result.post!, emoji, add)} />
+          <PostCard {projection} post={result.post} quote={quoteView(result.post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(result.post.id) ?? new Map()} {speaker} {social} {saved} replyCount={social.replies.get(result.post.id) ?? 0} onreply={() => router.go(`/journal/post/${encodeURIComponent(result.post!.id)}`)} onreact={(emoji, add) => react(result.post!, emoji, add)} />
         {:else if result.message}
           <article class="message"><p class="muted">#{result.channelName} · {new Date(result.occurred_at).toLocaleString()}</p>
             {#if result.message.cw}<details><summary>Content warning: {result.message.cw}</summary><p><RichText text={result.message.text} entities={result.message.entities} /></p>{#each result.message.attachments as attachment (attachment.id)}<AttachmentView {attachment} />{/each}</details>

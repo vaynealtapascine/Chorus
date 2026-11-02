@@ -5,7 +5,8 @@
   import { bodyAuthors } from '../front-view';
   import PostCard from './PostCard.svelte';
   import PostComposer from './PostComposer.svelte';
-  import { quoteView, replyCounts } from '../post-threads';
+  import { quoteView } from '../post-threads';
+  import { repostOriginal, savedPosts, socialIndex } from '../journal-social';
   import { router } from '../router.svelte';
   import JournalLists from './JournalLists.svelte';
   import JournalFeeds from './JournalFeeds.svelte';
@@ -15,7 +16,8 @@
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
   const subjectNames = $derived(new Map([...members(projection).map((m) => [m.id, m.display_name ?? m.name] as [string, string]), ...groups(projection).map((g) => [g.id, g.name] as [string, string])]));
   const entries = $derived(posts(projection).filter((p) => !p.deleted));
-  const counts = $derived(replyCounts(entries));
+  const social = $derived(socialIndex(posts(projection)));
+  const saved = $derived(savedPosts(projection.rows.pref ?? {}, sync.accountId));
   const byId = $derived(new Map(entries.map((p) => [p.id, p])));
   const postById = $derived(new Map(posts(projection).map((p) => [p.id, p])));
   const reacts = $derived(reactions(projection));
@@ -55,10 +57,15 @@
   <div class="timeline">
     {#each timeline as item (`${item.kind}:${item.id}`)}
       {#if item.kind === 'post'}
+        {@const original = item.post.repost_of ? repostOriginal(social, item.post) : item.post}
+        {@const by = item.post.repost_of ? item.post.authors.map(name).join(' & ') || 'Someone' : undefined}
+        {#if !original}<p class="repost-gone">{by} reposted a post that’s no longer available</p>
+        {:else}
         <!-- replying opens the post's thread, where the reply box shows what it answers -->
-        <PostCard {projection} post={item.post} quote={quoteView(item.post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(item.post.id) ?? new Map()} {speaker} compactEntry
-          replyCount={counts.get(item.post.id) ?? 0} replyToNames={item.post.reply_to ? byId.get(item.post.reply_to)?.authors.map(name).join(' & ') : undefined}
-          onreply={() => router.go(`/journal/post/${encodeURIComponent(item.post.id)}`)} onreact={(emoji, add) => react(item.post, emoji, add)} />
+        <PostCard {projection} post={original} quote={quoteView(original.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(original.id) ?? new Map()} {speaker} compactEntry
+          {social} {saved} repostedBy={by} replyCount={social.replies.get(original.id) ?? 0} replyToNames={original.reply_to ? byId.get(original.reply_to)?.authors.map(name).join(' & ') : undefined}
+          onreply={() => router.go(`/journal/post/${encodeURIComponent(original.id)}`)} onreact={(emoji, add) => react(original, emoji, add)} />
+        {/if}
       {:else if item.kind === 'switch'}
         <div class="event"><span class="event-icon">◌</span><span>{item.sw.retracted ? 'Undone switch' : `Front: ${item.sw.fronting.map(frontName).join(' & ') || 'no one'}`}</span><time>{new Date(item.at).toLocaleString()}</time></div>
       {:else}
@@ -93,8 +100,10 @@
   header label { color: var(--ink-3); font-size: var(--fs-sm); }
   select { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: var(--s-2); }
   .timeline { display: grid; gap: 0; border-top: 1px solid var(--line); }
-  .event { display: flex; gap: var(--s-3); align-items: center; padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink-2); }
-  .event-icon { color: var(--accent); }
+  /* a switch or pin is a quiet marker in the timeline, aligned with the post avatars */
+  .event { display: flex; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
+  .event-icon { width: 40px; flex: none; text-align: center; color: var(--accent); }
   time { margin-left: auto; color: var(--ink-3); font-size: var(--fs-xs); white-space: nowrap; }
   .empty { color: var(--ink-3); }
+  .repost-gone { margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: var(--fs-sm); }
 </style>

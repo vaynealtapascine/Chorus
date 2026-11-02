@@ -1,33 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { loadObjectUrl, onSyncStatusChange } from '../blob-url';
   import type { AttachmentRow } from '../data';
-  import { sync } from '../sync/client';
-  import { loadBlob } from '../sync/blobs';
 
   let { attachment, blur = false, revealable = true }: { attachment: AttachmentRow; blur?: boolean; revealable?: boolean } = $props();
   let revealed = $state(false);
   let src = $state('');
   let tick = $state(0);
   const hash = $derived(attachment.thumb_blob_hash ?? attachment.blob_hash);
-  onMount(() => {
-    let status = sync.status;
-    return sync.subscribe(() => {
-      if (sync.status !== status) { status = sync.status; tick += 1; }
-    });
-  });
+  onMount(() => onSyncStatusChange(() => { tick += 1; }));
   $effect(() => {
     void tick;
-    const wanted = hash;
-    let cancelled = false;
-    let objectUrl = '';
-    src = '';
-    void (async () => {
-      const blob = await loadBlob(wanted, sync.device);
-      if (!blob || cancelled) return;
-      objectUrl = URL.createObjectURL(blob);
-      src = objectUrl;
-    })();
-    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    return loadObjectUrl(hash, (_state, url) => { src = url; });
   });
 </script>
 

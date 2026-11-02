@@ -59,3 +59,20 @@ Separate `:app:assembleDebug --offline` passed, exit 0 (`F:/DunBuild/journal-dur
 APK at `F:/DunBuild/chorus-gradle/app/outputs/apk/debug/app-debug.apk`. All builds use F:,
 Studio JBR and the process-scoped wrapper environment; no quick/full concurrency. Start/handoff
 commit b9ef139 was also gated by the explicit full verifier (`journal-durable-start.log`).
+
+2026-11-02 claude-opus-5.5 (owner: implement in sequence, deploy after each slice; no more delegation
+for now). Slice 1: reviewed and accepted the durable drafts above; deployed Android-only 0.1.675.
+Slice 2, web post card: `PostCard.svelte` now reads like Android's `JournalPostFrame` (avatar column,
+names · compact time with the full time on hover, a lock for private/followers posts, a ⋯ menu with
+Open post / Copy text / Stage) and `JournalActions` (reply, repost with Undo, a single 💜 heart with
+the once-per-device "readers see the member's name" notice, save as the `bookmark:` account pref,
+share via `navigator.share` or the clipboard; the content warning always leads shared text). Reposts
+render their original one level deep under "X reposted" (or "no longer available"). Post media
+(Gemini's parked `PostMedia.svelte` + `journal-presentation.ts` + `blob-url.ts`, reviewed and
+adopted; its unused `threadItemAttachments` dropped) shows the 1–4+ image grid with spoilers, ALT,
+a viewer and file rows on own posts, server thread rows and shared feeds. `journal-social.ts`
+mirrors Android's `JournalSocial` (tests in `journal-social.test.ts`). Parents build one
+`socialIndex` per list and pass `social`/`saved`; a card without them hides repost/save.
+Remaining web gaps, in order: Our system / Friends / Journals tabs plus a Saved view (slice 3);
+composer attachments, quote posts, local drafts and the "React as"/author default (slice 4);
+change-audience on own posts.
