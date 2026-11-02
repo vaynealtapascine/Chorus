@@ -185,15 +185,15 @@ GET  /search/messages?q=&tz=&in=&from=&before=&after=&has=&limit=&cursor=
   and why. The older `in`, `from`, `has` (same values) and `before`/`after` (exclusive epoch
   ms) parameters still narrow the search. Pages contain 1–100
   results (default 100). Pass `next_cursor` back with the same search and filters to continue;
-  a null cursor means the results are exhausted. Results are ordered by FTS rank, occurred time,
-  then id and limited to accessible spaces plus public or own messages. API tokens need
+  a null cursor means the results are exhausted. Results are ordered by occurred time then id, newest first, and pass the current-front
+  channel/message view (D-110). Cursors carry no corpus-dependent FTS rank. API tokens need
   `read:messages`; device sessions inherit access.
 GET  /pins?channel=
 GET  /search/posts?q=&account=&kind=&before=&after=&limit=&cursor=
   → {items:[post, as GET /posts],next_cursor}
   FTS5 over post titles, text and tags (post_fts). Every hit passes the post's audience check
   (`posts::readable_sql`, as `/posts`): own posts, server-visible ones, and ones shared with an
-  active follower or an assigned bucket; deleted posts never match. Ranking, pages (1–100,
+  active follower or an assigned bucket; deleted posts never match. Chronological order (newest first), pages (1–100,
   default 100) and the opaque cursor work like `/search/messages`. API tokens need `read:posts`
   and search only their own account's posts.
 
@@ -429,7 +429,7 @@ the apps' parser, mentioning your own members and the server's emoji), `plain` o
 ## 5. Blobs
 
 ```
-HEAD /blobs/{sha256}                  200 complete | 206 + Upload-Offset partial | 404 | 403 another account's
+HEAD /blobs/{sha256}                  200 complete | 206 + Upload-Offset partial | 404 missing or unreadable
 PUT  /blobs/{sha256}                  Content-Range chunks (≤ 4 MB each); verifies hash on completion;
                                       200 if already complete (from anyone); 403 into another account's
                                       unfinished upload
@@ -590,14 +590,18 @@ ignores typing (the current router does not implement those fallback routes).
 ### UI11b search view (D-110)
 
 `GET /search/messages` additionally accepts `current=true` and `channel_id=<exact id>`.
-Current view uses chronological newest-first ordering and rechecks current permissions, Body
+All searches use chronological newest-first ordering and rechecks current permissions, Body
 front/private chats, inherited thread parents, message audience and clear cutoffs before paging.
 Each item is a rich message with `context_before` and `context_after` (one visible message or
 null). Context is chronological in the same channel and ignores the search terms. Cursors bind
 the scope/query; only returned visible anchors can appear. It exposes no raw match totals or
-hidden rank scores. Existing non-current search remains compatible. `channel_id` is an exact
+hidden rank scores. Every message search now enforces this view, including callers omitting `current` or sending false. `channel_id` is an exact
 additional restriction, intersecting `in:` rather than broadening it.
 
 `GET /search/posts` additionally accepts `saved=true`, narrowing through this account's
 account-wide `bookmark:<id> = true` preferences before paging and the ordinary live post audience
 check. Cursors bind this flag. Saved preferences grant no post/blob access.
+
+D-110: blob GET/HEAD return the same 404 for missing and unreadable hashes; a hash retained
+from a search card does not bypass current recipient-front/channel permission checks. Upload
+ownership failures remain 403. Uploaders retain their existing own-file access.

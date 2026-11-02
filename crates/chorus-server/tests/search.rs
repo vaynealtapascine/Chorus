@@ -154,7 +154,7 @@ async fn http_search_applies_account_visibility_and_filters() {
             .as_array()
             .unwrap()
             .len(),
-        5
+        4
     );
     // an API token reaches only its own account's messages (API.md §2.3), even in a shared space
     let items = |v: Value| {
@@ -379,4 +379,88 @@ fn sql_search_agrees_with_core() {
         }
     }
     assert!(found > asked / 4 && found < asked, "the queries should sometimes match: {found} of {asked}");
+}
+
+#[test]
+fn current_search_filters_before_paging_and_context_and_rechecks_front_permissions() {
+    use chorus_server::{
+        search::{self, MessageQuery},
+        search_view::CurrentView,
+    };
+    let conn = seed();
+    let alice = api_data::Principal::owner(ALICE);
+    let bob = api_data::Principal::owner(BOB);
+    let query = MessageQuery { q: "violet".into(), current: true, limit: Some(1), ..Default::default() };
+    let first = search::messages(&conn, &bob, &query).unwrap();
+    assert_eq!(first["items"][0]["id"], "segmented");
+    assert_eq!(first["items"][0]["context_before"]["id"], "bob");
+    assert!(first["items"][0]["context_after"].is_null());
+    // Hidden indexed rows cannot alter order, cursor scores, visible page counts or context.
+    conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text,visibility) VALUES ('hidden-new',?1,?2,?2,999,'violet violet violet','{\"mode\":\"system_only\"}')",params![CHANNEL,ALICE]).unwrap();
+    conn.execute("INSERT INTO message_fts(rowid,text,cw) SELECT rowid,text,'' FROM message WHERE id='hidden-new'", [])
+        .unwrap();
+    assert_eq!(first, search::messages(&conn, &bob, &query).unwrap());
+    let second = search::messages(
+        &conn,
+        &bob,
+        &MessageQuery { cursor: Some(first["next_cursor"].as_str().unwrap().into()), ..query },
+    )
+    .unwrap();
+    assert_eq!(second["items"][0]["id"], "bob");
+    assert_eq!(second["items"][0]["context_before"]["id"], "public");
+    assert!(!serde_json::to_string(&second).unwrap().contains("members"));
+    assert!(CurrentView::new(&conn, &alice).unwrap().card("members").unwrap().is_none());
+    conn.execute("INSERT INTO front_interval(id,account_id,subject_type,subject_id,level,is_primary,position,start_at,start_switch_id,start_tz_offset_min) VALUES ('live',?1,'member','rose','front',1,0,0,'switch',0)",[ALICE]).unwrap();
+    assert!(CurrentView::new(&conn, &alice).unwrap().card("members").unwrap().is_some());
+    conn.execute("UPDATE front_interval SET end_at=100 WHERE id='live'", []).unwrap();
+    assert!(CurrentView::new(&conn, &alice).unwrap().card("members").unwrap().is_none());
+    conn.execute("INSERT INTO channel_permission(channel_id,target_type,target_id,allow,deny,hlc) VALUES (?1,'account',?2,'[]','[\"view\"]','1')",params![CHANNEL,BOB]).unwrap();
+    let denied =
+        search::messages(&conn, &bob, &MessageQuery { q: "violet".into(), current: true, ..Default::default() })
+            .unwrap();
+    assert_eq!(denied["items"], serde_json::json!([]));
+    assert!(denied["next_cursor"].is_null());
+    assert!(CurrentView::new(&conn, &bob).unwrap().card("public").unwrap().is_none());
+}
+
+#[test]
+fn current_search_keeps_exact_chat_scope_and_private_thread_ancestry() {
+    use chorus_server::search::{self, MessageQuery};
+    let conn = seed();
+    conn.execute("INSERT INTO channel(id,space_id,kind,name,member_ids,created_at) VALUES ('private',?1,'member_dm','private','[\"rose\"]',0)",[SPACE]).unwrap();
+    conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text) VALUES ('private-msg','private',?1,?1,200,'violet private')",[ALICE]).unwrap();
+    conn.execute("INSERT INTO message_fts(rowid,text,cw) SELECT rowid,text,'' FROM message WHERE id='private-msg'", [])
+        .unwrap();
+    conn.execute("INSERT INTO channel(id,space_id,kind,name,parent_message_id,created_at) VALUES ('thread',?1,'thread','thread','private-msg',0)",[SPACE]).unwrap();
+    conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text) VALUES ('thread-msg','thread',?1,?1,210,'violet thread')",[ALICE]).unwrap();
+    conn.execute("INSERT INTO message_fts(rowid,text,cw) SELECT rowid,text,'' FROM message WHERE id='thread-msg'", [])
+        .unwrap();
+    let alice = api_data::Principal::owner(ALICE);
+    let q =
+        MessageQuery { q: "violet".into(), current: true, channel_id: Some("private".into()), ..Default::default() };
+    assert_eq!(search::messages(&conn, &alice, &q).unwrap()["items"], serde_json::json!([]));
+    let thread = MessageQuery { channel_id: Some("thread".into()), ..q };
+    assert_eq!(search::messages(&conn, &alice, &thread).unwrap()["items"], serde_json::json!([]));
+    conn.execute("INSERT INTO front_interval(id,account_id,subject_type,subject_id,level,is_primary,position,start_at,start_switch_id,start_tz_offset_min) VALUES ('live',?1,'member','rose','cocon',0,0,0,'switch',0)",[ALICE]).unwrap();
+    assert_eq!(search::messages(&conn, &alice, &thread).unwrap()["items"][0]["id"], "thread-msg");
+    assert_eq!(
+        search::messages(&conn, &alice, &MessageQuery { q: "violet in:garden".into(), ..thread }).unwrap()["items"],
+        serde_json::json!([])
+    );
+}
+
+#[test]
+fn internal_member_chat_with_no_eligible_members_fails_closed() {
+    use chorus_server::search::{self, MessageQuery};
+    let conn = seed();
+    conn.execute("UPDATE space SET kind='internal' WHERE id=?1", [SPACE]).unwrap();
+    conn.execute("UPDATE channel SET kind='member_dm',member_ids='[]' WHERE id=?1", [CHANNEL]).unwrap();
+    let page = search::messages(
+        &conn,
+        &api_data::Principal::owner(ALICE),
+        &MessageQuery { q: "violet".into(), ..Default::default() },
+    )
+    .unwrap();
+    assert_eq!(page["items"], serde_json::json!([]));
+    assert!(page["next_cursor"].is_null());
 }

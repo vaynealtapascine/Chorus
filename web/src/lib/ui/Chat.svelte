@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Search from "./Search.svelte";
+  let searchHere = $state(false);
   import { onDestroy, tick, untrack } from 'svelte';
   import { core, type Composed, type Entity } from '../core';
   import RichText from './RichText.svelte';
@@ -1134,7 +1136,7 @@
   </aside>
 
   <section class="room" aria-label={current ? `#${current.name}` : 'Chat'} ondragover={(e) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); }} ondrop={dropFiles}>
-    <header class="room-head">
+    <header class="room-head" inert={searchHere}>
       {#if current?.kind === 'thread'}
         <a class="icon-button thread-back" href="#/chat/{parentChannel?.id ?? ''}" aria-label="Back to #{parentChannel?.name ?? 'channel'}"><span aria-hidden="true">‹</span></a>
       {/if}
@@ -1143,7 +1145,7 @@
         <h1>{roomTitle}</h1>
         {#if typingSubtitle}<span class="sub typing" role="status">{typingSubtitle}</span>{:else if roomSubtitle}<span class="sub">{roomSubtitle}</span>{/if}
       </button>
-      <a class="icon-button" href="#/search" aria-label="Search messages"><Icon name="search" size={22} /></a>
+      <button class="icon-button" onclick={() => searchHere = !searchHere} aria-label="Search this chat" aria-expanded={searchHere}><Icon name="search" size={22} /></button>
       {#if current && !lockedOut}
         <details class="room-menu" bind:open={menuOpen}>
           <summary class="icon-button" aria-label="Channel menu"><Icon name="more" size={22} /></summary>
@@ -1254,6 +1256,11 @@
         </details>
       {/if}
     </header>
+    {#if searchHere && current}
+      <div class="search-overlay">{#key current.id}<Search {projection} {dark} channelId={current.id} onclose={() => searchHere = false}
+        onopen={(m) => { searchHere = false; void tick().then(() => showMessage(m)); }} />{/key}</div>
+    {/if}
+    <div class="search-underlay" inert={searchHere} aria-hidden={searchHere}>
     {#if pinned.length && !showPins}
       {@const latestPin = pinned[pinned.length - 1]}
       <button class="pinned-bar" onclick={() => (showPins = true)} aria-label="Show pinned messages">
@@ -1572,6 +1579,7 @@
         disabled={editing ? (editingParts ? !editingParts.some((part) => part.trim()) : !draft.trim()) : !canSend}><Icon name={editing ? 'read' : 'send'} size={20} /></button>
     </div>
     {/if}
+    </div>
   </section>
   {#if showInfo}
     <aside class="room-info" aria-label="Chat info">
@@ -1586,7 +1594,7 @@
       <div class="info-actions" hidden={lockedOut}>
         <button onclick={() => setNotifyLevel(notifyLevel === 'none' ? (space?.kind === 'dm' ? 'all' : 'mentions') : 'none')} aria-pressed={notifyLevel === 'none'}>
           <Icon name={notifyLevel === 'none' ? 'muted' : 'muted'} size={20} />{notifyLevel === 'none' ? 'Unmute' : 'Mute'}</button>
-        <a href="#/search"><Icon name="search" size={20} />Search</a>
+        <button onclick={() => { searchHere = true; showInfo = false; }}><Icon name="search" size={20} />Search this chat</button>
         <button onclick={() => { showPins = !showPins; if (window.innerWidth < 1280) showInfo = false; }}><Icon name="pin" size={20} />Pinned{pinned.length ? ` · ${pinned.length}` : ''}</button>
         {#if groupEditable && spaceChannels.length <= 1}<button onclick={() => (editingGroup = true)}><Icon name="edit" size={20} />Edit</button>
         {:else if canEditChannel}<button onclick={() => (editingChannel = true)}><Icon name="edit" size={20} />Edit</button>{/if}
@@ -1638,6 +1646,9 @@
 {/if}
 
 <style>
+  .room { position: relative; }
+  .search-overlay { position: absolute; inset: 0; z-index: 5; background: var(--bg); overflow: auto; }
+  .search-underlay { display: contents; }
   .info-link { display: block; overflow-wrap: anywhere; padding: 8px 0; }
   .unicode-emoji { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
   .unicode-emoji button { font-size: 22px; padding: 7px; justify-content: center; }
@@ -1929,7 +1940,7 @@
   .room-info h2 { font-size: var(--fs-lg); overflow-wrap: anywhere; }
   .info-kind, .info-topic { font-size: var(--fs-xs); color: var(--ink-3); overflow-wrap: anywhere; }
   .info-actions { display: flex; gap: 8px; margin-block: 20px; }
-  .info-actions a, .info-actions button { display: flex; flex: 1; align-items: center; justify-content: center; flex-direction: column; gap: 6px; padding: 12px; border-radius: 12px; background: var(--surface-2); color: var(--accent); border: 0; font-size: var(--fs-xs); text-decoration: none; cursor: pointer; }
+  .info-actions button { display: flex; flex: 1; align-items: center; justify-content: center; flex-direction: column; gap: 6px; padding: 12px; border-radius: 12px; background: var(--surface-2); color: var(--accent); border: 0; font-size: var(--fs-xs); text-decoration: none; cursor: pointer; }
   .room-info h3 { font-size: var(--fs-xs); color: var(--accent); text-align: left; border-top: 1px solid var(--line); padding-top: 16px; }
   .info-members { display: grid; gap: 12px; padding-block: 16px; text-align: left; }
   .info-members a { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-size: var(--fs-sm); min-height: 40px; }
@@ -2009,7 +2020,7 @@
   .info-hero h2 { margin: 0; font-size: 18px; line-height: 24px; }
   .info-kind, .info-topic { margin: 0; }
   .info-actions { gap: 8px; margin: 0; padding: 0 16px 13px; border-bottom: 1px solid var(--line); }
-  .info-actions a, .info-actions button { gap: 4px; padding: 8px 4px; min-height: 54px; font-size: 11px; color: var(--accent); }
+  .info-actions button { gap: 4px; padding: 8px 4px; min-height: 54px; font-size: 11px; color: var(--accent); }
   .info-actions button[aria-pressed='true'] { color: var(--ink-2); }
   .room-info h3 { margin: 0; padding: 12px 16px 4px; border: 0; font-size: 12px; font-weight: 600; }
   .info-members { gap: 0; padding: 0 0 8px; }

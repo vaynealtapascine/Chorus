@@ -42,13 +42,15 @@ object ChannelPermissions {
             .put("allow", JSONArray(allow)).put("deny", JSONArray(deny))
     }
     /** [owner] is the space's owner from the server's directory (`GET /spaces`): the replica doesn't carry it. */
-    fun canManage(state: JSONObject, channel: ChatChannel, account: String, owner: String? = null): Boolean {
+    fun canManage(state: JSONObject, channel: ChatChannel, account: String, owner: String? = null): Boolean = can(state,channel,account,"manage",owner)
+    fun canView(state: JSONObject, channel: ChatChannel, account: String): Boolean = can(state,channel,account,"view")
+    private fun can(state: JSONObject, channel: ChatChannel, account: String, permission: String, owner: String? = null): Boolean {
         // Threads use their parent's permissions; controls belong on the parent channel.
         if (channel.kind == "thread" || account.isBlank()) return false
         val space = fields(state, "space", channel.spaceId)
-        if (owner == account || space.optString("owner_account_id") == account) return true
+        if (owner == account || space.optString("owner_account_id",space.optString("created_by_account_id")) == account) return true
         val member = fields(state, "space_member", "${channel.spaceId}|$account")
-        val role = member.optString("role").takeIf { it.isNotEmpty() }
+        val role = member.optString("role").takeIf { it.isNotEmpty() && (!member.has("is_present") || member.optBoolean("is_present")) }
         if (role == "admin" || (role != null && space.optString("kind") == "dm")) return true
         fun allowed(permission: String): Boolean {
             val levels = mutableListOf(Target("account", account, account))
@@ -64,7 +66,7 @@ object ChannelPermissions {
             return (0 until roles.length()).mapNotNull { roles.optJSONObject(it) }
                 .any { it.optString("id") == role && permission in list(it, "perms") }
         }
-        return allowed("view") && allowed("manage")
+        return allowed("view") && allowed(permission)
     }
     fun targets(state: JSONObject, channel: ChatChannel, people: List<SpaceAccount>): List<Target> {
         val targets = mutableListOf(Target("role", "everyone", "Everyone in this space"),

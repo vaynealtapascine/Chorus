@@ -107,6 +107,21 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
     if crate::profiles::blob_visible(conn, account, hash).map_err(internal)? {
         return Ok(true);
     }
+    // A retained hash is not a grant after a private-chat/front/permission change.
+    let principal = crate::api_data::Principal::owner(account);
+    let mut view = crate::search_view::CurrentView::new(conn, &principal).map_err(internal)?;
+    let mut st = conn
+        .prepare_cached(
+            "SELECT m.id FROM attachment a JOIN item_attachment ia ON ia.attachment_id=a.id
+        AND ia.owner_type='message' JOIN message m ON m.id=ia.owner_id WHERE a.blob_hash=?1 OR a.thumb_blob_hash=?1",
+        )
+        .map_err(internal)?;
+    let ids = st.query_map([hash], |r| r.get::<_, String>(0)).map_err(internal)?;
+    for id in ids {
+        if view.message(&id.map_err(internal)?).map_err(internal)? {
+            return Ok(true);
+        }
+    }
     conn.query_row(
         &format!("SELECT EXISTS (
            SELECT 1 FROM custom_emoji e WHERE e.blob_hash = ?1
@@ -128,13 +143,6 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
            UNION ALL SELECT 1 FROM attachment a WHERE (a.blob_hash = ?1 OR a.thumb_blob_hash = ?1)
               AND a.account_id = ?2
            UNION ALL SELECT 1 FROM attachment a
-              JOIN item_attachment ia ON ia.attachment_id = a.id AND ia.owner_type = 'message'
-              JOIN message m ON m.id = ia.owner_id AND m.deleted_at IS NULL
-              JOIN channel c ON c.id = m.channel_id AND c.deleted_at IS NULL
-              JOIN scope_access sa ON sa.scope = 'space:' || c.space_id AND sa.account_id = ?2
-              WHERE (a.blob_hash = ?1 OR a.thumb_blob_hash = ?1)
-                AND {}
-           UNION ALL SELECT 1 FROM attachment a
               JOIN item_attachment ia ON ia.attachment_id = a.id AND ia.owner_type = 'post'
               JOIN post p ON p.id = ia.owner_id AND p.deleted_at IS NULL
               WHERE (a.blob_hash = ?1 OR a.thumb_blob_hash = ?1)
@@ -147,7 +155,7 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
                 AND EXISTS (SELECT 1 FROM json_each(fv.entries) je
                     WHERE json_extract(je.value, '$.subject_type') = 'member'
                       AND json_extract(je.value, '$.subject_id') = m.id)
-         )", crate::visibility::visible_channel_sql("?2"), crate::visibility::visible_message_sql("?2"), crate::posts::readable_sql("?2")),
+         )", crate::visibility::visible_channel_sql("?2"), crate::posts::readable_sql("?2")),
         params![hash, account],
         |r| r.get(0),
     )
@@ -181,7 +189,7 @@ pub async fn head_blob(
     let Some(mut r) = row(&conn, &hash)? else { return Ok(StatusCode::NOT_FOUND.into_response()) };
     recover_complete(&conn, &hash, &dest, &mut r)?;
     if !can_read(&conn, &me.account_id, &hash, &r.uploader)? {
-        return Err(BlobError(StatusCode::FORBIDDEN, "forbidden"));
+        return Ok(StatusCode::NOT_FOUND.into_response());
     }
     if r.complete && dest.is_file() {
         return Ok((StatusCode::OK, [(header::CONTENT_LENGTH, r.size.to_string())]).into_response());
@@ -315,7 +323,7 @@ pub async fn get_blob(
     let mut r = row(&conn, &hash)?.ok_or(BlobError(StatusCode::NOT_FOUND, "not_found"))?;
     recover_complete(&conn, &hash, &dest, &mut r)?;
     if !can_read(&conn, &me.account_id, &hash, &r.uploader)? {
-        return Err(BlobError(StatusCode::FORBIDDEN, "forbidden"));
+        return Err(BlobError(StatusCode::NOT_FOUND, "not_found"));
     }
     if !r.complete || !dest.is_file() {
         return Err(BlobError(StatusCode::NOT_FOUND, "not_found"));

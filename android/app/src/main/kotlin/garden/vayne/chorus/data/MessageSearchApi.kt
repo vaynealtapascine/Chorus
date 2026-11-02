@@ -8,10 +8,10 @@ data class MessageSearchPage(val items: List<SearchDocument>, val nextCursor: St
 
 /** Server-filtered history for matches outside the local replica's current window. */
 object MessageSearchApi {
-    fun pathRaw(raw: String, cursor: String? = null, tzOffsetMin: Int): String {
+    fun pathRaw(raw: String, cursor: String? = null, tzOffsetMin: Int, channelId: String? = null): String {
         require(raw.isNotBlank())
-        val params = listOf("q" to raw.trim(), "limit" to "25", "tz" to tzOffsetMin.toString()) +
-            listOfNotNull(cursor?.let { "cursor" to it })
+        val params = listOf("q" to raw.trim(), "limit" to "25", "tz" to tzOffsetMin.toString(), "current" to "true") +
+            listOfNotNull(cursor?.let { "cursor" to it }, channelId?.let { "channel_id" to it })
         return "/search/messages?" + params.joinToString("&") { (key, value) ->
             "$key=${URLEncoder.encode(value, StandardCharsets.UTF_8.toString())}"
         }
@@ -44,7 +44,12 @@ object MessageSearchApi {
             } } ?: emptyList()
             SearchDocument(id, "Messages", row.optLong("occurred_at"), row.optString("text"),
                 cw = row.optString("cw").takeIf { row.has("cw") && !row.isNull("cw") && it.isNotBlank() },
-                authors = authors, channelId = row.optString("channel_id").takeIf { it.isNotBlank() })
+                authors = authors, channelId = row.optString("channel_id").takeIf { it.isNotBlank() },
+                card = SearchVisibility.parseCard(row), before = row.optJSONObject("context_before")?.let(SearchVisibility::parseCard),
+                after = row.optJSONObject("context_after")?.let(SearchVisibility::parseCard),
+                accountId = row.optString("account_id").takeIf { !row.isNull("account_id") },
+                visibilityMode = row.optJSONObject("visibility")?.optString("mode") ?: "all",
+                visibleMemberIds = SearchVisibility.strings(row.optJSONObject("visibility")?.optJSONArray("member_ids")).toSet())
         }
         val cursor = j.optString("next_cursor").takeIf { j.has("next_cursor") && !j.isNull("next_cursor") && it.isNotBlank() }
         return MessageSearchPage(rows, cursor)
@@ -53,6 +58,6 @@ object MessageSearchApi {
     suspend fun page(dev: DeviceRecord, query: LocalSearchQuery, cursor: String? = null): MessageSearchPage =
         parse(Api.call("GET", dev.base, path(query, cursor), null, dev.session))
 
-    suspend fun pageRaw(dev: DeviceRecord, raw: String, tzOffsetMin: Int, cursor: String? = null): MessageSearchPage =
-        parse(Api.call("GET", dev.base, pathRaw(raw, cursor, tzOffsetMin), null, dev.session))
+    suspend fun pageRaw(dev: DeviceRecord, raw: String, tzOffsetMin: Int, cursor: String? = null, channelId: String? = null): MessageSearchPage =
+        parse(Api.call("GET", dev.base, pathRaw(raw, cursor, tzOffsetMin, channelId), null, dev.session))
 }

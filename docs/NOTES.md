@@ -816,3 +816,23 @@ root` although `src/profiles.rs` and its `mod` line were there. `touch` the chan
   latches/CompletableDeferred gates, real core markup preflight, and injected stage/commit reads.
   They do not prove native IME/layout behavior or SQLite/device process-kill behavior. No device,
   deployment, push, service, dependency or parked web-file changes were made.
+
+### 2026-11-02 — UI11b search privacy adapters
+
+FTS bm25 depends on the entire indexed corpus, including unreadable rows. Even after SQL audience
+filtering, putting that score in an opaque base64 cursor can expose hidden-corpus changes. Search
+now sorts chronologically; cursors contain only a visible anchor and no corpus-dependent score.
+The score field is the constant zero for wire compatibility. Search candidate filtering occurs
+before limiting/paging, not by trimming a page afterwards. Context independently checks visibility
+and walks past unreadable rows without exposing their ids or how many were skipped.
+
+Android's old SearchDocument omitted message visibility/account metadata; checking only a chat's
+availability was insufficient. Preserve those fields and bind the existing canonical chat/member
+rules per model before core matching/limits and before every rich-card/context render. Read full
+message cards on demand on the store worker instead of adding all history payloads to Model.parse.
+Web typed row caches depend on immutable projection row replacement: regression fixtures must
+replace a changed row rather than mutating its fields in place under an existing cached identity.
+
+Blob GET/HEAD now return the same missing response for unreadable hashes. Upload ownership
+failures still use 403. Search grants nothing to blobs; a recipient's message reference is checked
+against their current front/channel view, while uploaders retain existing account-owned access.

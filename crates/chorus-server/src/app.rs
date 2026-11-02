@@ -1122,7 +1122,8 @@ async fn search_message(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let conn = s.db();
     let p = principal(&s, &conn, &headers)?;
-    let message = crate::search::message_by_id(&conn, &p, &id)?
+    let message = crate::search_view::CurrentView::new(&conn, &p)?
+        .card(&id)?
         .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "message unavailable".into()))?;
     Ok(Json(message))
 }

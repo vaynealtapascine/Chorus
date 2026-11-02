@@ -196,7 +196,7 @@
         <Chat {projection} {dark} channelId={router.route.id} focusId={router.route.messageId}
           onswitch={() => (switching = true)} onmenu={() => (navOpen = true)} />
       {:else if router.route.name === 'search'}
-        <Search {projection} />
+        <Search {projection} {dark} initialScope={router.route.id === "saved" ? "saved" : router.route.id === "posts" ? "posts" : "messages"} />
       {:else if router.route.name === 'fronts'}
           <Fronts {projection} />
         {:else if router.route.name === 'history'}

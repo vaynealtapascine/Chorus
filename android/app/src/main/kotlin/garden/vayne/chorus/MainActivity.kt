@@ -249,6 +249,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var quickSwitchOpen by rememberSaveable { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var searchSection by rememberSaveable { mutableStateOf("Messages") }
     var insightsOpen by rememberSaveable { mutableStateOf(false) }
     var frontsOpen by rememberSaveable { mutableStateOf(false) }
     var lastAccount by rememberSaveable { mutableStateOf<String?>(null) }
@@ -342,7 +343,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     Text(if (status == Status.Live) "Chorus · synced" else if (status == Status.Connecting) "Connecting…" else "Offline · saved on this device",
                         fontSize = 12.sp, color = p.ink3)
                 }
-                IconButton(onClick = { searchOpen = !searchOpen; settingsOpen = false; insightsOpen = false; frontsOpen = false }) { ChorusIcon(if (searchOpen) AppIcon.Close else AppIcon.Search, if (searchOpen) "Close search" else "Search") }
+                IconButton(onClick = { searchSection=if(activeTab==Tab.Journal) "Posts" else "Messages"; searchOpen = !searchOpen; settingsOpen = false; insightsOpen = false; frontsOpen = false }) { ChorusIcon(if (searchOpen) AppIcon.Close else AppIcon.Search, if (searchOpen) "Close search" else "Search") }
                 if (!person) IconButton(onClick = { quickSwitchOpen = true }) { ChorusIcon(AppIcon.Swap, "Open switcher") }
                 IconButton(onClick = { settingsOpen = !settingsOpen; searchOpen = false; insightsOpen = false; frontsOpen = false }) { ChorusIcon(if (settingsOpen) AppIcon.Close else AppIcon.Settings, if (settingsOpen) "Close settings" else "Settings") }
             }
@@ -366,11 +367,11 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         onShareDismissed()
                     })
                 else if (searchOpen) ContentSearch(chorus, model, status == Status.Live,
-                    onClose = { searchOpen = false },
+                    onClose = { searchOpen = false }, initialSection = searchSection,
                     onOpenMessage = { hit ->
                         val channel = model.channels.find { it.id == hit.channelId }
                         if (channel != null) {
-                            chatSpace = channel.spaceId; chatChannel = channel.id; chatSearchHit = hit
+                            chatSpace = channel.spaceId; chatChannel = channel.id; chatSearchHit = null; chatMessage = hit.id
                             tab = Tab.Chat; searchOpen = false
                         }
                     },
@@ -388,7 +389,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
                         onStageCapture = { chatStageCapture = it }, onDismissSearchHit = { chatSearchHit = null },
                         sharedDraft = chatShare, sharedChannel = sharedChannel,
-                        onShareConsumed = { chatShare = null; sharedChannel = null }, onSearch = { searchOpen = true },
+                        onShareConsumed = { chatShare = null; sharedChannel = null }, onSearch = { searchSection="Messages"; searchOpen = true },
                         active = shownTab == activeTab, onFocusedRoute = { chatFocused = it },
                         onOpenConsumed = { chatSpace = null; chatChannel = null; chatMessage = null },
                         requestedMessage = chatMessage)
@@ -399,7 +400,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         externalOpenProfile = journalOpenProfile, onExternalProfileConsumed = { journalOpenProfile = null },
                         sharedDraft = journalShare, onShareConsumed = { journalShare = null },
                         externalNewEntry = journalNewEntry, onExternalNewEntryConsumed = { journalNewEntry = null },
-                        active = shownTab == activeTab, onFocusedRoute = { journalFocused = it })
+                        active = shownTab == activeTab, onFocusedRoute = { journalFocused = it },
+                        onSearch = { searchSection=it; searchOpen=true })
                     Tab.People -> People(chorus, model,
                         onOpenChat = { spaceId -> chatSpace = spaceId; chatChannel = null; chatSearchHit = null; tab = Tab.Chat },
                         onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal })
@@ -409,7 +411,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     Tab.History -> History(chorus, model)
                     Tab.More -> MoreScreen(person, onMembers = { tab = Tab.Members }, onHome = { tab = Tab.Home }, onChat = { tab = Tab.Chat }, onPeople = { tab = Tab.People }, onJournal = { tab = Tab.Journal }, onHistory = { tab = Tab.History },
                         onInsights = { insightsOpen = true }, onFronts = { frontsOpen = true }, onSettings = { settingsOpen = true },
-                        onSearch = { searchOpen = true }, onLink = { linking = true })
+                        onSearch = { searchSection="Messages"; searchOpen = true }, onLink = { linking = true })
                 }
                 }
                 }

@@ -22,7 +22,7 @@ function parse(hash: string): Route {
   if (parts[0] === 'history') return { name: 'history' };
   if (parts[0] === 'fronts') return { name: 'fronts' };
   if (parts[0] === 'chat') return { name: 'chat', id: parts[1] ? decodeURIComponent(parts[1]) : undefined, messageId: parts[2] ? decodeURIComponent(parts[2]) : undefined };
-  if (parts[0] === 'search') return { name: 'search' };
+  if (parts[0] === 'search') return { name: 'search', id: parts[1] };
   // a link to a message (D-109): the app finds its chat
   if (parts[0] === 'message' && parts[1]) return { name: 'message', id: decodeURIComponent(parts[1]) };
   if (parts[0] === 'insights') return { name: 'insights' };

@@ -179,6 +179,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val p = LocalChorusPalette.current
     val heldMessages by chorus.heldMessages.collectAsState()
     val syncStatus by chorus.status.collectAsState()
+    var searchHere by rememberSaveable { mutableStateOf(false) }
     var infoOpen by rememberSaveable { mutableStateOf(false) }
     var readerOpen by remember { mutableStateOf(false) }
     var conversationOpen by rememberSaveable { mutableStateOf(false) }
@@ -773,6 +774,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
     val partnerFront = dmPartner?.let { other -> chorus.device?.let { friendViews[garden.vayne.chorus.data.FriendFronts.key(it.accountId, other.id)] } }
         ?.let { garden.vayne.chorus.data.FriendFronts.line(it.frontNames) }
+    if (searchHere && channel != null) {
+        androidx.activity.compose.BackHandler { searchHere = false }
+        ContentSearch(chorus, model, syncStatus == garden.vayne.chorus.data.Status.Live,
+            onClose = {searchHere=false}, onOpenMessage = {jumpTo=it.id; searchHere=false},
+            onOpenPost = {}, channelId = channel.id)
+        return@ChorusScene
+    }
     Row(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         if (arrangingPins) ArrangePins(listRows.filter { it.pinned }, if (expanded) Modifier.width(320.dp) else Modifier.weight(1f),
             { arrangingPins = false }) { savePins(it); arrangingPins = false }
@@ -782,7 +790,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             onNewChannel = { editChannel = false; channelEditor = true }, onRowAction = rowAction, previews = listPreviews)
         if (expanded) VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
         if (pane == "info" && !expanded && channel != null && space != null && !paneLocked) {
-            ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; onSearch() },
+            ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; searchHere = true },
                 { infoOpen = false }, model.accountPrefs.channelNotify(channel.id, space.kind), ::setNotify,
                 onShowMessage = { infoOpen = false; jumpTo = it }, modifier = Modifier.weight(1f), title = infoTitle(channel, space),
                 subtitle = infoSubtitle(channel, space), connections = connections, foreign = foreignAuthors + privateCards,
@@ -810,7 +818,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     partnerFront ?: space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }.orEmpty()),
                     color = if (typingLabel != null || syncStatus != Status.Live) p.accent else p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
             }
-            ChatIconButton(R.drawable.ic_search, "Search messages", onSearch)
+            ChatIconButton(R.drawable.ic_search, "Search this chat", { searchHere = true })
             Box {
                 ChatIconButton(R.drawable.ic_more, "Conversation options") { headerMenu = true }
                 DropdownMenu(headerMenu, { headerMenu = false }) {
@@ -854,7 +862,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (error != null) Text(error.orEmpty(), color = p.danger, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(16.dp))
         if (space == null) Text("No spaces yet. Start a chat with someone you follow.", color = p.ink2, modifier = Modifier.padding(24.dp))
         else {
-        if (searchHit != null && searchHit.channelId == channel?.id) {
+        if (searchHit != null && searchHit.channelId == channel?.id && garden.vayne.chorus.data.SearchVisibility(model,chorus.device?.accountId.orEmpty()).document(searchHit)) {
             var revealed by rememberSaveable(searchHit.id) { mutableStateOf(false) }
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
                 .background(p.surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1320,7 +1328,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
         if (expanded && channel != null && space != null && !paneLocked) {
             VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
-            ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], onSearch,
+            ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { searchHere = true },
                 notifyLevel = model.accountPrefs.channelNotify(channel.id, space.kind), onNotify = ::setNotify,
                 onShowMessage = { jumpTo = it }, modifier = Modifier.width(260.dp), title = infoTitle(channel, space),
                 subtitle = infoSubtitle(channel, space), connections = connections, foreign = foreignAuthors + privateCards,
@@ -1665,7 +1673,7 @@ private fun EditedMark() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
+internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
     chorus: Chorus, unseenBy: List<String>, held: HeldMessage?, actingMemberId: String?, onReply: () -> Unit,
     /** Authors whose messages sit on our side (D-103); null: just the acting speaker's. */
     aligned: Set<String>? = null,
@@ -1702,10 +1710,10 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     LaunchedEffect(held?.until) {
         while (held != null) { delay(1_000); now = System.currentTimeMillis() }
     }
-    val authors = message.authors.map { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
+    val authors = message.authors.map { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: message.authorCards[it]?.name ?: "Someone" }
         .joinToString(" & ").ifEmpty { "Someone" }
     // another account's members come from the space's author cards (their picture, colour and sigil)
-    fun author(id: String) = model.member(id) ?: foreignAuthors[id]?.member
+    fun author(id: String) = model.member(id) ?: foreignAuthors[id]?.member ?: message.authorCards[id]?.member
     val own = if (aligned != null) ChatPresentation.own(message, chorus.device?.accountId.orEmpty(), aligned)
         else ChatPresentation.own(message, chorus.device?.accountId.orEmpty(), actingMemberId)
     val member = message.authors.firstOrNull()?.let(::author)
@@ -1770,7 +1778,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 .then(if (quote != null && onJump != null && interactive) Modifier.clickable(onClickLabel = "Show the message this replies to") { onJump(quote.id) } else Modifier)) {
                 Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(quoteColor))
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    Text((quote?.authors?.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
+                    Text((quote?.authors?.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: message.authorCards[it]?.name ?: "Someone" }
                         ?: "Reply") + (quoteElsewhere?.let { " · in $it" } ?: ""), color = quoteColor, fontSize = 12.sp, lineHeight = 16.sp)
                     Text(if (quote != null) ChatPresentation.preview(quote) else "Message unavailable in this view",
                         color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
@@ -1784,7 +1792,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 .then(if (onJump != null && interactive) Modifier.clickable(onClickLabel = "Show the original message") { onJump(item.messageId) } else Modifier)) {
                 Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(sourceColor))
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    Text("Forwarded from " + item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
+                    Text("Forwarded from " + item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: message.authorCards[it]?.name ?: "Someone" }
                         .ifEmpty { "Someone" }, color = sourceColor, fontSize = 12.sp, lineHeight = 16.sp)
                     Text(listOfNotNull(item.channelName, ChatPresentation.dateLabel(item.occurredAt)).joinToString(" · "),
                         color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
@@ -1803,7 +1811,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 .then(if (onJump != null && interactive) Modifier.clickable(onClickLabel = "Show the quoted message") { onJump(item.messageId) } else Modifier)) {
                 Box(Modifier.width(2.dp).heightIn(min = 24.dp).background(tint))
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    if (item.authors.isNotEmpty()) Text(item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" } +
+                    if (item.authors.isNotEmpty()) Text(item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: message.authorCards[it]?.name ?: "Someone" } +
                         (item.channelName?.let { " · #$it" } ?: ""), color = tint, fontSize = 12.sp, lineHeight = 16.sp)
                     Text(item.text, color = p.ink2, fontSize = 14.sp, lineHeight = 19.sp, maxLines = 8, overflow = TextOverflow.Ellipsis)
                 }
@@ -1846,12 +1854,13 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                     onPlainClick = { if (interactive) { if (selecting && onSelect != null) onSelect() else menuOpen = true } },
                     onLongClick = if (settled) openActions else null, onDoubleClick = heart)
             if (linked != null) ChatLinkEmbeds(message.text, message.entities, chorus, model, linked,
-                { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }, onJump.takeIf { interactive })
+                { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: message.authorCards[it]?.name ?: "Someone" }, onJump.takeIf { interactive })
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus, authors, message.occurredAt)
             }
             // Same resolved acting speaker as the composer: explicit selection or channel default.
-            PollCard(chorus, model, message.id, garden.vayne.chorus.data.Polls.chatMember(model, actingMemberId))
+            PollCard(chorus, model, message.id, garden.vayne.chorus.data.Polls.chatMember(model, actingMemberId),
+                definition=model.polls.polls[message.id] ?: message.poll, remoteTally=message.pollTally)
         }
         if (thread != null && thread.replies > 0) Row(Modifier.heightIn(min = 48.dp)
             .then(if (onThread != null) Modifier.clickable(onClickLabel = "Open thread", onClick = onThread) else Modifier),

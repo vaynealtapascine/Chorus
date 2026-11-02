@@ -12,7 +12,7 @@ Implementation agents do not deploy or change services/settings.
    be own members, visible on-server members/fragments/singlets, or external labels. Check
    target visibility on writes and every shared read; never publish a hidden identity, its
    blobs or history. Use the existing visible-member checks. No new fragment account kind.
-2. **Search (UI11b, pending).** Search in current channel, journal only, all chats visible to
+2. **Search (UI11b implemented; parent review/deploy pending).** Search in current channel, journal only, all chats visible to
    the current fronter, and saved/bookmarked posts. Full message cards, with one visible
    message before and after as context, and full post cards. Enforce channel/member visibility
    independently for every result and each context message; no existence leaks from counts,
@@ -205,3 +205,109 @@ are outside this task and must remain untouched. Owner authorized UI11b behavior
 Next: implement clear web/Android scopes, canonical full cards and one independently visible
 neighbor each side; test front/permission changes and hidden-result/count/cursor/blob safety.
 UI11c stays pending until UI11b independent parent review and deployment.
+
+UI11b implementation detail: all message-search callers enforce the current view; `current` is
+accepted for compatibility but false cannot bypass it. Message jumps use the same guarded rich
+read. Post search also orders chronologically, with no hidden-corpus rank in its cursor.
+
+## UI11b implementation map (GPT-6-sol, 2026-11-02)
+
+Baseline is deployed `521c7d2`; start/spec record is `2b4a702`. Work stays on `feat/links` in
+`F:/DunBuild/chorus-avatars`. No alternate checkout was read or merged, no subagents were run,
+and no deployment, phone install, service or system setting change was performed.
+
+- Web: Search now has All chats / Journal / Saved / Switches. Room header/info opens This chat
+  inside the room; exact `channel_id` intersects any `in:` query. Journal and Saved have scoped
+  entry points. `search-view.ts` binds the existing Body presence, private-chat and member-view
+  helpers to the current projection, checks permissions before sync eviction, handles inherited
+  thread parents and clear cutoffs, and builds per-channel nearest-visible context once. The
+  existing `Message` renderer has a read-only mode; post results use `PostCard` / `FriendPostCard`
+  with canonical 300-character post previews. CW/spoilers, rich text, segments, media, forwards,
+  quotes and polls remain in the canonical renderers. Open message/thread returns to detail.
+- Android: room header/info opens ContentSearch inside Chat's current scene, preserving its
+  drafts and list state; global and Journal/Saved entry points choose explicit scopes. Search
+  documents retain their audience/account metadata rather than dropping it. `SearchVisibility`
+  applies the existing ChatOrganize/member/account guards and ChannelPermissions before the
+  core matcher limits results, and applies them again to every context/card. Full local message
+  payloads are read on demand on Chorus's store worker, without enlarging the ordinary model's
+  100-message chat windows. Remote payloads carry rich cards. Message and post results reuse
+  ChatMessageCard / JournalPostCard / SharedPostPreview. JNI core still owns message query matching.
+- Server: `search_view.rs` builds one ephemeral read view per request from canonical current
+  Body (`api_data::current_front`), scope + `perms::can`, inherited parent availability,
+  current member audience, private chats and cleared-chat cutoffs. Search filters candidates
+  *before* page limits and cursor generation. Each hit has one independently guarded nearest
+  chronological message each side; no gap marker or hidden anchor. Rich messages/jumps reuse
+  `messages::one` and canonical author cards (`spaces::authors`), with scoped attachments,
+  segments, stored quote/forward snapshots and counts-only poll totals. All message search calls
+  enforce this, even `current=false`; API tokens retain own-account-only semantics.
+- Post search supports `saved=true` through the account-wide bookmark pref plus ordinary live
+  post audience checks before paging. Both message and post search order newest-first by time/id;
+  no corpus-dependent bm25 score is exposed through cursors. Blob GET/HEAD use uniform 404 for
+  missing/unreadable hashes and recheck the recipient's current message view for message grants.
+  Upload ownership still returns 403; uploaders keep existing own-file access.
+- Async results/cursors are scoped to query, scope, model/projection and session. Projection/front/
+  permission changes immediately hide retained pages, abort the first-page read and start fresh.
+  A pending local audience change takes precedence over an older server copy of the same row.
+
+### Tests and review focus
+
+`fixtures/ui_search.json` runs in web and Android: same-time ID ordering, skipping hidden/deleted
+neighbors, current/front-empty/front-changed availability, member-private chats, inherited private
+thread parents, denied channels, Journal note/entry/reply isolation and Saved narrowing. Existing
+core message-search conformance remains the query contract. Web also renders real read-only
+Message components with long rich text beyond the former excerpt limit and CW gates, and tests
+pending local privacy against stale remote rows. Native API tests retain rich formatting/media,
+per-message context and exact scope parameters. Server search tests prove adding hidden FTS rows
+cannot change the visible page/cursor/context; check front removal/co-conscious availability,
+private thread ancestry, exact scope intersecting `in:`, and permission revocation. Saved search
+rechecks revocation. HTTP blob tests cover known-hash access before/during/after a recipient fronts,
+plus existing channel/parent/follower/post-audience cases. No schema/op/dependency/version changes.
+
+Parent independent review should emphasize the forced-current search path, soft member gates,
+unreadable cursor anchors, per-context revalidation, offline pending changes, permission updates
+before replica eviction, blob status/grants and async race handling. Diff from deployed `521c7d2`.
+
+### Remaining limits / deployment prerequisites
+
+- Local matches are capped at 100 after visibility (Saved after bookmark narrowing); online
+  history pages add 25 at a time. Server filters may scan many candidates when most are hidden.
+  No total-match count is emitted. Context is nearest visible in the available local replica
+  when offline; windowed replicas cannot invent older neighbors. Shared posts are live reads,
+  not a new durable foreign-post cache. Their presentation reflects their last authorized read
+  until the next query/projection refresh; opening detail always rechecks on the server.
+- The existing account-scoped op replica and own-upload rights remain soft-privacy boundaries:
+  search does not erase already-held account data or cached files on a front change. Revocation
+  while disconnected is learned by existing sync repair on reconnect. Search adds no grant.
+- No hydrated browser or physical-device smoke check was performed in this implementation turn.
+  Parent checks compact/desktop layouts and phone keyboard/Back, in-room close/jump preserving
+  draft/scroll, all scopes, CW/spoilers/media/polls, offline context, front changes while a page
+  is in flight, permission loss, Saved search and return-to-detail.
+- Parent independently reviews and commits fixes, then builds/publishes matching server, web
+  and Android artifacts from the reviewed head using the documented process environment and
+  `scripts/deploy-linux.ps1 -Android`. There is no migration in UI11b; take the normal verified
+  backup anyway. Do not reuse the deployed 521c7d2 bundle/APK for this source. Core interfaces
+  did not change, so no new binding generation is required; normal platform build steps stand.
+  UI11c starts only after this slice is reviewed and deployed.
+
+
+### UI11b final gate — 2026-11-02
+
+Full `python scripts/verify.py --android --offline` **passed**, using the process-only
+`F:/DunBuild/chorus-env.ps1` environment, Android Studio JBR and F: caches. Log:
+`F:/DunBuild/chorus-ui11b-final3.log`. Includes token/projection/API documentation checks,
+fmt/workspace clippy, release workspace/convergence/simulator/HTTP suites, WASM build,
+Svelte check (0 errors, 0 warnings), web tests (**234 passed, 1 existing skip**), production
+build/budgets (**189 KB JS / 300 KB WASM gzipped**), Android lint and JVM unit tests.
+The final native shared fixture also checks malformed audiences, tombstones overriding older
+network cards, and a custom-role thread inheriting its parent's explicit account view grant.
+Eight targeted web cases cover those adapters and real Message/Search component rendering.
+Server coverage includes 5 search tests, 15 post tests and 10 blob tests, alongside the
+workspace's broader API/sync/permissions/profile/rebuild suites. Existing sync end-to-end blob
+assertions now expect the same unreadable/missing 404 while retaining their denial assertions.
+No failure was waived. Earlier gate attempts exposed a test-harness private-method call, old
+403 expectations, and a missing local in the empty-private-chat correction; all were fixed
+before this final full pass. No quick wrapper was used.
+
+Implementation is ready for the parent's independent review. The source and handoff are
+committed on feat/links; read the implementation commit following 2b4a702. No deployment or
+physical-device/browser smoke check was performed. UI11c remains pending.

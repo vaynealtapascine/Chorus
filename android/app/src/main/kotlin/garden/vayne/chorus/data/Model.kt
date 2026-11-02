@@ -79,6 +79,8 @@ data class ChatMessage(
     val pinned: Boolean = false,
     /** What it quotes (SPEC §5.3): a part of one message, or a bundle of several (D-048). */
     val quote: List<ForwardItem> = emptyList(),
+    val authorCards: Map<String,ForeignAuthor> = emptyMap(),
+    val poll: Poll? = null, val pollTally: PollTally? = null,
 )
 data class ChannelWindow(val messages: List<ChatMessage>, val hasOlder: Boolean)
 
@@ -151,6 +153,9 @@ class Model(
     val memberList: MemberListSettings = MemberListSettings(),
     /** Sharing buckets, id → name, by name (audiences, D-101). */
     val sharingBuckets: List<Pair<String, String>> = emptyList(),
+    /** Retain tombstones for rejecting stale network search cards without hydrating their bodies. */
+    val deletedMessageIds: Set<String> = emptySet(),
+    val deletedPostIds: Set<String> = emptySet(),
 ) {
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -242,6 +247,13 @@ class Model(
                 } } ?: emptyList(),
                 forward = ChatForward.parse(f.optJSONArray("forward_snapshot")), pinned = f.present("pinned_at"),
                 quote = ChatForward.quoted(f.optJSONObject("quote")))
+        }
+
+        fun messageCards(p: JSONObject, ids: Set<String>): Map<String, ChatMessage> {
+            val attachments = rows(p, "attachment").associate { it.first to it.second }
+            return rows(p, "message").filter { (id,f) -> id in ids && !f.present("deleted_at") }
+                .associate { (id,f) -> id to chatMessage(id,f,attachments,
+                    (p.optJSONObject("rows")?.optJSONObject("message")?.optJSONObject(id)?.optInt("edits") ?: 0) > 0) }
         }
 
         /** Page backward through locally replicated messages without enlarging the chat model. */
@@ -382,7 +394,9 @@ class Model(
                     mimes = linked.map { attachments[it]?.str("mime").orEmpty() },
                     hasLink = f.optJSONArray("entities")?.let { entities ->
                         (0 until entities.length()).any { entities.optJSONObject(it)?.str("type") in listOf("url", "text_link") }
-                    } ?: false, pinned = f.present("pinned_at"))
+                    } ?: false, pinned = f.present("pinned_at"), accountId = f.str("account_id"),
+                    visibilityMode = if(!f.present("visibility")) "all" else f.optJSONObject("visibility")?.str("mode") ?: "invalid",
+                    visibleMemberIds = stringSet(f.optJSONObject("visibility")?.optJSONArray("member_ids")))
             }
             val latestOwn = HashMap<String, Triple<Long, String, List<String>>>()
             for ((id, fields) in messageRows) {
@@ -449,7 +463,9 @@ class Model(
                 profileDetails = ProfileDetails.parse(p),
                 spaceRoles = rows(p, "space_member").mapNotNull { (key, f) -> f.str("role")?.let { key to it } }.toMap(),
                 channelPermissionState = ChannelPermissions.snapshot(p), memberList = MemberListPrefs.parse(p, accountId),
-                sharingBuckets = ProfileAudience.buckets(p))
+                sharingBuckets = ProfileAudience.buckets(p),
+                deletedMessageIds = rows(p, "message").filter {it.second.present("deleted_at")}.mapTo(HashSet()) {it.first},
+                deletedPostIds = rows(p, "post").filter {it.second.present("deleted_at")}.mapTo(HashSet()) {it.first})
         }
     }
 }
