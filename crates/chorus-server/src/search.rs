@@ -7,7 +7,6 @@ use serde_json::{Value, json};
 use chorus_core::search;
 
 use crate::api_data::{DataError, Principal};
-use crate::visibility::visible_message_sql;
 
 #[derive(Clone, Default, serde::Deserialize)]
 pub struct MessageQuery {
@@ -124,13 +123,20 @@ pub fn messages(conn: &Connection, principal: &Principal, query: &MessageQuery) 
     let channels = named(conn, "channel", &parsed.channels)?;
     let cursor = decode_cursor(query)?;
     let limit = query.limit.unwrap_or(100).clamp(1, 100);
-    let visible = visible_message_sql("?2");
+    let mut view = crate::search_view::CurrentView::new(conn, principal)?;
+    if let Some(c) = &cursor
+        && (c.score != 0.0 || !view.message(&c.id)?)
+    {
+        return Err(DataError::Bad("search view changed; restart search".into()));
+    }
+    let (allowed_channels, front, cutoffs) = view.selection()?;
+    let visible = crate::search_view::message_sql("?2", "?14", "?15", "?16", "?8");
     let fts = parsed.fts();
     // words go through the FTS index; filters alone scan the readable messages, newest first
-    let (source, score, matching) = if fts.is_some() {
-        ("message_fts JOIN message m ON m.rowid=message_fts.rowid", "bm25(message_fts)", "message_fts MATCH ?1")
+    let (source, matching) = if fts.is_some() {
+        ("message_fts JOIN message m ON m.rowid=message_fts.rowid", "message_fts MATCH ?1")
     } else {
-        ("message m", "0.0", "?1 IS NULL")
+        ("message m", "?1 IS NULL")
     };
     let has_sql = |h: &str| match h {
         "image" => {
@@ -148,17 +154,13 @@ pub fn messages(conn: &Connection, principal: &Principal, query: &MessageQuery) 
         }
     };
     let has: String = parsed.has.iter().map(|h| format!(" AND {}", has_sql(h))).collect();
-    let score = if query.current { "0.0" } else { score };
     let sql = format!(
-        "WITH hits AS (SELECT m.id, m.channel_id, c.space_id, m.account_id, m.occurred_at, m.text, m.cw, m.visibility,
-                COALESCE((SELECT json_group_array(member_id) FROM (SELECT member_id FROM message_author WHERE message_id=m.id
-                    UNION SELECT member_id FROM message_segment_author WHERE message_id=m.id)), '[]') AS authors,
-                {score} AS score
+        "WITH hits AS (SELECT m.id, m.occurred_at, 0.0 AS score
          FROM {source}
          JOIN channel c ON c.id=m.channel_id
          WHERE {matching} AND m.deleted_at IS NULL AND c.deleted_at IS NULL
            AND EXISTS (SELECT 1 FROM scope_access sa WHERE sa.account_id=?2 AND sa.scope='space:'||c.space_id)
-           AND (m.account_id=?2 OR ({visible} AND ?8 = 0))
+           AND ({visible})
            AND (?13 IS NULL OR c.id=?13)
            AND (?3 IS NULL OR c.id IN (SELECT value FROM json_each(?3)))
            AND (?4 IS NULL OR EXISTS (SELECT 1 FROM
@@ -187,46 +189,21 @@ pub fn messages(conn: &Connection, principal: &Principal, query: &MessageQuery) 
             cursor.as_ref().map(|c| c.score),
             cursor.as_ref().map(|c| c.occurred_at),
             cursor.as_ref().map(|c| c.id.as_str()),
-            if query.current { i64::MAX } else { (limit + 1) as i64 },
+            (limit + 1) as i64,
             query.channel_id,
+            allowed_channels,
+            front,
+            cutoffs,
         ],
-        |r| {
-            let authors: String = r.get(8)?;
-            let visibility: Option<String> = r.get(7)?;
-            let item = json!({
-                "id": r.get::<_, String>(0)?, "channel_id": r.get::<_, String>(1)?,
-                "space_id": r.get::<_, String>(2)?, "account_id": r.get::<_, String>(3)?,
-                "occurred_at": r.get::<_, i64>(4)?, "text": r.get::<_, String>(5)?,
-                "cw": r.get::<_, Option<String>>(6)?,
-                "visibility": visibility.and_then(|v| serde_json::from_str::<Value>(&v).ok()),
-                "authors": serde_json::from_str::<Value>(&authors).unwrap_or(json!([])),
-            });
-            Ok((item, r.get::<_, f64>(9)?))
-        },
+        |r| Ok((json!({"id":r.get::<_,String>(0)?,"occurred_at":r.get::<_,i64>(1)?}), 0.0)),
     );
     let rows = match rows {
         Ok(rows) => rows,
         Err(rusqlite::Error::SqliteFailure(_, _)) => return Err(DataError::Bad("invalid search query".into())),
         Err(error) => return Err(error.into()),
     };
-    let mut view = crate::search_view::CurrentView::new(conn, principal)?;
-    if query.current
-        && let Some(c) = &cursor
-        && (c.score != 0.0 || !view.message(&c.id)?)
-    {
-        return Err(DataError::Bad("search view changed; restart search".into()));
-    }
-    let mut found = Vec::new();
-    for row in rows {
-        let row = row?;
-        if !query.current || view.message(row.0["id"].as_str().unwrap_or_default())? {
-            found.push(row);
-            if found.len() > limit {
-                break;
-            }
-        }
-    }
-    let mut rows = found;
+    // Visibility already ran inside SQL, before the bounded result set is materialized/sorted.
+    let mut rows = rows.collect::<Result<Vec<_>, _>>()?;
     let next_cursor = if rows.len() > limit {
         rows.truncate(limit);
         let (last, score) = rows.last().expect("a paged search has a last row");

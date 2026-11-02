@@ -257,7 +257,7 @@ class Model(
         }
 
         /** Page backward through locally replicated messages without enlarging the chat model. */
-        fun channelWindow(p: JSONObject, channelId: String, limit: Int,
+        fun channelWindow(p: JSONObject, channelId: String, limit: Int, around: String? = null,
             visible: (ChatMessage) -> Boolean = { true }): ChannelWindow {
             val attachments = rows(p, "attachment").associate { it.first to it.second }
             val messages = rows(p, "message").filter { (_, f) ->
@@ -268,6 +268,12 @@ class Model(
                 chatMessage(id, f, attachments, (messageTable?.optJSONObject(id)?.optInt("edits") ?: 0) > 0)
             }.filter(visible)
             val count = limit.coerceAtLeast(1)
+            if(around!=null) {
+                val target=view.indexOfFirst {it.id==around}
+                if(target<0) return ChannelWindow(emptyList(),false)
+                val start=(target-count/2).coerceAtLeast(0).coerceAtMost((view.size-count).coerceAtLeast(0))
+                return ChannelWindow(view.subList(start,(start+count).coerceAtMost(view.size)),start>0)
+            }
             return ChannelWindow(view.takeLast(count), view.size > count)
         }
 

@@ -4,6 +4,7 @@ import org.json.JSONObject
 import org.json.JSONArray
 import org.junit.Assert.*
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 
 class SearchVisibilityTest {
     @Test fun sharedCurrentFrontContextAndScopeFixtures() {
@@ -34,6 +35,48 @@ class SearchVisibilityTest {
         val old=Model.parse(p,"account").searchMessages.first {it.id=="m-match"}
         p.getJSONObject("rows").getJSONObject("message").getJSONObject("m-match").getJSONObject("fields").put("deleted_at",30)
         assertFalse(SearchVisibility(Model.parse(p,"account"),"account").document(old))
+    }
+    @Test fun guardedMissingParentAndLocalRestrictions() {
+        val f=JSONObject(java.io.File(System.getProperty("chorus.fixtures"),"ui_search.json").readText())
+        val p=f.getJSONObject("projection")
+        val rows=p.getJSONObject("rows")
+        rows.getJSONObject("channel").getJSONObject("thread").getJSONObject("fields").put("parent_message_id","m-match")
+        val original=Model.parse(p,"account")
+        val parent=original.searchMessages.first {it.id=="m-match"}.let { ChatMessage(it.id,it.channelId!!,it.authors,it.text,it.occurredAt,it.cw,"all",emptySet(),"account",null,emptyList()) }
+        rows.getJSONObject("message").remove(parent.id)
+        val model=Model.parse(p,"account")
+        val hit=model.searchMessages.first {it.channelId=="thread"}
+        assertFalse(SearchVisibility(model,"account").document(hit))
+        assertTrue(SearchVisibility(model,"account",ancestors=mapOf(parent.id to parent)).document(hit))
+        rows.getJSONObject("message").put(parent.id,JSONObject().put("exists",true).put("fields",JSONObject().put("channel_id","c").put("occurred_at",20).put("text","local").put("account_id","account").put("visibility",JSONObject().put("mode","members").put("member_ids",JSONArray().put("missing")))))
+        assertFalse(SearchVisibility(Model.parse(p,"account"),"account",ancestors=mapOf(parent.id to parent)).document(hit))
+        rows.getJSONObject("message").getJSONObject(parent.id).getJSONObject("fields").put("deleted_at",30)
+        assertFalse(SearchVisibility(Model.parse(p,"account"),"account",ancestors=mapOf(parent.id to parent)).document(hit))
+        rows.getJSONObject("message").remove(parent.id)
+        rows.getJSONObject("space").getJSONObject("s").getJSONObject("fields").put("created_by_account_id","other")
+        rows.getJSONObject("channel_permission").put("c|account|account",JSONObject().put("exists",true).put("fields",JSONObject().put("deny",JSONArray().put("view"))))
+        assertFalse(SearchVisibility(Model.parse(p,"account"),"account",ancestors=mapOf(parent.id to parent)).document(hit))
+    }
+    @Test fun missingAncestorsUseGuardedFetchButLocalTombstonesNeverDo() = runBlocking {
+        val f=JSONObject(java.io.File(System.getProperty("chorus.fixtures"),"ui_search.json").readText())
+        val p=f.getJSONObject("projection")
+        val messages=p.getJSONObject("rows").getJSONObject("message")
+        val parent=Model.messageCards(p,setOf("m-match")).getValue("m-match")
+        p.getJSONObject("rows").getJSONObject("channel").getJSONObject("thread").getJSONObject("fields").put("parent_message_id",parent.id)
+        val row=messages.getJSONObject(parent.id)
+        messages.remove(parent.id)
+        val model=Model.parse(p,"account")
+        val requested=mutableListOf<String>()
+        val dependencies=SearchAncestors.load(model) {id->requested.add(id);parent.takeIf {it.id==id}}
+        assertTrue(parent.id in requested)
+        val hit=model.searchMessages.first {it.channelId=="thread"}
+        assertTrue(SearchVisibility(model,"account",ancestors=dependencies).document(hit))
+        assertFalse(SearchVisibility(model,"account",ancestors=SearchAncestors.load(model) {null}).document(hit))
+        row.getJSONObject("fields").put("deleted_at",99)
+        messages.put(parent.id,row)
+        requested.clear()
+        SearchAncestors.load(Model.parse(p,"account")) {id->requested.add(id);parent}
+        assertFalse(parent.id in requested)
     }
     @Test fun remoteCardsPreserveFormattingAttachmentsAndIndependentContext() {
         val row=JSONObject("""{"items":[{"id":"m","channel_id":"c","text":"full","occurred_at":10,"entities":[{"type":"bold","offset":0,"length":4}],"visibility":{"mode":"members","member_ids":["kai"]},"attachments":[{"id":"a","blob_hash":"hash","mime":"image/png"}],"context_before":{"id":"b","channel_id":"c","text":"before","occurred_at":1}}],"next_cursor":null}""")

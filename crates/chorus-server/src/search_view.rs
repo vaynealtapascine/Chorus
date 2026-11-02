@@ -10,6 +10,9 @@ pub struct CurrentView<'a> {
     front: HashSet<String>,
     channels: HashMap<String, bool>,
     authors: HashMap<String, Value>,
+    selection: Option<(String, String, String)>,
+    neighbors: HashMap<String, Vec<(i64, String)>>,
+    cards: HashMap<String, Value>,
 }
 impl<'a> CurrentView<'a> {
     pub fn new(conn: &'a Connection, p: &'a Principal) -> Result<Self, DataError> {
@@ -21,7 +24,16 @@ impl<'a> CurrentView<'a> {
             .filter(|e| e["subject_type"] == "member" && matches!(e["level"].as_str(), Some("front" | "cocon")))
             .filter_map(|e| e["subject_id"].as_str().map(str::to_string))
             .collect();
-        Ok(Self { conn, p, front, channels: HashMap::new(), authors: HashMap::new() })
+        Ok(Self {
+            conn,
+            p,
+            front,
+            channels: HashMap::new(),
+            authors: HashMap::new(),
+            selection: None,
+            neighbors: HashMap::new(),
+            cards: HashMap::new(),
+        })
     }
     pub fn message(&mut self, id: &str) -> Result<bool, DataError> {
         self.message_inner(id, &mut HashSet::new())
@@ -116,6 +128,9 @@ impl<'a> CurrentView<'a> {
         Ok(ok)
     }
     pub fn card(&mut self, id: &str) -> Result<Option<Value>, DataError> {
+        if let Some(card) = self.cards.get(id) {
+            return Ok(Some(card.clone()));
+        }
         if !self.message(id)? {
             return Ok(None);
         }
@@ -166,23 +181,68 @@ impl<'a> CurrentView<'a> {
         let mut st = self.conn.prepare_cached("SELECT ms.offset_u16,ms.length_u16,COALESCE((SELECT json_group_array(member_id) FROM
             (SELECT member_id FROM message_segment_author WHERE message_id=ms.message_id AND idx=ms.idx ORDER BY position)),'[]') FROM message_segment ms WHERE message_id=?1 ORDER BY idx")?;
         m["segments"] = Value::Array(st.query_map([id], |r| { let authors:String=r.get(2)?; Ok(json!({"offset":r.get::<_,i64>(0)?,"length":r.get::<_,i64>(1)?,"authors":serde_json::from_str::<Value>(&authors).unwrap_or(json!([]))})) })?.collect::<Result<Vec<_>,_>>()?);
+        self.cards.insert(id.to_string(), m.clone());
         Ok(Some(m))
     }
-    pub fn neighbor(&mut self, m: &Value, after: bool) -> Result<Option<Value>, DataError> {
-        let (cmp, order) = if after { (">", "ASC") } else { ("<", "DESC") };
-        let sql = format!(
-            "SELECT id FROM message WHERE channel_id=?1 AND deleted_at IS NULL AND (occurred_at,id){cmp}(?2,?3) ORDER BY occurred_at {order},id {order}"
-        );
-        let mut st = self.conn.prepare(&sql)?;
-        let ids = st
-            .query_map(params![m["channel_id"].as_str(), m["occurred_at"].as_i64(), m["id"].as_str()], |r| {
-                r.get::<_, String>(0)
-            })?;
+    /// Validate channel/ancestor permissions once; SQLite filters message audiences before LIMIT.
+    pub fn selection(&mut self) -> Result<(String, String, String), DataError> {
+        if let Some(s) = &self.selection {
+            return Ok(s.clone());
+        }
+        let mut st=self.conn.prepare_cached("SELECT c.id FROM channel c JOIN space s ON s.id=c.space_id WHERE c.deleted_at IS NULL AND c.archived_at IS NULL AND s.deleted_at IS NULL AND EXISTS(SELECT 1 FROM scope_access WHERE account_id=?1 AND scope='space:'||s.id)")?;
+        let ids = st.query_map([&self.p.account_id], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
+        let mut allowed = Vec::new();
         for id in ids {
-            if let Some(card) = self.card(&id?)? {
-                return Ok(Some(card));
+            if self.channel(&id, &mut HashSet::new())? {
+                allowed.push(id);
             }
         }
-        Ok(None)
+        let mut st=self.conn.prepare_cached("SELECT substr(key,13),CAST(value AS INTEGER) FROM pref WHERE account_id=?1 AND device_id='' AND substr(key,1,12)='chat_hidden:' AND json_type(value) IN ('integer','real')")?;
+        let cutoffs = st
+            .query_map([&self.p.account_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        let s = (json!(allowed).to_string(), json!(self.front).to_string(), json!(cutoffs).to_string());
+        self.selection = Some(s.clone());
+        Ok(s)
     }
+    pub fn neighbor(&mut self, m: &Value, after: bool) -> Result<Option<Value>, DataError> {
+        let channel = m["channel_id"].as_str().unwrap_or_default();
+        if !self.neighbors.contains_key(channel) {
+            let (channels, front, cutoffs) = self.selection()?;
+            let predicate = message_sql("?1", "?2", "?3", "?4", "?5");
+            let sql = format!(
+                "SELECT m.occurred_at,m.id FROM message m WHERE m.channel_id=?6 AND {predicate} ORDER BY m.occurred_at,m.id"
+            );
+            let mut st = self.conn.prepare(&sql)?;
+            let rows = st
+                .query_map(params![self.p.account_id, channels, front, cutoffs, !self.p.is_device(), channel], |r| {
+                    Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            self.neighbors.insert(channel.to_string(), rows);
+        }
+        let rows = &self.neighbors[channel];
+        let anchor = (m["occurred_at"].as_i64().unwrap_or_default(), m["id"].as_str().unwrap_or_default().to_string());
+        let Ok(i) = rows.binary_search(&anchor) else { return Ok(None) };
+        let index = if after { i.checked_add(1) } else { i.checked_sub(1) };
+        let id = index.and_then(|i| rows.get(i)).map(|(_, id)| id.clone());
+        id.map(|id| self.card(&id)).transpose().map(Option::flatten)
+    }
+}
+
+/// Equivalent to CurrentView::message after channel/ancestor validation. CASE keeps malformed
+/// JSON fail-closed without evaluating json_extract on invalid input. Used for hits AND context.
+pub fn message_sql(account: &str, channels: &str, front: &str, cutoffs: &str, token: &str) -> String {
+    format!(
+        r#"m.deleted_at IS NULL AND m.channel_id IN (SELECT value FROM json_each({channels}))
+      AND ({token}=0 OR m.account_id={account})
+      AND NOT EXISTS(SELECT 1 FROM json_each({cutoffs}) h WHERE h.key=m.channel_id AND m.occurred_at<=h.value)
+      AND CASE WHEN m.visibility IS NULL THEN 1 WHEN NOT json_valid(m.visibility) THEN 0 ELSE
+        CASE json_extract(m.visibility,'$.mode') WHEN 'all' THEN 1
+          WHEN 'system_only' THEN m.account_id={account}
+          WHEN 'members' THEN CASE WHEN json_array_length({front})=0 THEN 0 ELSE
+            m.account_id={account} AND json_type(m.visibility,'$.member_ids')='array'
+            AND EXISTS(SELECT 1 FROM json_each(m.visibility,'$.member_ids') a JOIN json_each({front}) f ON a.value=f.value WHERE a.type='text') END
+          ELSE 0 END END"#
+    )
 }

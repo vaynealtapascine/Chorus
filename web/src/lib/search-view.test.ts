@@ -3,7 +3,7 @@ import { beforeAll, expect, it, vi } from 'vitest';
 vi.mock('./router.svelte', () => ({router:{go:vi.fn()}}));
 import { core, loadCore } from './core';
 import { messageById } from './data';
-import { searchView, contextMessages } from './search-view';
+import { searchView, contextMessages, searchAncestors } from './search-view';
 import { SearchIndex, JournalIndex, parseSearch } from './search';
 import { savedPosts } from './journal-social';
 import type { Projection } from './sync/client';
@@ -75,4 +75,53 @@ it('shows an unavailable chat state without its private title after a front chan
   expect(html).toContain('This chat is unavailable to the current front.');
   expect(html).not.toContain('SECRET_ROOM_TITLE');
  } finally {Object.assign(sync,{device:previous});}
+});
+
+it('excludes archived chat matches and inherited context before counting',()=>{
+ const p=structuredClone(fixture.projection) as Projection;
+ p.rows.channel.c.fields.archived_at=42;
+ const visible=searchView(p,'account');
+ expect(Object.keys(p.rows.message).map(id=>messageById(p,id)!).filter(visible).filter(m=>m.channel_id==='c')).toEqual([]);
+ expect(contextMessages(messageById(p,'m-match')!,Object.keys(p.rows.message).map(id=>messageById(p,id)!),visible)).toEqual([]);
+});
+it('validates a guarded missing parent while local privacy and tombstones win',()=>{
+ const p=structuredClone(fixture.projection) as Projection;
+ p.fronts.account={current:[{subject_type:'member',subject_id:'rin',level:'front'}],switches:[],intervals:[]} as never;
+ p.rows.channel.thread.fields.parent_message_id='private-message';
+ const parent=messageById(p,'private-message')!;
+ const hit=Object.keys(p.rows.message).map(id=>messageById(p,id)!).find(m=>m.channel_id==='thread')!;
+ delete p.rows.message[parent.id];
+ const ancestors=new Map([[parent.id,parent]]);
+ expect(searchView(p,'account')(hit)).toBe(false);
+ expect(searchView(p,'account',ancestors)(hit)).toBe(true);
+ p.rows.message[parent.id]={exists:true,fields:{channel_id:parent.channel_id,text:'local',occurred_at:parent.occurred_at,visibility:{mode:'members',member_ids:['missing']}}};
+ expect(searchView(p,'account',ancestors)(hit)).toBe(false);
+ p.rows.message[parent.id].fields.deleted_at=30;
+ expect(searchView(p,'account',ancestors)(hit)).toBe(false);
+ delete p.rows.message[parent.id];
+ p.fronts.account.current=[];
+ expect(searchView(p,'account',ancestors)(hit)).toBe(false);
+});
+
+it('hydrates guarded thread dependencies, and never fetches over a local tombstone',async()=>{
+ const p=structuredClone(fixture.projection) as Projection;
+ p.rows.channel.thread.fields.parent_message_id='private-message';
+ const parent=messageById(p,'private-message')!;
+ delete p.rows.message[parent.id];
+ const fetch=vi.fn(async(id:string)=>id===parent.id?parent:undefined);
+ const ancestors=await searchAncestors(p,fetch);
+ expect(fetch).toHaveBeenCalledWith(parent.id);
+ expect(ancestors.get(parent.id)).toEqual(parent);
+ const hit=Object.keys(p.rows.message).map(id=>messageById(p,id)!).find(m=>m.channel_id==='thread')!;
+ expect(searchView(p,'account',ancestors)(hit)).toBe(false); // Private parent, no eligible front.
+ p.fronts.account={current:[{subject_type:'member',subject_id:'rin',level:'front'}],switches:[],intervals:[]} as never;
+ expect(searchView(p,'account',ancestors)(hit)).toBe(true);
+ const denied=await searchAncestors(p,async()=>undefined);
+ expect(searchView(p,'account',denied)(hit)).toBe(false);
+ p.rows.message[parent.id]={exists:true,fields:{deleted_at:30}};
+ fetch.mockClear();
+ await searchAncestors(p,fetch);
+ expect(fetch).not.toHaveBeenCalledWith(parent.id);
+ p.rows.channel.private.fields.archived_at=50;
+ expect(searchView(p,'account',ancestors)(hit)).toBe(false);
 });

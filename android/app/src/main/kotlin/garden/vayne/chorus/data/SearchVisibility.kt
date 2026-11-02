@@ -4,29 +4,25 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Current-front view bound once per model, reused for each match and each neighbor. */
-class SearchVisibility(private val model: Model, private val account: String, private val channel: String? = null) {
+class SearchVisibility(private val model: Model, private val account: String, private val channel: String? = null, private val ancestors: Map<String,ChatMessage> = emptyMap()) {
     private val byId=model.searchMessages.associateBy {it.id}
     private val own=model.members.mapTo(HashSet()) {it.id}
-    private val shown = ChatOrganize.shown(model)
     private val channels = model.channels.associateBy { it.id }
     private val spaces = model.spaces.associateBy { it.id }
     fun document(d: SearchDocument): Boolean = (channel == null || d.channelId == channel) &&
         message(d.card ?: ChatMessage(d.id,d.channelId.orEmpty(),d.authors,d.text,d.occurredAt,d.cw,
             d.visibilityMode,d.visibleMemberIds,d.accountId,null,emptyList()))
-    fun message(m: ChatMessage): Boolean {
-        if(m.id in model.deletedMessageIds) return false
-        val local=byId[m.id]
-        val current=local?.let { ChatMessage(it.id,it.channelId.orEmpty(),it.authors,it.text,it.occurredAt,it.cw,it.visibilityMode,it.visibleMemberIds,it.accountId,null,emptyList()) } ?: m
-        return visible(current,HashSet())
-    }
-    private fun visible(m: ChatMessage, seen: MutableSet<String>): Boolean {
+    fun message(m: ChatMessage): Boolean = visible(m,HashSet())
+    private fun visible(input: ChatMessage, seen: MutableSet<String>): Boolean {
+        if(input.id in model.deletedMessageIds) return false
+        val m=byId[input.id]?.let { it.card ?: ChatMessage(it.id,it.channelId.orEmpty(),it.authors,it.text,it.occurredAt,it.cw,it.visibilityMode,it.visibleMemberIds,it.accountId,null,emptyList()) } ?: input
         val c = channels[m.channelId] ?: return false
         val s = spaces[c.spaceId] ?: return false
-        if (seen.size > 256 || !seen.add(c.id) || !shown(c.id)) return false
+        if (seen.size > 256 || !seen.add(c.id)) return false
         if (c.kind == "thread") {
-            val parent = byId[c.parentMessageId] ?: return false
-            val p = parent.card ?: ChatMessage(parent.id,parent.channelId.orEmpty(),parent.authors,parent.text,parent.occurredAt,parent.cw,
-                parent.visibilityMode,parent.visibleMemberIds,parent.accountId,null,emptyList())
+            val parent = byId[c.parentMessageId]
+            val p = parent?.let { it.card ?: ChatMessage(it.id,it.channelId.orEmpty(),it.authors,it.text,it.occurredAt,it.cw,
+                it.visibilityMode,it.visibleMemberIds,it.accountId,null,emptyList()) } ?: ancestors[c.parentMessageId] ?: return false
             if (!visible(p,seen)) return false
         } else if (!ChatOrganize.privateVisible(c,s,model.current,null,true,own)) return false
         if(c.kind != "thread" && !ChannelPermissions.canView(model.channelPermissionState,c,account)) return false

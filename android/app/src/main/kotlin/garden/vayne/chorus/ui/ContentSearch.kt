@@ -55,7 +55,15 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
     val actions = rememberCoroutineScope()
     var query by rememberSaveable { mutableStateOf("") }
     var section by rememberSaveable { mutableStateOf(initialSection) }
-    val visibility = remember(model, channelId, chorus.device?.accountId) { SearchVisibility(model, chorus.device?.accountId.orEmpty(), channelId) }
+    val session=chorus.device?.session
+    val dependencies by produceState<Triple<Model?,String?,Map<String,ChatMessage>>>(Triple(null,null,emptyMap()),model,session,online) {
+        value=Triple(null,null,emptyMap())
+        val dev=chorus.device
+        if(online && dev!=null) value=Triple(model,dev.session,garden.vayne.chorus.data.SearchAncestors.load(model,dev))
+    }
+    val visibility = remember(model, channelId, session, online, dependencies) {
+        SearchVisibility(model,chorus.device?.accountId.orEmpty(),channelId,if(dependencies.first===model && dependencies.second==session && online) dependencies.third else emptyMap())
+    }
     var remoteOwner by remember { mutableStateOf<Model?>(null) }
     var remote by remember { mutableStateOf<List<SearchDocument>>(emptyList()) }
     var cursor by remember { mutableStateOf<String?>(null) }
@@ -68,7 +76,7 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
         val saved = if (model.namedFronts != null) runCatching { chorus.frontHistory() }.getOrNull()?.saved else null
         value = withContext(Dispatchers.Default) { LocalSearch.fromModel(model, saved) }
     }
-    val messageIndex by produceState<CoreMessageSearch?>(initialValue = null, model) {
+    val messageIndex by produceState<CoreMessageSearch?>(initialValue = null, model, visibility) {
         value = null
         value = withContext(Dispatchers.Default) { CoreMessageSearch(model, visibility::document) }
     }
@@ -113,12 +121,11 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
     }
     val known = results.mapTo(HashSet()) { it.id }
     // members' private chats and private chats in DMs only while theirs are here (D-097, D-098)
-    val chatOk = remember(model) { ChatOrganize.shown(model) }
     val shown = (if (section == "Switches") results else results + (if(remoteOwner === model && online) remote else emptyList()).filter { doc ->
         doc.id !in known && (section !in listOf("Posts", "Saved") || parsed.from == null ||
             doc.authors.any { it == parsed.from } || doc.authorNames.any { it.contains(parsed.from, ignoreCase = true) })
     }).filter { doc -> (doc.kind != "Posts" || doc.id !in model.deletedPostIds) && (section != "Saved" || doc.id in model.accountPrefs.bookmarks) &&
-        (doc.channelId == null || chatOk(doc.channelId) && visibility.document(doc)) }
+        (doc.channelId == null || visibility.document(doc)) }
     val contextIds = shown.filter { it.kind == "Messages" }.associate { doc ->
         doc.id to visibility.context(doc, (if(remoteOwner === model && online) remote.firstOrNull {it.id==doc.id} else null).let {listOfNotNull(it?.before,it?.after)} + listOfNotNull(doc.before,doc.after)) }
     val ids = contextIds.values.flatten().toSet()

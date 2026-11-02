@@ -464,3 +464,126 @@ fn internal_member_chat_with_no_eligible_members_fails_closed() {
     assert_eq!(page["items"], serde_json::json!([]));
     assert!(page["next_cursor"].is_null());
 }
+
+#[test]
+fn sparse_current_view_50k_first_screen_stays_within_budget() {
+    use chorus_server::search::{self, MessageQuery};
+    let conn = seed();
+    conn.execute_batch("DELETE FROM item_attachment; DELETE FROM message_author; DELETE FROM message_segment_author; DELETE FROM message; DELETE FROM message_fts; BEGIN;").unwrap();
+    for i in 0..50_000 {
+        conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text,visibility) VALUES (?1,?2,?3,?3,?4,'needle',?5)",params![format!("m{i:08}"),CHANNEL,ALICE,i,if i%2000==0 {None} else {Some(r#"{"mode":"members","member_ids":["rose"]}"#)}]).unwrap();
+    }
+    conn.execute_batch("INSERT INTO message_fts(rowid,text,cw) SELECT rowid,text,'' FROM message; COMMIT;").unwrap();
+    let query = MessageQuery { q: "needle".into(), limit: Some(25), ..Default::default() };
+    let start = std::time::Instant::now();
+    let page = search::messages(&conn, &api_data::Principal::owner(ALICE), &query).unwrap();
+    let elapsed = start.elapsed();
+    let items = page["items"].as_array().unwrap();
+    assert_eq!(items.len(), 25); // No pre-visibility candidate cap may silently omit authorized hits.
+    assert!(page["next_cursor"].is_null());
+    for (i, item) in items.iter().enumerate() {
+        assert_eq!(item["id"], format!("m{:08}", 48_000 - i * 2000));
+        if i > 0 {
+            assert_eq!(item["context_after"]["id"], items[i - 1]["id"]);
+        }
+        if i + 1 < items.len() {
+            assert_eq!(item["context_before"]["id"], items[i + 1]["id"]);
+        }
+    }
+    eprintln!("50k sparse search: {elapsed:?}");
+    // SPEC §9 first-screen budget; release is the mandatory full verification profile.
+    if !cfg!(debug_assertions) {
+        assert!(elapsed < std::time::Duration::from_millis(150), "shared DB held for {elapsed:?}");
+    }
+    let one =
+        search::messages(&conn, &api_data::Principal::owner(ALICE), &MessageQuery { limit: Some(1), ..query.clone() })
+            .unwrap();
+    let second = search::messages(
+        &conn,
+        &api_data::Principal::owner(ALICE),
+        &MessageQuery { cursor: Some(one["next_cursor"].as_str().unwrap().into()), limit: Some(1), ..query },
+    )
+    .unwrap();
+    assert_eq!(second["items"][0]["id"], "m00046000");
+    conn.execute("INSERT INTO member(id,account_id,name,created_at) VALUES ('other-fronter',?1,'Other',0)", [ALICE])
+        .unwrap();
+    conn.execute("INSERT INTO front_interval(id,account_id,subject_type,subject_id,level,is_primary,position,start_at,start_switch_id,start_tz_offset_min) VALUES ('perf-front',?1,'member','other-fronter','front',1,0,0,'switch',0)",[ALICE]).unwrap();
+    for dense in [false, true] {
+        if dense {
+            conn.execute("UPDATE message SET visibility=NULL", []).unwrap();
+        }
+        let start = std::time::Instant::now();
+        let page = search::messages(
+            &conn,
+            &api_data::Principal::owner(ALICE),
+            &MessageQuery { q: "needle".into(), limit: Some(25), ..Default::default() },
+        )
+        .unwrap();
+        let elapsed = start.elapsed();
+        assert_eq!(page["items"].as_array().unwrap().len(), 25);
+        assert_eq!(page["items"][0]["id"], if dense { "m00049999" } else { "m00048000" });
+        assert_eq!(page["next_cursor"].is_string(), dense);
+        eprintln!("50k nonempty front, dense={dense}: {elapsed:?}");
+        if !cfg!(debug_assertions) {
+            assert!(elapsed < std::time::Duration::from_millis(150), "shared DB held for {elapsed:?}, dense={dense}");
+        }
+    }
+}
+
+#[test]
+fn sql_current_selection_agrees_with_guard_for_malformed_audiences_and_cutoffs() {
+    use chorus_server::search_view::{CurrentView, message_sql};
+    let conn = seed();
+    for (i, visibility) in [
+        "{",
+        "null",
+        "[]",
+        r#"{"mode":"unknown"}"#,
+        r#"{"mode":"members","member_ids":{}}"#,
+        r#"{"mode":"members","member_ids":[true,42,"rose"]}"#,
+        r#"{"mode":"all"}"#,
+    ]
+    .iter()
+    .enumerate()
+    {
+        conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text,visibility) VALUES (?1,?2,?3,?3,200,'needle',?4)",params![format!("malformed{i}"),CHANNEL,ALICE,visibility]).unwrap();
+    }
+    let ids = conn
+        .prepare("SELECT id FROM message")
+        .unwrap()
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    for account in [ALICE, BOB] {
+        for front in [false, true] {
+            if front {
+                conn.execute("INSERT OR REPLACE INTO front_interval(id,account_id,subject_type,subject_id,level,is_primary,position,start_at,start_switch_id,start_tz_offset_min) VALUES ('live',?1,'member','rose','front',1,0,0,'switch',0)",[ALICE]).unwrap();
+            }
+            for cutoff in [0, 125] {
+                conn.execute(
+                    "INSERT OR REPLACE INTO pref(account_id,device_id,key,value,hlc) VALUES (?1,'',?2,?3,'1')",
+                    params![account, format!("chat_hidden:{CHANNEL}"), cutoff.to_string()],
+                )
+                .unwrap();
+                let p = api_data::Principal::owner(account);
+                let mut view = CurrentView::new(&conn, &p).unwrap();
+                let (channels, front, cutoffs) = view.selection().unwrap();
+                let sql = format!(
+                    "SELECT m.id FROM message m WHERE {} ORDER BY m.id",
+                    message_sql("?1", "?2", "?3", "?4", "?5")
+                );
+                let got = conn
+                    .prepare(&sql)
+                    .unwrap()
+                    .query_map(params![account, channels, front, cutoffs, false], |r| r.get::<_, String>(0))
+                    .unwrap()
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap();
+                let mut want = ids.iter().filter(|id| view.message(id).unwrap()).cloned().collect::<Vec<_>>();
+                want.sort();
+                assert_eq!(got, want);
+            }
+        }
+    }
+}

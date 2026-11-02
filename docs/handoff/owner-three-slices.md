@@ -311,3 +311,99 @@ before this final full pass. No quick wrapper was used.
 Implementation is ready for the parent's independent review. The source and handoff are
 committed on feat/links; read the implementation commit following 2b4a702. No deployment or
 physical-device/browser smoke check was performed. UI11c remains pending.
+
+
+## UI11b independent review corrections (GPT-6-sol, 2026-11-02)
+
+Task baseline: `759502afab0a83c4abb50692aff2a03989534d73`, existing `feat/links`
+checkout `F:/DunBuild/chorus-avatars`. Start record is `9482d1c`. Only this checkout was
+modified. No subagents, deployment, device install or UI11c work.
+
+All six findings are addressed together:
+
+1. Web Search owns each asynchronous request with a **raw** context object. Deep `$state`
+   proxies cannot serve as projection identity tokens. First page, pagination, cursors,
+   author cards and ancestor dependencies all require the same active context. The mounted
+   real Search component is tested in headless Chromium; SSR alone missed this defect.
+2. Search subscribes to both projection deltas and SyncClient's ordinary status/session
+   notifications. SyncClient is a nonreactive class. A raw connection snapshot plus a fresh
+   request context distinguishes disconnect/reconnect and same-query/same-cursor/session
+   ABA changes. Headers and URL are captured, both request paths share cancellation, retained
+   results disappear immediately, reconnect retries the unchanged query, and subscriptions
+   are removed on unmount. A projection delta also invalidates the context when its object
+   reference is retained. Tests deliberately resolve cancelled requests out of order.
+3. Android keeps its ordinary 100-message model window. `Model.channelWindow(around=...)`,
+   `Chorus.searchWindow` and `SearchJump` load a separate at-most-100-message window containing
+   the chosen target. The list waits for the target before consuming `jumpTo`. Online fallback
+   first reads the guarded exact target, then its surrounding page, filters each row through
+   current SearchVisibility and deduplicates the target. Windows belong to model/session/
+   channel; Compose cancellation and owner checks discard stale loads. Existing durable draft
+   objects and per-channel list states stay in place. Current permissions also guard retained
+   conversations before replica eviction. Missing-parent thread jumps use validated dependencies.
+4. Both clients fetch absent thread parents through guarded `GET /messages/{id}` and recurse
+   through ancestry with a cycle/depth bound. Until validation completes the result stays
+   hidden. These cards are ephemeral, carry no sync grant and expire with the request/model/
+   session. Existing local restrictions, malformed rows and tombstones take precedence over
+   remote parents. Private/archived/denied parent channels are checked again locally. Android's
+   list-only ChatOrganize guard cannot validate hydrated parents; search uses SearchVisibility
+   directly instead. Web limits dependency walks to candidate channels and their ancestors.
+5. Server validates eligible channels/ancestors once, then applies message audience, current
+   front, token ownership and clear cutoff **inside** the FTS/filter SQL before chronological
+   LIMIT. It selects bounded id/time anchors, materializing rich cards only for returned rows.
+   Neighbor IDs are built once per channel using the existing channel/time index; binary
+   lookup replaces repeated scans, and rich cards are cached only for this immutable request.
+   No pre-visibility candidate cap, hidden rank/cursor/count or persistent cache was added.
+6. Web excludes archived channels before matches/context/counts, including inherited ancestry,
+   matching server and Android behavior.
+
+### Reproduction and regression evidence
+
+Original mounted web tests: 5 failures across real Search lifecycle, archived channels and
+missing-parent visibility (`F:/DunBuild/chorus-ui11b-review-web-original.log`). A separate
+raw-owner-only probe demonstrates the independent second P1: the foreign post remains after
+session replacement/disconnect, there is no offline banner and there are zero status subscribers
+(`chorus-ui11b-review-raw-only.log`). Original Android loader/visibility tests fail for a target
+at message 10 in a 250-message conversation and for an authorized missing parent (2 failures,
+`chorus-ui11b-review-android-original.log`). The original 50,000-message/one-visible-per-2,000
+release regression returns the correct 25 hits but holds the DB for 2.12 seconds and fails the
+150 ms SPEC first-screen budget (`chorus-ui11b-review-perf-original.log`). The independent
+reviewer executable also reproduces about 2.4 seconds for 25 hits. Reviewer sources were read
+from `F:/DunBuild/chorus-ui11b-review-readonly`; scratch probes/logs were written outside it.
+
+Regression coverage includes real mounted client state (foreign render/page, disconnect,
+reconnect, first-page/session/pagination races, query ABA and retained-projection invalidation),
+guarded dependency fetches/404s, pending local restrictions/deletes, private/archived ancestry,
+250-message native jump windows, stale remote jump targets after delete/revoke, SQL/guard
+agreement for malformed audiences/cutoffs, and the release 50k budget with exact visible hits,
+neighbors and pagination. CI's web job installs Chromium from the already-pinned Playwright
+package for the new mounted tests. Local tests use installed Chrome; no dependency was added.
+
+Final full `python scripts/verify.py --android --offline` **passed** with the documented
+process-only environment, Android Studio JBR and F: caches. Log:
+`F:/DunBuild/chorus-ui11b-review-final.log`. Includes documentation checks, fmt/workspace clippy,
+full release workspace/convergence/simulator/HTTP suites, WASM build, Svelte check (0 errors /
+0 warnings), **242 web tests passed, 1 existing skip**, production build/budgets (**190 KB JS /
+300 KB WASM gzipped**), Android lint and **355 app + 7 core-bridge JVM tests**, no failures.
+Both this fix commit and start commit 9482d1c have a preceding full Android/offline gate; no
+quick wrapper was used. Final benchmark log `chorus-ui11b-review-perf-final.log` records
+**71 ms sparse / 133 ms sparse with a nonempty front / 95 ms dense**, each below 150 ms, with
+all 25 authorized hits and correct nearest visible context/cursor behavior. Original sparse
+case: 2.12 seconds. Tests also compare SQL selection with the canonical guard on malformed
+JSON, member audiences and cutoffs. There is no pre-visibility cap.
+
+Pitfalls for the next agent: dependency validation must include retained earlier pages when
+pagination introduces another channel; replacing the dependency map with only the new page's
+ancestors hides older authorized hits. The mounted regression covers that case. Browser startup
+and cleanup hooks allow 30 seconds (one targeted run's cleanup exceeded the default 10 seconds
+while release LTO saturated the machine; the final full suite passes). Cargo workspace feature
+unification leaves several differently named test binaries in the shared target directory;
+use the binary named by the exact verified run when recording timings. No failure was waived.
+
+Remaining limits: no physical-device/IME/Back/animation smoke test was performed. Parent should
+check old search hits opening in-place and globally, retained drafts/list position, nested-thread
+missing parents, and permission loss during a jump. Offline missing ancestors remain hidden;
+there is no way to validate an absent parent while disconnected. Server still evaluates SQL
+predicates over matching indexed candidates and builds an ephemeral visible timeline per hit
+channel; it does not promise constant work for arbitrarily larger histories. This is not a
+persistent visibility index. UI11b still needs independent re-review and deployment with matching
+artifacts before UI11c. No migration, schema, op-kind or library/version changes.

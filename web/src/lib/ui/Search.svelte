@@ -8,7 +8,7 @@
   import { apiFetch } from '../http';
   import { posts as postRows, type PostRow } from '../posts';
   import { savedPosts, socialIndex } from '../journal-social';
-  import { searchView, searchContexts, remoteMessage, type SearchMessage } from '../search-view';
+  import { searchView, searchContexts, searchAncestors, remoteMessage, type SearchMessage } from '../search-view';
   import type { FriendPost } from '../friends-feed';
   import { pollOf } from '../polls';
   import PollCard from './PollCard.svelte';
@@ -28,18 +28,23 @@
   type Hit = SearchMessage & { context_before?: MessageRow | null; context_after?: MessageRow | null };
   let remote = $state<Hit[]>([]), remotePosts = $state<FriendPost[]>([]);
   let cursor = $state<string | null>(null), loading = $state(false), error = $state('');
-  let owner = $state<Projection | null>(null), request = $state('');
+  // SyncClient is a plain class. Only connection changes replace this raw snapshot.
+  let connection = $state.raw({status:sync.status, session:sync.device?.session, account:sync.accountId});
+  type Request = {projection:Projection; key:string; connection:typeof connection; revision:number; url:string; scope:typeof scope};
+  let active = $state.raw<Request|null>(null), owner = $state.raw<Request|null>(null);
+  let ancestors = $state.raw<ReadonlyMap<string,MessageRow>>(new Map());
   const scope = $derived(channelId ? 'messages' : tab);
   const key = $derived(`${scope}:${channelId ?? ''}:${query}`);
-  const visible = $derived(searchView(projection, sync.accountId));
+  const current = $derived(owner !== null && owner === active && owner.projection === projection && owner.key === key && owner.connection === connection && owner.revision===revision && connection.status === 'live');
+  const visible = $derived(searchView(projection, connection.account, current ? ancestors : new Map()));
   const people = $derived.by(() => {
     const map=new Map(members(projection).map(m=>[m.id,m]));
-    if(owner===projection && request===key && sync.status==='live') for(const hit of remote) for(const m of [hit,hit.context_before,hit.context_after]) if(m && visible(m))
+    if(current) for(const hit of remote) for(const m of [hit,hit.context_before,hit.context_after]) if(m && visible(m))
       for(const a of (m as SearchMessage).author_cards ?? []) if(!map.has(a.id)) map.set(a.id,{...a,name:a.name??'Someone',color:a.color??'#A09184',sigils:a.sigils??[],proxy_tags:[],archived:false,deleted:false});
     return map;
   });
   const emojiById = $derived(new Map(customEmojis(projection).map(e => [e.id,e])));
-  const saved = $derived(savedPosts(projection.rows.pref ?? {},sync.accountId));
+  const saved = $derived(savedPosts(projection.rows.pref ?? {},connection.account));
   const entries = $derived(postRows(projection).filter(p => !p.deleted));
   const reacts = $derived(reactionRows(projection));
   const social = $derived(socialIndex(entries));
@@ -50,8 +55,15 @@
     catch(e) { return { q: null, error: e instanceof Error ? e.message : String(e) }; }
   });
   onMount(() => {
-    index = new SearchIndex(projection); journal = new JournalIndex(projection,sync.accountId,() => sync.frontHistory()); revision++;
-    return sync.subscribeProjection((p,d) => { index?.apply(p,d); journal?.apply(p,d); revision++; });
+    index = new SearchIndex(projection); journal = new JournalIndex(projection,connection.account,() => sync.frontHistory()); revision++;
+    const projectionOff=sync.subscribeProjection((p,d) => { index?.apply(p,d); journal?.apply(p,d); revision++; });
+    const observeConnection=() => {
+      const next={status:sync.status,session:sync.device?.session,account:sync.accountId};
+      if(next.status!==connection.status || next.session!==connection.session || next.account!==connection.account) connection=next;
+    };
+    const statusOff=sync.subscribe(observeConnection);
+    observeConnection();
+    return () => {projectionOff();statusOff();};
   });
   const local = $derived.by(() => {
     void revision;
@@ -59,11 +71,11 @@
       .map(h => messageById(projection,h.id)).filter((m): m is MessageRow => !!m && (!channelId || m.channel_id === channelId) && visible(m)).slice(0,100) : [];
   });
   const hits = $derived.by(() => {
-    const rows = owner === projection && request === key && sync.status === 'live' ? remote : [];
+    const rows = current ? remote : [];
     return [...new Map([...rows,...local].filter(m => (!channelId || m.channel_id === channelId) && visible(m)).map(m => [m.id,m])).values()]
       .sort((a,b) => b.occurred_at-a.occurred_at || b.id.localeCompare(a.id));
   });
-  const contexts = $derived(searchContexts(projection,hits,owner===projection && request===key && sync.status==='live' ? remote : [],visible));
+  const contexts = $derived(searchContexts(projection,hits,current ? remote : [],visible));
   const localPosts = $derived.by(() => {
     void revision;
     const ids = new Set(query.trim() ? journal?.searchPosts(parsed, Number.MAX_SAFE_INTEGER).map(h => h.id) ?? [] : []);
@@ -71,7 +83,7 @@
   });
   const allPosts = $derived.by(() => {
     const own = new Map(localPosts.map(p => [p.id,p]));
-    const remoteRows = owner === projection && request === key && sync.status === 'live' ? remotePosts : [];
+    const remoteRows = current ? remotePosts : [];
     return [...localPosts.map(local => ({id:local.id,at:local.occurred_at,local,remote:undefined as FriendPost|undefined})),
       ...remoteRows.filter(p => !own.has(p.id) && projection.rows.post?.[p.id]?.fields.deleted_at == null && (scope !== 'saved' || saved.has(p.id)) && (!parsed.from || p.author_cards?.some(a => a.id===parsed.from || (a.display_name??a.name??'').normalize('NFKD').replace(/\p{M}/gu,'').toLocaleLowerCase().includes(parsed.from!.normalize('NFKD').replace(/\p{M}/gu,'').toLocaleLowerCase())))).map(remote => ({id:remote.id,at:remote.occurred_at,local:undefined as PostRow|undefined,remote}))]
       .sort((a,b) => b.at-a.at || b.id.localeCompare(a.id));
@@ -84,33 +96,53 @@
     if(next) params.set('cursor',next);
     return `${apiBase()}/search/${scope === 'messages' ? 'messages' : 'posts'}?${params}`;
   }
-  async function page(next: string | null, signal?: AbortSignal) {
-    const r = await apiFetch(url(next ?? undefined), {headers:{authorization:`Bearer ${sync.device?.session ?? ''}`},signal});
-    if(!r.ok) throw new Error(`Search HTTP ${r.status}`);
-    return await r.json() as {items: Hit[] & FriendPost[]; next_cursor:string|null};
+  function valid(ctx:Request) {
+    return active===ctx && ctx.projection===projection && ctx.key===key && ctx.connection===connection && ctx.revision===revision &&
+      sync.status==='live' && sync.device?.session===ctx.connection.session && sync.accountId===ctx.connection.account;
   }
+  async function page(ctx:Request, next: string | null, signal:AbortSignal) {
+    const target=ctx.url+(next ? `&cursor=${encodeURIComponent(next)}` : '');
+    const r = await apiFetch(target, {headers:{authorization:`Bearer ${ctx.connection.session ?? ''}`},signal});
+    if(!r.ok) throw new Error(`Search HTTP ${r.status}`);
+    const result=await r.json() as {items: Hit[] & FriendPost[]; next_cursor:string|null};
+    if(!valid(ctx) || signal.aborted) return {...result,dependencies:new Map<string,MessageRow>()};
+    const dependencies=ctx.scope==='messages' ? await searchAncestors(ctx.projection,async id=>{
+      const r=await apiFetch(`${apiBase()}/messages/${encodeURIComponent(id)}`,{headers:{authorization:`Bearer ${ctx.connection.session ?? ''}`},signal});
+      if(!r.ok) return undefined;
+      return remoteMessage(await r.json());
+    },new Set([...remote.map(m=>m.channel_id),...result.items.map(m=>m.channel_id),...(parsedMessage.q?index?.find(parsedMessage.q,Date.now(),Number.MAX_SAFE_INTEGER).map(m=>m.channel_id) ?? []:[])])) : new Map<string,MessageRow>();
+    return {...result,dependencies};
+  }
+  function append(ctx:Request,result:Awaited<ReturnType<typeof page>>,more=false) {
+    if(ctx.scope==='messages') {
+      const items=result.items.map(m=>({...remoteMessage(m),context_before:m.context_before?remoteMessage(m.context_before):null,context_after:m.context_after?remoteMessage(m.context_after):null}));
+      remote=more?[...remote,...items]:items;
+    } else remotePosts=more?[...remotePosts,...result.items]:result.items;
+    ancestors=result.dependencies;owner=ctx;cursor=result.next_cursor;
+  }
+  let controller:AbortController|null=null;
   $effect(() => {
-    const p = projection, k = key; void revision;
-    remote=[]; remotePosts=[]; cursor=null; owner=null; error=''; loading=false;
-    if(!query.trim() || scope === 'switches' || sync.status !== 'live' || (scope === 'messages' ? !parsedMessage.q : !parsed.terms.length)) return;
-    const abort=new AbortController();
-    const timer=setTimeout(async () => {
+    const p=projection,k=key,c=connection; void revision;
+    remote=[]; remotePosts=[]; cursor=null; owner=null; active=null; ancestors=new Map(); error=''; loading=false;
+    if(!query.trim() || scope==='switches' || c.status!=='live' || (scope==='messages' ? !parsedMessage.q : !parsed.terms.length)) return;
+    const ctx:Request={projection:p,key:k,connection:c,revision,url:url(),scope};active=ctx;
+    const abort=new AbortController();controller=abort;
+    const timer=setTimeout(async()=>{
+      if(!valid(ctx)) return;
       loading=true;
-      try { const result=await page(null,abort.signal); if(abort.signal.aborted) return;
-        if(scope === 'messages') remote=result.items.map(m => ({...remoteMessage(m),context_before:m.context_before ? remoteMessage(m.context_before):null,context_after:m.context_after ? remoteMessage(m.context_after):null}));
-        else remotePosts=result.items;
-        owner=p; request=k; cursor=result.next_cursor;
-      } catch(e) { if(!abort.signal.aborted) error=e instanceof Error ? e.message : String(e); }
-      finally { if(!abort.signal.aborted) loading=false; }
+      try {const result=await page(ctx,null,abort.signal);if(valid(ctx) && !abort.signal.aborted) append(ctx,result);}
+      catch(e){if(valid(ctx) && !abort.signal.aborted) error=e instanceof Error?e.message:String(e);}
+      finally{if(valid(ctx) && !abort.signal.aborted) loading=false;}
     },250);
-    return () => {clearTimeout(timer);abort.abort();};
+    return ()=>{clearTimeout(timer);abort.abort();};
   });
   async function more() {
-    if(!cursor || loading) return;
-    const p=projection,k=key,next=cursor; loading=true;
-    try {const result=await page(next); if(p!==projection || k!==key || cursor!==next || sync.status!=='live') return;
-      if(scope==='messages') remote=[...remote,...result.items.map(m => ({...remoteMessage(m),context_before:m.context_before ? remoteMessage(m.context_before):null,context_after:m.context_after ? remoteMessage(m.context_after):null}))]; else remotePosts=[...remotePosts,...result.items]; cursor=result.next_cursor;
-    } catch(e) {if(p===projection && k===key) error=String(e);} finally {if(p===projection && k===key) loading=false;}
+    const ctx=active,next=cursor,abort=controller;
+    if(!ctx || !next || !abort || loading || !valid(ctx)) return;
+    loading=true;
+    try {const result=await page(ctx,next,abort.signal);if(valid(ctx) && cursor===next && !abort.signal.aborted) append(ctx,result,true);}
+    catch(e){if(valid(ctx) && !abort.signal.aborted) error=String(e);}
+    finally{if(valid(ctx) && !abort.signal.aborted) loading=false;}
   }
   const lookup = (id:string) => {const m=messageById(projection,id);return m && visible(m) ? m : undefined;};
   const noop = () => {};
@@ -118,7 +150,7 @@
 </script>
 
 {#snippet pollBody(id:string)}
-  {@const raw = (owner===projection && request===key && sync.status==='live' ? remote : []).flatMap(m=>[m,m.context_before,m.context_after]).find(m=>m?.id===id) as SearchMessage|undefined}
+  {@const raw = (current ? remote : []).flatMap(m=>[m,m.context_before,m.context_after]).find(m=>m?.id===id) as SearchMessage|undefined}
   {@const poll = pollOf(projection,id) ?? raw?.poll}
   {#if poll}<PollCard {projection} parentId={id} {poll} member={null} remoteTally={raw?.poll_tally}/>{/if}
 {/snippet}
@@ -128,7 +160,7 @@
   {#if !channelId}<nav aria-label="Search scope">{#each [['messages','All chats'],['posts','Journal'],['saved','Saved'],['switches','Switches']] as [id,label]}<button aria-pressed={scope===id} onclick={()=>tab=id as typeof tab}>{label}</button>{/each}</nav>{/if}
   <input type="search" aria-label={channelId ? 'Search this chat' : `Search ${scope==='messages'?'all chats':scope==='saved'?'saved posts':scope==='posts'?'Journal':'switches'}`} placeholder="Search words or filters" bind:value={query}/>
   <p class="hint">{scope==='messages' ? 'Current front · from:, in:, has:, before:, after:, is:pinned. Context shows only messages available now.' : scope==='switches' ? 'Switch names and notes · before: and after:.' : `${scope==='saved'?'Bookmarked posts':'Journal posts and entries'} · titles, text and tags; before: and after:.`}</p>
-  {#if sync.status!=='live'}<p class="hint" role="status">Offline · searching what is on this device. Shared posts need a connection.</p>{/if}
+  {#if connection.status!=='live'}<p class="hint" role="status">Offline · searching what is on this device. Shared posts need a connection.</p>{/if}
   {#if error}<p role="status">Server search unavailable. Local results are below. {error}</p>{/if}
   {#if scope==='messages' && parsedMessage.error}<p role="alert">{parsedMessage.error}</p>{/if}
   {#if !available}<p class="empty">This chat is unavailable to the current front.</p>
@@ -150,7 +182,7 @@
     {:else}<p class="empty">{scope==='saved'?'No matching saved posts. Save posts with their bookmark button.':'No matching Journal posts or entries.'}</p>{/each}
   {/if}
   {#if loading}<p class="hint" role="status">Searching…</p>{/if}
-  {#if cursor && owner===projection && request===key && sync.status==='live'}<button disabled={loading} onclick={more}>Load more</button>{/if}
+  {#if cursor && current}<button disabled={loading} onclick={more}>Load more</button>{/if}
 </section>
 <style>
 .search-page{display:grid;gap:var(--s-3);padding:var(--s-4);min-width:0;overflow:auto}header{display:flex;align-items:center;justify-content:space-between;gap:var(--s-3)}h1{margin:0;font-size:var(--fs-xl)}nav{display:flex;flex-wrap:wrap;gap:var(--s-2)}input,button{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px}button{cursor:pointer;min-height:44px}button[aria-pressed=true]{background:var(--surface-3);color:var(--accent)}button:disabled{opacity:.5;cursor:default}input{width:100%;box-sizing:border-box;caret-color:var(--accent)}.hint,.empty{margin:0;color:var(--ink-3);font-size:var(--fs-sm)}.empty{padding:var(--s-4) 0}.match{display:grid;gap:var(--s-3);border-bottom:1px solid var(--line);padding:var(--s-3) 0}.matched{background:var(--surface);border-radius:12px;padding:var(--s-2)}.match>button{justify-self:start}:focus-visible{outline:2px solid var(--accent);outline-offset:3px}

@@ -7,16 +7,20 @@ import type { MemberRow } from './data';
 import type { Projection } from './sync/client';
 
 /** Local view guard, used again for every result, neighbor and jump. Server owns delivery. */
-export function searchView(p: Projection, account: string): (m: MessageRow | undefined) => boolean {
+export function searchView(p: Projection, account: string, ancestors: ReadonlyMap<string, MessageRow> = new Map()): (m: MessageRow | undefined) => boolean {
   const cs = new Map(channels(p).map(c => [c.id, c]));
   const ss = new Map(spaces(p).map(s => [s.id, s]));
   const front = bodyPresence(p, account), active = activeViewers(front);
   const own = new Set(members(p).map(m => m.id));
   const prefs = chatPrefs(p.rows.pref ?? {}, account);
+  // A known local tombstone/malformed row must never fall back to an older network card.
+  function localOrAncestor(id: string): MessageRow | undefined {
+    return p.rows.message?.[id] ? messageById(p,id) : ancestors.get(id);
+  }
   function view(m: MessageRow | undefined, seen = new Set<string>()): boolean {
     if (!m || m.deleted || seen.size > 256 || seen.has(m.channel_id)) return false;
     const c = cs.get(m.channel_id), s = c && ss.get(c.space_id);
-    if (!c || !s) return false;
+    if (!c || c.archived || !s) return false;
     seen.add(c.id);
     // Permissions can arrive before scope repair evicts the old message rows.
     const sf = p.rows.space?.[s.id]?.fields ?? {};
@@ -33,7 +37,7 @@ export function searchView(p: Projection, account: string): (m: MessageRow | und
       if (allowed === null && role !== 'member' && role !== 'read_only' && !(Array.isArray(sf.roles) && sf.roles.some((r: unknown) => !!r && typeof r === 'object' && 'id' in r && r.id === role && 'perms' in r && Array.isArray(r.perms) && r.perms.includes('view')))) return false;
     }
     if (c.kind === 'thread') {
-      if (!c.parent_message_id || !view(messageById(p, c.parent_message_id), seen)) return false;
+      if (!c.parent_message_id || !view(localOrAncestor(c.parent_message_id), seen)) return false;
     } else if (!privateVisible(c, s, front, null, true, id => own.has(id), front)) return false;
     const cutoff = prefs.hidden.get(c.id);
     if (cutoff != null && m.occurred_at <= cutoff) return false;
@@ -48,7 +52,7 @@ export function searchView(p: Projection, account: string): (m: MessageRow | und
     } else if (mode && !['all', 'system_only'].includes(mode)) return false;
     return true;
   }
-  return m => view(m ? messageById(p,m.id) ?? m : undefined);
+  return m => view(m ? (p.rows.message?.[m.id] ? messageById(p,m.id) : m) : undefined);
 }
 
 export function contextMessages(hit: MessageRow, candidates: MessageRow[], visible: (m: MessageRow) => boolean): MessageRow[] {
@@ -77,4 +81,24 @@ export type SearchMessage = MessageRow & {author_cards?: MemberRow[];poll?: Poll
 export function remoteMessage(raw: Partial<MessageRow> & { id: string; channel_id: string; occurred_at: number; text: string }): SearchMessage {
   return { authors: [], entities: [], segments: [], attachments: [], deleted: false, edited: false, pinned: false, sent_offline: false, ...raw,
     cw: raw.cw ?? undefined, visibility: raw.visibility ?? undefined, reply_to: raw.reply_to ?? undefined, forward_snapshot: raw.forward_snapshot ?? undefined, quote: raw.quote ?? undefined };
+}
+
+/** Fetch ephemeral thread dependencies through the same guarded jump endpoint. No sync/cache grant. */
+export async function searchAncestors(p: Projection, fetch: (id:string)=>Promise<MessageRow|undefined>, wanted?: Iterable<string>): Promise<Map<string,MessageRow>> {
+  const cs=new Map(channels(p).map(c=>[c.id,c]));
+  const found=new Map<string,MessageRow>(), attempted=new Set<string>();
+  async function visit(channel:string, seen=new Set<string>()):Promise<void> {
+    const c=cs.get(channel);
+    if(!c || c.archived || c.kind!=='thread' || !c.parent_message_id || seen.has(channel) || seen.size>256) return;
+    seen.add(channel);
+    const id=c.parent_message_id;
+    let parent=p.rows.message?.[id] ? messageById(p,id) : found.get(id);
+    if(!p.rows.message?.[id] && !parent && !attempted.has(id)) {
+      attempted.add(id); parent=await fetch(id);
+      if(parent?.id===id) found.set(id,parent); else parent=undefined;
+    }
+    if(parent && !parent.deleted) await visit(parent.channel_id,seen);
+  }
+  for(const id of wanted ?? cs.keys()) await visit(id);
+  return found;
 }

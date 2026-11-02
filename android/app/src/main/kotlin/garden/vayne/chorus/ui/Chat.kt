@@ -119,6 +119,11 @@ import garden.vayne.chorus.data.ChatCompose
 import garden.vayne.chorus.data.RichTextEdit
 import garden.vayne.chorus.data.ChatEdit
 import garden.vayne.chorus.data.ChatSpace
+import garden.vayne.chorus.data.SearchAncestors
+import garden.vayne.chorus.data.SearchJump
+import garden.vayne.chorus.data.SearchVisibility
+import garden.vayne.chorus.data.ChannelPermissions
+import garden.vayne.chorus.data.Api
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.Polls
@@ -397,9 +402,50 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val clearedAt = channel?.id?.let { model.accountPrefs.hiddenChats[it] }
     // someone's private chat that isn't ours to look at now (D-097, D-098): its words stay out and
     // nothing is marked read
-    val shownNow = remember(model, viewingAs) { ChatOrganize.shown(model, viewingAs) }
+    val jumpSession=chorus.device?.session
+    var historyTarget by remember(channel?.id,jumpSession) { mutableStateOf<String?>(null) }
+    var historyRows by remember(channel?.id,jumpSession) { mutableStateOf<Pair<Model?,SearchJump.Rows?>>(null to null) }
+    val jumpTarget=jumpTo ?: historyTarget
+    LaunchedEffect(jumpTarget,model,channel?.id,jumpSession,syncStatus) {
+        val id=jumpTarget ?: return@LaunchedEffect
+        val c=channel ?: return@LaunchedEffect
+        val dev=chorus.device ?: return@LaunchedEffect
+        historyRows=null to null
+        try {
+            val dependencies=if(syncStatus==Status.Live) SearchAncestors.load(model,dev) else emptyMap()
+            val rows=SearchJump.load(model,dev.accountId,c.id,id,dependencies,
+                local={view->chorus.searchWindow(c.id,id,view)},remote={
+                    if(syncStatus!=Status.Live) emptyList() else {
+                        // The exact target must pass the current-front guarded endpoint first.
+                        val target=SearchVisibility.parseCard(Api.call("GET",dev.base,"/messages/$id",null,dev.session))
+                        val page=Api.call("GET",dev.base,"/channels/${c.id}/messages?around=$id&limit=99",null,dev.session).getJSONArray("items")
+                        (0 until page.length()).map {SearchVisibility.parseCard(page.getJSONObject(it))}.filter {it.id!=target.id} + target
+                    }
+                })
+            if(rows.messages.isNotEmpty()) {historyRows=model to rows;historyTarget=id}
+            else {error="That message isn't available here.";jumpTo=null;historyTarget=null}
+        } catch(e:CancellationException) {throw e}
+        catch(_:Exception) {error="That message isn't available here.";jumpTo=null;historyTarget=null}
+    }
+    val loadedHistory=historyRows.takeIf {it.first===model}?.second
+    val jumpVisibility=remember(model,loadedHistory) {SearchVisibility(model,chorus.device?.accountId.orEmpty(),ancestors=loadedHistory?.ancestors.orEmpty())}
+    val shownNow = remember(model, viewingAs, loadedHistory) {
+        val base=ChatOrganize.shown(model,viewingAs)
+        val byChannel=model.channels.associateBy {it.id}
+        val parents=model.searchMessages.associate {it.id to it.channelId}
+        fun permitted(id:String?,seen:MutableSet<String>):Boolean {
+            val c=byChannel[id] ?: return false
+            if(seen.size>256 || !seen.add(c.id)) return false
+            return if(c.kind=="thread") permitted(parents[c.parentMessageId],seen)
+                else ChannelPermissions.canView(model.channelPermissionState,c,chorus.device?.accountId.orEmpty())
+        }
+        val guard:(String?)->Boolean={id -> (base(id) && permitted(id,HashSet())) ||
+            (loadedHistory!=null && byChannel[id]?.kind=="thread" && loadedHistory.messages.any {it.channelId==id && jumpVisibility.message(it)})}
+        guard
+    }
     val locked = channel != null && !shownNow(channel.id)
-    val messages = if (locked) emptyList() else model.chatMessages[channel?.id].orEmpty().filter {
+    val messages = if (locked) emptyList() else (loadedHistory?.messages ?: model.chatMessages[channel?.id].orEmpty()).filter {
+        (loadedHistory==null || jumpVisibility.message(it)) &&
         space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
             accountVisible(it, space.kind, chorus.device?.accountId.orEmpty()) && (clearedAt == null || it.occurredAt > clearedAt)
     }
@@ -862,7 +908,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (error != null) Text(error.orEmpty(), color = p.danger, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(16.dp))
         if (space == null) Text("No spaces yet. Start a chat with someone you follow.", color = p.ink2, modifier = Modifier.padding(24.dp))
         else {
-        if (searchHit != null && searchHit.channelId == channel?.id && garden.vayne.chorus.data.SearchVisibility(model,chorus.device?.accountId.orEmpty()).document(searchHit)) {
+        if (searchHit != null && searchHit.channelId == channel?.id && SearchVisibility(model,chorus.device?.accountId.orEmpty()).document(searchHit)) {
             var revealed by rememberSaveable(searchHit.id) { mutableStateOf(false) }
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
                 .background(p.surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -931,12 +977,14 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             followNext = false
         }
         // after the opening position, so coming back from chat info lands on the chosen message
-        LaunchedEffect(jumpTo, currentPane) {
+        LaunchedEffect(jumpTo, messages, currentPane) {
             if (!currentPane) return@LaunchedEffect
             val id = jumpTo ?: return@LaunchedEffect
             val at = messages.asReversed().indexOfFirst { it.id == id }
             // a third of the way up, not against the composer
-            if (at >= 0) { listState.animateScrollToItem(at, -listState.layoutInfo.viewportSize.height / 3); flashId = id }
+            if (at < 0) return@LaunchedEffect // The guarded containing window is still loading.
+            listState.animateScrollToItem(at, -listState.layoutInfo.viewportSize.height / 3)
+            flashId = id
             jumpTo = null
         }
         LaunchedEffect(flashId) { if (flashId != null) { delay(1600); flashId = null } }
