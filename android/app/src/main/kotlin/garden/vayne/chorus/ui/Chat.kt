@@ -13,7 +13,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import garden.vayne.chorus.data.Status
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.layout.PaddingValues
@@ -1227,7 +1226,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 var authorsOpen by remember { mutableStateOf(false) }
                 var emojiOpen by remember { mutableStateOf(false) }
                 // the composer's emoji: the reaction set, tapped into the draft (Android has no custom emoji yet)
-                if (emojiOpen) ModalBottomSheet(onDismissRequest = { emojiOpen = false }, containerColor = p.surface) {
+                if (emojiOpen) ChorusSheet(onDismissRequest = { emojiOpen = false }, containerColor = p.surface) {
                     FlowRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 24.dp)) {
                         for (emoji in ChatReactions.QUICK + ChatReactions.MORE) Box(Modifier.size(48.dp).clip(CircleShape)
                             .clickable(onClickLabel = "Add $emoji") { draft += emoji },
@@ -1334,8 +1333,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         val readers = remember(model.active, readerQuery) {
             model.active.filter { member -> listOf(member.shownName, member.name, *member.sigils.toTypedArray()).any { it.contains(readerQuery.trim(), ignoreCase = true) } }
         }
-        ModalBottomSheet(onDismissRequest = { readerOpen = false }, containerColor = p.surface,
-            sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ChorusSheet(onDismissRequest = { readerOpen = false }, containerColor = p.surface,
+            skipPartiallyExpanded = true) {
             InspectionDialogContent {
                 Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f).imePadding().padding(horizontal = 20.dp)) {
                     Text("Read as…", style = MaterialTheme.typography.titleLarge)
@@ -1377,7 +1376,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         MessageEditDialog(chorus, model, id, viewingAs) { editingMessageId = null }
     }
     forwarding?.takeIf { forwardableMessage != null }?.let { message ->
-        ModalBottomSheet(onDismissRequest = { forwarding = null }, containerColor = p.surface) {
+        ChorusSheet(onDismissRequest = { forwarding = null }, containerColor = p.surface) {
             Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                 Text("Forward to…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -1404,7 +1403,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     // Quote: pick a part of the text (long-press to select), or all of it (SPEC §5.3 partial quotes)
     quotePicking?.let { message ->
         var picked by remember(message.id) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(message.text)) }
-        ModalBottomSheet(onDismissRequest = { quotePicking = null }, containerColor = p.surface) {
+        ChorusSheet(onDismissRequest = { quotePicking = null }, containerColor = p.surface) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Quote", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
                 Text("Select the part to quote, or quote it all.", color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp)
@@ -1423,7 +1422,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
     }
     replyIn?.let { message ->
-        ModalBottomSheet(onDismissRequest = { replyIn = null }, containerColor = p.surface) {
+        ChorusSheet(onDismissRequest = { replyIn = null }, containerColor = p.surface) {
             Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                 Text("Reply in…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -1440,7 +1439,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             }
         }
     }
-    if (bundleForward.isNotEmpty()) ModalBottomSheet(onDismissRequest = { bundleForward = emptyList() }, containerColor = p.surface) {
+    if (bundleForward.isNotEmpty()) ChorusSheet(onDismissRequest = { bundleForward = emptyList() }, containerColor = p.surface) {
         Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             Text("Forward ${bundleForward.size} messages to…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -1489,8 +1488,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         })
     if (spaceAction == "new") {
         var choice by rememberSaveable { mutableStateOf("choose") }
-        ModalBottomSheet(onDismissRequest = { directRequest?.cancel(); spaceAction = "" }, containerColor = p.surface,
-            sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ChorusSheet(onDismissRequest = { directRequest?.cancel(); spaceAction = "" }, containerColor = p.surface,
+            skipPartiallyExpanded = true) {
             InspectionDialogContent {
                 Column(Modifier.fillMaxWidth().then(if (choice == "direct") Modifier.fillMaxHeight(0.9f) else Modifier)
                     .imePadding().then(if (choice == "direct") Modifier else Modifier.verticalScroll(rememberScrollState()))

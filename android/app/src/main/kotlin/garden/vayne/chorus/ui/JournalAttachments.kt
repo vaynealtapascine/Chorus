@@ -59,7 +59,7 @@ internal fun JournalAttachments(files: List<PendingAttachment>, enabled: Boolean
     }
     val chosen = editing
     val index = files.indexOfFirst { it.uri == chosen?.uri }
-    if (chosen != null && index >= 0) ModalBottomSheet(onDismissRequest = { editing = null }, containerColor = p.surface) {
+    if (chosen != null && index >= 0) ChorusSheet(onDismissRequest = { editing = null }, containerColor = p.surface) {
         val file = files[index]
         Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(file.name, style = MaterialTheme.typography.titleMedium)

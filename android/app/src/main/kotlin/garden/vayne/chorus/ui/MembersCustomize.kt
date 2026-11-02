@@ -36,7 +36,7 @@ internal fun MembersCustomizeSheet(chorus: Chorus, model: Model, onError: (Strin
     fun setFolders(f: List<garden.vayne.chorus.data.MemberFolder>) = send("pref.set", null, MemberListPrefs.foldersPayload(f))
     var deleting by remember { mutableStateOf<garden.vayne.chorus.data.MemberFolder?>(null) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = p.surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ChorusSheet(onDismissRequest = onDismiss, containerColor = p.surface, skipPartiallyExpanded = true) {
         Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("On each member", color = p.ink3, style = MaterialTheme.typography.labelMedium)
@@ -169,7 +169,7 @@ internal fun GroupsSheet(chorus: Chorus, model: Model, onDismiss: () -> Unit) {
         catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Exception) { error = "Could not save that. Try again." }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = p.surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ChorusSheet(onDismissRequest = onDismiss, containerColor = p.surface, skipPartiallyExpanded = true) {
         Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Subsystems & groups", color = p.ink, style = MaterialTheme.typography.titleMedium)

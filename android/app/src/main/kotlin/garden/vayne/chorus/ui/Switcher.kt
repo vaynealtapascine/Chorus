@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -102,7 +101,7 @@ fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, onClose: () 
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onClose) {
+    ChorusSheet(onDismissRequest = onClose) {
         Column(Modifier.fillMaxWidth().heightIn(max = 700.dp).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             val frontName = target?.takeIf { it != named?.bodyId }?.let { named?.fronts?.get(it)?.name }
             Text(if (frontName != null) "Who's in $frontName?" else "Who's here?", fontWeight = FontWeight.SemiBold, color = p.ink)

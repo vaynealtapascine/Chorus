@@ -56,8 +56,8 @@ internal fun ProfileImageCrop(path: String, banner: Boolean, account: String, on
         catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Exception) { error = e.message ?: "Could not open that image. Choose another." }
     }
-    ModalBottomSheet(onDismissRequest = { if (!busy) onCancel() }, containerColor = p.surface,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ChorusSheet(onDismissRequest = { if (!busy) onCancel() }, containerColor = p.surface,
+        skipPartiallyExpanded = true) {
         InspectionDialogContent {
             // Reserve the viewport before decoding. Otherwise the loading-sized expanded
             // anchor can leave newly loaded crop controls below the screen (Material sheet).

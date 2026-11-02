@@ -95,8 +95,8 @@ internal fun PkImportSheet(chorus: Chorus, onDismiss: () -> Unit) {
             finally { busy = false }
         }
     }
-    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, containerColor = p.surface,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ChorusSheet(onDismissRequest = { if (!busy) onDismiss() }, containerColor = p.surface,
+        skipPartiallyExpanded = true) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Import from PluralKit", color = p.ink, style = MaterialTheme.typography.titleMedium)

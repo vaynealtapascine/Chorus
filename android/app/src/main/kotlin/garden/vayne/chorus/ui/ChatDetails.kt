@@ -63,7 +63,7 @@ internal fun SendAsSheet(model: Model, channelId: String, members: List<Member>,
             .filter { it.subjectType == "member" }.map { it.subjectId }.toSet()
     val frontName = model.namedFronts?.fronts?.get(frontId)?.name ?: "Body"
     val present = presence.filter { it.subjectId in presentIds }.mapNotNull { entry -> members.find { it.id == entry.subjectId } }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = p.surface) {
+    ChorusSheet(onDismissRequest = onDismiss, containerColor = p.surface) {
         Column(Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             Text("Send message as…", color = p.ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))

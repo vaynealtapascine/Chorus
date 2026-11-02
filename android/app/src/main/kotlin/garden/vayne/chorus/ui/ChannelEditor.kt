@@ -111,8 +111,8 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
             finally { busy = false }
         }
     }
-    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, containerColor = p.surface,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ChorusSheet(onDismissRequest = { if (!busy) onDismiss() }, containerColor = p.surface,
+        skipPartiallyExpanded = true) {
         Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(when { group != null -> "Edit group"; channel == null -> "New channel"; memberChat -> "Edit chat"; else -> "Edit channel" },

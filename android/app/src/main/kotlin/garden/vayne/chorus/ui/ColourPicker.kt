@@ -82,7 +82,7 @@ internal fun ColourPicker(initial: String, onDismiss: () -> Unit, onApply: (Stri
     }
     val swatches = listOf("#42A397", "#86BFA5", "#6D9ED2", "#A58BCC", "#D08EA4", "#C0694E", "#E0B560", "#B1ACA1")
     val recent = remember { prefs.getString("recent", "").orEmpty().split(',').mapNotNull(ColourValue::normalize).distinct().take(8) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = p.surface) {
+    ChorusSheet(onDismissRequest = onDismiss, skipPartiallyExpanded = true, containerColor = p.surface) {
 
         InspectionDialogContent {
                 Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
