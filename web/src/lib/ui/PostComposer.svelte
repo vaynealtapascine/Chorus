@@ -1,6 +1,8 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import QuoteEmbed from './QuoteEmbed.svelte';
+  import AudienceChip from './AudienceChip.svelte';
+  import type { Audience } from '../profile-audience';
   import { core } from '../core';
   import { buckets, members } from '../data';
   import { canWriteAs, posts } from '../posts';
@@ -15,6 +17,7 @@
   let { projection, initialAuthors = [], replyTo, defaultVisibility = 'private', onsent }: { projection: Projection; initialAuthors?: string[]; replyTo?: string; defaultVisibility?: 'private' | 'followers' | 'server'; onsent?: () => void } = $props();
   const active = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
   const availableBuckets = $derived(buckets(projection));
+  const chipBuckets = $derived(availableBuckets.map((b) => ({ id: b.id, name: b.name })));
   const MAX_FILES = 10;
 
   // one saved draft per composer context, like Android's (the main composer, or a thread's reply box)
@@ -23,6 +26,13 @@
   let draft = $state<JournalDraft>(emptyDraft());
   let loadedKey = $state('');
   let restored = $state(false);
+  // the same audience chip as profiles and Android's composer: Only us, Friends, buckets, More › everyone here
+  const audience = $derived<Audience>(draft.visibility === 'buckets' ? { mode: 'buckets', bucket_ids: draft.bucketIds } : { mode: draft.visibility });
+  function setAudience(a: Audience | null) {
+    const next = a ?? { mode: 'private' as const };
+    draft.visibility = next.mode;
+    draft.bucketIds = next.mode === 'buckets' ? next.bucket_ids : [];
+  }
   $effect(() => {
     if (loadedKey === key) return;
     let saved: JournalDraft | null = null;
@@ -66,9 +76,6 @@
 
   function toggle(id: string) {
     draft.authors = authors.includes(id) ? authors.filter((x) => x !== id) : [...authors, id];
-  }
-  function toggleBucket(id: string) {
-    draft.bucketIds = draft.bucketIds.includes(id) ? draft.bucketIds.filter((x) => x !== id) : [...draft.bucketIds, id];
   }
   function addFiles(files: FileList | File[]) {
     const room = MAX_FILES - pending.length;
@@ -190,10 +197,9 @@
         <label><input type="checkbox" bind:checked={draft.pollMultiple} /> Allow more than one choice</label>
       {/if}
     </div></details>
-    <label class="audience"><Icon name="lock" size={14} /><span class="sr-label">Visible to</span><select aria-label="Visible to" bind:value={draft.visibility}><option value="private">Only our system</option>{#if availableBuckets.length}<option value="buckets">Selected buckets</option>{/if}<option value="followers">Followers</option><option value="server">Everyone on server</option></select></label>
+    <span class="audience"><AudienceChip label="This post" value={audience} own buckets={chipBuckets} onchange={setAudience} /></span>
     <button class="primary" disabled={!canPost}>{busy ? 'Posting…' : replyTo ? 'Reply' : 'Post'}</button>
   </div>
-  {#if draft.visibility === 'buckets'}<div class="authors" aria-label="Visible buckets">{#each availableBuckets as bucket (bucket.id)}<label class:on={draft.bucketIds.includes(bucket.id)}><input type="checkbox" checked={draft.bucketIds.includes(bucket.id)} onchange={() => toggleBucket(bucket.id)} />{bucket.name}</label>{/each}</div>{/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 </form>
 
@@ -207,7 +213,7 @@
   .authors { display: flex; flex-wrap: wrap; max-height: 6rem; overflow: auto; gap: var(--s-1); }
   .authors label { display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); padding: 2px var(--s-2); border: 1px solid var(--line); border-radius: var(--r-full); cursor: pointer; }
   .authors label.on { background: var(--accent-soft); }
-  input:not([type='checkbox']), textarea, select { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); padding: var(--s-2); font: inherit; }
+  input:not([type='checkbox']), textarea { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); padding: var(--s-2); font: inherit; }
   textarea { width: 100%; resize: vertical; box-sizing: border-box; }
   .extras { margin-right: auto; position: relative; }
   .extras input { flex: 1 1 9rem; min-width: 0; }
@@ -241,6 +247,5 @@
   .extras summary { cursor: pointer; display: flex; gap: 6px; align-items: center; color: var(--ink-3); font-size: var(--fs-xs); min-height: 40px; }
   .extra-fields { display: grid; gap: 8px; position: absolute; left: 0; top: 100%; z-index: 3; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); width: min(280px, 75vw); }
   .audience { display: flex; align-items: center; gap: 4px; color: var(--ink-3); min-width: 0; }
-  .audience select { padding: 6px; border: 0; border-radius: 999px; font-size: var(--fs-xs); max-width: 160px; }
   .sr-label { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
 </style>

@@ -85,3 +85,11 @@ export function sameAudience(a: Audience, b: Audience): boolean {
   if (a.mode === 'buckets' && b.mode === 'buckets') return [...a.bucket_ids].sort().join() === [...b.bucket_ids].sort().join();
   return true;
 }
+
+/** Whether [next] may add readers over [previous] (Android `Audience.possiblyWidens`): a wider mode
+ * does, and so does any bucket that wasn't chosen before, since bucket sets can't be compared. */
+export function possiblyWidens(next: Audience, previous: Audience): boolean {
+  const rank = { private: 0, buckets: 1, followers: 2, server: 3 } as const;
+  if (next.mode === 'buckets' && previous.mode === 'buckets') return next.bucket_ids.some((id) => !previous.bucket_ids.includes(id));
+  return rank[next.mode] > rank[previous.mode];
+}

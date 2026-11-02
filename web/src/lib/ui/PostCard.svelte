@@ -6,7 +6,9 @@
   import { sync, type Projection } from '../sync/client';
   import { core } from '../core';
   import type { MemberRow } from '../data';
-  import type { PostRow } from '../posts';
+  import { canWriteAs, type PostRow } from '../posts';
+  import { audienceOf } from '../profile-audience';
+  import PostAudienceDialog from './PostAudienceDialog.svelte';
   import RichText from './RichText.svelte';
   import AvatarImage from './AvatarImage.svelte';
   import QuoteEmbed from './QuoteEmbed.svelte';
@@ -45,6 +47,9 @@
   let expanded = $state(false);
   let bodyExpanded = $state(false);
   let menu = $state(false);
+  let changingAudience = $state(false);
+  // only a post written by one of this account's members can have its audience changed here
+  const own = $derived(!!projection && post.authors.some((id) => canWriteAs(projection, id, sync.accountId)));
   let repostMenu = $state(false);
   let notice = $state('');
   let disclose = $state<HTMLDialogElement | undefined>();
@@ -161,11 +166,14 @@
       {#if menu}<div class="menu right" role="menu" use:outside={() => (menu = false)}>
         {#if !inThread}<a role="menuitem" href={threadHref} onclick={() => (menu = false)}>Open post</a>{/if}
         {#if share}<button role="menuitem" onclick={copy}>Copy text</button>{/if}
+        {#if own}<button role="menuitem" onclick={() => { menu = false; changingAudience = true; }}>Change audience</button>{/if}
         <a role="menuitem" href="#/stage-post/{post.id}" onclick={() => (menu = false)}>Stage</a>
       </div>{/if}
     </span>
   </div>
 </article>
+
+{#if changingAudience && projection}<PostAudienceDialog {projection} postId={post.id} current={audienceOf(post.visibility)} onclose={() => (changingAudience = false)} />{/if}
 
 <dialog bind:this={disclose} class="disclose" aria-labelledby="disclose-{post.id}">
   <h2 id="disclose-{post.id}">React as {speaker ? name(speaker) : 'this member'}?</h2>
