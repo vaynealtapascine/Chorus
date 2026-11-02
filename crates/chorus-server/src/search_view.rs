@@ -35,6 +35,9 @@ impl<'a> CurrentView<'a> {
             cards: HashMap::new(),
         })
     }
+    pub fn channel_visible(&mut self, id: &str) -> Result<bool, DataError> {
+        self.channel(id, &mut HashSet::new())
+    }
     pub fn message(&mut self, id: &str) -> Result<bool, DataError> {
         self.message_inner(id, &mut HashSet::new())
     }
@@ -101,6 +104,18 @@ impl<'a> CurrentView<'a> {
         else {
             return Ok(false);
         };
+        // Missing membership is compatible with ordinary channels; malformed stored membership
+        // is never an empty/unrestricted list, including on a thread and its ancestors.
+        let listed: Vec<String> = match listed.as_deref() {
+            None => Vec::new(),
+            Some(raw) => match serde_json::from_str(raw) {
+                Ok(ids) => ids,
+                Err(_) => {
+                    self.channels.insert(id.to_string(), false);
+                    return Ok(false);
+                }
+            },
+        };
         let mut ok = crate::perms::can(self.conn, &self.p.account_id, id, "view")?;
         if ok && kind == "thread" {
             ok = match parent {
@@ -108,7 +123,6 @@ impl<'a> CurrentView<'a> {
                 None => false,
             };
         } else if ok {
-            let listed: Vec<String> = listed.as_deref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default();
             let internal_private = space_kind == "internal" && (kind == "member_dm" || !listed.is_empty());
             let own =
                 listed
@@ -242,7 +256,7 @@ pub fn message_sql(account: &str, channels: &str, front: &str, cutoffs: &str, to
           WHEN 'system_only' THEN m.account_id={account}
           WHEN 'members' THEN CASE WHEN json_array_length({front})=0 THEN 0 ELSE
             m.account_id={account} AND json_type(m.visibility,'$.member_ids')='array'
-            AND EXISTS(SELECT 1 FROM json_each(m.visibility,'$.member_ids') a JOIN json_each({front}) f ON a.value=f.value WHERE a.type='text') END
+            AND EXISTS(SELECT 1 FROM json_each(m.visibility,'$.member_ids') a WHERE a.type='text' AND a.value IN (SELECT value FROM json_each({front}))) END
           ELSE 0 END END"#
     )
 }

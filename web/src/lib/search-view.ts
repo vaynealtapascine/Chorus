@@ -20,7 +20,7 @@ export function searchView(p: Projection, account: string, ancestors: ReadonlyMa
   function view(m: MessageRow | undefined, seen = new Set<string>()): boolean {
     if (!m || m.deleted || seen.size > 256 || seen.has(m.channel_id)) return false;
     const c = cs.get(m.channel_id), s = c && ss.get(c.space_id);
-    if (!c || c.archived || !s) return false;
+    if (!c || c.archived || c.invalid_membership || !s) return false;
     seen.add(c.id);
     // Permissions can arrive before scope repair evicts the old message rows.
     const sf = p.rows.space?.[s.id]?.fields ?? {};

@@ -587,3 +587,44 @@ fn sql_current_selection_agrees_with_guard_for_malformed_audiences_and_cutoffs()
         }
     }
 }
+
+#[test]
+fn malformed_channel_membership_never_becomes_unrestricted() {
+    use chorus_server::{
+        search::{self, MessageQuery},
+        search_view::{CurrentView, message_sql},
+    };
+    let conn = seed();
+    conn.execute("UPDATE space SET kind='internal' WHERE id=?1", [SPACE]).unwrap();
+    conn.execute("INSERT INTO channel(id,space_id,kind,name,parent_message_id,created_at) VALUES ('child',?1,'thread','Child','public',0)",[SPACE]).unwrap();
+    conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text) VALUES ('child-msg','child',?1,?1,200,'violet child')",[ALICE]).unwrap();
+    conn.execute("INSERT INTO message_fts(rowid,text,cw) SELECT rowid,text,'' FROM message WHERE id='child-msg'", [])
+        .unwrap();
+    let p = api_data::Principal::owner(ALICE);
+    for raw in [r#"["rose",42]"#, r#"[42]"#, r#"{}"#, r#""rose""#, r#"null"#] {
+        conn.execute("UPDATE channel SET member_ids=?1 WHERE id=?2", params![raw, CHANNEL]).unwrap();
+        for front in [false, true] {
+            conn.execute("DELETE FROM front_interval", []).unwrap();
+            if front {
+                conn.execute("INSERT INTO front_interval(id,account_id,subject_type,subject_id,level,is_primary,position,start_at,start_switch_id,start_tz_offset_min) VALUES ('live',?1,'member','rose','front',1,0,0,'switch',0)",[ALICE]).unwrap();
+            }
+            let mut view = CurrentView::new(&conn, &p).unwrap();
+            assert!(!view.message("public").unwrap(), "{raw}, front={front}");
+            assert!(!view.message("child-msg").unwrap(), "ancestor {raw}");
+            assert!(search::message_by_id(&conn, &p, "public").unwrap().is_none());
+            let (channels, front, cutoffs) = view.selection().unwrap();
+            let sql = format!("SELECT COUNT(*) FROM message m WHERE {}", message_sql("?1", "?2", "?3", "?4", "?5"));
+            let count: i64 =
+                conn.query_row(&sql, params![ALICE, channels, front, cutoffs, false], |r| r.get(0)).unwrap();
+            assert_eq!(count, 0, "SQL selection {raw}");
+            let page = search::messages(&conn, &p, &MessageQuery { q: "violet".into(), ..Default::default() }).unwrap();
+            assert_eq!(page["items"], serde_json::json!([]));
+            assert!(page["next_cursor"].is_null());
+        }
+    }
+    // SQL NULL and a valid empty text-channel list retain their established meaning.
+    for raw in [None, Some("[]")] {
+        conn.execute("UPDATE channel SET member_ids=?1 WHERE id=?2", params![raw, CHANNEL]).unwrap();
+        assert!(CurrentView::new(&conn, &p).unwrap().message("public").unwrap());
+    }
+}

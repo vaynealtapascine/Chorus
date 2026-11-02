@@ -20,7 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -28,7 +28,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.SearchVisibility
 import garden.vayne.chorus.data.ChatMessage
-import garden.vayne.chorus.data.ChatOrganize
 import garden.vayne.chorus.data.LocalSearch
 import garden.vayne.chorus.data.CoreMessageSearch
 import garden.vayne.chorus.data.MessageSearchResult
@@ -43,8 +42,9 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Search the permitted local replica even when the server is asleep. */
@@ -56,20 +56,20 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
     var query by rememberSaveable { mutableStateOf("") }
     var section by rememberSaveable { mutableStateOf(initialSection) }
     val session=chorus.device?.session
-    val dependencies by produceState<Triple<Model?,String?,Map<String,ChatMessage>>>(Triple(null,null,emptyMap()),model,session,online) {
-        value=Triple(null,null,emptyMap())
+    var remoteChannels by remember(model,session,online,query,section,channelId) { mutableStateOf<Set<String>>(emptySet()) }
+    val dependencyOwner = remember(model,session,online,channelId) { Any() }
+    val dependencies by produceState<Pair<Any?,Map<String,ChatMessage>>>(null to emptyMap(),dependencyOwner,remoteChannels) {
+        value=null to emptyMap()
         val dev=chorus.device
-        if(online && dev!=null) value=Triple(model,dev.session,garden.vayne.chorus.data.SearchAncestors.load(model,dev))
+        if(online && dev!=null) {
+            val found=garden.vayne.chorus.data.SearchAncestors.load(model,dev,channelId?.let(::listOf) ?: (model.searchMessages.mapNotNull {it.channelId}.toSet() + remoteChannels))
+            currentCoroutineContext().ensureActive()
+            value=dependencyOwner to found
+        }
     }
-    val visibility = remember(model, channelId, session, online, dependencies) {
-        SearchVisibility(model,chorus.device?.accountId.orEmpty(),channelId,if(dependencies.first===model && dependencies.second==session && online) dependencies.third else emptyMap())
+    val visibility = remember(model, channelId, dependencyOwner, dependencies) {
+        SearchVisibility(model,chorus.device?.accountId.orEmpty(),channelId,if(dependencies.first===dependencyOwner && online) dependencies.second else emptyMap())
     }
-    var remoteOwner by remember { mutableStateOf<Model?>(null) }
-    var remote by remember { mutableStateOf<List<SearchDocument>>(emptyList()) }
-    var cursor by remember { mutableStateOf<String?>(null) }
-    var remoteError by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(false) }
-    val currentSession by rememberUpdatedState(chorus.device?.session)
     val frontRevision by chorus.frontHistoryRevision.collectAsState()
     val index by produceState<LocalSearch?>(initialValue = null, model, frontRevision) {
         value = null
@@ -93,79 +93,69 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
         remember(index, query, section) { index?.search(query, if(section == "Saved") "Posts" else section, limit = Int.MAX_VALUE).orEmpty()
             .filter { section != "Saved" || it.id in model.accountPrefs.bookmarks }.take(100) }
     val parsed = remember(query) { LocalSearch.parse(query) }
-    LaunchedEffect(query, section, chorus.device?.session, online, model, messageResult) {
-        remoteOwner = null; remote = emptyList(); cursor = null; remoteError = null; loading = false
+    // Recomposition selects a fresh owner synchronously. A-B-A and reconnect never reuse it.
+    val validMessageQuery = remember(query) { runCatching { uniffi.chorus_ffi.searchParse(query) }.isSuccess }
+    val requests = remember(query, section, session, online, model, channelId) { SearchRequests() }
+    DisposableEffect(requests) { onDispose { requests.close() } }
+    LaunchedEffect(requests) {
         val dev = chorus.device ?: return@LaunchedEffect
         if (!online || section == "Switches" || query.isBlank()) return@LaunchedEffect
-        if (section == "Messages" && (messageResult.raw != query || !messageResult.validQuery) ||
+        if (section == "Messages" && !validMessageQuery ||
             section in listOf("Posts", "Saved") && parsed.terms.isEmpty()) return@LaunchedEffect
-        delay(250)
-        loading = true
-        try {
-            if (section == "Messages") {
+        val requestedQuery = query
+        val requestedSection = section
+        requests.first(this) {
+            delay(250)
+            if (requestedSection == "Messages") {
                 val now = System.currentTimeMillis()
-                val page = MessageSearchApi.pageRaw(dev, query, TimeZone.getDefault().getOffset(now) / 60_000, channelId = channelId)
-                remoteOwner = model
-                remote = page.items
-                cursor = page.nextCursor
+                val page = MessageSearchApi.pageRaw(dev, requestedQuery, TimeZone.getDefault().getOffset(now) / 60_000, channelId = channelId)
+                SearchRequests.Page(page.items, page.nextCursor)
             } else {
-                val page = PostSearchApi.page(dev, parsed, saved = section == "Saved")
-                remoteOwner = model
-                remote = page.items
-                cursor = page.nextCursor
+                val page = PostSearchApi.page(dev, parsed, saved = requestedSection == "Saved")
+                SearchRequests.Page(page.items, page.nextCursor)
             }
-        } catch (e: Exception) {
-            if(e is kotlinx.coroutines.CancellationException) throw e
-            remoteError = e.message ?: "Server search is unavailable." }
-        finally { loading = false }
+        }
     }
+    val remote = if (online) requests.items else emptyList()
+    LaunchedEffect(requests,remote) {
+        // Retain prior-page dependencies when another page introduces a new thread channel.
+        remoteChannels = remoteChannels + remote.mapNotNull {it.channelId}
+    }
+    val cursor = requests.cursor
+    val remoteError = requests.error
+    val loading = requests.loading
     val known = results.mapTo(HashSet()) { it.id }
     // members' private chats and private chats in DMs only while theirs are here (D-097, D-098)
-    val shown = (if (section == "Switches") results else results + (if(remoteOwner === model && online) remote else emptyList()).filter { doc ->
+    val shown = (if (section == "Switches") results else results + (if(online) remote else emptyList()).filter { doc ->
         doc.id !in known && (section !in listOf("Posts", "Saved") || parsed.from == null ||
             doc.authors.any { it == parsed.from } || doc.authorNames.any { it.contains(parsed.from, ignoreCase = true) })
     }).filter { doc -> (doc.kind != "Posts" || doc.id !in model.deletedPostIds) && (section != "Saved" || doc.id in model.accountPrefs.bookmarks) &&
         (doc.channelId == null || visibility.document(doc)) }
     val contextIds = shown.filter { it.kind == "Messages" }.associate { doc ->
-        doc.id to visibility.context(doc, (if(remoteOwner === model && online) remote.firstOrNull {it.id==doc.id} else null).let {listOfNotNull(it?.before,it?.after)} + listOfNotNull(doc.before,doc.after)) }
+        doc.id to visibility.context(doc, (if(online) remote.firstOrNull {it.id==doc.id} else null).let {listOfNotNull(it?.before,it?.after)} + listOfNotNull(doc.before,doc.after)) }
     val ids = contextIds.values.flatten().toSet()
     val localCards by produceState<Pair<Model?,Map<String,ChatMessage>>>(null to emptyMap(), model, ids) {
         value = null to emptyMap()
-        value = model to chorus.searchCards(ids)
+        val found = chorus.searchCards(ids)
+        currentCoroutineContext().ensureActive()
+        value = model to found
     }
-    val cards = ((shown + if(remoteOwner === model && online) remote else emptyList()).flatMap { listOfNotNull(it.card,it.before,it.after) }.associateBy {it.id} +
+    val cards = ((shown + if(online) remote else emptyList()).flatMap { listOfNotNull(it.card,it.before,it.after) }.associateBy {it.id} +
         if(localCards.first === model) localCards.second else emptyMap()).filterValues(visibility::message)
 
     fun loadMore() {
-        val next = cursor ?: return
         val dev = chorus.device ?: return
-        if (loading) return
         val requestedQuery = query
         val requestedSection = section
-        loading = true
-        actions.launch {
-            try {
-                if (requestedSection == "Messages") {
-                    val now = System.currentTimeMillis()
-                    val page = MessageSearchApi.pageRaw(dev, requestedQuery,
-                        TimeZone.getDefault().getOffset(now) / 60_000, next, channelId)
-                    if (query == requestedQuery && section == requestedSection && currentSession == dev.session && cursor == next && remoteOwner === model) {
-                        remote = remote + page.items
-                        cursor = page.nextCursor
-                        remoteError = null
-                    }
-                } else {
-                    val page = PostSearchApi.page(dev, parsed, next, saved = requestedSection == "Saved")
-                    if (query == requestedQuery && section == requestedSection && currentSession == dev.session && cursor == next && remoteOwner === model) {
-                        remote = remote + page.items
-                        cursor = page.nextCursor
-                        remoteError = null
-                    }
-                }
-            } catch (e: Exception) {
-                if (query == requestedQuery && section == requestedSection && currentSession == dev.session)
-                    remoteError = e.message ?: "Could not load more results."
-            } finally { loading = false }
+        requests.more(actions) { next ->
+            if (requestedSection == "Messages") {
+                val now = System.currentTimeMillis()
+                val page = MessageSearchApi.pageRaw(dev, requestedQuery, TimeZone.getDefault().getOffset(now) / 60_000, next, channelId)
+                SearchRequests.Page(page.items, page.nextCursor)
+            } else {
+                val page = PostSearchApi.page(dev, parsed, next, saved = requestedSection == "Saved")
+                SearchRequests.Page(page.items, page.nextCursor)
+            }
         }
     }
     LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
@@ -216,7 +206,7 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
         if (results.size == 100) item { Text("Showing the newest 100 local matches. Narrow the search for more.", color = p.ink2) }
         if (loading) item { Text("Searching server…", color = p.ink2) }
         if (remoteError != null && section != "Switches") item { Text("Server search unavailable: ${remoteError.orEmpty()}", color = p.ink2) }
-        if (section != "Switches" && cursor != null && remoteOwner === model && online) item {
+        if (section != "Switches" && cursor != null && online) item {
             TextButton(enabled = !loading, onClick = ::loadMore) { Text("Load more from server") }
         }
         item { Text("", modifier = Modifier.padding(bottom = 16.dp)) }

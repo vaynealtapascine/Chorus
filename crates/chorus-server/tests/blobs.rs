@@ -533,6 +533,18 @@ async fn private_chat_attachment_rechecks_recipient_front_even_with_a_retained_h
     }
     assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 200);
     {
+        let conn = s.state.db.lock().unwrap();
+        conn.execute("UPDATE channel SET kind='text',member_ids='[\"bob-member\",42]' WHERE id='private-channel'", [])
+            .unwrap();
+    }
+    for method in [reqwest::Method::GET, reqwest::Method::HEAD] {
+        assert_eq!(client.request(method, &url).bearer_auth("bob-token").send().await.unwrap().status(), 404);
+    }
+    {
+        let conn = s.state.db.lock().unwrap();
+        conn.execute("UPDATE channel SET member_ids='[\"bob-member\"]' WHERE id='private-channel'", []).unwrap();
+    }
+    {
         s.state.db.lock().unwrap().execute("UPDATE front_interval SET end_at=2 WHERE id='bob-live'", []).unwrap();
     }
     assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 404);

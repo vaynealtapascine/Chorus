@@ -18,7 +18,7 @@ class SearchVisibility(private val model: Model, private val account: String, pr
         val m=byId[input.id]?.let { it.card ?: ChatMessage(it.id,it.channelId.orEmpty(),it.authors,it.text,it.occurredAt,it.cw,it.visibilityMode,it.visibleMemberIds,it.accountId,null,emptyList()) } ?: input
         val c = channels[m.channelId] ?: return false
         val s = spaces[c.spaceId] ?: return false
-        if (seen.size > 256 || !seen.add(c.id)) return false
+        if (c.invalidMembership || seen.size > 256 || !seen.add(c.id)) return false
         if (c.kind == "thread") {
             val parent = byId[c.parentMessageId]
             val p = parent?.let { it.card ?: ChatMessage(it.id,it.channelId.orEmpty(),it.authors,it.text,it.occurredAt,it.cw,

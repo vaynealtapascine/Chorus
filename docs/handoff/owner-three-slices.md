@@ -407,3 +407,123 @@ predicates over matching indexed candidates and builds an ephemeral visible time
 channel; it does not promise constant work for arbitrarily larger histories. This is not a
 persistent visibility index. UI11b still needs independent re-review and deployment with matching
 artifacts before UI11c. No migration, schema, op-kind or library/version changes.
+
+
+## UI11b four independent re-review corrections (GPT-6-sol, 2026-11-02)
+
+Baseline `fb7efb85a772365ac2fbbb431f142c0f11b0e323`, start record `5b58c7b`.
+Only `F:/DunBuild/chorus-avatars`, existing `feat/links`; no other checkout, subagents,
+deployment, services/settings, phone install or UI11c work.
+
+- `search_view.rs` no longer defaults an invalid `Vec<String>` parse to empty. Malformed
+  membership closes the channel and inherited threads before SQL selection, exact guards,
+  context and attachment grants. Channel-image blob grants now use this same current view,
+  rather than the older permission-only SQL branch. Valid absent/null and empty memberships
+  retain their existing meaning; new malformed `channel.create`/`channel.set` writes are
+  rejected by `validate_new`, while legacy `validate`/projection replay remains compatible.
+  Web/native channel adapters retain an explicit invalid flag. Native's prior strict JSON
+  string getter also threw on a mixed array; the safe adapter keeps the model usable while
+  every affected channel remains unavailable.
+- `ui/SearchRequests.kt` is the controller used by ContentSearch for first pages and pagination.
+  Each remembered search/connection/projection incarnation gets a fresh owner; each operation
+  also gets an identity token. Both jobs cancel on disposal, and every result/error/finally
+  write checks ownership, even when transport ignores cancellation. Query/section values are
+  captured before suspension; core parses query validity independently of ancestor hydration, so
+  adding a later page's dependency does not discard retained pages/cursors. Ancestor producers also check cancellation and a fresh owner.
+- `ui/ChatHistory.kt` owns temporary history mode and its guarded window. The always-available
+  accessible latest button while in history clears the target/window; successful send/forward
+  takes the same return-to-live path. Room drafts and per-room LazyListState remain owned by
+  the existing durable/navigation objects. Already-authorized local history stays stable during model refresh, revalidated without old
+  remote ancestor grants; history responses cannot re-enter after latest/send,
+  model/connection replacement or disposal, including ignored cancellation. New messages use
+  the ordinary newest-100 model once history ends.
+- `SearchAncestors.load` walks only explicit candidate channel ancestry. Chat passes the target
+  channel alone, so unrelated missing parents cannot delay an ordinary local target. ContentSearch
+  passes only channels containing candidate local/returned messages (or its exact room), allowing ordinary
+  authorized local matches before remote dependencies finish. Missing target ancestry still hides
+  its thread; local tombstones/restrictions retain precedence over hydrated parents.
+- The SQL member/front match uses an uncorrelated `IN (SELECT value FROM json_each(front))`
+  lookup instead of expanding the identical front JSON inside a per-candidate join. Visibility
+  still precedes LIMIT and context selection; the 50k/150ms requirement is unchanged.
+
+Baseline reproduction logs: `F:/DunBuild/chorus-ui11b-rereview-original-rust.log` (server exposes
+mixed membership with no fronter; core accepts malformed new writes), `...-original-web.log`
+(local malformed membership becomes unrestricted), `...-original-android.log` (mixed membership
+crashes parsing). Those new regressions ran before their implementation changes. The deterministic
+native controller tests exercise delayed first/page success and errors, ignored cancellation,
+reconnect/query ABA/projection replacement, reused cursors, return-latest/send with message250
+arriving after a message10 history jump, unchanged drafts/reading position, and stalled unrelated
+ancestry while a local jump succeeds. No native device or UI instrumentation smoke test was run.
+
+Final full gate and benchmark results are recorded below when complete. Parent review should
+focus on ContentSearch owner wiring/disposal, history/latest/send integration and live new messages,
+malformed legacy membership across all grants, and exact target ancestry under permission loss.
+
+
+### Concurrent main deployment coordination — owner relay, 2026-11-02
+
+Claude Opus is deploying main `0ac29cc` / Android `.698` through `deploy-linux.ps1 -Android`.
+This task must not deploy, package, or write shared `F:/DunBuild/chorus-linux` or PC `app/android`.
+Those paths were not touched. Main and other worktrees were not overwritten/reset/merged.
+More main work is forthcoming: archived chats (D-111), reply jump stack and custom folders.
+**Parent MUST merge latest main into the reviewed UI11b branch, resolve semantics/conflicts and
+rerun the full Android/offline gate before any next packaging/deployment.** Do not deploy this
+unmerged task head merely because its isolated gate passed.
+
+Read-only inspection of `0ac29cc` confirms new `perms::kept_to -> listed_in + with_parts` and
+`tests/private_chats.rs::a_subsystem_s_chat_includes_who_is_inside_it`. New main D-110 expands a
+listed subsystem through `member_subsystem:` prefs to present active nested members, never upward.
+Main native `ChatOrganize.privateVisible` accepts `inside`, and `shown` supplies
+`Subsystems.including`. This branch predates those helpers. Its fail-closed shape validation must
+stay BEFORE expansion; valid listed members must use the merged semantics. At integration:
+
+- Expose/reuse main's `with_parts` (currently private) for CurrentView's validated own listed
+  members, including internal member chats; simply calling `kept_to` misses internal channels.
+- Pass `inside = { Subsystems.including(model,it) }` from native SearchVisibility to the merged
+  `privateVisible`. Reconcile web's corresponding local guard/expansion too (main's decision
+  explicitly says web currently lists only named members).
+- Add server/web/native search/context/ancestor/blob tests for recursive inside membership,
+  removal/archive/deletion, malformed mixed lists and the never-upward case; retain recorded
+  Body-front-only search semantics under the new membership relation.
+- Resolve the decision-ID collision: this branch's D-110 is scoped search; main's D-110 is
+  subsystem chat expansion, and D-111 is reserved by forthcoming archived-chat work. Renumber
+  references consistently during the parent merge instead of silently losing either decision.
+
+These are integration requirements from the owner's latest relay, not features merged into this
+four-finding patch. No other thread was contacted and no deployment tools were run.
+
+Package-only release benchmark (`chorus-ui11b-rereview-perf.log`, binary
+`search-65219cc9d57bfc7c.exe`): 57.7546 ms sparse, 116.3804 ms sparse/nonempty front,
+91.6928 ms dense. All exact hits/context/cursor assertions and the unchanged 150 ms limit pass.
+
+The core `validate_new` change also requires freshly built matching web WASM and Android native
+libraries at the parent integration/deployment step (`build-web-core.ps1`, `build-android-core.ps1`).
+The ordinary verification builds WASM and host JNI for tests but is not permission to reuse the
+previously deployed core binaries or to package in the concurrently occupied staging directories.
+
+Full-workspace release test executable from this exact gate (`search-612d2eda150e474f.exe`),
+run once with `--nocapture` after its suite passed: 68.3495 ms sparse, 115.0459 ms nonempty front,
+104.3725 ms dense. Log `F:/DunBuild/chorus-ui11b-rereview-perf-workspace.log`. This distinguishes
+workspace feature unification from the package-only executable; neither budget was weakened.
+
+
+### Final four-finding gate / handback — 2026-11-02
+
+Full `python scripts/verify.py --android --offline` **passed**, process-only
+`F:/DunBuild/chorus-env.ps1`, Studio JBR and F: caches, no quick wrapper. Final log:
+`F:/DunBuild/chorus-ui11b-rereview-final2.log`. Includes fmt/clippy, full release workspace /
+convergence / simulator / HTTP suites, WASM build, Svelte diagnostics (0 errors, 0 warnings),
+**243 web tests passed + 1 existing skip**, production budgets (**190 KB JS / 300 KB WASM gz**),
+Android lint and **363 app + 7 bridge JVM tests**, zero failures/errors/skips in JVM reports.
+The start commit also followed a full passing gate (`chorus-ui11b-rereview-start.log`).
+
+The first final attempt passed release Rust but found a setup error in the strengthened web
+regression (assigning `fronts.account.current` before creating `fronts.account`). The fixture
+setup was corrected and the full gate rerun; no check or failure was waived. The isolated native
+regressions passed before the final gate as well (`...-target-android3.log`).
+
+All four findings are committed for parent review in the implementation commit following
+`5b58c7b`. No WIP remains. Main integration/new subsystem semantics and phone/IME/Back/scroll
+smoke checks remain the parent's work; the isolated task head must not be deployed before that
+integration. No schema/op-kind/dependency/version change or data migration. No deployment or
+packaging/staging write was performed; UI11c remains gated.

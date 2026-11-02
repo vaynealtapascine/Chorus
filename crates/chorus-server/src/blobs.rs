@@ -122,6 +122,13 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
             return Ok(true);
         }
     }
+    let mut st = conn.prepare_cached("SELECT id FROM channel WHERE avatar_blob=?1").map_err(internal)?;
+    let ids = st.query_map([hash], |r| r.get::<_, String>(0)).map_err(internal)?;
+    for id in ids {
+        if view.channel_visible(&id.map_err(internal)?).map_err(internal)? {
+            return Ok(true);
+        }
+    }
     conn.query_row(
         &format!("SELECT EXISTS (
            SELECT 1 FROM custom_emoji e WHERE e.blob_hash = ?1
@@ -137,9 +144,6 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
            UNION ALL SELECT 1 FROM member m WHERE (m.avatar_blob = ?1 OR m.banner_blob = ?1)
               AND m.account_id = ?2 AND m.deleted_at IS NULL
            UNION ALL SELECT 1 FROM member_group g WHERE g.avatar_blob = ?1 AND g.account_id = ?2 AND g.deleted_at IS NULL
-           UNION ALL SELECT 1 FROM channel c
-              JOIN scope_access sa ON sa.scope = 'space:' || c.space_id AND sa.account_id = ?2
-              WHERE c.avatar_blob = ?1 AND c.deleted_at IS NULL AND {}
            UNION ALL SELECT 1 FROM attachment a WHERE (a.blob_hash = ?1 OR a.thumb_blob_hash = ?1)
               AND a.account_id = ?2
            UNION ALL SELECT 1 FROM attachment a
@@ -155,7 +159,7 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
                 AND EXISTS (SELECT 1 FROM json_each(fv.entries) je
                     WHERE json_extract(je.value, '$.subject_type') = 'member'
                       AND json_extract(je.value, '$.subject_id') = m.id)
-         )", crate::visibility::visible_channel_sql("?2"), crate::posts::readable_sql("?2")),
+         )", crate::posts::readable_sql("?2")),
         params![hash, account],
         |r| r.get(0),
     )

@@ -7,6 +7,21 @@ import org.junit.Test
 import kotlinx.coroutines.runBlocking
 
 class SearchVisibilityTest {
+    @Test fun malformedChannelMembershipNeverBecomesAnUnrestrictedLocalChat() {
+        for(raw in listOf("[\"rin\",42]","[42]","{}","\"rin\"")) {
+            val p=JSONObject(java.io.File(System.getProperty("chorus.fixtures"),"ui_search.json").readText()).getJSONObject("projection")
+            p.getJSONObject("rows").getJSONObject("channel").getJSONObject("c").getJSONObject("fields").put("member_ids",org.json.JSONTokener(raw).nextValue())
+            p.put("fronts",JSONObject().put("account",JSONObject().put("current",JSONArray().put(JSONObject().put("subject_type","member").put("subject_id","rin").put("level","front")))))
+            p.getJSONObject("rows").getJSONObject("channel").getJSONObject("thread").getJSONObject("fields").put("parent_message_id","m-match")
+            val model=Model.parse(p,"account")
+            val view=SearchVisibility(model,"account")
+            val hit=model.searchMessages.first {it.id=="m-match"}
+            assertFalse(raw,view.document(hit))
+            assertFalse(view.document(model.searchMessages.first {it.id=="thread-message"}))
+            assertTrue(view.context(hit).isEmpty())
+            assertFalse(ChatOrganize.shown(model)("c"))
+        }
+    }
     @Test fun sharedCurrentFrontContextAndScopeFixtures() {
         val f=JSONObject(java.io.File(System.getProperty("chorus.fixtures"),"ui_search.json").readText())
         val cases=f.getJSONArray("cases")

@@ -28,6 +28,7 @@ object ChatOrganize {
      */
     fun privateVisible(channel: ChatChannel, space: ChatSpace, front: List<Entry>, viewingAs: String?, hidePrivate: Boolean,
         own: Set<String>? = null, switched: List<Entry> = front): Boolean {
+        if (channel.invalidMembership) return false
         val mine = own?.let { ChatManage.sides(channel, space, it)?.mine }
         if (!mine.isNullOrEmpty()) return here(switched, mine)
         if (!hidePrivate || !isPrivate(channel, space)) return true
@@ -46,6 +47,7 @@ object ChatOrganize {
         val messageChannel = model.searchMessages.associate { it.id to it.channelId }
         fun ok(id: String?, depth: Int): Boolean {
             val c = channels[id ?: return false] ?: return false
+            if (c.invalidMembership) return false
             if (c.kind == "thread" && depth < 4) {
                 val home = c.parentMessageId?.let { messageChannel[it] }
                 return home != null && ok(home, depth + 1)

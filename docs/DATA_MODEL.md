@@ -934,3 +934,10 @@ pushes (SYNC.md §7.3), and are projected in their old order. What the bundle ca
 D-110 search adds read-only scopes and visible context, without changing sync delivery, the op
 catalogue, projections or schema. Bookmarks remain ordinary account-scoped `pref.set` values;
 a bookmark never grants post, author or blob access. Current-front search pages are ephemeral.
+
+UI11b membership hardening: new `channel.create`/`channel.set` writes accept absent or null
+`member_ids`, or an array containing only strings (including an empty array). Projection/replay
+still accepts legacy ops without rewriting them. Current-front reads treat a non-array or mixed
+persisted membership as unavailable, including through thread ancestors, context and known-hash
+blob references; clients retain an explicit invalid flag rather than interpreting it as an empty
+unrestricted list. SQL NULL remains the absent membership value.

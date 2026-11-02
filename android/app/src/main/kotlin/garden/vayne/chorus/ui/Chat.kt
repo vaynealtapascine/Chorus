@@ -403,31 +403,34 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     // someone's private chat that isn't ours to look at now (D-097, D-098): its words stay out and
     // nothing is marked read
     val jumpSession=chorus.device?.session
-    var historyTarget by remember(channel?.id,jumpSession) { mutableStateOf<String?>(null) }
-    var historyRows by remember(channel?.id,jumpSession) { mutableStateOf<Pair<Model?,SearchJump.Rows?>>(null to null) }
-    val jumpTarget=jumpTo ?: historyTarget
+    val history = remember(channel?.id,jumpSession) { ChatHistory() }
+    history.bind(model,syncStatus,chorus.device?.accountId.orEmpty())
+    DisposableEffect(history) { onDispose { history.latest() } }
+    val jumpTarget=jumpTo ?: history.target
     LaunchedEffect(jumpTarget,model,channel?.id,jumpSession,syncStatus) {
         val id=jumpTarget ?: return@LaunchedEffect
         val c=channel ?: return@LaunchedEffect
         val dev=chorus.device ?: return@LaunchedEffect
-        historyRows=null to null
+        val request=history.begin(id)
         try {
-            val dependencies=if(syncStatus==Status.Live) SearchAncestors.load(model,dev) else emptyMap()
+            // Ordinary/local targets never wait for an unrelated thread's missing parent.
+            val dependencies=if(syncStatus==Status.Live) SearchAncestors.load(model,dev,listOf(c.id)) else emptyMap()
             val rows=SearchJump.load(model,dev.accountId,c.id,id,dependencies,
                 local={view->chorus.searchWindow(c.id,id,view)},remote={
                     if(syncStatus!=Status.Live) emptyList() else {
-                        // The exact target must pass the current-front guarded endpoint first.
                         val target=SearchVisibility.parseCard(Api.call("GET",dev.base,"/messages/$id",null,dev.session))
                         val page=Api.call("GET",dev.base,"/channels/${c.id}/messages?around=$id&limit=99",null,dev.session).getJSONArray("items")
                         (0 until page.length()).map {SearchVisibility.parseCard(page.getJSONObject(it))}.filter {it.id!=target.id} + target
                     }
                 })
-            if(rows.messages.isNotEmpty()) {historyRows=model to rows;historyTarget=id}
-            else {error="That message isn't available here.";jumpTo=null;historyTarget=null}
+            if(history.owns(request)) {
+                if(rows.messages.isNotEmpty()) history.loaded(request,rows)
+                else {error="That message isn't available here.";jumpTo=null;history.latest()}
+            }
         } catch(e:CancellationException) {throw e}
-        catch(_:Exception) {error="That message isn't available here.";jumpTo=null;historyTarget=null}
+        catch(_:Exception) {if(history.owns(request)) {error="That message isn't available here.";jumpTo=null;history.latest()}}
     }
-    val loadedHistory=historyRows.takeIf {it.first===model}?.second
+    val loadedHistory=history.window(model)
     val jumpVisibility=remember(model,loadedHistory) {SearchVisibility(model,chorus.device?.accountId.orEmpty(),ancestors=loadedHistory?.ancestors.orEmpty())}
     val shownNow = remember(model, viewingAs, loadedHistory) {
         val base=ChatOrganize.shown(model,viewingAs)
@@ -435,7 +438,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         val parents=model.searchMessages.associate {it.id to it.channelId}
         fun permitted(id:String?,seen:MutableSet<String>):Boolean {
             val c=byChannel[id] ?: return false
-            if(seen.size>256 || !seen.add(c.id)) return false
+            if(c.invalidMembership || seen.size>256 || !seen.add(c.id)) return false
             return if(c.kind=="thread") permitted(parents[c.parentMessageId],seen)
                 else ChannelPermissions.canView(model.channelPermissionState,c,chorus.device?.accountId.orEmpty())
         }
@@ -444,7 +447,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         guard
     }
     val locked = channel != null && !shownNow(channel.id)
-    val messages = if (locked) emptyList() else (loadedHistory?.messages ?: model.chatMessages[channel?.id].orEmpty()).filter {
+    val messages = if (locked) emptyList() else history.messages(model,model.chatMessages[channel?.id].orEmpty()).filter {
         (loadedHistory==null || jumpVisibility.message(it)) &&
         space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
             accountVisible(it, space.kind, chorus.device?.accountId.orEmpty()) && (clearedAt == null || it.occurredAt > clearedAt)
@@ -651,7 +654,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 chorus.create("message.forward", chorus.newId(), ChatForward.bundle(row.channel.id, speaker, items, from.name, ids), scope = scope)
                 bundleForward = emptyList()
                 openChat(row)
-                followNext = true
+                history.sent(); jumpTo = null; followNext = true
             } catch (e: Exception) { error = e.message ?: "Could not forward the messages." }
             finally { busy = false }
         }
@@ -684,7 +687,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 chorus.create("message.forward", chorus.newId(), ChatForward.payload(row.channel.id, speaker, message, from.name, ids), scope = scope)
                 forwarding = null; forwardConfirm = null
                 openChat(row)
-                followNext = true
+                history.sent(); jumpTo = null; followNext = true
             } catch (e: Exception) { error = e.message ?: "Could not forward the message." }
             finally { busy = false }
         }
@@ -969,7 +972,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         val everywhere = remember(model, viewingAs) {
             model.chatMessages.filterKeys { shownNow(it) }.values.flatten().associateBy { it.id }
         }
-        LaunchedEffect(newest, readerId, currentPane) {
+        LaunchedEffect(newest, readerId, currentPane, history.target, followNext) {
             if (!currentPane) return@LaunchedEffect
             if (newest != null && ((newest != snapshot.reading.newest && listState.firstVisibleItemIndex <= 2) || followNext))
                 listState.animateScrollToItem(0)
@@ -1063,12 +1066,14 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
             }
         }
-        if (listState.firstVisibleItemIndex > 1 || unreadCount > 0) Column(
+        if (history.target != null || jumpTo != null || listState.firstVisibleItemIndex > 1 || unreadCount > 0) Column(
             Modifier.align(Alignment.BottomEnd).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (unreadMentions.isNotEmpty()) ChatJumpButton("@", unreadMentions.size, "${unreadMentions.size} unread mentions for $readerName") {
                 actions.launch { val at = messages.asReversed().indexOfFirst { it.id == unreadMentions.last().id }; if (at >= 0) listState.animateScrollToItem(at) }
             }
-            ChatJumpButton(null, unreadCount, if (unreadCount > 0) "Jump to latest message · $unreadCount unread" else "Jump to latest message") { actions.launch { listState.animateScrollToItem(0) } }
+            ChatJumpButton(null, unreadCount, if (unreadCount > 0) "Jump to latest message · $unreadCount unread" else "Jump to latest message") {
+                history.latest(); jumpTo = null; followNext = true
+            }
         }
         }
         undoDelete?.let { gone ->
@@ -1337,8 +1342,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                         accountId = senderAccount,
                                         quote = quoted.takeIf { it.isNotEmpty() }?.let { q -> ChatForward.quote(q, model.channels.find { it.id == q.first().channelId }?.name ?: channel.name, quotePart) })
                                     if (pollOn) payload.put("poll", Polls.draft(pollOptions.toList(), pollMultiple).getOrThrow())
-                                    followNext = true
                                     chorus.create("message.send", chorus.newId(), payload, scope = scope)
+                                    history.sent(); jumpTo = null; followNext = true
                                     val alsoTo = threadParentChannel?.takeIf { alsoSend && channel.kind == "thread" }
                                     val parent = threadParent
                                     if (alsoTo != null && parent != null) chorus.create("message.send", chorus.newId(),

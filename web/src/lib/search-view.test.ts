@@ -125,3 +125,17 @@ it('hydrates guarded thread dependencies, and never fetches over a local tombsto
  p.rows.channel.private.fields.archived_at=50;
  expect(searchView(p,'account',ancestors)(hit)).toBe(false);
 });
+
+it('malformed channel membership fails closed in hits, neighbors and thread ancestors',()=>{
+ for(const ids of [['rin',42],[42],{},'rin']) {
+  const p=structuredClone(fixture.projection) as Projection;
+  p.fronts.account={current:[{subject_type:'member',subject_id:'rin',level:'front'}],switches:[],intervals:[]} as never;
+  p.rows.channel.c.fields.member_ids=ids;
+  p.rows.channel.thread.fields.parent_message_id='m-match';
+  const view=searchView(p,'account');
+  const hit=messageById(p,'m-match')!;
+  expect(view(hit)).toBe(false);
+  expect(view(messageById(p,'thread-message'))).toBe(false);
+  expect(contextMessages(hit,Object.keys(p.rows.message).map(id=>messageById(p,id)!),view)).toEqual([]);
+ }
+});
