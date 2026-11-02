@@ -7,7 +7,7 @@
   import { router } from '../router.svelte';
   import { snapshot } from '../selection';
   import { editedSegments, segmentRich } from '../segments';
-  import { canWriteAs } from '../posts';
+  import { canWriteAs, posts } from '../posts';
   import { channelFrontChoices, channelFrontId, channelFrontKey, channelReaders, channelSpeaker } from '../channel-front';
   import { typingLabel, typingName } from '../sync/typing';
   import { sync, type Projection } from '../sync/client';
@@ -70,6 +70,19 @@
   const space = $derived(ss.find((s) => s.id === current?.space_id) ?? ss[0]);
   // members' private chats only while one of them is here (D-097, D-098), as in ChatList
   const shownNow = $derived(chatShown(projection, sync.accountId, viewingAs));
+  // what messages link to (D-109): posts from the replica (others' come from the server), and a
+  // message only where this reader may see it now: its chat is shown, and its audience allows us
+  const postsById = $derived(new Map(posts(projection).map((p) => [p.id, p])));
+  const channelsById = $derived(new Map(channels(projection, undefined, true).map((c) => [c.id, c])));
+  function embedLookup(id: string) {
+    const found = messageById(projection, id);
+    const channel = found && channelsById.get(found.channel_id);
+    if (!found || !channel || !shownNow(channel)) return undefined;
+    const home = ss.find((s) => s.id === channel.space_id);
+    const where = home?.kind === 'dm' ? home.name ?? 'Direct message' : channel.kind === 'member_dm' ? channel.name ?? undefined
+      : home?.kind === 'shared' ? `${home.name} · #${channel.name}` : `#${channel.name}`;
+    return memberVisible(found, home?.kind, activeMembers, viewingAs) ? { ...found, channel_name: where } : undefined;
+  }
   const spaceChannels = $derived(allChannels.filter((c) => c.space_id === space?.id && !c.archived && c.kind !== 'thread' && shownNow(c)));
   // a private chat in a DM (D-098): whose it is on our side and theirs
   const ownIds = $derived(new Set(members(projection).map((m) => m.id)));
@@ -1348,6 +1361,8 @@
           oncancelheld={() => sync.cancelHeld(m.id)}
           onreact={(emoji, on) => react(m, emoji, on)}
           onjump={showMessage}
+          postOf={(id) => postsById.get(id)}
+          {embedLookup}
           extra={pollFor}
         />
         {/if}

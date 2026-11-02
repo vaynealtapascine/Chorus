@@ -173,7 +173,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     onStageCapture: (Boolean) -> Unit = {},
     onDismissSearchHit: () -> Unit = {}, sharedDraft: SharedDraft? = null,
     sharedChannel: String? = null, onShareConsumed: () -> Unit = {}, onSearch: () -> Unit = {},
-    active: Boolean = true, onFocusedRoute: (Boolean) -> Unit = {}, onOpenConsumed: () -> Unit = {}) {
+    active: Boolean = true, onFocusedRoute: (Boolean) -> Unit = {}, onOpenConsumed: () -> Unit = {},
+    /** A link to a message (D-109): open its chat at it. */
+    requestedMessage: String? = null) {
     val p = LocalChorusPalette.current
     val heldMessages by chorus.heldMessages.collectAsState()
     val syncStatus by chorus.status.collectAsState()
@@ -188,11 +190,12 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val expanded = LocalConfiguration.current.screenWidthDp >= 840
     var selectedSpace by rememberSaveable { mutableStateOf("") }
     var selectedChannel by rememberSaveable { mutableStateOf("") }
-    LaunchedEffect(requestedSpace, requestedChannel, searchHit?.id, sharedDraft?.id) {
+    LaunchedEffect(requestedSpace, requestedChannel, searchHit?.id, sharedDraft?.id, requestedMessage) {
         if (requestedSpace != null || requestedChannel != null || searchHit != null || sharedDraft != null) {
             if (requestedSpace != null) selectedSpace = requestedSpace
             if (requestedChannel != null) selectedChannel = requestedChannel
             else if (requestedSpace != null) selectedChannel = ""
+            if (requestedMessage != null) jumpTo = requestedMessage
             conversationOpen = true
             if (requestedSpace != null || requestedChannel != null) onOpenConsumed()
         }
@@ -981,7 +984,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     onEdit = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
                         heldMessages[message.id] == null)
                         ({ editingMessageId = message.id }) else null,
-                    onJump = ::showMessage, flash = message.id == flashId)
+                    onJump = ::showMessage, flash = message.id == flashId,
+                    linked = { id -> garden.vayne.chorus.data.ChatOrganize.actionMessage(model, id, viewingAs, chorus.device?.accountId.orEmpty()) })
                 for (marker in timelinePlan.after) TimelineMarker(marker)
                 }
             }
@@ -1677,6 +1681,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     selecting: Boolean = false, selected: Boolean = false, onSelect: (() -> Unit)? = null,
     /** Show a replied-to, quoted or forwarded original by its message id. */
     onJump: ((String) -> Unit)? = null,
+    /** What its links point at (D-109): a message this reader may see here now, else null. */
+    linked: ((String) -> ChatMessage?)? = null,
     /** Just jumped to: a moment's ring. */
     flash: Boolean = false) {
     val p = LocalChorusPalette.current
@@ -1839,6 +1845,8 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 RichBody(message.text, message.entities, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
                     onPlainClick = { if (interactive) { if (selecting && onSelect != null) onSelect() else menuOpen = true } },
                     onLongClick = if (settled) openActions else null, onDoubleClick = heart)
+            if (linked != null) ChatLinkEmbeds(message.text, message.entities, chorus, model, linked,
+                { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }, onJump.takeIf { interactive })
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus, authors, message.occurredAt)
             }
@@ -1923,6 +1931,13 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 if (message.cw == null || revealed) ChatActionRow(R.drawable.ic_copy, "Copy text") {
                     val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("Message", message.text)); menuOpen = false
+                }
+                // a link that opens this message, and shows it as a preview in a chat (D-109)
+                val linkBase = chorus.device?.base
+                if (held == null && linkBase != null) ChatActionRow(R.drawable.ic_copy, "Copy link") {
+                    val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Link", garden.vayne.chorus.data.ChorusLinks.linkTo(linkBase, "message", message.id)))
+                    menuOpen = false
                 }
                 if (onPin != null) ChatActionRow(if (message.pinned) R.drawable.ic_unpin else R.drawable.ic_pin,
                     if (message.pinned) "Unpin" else "Pin") { menuOpen = false; onPin() }

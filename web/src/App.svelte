@@ -30,7 +30,33 @@
   import Icon from './lib/ui/Icon.svelte';
   import AvatarImage from './lib/ui/AvatarImage.svelte';
   import { frontView } from './lib/front-view';
+  import { messageById } from './lib/data';
+  import { parseLink } from './lib/share-links';
+  import { apiFetch } from './lib/http';
+  import { apiBase } from './lib/sync/device';
 
+  // a link to a message (D-109): its chat, at it, when this account has it; the chat applies its
+  // own rules about what shows; anything else lands on the chat list
+  $effect(() => {
+    if (router.route.name !== 'message' || !router.route.id || !projection) return;
+    const id = router.route.id;
+    const local = messageById(projection, id);
+    if (local) { location.replace(`#/chat/${local.channel_id}/${id}`); return; }
+    void apiFetch(`${apiBase()}/messages/${encodeURIComponent(id)}`, { headers: { authorization: `Bearer ${sync.device?.session ?? ''}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((j) => { if (router.route.name === 'message') location.replace(j?.channel_id ? `#/chat/${j.channel_id}/${id}` : '#/chat'); });
+  });
+  // links to our posts and messages open here instead of in a new tab (D-109)
+  function openOwnLink(e: MouseEvent) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+    if (!a || (a.target !== '_blank' && new URL(a.href).pathname === '/')) return;
+    const target = parseLink(a.href, location.origin);
+    if (!target) return;
+    e.preventDefault();
+    router.go(target.kind === 'post' ? `/journal/post/${target.id}` : `/message/${target.id}`);
+  }
   let switching = $state(false);
   // the desktop chat hides the sidebar behind its rail's menu button (Figma F5.21)
   let navOpen = $state(false);
@@ -100,6 +126,8 @@
   });
   const routeTitle = $derived(({ home: person ? 'Home' : 'Fronting', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', post: 'Post', chat: 'Chat', people: 'Friends', friend: 'Friends', history: 'Front history', fronts: 'Fronts', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
 </script>
+
+<svelte:document onclick={openOwnLink} />
 
 {#if status === 'no-device'}
   <Onboarding />

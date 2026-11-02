@@ -1,6 +1,6 @@
 // A tiny hash router: #/, #/members, #/members/<id>. Keeps URLs shareable between devices.
 export interface Route {
-  name: 'home' | 'members' | 'member' | 'history' | 'chat' | 'trash' | 'people' | 'stage' | 'data' | 'search' | 'insights' | 'journal' | 'profile' | 'post-stage' | 'post' | 'more' | 'settings' | 'computer' | 'fronts' | 'friend';
+  name: 'home' | 'members' | 'member' | 'history' | 'chat' | 'trash' | 'people' | 'stage' | 'data' | 'search' | 'insights' | 'journal' | 'profile' | 'post-stage' | 'post' | 'more' | 'settings' | 'computer' | 'fronts' | 'friend' | 'message';
   id?: string;
   messageId?: string;
   /** a friend's member (friend route, D-101) */
@@ -23,6 +23,8 @@ function parse(hash: string): Route {
   if (parts[0] === 'fronts') return { name: 'fronts' };
   if (parts[0] === 'chat') return { name: 'chat', id: parts[1] ? decodeURIComponent(parts[1]) : undefined, messageId: parts[2] ? decodeURIComponent(parts[2]) : undefined };
   if (parts[0] === 'search') return { name: 'search' };
+  // a link to a message (D-109): the app finds its chat
+  if (parts[0] === 'message' && parts[1]) return { name: 'message', id: decodeURIComponent(parts[1]) };
   if (parts[0] === 'insights') return { name: 'insights' };
   if (parts[0] === 'stage' && parts[1]) return { name: 'stage', id: decodeURIComponent(parts[1]) };
   if (parts[0] === 'data') return { name: 'data' };

@@ -9,6 +9,7 @@
   import { core } from '../core';
   import Icon from './Icon.svelte';
   import type { EmojiRow, MemberRow, MessageRow, SnapshotItem, TextRange, ThreadSummary } from '../data';
+  import type { PostRow } from '../posts';
   import { segmentRich } from '../segments';
   import RichText from './RichText.svelte';
   import AttachmentView from './AttachmentView.svelte';
@@ -16,6 +17,8 @@
   import EmojiImage from './EmojiImage.svelte';
   import { sync, type Revision } from '../sync/client';
   import { swipeReply } from '../swipe-reply';
+  import { linkTo } from '../share-links';
+  import LinkEmbeds from './LinkEmbeds.svelte';
 
   export type Quote = TextRange;
   export type Forwarded = SnapshotItem;
@@ -54,6 +57,8 @@
     tag,
     right,
     onjump,
+    postOf,
+    embedLookup,
   }: {
     m: MessageRow;
     cont: boolean;
@@ -65,6 +70,9 @@
     right?: boolean;
     /** Show a replied-to, quoted or forwarded original: scroll to it, or open its chat at it. */
     onjump?: (target: MessageRow) => void;
+    /** What its links point at (D-109): the replica's posts, and messages this reader may see here. */
+    postOf?: (id: string) => PostRow | undefined;
+    embedLookup?: (id: string) => (MessageRow & { channel_name?: string }) | undefined;
     people: Map<string, MemberRow>;
     dark: boolean;
     lookup: (id: string) => (MessageRow & { channel_name?: string }) | undefined;
@@ -282,6 +290,7 @@
       {:else if m.text}
         <span class="selectable text" data-message-offset="0"><RichText text={m.text} entities={m.entities} emoji={emojiById} /></span>
       {/if}
+      {#if postOf && embedLookup && m.entities.length}<LinkEmbeds text={m.text} entities={m.entities} lookup={embedLookup} {postOf} {nameOf} {onjump} />{/if}
       {#if m.attachments.length && !m.forward_snapshot?.some((f) => f.attachments?.length)}
         <div class="attachments">{#each m.attachments as a (a.id)}<AttachmentView attachment={a} />{/each}</div>
       {/if}
@@ -354,6 +363,7 @@
       {#if onreplyprivately}<button onclick={() => runAction(onreplyprivately)} title="Reply privately"><Icon name="chat" size={20} />Reply privately</button>{/if}
       <button onclick={() => runAction(quote)} title="Quote (select text first to quote part)"><Icon name="copy" size={20} />Quote selection or message</button>
       <button onclick={() => runAction(() => onforward(selectedRange() ?? undefined))} title="Forward selection or message"><Icon name="forward" size={20} />Forward</button>
+      <button onclick={() => runAction(() => navigator.clipboard?.writeText(linkTo(location.origin, { kind: 'message', id: m.id })))} title="Copy a link to this message: it shows as a preview in a chat"><Icon name="copy" size={20} />Copy link</button>
       <button onclick={() => runAction(onselect)} title={selected ? 'Deselect message' : 'Select for bundle'} aria-label={selected ? 'Deselect message' : 'Select for bundle'}><Icon name="select" size={20} />{selected ? 'Deselect' : 'Select for bundle'}</button>
       <button onclick={() => runAction(onthread)} title={thread ? 'Open thread' : 'Start thread'} aria-label={thread ? 'Open thread' : 'Start thread'}><Icon name="action-thread" size={20} />{thread ? 'Open thread' : 'Start thread'}</button>
       <button onclick={() => runAction(onpin)} title={m.pinned ? 'Unpin' : 'Pin'}><Icon name="action-pin" size={20} />{m.pinned ? 'Unpin' : 'Pin'}</button>

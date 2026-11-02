@@ -16,6 +16,7 @@
   import Icon from './Icon.svelte';
   import type { QuoteView } from '../post-threads';
   import { bookmarkPayload, repostBy, repostPayload, shareText, type SocialIndex } from '../journal-social';
+  import { linkTo } from '../share-links';
   import { entryMeta, fullTimestamp, shortAgo } from '../journal-presentation';
   import { journalCompose } from '../journal-compose.svelte';
   import { router } from '../router.svelte';
@@ -112,6 +113,12 @@
     } catch (e) { if ((e as Error).name === 'AbortError') return; }
     copy();
   }
+  /** A link that opens this post and, pasted into a chat, shows it there (D-109). */
+  async function copyLink() {
+    menu = false;
+    try { await navigator.clipboard.writeText(linkTo(location.origin, { kind: 'post', id: post.id })); notice = 'Link copied'; } catch { notice = 'Could not copy'; }
+    setTimeout(() => (notice = ''), 2000);
+  }
   async function copy() {
     menu = false;
     try { await navigator.clipboard.writeText(share); notice = 'Copied'; } catch { notice = 'Could not copy'; }
@@ -184,6 +191,7 @@
       <button class="more" aria-haspopup="menu" aria-expanded={menu} aria-label="More options for this post" onclick={() => (menu = !menu)}><Icon name="more" size={18} /></button>
       {#if menu}<div class="menu right" role="menu" use:outside={() => (menu = false)}>
         {#if !inThread}<a role="menuitem" href={threadHref} onclick={() => (menu = false)}>Open post</a>{/if}
+        <button role="menuitem" onclick={copyLink}>Copy link</button>
         {#if share}<button role="menuitem" onclick={copy}>Copy text</button>{/if}
         {#if own}<button role="menuitem" onclick={() => { menu = false; changingAudience = true; }}>Change audience</button>{/if}
         <a role="menuitem" href="#/stage-post/{post.id}" onclick={() => (menu = false)}>Stage</a>

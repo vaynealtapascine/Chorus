@@ -82,7 +82,7 @@ import garden.vayne.chorus.ui.InsightsScreen
 
 private data class OpenChatRequest(val id: Long, val spaceId: String?, val channelId: String)
 /** A tapped post alert (D-106): the post, or (no post) Friends for a request or its answer. */
-private data class OpenPostRequest(val id: Long, val postId: String?)
+private data class OpenPostRequest(val id: Long, val postId: String?, val messageId: String? = null)
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -121,13 +121,14 @@ class MainActivity : ComponentActivity() {
         }
         garden.vayne.chorus.data.Push.ensure(this)
         garden.vayne.chorus.data.Updater.schedule(this)
-        setContent { InspectionOverrides(intent) { ChorusTheme { App(chorus, inviteLink.value, sharedDraft.value,
+        setContent { androidx.compose.runtime.CompositionLocalProvider(garden.vayne.chorus.ui.LocalChorusLinks provides ::openOwnLink) {
+            InspectionOverrides(intent) { ChorusTheme { App(chorus, inviteLink.value, sharedDraft.value,
             onShareDismissed = { sharedDraft.value = null }, newEntryRequest = newEntryRequest.value,
             onNewEntryConsumed = { newEntryRequest.value = null },
             openChatRequest = openChatRequest.value,
             onOpenChatConsumed = { openChatRequest.value = null },
             openPostRequest = openPostRequest.value,
-            onOpenPostConsumed = { openPostRequest.value = null }) } } }
+            onOpenPostConsumed = { openPostRequest.value = null }) } } } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -171,7 +172,21 @@ class MainActivity : ComponentActivity() {
     private fun inviteFrom(i: Intent?): String? =
         i?.takeIf { it.action == Intent.ACTION_VIEW }?.data?.toString()?.takeIf { "/i/" in it }
 
+    /** A tapped link to one of our posts or messages (D-109) opens here; anything else is the browser's. */
+    private fun openOwnLink(href: String): Boolean {
+        val base = Chorus.get(this).device?.base ?: return false
+        val t = garden.vayne.chorus.data.ChorusLinks.parse(href, base) ?: return false
+        openPostRequest.value = OpenPostRequest(++nextOpenChatId, t.id.takeIf { t.kind == "post" }, t.id.takeIf { t.kind == "message" })
+        return true
+    }
+
     private fun openPostFrom(i: Intent?): OpenPostRequest? {
+        // a shared link opened from outside (D-109); the intent filter already names the server
+        i?.takeIf { it.action == Intent.ACTION_VIEW }?.data?.let { uri ->
+            garden.vayne.chorus.data.ChorusLinks.parse(uri.toString(), "${uri.scheme}://${uri.encodedAuthority}")?.let { t ->
+                return OpenPostRequest(++nextOpenChatId, t.id.takeIf { t.kind == "post" }, t.id.takeIf { t.kind == "message" })
+            }
+        }
         val post = i?.getStringExtra(EXTRA_OPEN_POST)?.takeIf { it.isNotBlank() }
         if (post == null && i?.getBooleanExtra(EXTRA_OPEN_PEOPLE, false) != true) return null
         return OpenPostRequest(++nextOpenChatId, post)
@@ -214,6 +229,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var chatSpace by rememberSaveable { mutableStateOf<String?>(null) }
     var chatChannel by rememberSaveable { mutableStateOf<String?>(null) }
     var chatSearchHit by remember { mutableStateOf<SearchDocument?>(null) }
+    // a link to a message (D-109): the chat opens at it
+    var chatMessage by remember { mutableStateOf<String?>(null) }
     var chatStageCapture by remember { mutableStateOf(false) }
     var chatFocused by rememberSaveable { mutableStateOf(false) }
     var journalFocused by rememberSaveable { mutableStateOf(false) }
@@ -267,11 +284,21 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         tab = Tab.Chat
         onOpenChatConsumed()
     }
+    val linkContext = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(openPostRequest?.id, status) {
         val req = openPostRequest ?: return@LaunchedEffect
         if (status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
         searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
-        if (req.postId != null) {
+        if (req.messageId != null) {
+            // only where this reader may see it now (its chat shown, its audience including who's here)
+            val m = garden.vayne.chorus.data.ChatOrganize.actionMessage(model, req.messageId, null, chorus.device?.accountId.orEmpty())
+            if (m == null) android.widget.Toast.makeText(linkContext, "That message isn't available here.", android.widget.Toast.LENGTH_SHORT).show()
+            else {
+                chatSpace = model.channels.find { it.id == m.channelId }?.spaceId; chatChannel = m.channelId
+                chatMessage = m.id; chatSearchHit = null
+                tab = Tab.Chat
+            }
+        } else if (req.postId != null) {
             journalReplyPost = null; journalOpenPost = req.postId
             tab = Tab.Journal
         } else tab = Tab.People
@@ -363,7 +390,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         sharedDraft = chatShare, sharedChannel = sharedChannel,
                         onShareConsumed = { chatShare = null; sharedChannel = null }, onSearch = { searchOpen = true },
                         active = shownTab == activeTab, onFocusedRoute = { chatFocused = it },
-                        onOpenConsumed = { chatSpace = null; chatChannel = null })
+                        onOpenConsumed = { chatSpace = null; chatChannel = null; chatMessage = null },
+                        requestedMessage = chatMessage)
                     Tab.Journal -> Journal(chorus, model, journalReplyPost,
                         onExternalReplyConsumed = { journalReplyPost = null },
                         externalOpenPost = journalOpenPost,

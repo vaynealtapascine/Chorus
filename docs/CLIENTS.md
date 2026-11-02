@@ -157,6 +157,12 @@ android/
 - `https://chorus.<domain>/i/<code>` (App Links) and `chorus://invite/<code>` → onboarding.
 - `chorus://switch?member=<id>&mode=replace|add|remove` (for Tasker/NFC; confirmation toast).
 - `chorus://c/<channel>/<message>`, `chorus://m/<member>`, `chorus://p/<post>`.
+- Shared links (D-109): `https://chorus.<domain>/post/<id>` and `/message/<id>` ("Copy link" in a
+  message's actions and behind a post's Share) open the post in Journal or the message's chat at it
+  (only where `ChatOrganize.actionMessage` lets this reader see it now). Inside the app every rich
+  text hands such links to `LocalChorusLinks` instead of the browser, and a chat message shows what
+  it links to under its text (`ChatLinkEmbeds`, `data/ChorusLinks.kt`). The web app does the same
+  (`share-links.ts`, `LinkEmbeds.svelte`; the server's SPA fallback serves it at those paths).
 - **Share target**: text/images/files → pick "Post as…" or "Send to channel…".
 - **App shortcuts**: static "Switch…", "Switch out", "New entry"; dynamic: top 4 pinned members.
 

@@ -31,6 +31,8 @@ internal fun RichBody(text: String, entities: String, modifier: Modifier = Modif
     onLongClick: (() -> Unit)? = null, onDoubleClick: (() -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val uri = LocalUriHandler.current
+    // our own posts and messages open in the app (D-109)
+    val openOwn = LocalChorusLinks.current
     var revealed by rememberSaveable(text, entities) { mutableStateOf(listOf<Int>()) }
     val annotated = remember(text, entities, revealed, p) {
         val prepared = garden.vayne.chorus.data.RichTextPresentation.prepare(text, entities, revealed)
@@ -72,7 +74,7 @@ internal fun RichBody(text: String, entities: String, modifier: Modifier = Modif
             if (spoiler != null) revealed = if (spoiler in revealed) revealed - spoiler else revealed + spoiler
             else {
                 val link = annotated.getStringAnnotations("link", offset, offset).firstOrNull()
-                if (link != null) runCatching { uri.openUri(link.item) } else plainClick()
+                if (link != null) { if (!openOwn(link.item)) runCatching { uri.openUri(link.item) } } else plainClick()
             }
     }
     BasicText(annotated, modifier = modifier.semantics {
