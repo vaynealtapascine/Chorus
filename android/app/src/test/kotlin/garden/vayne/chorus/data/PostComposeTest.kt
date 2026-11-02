@@ -22,6 +22,9 @@ class PostComposeTest {
             markup = markup, authorIds = ids + "b")
         assertEquals("[\"b\",\"a\"]", payload.getJSONArray("authors").toString())
         assertEquals(listOf("a"), PostCompose.toggleAuthor(ids, "b"))
+        assertEquals(listOf("c", "a", "b"), PostCompose.moveAuthor(listOf("a", "b", "c"), 2, 0))
+        assertEquals(listOf("b", "a", "c"), PostCompose.moveAuthor(listOf("a", "b", "c"), 0, 1))
+        assertEquals(listOf("a", "b"), PostCompose.moveAuthor(listOf("a", "b"), 0, 5))
         for (invalid in listOf(emptyList(), listOf("missing"), listOf("own", "foreign"))) {
             assertTrue(runCatching { PostCompose.validatedAuthors(model, "mine", invalid) }.isFailure)
         }

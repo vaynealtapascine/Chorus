@@ -347,7 +347,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
             LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), state = draftList, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // the post being answered scrolls with the draft, so expanding a long one never hides it
                 replyTo?.let { id -> item(key = "replying") { ReplyContext(model.posts.find { it.id == id }, model) } }
-                item(key = "author") { if (!model.isPerson) JournalAuthorsPicker(selectedAuthors ?: listOfNotNull(author?.id), mine, !busy) { selectedAuthors = it } }
+                item(key = "author") { JournalAuthorsPicker(selectedAuthors ?: listOfNotNull(author?.id), mine, !busy) { selectedAuthors = it } }
                 if (replyTo != null) item {
                     Text("Check the audience before posting.", color = p.ink3, style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(start = 52.dp))
