@@ -517,12 +517,15 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                 onQuote = { launchDraft("quote", it.id) },
                 onOpenPost = { threadPostId = it },
                 onProfile = { profileId = it })
-            // a switch is a quiet marker in the timeline, aligned with the post avatars
+            // a switch is a quiet marker in the timeline, aligned with the post avatars; a hairline
+            // runs on after it so it never reads as a post
             else Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) { ChatIcon(R.drawable.ic_switch_arrows, tint = p.ink3) }
                 Text(event.switchLabel.orEmpty() + " · " + compactAgo(event.at), color = p.ink3,
-                    style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false))
+                Box(Modifier.weight(1f).height(1.dp).background(p.line))
             }
             }
         }
