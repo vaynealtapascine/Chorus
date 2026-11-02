@@ -279,6 +279,11 @@ relationships, **pinned post**, **stats** (front time this week/month, last fron
 - Replies, quotes (full/partial), reposts, reactions — all as members. Multi-author posts allowed.
 - Visibility per post; default per member.
 - Drafts sync across devices.
+- Notes, entries and replies can be edited; history opens from the post. The server stores
+  compact derived history diffs while retaining complete append-only ops (D-107).
+- Timeline previews show at most 300 Unicode characters, with Show more; detail shows all text.
+- Person accounts can write posts and customize their self profile's avatar, colour and all
+  custom fields through the same editor as system members (D-046, D-107).
 
 ### 6.3 Relationships
 
@@ -286,6 +291,12 @@ Typed, directed or mutual links between a member and: another member of the same
 of another system, a person account, or a free-text external person. Relationship types are
 system-defined (name, inverse name, symmetric?, colour, icon). Examples: sibling, partner,
 protector of / protected by, caretaker, source, friend.
+
+Each relationship has its own audience including selected privacy buckets. On-server targets
+include visible members/fragments and singlets (their self member). A shared relationship is
+shown only when its source profile, audience and target profile all allow the reader. Hidden
+or deleted targets omit the whole relationship; links grant no extra identity, blob or history
+access. See D-107 and `docs/handoff/owner-three-slices.md` for the ordered owner plan.
 
 ### 6.4 Lists and feeds
 

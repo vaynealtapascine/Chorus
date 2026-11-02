@@ -372,6 +372,12 @@ options ("Add a poll") and voting on the poll card under the message (D-081, POL
 ### Journal and settings
 
 Journal opens on the existing Timeline / Lists / Feeds navigation and compact post composer.
+D-107: timeline bodies truncate at 300 Unicode characters with Show more, never at three lines.
+Post actions include Edit (own posts) and Edit history; history is fetched from the server with
+loading/error/retry states. Singlets have a Profile shortcut to the full self editor. Relationship
+rows and creation use the existing audience chip/picker, including individual bucket choices;
+the target picker includes profiles visible to the current account. Repost uses rectangular
+repeat arrows; switches use straight opposing arrows.
 Audience selection remains visible before posting. Long entry text collapses to a short preview with
 Show more / Show less. Settings starts with the explicit per-device theme choice, then the existing
 notifications/sharing controls, with extra options behind Advanced. This changes presentation while

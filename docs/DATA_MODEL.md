@@ -613,6 +613,12 @@ CREATE INDEX post_account_time ON post(account_id, occurred_at);
 
 CREATE TABLE post_author (post_id TEXT NOT NULL, member_id TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY (post_id, member_id));
 CREATE TABLE post_revision (post_id TEXT NOT NULL, rev INTEGER NOT NULL, title TEXT, text TEXT NOT NULL, entities TEXT NOT NULL, edited_at INTEGER NOT NULL, hlc TEXT NOT NULL, PRIMARY KEY (post_id, rev));
+-- D-107 / migration 0018 replaces full derived post_revision contents with:
+-- post_revision_diff(post_id, rev, delta JSON, edited_at, hlc), primary key (post_id, rev).
+-- Rev 0 sets all version fields; later deltas set only changed fields and optionally splice
+-- text at UTF-8 byte boundaries. Revisions are reconstructed on the server, never indexed for
+-- search or used for blob permissions. The legacy table is emptied transactionally after
+-- regeneration from ops. Append-only op payloads and account exports remain intact.
 
 CREATE TABLE highlight (
   profile_member_id TEXT NOT NULL, post_id TEXT NOT NULL,
