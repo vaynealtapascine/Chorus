@@ -21,7 +21,7 @@
   import SpaceRail from './SpaceRail.svelte';
   import ChatFolderRail from './ChatFolderRail.svelte';
   import ChatList from './ChatList.svelte';
-  import { chatPrefs, dayLabel, discColor, folderOf, frontEvents, type Folder } from '../chat-list';
+  import { chatPrefs, dayLabel, discColor, folderOf, frontEvents, jumpBack, pushJump, type Folder } from '../chat-list';
   import AttachmentView from './AttachmentView.svelte';
   import { expandFront } from '../subsystems';
   import Icon from './Icon.svelte';
@@ -1043,8 +1043,25 @@
     readChannel = current?.id ?? '';
     unreadBoundary = current ? lastRead(projection, current.id, sync.accountId) : 0;
     atLatest = true;
+    jumpTrail = [];
   });
+  // where each reply jump here started, newest last (D-112): ↓ first goes back one jump at a time,
+  // then to the latest message; reaching the latest forgets the trail
+  let jumpTrail = $state<string[]>([]);
+  $effect(() => { if (atLatest) jumpTrail = []; });
+  const returnTo = $derived(jumpBack(jumpTrail, (id) => !!list?.querySelector(`[data-message-id="${CSS.escape(id)}"]`) || visibleMsgs.some((m) => m.id === id)));
   function jumpLatest() {
+    const back = returnTo;
+    if (back) {
+      jumpTrail = back.rest;
+      const el = list?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(back.id)}"]`);
+      if (el) {
+        el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+        flash(el);
+        return;
+      }
+    }
+    jumpTrail = [];
     list?.scrollTo({ top: list.scrollHeight });
     atLatest = true;
   }
@@ -1094,10 +1111,11 @@
     el.animate([{ boxShadow: `0 0 0 3px ${accent}` }, { boxShadow: '0 0 0 3px transparent' }], { duration: 1400, easing: 'ease-out' });
   }
   /** The message a reply, quote or forward points at: here, scroll to it; elsewhere, open its chat at it. */
-  function showMessage(target: MessageRow) {
+  function showMessage(target: MessageRow, from?: string) {
     if (target.channel_id === current?.id) {
       const el = list?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(target.id)}"]`);
       if (el) {
+        jumpTrail = pushJump(jumpTrail, from, target.id);
         el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
         flash(el);
         return;
@@ -1360,7 +1378,7 @@
           heldUntil={held[m.id]?.until}
           oncancelheld={() => sync.cancelHeld(m.id)}
           onreact={(emoji, on) => react(m, emoji, on)}
-          onjump={showMessage}
+          onjump={(t) => showMessage(t, m.id)}
           postOf={(id) => postsById.get(id)}
           {embedLookup}
           extra={pollFor}
@@ -1379,7 +1397,7 @@
         <button class="x" onclick={() => { selecting = false; selectedIds = new Set(); }} aria-label="Cancel selection">✕</button>
       </div>
     {/if}
-    {#if !atLatest && !lockedOut}<button class="jump-latest" onclick={jumpLatest} aria-label={`Jump to latest${pendingUnread ? `, ${pendingUnread} unread` : ''}`}>↓ Latest{pendingUnread ? ` · ${pendingUnread}` : ''}</button>{/if}
+    {#if (!atLatest || returnTo) && !lockedOut}<button class="jump-latest" onclick={jumpLatest} aria-label={returnTo ? 'Back to where you jumped from' : `Jump to latest${pendingUnread ? `, ${pendingUnread} unread` : ''}`}>{returnTo ? '↓ Back' : `↓ Latest${pendingUnread ? ` · ${pendingUnread}` : ''}`}</button>{/if}
     {#if forwarding && !lockedOut}
       <div class="bar">
         Forward {forwarding.length} {forwarding.length === 1 ? 'item' : 'items'} to

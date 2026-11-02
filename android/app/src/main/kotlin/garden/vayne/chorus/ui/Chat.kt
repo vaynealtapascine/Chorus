@@ -931,6 +931,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             snapshot.reading.newest = newest
             followNext = false
         }
+        // where each reply jump here started, newest last (D-112): the down arrow first goes back
+        // one jump at a time, then to the latest message; reaching the latest forgets the trail
+        var jumpBack by remember(channel.id) { mutableStateOf(listOf<String>()) }
+        val atLatest = listState.firstVisibleItemIndex == 0
+        LaunchedEffect(atLatest) { if (atLatest) jumpBack = emptyList() }
         // after the opening position, so coming back from chat info lands on the chosen message
         LaunchedEffect(jumpTo, currentPane) {
             if (!currentPane) return@LaunchedEffect
@@ -942,10 +947,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
         LaunchedEffect(flashId) { if (flashId != null) { delay(1600); flashId = null } }
         // a reply's, quote's or forward's original (owner, 2026-11-02): scroll to it here, or open its chat at it
-        fun showMessage(id: String) {
+        fun showMessage(id: String, from: String? = null) {
             when (val where = garden.vayne.chorus.data.ChatJump.channelOf(id, messages, everywhere)) {
                 null -> android.widget.Toast.makeText(ctx, "That message isn't available here.", android.widget.Toast.LENGTH_SHORT).show()
-                channel.id -> jumpTo = id
+                channel.id -> { jumpBack = garden.vayne.chorus.data.ChatJump.push(jumpBack, from, id); jumpTo = id }
                 else -> model.channels.find { it.id == where }?.let { c ->
                     selectedSpace = c.spaceId; selectedChannel = c.id; jumpTo = id
                 }
@@ -993,7 +998,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     onEdit = if (chorus.device?.accountId?.let { it == message.accountId } == true &&
                         heldMessages[message.id] == null)
                         ({ editingMessageId = message.id }) else null,
-                    onJump = ::showMessage, flash = message.id == flashId,
+                    onJump = { target -> showMessage(target, message.id) }, flash = message.id == flashId,
                     linked = { id -> garden.vayne.chorus.data.ChatOrganize.actionMessage(model, id, viewingAs, chorus.device?.accountId.orEmpty()) })
                 for (marker in timelinePlan.after) TimelineMarker(marker)
                 }
@@ -1016,12 +1021,17 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 Text("No messages here yet.", color = p.ink2, modifier = Modifier.padding(16.dp))
             }
         }
-        if (listState.firstVisibleItemIndex > 1 || unreadCount > 0) Column(
+        val returnTo = garden.vayne.chorus.data.ChatJump.back(jumpBack, messages.mapTo(HashSet()) { it.id })
+        if (listState.firstVisibleItemIndex > 1 || unreadCount > 0 || returnTo != null) Column(
             Modifier.align(Alignment.BottomEnd).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (unreadMentions.isNotEmpty()) ChatJumpButton("@", unreadMentions.size, "${unreadMentions.size} unread mentions for $readerName") {
                 actions.launch { val at = messages.asReversed().indexOfFirst { it.id == unreadMentions.last().id }; if (at >= 0) listState.animateScrollToItem(at) }
             }
-            ChatJumpButton(null, unreadCount, if (unreadCount > 0) "Jump to latest message · $unreadCount unread" else "Jump to latest message") { actions.launch { listState.animateScrollToItem(0) } }
+            ChatJumpButton(null, unreadCount, if (returnTo != null) "Back to where you jumped from"
+                else if (unreadCount > 0) "Jump to latest message · $unreadCount unread" else "Jump to latest message") {
+                if (returnTo != null) { jumpBack = returnTo.rest; jumpTo = returnTo.id }
+                else { jumpBack = emptyList(); actions.launch { listState.animateScrollToItem(0) } }
+            }
         }
         }
         undoDelete?.let { gone ->

@@ -126,6 +126,8 @@ default the owner has not contradicted; these may be revisited if implementation
 
 | D-111 | **Archived chats (owner request, 2026-11-02).** A chat's long-press menu (web: its ⋯ menu) offers Archive; Chat's overflow menu (web: a bar above the list) offers "Archived chats (N)" while there are any, where each can be opened or unarchived. The account pref `chat_archived:<channel>` = when (the later of now and its latest message; null unarchives), like D-097's `chat_hidden:`, so it reaches the system's devices with no server change. A chat stays archived only while nothing newer than that has arrived: a new message puts it back in the list by itself, on every device. Archived chats leave the list and folder counts but are still found by search, and their notifications are unchanged. Android and web. | Owner request; claude-opus-5.5 |
 
+| D-112 | **Reply jumps leave a trail back (owner request, 2026-11-02).** Tapping a reply, quote or forward that jumps within the same chat (D-104) remembers the message it was tapped on, newest last, once each. The jump-to-latest arrow then first returns to the newest remembered message (ringing it) and forgets it, one jump at a time; with nothing left it goes to the latest message. Reaching the latest message, or opening another chat, forgets the trail; starts that have since left the view are skipped. Device-local, not synced. Android (`ChatJump.push/back`) and web (`pushJump`/`jumpBack`). | Owner request; claude-opus-5.5 |
+
 ## Versions
 
 Pin here as they are adopted (tool/library → version → date → why).

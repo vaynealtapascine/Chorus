@@ -171,6 +171,20 @@ export function privateVisible(
   return hereIn(front, members);
 }
 
+// ─── the reply jump trail (D-112; Android's ChatJump.kt) ──────────────────────────────────────────
+
+/** A reply jump from `from` to `to` remembers `from`, newest last, once. */
+export function pushJump(trail: string[], from: string | undefined, to: string): string[] {
+  return !from || from === to ? trail : [...trail.filter((id) => id !== from), from];
+}
+
+/** Where ↓ goes first: the newest start of a jump still in this chat (gone ones are skipped) and the
+ * trail left after it; null means the latest message. */
+export function jumpBack(trail: string[], present: (id: string) => boolean): { id: string; rest: string[] } | null {
+  for (let i = trail.length - 1; i >= 0; i--) if (present(trail[i])) return { id: trail[i], rest: trail.slice(0, i) };
+  return null;
+}
+
 /** Pinned (in pin order) first, then the rest by activity. */
 export function orderChats<T extends { id: string; at: number; title: string }>(rows: T[], pins: string[]): T[] {
   const rank = new Map(pins.map((p, i) => [p, i]));

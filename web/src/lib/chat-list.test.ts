@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ARCHIVED, byActivity, chatPrefs, stillArchived, chatTime, dayLabel, folderOf, frontEvents, HIDDEN, HIDE_PRIVATE, hideSpoilers, isPrivate, movePin, orderChats, PINS, previewOf, privateVisible, togglePin } from './chat-list';
+import { ARCHIVED, byActivity, chatPrefs, jumpBack, pushJump, stillArchived, chatTime, dayLabel, folderOf, frontEvents, HIDDEN, HIDE_PRIVATE, hideSpoilers, isPrivate, movePin, orderChats, PINS, previewOf, privateVisible, togglePin } from './chat-list';
 import type { ChannelRow, MessageRow, SpaceRow } from './data';
 
 const space = (kind: SpaceRow['kind']): SpaceRow => ({ id: kind, kind, name: kind });
@@ -53,6 +53,23 @@ describe('chat list', () => {
       { at: 60, text: 'Nairon became co-conscious' },
       { at: 70, text: 'Foxglove started steering' },
     ]);
+  });
+});
+
+describe('the reply jump trail (D-112)', () => {
+  it('retraces reply jumps one at a time, then the latest', () => {
+    let trail = pushJump([], 'm9', 'm5');
+    trail = pushJump(trail, 'm5', 'm2');
+    expect(trail).toEqual(['m9', 'm5']);
+    const present = (id: string) => ['m2', 'm5', 'm9'].includes(id);
+    const first = jumpBack(trail, present)!;
+    expect(first.id).toBe('m5');
+    const second = jumpBack(first.rest, present)!;
+    expect(second.id).toBe('m9');
+    expect(jumpBack(second.rest, present)).toBeNull();
+    expect(pushJump(['m9', 'm5'], 'm9', 'm1')).toEqual(['m5', 'm9']);
+    expect(pushJump(['m9'], undefined, 'm1')).toEqual(['m9']);
+    expect(jumpBack(['m9', 'gone'], present)!.id).toBe('m9');
   });
 });
 
