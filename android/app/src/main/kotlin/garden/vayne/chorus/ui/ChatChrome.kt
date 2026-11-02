@@ -72,7 +72,10 @@ internal fun ChannelDisc(channel: ChatChannel, member: Member? = null, size: Dp 
 internal data class ChatListRow(val channel: ChatChannel, val space: ChatSpace, val title: String,
     val latest: ChatMessage?, val unread: Int, val sender: String? = null, val muted: Boolean = false, val pinned: Boolean = false,
     /** A private chat in a DM (D-098), or a channel kept to some of our members (D-097): a lock, not a globe or #. */
-    val private: Boolean = false)
+    val private: Boolean = false,
+    /** Whose a private chat with another account is on our side ("• Fox"), so one member's chat with
+     * someone isn't mistaken for another's. */
+    val whose: String? = null)
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -174,7 +177,9 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                                 else if (row.channel.parentMessageId != null) ChatIcon(R.drawable.ic_reply)
                                 else if (!direct) Text("#", color = p.ink3, fontSize = 16.sp, lineHeight = 22.sp)
                                 Text(row.title, color = p.ink, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                row.whose?.let { Text("• $it", color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)) }
                             }
                             val sender = row.sender
                             val special = previews[row.channel.id]

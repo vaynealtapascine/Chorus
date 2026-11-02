@@ -559,7 +559,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 ?: directory[home.id]?.accounts?.find { it.id == latest.accountId }?.shownName ?: "Someone" }
             ChatListRow(candidate, home, title, latest, unread, sender,
                 muted = model.accountPrefs.channelNotify(candidate.id, home.kind) == "none", pinned = candidate.id in prefs.chatPins,
-                private = sides != null || (home.kind == "internal" && candidate.kind == "text" && candidate.memberIds.isNotEmpty()))
+                private = sides != null || (home.kind == "internal" && candidate.kind == "text" && candidate.memberIds.isNotEmpty()),
+                whose = sides?.mine?.mapNotNull { model.member(it)?.shownName }?.joinToString(" & ")?.ifEmpty { null })
         }.let { rows -> ChatOrganize.order(rows, prefs.chatPins, { it.channel.id }, { it.latest?.occurredAt ?: 0L }, { it.title }) }
     }
     var arrangingPins by rememberSaveable { mutableStateOf(false) }
