@@ -656,14 +656,15 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
                 style = MaterialTheme.typography.labelLarge, modifier = Modifier.clickable {
                     expanded = !expanded
                 }.heightIn(min = 32.dp).wrapContentHeight(Alignment.CenterVertically))
-            if (post.kind == "entry") Text(JournalPresentation.entryMeta(post.text, post.tags), color = p.ink3,
+            if (post.kind == "entry") Text(JournalPresentation.entryMeta(post.text, emptyList()), color = p.ink3,
                 style = MaterialTheme.typography.bodySmall)
             post.mood?.let { Text(it, color = p.ink2, style = MaterialTheme.typography.bodySmall) }
-            if (post.kind != "entry" && post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
-                style = MaterialTheme.typography.bodySmall)
-            JournalMedia(post.attachments, chorus, names, post.occurredAt)
+            JournalMedia(post.attachments, chorus, names, post.occurredAt, full = full)
             PollCard(chorus, model, post.id, Reply.speaker(model)?.id)
             post.quotePostId?.let { id -> ThreadQuote(id, quoted, model, onOpenPost) }
+            // tags close the post, after its media, poll and quote, just above the actions
+            if (post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
+                style = MaterialTheme.typography.bodySmall)
             if (showActions) JournalPostActions(post, model, chorus, onReply = { (onThread ?: onReply)(post) }, onQuote = onQuote)
         }
     }
