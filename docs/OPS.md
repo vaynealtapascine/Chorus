@@ -105,6 +105,8 @@ chorus-server backup [--to path]        # online backup (SQLite backup API) + bl
 chorus-server restore --from <snapshot> --into <new dir>   # verifies, bumps epoch (SYNC.md §7.3)
 chorus-server rebuild [--in-place]      # rebuild all projections from the op log, server stopped: built in a
                                         # fresh file (no journal), checked, swapped in (R19); --in-place: the old way
+                                        # Both keep legacy post history the log can't rebuild, and refuse (changing
+                                        # nothing) if a post with such history has no post.create left in the log (D-107)
 chorus-server export --account <id> --kind full|csv|sqlite
 chorus-server import-account --from <bundle.zip> [--handle NEW] [--check]   # one account from another
                                         # server's export bundle, server stopped (R27): ids, authors,

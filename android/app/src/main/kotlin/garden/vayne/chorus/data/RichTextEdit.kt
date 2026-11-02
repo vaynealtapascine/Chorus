@@ -87,7 +87,13 @@ object RichTextEdit {
                 fun word(at: Int): Boolean {
                     if (at !in text.indices) return false
                     val unit = if (text[at].isLowSurrogate() && at > 0 && text[at - 1].isHighSurrogate()) at - 1 else at
-                    return Character.isLetterOrDigit(text.codePointAt(unit))
+                    // core's is_alphanumeric: Unicode Alphabetic (letters, letter numbers like Ⅰ, marks like
+                    // U+0345) or any number (², ½); isLetterOrDigit misses those
+                    val cp = text.codePointAt(unit)
+                    return Character.isAlphabetic(cp) || when (Character.getType(cp).toByte()) {
+                        Character.DECIMAL_DIGIT_NUMBER, Character.LETTER_NUMBER, Character.OTHER_NUMBER -> true
+                        else -> false
+                    }
                 }
                 if (word(start - 1)) continue
                 var end = start + length

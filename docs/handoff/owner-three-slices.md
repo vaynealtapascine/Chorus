@@ -165,3 +165,25 @@ without a valid replacement range drop atomic identities instead of assigning th
 occurrence. No deployment, browser/native smoke check or device installation was performed.
 Parent still independently re-reviews, builds matching platform libraries, deploys and performs
 device checks before UI11b/UI11c.
+
+## Second re-review fixes (claude-opus-5.5, 2026-11-02)
+
+The re-review of 86c6aa6 left three findings; Sol's fix task stopped before writing code, so they
+were fixed on `feat/links` after merging this branch (with main's web Journal work and D-109):
+
+- **Swap rebuild dropped retained legacy history** (`project.rs`, `chorus-server rebuild`'s
+  default). `post_revision` is now `RETAINED`: the swap copies it into the fresh file like the
+  in-place path keeps it, and the row-count check skips it (a complete reconstruction may clear
+  it). Test: `swap_rebuild_keeps_retained_legacy_history` (missing middle op; two swaps, a later
+  edit, a third swap).
+- **In-place rebuild stranded history of a post with no ops.** Both rebuilds now refuse before
+  clearing anything when retained history belongs to a post with no applied `post.create`
+  (`post_history::stranded`): the error names the posts, the database (and the swap's file) is
+  unchanged. Nightly backup verification already failed for such a database (the post row can't be
+  rebuilt); it now fails with this message. Test: `rebuilds_refuse_to_strand_a_posts_retained_history`.
+  The account SQLite export (`exports::sqlite_copy`) also rebuilt from ops only; it now copies the
+  account's retained rows for posts its log creates (`sqlite_export_carries_retained_legacy_history`).
+- **Android mention boundaries** (`data/RichTextEdit.kt`): `Character.isLetterOrDigit` became
+  `Character.isAlphabetic` or a Nd/Nl/No number, which is core's `char::is_alphanumeric` (and the
+  web's `\p{Alphabetic}\p{N}`). `fixtures/ui_post_edit.json` gains ², Ⅰ and U+0345 appended and
+  prepended. Remaining limit: Android's Unicode tables can lag Rust's for newly assigned characters.
