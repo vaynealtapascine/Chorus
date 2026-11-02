@@ -498,7 +498,7 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
     var expanded by rememberSaveable(post.id) { mutableStateOf(false) }
-    var overflow by remember(post.id) { mutableStateOf(false) }
+    val preview = remember(post.text, post.entities) { garden.vayne.chorus.data.PostPreviews.of(post.text, post.entities) }
     val ctx = LocalContext.current
     val names = post.authorNames.joinToString(" & ").ifBlank { accountName }
     JournalPostFrame(names, compactAgo(post.occurredAt), null, endsWithActions = post.cw == null || revealed, avatar = {
@@ -512,10 +512,10 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
         if (post.cw == null || revealed) {
             if (post.title != null) Text(post.title, color = p.ink, fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp, lineHeight = 20.sp))
-            RichBody(post.text, post.entities, maxLines = if (expanded) Int.MAX_VALUE else 3,
-                onOverflow = { overflow = it }, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp))
-            if (overflow || expanded) TextButton(onClick = {
-                if (post.kind == "entry" && onThread != null) onThread(post) else expanded = !expanded
+            RichBody(if (expanded) post.text else preview.text + if (preview.truncated) "…" else "",
+                if (expanded) post.entities else preview.entities, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp))
+            if (preview.truncated) TextButton(onClick = {
+                expanded = !expanded
             }) { Text(if (expanded) "Show less" else "Show more") }
             PollCard(chorus, model, post.id, reactMemberId ?: Reply.speaker(model)?.id, post.poll, post.pollTally)
             JournalMedia(post.attachments, chorus, names, post.occurredAt)

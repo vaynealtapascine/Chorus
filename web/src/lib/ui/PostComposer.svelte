@@ -4,7 +4,7 @@
   import AudienceChip from './AudienceChip.svelte';
   import type { Audience } from '../profile-audience';
   import { core } from '../core';
-  import { buckets, members } from '../data';
+  import { buckets, members, selfMember } from '../data';
   import { canWriteAs, posts } from '../posts';
   import { sync, type Projection } from '../sync/client';
   import { bodyAuthors } from '../front-view';
@@ -60,7 +60,9 @@
   });
 
   // null = follow the current front (or the context's suggestion) until someone picks (Android's default intent)
-  const defaultAuthors = $derived(initialAuthors.length ? initialAuthors : bodyAuthors(projection, sync.accountId));
+  // a singlet always writes as themself (D-107)
+  const self = $derived(selfMember(projection));
+  const defaultAuthors = $derived(initialAuthors.length ? initialAuthors : self ? [self.id] : bodyAuthors(projection, sync.accountId));
   const authors = $derived(draft.authors ?? defaultAuthors.filter((id) => active.some((m) => m.id === id)));
   const authorLabel = $derived(active.filter((m) => authors.includes(m.id)).map((m) => m.display_name ?? m.name).join(' & ') || 'Choose author');
   const postById = $derived(new Map(posts(projection).map((p) => [p.id, p])));

@@ -17,6 +17,7 @@
   import RemotePostPoll from './RemotePostPoll.svelte';
   import type { PollTally } from '../polls';
   import RichText from './RichText.svelte';
+  import PostPreviewBody from './PostPreviewBody.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
   const feeds = $derived(savedFeeds(projection));
@@ -157,9 +158,9 @@
         {#if filtersByFronting(openShared.query)}<p class="banner" role="note">{FRONTING_NOTE}, as far as your notifications from {owner(openShared)} have shown you.</p>{/if}
         {#each sharedItems as post (post.id)}
           <article class="message"><p class="muted">{byline(post)} · {new Date(post.occurred_at).toLocaleString()}</p>
-            {#if post.cw}<details><summary>Content warning: {post.cw}</summary>{#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
+            {#if post.cw}<details><summary>Content warning: {post.cw}</summary>{#if post.title}<strong>{post.title}</strong>{/if}<p><PostPreviewBody text={post.text} entities={post.entities ?? []} /></p>
                   <RemotePostPoll {projection} post={post} member={speaker} />{#if post.attachments?.length}<PostMedia attachments={post.attachments} who={byline(post)} occurredAt={post.occurred_at} />{/if}</details>
-            {:else}{#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
+            {:else}{#if post.title}<strong>{post.title}</strong>{/if}<p><PostPreviewBody text={post.text} entities={post.entities ?? []} /></p>
                   <RemotePostPoll {projection} post={post} member={speaker} />{#if post.attachments?.length}<PostMedia attachments={post.attachments} who={byline(post)} occurredAt={post.occurred_at} />{/if}{/if}
           </article>
         {:else}<p class="muted">Nothing in this feed that you can read yet.</p>{/each}

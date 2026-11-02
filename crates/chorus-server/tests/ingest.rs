@@ -75,6 +75,70 @@ fn accepts_stamps_and_is_idempotent() {
 }
 
 #[test]
+fn person_self_cannot_be_archived_or_deleted_but_can_edit_and_write() {
+    let (c, person, system) = setup();
+    c.execute("UPDATE account SET kind='person' WHERE id=?1", [&person]).unwrap();
+    let scope = format!("account:{person}");
+    let create = op(71, "member.create", &scope, json!({"name":"Kai","is_self":true}), NOW);
+    let id = create.entity_id.clone().unwrap();
+    // Offline lifecycle ops can arrive before the self's creation.
+    for (n, kind) in [(72, "member.archive"), (73, "member.delete")] {
+        let mut attempt = op(n, kind, &scope, json!({}), NOW + 1);
+        attempt.entity_id = Some(id.clone());
+        let (ack, accepted) = ingest::accept(&c, &session(&person, 0), attempt, NOW + 1, false).unwrap();
+        assert!(accepted.is_none());
+        assert_eq!(ack.error.unwrap().code, "forbidden");
+    }
+    assert!(ingest::accept(&c, &session(&person, 0), create, NOW, false).unwrap().0.error.is_none());
+    for (n, kind) in [(74, "member.archive"), (75, "member.delete")] {
+        let mut attempt = op(n, kind, &scope, json!({}), NOW + 2);
+        attempt.entity_id = Some(id.clone());
+        assert_eq!(
+            ingest::accept(&c, &session(&person, 0), attempt, NOW + 2, false).unwrap().0.error.unwrap().code,
+            "forbidden"
+        );
+    }
+    ingest::server_op(
+        &c,
+        &person,
+        "member.set",
+        &scope,
+        Some(&id),
+        json!({"name":"Still Kai","color":"#aabbcc"}),
+        NOW + 3,
+    )
+    .unwrap();
+    ingest::server_op(
+        &c,
+        &person,
+        "post.create",
+        &scope,
+        Some(&new_id(2, [2; 10])),
+        json!({"kind":"note","authors":[id],"text":"still writing","entities":[]}),
+        NOW + 4,
+    )
+    .unwrap();
+    let active: bool = c
+        .query_row(
+            "SELECT is_self AND archived_at IS NULL AND deleted_at IS NULL FROM member WHERE id=?1",
+            [&id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(active);
+    // Systems keep normal member lifecycle controls.
+    let scope = format!("account:{system}");
+    let create = op(76, "member.create", &scope, json!({"name":"Rin"}), NOW);
+    let id = create.entity_id.clone().unwrap();
+    assert!(ingest::accept(&c, &session(&system, 0), create, NOW, false).unwrap().0.error.is_none());
+    for (n, kind) in [(77, "member.archive"), (78, "member.delete")] {
+        let mut attempt = op(n, kind, &scope, json!({}), NOW + 5);
+        attempt.entity_id = Some(id.clone());
+        assert!(ingest::accept(&c, &session(&system, 0), attempt, NOW + 5, false).unwrap().0.error.is_none());
+    }
+}
+
+#[test]
 fn rejects_invalid_and_forbidden() {
     let (c, a, b) = setup();
     let s = session(&a, 0);

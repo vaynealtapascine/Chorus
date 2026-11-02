@@ -279,6 +279,11 @@ relationships, **pinned post**, **stats** (front time this week/month, last fron
 - Replies, quotes (full/partial), reposts, reactions — all as members. Multi-author posts allowed.
 - Visibility per post; default per member.
 - Drafts sync across devices.
+- Notes, entries and replies can be edited; history opens from the post. The server stores
+  compact derived history diffs while retaining complete append-only ops (D-107).
+- Timeline previews show at most 300 Unicode characters, with Show more; detail shows all text.
+- Person accounts can write posts and customize their self profile's avatar, colour and all
+  custom fields through the same editor as system members (D-046, D-107).
 
 ### 6.3 Relationships
 
@@ -286,6 +291,12 @@ Typed, directed or mutual links between a member and: another member of the same
 of another system, a person account, or a free-text external person. Relationship types are
 system-defined (name, inverse name, symmetric?, colour, icon). Examples: sibling, partner,
 protector of / protected by, caretaker, source, friend.
+
+Each relationship has its own audience including selected privacy buckets. On-server targets
+include visible members/fragments and singlets (their self member). A shared relationship is
+shown only when its source profile, audience and target profile all allow the reader. Hidden
+or deleted targets omit the whole relationship; links grant no extra identity, blob or history
+access. See D-107 and `docs/handoff/owner-three-slices.md` for the ordered owner plan.
 
 ### 6.4 Lists and feeds
 
@@ -370,7 +381,7 @@ never an erase, and a device evicting old data locally to save space deletes not
 | Scroll history | 60 fps; pages of 100 messages; virtualised |
 | Member search over 500 members | ≤ 16 ms per keystroke |
 | Android cold start to front card | ≤ 1 s |
-| Web initial JS | ≤ 200 KB gz (routes lazy-loaded; wasm core loaded async, ≤ 300 KB gz) |
+| Web initial JS | ≤ 200 KB gz (routes lazy-loaded; wasm core loaded async, ≤ 500 KB gz, D-108) |
 | Server op ingestion | ≥ 2 000 ops/s sustained on the owner's PC |
 | Reconnect after 7 days offline with 5 000 queued local ops | fully synced ≤ 10 s |
 | Rebuild all projections from a 1M-op log | ≤ 60 s |

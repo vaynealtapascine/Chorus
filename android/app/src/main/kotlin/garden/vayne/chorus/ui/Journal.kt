@@ -474,7 +474,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
     LaunchedEffect(feedListState.firstVisibleItemIndex) { if (feedListState.firstVisibleItemIndex == 0) newPosts = false }
     Column(Modifier.fillMaxSize().background(p.bg)) {
         Row(Modifier.fillMaxWidth().background(p.surface).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            author?.let { ChatAvatar(it, 36.dp) }
+            author?.let { member -> Box(Modifier.clickable(enabled = model.isPerson, onClickLabel = "My profile") { profileId = member.id }) { ChatAvatar(member, 36.dp) } }
             Column(Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 6.dp)) {
                 Text("Journal", style = MaterialTheme.typography.titleMedium.copy(fontSize = 20.sp, lineHeight = 26.sp), color = p.ink)
                 Text(if (connection != garden.vayne.chorus.data.Status.Live) "Offline · saved on this device"
@@ -495,7 +495,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         }
         ScrollableTabRow(selectedTabIndex = listOf("system", "friends", "entries").indexOf(journalTab).coerceAtLeast(0),
             containerColor = p.surface, contentColor = p.accent, edgePadding = 16.dp, divider = { HorizontalDivider(color = p.line) }) {
-            for ((id, label) in listOf("system" to "Our system", "friends" to "Friends", "entries" to "Journals")) Tab(
+            for ((id, label) in listOf("system" to if (model.isPerson) "My posts" else "Our system", "friends" to "Friends", "entries" to "Journals")) Tab(
                 selected = journalTab == id, onClick = { journalTab = id }, text = { Text(label, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, lineHeight = 18.sp)) },
                 selectedContentColor = p.ink, unselectedContentColor = p.ink3)
         }
@@ -520,7 +520,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
             // a switch is a quiet marker in the timeline, aligned with the post avatars
             else Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) { ChatIcon(R.drawable.ic_swap, tint = p.ink3) }
+                Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) { ChatIcon(R.drawable.ic_switch_arrows, tint = p.ink3) }
                 Text(event.switchLabel.orEmpty() + " · " + compactAgo(event.at), color = p.ink3,
                     style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
@@ -599,9 +599,11 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
     if (repostedBy != null) RepostHeader(repostedBy)
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
     var expanded by rememberSaveable(post.id) { mutableStateOf(full) }
-    var overflow by remember(post.id) { mutableStateOf(false) }
     var authorsOpen by remember { mutableStateOf(false) }
     var audienceOpen by remember(post.id) { mutableStateOf(false) }
+    var postEditing by remember(post.id) { mutableStateOf(false) }
+    var historyOpen by remember(post.id) { mutableStateOf(false) }
+    val preview = remember(post.text, post.entities) { garden.vayne.chorus.data.PostPreviews.of(post.text, post.entities) }
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val names = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
     val open = onThread?.takeIf { !full }?.let { { it(post) } }
@@ -620,6 +622,8 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
         }
     }, overflow = {
         JournalOverflow("More options for this post", listOfNotNull(
+            ("Edit post" to { postEditing = true }).takeIf { post.repostOf == null && JournalSocial.canEditAudience(post, model, chorus.device?.accountId) },
+            "Edit history" to { historyOpen = true },
             open?.let { "Open post" to it },
             JournalSocial.shareText(post.title, post.cw, post.text).takeIf { it.isNotBlank() }?.let { text ->
                 "Copy text" to { clipboard.setText(androidx.compose.ui.text.AnnotatedString(text)) }
@@ -644,12 +648,13 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
         if (post.cw == null || revealed) {
             post.title?.let { Text(it, color = p.ink, style = MaterialTheme.typography.titleSmall.copy(
                 fontSize = if (full) 24.sp else 16.sp, lineHeight = if (full) 30.sp else 22.sp), fontWeight = FontWeight.Bold) }
-            RichBody(post.text, post.entities, maxLines = if (expanded || full) Int.MAX_VALUE else 3,
-                onOverflow = { overflow = it }, onPlainClick = { open?.invoke() }, style = MaterialTheme.typography.bodyMedium.copy(
+            RichBody(if (expanded || full) post.text else preview.text + if (preview.truncated) "…" else "",
+                if (expanded || full) post.entities else preview.entities,
+                onPlainClick = { open?.invoke() }, style = MaterialTheme.typography.bodyMedium.copy(
                     fontSize = if (full) 16.sp else 15.sp, lineHeight = if (full) 24.sp else 21.sp))
-            if (!full && (overflow || expanded)) Text(if (expanded) "Show less" else "Show more", color = p.accent,
+            if (!full && preview.truncated) Text(if (expanded) "Show less" else "Show more", color = p.accent,
                 style = MaterialTheme.typography.labelLarge, modifier = Modifier.clickable {
-                    if (post.kind == "entry" && onThread != null) onThread(post) else expanded = !expanded
+                    expanded = !expanded
                 }.heightIn(min = 32.dp).wrapContentHeight(Alignment.CenterVertically))
             if (post.kind == "entry") Text(JournalPresentation.entryMeta(post.text, post.tags), color = p.ink3,
                 style = MaterialTheme.typography.bodySmall)
@@ -663,6 +668,8 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
         }
     }
     if (audienceOpen) JournalAudienceDialog(post, model, chorus, onDismiss = { audienceOpen = false })
+    if (postEditing) PostEditDialog(post, chorus) { postEditing = false }
+    if (historyOpen) PostHistoryDialog(post.id, chorus) { historyOpen = false }
     if (!full) HorizontalDivider(color = p.line, thickness = .5.dp)
 }
 
@@ -679,6 +686,8 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
     replyAuthor: Member? = null, replyAuthors: List<Member> = emptyList(), onPickAuthor: ((String) -> Unit)? = null,
     onQuote: ((JournalPost) -> Unit)? = null, onOpenPost: ((String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
+    var historyOpen by remember(postId) { mutableStateOf(false) }
+    if (historyOpen) PostHistoryDialog(postId, chorus) { historyOpen = false }
     val motion = rememberChorusMotion()
     var remote by remember(postId) { mutableStateOf<PostDetail?>(null) }
     var error by remember(postId) { mutableStateOf<String?>(null) }
@@ -718,6 +727,7 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
             ChatIconButton(R.drawable.ic_back, "Back", onClose)
             Text(if (rootPost?.kind == "entry") "Journal entry" else if (ancestors.isNotEmpty()) "Thread" else "Post",
                 color = p.ink, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+            TextButton(onClick = { historyOpen = true }) { Text("History") }
         }
         // pull down to fetch replies again; own replies are already local
         androidx.compose.material3.pulltorefresh.PullToRefreshBox(refreshing, { refreshing = true; refresh++ }, Modifier.weight(1f)) {

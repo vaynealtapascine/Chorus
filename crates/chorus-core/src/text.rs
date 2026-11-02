@@ -207,7 +207,10 @@ impl P<'_> {
         #[cfg(feature = "editor")]
         if let Some(sources) = &mut self.sources {
             let at = self.source_units[_at];
-            sources.extend((0..c.len_utf16()).map(|unit| at + unit as u32));
+            sources.push(at);
+            if c.len_utf16() == 2 {
+                sources.push(at + 1);
+            }
         }
         self.out.push(c);
         self.u16 += c.len_utf16() as u32;
@@ -595,15 +598,16 @@ fn parse_inner(src: &str, r: &dyn Resolver, _mapped: bool) -> (Rich, Vec<u32>) {
         }
     }
     #[cfg(feature = "editor")]
-    let source_units = {
+    let source_units = if _mapped {
         let mut offset = 0;
-        s.iter()
-            .map(|c| {
-                let at = offset;
-                offset += c.len_utf16() as u32;
-                at
-            })
-            .collect()
+        let mut units = Vec::with_capacity(s.len());
+        for c in &s {
+            units.push(offset);
+            offset += c.len_utf16() as u32;
+        }
+        units
+    } else {
+        Vec::new()
     };
     let mut p = P {
         s,

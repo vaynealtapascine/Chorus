@@ -188,6 +188,7 @@ pub fn router(state: AppState) -> Router {
         .route("/posts", get(posts_list))
         .route("/posts/{id}", get(post_one))
         .route("/posts/{id}/revisions", get(post_revisions))
+        .route("/relationship-targets", get(relationship_targets))
         .route("/me", get(me))
         .route("/stream", get(stream))
         .route("/spaces", get(spaces_list).post(spaces_create))
@@ -1630,6 +1631,15 @@ async fn account_members(
     let conn = s.db();
     let me = who(&s, &conn, &headers)?;
     Ok(Json(crate::profiles::members(&conn, &me.account_id, &id)?))
+}
+
+async fn relationship_targets(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    Ok(Json(crate::profiles::targets(&conn, &me.account_id)?))
 }
 
 /// One friend profile: only the parts and fields shared with this account (D-101).

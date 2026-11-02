@@ -1,0 +1,23 @@
+{
+  "text": "@Kai @Kai",
+  "entities": [
+    {"type":"mention","offset":0,"length":4,"target_type":"member","target_id":"first"},
+    {"type":"mention","offset":5,"length":4,"target_type":"member","target_id":"second"}
+  ],
+  "cases": [
+    {"name":"delete first identical token","draft":"@Kai","start":0,"end":5,"ids":["second"]},
+    {"name":"identical selected retyping is new input","draft":"@Kai @Kai","start":0,"end":4,"ids":["second"]},
+    {"name":"append keeps both identities","draft":"@Kai @Kai!","start":9,"end":9,"ids":["first","second"]},
+    {"name":"extend mention word drops old identity","draft":"@Kai @Kaix","start":9,"end":9,"ids":["first"]},
+    {"name":"append hyphenated mention suffix","draft":"@Kai @Kai-extra","start":9,"end":9,"ids":["first"]},
+    {"name":"append dotted mention suffix","draft":"@Kai @Kai.extra","start":9,"end":9,"ids":["first"]},
+    {"name":"append trailing punctuation","draft":"@Kai @Kai.-!","start":9,"end":9,"ids":["first","second"]},
+    {"name":"prepend Latin letter","draft":"x@Kai @Kai","start":0,"end":0,"ids":["second"]},
+    {"name":"prepend supplementary Unicode letter","draft":"𐐀@Kai @Kai","start":0,"end":0,"ids":["second"]},
+    {"name":"append supplementary Unicode letter","draft":"@Kai @Kai𐐀","start":9,"end":9,"ids":["first"]},
+    {"name":"append Unicode digit","draft":"@Kai @Kai𝟙","start":9,"end":9,"ids":["first"]},
+    {"name":"append underscore","draft":"@Kai @Kai_","start":9,"end":9,"ids":["first"]},
+    {"name":"prepend emoji separator","draft":"🪴@Kai @Kai","start":0,"end":0,"ids":["first","second"]},
+    {"name":"prepend punctuation separator","draft":"-@Kai @Kai","start":0,"end":0,"ids":["first","second"]}
+  ]
+}

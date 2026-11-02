@@ -217,10 +217,11 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
             } ?: run { settingsFor = null } }
             HorizontalDivider(color = p.line)
             var advanced by rememberSaveable { mutableStateOf(false) }
-            TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Hide more details" else "More details") }
-            if (advanced) {
+              if (model.isPerson) ColourField(color, { color = it }, modifier = Modifier.fillMaxWidth(), enabled = !busy)
+            if (!model.isPerson) TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Hide more details" else "More details") }
+            if (advanced && !model.isPerson) {
                 OutlinedTextField(sigil, { sigil = it }, label = { Text("Representative characters") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
-                ColourField(color, { color = it }, modifier = Modifier.fillMaxWidth(), enabled = !busy)
+                if (!model.isPerson) ColourField(color, { color = it }, modifier = Modifier.fillMaxWidth(), enabled = !busy)
                 Text("Start a message with one or more members' representative characters, then a space.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
                 if (baseline != null) OutlinedButton(enabled = !busy && !dirty, onClick = {
                     actions.launch {

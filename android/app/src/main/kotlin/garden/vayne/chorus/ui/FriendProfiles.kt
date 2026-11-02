@@ -139,6 +139,13 @@ internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: Stri
                             FriendField(f.optString("name")) { FriendValue(f.optString("type"), f.opt("value")) }
                         }
                     }
+                    val links = m.optJSONArray("relationships") ?: JSONArray()
+                    if (links.length() > 0) Text("Relationships", color = p.ink, style = MaterialTheme.typography.titleMedium)
+                    for (i in 0 until links.length()) {
+                        val link = links.getJSONObject(i)
+                        Text("${link.optString("type")} · ${shown(link.getJSONObject("target"))}", color = p.ink)
+                        link.text("note")?.let { Text(it, color = p.ink2) }
+                    }
                     Text("You see what $accountName chose to share with you.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
                 }
             }

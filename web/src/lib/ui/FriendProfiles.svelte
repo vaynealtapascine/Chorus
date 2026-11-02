@@ -14,7 +14,7 @@
 
   interface Card { id: string; name: string; display_name: string | null; pronouns: string | null; color: string | null; sigil: string | null; avatar_blob: string | null }
   interface Field { id: string; name: string; type: string; value: unknown }
-  interface Full extends Card { description: string | null; description_entities: never[]; birthday: string | null; banner_blob: string | null; fields: Field[]; post_alerts?: 'none' | 'requested' | 'active' }
+  interface Full extends Card { description: string | null; description_entities: never[]; birthday: string | null; banner_blob: string | null; fields: Field[]; relationships?: {id: string; type: string; target: Card; note?: string}[]; post_alerts?: 'none' | 'requested' | 'active' }
 
   let owner = $state<{ name: string; avatar_blob: string | null } | null>(null);
   let list = $state<Card[] | null>(null);
@@ -128,6 +128,7 @@
           {/each}
         </dl>
       {/if}
+      {#if profile.relationships?.length}<section aria-label="Relationships"><h2>Relationships</h2>{#each profile.relationships as link (link.id)}<p>{link.type} · {shownName(link.target)}{#if link.note}<br />{link.note}{/if}</p>{/each}</section>{/if}
       <p class="hint">You see what {owner?.name ?? 'they'} chose to share with you.</p>
     {:else if !error}
       <p class="muted">Loading…</p>

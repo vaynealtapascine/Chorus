@@ -394,6 +394,9 @@ fn write_revisions(
     if revisions.is_empty() {
         return Ok(());
     }
+    if table == "post" {
+        return crate::post_history::write(conn, id, revisions);
+    }
     exec(conn, &format!("DELETE FROM {table}_revision WHERE {table}_id = ?1"), [id])?;
     let text = |r: &chorus_core::revisions::Revision, k: &str| -> Option<String> {
         r.fields.get(k).filter(|v| !v.is_null()).map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string))
@@ -1491,6 +1494,7 @@ pub(crate) const DERIVED: &[&str] = &[
     "post",
     "post_author",
     "post_revision",
+    "post_revision_diff",
     "highlight",
     "relationship_type",
     "relationship",
@@ -1786,6 +1790,11 @@ fn rebuild_in(conn: &mut Connection, time: &mut dyn FnMut(&str, std::time::Durat
     let tx = conn.transaction()?;
     let t = std::time::Instant::now();
     for t in DERIVED {
+        // Incomplete/imported logs may not contain the source of retained legacy history.
+        // post_history::write clears it only after checking a complete reconstruction.
+        if *t == "post_revision" {
+            continue;
+        }
         tx.execute(&format!("DELETE FROM {t}"), [])?;
     }
     time("(clear)", t.elapsed());

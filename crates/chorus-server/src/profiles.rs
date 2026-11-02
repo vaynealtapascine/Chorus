@@ -202,7 +202,135 @@ pub fn profile(conn: &Connection, viewer: &str, owner: &str, member: &str) -> an
         fields.push(json!({ "id": id, "name": name.unwrap_or_default(), "type": kind.unwrap_or_else(|| "text".into()), "value": value }));
     }
     out["fields"] = json!(fields);
+    out["relationships"] = relationships(conn, viewer, owner, member)?;
     Ok(Some(out))
+}
+
+/// Small cards only. Reuses exactly the profile-opening rule, without fetching relationships
+/// recursively or granting access to any target's other parts, history or files.
+pub fn visible_card(conn: &Connection, viewer: &str, member: &str) -> anyhow::Result<Option<Value>> {
+    let found = conn
+        .query_row(
+            &format!(
+                "SELECT {COLUMNS}, account_id FROM member WHERE id=?1 AND deleted_at IS NULL AND archived_at IS NULL"
+            ),
+            [member],
+            |r| Ok((row(r)?, r.get::<_, String>(13)?)),
+        )
+        .optional()?;
+    let Some((m, owner)) = found else { return Ok(None) };
+    let v = Viewer::of(conn, viewer, &owner)?;
+    if !m.open(&v) {
+        return Ok(None);
+    }
+    let mut card = m.card(&v);
+    card["account_id"] = json!(owner);
+    Ok(Some(card))
+}
+
+pub(crate) fn target_member(conn: &Connection, kind: &str, id: &str) -> anyhow::Result<Option<String>> {
+    Ok(match kind {
+        "member" => Some(id.into()),
+        "account" => conn
+            .query_row(
+                "SELECT m.id FROM member m JOIN account a ON a.id=m.account_id
+            WHERE a.id=?1 AND a.kind='person' AND m.is_self AND m.deleted_at IS NULL AND m.archived_at IS NULL LIMIT 1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?,
+        _ => None,
+    })
+}
+
+/// No raw foreign ids/labels/notes survive a hidden target. Both the relationship audience
+/// and the target's current profile visibility must allow this reader, on every request.
+pub fn relationships(conn: &Connection, viewer: &str, owner: &str, member: &str) -> anyhow::Result<Value> {
+    let v = Viewer::of(conn, viewer, owner)?;
+    let mut st = conn.prepare_cached("SELECT r.id,r.to_kind,r.to_id,r.to_label,r.note,r.visibility,t.name
+        FROM relationship r JOIN relationship_type t ON t.id=r.type_id AND t.account_id=r.account_id AND t.deleted_at IS NULL
+        WHERE r.account_id=?1 AND r.from_member_id=?2 AND r.deleted_at IS NULL ORDER BY t.name,r.id")?;
+    let rows = st
+        .query_map(params![owner, member], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                json_of(r.get(5)?),
+                r.get::<_, Option<String>>(6)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut items = Vec::new();
+    for (id, kind, to, label, note, audience, name) in rows {
+        if !v.allows(&audience) {
+            continue;
+        }
+        let target = if kind == "external" {
+            let Some(label) = label.filter(|s| !s.trim().is_empty()) else { continue };
+            json!({"name":label})
+        } else {
+            let Some(mid) = target_member(conn, &kind, to.as_deref().unwrap_or_default())? else { continue };
+            let Some(card) = visible_card(conn, viewer, &mid)? else { continue };
+            card
+        };
+        items.push(json!({"id":id,"type":name,"target":target,"note":note}));
+    }
+    Ok(json!(items))
+}
+
+/// On-demand target directory: never sync these cards into the own-member replica.
+pub fn targets(conn: &Connection, viewer: &str) -> anyhow::Result<Value> {
+    let mut st = conn.prepare_cached(
+        "SELECT DISTINCT account_id FROM member WHERE deleted_at IS NULL AND archived_at IS NULL ORDER BY account_id",
+    )?;
+    let owners = st.query_map([], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
+    let mut items = Vec::new();
+    for owner in owners {
+        let directory = members(conn, viewer, &owner)?;
+        for card in directory["items"].as_array().into_iter().flatten() {
+            let mut card = card.clone();
+            card["account_id"] = json!(owner);
+            items.push(card);
+        }
+    }
+    Ok(json!({"items":items}))
+}
+
+pub fn relationship_write_allowed(conn: &Connection, author: &str, o: &chorus_core::op::Op) -> anyhow::Result<bool> {
+    if o.kind != "relationship.set" {
+        return Ok(true);
+    }
+    if let Some(from) = o.payload.get("from_member_id").and_then(Value::as_str) {
+        let owner: Option<String> =
+            conn.query_row("SELECT account_id FROM member WHERE id=?1", [from], |r| r.get(0)).optional()?;
+        if owner.as_deref().is_some_and(|a| a != author) {
+            return Ok(false);
+        }
+    }
+    // Audience-only edits and tombstones don't need a target that is still shared.
+    let existing = match o.entity() {
+        Some(id) => conn
+            .query_row(
+                "SELECT to_kind,to_id FROM relationship WHERE id=?1 AND account_id=?2",
+                params![id, author],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)),
+            )
+            .optional()?,
+        None => None,
+    };
+    let kind = o.payload.get("to_kind").and_then(Value::as_str).or_else(|| existing.as_ref().map(|e| e.0.as_str()));
+    if !o.payload.as_object().is_some_and(|p| p.contains_key("to_kind") || p.contains_key("to_id")) {
+        return Ok(true);
+    }
+    if kind == Some("external") {
+        return Ok(true);
+    }
+    let id = o.payload.get("to_id").and_then(Value::as_str).or_else(|| existing.as_ref().and_then(|e| e.1.as_deref()));
+    let Some(mid) = target_member(conn, kind.unwrap_or_default(), id.unwrap_or_default())? else { return Ok(false) };
+    Ok(visible_card(conn, author, &mid)?.is_some())
 }
 
 /// A shared member's avatar, or their banner when the banner part is shared too (blob reads).

@@ -96,6 +96,14 @@ pub fn accept(
     if !allowed {
         return Ok((AckResult::err(o.id, "forbidden", format!("{} not writable", o.scope), false), None));
     }
+    // D-003: a person's only member is their writing identity, never an archivable/deletable
+    // system member. Check account kind even if this op arrives before the member projection.
+    if !preserved
+        && matches!(o.kind.as_str(), "member.archive" | "member.delete")
+        && conn.query_row("SELECT kind = 'person' FROM account WHERE id = ?1", [&author], |r| r.get::<_, bool>(0))?
+    {
+        return Ok((AckResult::err(o.id, "forbidden", "a person's self profile must stay active".into(), false), None));
+    }
     if !preserved && let Some(why) = crate::fronts::write_denied(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
     }
@@ -108,6 +116,9 @@ pub fn accept(
     }
     if !preserved && let Some(why) = foreign_speaker(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
+    }
+    if !preserved && !crate::profiles::relationship_write_allowed(conn, &author, &o)? {
+        return Ok((AckResult::err(o.id, "forbidden", "relationship target unavailable".into(), false), None));
     }
     // channel permissions (perms.rs, D-047)
     if !preserved && let Some(why) = crate::perms::write_denied(conn, &author, &o)? {
@@ -264,6 +275,11 @@ fn store_and_project(
 fn foreign_item(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
     let Some(spec) = op::spec(&o.kind) else { return Ok(None) };
     let table = match (spec.table, spec.action) {
+        ("relationship", op::Action::Set | op::Action::Delete) => "relationship",
+        (
+            "post",
+            op::Action::Append | op::Action::Revise | op::Action::Set | op::Action::Delete | op::Action::Restore,
+        ) => "post",
         ("message" | "attachment", op::Action::Append) | ("attachment", op::Action::Set) => spec.table,
         _ => return Ok(None),
     };

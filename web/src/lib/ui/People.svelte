@@ -14,7 +14,7 @@
   import AttachmentView from './AttachmentView.svelte';
   import RemotePostPoll from './RemotePostPoll.svelte';
   import type { PollTally } from '../polls';
-  import RichText from './RichText.svelte';
+  import PostPreviewBody from './PostPreviewBody.svelte';
   import PostComposer from './PostComposer.svelte';
   import type { Entity } from '../core';
   import { disablePush, enablePush, pushActive, pushSupported, testPush } from '../push';
@@ -617,7 +617,7 @@
                 <div class="post-meta"><span>{postAuthors(post, f.account)} · {post.kind}</span><time>{new Date(post.occurred_at).toLocaleString()}</time></div>
                 {#if post.cw}
                   <details><summary>Content warning: {post.cw}</summary>
-                    {#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
+                    {#if post.title}<strong>{post.title}</strong>{/if}<p><PostPreviewBody text={post.text} entities={post.entities ?? []} /></p>
                   <RemotePostPoll {projection} post={post} member={reactMember} />
                     {#each post.attachments ?? [] as attachment (attachment.id)}
                       <AttachmentView {attachment} />
@@ -627,7 +627,7 @@
                     {#if reactMember}<button class="ghost" onclick={() => (replyingPost = replyingPost === post.id ? null : post.id)}>{replyingPost === post.id ? 'Cancel reply' : 'Reply'}</button>{/if}
                   </details>
                 {:else}
-                  {#if post.title}<strong>{post.title}</strong>{/if}<p><RichText text={post.text} entities={post.entities ?? []} /></p>
+                  {#if post.title}<strong>{post.title}</strong>{/if}<p><PostPreviewBody text={post.text} entities={post.entities ?? []} /></p>
                   <RemotePostPoll {projection} post={post} member={reactMember} />
                   {#each post.attachments ?? [] as attachment (attachment.id)}
                     <AttachmentView {attachment} />

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { core } from '../core';
-  import { buckets, fieldDefs, fieldValues, groupPath, groups, members, membership, type ProxyTag } from '../data';
+  import { buckets, fieldDefs, fieldValues, groupPath, groups, members, membership, selfMember, type ProxyTag } from '../data';
   import { router } from '../router.svelte';
   import { sync, type Projection } from '../sync/client';
   import AvatarImage from './AvatarImage.svelte';
@@ -13,6 +13,7 @@
 
   const all = $derived(members(projection));
   const m = $derived(all.find((x) => x.id === id));
+  const person = $derived(!!selfMember(projection));
   const raw = $derived((projection.rows.member?.[id]?.fields ?? {}) as Record<string, unknown>);
   const gs = $derived(groups(projection));
   const inGroup = $derived(membership(projection));
@@ -142,6 +143,7 @@
 
 
   function switchIn() {
+    if (person) return;
     sync.create('front.switch', sync.accountScope, sync.newId(), {
       entries: [{ subject_type: 'member', subject_id: id, level: 'front', is_primary: true }],
     });
@@ -154,7 +156,7 @@
 {:else}
   <article class="editor" style="--ring: {colors?.ring}; --tint: {colors?.tint}">
     <header>
-      <a class="back" href="#/members" aria-label="Back to members">‹ Members</a>
+      <a class="back" href={person ? '#/settings' : '#/members'} aria-label={person ? 'Back to settings' : 'Back to members'}>‹ {person ? 'Settings' : 'Members'}</a>
       <div class="identity">
         <span class="avatar" aria-hidden="true"><AvatarImage hash={m.avatar_blob} glyph={m.sigils[0] ?? m.name[0]} name={m.name} /></span>
         <div>
@@ -163,7 +165,7 @@
         </div>
       </div>
       <a class="back" href="#/profile/{id}">View profile</a>
-      <button class="primary" onclick={switchIn}>Switch in</button>
+      {#if !person}<button class="primary" onclick={switchIn}>Switch in</button>{/if}
     </header>
 
     <section>
@@ -192,6 +194,7 @@
       <ProfileFields {m} {raw} {defs} {values} buckets={sharingBuckets} {set} />
     </section>
 
+    {#if !person}
     <section>
       <h2>Fronting</h2>
       <div class="fields">
@@ -213,7 +216,6 @@
         {/if}
       </div>
     </section>
-
     <section>
       <h2>Speaking</h2>
       <div class="fields">
@@ -307,6 +309,7 @@
       {/if}
       <span class="hint">Nothing is ever erased; Trash can always restore (D-053).</span>
     </section>
+    {/if}
   </article>
 {/if}
 

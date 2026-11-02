@@ -1,10 +1,28 @@
 <script lang="ts">
-  import { members, relationshipTypes, relationships } from '../data';
+  import { buckets, members, relationshipTypes, relationships } from '../data';
+  import AudienceChip from './AudienceChip.svelte';
+  import { audienceOf, type Audience } from '../profile-audience';
+  import { apiFetch } from '../http';
+  import { apiBase } from '../sync/device';
   import { sync, type Projection } from '../sync/client';
 
   let { projection, id, own }: { projection: Projection; id: string; own: boolean } = $props();
   const people = $derived(members(projection).filter((m) => !m.deleted));
-  const byId = $derived(new Map(people.map((m) => [m.id, m.display_name ?? m.name])));
+  let remote = $state<{id: string; account_id: string; name: string; display_name?: string}[]>([]);
+  let targetError = $state('');
+  async function loadTargets() {
+    remote = []; targetError = '';
+    try {
+      const r = await apiFetch(`${apiBase()}/relationship-targets`, { headers: { authorization: `Bearer ${sync.device?.session ?? ''}` } });
+      if (!r.ok) throw new Error('Connect to load shared profiles.');
+      remote = (await r.json()).items;
+    } catch (e) { targetError = e instanceof Error ? e.message : String(e); }
+  }
+  $effect(() => { if (own) void loadTargets(); });
+  const candidates = $derived([...people.filter((m) => !m.archived).map((m) => ({ id: m.id, name: m.display_name ?? m.name })),
+    ...remote.filter((m) => !people.some((p) => p.id === m.id)).map((m) => ({ id: m.id, name: m.display_name ?? m.name }))]);
+  const byId = $derived(new Map(candidates.map((m) => [m.id, m.name])));
+  const sharing = $derived(buckets(projection));
   const types = $derived(relationshipTypes(projection));
   const all = $derived(relationships(projection));
   const links = $derived(all.filter((r) => r.from_member_id === id || (r.to_kind === 'member' && r.to_id === id)));
@@ -19,6 +37,7 @@
   let targetLabel = $state('');
   let note = $state('');
   let error = $state('');
+  let audience = $state<Audience>({ mode: 'private' });
 
   function createType(e: SubmitEvent) {
     e.preventDefault();
@@ -41,7 +60,7 @@
       sync.create('relationship.set', sync.accountScope, sync.newId(), {
         from_member_id: id, to_kind: targetKind, to_id: targetKind === 'member' ? to : null,
         to_label: targetKind === 'external' ? to : null, type_id: type, note: note.trim() || null,
-        visibility: { mode: 'private' },
+        visibility: audience,
       });
       targetLabel = note = '';
     } catch (cause) { error = cause instanceof Error ? cause.message : String(cause); }
@@ -62,7 +81,7 @@
       <div>{#each links as link (link.id)}<span class="node">{relatedName(link)}</span>{/each}</div>
     </div>
     <ul>{#each links as link (link.id)}<li class="link"><span><strong>{relatedType(link)}</strong> · {relatedName(link)}{#if link.note}<small>{link.note}</small>{/if}</span>
-      {#if own}<button onclick={() => sync.create('relationship.delete', sync.accountScope, link.id, {})}>Remove</button>{/if}</li>{/each}</ul>
+      {#if own}<AudienceChip label="Relationship" value={audienceOf(link.visibility)} own buckets={sharing} onchange={(a) => sync.create('relationship.set', sync.accountScope, link.id, { visibility: a ?? { mode: 'private' } })} /><button onclick={() => sync.create('relationship.delete', sync.accountScope, link.id, {})}>Remove</button>{/if}</li>{/each}</ul>
   {:else}<p class="muted">No relationships yet.</p>{/if}
 
   {#if own}
@@ -70,11 +89,12 @@
       <h3>Add relationship</h3>
       {#if types.length}
         <label>Type <select bind:value={selectedType} required><option value="" disabled>Choose a type</option>{#each types as type (type.id)}<option value={type.id}>{type.name}</option>{/each}</select></label>
-        <label>With <select bind:value={targetKind}><option value="member">A member</option><option value="external">Someone outside Chorus</option></select></label>
-        {#if targetKind === 'member'}<label>Member <select bind:value={targetMember} required><option value="" disabled>Choose a member</option>{#each people.filter((m) => m.id !== id) as person (person.id)}<option value={person.id}>{person.display_name ?? person.name}</option>{/each}</select></label>
+        <label>With <select bind:value={targetKind}><option value="member">Someone on Chorus</option><option value="external">Someone outside Chorus</option></select></label>
+        {#if targetKind === 'member'}<label>Profile <select bind:value={targetMember} required><option value="" disabled>Choose a profile</option>{#each candidates.filter((m) => m.id !== id) as person (person.id)}<option value={person.id}>{person.name}</option>{/each}</select></label>
+        {#if targetError}<p role="status">{targetError}</p><button type="button" onclick={loadTargets}>Refresh shared profiles</button>{/if}
         {:else}<label>Name <input bind:value={targetLabel} required maxlength="100" /></label>{/if}
         <label>Note <input bind:value={note} maxlength="300" /></label>
-        <p class="muted">Relationships are private to this account for now.</p>
+        <AudienceChip label="New relationship" value={audience} own buckets={sharing} onchange={(a) => (audience = a ?? { mode: 'private' })} />
         {#if error}<p class="error" role="alert">{error}</p>{/if}
         <button disabled={!(selectedType || types.length === 1)}>Add relationship</button>
       {:else}<p class="muted">Create a relationship type first.</p>{/if}

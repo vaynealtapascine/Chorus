@@ -9,6 +9,8 @@
   import { canWriteAs, type PostRow } from '../posts';
   import { audienceOf } from '../profile-audience';
   import PostAudienceDialog from './PostAudienceDialog.svelte';
+  import { postPreview } from '../post-preview';
+  import PostEdit from './PostEdit.svelte';
   import RichText from './RichText.svelte';
   import AvatarImage from './AvatarImage.svelte';
   import QuoteEmbed from './QuoteEmbed.svelte';
@@ -23,7 +25,9 @@
 
   let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection, replyCount = 0, replyToNames, inThread = false, quote = null, social, saved, repostedBy, full = false, quoteCount = 0, onquotes }: {
     post: PostRow; people: Map<string, MemberRow>; dark: boolean;
-    reactions: Map<string, string[]>; speaker: string | null; compactEntry?: boolean;
+    reactions: Map<string, string[]>; speaker: string | null;
+    /** In a feed: stop at 300 characters with Show more (an entry opens its thread). */
+    compactEntry?: boolean;
     onreply: () => void; onreact: (emoji: string, add: boolean) => void;
     /** Replies to this post, shown on its Reply button. */
     replyCount?: number;
@@ -59,6 +63,11 @@
   let repostMenu = $state(false);
   let notice = $state('');
   let disclose = $state<HTMLDialogElement | undefined>();
+  let editing = $state(false);
+  // every card stops at 300 characters (owner, D-107); a thread shows its posts whole
+  const preview = $derived(postPreview(post.text, post.entities));
+  const whole = $derived(full || inThread);
+  const previewing = $derived(!whole && !bodyExpanded && preview.truncated);
   const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
   const names = $derived(post.authors.map(name).join(' & ') || 'Someone');
   const lead = $derived(people.get(post.authors[0] ?? ''));
@@ -139,7 +148,7 @@
     <a class="avatar" href="#/profile/{post.authors[0] ?? ''}" aria-label="{name(post.authors[0] ?? '')}’s profile"><AvatarImage hash={lead?.avatar_blob} glyph={lead?.sigils[0] ?? name(post.authors[0] ?? '')[0]} name={name(post.authors[0] ?? '')} /></a>
     <div class="identity">
         <span class="authors">{#each post.authors as id, i (id)}{#if i} &amp; {/if}<a href="#/profile/{id}">{name(id)}</a>{/each}</span>
-        <span class="when">· <a href={threadHref} title={fullTimestamp(post.occurred_at)}><time datetime={new Date(post.occurred_at).toISOString()}>{shortAgo(post.occurred_at)}</time></a></span>
+        <span class="when">· <a href={threadHref} title={fullTimestamp(post.occurred_at)}><time datetime={new Date(post.occurred_at).toISOString()}>{shortAgo(post.occurred_at)}</time></a>{#if post.edited} · edited{/if}</span>
         {#if post.visibility.mode === 'private' || post.visibility.mode === 'followers'}<span class="lock" title={audienceLabel} role="img" aria-label={audienceLabel}><Icon name="lock" size={14} /></span>
         {:else if post.visibility.mode === 'buckets'}<span class="audience">{audienceLabel}</span>{/if}
     </div>
@@ -148,9 +157,9 @@
       {#if post.cw}<button class="cw" aria-expanded={expanded} onclick={() => (expanded = !expanded)}><span>Content warning: {post.cw}</span><span class="cw-toggle">{expanded ? 'Hide' : 'Show'}</span></button>{/if}
       {#if !post.cw || expanded}
         {#if post.title}<h3 class="display">{post.title}</h3>{/if}
-        {#if post.text}<div class="body" class:clamped={compactEntry && !full && !bodyExpanded}><RichText text={post.text} entities={post.entities} /></div>{/if}
-        {#if compactEntry && !full && (post.kind === 'entry' || post.text.length > 280)}
-          {#if post.kind === 'entry' && !bodyExpanded}<a class="expand" href={threadHref}>Show more</a>
+        {#if post.text}<div class="body">{#if previewing}<RichText text={preview.text} entities={preview.entities} />…{:else}<RichText text={post.text} entities={post.entities} />{/if}</div>{/if}
+        {#if !whole && preview.truncated}
+          {#if compactEntry && post.kind === 'entry' && !bodyExpanded}<a class="expand" href={threadHref}>Show more</a>
           {:else}<button class="expand" aria-expanded={bodyExpanded} onclick={() => (bodyExpanded = !bodyExpanded)}>{bodyExpanded ? 'Show less' : 'Show more'}</button>{/if}
         {/if}
         {#if post.kind === 'entry'}<p class="meta-line">{entryMeta(post.text, post.tags)}</p>{/if}
@@ -193,13 +202,16 @@
         {#if !inThread}<a role="menuitem" href={threadHref} onclick={() => (menu = false)}>Open post</a>{/if}
         <button role="menuitem" onclick={copyLink}>Copy link</button>
         {#if share}<button role="menuitem" onclick={copy}>Copy text</button>{/if}
+        {#if own && !post.repost_of}<button role="menuitem" onclick={() => { menu = false; editing = true; }}>Edit post</button>{/if}
         {#if own}<button role="menuitem" onclick={() => { menu = false; changingAudience = true; }}>Change audience</button>{/if}
         <a role="menuitem" href="#/stage-post/{post.id}" onclick={() => (menu = false)}>Stage</a>
       </div>{/if}
     </span>
   </div>
+  {#if editing}<PostEdit {post} onclose={() => (editing = false)} />{/if}
 </article>
 
+{#if editing}<PostEdit {post} onclose={() => (editing = false)} />{/if}
 {#if changingAudience && projection}<PostAudienceDialog {projection} postId={post.id} current={audienceOf(post.visibility)} onclose={() => (changingAudience = false)} />{/if}
 
 <dialog bind:this={disclose} class="disclose" aria-labelledby="disclose-{post.id}">
@@ -244,7 +256,6 @@
   h3, p { margin: 0; }
   h3 { font-size: 16px; line-height: 22px; }
   .body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 21px; }
-  .clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
   .expand { border: 0; background: none; color: var(--accent); justify-self: start; padding: 4px 0; font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; text-decoration: none; }
   .meta-line, .tags { color: var(--ink-3); font-size: var(--fs-xs); }
   .mood { color: var(--ink-2); font-size: var(--fs-xs); }

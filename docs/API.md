@@ -203,7 +203,9 @@ GET  /posts/{id}                           with replies ?depth=
                                            answers, oldest first; ends at the first unreadable parent)
                                            + quotes (readable posts quoting it, newest first) and, on
                                            every post it returns, quoted (the quoted post, if readable)
-GET  /posts/{id}/revisions                 {items:[{rev,title,text,entities,at}]}, same read rule as the post
+GET  /posts/{id}/revisions                 {items:[{rev,title,text,entities,cw,at}]}, same read rule as the post
+  D-107: reconstructed from compact server-kept diffs. Deleted/unreadable posts return 404;
+  history does not grant access to prior attachments or broaden the post's audience.
   Device-session reads now return posts visible to the caller: own posts, server-visible posts,
   posts shared with active followers, and posts for an assigned, live bucket. `account=` narrows
   the list to one account. `before` is an exclusive occurred-at millisecond value; `limit` is
@@ -230,6 +232,11 @@ GET  /accounts/{id}/members/{member}       one shared profile: the card plus des
                                            banner_blob and fields:[{id,name,type,value}] shared with you; 404 alike
                                            for missing and unshared. Never fronting, history or timestamps.
                                            Another account's profile also says post_alerts: none|requested|active.
+  D-107: includes relationships allowed by their individual audience and the target profile's
+  visibility. Hidden/deleted targets omit the entire relationship, including notes and ids.
+GET  /relationship-targets                 device-session-only {items:[{id,account_id,name,display_name,...}]};
+                                           on-server profiles this account may see, including singlets.
+                                           No fronting, history, private target ids or search index.
 PUT  /accounts/{id}/members/{member}/alerts  ask to hear about that member's new posts (D-106): {post_alerts};
                                            404 unless you may open the profile; the owner hears once
 DELETE /accounts/{id}/members/{member}/alerts  stop asking / turn alerts off → {post_alerts}

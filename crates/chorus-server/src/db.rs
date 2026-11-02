@@ -24,6 +24,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
     ("0015_polls", include_str!("../migrations/0015_polls.sql")),
     ("0016_channel_avatar", include_str!("../migrations/0016_channel_avatar.sql")),
     ("0017_post_alerts", include_str!("../migrations/0017_post_alerts.sql")),
+    ("0018_post_history_diffs", include_str!("../migrations/0018_post_history_diffs.sql")),
 ];
 
 pub fn open(path: &Path) -> anyhow::Result<Connection> {
@@ -81,6 +82,9 @@ pub fn migrate(conn: &mut Connection) -> anyhow::Result<usize> {
         tx.execute_batch(sql).with_context(|| format!("migration {name}"))?;
         if *name == "0013_front_review_resolution" {
             crate::project::repair_review_resolutions(&tx)?;
+        }
+        if *name == "0018_post_history_diffs" {
+            crate::post_history::backfill(&tx)?;
         }
         tx.execute(
             "INSERT INTO server_meta(key, value) VALUES ('schema_version', ?1)

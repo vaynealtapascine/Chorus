@@ -145,6 +145,7 @@
         {/each}
       </nav>
       <nav class="desktop-tools" aria-label="Your tools">
+        {#if self}<a href="#/profile/{self.id}"><Icon name="members" />My profile</a>{/if}
         {#if !person}<a href="#/journal" class:on={router.route.name === 'journal' || router.route.name === 'post'} aria-current={router.route.name === 'journal' ? 'page' : undefined}><Icon name="journal" />Journal</a>{/if}
         <a href="#/search"><Icon name="search" />Search</a>
         <a href="#/settings"><Icon name="settings" />Settings</a>

@@ -20,7 +20,7 @@ enum class AppIcon(val resource: Int) {
     Members(R.drawable.ic_members), Front(R.drawable.ic_front), Chat(R.drawable.ic_chat),
     Friends(R.drawable.ic_friends), More(R.drawable.ic_more), Journal(R.drawable.ic_journal),
     Search(R.drawable.ic_search), Settings(R.drawable.ic_settings), History(R.drawable.ic_history),
-    Swap(R.drawable.ic_swap), Plus(R.drawable.ic_plus), Close(R.drawable.ic_close),
+    Swap(R.drawable.ic_switch_arrows), Plus(R.drawable.ic_plus), Close(R.drawable.ic_close),
     Chevron(R.drawable.ic_chevron), Layers(R.drawable.ic_layers), Lock(R.drawable.ic_lock),
 }
 

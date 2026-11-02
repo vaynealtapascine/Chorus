@@ -12,6 +12,195 @@ use serde_json::Value;
 use serde_json::json;
 mod common;
 
+#[test]
+fn compact_post_history_migrates_and_rebuilds_without_rewriting_ops() {
+    let mut conn = db::open_memory().unwrap();
+    db::migrate(&mut conn).unwrap();
+    for account in [ALICE, BOB] {
+        conn.execute("INSERT INTO account(id,kind,created_at) VALUES (?1,'person',0)", [account]).unwrap();
+        ingest::grant(&conn, account, &format!("account:{account}")).unwrap();
+    }
+    let scope = format!("account:{ALICE}");
+    let id = new_id(1, [42; 10]);
+    let text = "🪴 garden ".repeat(4000);
+    let now = 1_790_000_000_000;
+    ingest::server_op(&conn, ALICE, "post.create", &scope, Some(&id), json!({"kind":"entry","authors":[],"title":"Day","text":text,"entities":[],"cw":"warning","visibility":{"mode":"private"}}), now).unwrap();
+    for n in 1..=10 {
+        ingest::server_op(
+            &conn,
+            ALICE,
+            "post.edit",
+            &scope,
+            Some(&id),
+            json!({"post_id":id,"title":null,"text":format!("{text}{n}"),"entities":[],"cw":null}),
+            now + n,
+        )
+        .unwrap();
+    }
+    let current = posts::one(&conn, ALICE, &id).unwrap().unwrap();
+    let history = chorus_server::messages::post_revisions(&conn, &current).unwrap();
+    assert_eq!(history["items"].as_array().unwrap().len(), 11);
+    assert_eq!(history["items"][0]["cw"], "warning");
+    assert_eq!(history["items"][10]["text"], current["text"]);
+    assert_eq!(history["items"][10]["title"], Value::Null);
+    assert_eq!(conn.query_row("SELECT count(*) FROM post_revision", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    let bytes: i64 = conn.query_row("SELECT sum(length(delta)) FROM post_revision_diff", [], |r| r.get(0)).unwrap();
+    assert!(bytes < text.len() as i64 * 2, "history duplicated the full entry: {bytes}");
+    assert!(posts::one(&conn, BOB, &id).unwrap().is_none());
+    let original_ops = chorus_server::exports::ops_jsonl(&conn, ALICE).unwrap();
+    // Exercise migration of an actual pre-0018 derived history, with the same permanent log.
+    legacy_history(&conn, &id);
+    conn.execute_batch("DROP TABLE post_revision_diff; UPDATE server_meta SET value='17' WHERE key='schema_version'")
+        .unwrap();
+    db::migrate(&mut conn).unwrap();
+    assert_eq!(chorus_server::messages::post_revisions(&conn, &current).unwrap(), history);
+    assert_eq!(chorus_server::exports::ops_jsonl(&conn, ALICE).unwrap(), original_ops);
+    chorus_server::project::rebuild(&mut conn).unwrap();
+    assert_eq!(chorus_server::messages::post_revisions(&conn, &current).unwrap(), history);
+    assert_eq!(chorus_server::exports::ops_jsonl(&conn, ALICE).unwrap(), original_ops);
+    assert!(
+        ingest::server_op(
+            &conn,
+            BOB,
+            "post.edit",
+            &format!("account:{BOB}"),
+            Some(&id),
+            json!({"post_id":id,"text":"forged","entities":[]}),
+            now + 20
+        )
+        .is_err()
+    );
+    assert_eq!(posts::one(&conn, ALICE, &id).unwrap().unwrap()["text"], current["text"]);
+}
+
+fn legacy_history(conn: &Connection, id: &str) {
+    let ops = chorus_server::oplog::for_entity_of_kinds(conn, id, &["post.create", "post.edit"]).unwrap();
+    for r in chorus_core::revisions::revisions(&ops) {
+        conn.execute(
+            "INSERT INTO post_revision(post_id,rev,title,text,entities,edited_at,hlc) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            params![
+                id,
+                r.rev,
+                r.fields.get("title").and_then(Value::as_str),
+                r.fields["text"].as_str(),
+                r.fields["entities"].to_string(),
+                r.at,
+                r.hlc.to_string()
+            ],
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn incomplete_legacy_history_survives_migration_reads_edits_and_rebuild() {
+    for corruption in ["missing_middle", "wrong_text", "wrong_title", "wrong_entities", "no_ops"] {
+        let mut conn = db::open_memory().unwrap();
+        db::migrate(&mut conn).unwrap();
+        conn.execute("INSERT INTO account(id,kind,created_at) VALUES (?1,'person',0)", [ALICE]).unwrap();
+        let scope = format!("account:{ALICE}");
+        ingest::grant(&conn, ALICE, &scope).unwrap();
+        let id = new_id(1, [43; 10]);
+        for (n, text) in ["first", "middle", "third"].iter().enumerate() {
+            ingest::server_op(
+                &conn,
+                ALICE,
+                if n == 0 { "post.create" } else { "post.edit" },
+                &scope,
+                Some(&id),
+                if n == 0 {
+                    json!({"kind":"entry","authors":[],"text":text,"entities":[],"title":"Day","cw":"warning"})
+                } else {
+                    json!({"post_id":id,"text":text,"entities":[]})
+                },
+                1_790_000_000_000 + n as i64,
+            )
+            .unwrap();
+        }
+        legacy_history(&conn, &id);
+        let current = posts::one(&conn, ALICE, &id).unwrap().unwrap();
+        match corruption {
+            "missing_middle" => {
+                conn.execute("DELETE FROM op WHERE entity_id=?1 AND json_extract(payload,'$.text')='middle'", [&id])
+                    .unwrap();
+            }
+            "no_ops" => {
+                conn.execute("DELETE FROM op WHERE entity_id=?1", [&id]).unwrap();
+            }
+            "wrong_text" => {
+                conn.execute("UPDATE post_revision SET text='retained middle' WHERE post_id=?1 AND rev=1", [&id])
+                    .unwrap();
+            }
+            "wrong_title" => {
+                conn.execute("UPDATE post_revision SET title='retained title' WHERE post_id=?1 AND rev=1", [&id])
+                    .unwrap();
+            }
+            "wrong_entities" => {
+                conn.execute("UPDATE post_revision SET entities='[{\"type\":\"bold\",\"offset\":0,\"length\":1}]' WHERE post_id=?1 AND rev=1", [&id]).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        conn.execute_batch(
+            "DROP TABLE post_revision_diff; UPDATE server_meta SET value='17' WHERE key='schema_version'",
+        )
+        .unwrap();
+        db::migrate(&mut conn).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM post_revision WHERE post_id=?1", [&id], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            3,
+            "{corruption}"
+        );
+        let history = chorus_server::messages::post_revisions(&conn, &current).unwrap();
+        let items = history["items"].as_array().unwrap();
+        assert_eq!(items.len(), 3, "{corruption}");
+        assert_eq!(items[1]["text"], if corruption == "wrong_text" { "retained middle" } else { "middle" });
+        if corruption == "wrong_title" {
+            assert_eq!(items[1]["title"], "retained title");
+        }
+        if corruption == "wrong_entities" {
+            assert_eq!(items[1]["entities"][0]["type"], "bold");
+        }
+        assert!(
+            items.iter().all(|v| !v["cw"].as_str().unwrap_or_default().is_empty()),
+            "unknown legacy CW must stay collapsed"
+        );
+        if corruption == "no_ops" {
+            continue;
+        }
+        ingest::server_op(
+            &conn,
+            ALICE,
+            "post.edit",
+            &scope,
+            Some(&id),
+            json!({"post_id":id,"text":"fourth","entities":[],"cw":null}),
+            1_790_000_000_004,
+        )
+        .unwrap();
+        let current = posts::one(&conn, ALICE, &id).unwrap().unwrap();
+        let edited = chorus_server::messages::post_revisions(&conn, &current).unwrap();
+        assert_eq!(&edited["items"].as_array().unwrap()[..3], items, "edit hid retained history: {corruption}");
+        assert_eq!(edited["items"][3]["text"], "fourth");
+        chorus_server::project::rebuild(&mut conn).unwrap();
+        assert_eq!(
+            chorus_server::messages::post_revisions(&conn, &current).unwrap(),
+            edited,
+            "rebuild lost history: {corruption}"
+        );
+    }
+}
+
+#[test]
+fn unedited_post_history_preserves_content_warning() {
+    let conn = seed();
+    conn.execute("UPDATE post SET cw='spoilers', text='warned full text' WHERE id='server'", []).unwrap();
+    let current = posts::one(&conn, ALICE, "server").unwrap().unwrap();
+    let history = chorus_server::messages::post_revisions(&conn, &current).unwrap();
+    assert_eq!(history["items"][0]["cw"], "spoilers");
+    assert_eq!(history["items"][0]["text"], "warned full text");
+}
+
 const ALICE: &str = "0192f8c2-0000-7000-8000-0000000000a1";
 const BOB: &str = "0192f8c2-0000-7000-8000-0000000000b2";
 const CAROL: &str = "0192f8c2-0000-7000-8000-0000000000c3";
