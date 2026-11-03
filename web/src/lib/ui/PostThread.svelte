@@ -6,8 +6,8 @@
   // accounts' come from `GET /posts/{id}`, read through the server's audience check.
   import { core } from '../core';
   import { members, reactions as allReactions, type MemberRow } from '../data';
-  import { canWriteAs, postReaction, posts, type PostRow } from '../posts';
-  import { authorProfileHref, quoteView, remoteNames, tagLine, threadAncestors, threadQuotes, threadReplies, type PostDetail, type ThreadItem, type ThreadPost } from '../post-threads';
+  import { canWriteAs, postReaction, posts } from '../posts';
+  import { authorProfileHref, opensPost, quoteView, remoteNames, tagLine, threadAncestors, threadQuotes, threadReplies, type PostDetail, type ThreadItem, type ThreadPost } from '../post-threads';
   import QuoteEmbed from './QuoteEmbed.svelte';
   import { apiFetch } from '../http';
   import { apiBase } from '../sync/device';
@@ -20,6 +20,7 @@
   import Icon from './Icon.svelte';
   import PostCard from './PostCard.svelte';
   import PostComposer from './PostComposer.svelte';
+  import RemotePostActions from './RemotePostActions.svelte';
   import RemotePostPoll from './RemotePostPoll.svelte';
   import RichText from './RichText.svelte';
   import PostHistory from './PostHistory.svelte';
@@ -71,7 +72,6 @@
   const quoteFor = (item: ThreadItem) => quoteView(item.local?.quote_post_id ?? item.remote?.quote?.post_id, postById, name, item.remote?.quoted);
   const focused = $derived(own ?? (detail ? detail as ThreadPost : null));
   const focusedNames = $derived(own ? own.authors.map(name).join(' & ') : detail ? remoteNames(detail) : '');
-  const reactionLine = $derived((detail?.reactions ?? []).map((r) => `${r.emoji} ${r.member_name}`).join(' · '));
 
   function name(memberId: string) {
     return people.get(memberId)?.display_name ?? people.get(memberId)?.name ?? 'Someone';
@@ -89,56 +89,52 @@
   }
   // a click anywhere on a row opens it, except on its own links and controls
   function rowClick(event: MouseEvent, next: string) {
-    if ((event.target as HTMLElement).closest('a, button, details, input, select, textarea, video, audio')) return;
-    if (window.getSelection()?.toString()) return;
-    open(next);
+    if (opensPost(event)) open(next);
   }
-  function itemNames(item: ThreadItem) {
-    return item.local ? item.local.authors.map(name).join(' & ') || 'Someone' : remoteNames(item.remote!);
-  }
-  function look(item: ThreadItem) {
-    const lead = item.local ? people.get(item.local.authors[0] ?? '') : (item.remote?.authors ?? []).map((a) => people.get(a)).find(Boolean);
-    const card = item.local ? undefined : item.remote?.author_cards?.[0];
+  const focusReply = () => document.getElementById('thread-reply')?.querySelector('textarea')?.focus();
+  // a server copy of a post, usually another account's: their picture and profile only where that
+  // profile is shared with us
+  function look(post: ThreadPost) {
+    const lead = (post.authors ?? []).map((a) => people.get(a)).find(Boolean);
+    const card = post.author_cards?.[0];
     const color = core.adaptColor(lead?.color ?? card?.color ?? '#A09184', dark);
-    // another account's author: their picture and profile only where that profile is shared with us
-    return { lead, color, glyph: lead?.sigils[0] ?? itemNames(item)[0] ?? '?', blob: lead?.avatar_blob ?? card?.avatar_blob,
-      href: lead || !item.remote ? null : authorProfileHref(item.remote) };
+    return { color, glyph: lead?.sigils[0] ?? remoteNames(post)[0] ?? '?', blob: lead?.avatar_blob ?? card?.avatar_blob,
+      href: lead ? null : authorProfileHref(post) };
   }
   const when = (at: number) => new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-  const count = (n: number) => `${n} ${n === 1 ? 'reply' : 'replies'}`;
 </script>
 
 <!-- what a post says, shown at once or behind its content warning: the same either way -->
-{#snippet content(item: ThreadItem, post: ThreadPost | PostRow, context: boolean)}
+{#snippet content(item: ThreadItem, post: ThreadPost, context: boolean)}
   {@const tags = tagLine(post.tags)}
   {#if post.title}<strong>{post.title}</strong>{/if}
   <div class="text" class:clamp={context}><RichText text={post.text} entities={post.entities ?? []} /></div>
   {#if quoteFor(item)}<QuoteEmbed quote={quoteFor(item)!} />{/if}
-  {#if item.remote}
-    <RemotePostPoll {projection} post={item.remote} member={speaker} />
-  {/if}
-  {#if !item.local && item.remote?.attachments?.length}<PostMedia attachments={item.remote.attachments} who={itemNames(item)} occurredAt={post.occurred_at} />{/if}
+  <RemotePostPoll {projection} {post} member={speaker} />
+  {#if post.attachments?.length}<PostMedia attachments={post.attachments} who={remoteNames(post)} occurredAt={post.occurred_at} />{/if}
   {#if tags}<p class="tags">{tags}</p>{/if}
 {/snippet}
 
 {#snippet row(item: ThreadItem, lineBelow: boolean, context: boolean)}
-  {@const l = look(item)}
-  {@const post = (item.local ?? item.remote)!}
+  {@const post = item.remote!}
+  {@const l = look(post)}
+  {@const names = remoteNames(post)}
   <!-- clicking the row is a mouse shortcut; keyboards and screen readers open it by its time link -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <article class="row" class:context class:line-below={lineBelow} data-post-id={item.id}
     style="--avatar-bg: {l.color.ring}; --avatar-ink: {l.color.avatar_ink}; --author: {l.color.name}"
     onclick={(event) => rowClick(event, item.id)}>
-    {#if l.href}<a class="avatar" href={l.href} aria-label="Open {itemNames(item)}’s profile"><AvatarImage hash={l.blob} glyph={l.glyph} /></a>
-    {:else}<span class="avatar" aria-hidden="true"><AvatarImage hash={l.blob} glyph={l.glyph} name={itemNames(item)} /></span>{/if}
+    {#if l.href}<a class="avatar" href={l.href} aria-label="Open {names}’s profile"><AvatarImage hash={l.blob} glyph={l.glyph} /></a>
+    {:else}<span class="avatar" aria-hidden="true"><AvatarImage hash={l.blob} glyph={l.glyph} name={names} /></span>{/if}
     <div class="row-body">
-      <p class="by"><span class="names">{itemNames(item)}</span> · <a href="#/journal/post/{encodeURIComponent(item.id)}" title="Open this post">{when(post.occurred_at)}</a></p>
+      <p class="by"><span class="names">{names}</span> · <a href="#/journal/post/{encodeURIComponent(item.id)}" title="Open this post">{when(post.occurred_at)}</a></p>
       {#if post.cw}
         <details><summary>Content warning: {post.cw}</summary>{@render content(item, post, false)}</details>
       {:else}
         {@render content(item, post, context)}
       {/if}
-      {#if !context && item.replyCount}<a class="count" href="#/journal/post/{encodeURIComponent(item.id)}">{count(item.replyCount)}</a>{/if}
+      <RemotePostActions post={{ ...post, reply_count: item.replyCount }} {speaker} speakerName={speaker ? name(speaker) : ''}
+        onreply={item.id === id ? focusReply : undefined} />
     </div>
   </article>
 {/snippet}
@@ -152,7 +148,13 @@
 
   {#if ancestors.length}
     <div class="ancestors">
-      {#each ancestors as parent (parent.id)}{@render row(parent, true, true)}{/each}
+      {#each ancestors as parent (parent.id)}
+        <!-- own parents keep every action, as own replies do -->
+        {#if parent.local}
+          <div class="own-parent"><PostCard {projection} post={parent.local} {people} {dark} reactions={reacts.get(parent.id) ?? new Map()} {speaker} {social} {saved} inThread
+            quote={quoteFor(parent)} replyCount={parent.replyCount} onreply={() => open(parent.id)} onreact={(emoji, add) => react(parent.id, emoji, add)} /></div>
+        {:else}{@render row(parent, true, true)}{/if}
+      {/each}
     </div>
   {/if}
 
@@ -161,7 +163,7 @@
       <PostCard {projection} post={own} {people} {dark} reactions={reacts.get(own.id) ?? new Map()} {speaker} {social} {saved} inThread full
         quoteCount={quotes.length} onquotes={() => (showQuotes = true)}
         quote={quoteView(own.quote_post_id, postById, name, detail?.quoted)}
-        replyCount={replies.length} onreply={() => document.getElementById('thread-reply')?.querySelector('textarea')?.focus()}
+        replyCount={replies.length} onreply={focusReply}
         onreact={(emoji, add) => react(own.id, emoji, add)} />
     </div>
   {:else if detail}
@@ -172,8 +174,7 @@
   {/if}
 
   {#if focused}
-    {#if !own}<p class="detail">{when(focused.occurred_at)}{#if replies.length}{' · '}<strong>{replies.length}</strong> {replies.length === 1 ? 'reply' : 'replies'}{/if}{#if quotes.length}{' · '}<button class="stat" onclick={() => (showQuotes = true)}><strong>{quotes.length}</strong> {quotes.length === 1 ? 'quote' : 'quotes'}</button>{/if}</p>
-    {#if reactionLine}<p class="reactions">{reactionLine}</p>{/if}{/if}
+    {#if !own}<p class="detail">{when(focused.occurred_at)}{#if replies.length}{' · '}<strong>{replies.length}</strong> {replies.length === 1 ? 'reply' : 'replies'}{/if}{#if quotes.length}{' · '}<button class="stat" onclick={() => (showQuotes = true)}><strong>{quotes.length}</strong> {quotes.length === 1 ? 'quote' : 'quotes'}</button>{/if}</p>{/if}
     <div class="reply-box" id="thread-reply">
       <p class="replying">Replying to <strong>{focusedNames || 'this post'}</strong></p>
       <!-- another account's reader must be able to read the reply, so it starts server-wide -->
@@ -231,9 +232,10 @@
   .by a { color: inherit; text-decoration: none; }
   .by a:hover { text-decoration: underline; }
   .text { white-space: pre-wrap; overflow-wrap: anywhere; }
-  .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; color: var(--ink-2); }
-  .count { justify-self: start; color: var(--accent); font-size: var(--fs-sm); text-decoration: none; }
-  .count:hover { text-decoration: underline; }
+  .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 8; line-clamp: 8; overflow: hidden; }
+  .own-parent { position: relative; }
+  .own-parent :global(.post) { border-bottom: 0; }
+  .own-parent::after { content: ''; position: absolute; left: 35px; top: 54px; bottom: 0; width: 2px; border-radius: 1px; background: var(--line); pointer-events: none; }
 
   .focus { position: relative; animation: arrive .24s cubic-bezier(.16, 1, .3, 1) both; }
   .focus :global(.body) { font-size: 1.125rem; line-height: 1.55; }
@@ -241,7 +243,7 @@
   .focus.remote .row { cursor: default; }
   .focus.remote .row:hover { background: none; }
   .focus.remote .text { font-size: 1.125rem; line-height: 1.55; }
-  .detail, .reactions { padding: var(--s-2) var(--s-4); color: var(--ink-3); font-size: var(--fs-sm); }
+  .detail { padding: var(--s-2) var(--s-4); color: var(--ink-3); font-size: var(--fs-sm); }
   .detail strong { color: var(--ink); }
   .reply-box { display: grid; gap: var(--s-2); padding: var(--s-3) var(--s-4); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   .replying { color: var(--ink-3); font-size: var(--fs-sm); }

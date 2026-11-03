@@ -16,7 +16,8 @@ data class ThreadReply(val id: String, val authorNames: List<String>, val text: 
     val quotePostId: String? = null, val quoted: ThreadReply? = null,
     val attachments: List<ChatAttachment> = emptyList(), val tags: List<String> = emptyList(),
     /** Whose post it is, and whose of its authors' profiles open for this reader. */
-    val accountId: String? = null, val profiles: List<String> = emptyList())
+    val accountId: String? = null, val profiles: List<String> = emptyList(),
+    val reactions: List<PostReaction> = emptyList())
 /** A post as a thread view shows it: what it answers ([ancestors], oldest first), its replies,
  * the posts quoting it and its reactions. */
 data class PostDetail(val replies: List<ThreadReply>, val reactions: List<PostReaction>, val root: ThreadReply? = null,
@@ -44,7 +45,8 @@ object PostThreads {
                 item.optJSONArray("authors")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) } }.orEmpty(),
                 item.optJSONObject("quote")?.text("post_id"),
                 item.optJSONObject("quoted")?.let { parse(JSONObject().put("replies", org.json.JSONArray().put(it))).firstOrNull() },
-                PeopleApi.attachments(item), PeopleApi.tags(item), item.text("account_id"), AuthorLooks.of(item).profiles)
+                PeopleApi.attachments(item), PeopleApi.tags(item), item.text("account_id"), AuthorLooks.of(item).profiles,
+                PostReactions.fromServer(item))
         } }
     }
 
@@ -55,6 +57,10 @@ object PostThreads {
 
     suspend fun load(dev: DeviceRecord, id: String): PostDetail =
         parseDetail(Api.call("GET", dev.base, "/posts/$id?depth=1", null, dev.session))
+
+    /** Another account's post for the action row: what it needs of a post that has no local row. */
+    fun foreignPost(id: String, kind: String, title: String?, text: String, occurredAt: Long, cw: String?): JournalPost =
+        JournalPost(id, kind, emptyList(), title, text, occurredAt, cw, "server", null, null, emptyList())
 
     /** Own-account replies still appear offline and while their op is waiting to sync. */
     fun ownReplies(model: Model, id: String): List<ThreadReply> = model.posts.filter { it.replyTo == id }.map { local(model, it) }

@@ -241,7 +241,7 @@ private fun PopIcon(icon: Int, active: Boolean, tint: Color, size: Dp, burst: Bo
 @Composable
 internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus, onReply: () -> Unit,
     onQuote: ((JournalPost) -> Unit)? = null, large: Boolean = false, reactions: List<PostReaction> = post.reactions,
-    foreign: Boolean = false, onReacted: ((Member) -> Unit)? = null) {
+    foreign: Boolean = false, onReacted: ((Member) -> Unit)? = null, replies: Int? = null) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     val ctx = LocalContext.current
@@ -260,7 +260,7 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
     }
     // a post from another account isn't in the local replica: it can be hearted and shared, not reposted or saved
     val own = member?.takeIf { !foreign }?.let { JournalSocial.repostBy(model.posts, post.id, it.id) }
-    JournalActions(reactions, member, !busy, onReply = onReply, replies = JournalSocial.replyCount(model.posts, post.id),
+    JournalActions(reactions, member, !busy, onReply = onReply, replies = replies ?: JournalSocial.replyCount(model.posts, post.id),
         reposts = JournalSocial.reposts(model.posts, post.id).size, reposted = own != null,
         onRepost = member?.takeIf { !foreign }?.let { who -> {
             write("Could not repost. Try again.") {

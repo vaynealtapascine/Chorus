@@ -18,7 +18,7 @@
   import QuoteEmbed from './QuoteEmbed.svelte';
   import PostMedia from './PostMedia.svelte';
   import Icon from './Icon.svelte';
-  import type { QuoteView } from '../post-threads';
+  import { opensPost, type QuoteView } from '../post-threads';
   import { bookmarkPayload, repostBy, repostPayload, shareText, type SocialIndex } from '../journal-social';
   import { linkTo } from '../share-links';
   import { entryMeta, fullTimestamp, shortAgo } from '../journal-presentation';
@@ -144,7 +144,10 @@
   }
 </script>
 
-<article class="post" class:full data-post-id={post.id} style="--author: {color.name}; --avatar-bg: {color.ring}; --avatar-ink: {color.avatar_ink}; --tint: {color.tint}">
+<!-- clicking the card is a mouse shortcut; keyboards and screen readers open it by its time link -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+<article class="post" class:full data-post-id={post.id} style="--author: {color.name}; --avatar-bg: {color.ring}; --avatar-ink: {color.avatar_ink}; --tint: {color.tint}"
+  onclick={(event) => { if (!full && !editing && opensPost(event)) router.go(`/journal/post/${encodeURIComponent(post.id)}`); }}>
   {#if repostedBy}<p class="reposted"><Icon name="repost" size={14} />{repostedBy} reposted</p>{/if}
   <div class="frame">
     <a class="avatar" href="#/profile/{post.authors[0] ?? ''}" aria-label="{name(post.authors[0] ?? '')}’s profile"><AvatarImage hash={lead?.avatar_blob} glyph={lead?.sigils[0] ?? name(post.authors[0] ?? '')[0]} name={name(post.authors[0] ?? '')} /></a>
@@ -181,7 +184,9 @@
             </p>
           {/if}
         {/if}
-        <div class="actions" class:large={full}>
+      {/if}
+      <!-- a content warning hides what it warns about, not the row -->
+      <div class="actions" class:large={full}>
           <button class="act" onclick={onreply} aria-label={replyCount ? `Reply (${replyCount} ${replyCount === 1 ? 'reply' : 'replies'})` : 'Reply'}><Icon name="reply" size={iconSize} />{#if replyCount && !full}<span>{replyCount}</span>{/if}</button>
           {#if social}
             <span class="pop-anchor">
@@ -195,8 +200,7 @@
           {#if saved}<button class="act" class:on={isSaved} aria-pressed={isSaved} aria-label={isSaved ? 'Remove from saved' : 'Save'} onclick={toggleSave}><Icon name={isSaved ? 'bookmark-filled' : 'bookmark'} size={iconSize} /></button>{/if}
           {#if share}<button class="act last" aria-label="Share" onclick={shareOut}><Icon name="share" size={iconSize} /></button>{/if}
           {#if notice}<span class="notice" role="status">{notice}</span>{/if}
-        </div>
-      {/if}
+      </div>
     </div>
     <span class="pop-anchor overflow">
       <button class="more" aria-haspopup="menu" aria-expanded={menu} aria-label="More options for this post" onclick={() => (menu = !menu)}><Icon name="more" size={18} /></button>
@@ -224,6 +228,8 @@
 
 <style>
   .post { padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--line); min-width: 0; }
+  .post:not(.full) { cursor: pointer; }
+  .post:not(.full):hover { background: color-mix(in srgb, var(--surface) 60%, var(--bg)); }
   .reposted { display: flex; align-items: center; gap: 6px; margin: 0 0 6px 28px; color: var(--ink-3); font-size: var(--fs-xs); font-weight: 600; }
   /* compact: the avatar column runs beside the post; full: avatar and names, then the post at full width */
   .frame { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 12px; row-gap: 4px; }

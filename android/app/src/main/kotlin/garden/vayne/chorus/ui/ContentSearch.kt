@@ -200,7 +200,7 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
             } else if(doc.kind == "Posts") {
                 val post=model.posts.firstOrNull {it.id==doc.id}
                 if(post != null) JournalPostCard(post,model,chorus,onReply={onOpenPost(it.id)},onThread={onOpenPost(it.id)},showActions=false)
-                else doc.sharedPost?.let {SharedPostPreview(it,"Shared post",chorus,model,enabled=false,onThread={onOpenPost(it.id)})}
+                else doc.sharedPost?.let {SharedPostPreview(it,"Shared post",chorus,model,onThread={onOpenPost(it.id)})}
             } else SearchCard(doc, model, onOpenMessage, onOpenPost)
         }
         if (results.size == 100) item { Text("Showing the newest 100 local matches. Narrow the search for more.", color = p.ink2) }

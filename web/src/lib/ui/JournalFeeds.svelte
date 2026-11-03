@@ -10,18 +10,14 @@
   import { sync, type Projection } from '../sync/client';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
-  import type { AttachmentRow } from '../data';
-  import type { Entity } from '../core';
   import AttachmentView from './AttachmentView.svelte';
-  import PostMedia from './PostMedia.svelte';
+  import FriendPostCard from './FriendPostCard.svelte';
+  import type { FriendPost } from '../friends-feed';
   import PostCard from './PostCard.svelte';
   import { quoteView } from '../post-threads';
   import { savedPosts, socialIndex } from '../journal-social';
   import { router } from '../router.svelte';
-  import RemotePostPoll from './RemotePostPoll.svelte';
-  import type { PollTally } from '../polls';
   import RichText from './RichText.svelte';
-  import PostPreviewBody from './PostPreviewBody.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
   const feeds = $derived(savedFeeds(projection));
@@ -54,11 +50,9 @@
   // feeds other accounts share with this one, evaluated by the server over what we may read
   interface SharedFeed { id: string; name: string | null; description: string | null; query: string | null;
     owner: { handle: string | null; display_name: string | null }; shared: boolean }
-  interface SharedPost { poll?: unknown; poll_tally?: PollTally | null; id: string; kind: string; title: string | null; text: string; cw: string | null; occurred_at: number;
-    entities: Entity[]; attachments: AttachmentRow[]; author_cards: { name: string | null; display_name: string | null }[] }
   let sharedFeeds = $state<SharedFeed[]>([]);
   let openShared = $state<SharedFeed | null>(null);
-  let sharedItems = $state<SharedPost[]>([]);
+  let sharedItems = $state<FriendPost[]>([]);
   let sharedCursor = $state<string | null>(null);
   let sharedError = $state('');
   async function api(path: string) {
@@ -77,12 +71,11 @@
       const cursor = more && sharedCursor ? `&cursor=${encodeURIComponent(sharedCursor)}` : '';
       const j = await api(`/feeds/${encodeURIComponent(feed.id)}/items?limit=20${cursor}`);
       if (!more) { openShared = feed; sharedItems = []; }
-      sharedItems = [...sharedItems, ...(j.items as SharedPost[])];
+      sharedItems = [...sharedItems, ...(j.items as FriendPost[])];
       sharedCursor = j.next_cursor;
     } catch (cause) { sharedError = cause instanceof Error ? cause.message : String(cause); }
   }
   const owner = (f: SharedFeed) => f.owner.display_name ?? (f.owner.handle ? `@${f.owner.handle}` : 'Someone');
-  const byline = (p: SharedPost) => p.author_cards.map((a) => a.display_name ?? a.name ?? 'Someone').join(' & ');
 
   const preview = $derived.by(() => {
     if (!query.trim()) return { rows: [] as typeof candidates, error: '' };
@@ -158,12 +151,7 @@
         {#if openShared.description}<p class="muted">{openShared.description}</p>{/if}
         {#if filtersByFronting(openShared.query)}<p class="banner" role="note">{FRONTING_NOTE}, as far as your notifications from {owner(openShared)} have shown you.</p>{/if}
         {#each sharedItems as post (post.id)}
-          <article class="message"><p class="muted">{byline(post)} · {new Date(post.occurred_at).toLocaleString()}</p>
-            {#if post.cw}<details><summary>Content warning: {post.cw}</summary>{#if post.title}<strong>{post.title}</strong>{/if}<p><PostPreviewBody text={post.text} entities={post.entities ?? []} /></p>
-                  <RemotePostPoll {projection} post={post} member={speaker} />{#if post.attachments?.length}<PostMedia attachments={post.attachments} who={byline(post)} occurredAt={post.occurred_at} />{/if}</details>
-            {:else}{#if post.title}<strong>{post.title}</strong>{/if}<p><PostPreviewBody text={post.text} entities={post.entities ?? []} /></p>
-                  <RemotePostPoll {projection} post={post} member={speaker} />{#if post.attachments?.length}<PostMedia attachments={post.attachments} who={byline(post)} occurredAt={post.occurred_at} />{/if}{/if}
-          </article>
+          <FriendPostCard {post} account={owner(openShared)} {projection} {speaker} speakerName={speaker ? memberName(speaker) : ''} {dark} />
         {:else}<p class="muted">Nothing in this feed that you can read yet.</p>{/each}
         {#if sharedCursor}<button onclick={() => showShared(openShared!, true)}>Load more</button>{/if}
       {/if}

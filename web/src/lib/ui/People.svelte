@@ -7,25 +7,20 @@
   import BucketIconPicker from './BucketIconPicker.svelte';
   import { DEFAULT_BUCKET_ICON, withPreset, canonical, PRESET_KEYS } from '../bucket-controls';
   import { notifyPreset } from '../core/pkg/chorus_wasm.js';
-  import { bucketAssignments, buckets, members, selfMember, type AttachmentRow } from '../data';
-  import { postReaction } from '../posts';
+  import { bucketAssignments, buckets, members, selfMember } from '../data';
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
   import { sync, type Projection } from '../sync/client';
   import { bodyAuthors } from '../front-view';
   import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
   import AvatarImage from './AvatarImage.svelte';
-  import AttachmentView from './AttachmentView.svelte';
-  import RemotePostPoll from './RemotePostPoll.svelte';
-  import type { PollTally } from '../polls';
-  import PostPreviewBody from './PostPreviewBody.svelte';
-  import PostComposer from './PostComposer.svelte';
-  import type { Entity } from '../core';
+  import FriendPostCard from './FriendPostCard.svelte';
+  import type { FriendPost } from '../friends-feed';
   import { disablePush, enablePush, pushActive, pushSupported, testPush } from '../push';
   import { createShared, openDm } from '../spaces';
   import { putFront } from '../friend-fronts.svelte';
 
-  let { projection }: { projection: Projection } = $props();
+  let { projection, dark }: { projection: Projection; dark: boolean } = $props();
 
   interface Person { id: string; handle: string | null; display_name: string | null; kind: string; avatar_blob?: string | null }
   interface FollowRow { id: string; account: Person; status: string; created_at: number; prefs?: Record<string, unknown> }
@@ -43,13 +38,6 @@
     history?: { entries: { name: string }[]; time: When }[];
     stats?: { days: number; members: { name: string; share_pct: number }[] };
   }
-  interface SharedPost {
-    poll?: unknown; poll_tally?: PollTally | null;
-    id: string; kind: 'note' | 'entry'; title: string | null; text: string; cw: string | null;
-    occurred_at: number; author_cards: { id: string; name: string | null; display_name: string | null }[];
-    entities: Entity[]; attachments: AttachmentRow[];
-    reactions: { emoji: string; member_id: string; member_name: string }[];
-  }
   interface Note {
     id: string;
     kind: 'switch' | 'mention' | 'dm' | 'reply' | 'message' | 'member_dm' | 'own_switch' | 'post' | 'alert_request' | 'alert_accepted';
@@ -66,7 +54,7 @@
   const noteTitle = (n: Note) => n.account?.display_name ?? (n.account?.handle ? `@${n.account.handle}` : (n.title ?? 'Chorus'));
 
   let views = $state<Record<string, View>>({});
-  let sharedPosts = $state<Record<string, SharedPost[]>>({});
+  let sharedPosts = $state<Record<string, FriendPost[]>>({});
   let notes = $state<Note[]>([]);
   let seenNotes = new Set<string>();
   let canNotify = $state(typeof Notification !== 'undefined' && Notification.permission === 'granted');
@@ -188,7 +176,7 @@
   /** What we may see of the accounts we follow, and our switch notifications (polled). */
   async function loadViews() {
     const next: Record<string, View> = {};
-    const nextPosts: Record<string, SharedPost[]> = {};
+    const nextPosts: Record<string, FriendPost[]> = {};
     for (const f of following.filter((x) => x.status === 'active')) {
       try {
         next[f.account.id] = await api(`/accounts/${f.account.id}/view`);
@@ -198,7 +186,7 @@
       }
       try {
         const result = await api(`/posts?account=${encodeURIComponent(f.account.id)}&limit=5`);
-        nextPosts[f.account.id] = result.items as SharedPost[];
+        nextPosts[f.account.id] = result.items as FriendPost[];
       } catch {
         /* older server or temporarily offline */
       }
@@ -355,19 +343,9 @@
   }
 
   const name = (p: Person) => p.display_name ?? (p.handle ? `@${p.handle}` : 'Someone');
-  const postAuthors = (p: SharedPost, fallback: Person) =>
-    p.author_cards.map((a) => a.display_name ?? a.name ?? 'Someone').join(' & ') || name(fallback);
   const reactMember = $derived(selfMember(projection)?.id ?? bodyAuthors(projection, sync.accountId)[0]);
-  function reactPost(post: SharedPost) {
-    if (!reactMember) return;
-    const selected = post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember);
-    sync.create(selected ? 'post.unreact' : 'post.react', sync.accountScope, post.id, postReaction(post.id, '💜', reactMember));
-    post.reactions = selected
-      ? post.reactions.filter((r) => !(r.emoji === '💜' && r.member_id === reactMember))
-      : [...(post.reactions ?? []), { emoji: '💜', member_id: reactMember, member_name: members(projection).find((m) => m.id === reactMember)?.display_name ?? 'You' }];
-  }
+  const reactName = $derived(members(projection).find((m) => m.id === reactMember)?.display_name ?? 'You');
   let choice = $state<Record<string, string>>({});
-  let replyingPost = $state<string | null>(null);
 </script>
 
 <section class="page">
@@ -630,35 +608,7 @@
           <div class="shared-posts" aria-label={`Posts from ${name(f.account)}`}>
             <strong>Shared posts</strong>
             {#each sharedPosts[f.account.id] as post (post.id)}
-              <article class="shared-post">
-                <div class="post-meta"><span>{postAuthors(post, f.account)} · {post.kind}</span><time>{new Date(post.occurred_at).toLocaleString()}</time></div>
-                {#if post.cw}
-                  <details><summary>Content warning: {post.cw}</summary>
-                    {#if post.title}<strong>{post.title}</strong>{/if}<p><PostPreviewBody text={post.text} entities={post.entities ?? []} /></p>
-                  <RemotePostPoll {projection} post={post} member={reactMember} />
-                    {#each post.attachments ?? [] as attachment (attachment.id)}
-                      <AttachmentView {attachment} />
-                    {/each}
-                    {#if post.reactions?.length}<p class="post-reactions">{post.reactions.map((r) => `${r.emoji} ${r.member_name}`).join(' · ')}</p>{/if}
-                    {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button><span class="hint">{isSystem ? 'Reacting shows this member to post readers right away.' : 'Post readers see your reaction right away.'}</span>{/if}
-                    {#if reactMember}<button class="ghost" onclick={() => (replyingPost = replyingPost === post.id ? null : post.id)}>{replyingPost === post.id ? 'Cancel reply' : 'Reply'}</button>{/if}
-                  </details>
-                {:else}
-                  {#if post.title}<strong>{post.title}</strong>{/if}<p><PostPreviewBody text={post.text} entities={post.entities ?? []} /></p>
-                  <RemotePostPoll {projection} post={post} member={reactMember} />
-                  {#each post.attachments ?? [] as attachment (attachment.id)}
-                    <AttachmentView {attachment} />
-                  {/each}
-                  {#if post.reactions?.length}<p class="post-reactions">{post.reactions.map((r) => `${r.emoji} ${r.member_name}`).join(' · ')}</p>{/if}
-                  {#if reactMember}<button class="ghost" onclick={() => reactPost(post)}>{post.reactions?.some((r) => r.emoji === '💜' && r.member_id === reactMember) ? 'Remove 💜 reaction' : 'React 💜'}</button><span class="hint">{isSystem ? 'Reacting shows this member to post readers right away.' : 'Post readers see your reaction right away.'}</span>{/if}
-                  {#if reactMember}<button class="ghost" onclick={() => (replyingPost = replyingPost === post.id ? null : post.id)}>{replyingPost === post.id ? 'Cancel reply' : 'Reply'}</button>{/if}
-                {/if}
-                {#if replyingPost === post.id && reactMember}
-                  <div class="reply-composer"><p class="hint">This reply is visible to everyone on this server. You can change that before posting.</p>
-                    <PostComposer {projection} initialAuthors={[reactMember]} replyTo={post.id} defaultVisibility="server" onsent={() => { replyingPost = null; void loadViews(); }} />
-                  </div>
-                {/if}
-              </article>
+              <FriendPostCard {post} account={name(f.account)} {projection} speaker={reactMember ?? null} speakerName={reactName} {dark} />
             {/each}
           </div>
         {/if}
@@ -718,9 +668,4 @@
   .note { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: baseline; padding: var(--s-2) 0; border-bottom: 1px solid var(--line); }
   .note time { margin-left: auto; color: var(--ink-3); font-size: var(--fs-sm); }
   .shared-posts { width: 100%; display: grid; gap: var(--s-2); border-top: 1px solid var(--line); padding-top: var(--s-2); }
-  .shared-post { display: grid; gap: var(--s-1); padding: var(--s-2); background: var(--surface-2); border-radius: var(--r-sm); min-width: 0; }
-  .shared-post p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .shared-post details { display: grid; gap: var(--s-1); }
-  .shared-post summary { cursor: pointer; color: var(--accent); }
-  .post-meta { display: flex; flex-wrap: wrap; gap: var(--s-2); color: var(--ink-3); font-size: var(--fs-xs); }
 </style>

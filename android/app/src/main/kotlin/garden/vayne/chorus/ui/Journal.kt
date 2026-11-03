@@ -448,7 +448,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         return@ChorusScene
     }
     if (shown == "feeds") {
-        JournalFeeds(chorus, model, onTimeline = { section = "timeline" })
+        JournalFeeds(chorus, model, onTimeline = { section = "timeline" }, onThread = { threadPostId = it }, onProfile = openFriend)
         return@ChorusScene
     }
     if (shown == "saved") {
@@ -594,10 +594,11 @@ internal fun JournalPostCard(post: JournalPost, model: Model, chorus: Chorus, on
     onThread: ((JournalPost) -> Unit)? = null, onProfile: ((String) -> Unit)? = null, full: Boolean = false,
     showActions: Boolean = true, repostedBy: String? = null, onQuote: ((JournalPost) -> Unit)? = null,
     onOpenPost: ((String) -> Unit)? = null, extraMenu: List<Pair<String, () -> Unit>> = emptyList(),
-    lineAbove: Boolean = false, inThread: Boolean = false, quoted: ThreadReply? = null) {
+    lineAbove: Boolean = false, inThread: Boolean = false, quoted: ThreadReply? = null,
+    lineBelow: Boolean = false, wide: Boolean = false, divider: Boolean = !full) {
     Column(Modifier.fillMaxWidth()) {
         JournalPostCardBody(post, model, chorus, onReply, onThread, onProfile, full, showActions, repostedBy, onQuote, onOpenPost, extraMenu,
-            lineAbove, inThread, quoted)
+            lineAbove, inThread, quoted, lineBelow, wide, divider)
     }
 }
 
@@ -606,7 +607,8 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
     onThread: ((JournalPost) -> Unit)?, onProfile: ((String) -> Unit)?, full: Boolean,
     showActions: Boolean, repostedBy: String?, onQuote: ((JournalPost) -> Unit)?,
     onOpenPost: ((String) -> Unit)?, extraMenu: List<Pair<String, () -> Unit>> = emptyList(),
-    lineAbove: Boolean = false, inThread: Boolean = false, quoted: ThreadReply? = null) {
+    lineAbove: Boolean = false, inThread: Boolean = false, quoted: ThreadReply? = null,
+    lineBelow: Boolean = false, wide: Boolean = false, divider: Boolean = !full) {
     val p = LocalChorusPalette.current
     // A repost has no text: show the original (one level only) under "X reposted", or say it's gone.
     if (post.repostOf != null && repostedBy == null) {
@@ -628,8 +630,8 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val names = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
     val open = onThread?.takeIf { !full }?.let { { it(post) } }
-    JournalPostFrame(names, compactAgo(post.occurredAt), post.visibility, full, endsWithActions = showActions && !full &&
-        (post.cw == null || revealed), lineAbove = lineAbove, avatar = {
+    JournalPostFrame(names, compactAgo(post.occurredAt), post.visibility, full, endsWithActions = showActions && !full,
+        lineAbove = lineAbove, lineBelow = lineBelow, wide = wide, avatar = {
         Box {
             Box(Modifier.size(if (full) 48.dp else 40.dp).clip(CircleShape).clickable(enabled = onProfile != null) {
                 if (post.authors.size > 1) authorsOpen = true else post.authors.firstOrNull()?.let { onProfile?.invoke(it) }
@@ -686,19 +688,20 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
             // tags close the post, after its media, poll and quote, just above the actions
             if (post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
                 style = MaterialTheme.typography.bodySmall)
-            if (showActions) JournalPostActions(post, model, chorus, onReply = { (onThread ?: onReply)(post) }, onQuote = onQuote)
         }
+        // a content warning hides what it warns about, not the row
+        if (showActions) JournalPostActions(post, model, chorus, onReply = { (onThread ?: onReply)(post) }, onQuote = onQuote)
     }
     if (audienceOpen) JournalAudienceDialog(post, model, chorus, onDismiss = { audienceOpen = false })
     if (postEditing) PostEditDialog(post, chorus) { postEditing = false }
     if (historyOpen) PostHistoryDialog(post.id, chorus) { historyOpen = false }
-    if (!full) HorizontalDivider(color = p.line, thickness = .5.dp)
+    if (divider) HorizontalDivider(color = p.line, thickness = .5.dp)
 }
 
 /** A post as a thread, the way Twitter reads one: what it answers sits above it (oldest first, one
  * avatar line running down into the focused post), then the focused post, larger, with when it was
- * written, its counts and a large action row, then its replies. Each reply opens as a thread of its
- * own ("N replies" says when it has more), and back returns here. Server replies can come from
+ * written, its counts and a large action row, then its replies. Every post has its action row, and
+ * each opens as a thread of its own, with back returning here. Server replies can come from
  * other accounts, while own replies and own parents remain available offline. The reply bar stays
  * pinned and opens the existing composer, so the audience is still chosen there. [replyAuthors] is
  * who may write here (one member for a person account, so no picker is shown). */
@@ -741,8 +744,7 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
     val rootPost = model.posts.find { it.id == postId }
     val foreignRoot = remote?.root?.takeIf { rootPost == null }
     // a post from another account has no local row: describe it with what the server sent
-    val focused = rootPost ?: foreignRoot?.let { JournalPost(it.id, "note", emptyList(), it.title, it.text, it.occurredAt,
-        it.cw, "server", null, null, emptyList()) }
+    val focused = rootPost ?: foreignRoot?.let { PostThreads.foreignPost(it.id, "note", it.title, it.text, it.occurredAt, it.cw) }
     val open: (String) -> Unit = { id -> if (id != postId) onOpenPost?.invoke(id) }
     // opens on the focused post, its context above; parents arriving later keep it in place (keyed)
     val scroll = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = localAncestors.size)
@@ -759,7 +761,12 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
             itemsIndexed(ancestors, key = { _, it -> "up:${it.id}" }) { i, parent ->
                 Column(Modifier.animateItem(fadeInSpec = if (motion) ChorusMotion.tween(true, ChorusMotion.Gentle) else null,
                     placementSpec = if (motion) ChorusMotion.settle() else null, fadeOutSpec = null)) {
-                    ThreadReplyCard(parent, chorus, model, replyAuthor?.id, onOpen = { open(parent.id) },
+                    // own parents keep every action, as own replies do
+                    val own = model.posts.find { it.id == parent.id }
+                    if (own != null) JournalPostCard(own, model, chorus, onReply = { open(it.id) }, onThread = { open(it.id) },
+                        onQuote = onQuote, onOpenPost = open, lineAbove = i > 0, inThread = true, quoted = parent.quoted,
+                        lineBelow = true, wide = true, divider = false)
+                    else ThreadReplyCard(parent, chorus, model, replyAuthor?.id, onOpen = { open(parent.id) },
                         lineAbove = i > 0, lineBelow = true, wide = true, divider = false, onOpenPost = open, onProfile = onProfile)
                 }
             }
@@ -821,7 +828,7 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
                     val own = model.posts.find { it.id == reply.id }
                     if (own != null) JournalPostCard(own, model, chorus, onReply = { open(it.id) }, onThread = { open(it.id) },
                         onQuote = onQuote, onOpenPost = open, inThread = listed === replies, quoted = reply.quoted)
-                    else ThreadReplyCard(reply, chorus, model, replyAuthor?.id, onOpen = { open(reply.id) }, actions = true, onOpenPost = open,
+                    else ThreadReplyCard(reply, chorus, model, replyAuthor?.id, onOpen = { open(reply.id) }, onOpenPost = open,
                         onProfile = onProfile)
                 }
             }
@@ -912,20 +919,30 @@ private fun JournalReplyBar(author: Member?, authors: List<Member>, onPick: ((St
 /** A post from the server's thread (another account's, or context above the focused post). One of our
  * members shows their own avatar; anyone else, their picture when their profile is shared with us
  * (tap to open it), else their colour and initial. Media, the poll, the quote and tags follow the
- * text as on our own posts. [actions] adds the action row with the reply count, which opens the
- * reply as its own thread. */
+ * text as on our own posts. Each has the action row (another account's post can be hearted and
+ * shared; reply opens it as its own thread), except the focused one, whose large row is below it. */
 @Composable
 private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, member: String?, full: Boolean = false,
     onOpen: (() -> Unit)? = null, lineAbove: Boolean = false, lineBelow: Boolean = false, wide: Boolean = false,
-    divider: Boolean = !full, actions: Boolean = false, onOpenPost: ((String) -> Unit)? = null,
+    divider: Boolean = !full, onOpenPost: ((String) -> Unit)? = null,
     onProfile: ((String, String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
-    val ctx = LocalContext.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     var revealed by rememberSaveable(reply.id) { mutableStateOf(false) }
+    var historyOpen by remember(reply.id) { mutableStateOf(false) }
+    // the server's hearts; ours answer at once, before the next read
+    var reactions by remember(reply.id, reply.reactions) { mutableStateOf(reply.reactions) }
     val names = reply.authorNames.joinToString(" & ").ifBlank { "Someone" }
     val shown = reply.cw == null || revealed
     JournalPostFrame(names, compactAgo(reply.occurredAt), null, full, onClick = onOpen, lineAbove = lineAbove,
-        lineBelow = lineBelow, wide = wide, endsWithActions = actions && shown, avatar = {
+        lineBelow = lineBelow, wide = wide, endsWithActions = !full, overflow = {
+        JournalOverflow("More options for this post", listOfNotNull(
+            onOpen?.let { "Open post" to it },
+            JournalSocial.shareText(reply.title, reply.cw, reply.text).takeIf { it.isNotBlank() }?.let { text ->
+                "Copy text" to { clipboard.setText(androidx.compose.ui.text.AnnotatedString(text)) }
+            },
+            ("Edit history" to { historyOpen = true }).takeIf { !full }))
+    }, avatar = {
         val own = reply.authorIds.firstNotNullOfOrNull(model::member)
         val profile = reply.profiles.firstOrNull()?.takeIf { onProfile != null && reply.accountId != null }
         if (own != null) ChatAvatar(own, 40.dp)
@@ -951,15 +968,12 @@ private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, me
             reply.quotePostId?.let { ThreadQuote(it, reply.quoted, model, onOpenPost) }
             if (reply.tags.isNotEmpty()) Text(reply.tags.joinToString("  ") { "#$it" }, color = p.accent,
                 style = MaterialTheme.typography.bodySmall)
-            if (actions) JournalActions(emptyList(), null, onReply = onOpen, replies = reply.replyCount,
-                onShare = JournalSocial.shareText(reply.title, reply.cw, reply.text).takeIf { it.isNotBlank() }?.let { text ->
-                    { shareJournalText(ctx, reply.title, text) }
-                })
-            // context above the focused post leads into it, so its own count would only repeat it
-            else if (reply.replyCount > 0 && !full && !lineBelow && onOpen != null) Text(
-                if (reply.replyCount == 1) "1 reply" else "${reply.replyCount} replies", color = p.accent,
-                style = MaterialTheme.typography.labelMedium)
         }
+        if (!full) JournalPostActions(PostThreads.foreignPost(reply.id, "note", reply.title, reply.text, reply.occurredAt, reply.cw),
+            model, chorus, onReply = { onOpen?.invoke() }, foreign = true, replies = reply.replyCount,
+            reactions = PostReactions.merge(model.postReactions[reply.id].orEmpty(), reactions),
+            onReacted = { who -> reactions = PostReactions.toggle(reactions, who.id, who.shownName) })
     }
+    if (historyOpen) PostHistoryDialog(reply.id, chorus) { historyOpen = false }
     if (divider) HorizontalDivider(color = p.line, thickness = .5.dp)
 }

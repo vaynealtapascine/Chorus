@@ -18,6 +18,7 @@ export interface ThreadPost {
     avatar_blob?: string | null; profile?: boolean }[];
   account_id?: string;
   tags?: string[] | null;
+  reactions?: { emoji: string; member_id?: string; member_name: string }[];
   /** Replies this reader may see. */
   reply_count?: number;
   reply_to?: string | null;
@@ -26,6 +27,12 @@ export interface ThreadPost {
   quote?: { post_id?: string } | null;
   /** The quoted post, when this reader may read it. */
   quoted?: ThreadPost | null;
+}
+
+/** A click anywhere on a post opens it, as on Twitter, except on its own links and controls or
+ * when it ends a text selection. Keyboards and screen readers open it by its time link. */
+export function opensPost(event: Pick<MouseEvent, 'target'>, selected = window.getSelection()?.toString()): boolean {
+  return !selected && !(event.target as Element).closest('a, button, summary, input, select, textarea, label, video, audio, dialog, [role="menu"]');
 }
 
 /** Where tapping a post's author goes: the first author whose profile this reader may open, on
@@ -46,7 +53,6 @@ export interface PostDetail extends ThreadPost {
   ancestors?: ThreadPost[];
   /** Posts quoting this one, newest first. */
   quotes?: ThreadPost[];
-  reactions?: { emoji: string; member_id?: string; member_name: string }[];
 }
 
 /** One post in a thread. Own posts keep their synced row (`local`), so they keep every action;

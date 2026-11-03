@@ -40,7 +40,7 @@
   {#if loading}<p class="quiet">Loading friends’ posts…</p>{/if}
   {#if error}<div class="quiet"><p>{error}</p><button onclick={load}>Try again</button></div>{/if}
   {#each items as item (item.post.id)}
-    <FriendPostCard bind:post={item.post} account={item.account} {projection} {speaker} {speakerName} {dark} />
+    <FriendPostCard post={item.post} account={item.account} {projection} {speaker} {speakerName} {dark} />
   {:else}
     {#if !loading && !error}<p class="quiet">No shared posts yet. Posts from accounts you follow will appear here.</p>{/if}
   {/each}

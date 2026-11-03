@@ -95,4 +95,15 @@ class PostThreadsTest {
         assertEquals(listOf("kai"), root.profiles)
         assertEquals("pic", root.avatarBlob)
     }
+
+    @Test fun everyThreadPostKeepsItsOwnReactions() {
+        val detail = PostThreads.parseDetail(JSONObject("""{"id":"root","text":"Hi","occurred_at":5,"author_cards":[],
+            "reactions":[{"emoji":"💜","member_id":"a","member_name":"Ann"}],
+            "ancestors":[{"id":"up","text":"Up","occurred_at":1,"reactions":[{"emoji":"💜","member_id":"b","member_name":"Bo"}]}],
+            "replies":[{"id":"down","text":"Down","occurred_at":9,"reactions":[{"emoji":"💜","member_id":"c","member_name":"Cy"}]},
+              {"id":"quiet","text":"Quiet","occurred_at":10}],"quotes":[]}"""))
+        assertEquals(listOf("b"), detail.ancestors.single().reactions.map { it.memberId })
+        assertEquals(listOf("c"), detail.replies.first().reactions.map { it.memberId })
+        assertEquals(emptyList<PostReaction>(), detail.replies.last().reactions)
+    }
 }

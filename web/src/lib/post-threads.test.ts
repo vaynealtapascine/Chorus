@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localAncestors, quoteView, remoteNames, replyCounts, threadAncestors, threadQuotes, threadReplies, authorProfileHref, tagLine } from './post-threads';
+import { opensPost, localAncestors, quoteView, remoteNames, replyCounts, threadAncestors, threadQuotes, threadReplies, authorProfileHref, tagLine } from './post-threads';
 import type { PostRow } from './posts';
 
 const post = (id: string, reply_to?: string, at = 0, deleted = false): PostRow => ({
@@ -73,5 +73,12 @@ describe('journal threads', () => {
     expect(authorProfileHref({ ...post, account_id: undefined })).toBeNull();
     expect(tagLine(['garden', ' ', 3, ' cats '])).toBe('#garden  #cats');
     expect(tagLine(null)).toBe('');
+  });
+
+  it('opens a post from a click on it, not on its controls or after selecting text', () => {
+    const on = (control: boolean) => ({ target: { closest: () => (control ? {} : null) } as unknown as Element });
+    expect(opensPost(on(false), '')).toBe(true);
+    expect(opensPost(on(true), '')).toBe(false);
+    expect(opensPost(on(false), 'some words')).toBe(false);
   });
 });

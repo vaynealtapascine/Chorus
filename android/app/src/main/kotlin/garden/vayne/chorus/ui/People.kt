@@ -78,9 +78,6 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
     var friend by rememberSaveable { mutableStateOf<Pair<String, String>?>(null) }
     // the member a post's author tap opened their profile on
     var friendMember by rememberSaveable { mutableStateOf<String?>(null) }
-    val reactMember = Reply.speaker(model)?.takeIf { member ->
-        member.createdByAccountId == null || member.createdByAccountId == chorus.device?.accountId
-    }
 
     LaunchedEffect(chorus.device?.session, model, refresh) {
         val dev = chorus.device ?: return@LaunchedEffect
@@ -211,25 +208,8 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                 sharedPosts[f.account.id]?.takeIf { it.isNotEmpty() }?.let { posts ->
                     Text("Shared posts", color = p.ink2, fontWeight = FontWeight.SemiBold)
                     for (post in posts) SharedPostPreview(post, f.account.shownName, chorus, model,
-                        reactMember?.id, !busy, onThread = { threadPostId = it.id },
-                        onReply = { onReplyPost(it.id) },
-                        onProfile = { account, member -> friendMember = member; friend = account to f.account.shownName }) { selected ->
-                        val member = reactMember ?: return@SharedPostPreview
-                        if (busy) return@SharedPostPreview
-                        busy = true; error = null
-                        actions.launch {
-                            try {
-                                val chosen = selected.reactions.any { it.emoji == PostReactions.HEART && it.memberId == member.id }
-                                chorus.create(if (chosen) "post.unreact" else "post.react", selected.id,
-                                    PostReactions.payload(selected.id, member.id))
-                                sharedPosts = sharedPosts + (f.account.id to posts.map { item ->
-                                    if (item.id == selected.id) item.copy(reactions = PostReactions.toggle(item.reactions,
-                                        member.id, member.shownName)) else item
-                                })
-                            } catch (e: Exception) { error = e.message ?: "Could not react to this post." }
-                            finally { busy = false }
-                        }
-                    }
+                        onThread = { threadPostId = it.id }, onReply = { onReplyPost(it.id) },
+                        onProfile = { account, member -> friendMember = member; friend = account to f.account.shownName })
                 }
             }
         }
@@ -423,25 +403,8 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                 sharedPosts[f.account.id]?.takeIf { it.isNotEmpty() }?.let { posts ->
                     Text("Shared posts", color = p.ink2, fontWeight = FontWeight.SemiBold)
                     for (post in posts) SharedPostPreview(post, f.account.shownName, chorus, model,
-                        reactMember?.id, !busy, onThread = { threadPostId = it.id },
-                        onReply = { onReplyPost(it.id) },
-                        onProfile = { account, member -> friendMember = member; friend = account to f.account.shownName }) { selected ->
-                        val member = reactMember ?: return@SharedPostPreview
-                        if (busy) return@SharedPostPreview
-                        busy = true; error = null
-                        actions.launch {
-                            try {
-                                val chosen = selected.reactions.any { it.emoji == PostReactions.HEART && it.memberId == member.id }
-                                chorus.create(if (chosen) "post.unreact" else "post.react", selected.id,
-                                    PostReactions.payload(selected.id, member.id))
-                                sharedPosts = sharedPosts + (f.account.id to posts.map { item ->
-                                    if (item.id == selected.id) item.copy(reactions = PostReactions.toggle(item.reactions,
-                                        member.id, member.shownName)) else item
-                                })
-                            } catch (e: Exception) { error = e.message ?: "Could not react to this post." }
-                            finally { busy = false }
-                        }
-                    }
+                        onThread = { threadPostId = it.id }, onReply = { onReplyPost(it.id) },
+                        onProfile = { account, member -> friendMember = member; friend = account to f.account.shownName })
                 }
             }
         }
@@ -524,18 +487,17 @@ private fun FollowAdvanced(ceiling: JSONObject, enabled: Boolean, onChange: (Str
 
 @Composable
 internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Chorus, model: Model,
-    reactMemberId: String? = null,
-    enabled: Boolean = true, onThread: ((SharedPost) -> Unit)? = null,
-    onReply: ((SharedPost) -> Unit)? = null,
+    onThread: ((SharedPost) -> Unit)? = null, onReply: ((SharedPost) -> Unit)? = null,
     /** Opens an author's profile (account, member) when it is shared with us. */
-    onProfile: ((String, String) -> Unit)? = null, onReact: (SharedPost) -> Unit = {}) {
+    onProfile: ((String, String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
     var expanded by rememberSaveable(post.id) { mutableStateOf(false) }
     val preview = remember(post.text, post.entities) { garden.vayne.chorus.data.PostPreviews.of(post.text, post.entities) }
-    val ctx = LocalContext.current
+    // the server's hearts; ours answer at once, before the next read
+    var reactions by remember(post.id, post.reactions) { mutableStateOf(post.reactions) }
     val names = post.authorNames.joinToString(" & ").ifBlank { accountName }
-    JournalPostFrame(names, compactAgo(post.occurredAt), null, endsWithActions = post.cw == null || revealed, avatar = {
+    JournalPostFrame(names, compactAgo(post.occurredAt), null, endsWithActions = true, avatar = {
         val profile = post.looks.profile?.takeIf { onProfile != null && post.accountId.isNotEmpty() }
         Avatar(names.take(1).uppercase(), post.looks.color ?: "#A09184", 40.dp, ring = false, avatarBlob = post.looks.avatarBlob,
             modifier = if (profile == null) Modifier else Modifier.clip(CircleShape)
@@ -552,17 +514,15 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
             if (preview.truncated) TextButton(onClick = {
                 expanded = !expanded
             }) { Text(if (expanded) "Show less" else "Show more") }
-            PollCard(chorus, model, post.id, reactMemberId ?: Reply.speaker(model)?.id, post.poll, post.pollTally)
+            PollCard(chorus, model, post.id, Reply.speaker(model)?.id, post.poll, post.pollTally)
             JournalMedia(post.attachments, chorus, names, post.occurredAt)
             if (post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
                 style = MaterialTheme.typography.bodySmall)
-            JournalActions(post.reactions, reactMemberId?.let(model::member), enabled,
-                onReply = onThread?.let { { it(post) } } ?: onReply?.let { { it(post) } },
-                onReact = reactMemberId?.let { { onReact(post) } },
-                onShare = JournalSocial.shareText(post.title, post.cw, post.text).takeIf { it.isNotBlank() }?.let { text ->
-                    { shareJournalText(ctx, post.title, text) }
-                })
         }
+        JournalPostActions(garden.vayne.chorus.data.PostThreads.foreignPost(post.id, post.kind, post.title, post.text, post.occurredAt, post.cw),
+            model, chorus, onReply = { (onThread ?: onReply)?.invoke(post) }, foreign = true,
+            reactions = PostReactions.merge(model.postReactions[post.id].orEmpty(), reactions),
+            onReacted = { who -> reactions = PostReactions.toggle(reactions, who.id, who.shownName) })
     }
 }
 

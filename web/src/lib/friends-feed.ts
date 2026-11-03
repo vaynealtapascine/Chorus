@@ -5,7 +5,6 @@ export interface FriendPost extends ThreadPost {
   kind?: 'note' | 'entry' | null;
   repost_of?: string | null;
   mood?: string | null;
-  reactions?: { emoji: string; member_id: string; member_name: string }[];
 }
 
 /** One account's shared posts, with the name to show when a post carries no author card. */
@@ -27,7 +26,7 @@ export function friendsFeed(sources: readonly FriendPosts[]): { account: string;
 }
 
 /** Toggle one member's 💜 in a server copy, so the card answers before the next read. */
-export function withHeart(post: FriendPost, memberId: string, memberName: string, on: boolean): FriendPost {
+export function withHeart<T extends ThreadPost>(post: T, memberId: string, memberName: string, on: boolean): T {
   const rest = (post.reactions ?? []).filter((r) => !(r.emoji === '💜' && r.member_id === memberId));
   return { ...post, reactions: on ? [...rest, { emoji: '💜', member_id: memberId, member_name: memberName }] : rest };
 }

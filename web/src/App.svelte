@@ -212,7 +212,7 @@
       {:else if router.route.name === 'settings'}
         <Settings {projection} />
       {:else if router.route.name === 'people'}
-        <People {projection} />
+        <People {projection} {dark} />
       {:else if router.route.name === 'trash'}
         <Trash {projection} channelId={router.route.id} />
       {:else}
