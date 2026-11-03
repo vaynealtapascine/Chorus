@@ -121,7 +121,6 @@ import garden.vayne.chorus.data.ChatSpace
 import garden.vayne.chorus.data.SearchAncestors
 import garden.vayne.chorus.data.SearchJump
 import garden.vayne.chorus.data.SearchVisibility
-import garden.vayne.chorus.data.ChannelPermissions
 import garden.vayne.chorus.data.Api
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Model
@@ -432,16 +431,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val loadedHistory=history.window(model)
     val jumpVisibility=remember(model,loadedHistory) {SearchVisibility(model,chorus.device?.accountId.orEmpty(),ancestors=loadedHistory?.ancestors.orEmpty())}
     val shownNow = remember(model, viewingAs, loadedHistory) {
-        val base=ChatOrganize.shown(model,viewingAs)
+        val base=ChatOrganize.openable(model,viewingAs,chorus.device?.accountId.orEmpty())
         val byChannel=model.channels.associateBy {it.id}
-        val parents=model.searchMessages.associate {it.id to it.channelId}
-        fun permitted(id:String?,seen:MutableSet<String>):Boolean {
-            val c=byChannel[id] ?: return false
-            if(c.invalidMembership || seen.size>256 || !seen.add(c.id)) return false
-            return if(c.kind=="thread") permitted(parents[c.parentMessageId],seen)
-                else ChannelPermissions.canView(model.channelPermissionState,c,chorus.device?.accountId.orEmpty())
-        }
-        val guard:(String?)->Boolean={id -> (base(id) && permitted(id,HashSet())) ||
+        val guard:(String?)->Boolean={id -> base(id) ||
             (loadedHistory!=null && byChannel[id]?.kind=="thread" && loadedHistory.messages.any {it.channelId==id && jumpVisibility.message(it)})}
         guard
     }

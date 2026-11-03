@@ -210,7 +210,8 @@ pub(crate) fn apply_op<'a>(
     match spec.action {
         Action::Create | Action::Append => {
             let mut fields = payload.clone();
-            if trash_item {
+            // a space's creator is its owner, as the server's `space.owner_account_id` (first create)
+            if trash_item || spec.table == "space" {
                 fields.insert("created_by_account_id".into(), json!(o.account_id));
             }
             if spec.action == Action::Append {

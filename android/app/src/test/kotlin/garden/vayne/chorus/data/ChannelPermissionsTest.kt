@@ -9,15 +9,29 @@ import org.junit.Test
 
 class ChannelPermissionsTest {
     private val channel = ChatChannel("c", "s", "text", "plans", null)
-    private fun state(rows: String) = ChannelPermissions.snapshot(JSONObject("""{"rows":$rows}"""))
+    private fun state(rows: String, sets: String = "{}") = ChannelPermissions.snapshot(JSONObject("""{"rows":$rows,"sets":$sets}"""))
+    // as the core projects them: joins are a set, `space.set_role` a row that never "exists"
+    private val joins = """{"space_member":{"s|{\"account_id\":\"a\"}":true,"s|{\"account_id\":\"m\"}":true,"s|{\"account_id\":\"x\"}":false}}"""
 
     @Test fun onlyManagersSeeTheControlsAndTheOwnerComesFromTheDirectory() {
         val s = state("""{"space":{"s":{"exists":true,"fields":{"kind":"shared"}}},
-            "space_member":{"s|a":{"exists":true,"fields":{"role":"admin"}},"s|m":{"exists":true,"fields":{"role":"member"}}}}""")
+            "space_member":{"s|a":{"exists":false,"fields":{"role":"admin"}},"s|x":{"exists":false,"fields":{"role":"admin"}}}}""", joins)
         assertTrue(ChannelPermissions.canManage(s, channel, "a"))
         assertFalse(ChannelPermissions.canManage(s, channel, "m"))
         assertTrue(ChannelPermissions.canManage(s, channel, "o", owner = "o"))
         assertFalse(ChannelPermissions.canManage(s, channel.copy(kind = "thread"), "a"))
+        // someone who left keeps a role row but not the role
+        assertFalse(ChannelPermissions.canManage(s, channel, "x"))
+    }
+
+    @Test fun membersSeeChatsAndTheCreatorOwnsTheSpace() {
+        val s = state("""{"space":{"s":{"exists":true,"fields":{"kind":"shared","created_by_account_id":"o"}}},
+            "channel_permission":{"c|role|everyone":{"exists":true,"fields":{"allow":[],"deny":["view"]}}}}""", joins)
+        assertFalse(ChannelPermissions.canView(s, channel, "m"))
+        assertTrue(ChannelPermissions.canView(s, channel, "o"))
+        assertTrue(ChannelPermissions.canView(s, channel.copy(id = "open"), "m"))
+        assertFalse(ChannelPermissions.canView(s, channel.copy(id = "open"), "stranger"))
+        assertFalse(ChannelPermissions.canView(s, channel.copy(id = "open"), "x"))
     }
 
     @Test fun savingRebasesOnlyTheEditedPermissions() {

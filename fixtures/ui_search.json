@@ -47,10 +47,9 @@
       },
       "space_member": {
         "shared|account": {
-          "exists": true,
+          "exists": false,
           "fields": {
-            "role": "custom",
-            "is_present": true
+            "role": "custom"
           },
           "clocks": {}
         }
@@ -405,7 +404,12 @@
         }
       }
     },
-    "sets": {},
+    "sets": {
+      "space_member": {
+        "s|{\"account_id\":\"account\"}": true,
+        "shared|{\"account_id\":\"account\"}": true
+      }
+    },
     "fronts": {}
   },
   "cases": [

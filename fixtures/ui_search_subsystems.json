@@ -89,16 +89,7 @@
           "clocks": {}
         }
       },
-      "space_member": {
-        "dm|account": {
-          "exists": true,
-          "fields": {
-            "role": "member",
-            "is_present": true
-          },
-          "clocks": {}
-        }
-      },
+      "space_member": {},
       "channel_permission": {},
       "channel": {
         "root": {
@@ -252,6 +243,10 @@
       "group_membership": {
         "g|{\"member_id\":\"nested\"}": true,
         "n|{\"member_id\":\"leaf\"}": true
+      },
+      "space_member": {
+        "home|{\"account_id\":\"account\"}": true,
+        "dm|{\"account_id\":\"account\"}": true
       }
     },
     "fronts": {

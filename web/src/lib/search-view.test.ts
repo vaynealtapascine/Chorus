@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { beforeAll, expect, it, vi } from 'vitest';
 vi.mock('./router.svelte', () => ({router:{go:vi.fn()}}));
 import { core, loadCore } from './core';
+import { project } from './core/pkg/chorus_wasm.js';
 import { channels, messageById } from './data';
 import { chatShown } from './chat-visible';
 import { searchView, contextMessages, searchAncestors } from './search-view';
@@ -162,4 +163,41 @@ for(const c of subsystemFixture.cases) it(`subsystem search: ${c.name}`,()=>{
   expect(shown(channels(p).find(c=>c.id==='root'))).toBe(true);
   expect(shown(channels(p).find(c=>c.id==='private-dm'))).toBe(true);
  }
+});
+
+// 0.1.706: every chat listed but shut. Ops shaped as the server writes them (auth.rs, spaces.rs),
+// projected by the real core: a space's creator is its owner, joins are a set, a role is its own row.
+it('opens what a member may see, from the core projection of real space ops', () => {
+  const me = '0192f8c2-0000-7000-8000-0000000000a1', friend = '0192f8c2-0000-7000-8000-0000000000a2';
+  const id = (n: number) => `0192f8c2-0000-7000-8000-${String(n).padStart(12, '0')}`;
+  const ops: unknown[] = [];
+  const op = (space: string, kind: string, entity: string, payload: object, by = me) => {
+    const n = ops.length + 1;
+    ops.push({ id: id(1000 + n), kind, scope: `space:${space}`, entity_id: entity, hlc: `${(0x1a0c4506c00 + n).toString(16).padStart(12, '0')}-0000-00000001`,
+      device_at: 1790000000000 + n, payload, account_id: by, seq: n });
+  };
+  const space = (s: string, kind: string, owner: string, ...joins: string[]) => {
+    op(s, 'space.create', s, { kind, name: kind }, owner);
+    for (const a of joins) op(s, 'space.join', s, { account_id: a }, owner);
+  };
+  const said = new Map<string, string>();
+  const channel = (s: string, c: string, by: string) => {
+    op(s, 'channel.create', c, { space_id: s, kind: 'text', name: 'chat' }, by);
+    said.set(c, id(3000 + ops.length));
+    op(s, 'message.send', said.get(c)!, { channel_id: c, text: 'hello' }, by);
+  };
+  const shut = (s: string, c: string, by: string) => op(s, 'channel.set_permission', c, { target_type: 'role', target_id: 'everyone', allow: [], deny: ['view'] }, by);
+  space(id(101), 'internal', me, me); channel(id(101), id(201), me);
+  space(id(102), 'shared', friend, friend, me); channel(id(102), id(202), friend);
+  channel(id(102), id(203), friend); shut(id(102), id(203), friend);
+  space(id(104), 'shared', me, me, friend); channel(id(104), id(205), me); shut(id(104), id(205), me);
+  space(id(105), 'shared', friend, friend, me); channel(id(105), id(206), friend);
+  op(id(105), 'space.set_role', id(105), { account_id: me, role: 'admin' }, friend);
+  op(id(105), 'space.leave', id(105), { account_id: me }, me);
+  const p = JSON.parse(project(JSON.stringify(ops))) as Projection;
+  const sees = (account: string, c: number) => searchView(p, account)(messageById(p, said.get(id(c))!));
+  expect([201, 202, 205].map((c) => sees(me, c))).toEqual([true, true, true]);
+  expect(sees(me, 203)).toBe(false);
+  expect(sees(me, 206)).toBe(false);
+  expect(sees(friend, 203)).toBe(true);
 });

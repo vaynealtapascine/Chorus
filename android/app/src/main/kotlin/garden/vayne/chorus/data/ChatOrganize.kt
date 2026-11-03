@@ -62,6 +62,25 @@ object ChatOrganize {
         return { ok(it, 0) }
     }
 
+    /**
+     * Whether a chat opens now: [shown], and its channel viewable by [account] as far as the
+     * replica knows its permissions ([ChannelPermissions.canView]); a thread goes by its parent
+     * message's channel. The server stays the authority; this keeps a revoked chat shut until its
+     * messages are gone.
+     */
+    fun openable(model: Model, viewingAs: String?, account: String): (String?) -> Boolean {
+        val base = shown(model, viewingAs)
+        val byChannel = model.channels.associateBy { it.id }
+        val parents = model.searchMessages.associate { it.id to it.channelId }
+        fun permitted(id: String?, seen: MutableSet<String>): Boolean {
+            val c = byChannel[id] ?: return false
+            if (c.invalidMembership || seen.size > 256 || !seen.add(c.id)) return false
+            return if (c.kind == "thread") permitted(parents[c.parentMessageId], seen)
+                else ChannelPermissions.canView(model.channelPermissionState, c, account)
+        }
+        return { id -> base(id) && permitted(id, HashSet()) }
+    }
+
     /** Revalidate retained message actions against today's channel, audience and clear cutoff. */
     fun actionMessage(model: Model, id: String?, viewingAs: String?, accountId: String): ChatMessage? {
         if (id == null) return null

@@ -852,3 +852,18 @@ against Rust canonical/SQL/FTS/context, web and Android; blob GET/HEAD additiona
 thread ancestry and membership/archive revocations. Scoped search is now D-114 (the initial
 integration used D-112; renumbered again 2026-11-03 to preserve UI12's D-111/D-112/D-113).
 Main's D-110 is unchanged. No new dependency, schema or op kind.
+
+## Client permission checks read the projection, not the server's tables (2026-11-03)
+
+Android 0.1.706 listed every chat and then opened each as "Private chat". The UI11b open gate
+(`ChannelPermissions.canView`, also used by search on both clients) read a space's owner from
+`owner_account_id`/`created_by_account_id` and a role from `space_member` rows with
+`is_present`, the server's SQL shape. The core projection had neither: spaces carried no creator,
+joins live in the `space_member` *set*, and `space.set_role` rows never `exists`. The shared
+fixtures (`ui_search*.json`) were written by hand in the SQL shape, so every test passed. The fix:
+the core stamps a space's creator (projection v5), both clients read membership from the join set
+(`ChannelPermissions.role`, web `searchView`), the fixtures are projection-shaped, and
+`fixtures/project/space_owner_membership.json` plus `ChatOpenTest` (Android) and a
+`search-view.test.ts` case (web) run real ops through the real core, list → open. **When client
+code reads projection rows, build its test model from ops through `project`, not from
+hand-written rows.**

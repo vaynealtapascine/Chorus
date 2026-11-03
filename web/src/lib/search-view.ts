@@ -15,6 +15,17 @@ export function searchView(p: Projection, account: string, ancestors: ReadonlyMa
   const own = new Set(members(p).map(m => m.id));
   const inside = chatMembers(p, account);
   const prefs = chatPrefs(p.rows.pref ?? {}, account);
+  // who is in each space, `space|account`: joins and leaves are the projection's `space_member` set,
+  // keyed `space|{"account_id":…}`; its `space_member` rows only carry `space.set_role`
+  const joined = new Set<string>();
+  for (const [key, present] of Object.entries(p.sets.space_member ?? {})) {
+    const bar = key.indexOf('|');
+    if (!present || bar <= 0) continue;
+    try {
+      const who = (JSON.parse(key.slice(bar + 1)) as { account_id?: unknown }).account_id;
+      if (typeof who === 'string' && who) joined.add(`${key.slice(0, bar)}|${who}`);
+    } catch { /* not a join */ }
+  }
   // A known local tombstone/malformed row must never fall back to an older network card.
   function localOrAncestor(id: string): MessageRow | undefined {
     return p.rows.message?.[id] ? messageById(p,id) : ancestors.get(id);
@@ -26,8 +37,10 @@ export function searchView(p: Projection, account: string, ancestors: ReadonlyMa
     seen.add(c.id);
     // Permissions can arrive before scope repair evicts the old message rows.
     const sf = p.rows.space?.[s.id]?.fields ?? {};
+    // a role counts while the account is in the space (the server's space_member.is_present);
+    // the projection stamps a space's creator, which is the server's owner (core model.rs)
     const sm = p.rows.space_member?.[`${s.id}|${account}`]?.fields;
-    const role = sm?.is_present === false ? undefined : sm?.role;
+    const role = joined.has(`${s.id}|${account}`) ? (typeof sm?.role === 'string' && sm.role ? sm.role : 'member') : undefined;
     const owner = sf.owner_account_id ?? sf.created_by_account_id;
     if (c.kind !== 'thread' && owner !== account && role !== 'admin' && !(s.kind === 'dm' && role)) {
       let allowed: boolean | null = null;
