@@ -145,7 +145,9 @@ impl Row {
     }
 }
 
-/// `GET /accounts/{id}/members`: the members of `owner` that `viewer` may open, in their order.
+/// `GET /accounts/{id}/members`: the members of `owner` that `viewer` may open, in their order,
+/// each as a row of the owner's Members list shows it (D-100): its banner and role pills, when
+/// the viewer may see those parts.
 pub fn members(conn: &Connection, viewer: &str, owner: &str) -> anyhow::Result<Value> {
     let v = Viewer::of(conn, viewer, owner)?;
     let mut st = conn.prepare(&format!(
@@ -153,8 +155,85 @@ pub fn members(conn: &Connection, viewer: &str, owner: &str) -> anyhow::Result<V
          ORDER BY sort_key IS NULL, sort_key, name COLLATE NOCASE, id"
     ))?;
     let rows = st.query_map([owner], row)?.collect::<Result<Vec<_>, _>>()?;
-    let items: Vec<Value> = rows.iter().filter(|m| m.open(&v)).map(|m| m.card(&v)).collect();
+    let (roles, pills) = role_field(conn, owner)?;
+    let mut value = conn.prepare_cached("SELECT value FROM field_value WHERE member_id = ?1 AND field_id = ?2")?;
+    let mut items = Vec::new();
+    for m in rows.iter().filter(|m| m.open(&v)) {
+        let mut card = m.card(&v);
+        card["banner_blob"] = json!(m.shown(&v, "banner", &m.banner_blob));
+        let mut shown = Vec::new();
+        if let Some((field, default)) = &roles
+            && v.allows(&m.audience(field).unwrap_or_else(|| default.clone()))
+        {
+            let raw = value.query_row(params![m.id, field], |r| r.get::<_, String>(0)).optional()?;
+            shown = roles_of(&json_of(raw));
+            if pills == "first" {
+                shown.truncate(1);
+            }
+        }
+        card["roles"] = json!(shown);
+        items.push(card);
+    }
     Ok(json!({ "items": items }))
+}
+
+/// The field the owner's Members list takes role pills from (D-100, as Android `MemberListPrefs`
+/// and web `member-list.ts` pick it): the one chosen in `members.view`, else one named "Role" or
+/// "Roles", else the first several-choice field; with its default audience and the pill setting
+/// (`all` · `first` · `off`, which shows none).
+fn role_field(conn: &Connection, owner: &str) -> rusqlite::Result<(Option<(String, Value)>, String)> {
+    let view = conn
+        .query_row(
+            "SELECT value FROM pref WHERE account_id = ?1 AND device_id = '' AND key = 'members.view'",
+            [owner],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?;
+    let view = json_of(view);
+    let pills = match view["pills"].as_str() {
+        Some(p @ ("off" | "first" | "all")) => p.to_string(),
+        _ => "all".to_string(),
+    };
+    if pills == "off" {
+        return Ok((None, pills));
+    }
+    let mut st = conn.prepare_cached(
+        "SELECT id, COALESCE(name, ''), COALESCE(type, 'text'), default_visibility FROM field_def
+         WHERE account_id = ?1 AND deleted_at IS NULL AND COALESCE(type, 'text') IN ('multi_select', 'select', 'text')
+         ORDER BY COALESCE(NULLIF(sort_key, ''), name, ''), id",
+    )?;
+    let fields = st
+        .query_map([owner], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get(3)?))
+        })?
+        .collect::<Result<Vec<(String, String, String, Option<String>)>, _>>()?;
+    let named =
+        |f: &&(String, String, String, Option<String>)| matches!(f.1.trim().to_lowercase().as_str(), "role" | "roles");
+    let chosen = view["role_field"]
+        .as_str()
+        .filter(|id| !id.is_empty())
+        .and_then(|id| fields.iter().find(|f| f.0 == id))
+        .or_else(|| fields.iter().find(named))
+        .or_else(|| fields.iter().find(|f| f.2 == "multi_select"));
+    Ok((chosen.map(|f| (f.0.clone(), json_of(f.3.clone()))), pills))
+}
+
+/// A member's roles from a field value: a choice list, one choice, or comma-separated text
+/// (fixtures/ui_member_list.json `roles`).
+pub fn roles_of(value: &Value) -> Vec<String> {
+    let parts: Vec<&str> = match value {
+        Value::Array(items) => items.iter().filter_map(Value::as_str).collect(),
+        Value::String(text) => text.split([',', ';']).collect(),
+        _ => Vec::new(),
+    };
+    let mut out: Vec<String> = Vec::new();
+    for part in parts {
+        let role = part.trim();
+        if !role.is_empty() && !out.iter().any(|r| r == role) {
+            out.push(role.to_string());
+        }
+    }
+    out
 }
 
 /// `GET /accounts/{id}/members/{member}`: the parts and fields of one profile `viewer` may see,

@@ -102,7 +102,7 @@ internal fun ArrangePins(pinned: List<ChatListRow>, modifier: Modifier, onCancel
                     .zIndex(if (active) 1f else 0f).graphicsLayer { translationY = if (active) dragY else 0f }
                     .clip(RoundedCornerShape(14.dp)).background(if (active) p.surface3 else p.surface)
                     .padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    ChannelDisc(if (row.space.kind == "dm") row.channel.copy(name = row.title) else row.channel, size = 40.dp)
+                    ChatRowDisc(row, 40.dp)
                     Column(Modifier.weight(1f).padding(start = 12.dp, top = 8.dp, bottom = 8.dp)) {
                         Text(row.title, color = p.ink, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row {

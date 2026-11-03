@@ -10,6 +10,12 @@ import java.time.format.FormatStyle
 object ChatPresentation {
     enum class Folder(val label: String) { All("All"), Internal("Internal"), Shared("Shared"), Direct("Direct") }
 
+    /** Whom a DM with [partner] shows: a person by their own member's picture (from the DM's author
+     * [cards], so only one we may read), else the account's own picture; nothing otherwise. */
+    fun dmIcon(partner: SpaceAccount, cards: Collection<ForeignAuthor>): Member? =
+        cards.firstOrNull { it.accountId == partner.id }?.takeIf { partner.kind == "person" }?.member
+            ?: partner.avatarBlob?.let { ForeignAuthor(partner.id, partner.id, partner.shownName, avatarBlob = it).member }
+
     fun folder(channel: ChatChannel, space: ChatSpace): Folder = when {
         channel.isMemberDm || space.kind == "dm" -> Folder.Direct
         space.kind == "internal" -> Folder.Internal

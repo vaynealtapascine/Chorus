@@ -239,7 +239,7 @@ pub fn list(conn: &Connection, me: &str) -> Result<Value, SpaceError> {
 
 fn accounts_in(conn: &Connection, space: &str) -> rusqlite::Result<Vec<Value>> {
     let mut st = conn.prepare_cached(
-        "SELECT a.id, a.handle, a.display_name, a.kind FROM space_member m JOIN account a ON a.id = m.account_id
+        "SELECT a.id, a.handle, a.display_name, a.kind, a.avatar_blob FROM space_member m JOIN account a ON a.id = m.account_id
          WHERE m.space_id = ?1 AND m.is_present ORDER BY a.display_name, a.handle",
     )?;
     st.query_map([space], |r| {
@@ -248,6 +248,8 @@ fn accounts_in(conn: &Connection, space: &str) -> rusqlite::Result<Vec<Value>> {
             "handle": r.get::<_, Option<String>>(1)?,
             "display_name": r.get::<_, Option<String>>(2)?,
             "kind": r.get::<_, String>(3)?,
+            // space co-members may read it (blobs::can_read)
+            "avatar_blob": r.get::<_, Option<String>>(4)?,
         }))
     })?
     .collect()

@@ -11,7 +11,8 @@ import garden.vayne.chorus.data.*
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 
 @Composable
-internal fun JournalFriends(chorus: Chorus, model: Model, onThread: (String) -> Unit, onReply: (String) -> Unit) {
+internal fun JournalFriends(chorus: Chorus, model: Model, onThread: (String) -> Unit, onReply: (String) -> Unit,
+    onProfile: ((String, String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     var posts by remember { mutableStateOf(listOf<Pair<String, SharedPost>>()) }
     var loading by remember { mutableStateOf(true) }
@@ -42,7 +43,7 @@ internal fun JournalFriends(chorus: Chorus, model: Model, onThread: (String) -> 
         if (!loading && error == null && posts.isEmpty()) item { Text("No shared posts yet. Posts from accounts you follow will appear here.",
             color = p.ink3, modifier = Modifier.padding(24.dp)) }
         items(posts, key = { it.second.id }) { (name, post) ->
-            SharedPostPreview(post, name, chorus, model, onThread = { onThread(it.id) }, onReply = { onReply(it.id) })
+            SharedPostPreview(post, name, chorus, model, onThread = { onThread(it.id) }, onReply = { onReply(it.id) }, onProfile = onProfile)
             HorizontalDivider(color = p.line)
         }
     }

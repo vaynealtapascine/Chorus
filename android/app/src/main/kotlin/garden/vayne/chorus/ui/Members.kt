@@ -299,7 +299,7 @@ private fun MemberRow(chorus: Chorus, model: Model, m: Member, level: String?, s
 
 /** The whole banner at the row's height, anchored bottom-right, fading out towards the name (D-100). */
 @Composable
-private fun RowBanner(chorus: Chorus, hash: String) {
+internal fun RowBanner(chorus: Chorus, hash: String) {
     val ctx = LocalContext.current
     val dev = chorus.device
     val image by produceState<android.graphics.Bitmap?>(null, hash, dev?.session) {

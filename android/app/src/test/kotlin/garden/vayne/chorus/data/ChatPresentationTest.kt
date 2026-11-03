@@ -139,4 +139,16 @@ class ChatPresentationTest {
         assertEquals("Today", ChatPresentation.dateLabel(0, LocalDate.of(1970, 1, 1), zone))
         assertEquals("Yesterday", ChatPresentation.dateLabel(0, LocalDate.of(1970, 1, 2), zone))
     }
+
+    @Test fun aDmShowsThePersonsOwnPictureElseTheAccountsElseNothing() {
+        val person = SpaceAccount("p", "june", "June", "person")
+        val june = ForeignAuthor("june-self", "p", "June", "#aabbcc", avatarBlob = "pic")
+        assertEquals("pic", ChatPresentation.dmIcon(person, listOf(ForeignAuthor("x", "other", "X"), june))?.avatarBlob)
+        assertEquals("june-self", ChatPresentation.dmIcon(person, listOf(june))?.id)
+        // a system's members aren't the account: its own picture, or none
+        val system = SpaceAccount("s", "fox", "Foxes", "system", avatarBlob = "sys")
+        assertEquals("sys", ChatPresentation.dmIcon(system, listOf(ForeignAuthor("m", "s", "Kai", avatarBlob = "kai")))?.avatarBlob)
+        assertEquals(null, ChatPresentation.dmIcon(system.copy(avatarBlob = null), listOf(ForeignAuthor("m", "s", "Kai"))))
+        assertEquals(null, ChatPresentation.dmIcon(person, emptyList()))
+    }
 }

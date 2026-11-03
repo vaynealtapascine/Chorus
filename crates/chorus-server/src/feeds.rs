@@ -143,7 +143,7 @@ pub fn items(conn: &Connection, principal: &Principal, id: &str, q: &ItemsQuery)
                 at: post["occurred_at"].as_i64().unwrap_or_default(),
                 id: post["id"].as_str().unwrap_or_default().to_string(),
             });
-            posts::hide_unreadable_links(conn, viewer, &mut post)?;
+            posts::for_viewer(conn, viewer, &mut post)?;
             let item = item_of(conn, &post, uses_fronting(&ast).then_some(&mut fronts))?;
             if feed::eval(&ast, &item, &ctx) {
                 matched.push(post);

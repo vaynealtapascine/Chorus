@@ -211,7 +211,9 @@ GET  /posts/{id}/revisions                 {items:[{rev,title,text,entities,cw,a
   the list to one account. `before` is an exclusive occurred-at millisecond value; `limit` is
   clamped to 1–100. Detail replies are filtered by the same rule (`depth` 0–3, at most 50 per
   level). Hidden/deleted posts return 404. Responses omit `front_snapshot` and remove unreadable
-  parent/repost links. Authors include ordered member ids and small author cards. Each post also
+  parent/repost links. Authors include ordered member ids and small author cards; a card says
+  `profile: true` and carries `avatar_blob` only when the reader may open that member's profile
+  (D-101, the rule the blob read uses), else `profile: false` and no picture. Each post also
   includes ordered attachment metadata and blob hashes, plus present post reactions with emoji and
   reactor member id/name; blob downloads enforce the same current
   audience. API tokens (`read:posts`) get only their own account's posts here, and only their
@@ -227,7 +229,9 @@ GET  /android/latest                       the published Android build for in-ap
 GET  /emoji                                the server-wide custom emoji set
 GET  /accounts/{id}/view                   follower view of another account (privacy-filtered, §5 NOTIFICATIONS)
 GET  /accounts/{id}/members                the members of that account shared with you (D-101): {items:[{id, name,
-                                           display_name, pronouns, color, sigil, avatar_blob}]}, unshared parts null
+                                           display_name, pronouns, color, sigil, avatar_blob, banner_blob, roles}]},
+                                           unshared parts null; roles are the pills their Members list shows
+                                           (D-100: its roles field and pill setting), [] when that field isn't shared
 GET  /accounts/{id}/members/{member}       one shared profile: the card plus description(+_entities), birthday,
                                            banner_blob and fields:[{id,name,type,value}] shared with you; 404 alike
                                            for missing and unshared. Never fronting, history or timestamps.
@@ -309,8 +313,8 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   fronts, under the name each had when revealed; `history`/`stats` stay Body's.
 - `/front/intervals` also takes `subject` (an id) and `level`.
 - **Shared spaces and DMs** (M6.2, `spaces.rs`, signed-in devices only):
-  - `GET /spaces` returns your spaces with the accounts in each, plus spaces where a channel is
-    shared with you (`guest: true`; DATA_MODEL §4.4).
+  - `GET /spaces` returns your spaces with the accounts in each (id, handle, display_name, kind,
+    avatar_blob), plus spaces where a channel is shared with you (`guest: true`; DATA_MODEL §4.4).
   - `POST /spaces {kind: "shared"|"dm", name?, accounts: [account ids]}` answers
     `201 {id}`, or `200 {id}` when that DM already exists. It works only with accounts connected
     to you by an active follow, in either direction.

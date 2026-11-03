@@ -13,7 +13,10 @@ data class ThreadReply(val id: String, val authorNames: List<String>, val text: 
     /** Member ids, so a reply by one of ours shows that member's own avatar. */
     val authorIds: List<String> = emptyList(),
     /** The post this one quotes, and what the server sent of it when this reader may read it. */
-    val quotePostId: String? = null, val quoted: ThreadReply? = null)
+    val quotePostId: String? = null, val quoted: ThreadReply? = null,
+    val attachments: List<ChatAttachment> = emptyList(), val tags: List<String> = emptyList(),
+    /** Whose post it is, and whose of its authors' profiles open for this reader. */
+    val accountId: String? = null, val profiles: List<String> = emptyList())
 /** A post as a thread view shows it: what it answers ([ancestors], oldest first), its replies,
  * the posts quoting it and its reactions. */
 data class PostDetail(val replies: List<ThreadReply>, val reactions: List<PostReaction>, val root: ThreadReply? = null,
@@ -40,7 +43,8 @@ object PostThreads {
                 first?.text("color"), first?.text("avatar_blob"),
                 item.optJSONArray("authors")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) } }.orEmpty(),
                 item.optJSONObject("quote")?.text("post_id"),
-                item.optJSONObject("quoted")?.let { parse(JSONObject().put("replies", org.json.JSONArray().put(it))).firstOrNull() })
+                item.optJSONObject("quoted")?.let { parse(JSONObject().put("replies", org.json.JSONArray().put(it))).firstOrNull() },
+                PeopleApi.attachments(item), PeopleApi.tags(item), item.text("account_id"), AuthorLooks.of(item).profiles)
         } }
     }
 
@@ -60,7 +64,8 @@ object PostThreads {
         val first = post.authors.firstOrNull()?.let(model::member)
         return ThreadReply(post.id, post.authors.mapNotNull { model.member(it)?.shownName }, post.text,
             post.title, post.cw, post.occurredAt, model.polls.polls[post.id], model.polls.tallies[post.id], post.entities,
-            model.posts.count { it.replyTo == post.id }, first?.color, first?.avatarBlob, post.authors, post.quotePostId)
+            model.posts.count { it.replyTo == post.id }, first?.color, first?.avatarBlob, post.authors, post.quotePostId,
+            attachments = post.attachments, tags = post.tags, profiles = post.authors)
     }
 
     /** Own posts quoting [id] (offline, or waiting to sync); reposts aren't quotes. */

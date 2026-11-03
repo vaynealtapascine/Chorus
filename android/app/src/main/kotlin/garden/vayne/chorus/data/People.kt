@@ -12,7 +12,30 @@ data class PostReaction(val emoji: String, val memberId: String, val memberName:
 data class SharedPost(val id: String, val kind: String, val title: String?, val text: String,
     val cw: String?, val occurredAt: Long, val authorNames: List<String>, val reactions: List<PostReaction> = emptyList(),
     val attachments: List<ChatAttachment> = emptyList(), val poll: Poll? = null, val pollTally: PollTally? = null,
-    val entities: String = "[]")
+    val entities: String = "[]", val tags: List<String> = emptyList(),
+    /** Whose post it is and its authors, with the first one's look and whose profiles open for us. */
+    val accountId: String = "", val looks: AuthorLooks = AuthorLooks())
+
+/**
+ * A post's authors as its reader gets them (D-101): member ids, the first one's colour and picture,
+ * and [profiles], those whose profile opens for this reader (the server's `profile` flag, the same
+ * rule that lets the picture load). Tapping any other author does nothing.
+ */
+data class AuthorLooks(val ids: List<String> = emptyList(), val color: String? = null, val avatarBlob: String? = null,
+    val profiles: List<String> = emptyList()) {
+    /** The first author whose profile opens, if any. */
+    val profile: String? get() = profiles.firstOrNull()
+
+    companion object {
+        fun of(post: JSONObject): AuthorLooks {
+            val cards = post.optJSONArray("author_cards") ?: return AuthorLooks()
+            val rows = (0 until cards.length()).mapNotNull { cards.optJSONObject(it) }
+            fun JSONObject.text(k: String) = optString(k).takeIf { has(k) && !isNull(k) && it.isNotBlank() }
+            return AuthorLooks(rows.mapNotNull { it.text("id") }, rows.firstOrNull()?.text("color"),
+                rows.firstOrNull()?.text("avatar_blob"), rows.filter { it.optBoolean("profile") }.mapNotNull { it.text("id") })
+        }
+    }
+}
 data class SharedFront(val names: List<String>, val time: String)
 data class SharedStats(val days: Int, val members: List<Pair<String, Int>>)
 /** Someone a followed account shows as fronting, with their colour, sigil and picture when shared. */
@@ -33,20 +56,30 @@ object PeopleApi {
                 cards.getJSONObject(n).let { it.optionalText("display_name") ?: it.optionalText("name") }
             }
             val reactions = PostReactions.fromServer(post)
-            val files = post.optJSONArray("attachments")?.let { rows -> (0 until rows.length()).mapNotNull { n ->
-                val row = rows.optJSONObject(n) ?: return@mapNotNull null
-                val id = row.optionalText("id") ?: return@mapNotNull null
-                val hash = row.optionalText("blob_hash") ?: return@mapNotNull null
-                ChatAttachment(id, hash, row.optionalText("thumb_blob_hash"), row.optionalText("filename") ?: "file",
-                    row.optionalText("mime") ?: "application/octet-stream", row.optLong("size"),
-                    row.optionalText("alt_text").orEmpty(), row.optBoolean("is_spoiler"))
-            } } ?: emptyList()
             SharedPost(post.getString("id"), post.getString("kind"), post.optionalText("title"),
-                post.getString("text"), post.optionalText("cw"), post.getLong("occurred_at"), names, reactions, files,
+                post.getString("text"), post.optionalText("cw"), post.getLong("occurred_at"), names, reactions, attachments(post),
                 Polls.parse(post.optJSONObject("poll")), Polls.tally(post.optJSONObject("poll_tally")),
-                post.optJSONArray("entities")?.toString() ?: "[]")
+                post.optJSONArray("entities")?.toString() ?: "[]", tags(post), post.optionalText("account_id").orEmpty(),
+                AuthorLooks.of(post))
         }
     }
+
+    /** A post's files as the server sent them; one without a blob is skipped. */
+    fun attachments(post: JSONObject): List<ChatAttachment> {
+        fun JSONObject.optionalText(key: String): String? = optString(key).takeIf { has(key) && !isNull(key) && it.isNotBlank() }
+        return post.optJSONArray("attachments")?.let { rows -> (0 until rows.length()).mapNotNull { n ->
+            val row = rows.optJSONObject(n) ?: return@mapNotNull null
+            val id = row.optionalText("id") ?: return@mapNotNull null
+            val hash = row.optionalText("blob_hash") ?: return@mapNotNull null
+            ChatAttachment(id, hash, row.optionalText("thumb_blob_hash"), row.optionalText("filename") ?: "file",
+                row.optionalText("mime") ?: "application/octet-stream", row.optLong("size"),
+                row.optionalText("alt_text").orEmpty(), row.optBoolean("is_spoiler"))
+        } } ?: emptyList()
+    }
+
+    /** A post's tags, without blanks. */
+    fun tags(post: JSONObject): List<String> = post.optJSONArray("tags")?.let { a ->
+        (0 until a.length()).mapNotNull { (a.opt(it) as? String)?.trim()?.takeIf(String::isNotEmpty) } }.orEmpty()
 
     fun parse(j: JSONObject): FollowList {
         fun rows(key: String): List<FollowInfo> {

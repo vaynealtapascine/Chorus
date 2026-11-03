@@ -7,7 +7,9 @@ private fun text(j: JSONObject, key: String): String? =
     if (j.has(key) && !j.isNull(key)) j.optString(key).takeIf { it.isNotBlank() } else null
 
 /** Server directory data that is intentionally absent from this account's sync projection. */
-data class SpaceAccount(val id: String, val handle: String?, val displayName: String?, val kind: String? = null) {
+data class SpaceAccount(val id: String, val handle: String?, val displayName: String?, val kind: String? = null,
+    /** The account's own picture (a singlet's is usually on their member instead). */
+    val avatarBlob: String? = null) {
     /** A plural system (not a singlet's person account, D-003/D-093). */
     val isSystem: Boolean get() = kind == "system"
     val shownName: String get() = displayName?.takeIf { it.isNotBlank() }
@@ -51,7 +53,8 @@ object Spaces {
     fun authors(j: JSONObject): Map<String, ForeignAuthor> = j.getJSONArray("members").objects()
         .map(ForeignAuthor::fromJson).associateBy { it.id }
 
-    private fun account(j: JSONObject) = SpaceAccount(j.getString("id"), text(j, "handle"), text(j, "display_name"), text(j, "kind"))
+    private fun account(j: JSONObject) = SpaceAccount(j.getString("id"), text(j, "handle"), text(j, "display_name"), text(j, "kind"),
+        text(j, "avatar_blob"))
 
     suspend fun list(dev: DeviceRecord): Map<String, SpaceInfo> = directory(Api.call("GET", dev.base, "/spaces", null, dev.session))
     suspend fun connections(dev: DeviceRecord): List<SpaceAccount> = connected(Api.call("GET", dev.base, "/follows", null, dev.session))

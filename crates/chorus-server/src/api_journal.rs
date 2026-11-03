@@ -98,7 +98,7 @@ pub fn profile(conn: &Connection, p: &Principal, member_id: &str) -> Result<Opti
             .query_map(params![p.account_id, member_id, !p.is_device()], posts::row)?
             .collect::<Result<Vec<_>, _>>()?;
         for item in &mut rows {
-            posts::hide_unreadable_links(conn, &p.account_id, item)?;
+            posts::for_viewer(conn, &p.account_id, item)?;
         }
         Some(rows)
     } else {
@@ -170,7 +170,7 @@ pub fn list_timeline(
         .query_map(params![p.account_id, id, !p.is_device(), q.before, limit], posts::row)?
         .collect::<Result<Vec<_>, _>>()?;
     for item in &mut items {
-        posts::hide_unreadable_links(conn, &p.account_id, item)?;
+        posts::for_viewer(conn, &p.account_id, item)?;
     }
     Ok(Some(json!({"items": items})))
 }

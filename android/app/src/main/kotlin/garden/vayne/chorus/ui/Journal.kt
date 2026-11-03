@@ -141,6 +141,9 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
     var feedMenu by remember { mutableStateOf(false) }
     var editing by field({ it.editing }) { copy(editing = it) }
     var profileId by rememberSaveable { mutableStateOf<String?>(null) }
+    // another account's member profile opened from a post: "account member"
+    var friendProfile by rememberSaveable { mutableStateOf<String?>(null) }
+    val openFriend: (String, String) -> Unit = { account, member -> friendProfile = "$account $member" }
     var threadPostId by rememberSaveable { mutableStateOf<String?>(null) }
     // the threads under the open one, newline-separated, so back from a reply's thread returns to its parent
     var threadBack by rememberSaveable { mutableStateOf("") }
@@ -252,13 +255,20 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
     val route = when {
         editing -> "write"
         profileId != null -> "profile:$profileId"
+        friendProfile != null -> "friend:$friendProfile"
         threadPostId != null -> "thread:$threadPostId"
         else -> section
     }
-    androidx.compose.runtime.SideEffect { if (active) onFocusedRoute(editing || profileId != null || threadPostId != null) }
+    androidx.compose.runtime.SideEffect { if (active) onFocusedRoute(editing || profileId != null || friendProfile != null || threadPostId != null) }
     val threadDepth = if (threadPostId != null) 1 + threadStack.size else 0
-    ChorusScene(route, if (editing) maxOf(2, threadDepth + 1) else if (profileId != null) maxOf(1, threadDepth + 1)
+    ChorusScene(route, if (editing) maxOf(2, threadDepth + 1) else if (profileId != null || friendProfile != null) maxOf(1, threadDepth + 1)
         else if (threadPostId != null) threadDepth else if (section != "timeline") 1 else 0) { shown ->
+    if (shown.startsWith("friend:")) {
+        val (account, member) = shown.substringAfter(":").split(' ').let { it[0] to it.getOrElse(1) { "" } }
+        FriendProfiles(chorus, account, "", onClose = { if (shown == route) friendProfile = null },
+            initialMember = member.ifEmpty { null }, backEnabled = active && shown == route)
+        return@ChorusScene
+    }
     if (shown.startsWith("profile:")) {
         val id = shown.substringAfter(":")
         BackHandler(active && shown == route) { profileId = null }
@@ -278,7 +288,8 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         JournalThread(chorus, model, id, onClose = back, onReply = { launchDraft("reply", id) },
             replyAuthor = author, replyAuthors = mine, onPickAuthor = { if (!draftState.draft.occupied) selectedAuthors = listOf(it) else error = "Open your draft to change its authors." },
             onQuote = { launchDraft("quote", it.id) },
-            onOpenPost = { next -> threadBack = (threadStack + id).joinToString("\n"); threadPostId = next })
+            onOpenPost = { next -> threadBack = (threadStack + id).joinToString("\n"); threadPostId = next },
+            onProfile = openFriend)
         return@ChorusScene
     }
 
@@ -502,7 +513,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                 selectedContentColor = p.ink, unselectedContentColor = p.ink3)
         }
         Box(Modifier.weight(1f)) {
-        if (journalTab == "friends") JournalFriends(chorus, model, onThread = { threadPostId = it }, onReply = {
+        if (journalTab == "friends") JournalFriends(chorus, model, onThread = { threadPostId = it }, onProfile = openFriend, onReply = {
             launchDraft("reply", it, audience = "server")
         }) else LazyColumn(Modifier.fillMaxSize(), state = feedListState, contentPadding = PaddingValues(bottom = 80.dp)) {
         if (shownEvents.isEmpty()) item {
@@ -690,7 +701,9 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
 @Composable
 internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose: () -> Unit, onReply: () -> Unit,
     replyAuthor: Member? = null, replyAuthors: List<Member> = emptyList(), onPickAuthor: ((String) -> Unit)? = null,
-    onQuote: ((JournalPost) -> Unit)? = null, onOpenPost: ((String) -> Unit)? = null) {
+    onQuote: ((JournalPost) -> Unit)? = null, onOpenPost: ((String) -> Unit)? = null,
+    /** Opens another account's member profile (account, member) when it is shared with us. */
+    onProfile: ((String, String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     var historyOpen by remember(postId) { mutableStateOf(false) }
     if (historyOpen) PostHistoryDialog(postId, chorus) { historyOpen = false }
@@ -742,7 +755,7 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
                 Column(Modifier.animateItem(fadeInSpec = if (motion) ChorusMotion.tween(true, ChorusMotion.Gentle) else null,
                     placementSpec = if (motion) ChorusMotion.settle() else null, fadeOutSpec = null)) {
                     ThreadReplyCard(parent, chorus, model, replyAuthor?.id, onOpen = { open(parent.id) },
-                        lineAbove = i > 0, lineBelow = true, wide = true, divider = false, onOpenPost = open)
+                        lineAbove = i > 0, lineBelow = true, wide = true, divider = false, onOpenPost = open, onProfile = onProfile)
                 }
             }
             if (rootPost != null) item(key = "root:$postId") {
@@ -750,7 +763,7 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
                     onOpenPost = onOpenPost, lineAbove = ancestors.isNotEmpty(), quoted = remote?.root?.quoted)
             } else if (foreignRoot != null) item(key = "root:$postId") {
                 ThreadReplyCard(foreignRoot, chorus, model, Reply.speaker(model)?.id, full = true, lineAbove = ancestors.isNotEmpty(),
-                    onOpenPost = open)
+                    onOpenPost = open, onProfile = onProfile)
             }
             if (focused != null) item(key = "detail:$postId") {
                 val hearts = reactions.count { it.emoji == PostReactions.HEART }
@@ -803,7 +816,8 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
                     val own = model.posts.find { it.id == reply.id }
                     if (own != null) JournalPostCard(own, model, chorus, onReply = { open(it.id) }, onThread = { open(it.id) },
                         onQuote = onQuote, onOpenPost = open, inThread = listed === replies, quoted = reply.quoted)
-                    else ThreadReplyCard(reply, chorus, model, replyAuthor?.id, onOpen = { open(reply.id) }, actions = true, onOpenPost = open)
+                    else ThreadReplyCard(reply, chorus, model, replyAuthor?.id, onOpen = { open(reply.id) }, actions = true, onOpenPost = open,
+                        onProfile = onProfile)
                 }
             }
         }
@@ -891,12 +905,15 @@ private fun JournalReplyBar(author: Member?, authors: List<Member>, onPick: ((St
 }
 
 /** A post from the server's thread (another account's, or context above the focused post). One of our
- * members shows their own avatar; anyone else, their colour and initial. [actions] adds the action
- * row with the reply count, which opens the reply as its own thread. */
+ * members shows their own avatar; anyone else, their picture when their profile is shared with us
+ * (tap to open it), else their colour and initial. Media, the poll, the quote and tags follow the
+ * text as on our own posts. [actions] adds the action row with the reply count, which opens the
+ * reply as its own thread. */
 @Composable
 private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, member: String?, full: Boolean = false,
     onOpen: (() -> Unit)? = null, lineAbove: Boolean = false, lineBelow: Boolean = false, wide: Boolean = false,
-    divider: Boolean = !full, actions: Boolean = false, onOpenPost: ((String) -> Unit)? = null) {
+    divider: Boolean = !full, actions: Boolean = false, onOpenPost: ((String) -> Unit)? = null,
+    onProfile: ((String, String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     var revealed by rememberSaveable(reply.id) { mutableStateOf(false) }
@@ -905,8 +922,11 @@ private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, me
     JournalPostFrame(names, compactAgo(reply.occurredAt), null, full, onClick = onOpen, lineAbove = lineAbove,
         lineBelow = lineBelow, wide = wide, endsWithActions = actions && shown, avatar = {
         val own = reply.authorIds.firstNotNullOfOrNull(model::member)
+        val profile = reply.profiles.firstOrNull()?.takeIf { onProfile != null && reply.accountId != null }
         if (own != null) ChatAvatar(own, 40.dp)
-        else Avatar(names.take(1).uppercase(), reply.color ?: "#42A397", 40.dp, avatarBlob = reply.avatarBlob, ring = false)
+        else Avatar(names.take(1).uppercase(), reply.color ?: "#42A397", 40.dp, avatarBlob = reply.avatarBlob, ring = false,
+            modifier = if (profile == null) Modifier else Modifier.clip(CircleShape)
+                .clickable(onClickLabel = "Open their profile") { onProfile?.invoke(reply.accountId.orEmpty(), profile) })
     }) {
         if (reply.cw != null) Surface(color = p.surface2, shape = RoundedCornerShape(10.dp)) {
             Row(Modifier.fillMaxWidth().clickable { revealed = !revealed }.heightIn(min = 48.dp).padding(horizontal = 10.dp),
@@ -921,8 +941,11 @@ private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, me
             RichBody(reply.text, reply.entities, maxLines = if (full || onOpen == null) Int.MAX_VALUE else 8,
                 onPlainClick = { onOpen?.invoke() }, style = MaterialTheme.typography.bodyMedium.copy(
                 fontSize = if (full) 16.sp else 15.sp, lineHeight = if (full) 24.sp else 21.sp))
+            JournalMedia(reply.attachments, chorus, names, reply.occurredAt, full = full)
             PollCard(chorus, model, reply.id, member, reply.poll, reply.pollTally)
             reply.quotePostId?.let { ThreadQuote(it, reply.quoted, model, onOpenPost) }
+            if (reply.tags.isNotEmpty()) Text(reply.tags.joinToString("  ") { "#$it" }, color = p.accent,
+                style = MaterialTheme.typography.bodySmall)
             if (actions) JournalActions(emptyList(), null, onReply = onOpen, replies = reply.replyCount,
                 onShare = JournalSocial.shareText(reply.title, reply.cw, reply.text).takeIf { it.isNotBlank() }?.let { text ->
                     { shareJournalText(ctx, reply.title, text) }

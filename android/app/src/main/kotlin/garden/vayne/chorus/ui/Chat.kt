@@ -558,10 +558,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
 
     val ownIds = model.knownMemberIds
-    // names for other accounts' members a private chat is kept to (D-098), from those DMs' author cards
+    // other accounts' members in our DMs, from those DMs' author cards: the names and pictures of
+    // whom a private chat is kept to (D-098), and the person at the other end of each DM
     var privateCards by remember { mutableStateOf<Map<String, ForeignAuthor>>(emptyMap()) }
-    val needCards = model.channels.filter { c -> c.kind == "member_dm" && c.memberIds.any { it !in ownIds } &&
-        model.spaces.find { it.id == c.spaceId }?.kind == "dm" }.map { it.spaceId }.distinct().sorted()
+    val needCards = model.spaces.filter { it.kind == "dm" }.map { it.id }.sorted()
     LaunchedEffect(needCards, chorus.device?.session, syncStatus == Status.Live) {
         val dev = chorus.device ?: return@LaunchedEffect
         if (syncStatus != Status.Live) return@LaunchedEffect
@@ -589,7 +589,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             val reader = if (!model.accountPrefs.readPerMember) "" else viewingAs ?: ReadTracking.readersFor(model, candidate.id, true).firstOrNull().orEmpty()
             val marks = model.readMarks[candidate.id].orEmpty()
             val unread = visible.count { ReadTracking.needsMark(it.occurredAt, it.id, marks, reader) }
-            val partner = directory[home.id]?.accounts?.firstOrNull { it.id != chorus.device?.accountId }?.shownName
+            val partnerAccount = directory[home.id]?.accounts?.firstOrNull { it.id != chorus.device?.accountId }
+            val partner = partnerAccount?.shownName
             // a private chat (D-098): titled by their member on their side, by the friend on ours
             val sides = ChatManage.sides(candidate, home, ownIds)
             val title = if (sides != null) sides.theirs.mapNotNull { privateCards[it]?.name ?: foreignAuthors[it]?.name }
@@ -603,7 +604,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 muted = model.accountPrefs.channelNotify(candidate.id, home.kind) == "none", pinned = candidate.id in prefs.chatPins,
                 private = sides != null || (home.kind == "internal" && candidate.kind == "text" && candidate.memberIds.isNotEmpty()),
                 whose = sides?.mine?.mapNotNull { model.member(it)?.shownName }?.joinToString(" & ")?.ifEmpty { null },
-                archived = ChatOrganize.archived(prefs.archivedChats[candidate.id], latest?.occurredAt))
+                archived = ChatOrganize.archived(prefs.archivedChats[candidate.id], latest?.occurredAt),
+                icon = if (sides != null) sides.theirs.firstNotNullOfOrNull { privateCards[it] ?: foreignAuthors[it] }?.member
+                    else if (home.kind == "dm" && partnerAccount != null) ChatPresentation.dmIcon(partnerAccount, privateCards.values) else null)
         }.let { rows -> ChatOrganize.order(rows, prefs.chatPins, { it.channel.id }, { it.latest?.occurredAt ?: 0L }, { it.title }) }
     }
     var arrangingPins by rememberSaveable { mutableStateOf(false) }
@@ -872,7 +875,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             // an account DM's channel is just "dm": it is shown as the account at the other end
             val dmName = (if (paneLocked) "Private chat" else paneSides?.theirs?.takeIf { it.isNotEmpty() }?.joinToString(" & ", transform = ::nameOf)
                 ?: dmPartner?.shownName)?.takeIf { !inThread }
-            channel?.let { ChannelDisc(if (dmName != null) it.copy(name = dmName) else it,
+            // a DM with another account shows who it is with, as in the list
+            val listed = listRows.find { it.channel.id == channel?.id }?.takeIf { !inThread && it.icon != null }
+            if (listed != null) ChatRowDisc(listed, 36.dp)
+            else channel?.let { ChannelDisc(if (dmName != null) it.copy(name = dmName) else it,
                 member = threadParent?.authors?.firstOrNull()?.let(model::member).takeIf { inThread }, size = 36.dp) }
             Column(Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 10.dp)) {
                 Text(if (inThread) "Thread" else dmName ?: channel?.name ?: "Chat", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp,
@@ -1522,7 +1528,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     pendingPrivateReply = PendingPrivateReply(message, channelId = row.channel.id, speakerId = replySpeakerId)
                 }.heightIn(min = 56.dp).padding(horizontal = 20.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    ChannelDisc(if (row.space.kind == "dm") row.channel.copy(name = row.title) else row.channel, size = 40.dp)
+                    ChatRowDisc(row, 40.dp)
                     Text(row.title, color = p.ink, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 1)
                 }
             }
@@ -1540,7 +1546,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 forwardBundle(bundleForward, row)
             }.heightIn(min = 56.dp).padding(horizontal = 20.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                ChannelDisc(if (row.space.kind == "dm") row.channel.copy(name = row.title) else row.channel, size = 40.dp)
+                ChatRowDisc(row, 40.dp)
                 Text(row.title, color = p.ink, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 1)
             }
         }

@@ -6,16 +6,22 @@ use serde_json::{Value, json};
 
 /// A malformed visibility value fails closed. An ended follow removes follower and bucket access.
 pub(crate) fn readable_sql(viewer: &str) -> String {
+    audience_sql(viewer, "p.account_id", "p.visibility")
+}
+
+/// Whether `viewer` is in an audience (`private` · `followers` · `buckets` · `server`) that
+/// `owner` set on something of theirs: posts, and member profiles (`profiles::Viewer::allows`).
+pub(crate) fn audience_sql(viewer: &str, owner: &str, audience: &str) -> String {
     format!(
-        "(p.account_id={viewer} OR CASE WHEN json_valid(p.visibility) THEN
-    (json_extract(p.visibility,'$.mode')='server' OR
-     (json_extract(p.visibility,'$.mode') IN ('followers','buckets') AND
+        "({owner}={viewer} OR CASE WHEN json_valid({audience}) THEN
+    (json_extract({audience},'$.mode')='server' OR
+     (json_extract({audience},'$.mode') IN ('followers','buckets') AND
       EXISTS (SELECT 1 FROM follow f WHERE f.follower_account_id={viewer}
-              AND f.target_account_id=p.account_id AND f.status='active') AND
-      (json_extract(p.visibility,'$.mode')='followers' OR
-       EXISTS (SELECT 1 FROM json_each(p.visibility,'$.bucket_ids') ids
+              AND f.target_account_id={owner} AND f.status='active') AND
+      (json_extract({audience},'$.mode')='followers' OR
+       EXISTS (SELECT 1 FROM json_each({audience},'$.bucket_ids') ids
                JOIN bucket_assignment ba ON ba.bucket_id=ids.value AND ba.follower_account_id={viewer} AND ba.is_present
-               JOIN bucket b ON b.id=ba.bucket_id AND b.account_id=p.account_id AND b.deleted_at IS NULL))))
+               JOIN bucket b ON b.id=ba.bucket_id AND b.account_id={owner} AND b.deleted_at IS NULL))))
     ELSE 0 END)"
     )
 }
@@ -94,12 +100,30 @@ fn readable_id(conn: &Connection, viewer: &str, id: &str) -> rusqlite::Result<bo
     conn.query_row(&sql, params![viewer, id], |r| r.get(0))
 }
 
-pub(crate) fn hide_unreadable_links(conn: &Connection, viewer: &str, item: &mut Value) -> rusqlite::Result<()> {
+/// A post as `viewer` gets it: links to posts they can't read are hidden, and each author card
+/// says whether its profile opens for them (`profile`) and, if so, carries its picture. That is
+/// the friend-profile rule (`profiles`), so the blob read allows exactly these pictures.
+pub(crate) fn for_viewer(conn: &Connection, viewer: &str, item: &mut Value) -> rusqlite::Result<()> {
     for key in ["reply_to", "repost_of"] {
         if let Some(id) = item[key].as_str()
             && !readable_id(conn, viewer, id)?
         {
             item[key] = Value::Null;
+        }
+    }
+    static AUTHOR: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+        format!(
+            "SELECT m.avatar_blob FROM member m WHERE m.id=?2 AND m.deleted_at IS NULL AND m.archived_at IS NULL AND {}",
+            audience_sql("?1", "m.account_id", "m.visibility")
+        )
+    });
+    if let Some(cards) = item["author_cards"].as_array_mut() {
+        let mut st = conn.prepare_cached(&AUTHOR)?;
+        for card in cards {
+            let Some(id) = card["id"].as_str().map(str::to_string) else { continue };
+            let open: Option<Option<String>> = st.query_row(params![viewer, id], |r| r.get(0)).optional()?;
+            card["profile"] = json!(open.is_some());
+            card["avatar_blob"] = json!(open.flatten());
         }
     }
     Ok(())
@@ -121,7 +145,7 @@ pub fn list(conn: &Connection, viewer: &str, q: &PostQuery) -> anyhow::Result<Va
         .query_map(params![viewer, q.account, q.kind, q.before, q.author, limit], row)?
         .collect::<Result<Vec<_>, _>>()?;
     for item in &mut items {
-        hide_unreadable_links(conn, viewer, item)?;
+        for_viewer(conn, viewer, item)?;
     }
     Ok(json!({"items": items}))
 }
@@ -131,7 +155,7 @@ pub fn one(conn: &Connection, viewer: &str, id: &str) -> anyhow::Result<Option<V
     let sql = format!("SELECT {COLUMNS} FROM post p WHERE p.id=?2 AND p.deleted_at IS NULL AND {readable}");
     let mut item = conn.query_row(&sql, params![viewer, id], row).optional()?;
     if let Some(item) = &mut item {
-        hide_unreadable_links(conn, viewer, item)?;
+        for_viewer(conn, viewer, item)?;
     }
     Ok(item)
 }
@@ -148,7 +172,7 @@ pub fn replies(conn: &Connection, viewer: &str, parent: &str, depth: usize) -> a
     let mut st = conn.prepare(&sql)?;
     let mut rows = st.query_map(params![viewer, parent], row)?.collect::<Result<Vec<_>, _>>()?;
     for item in &mut rows {
-        hide_unreadable_links(conn, viewer, item)?;
+        for_viewer(conn, viewer, item)?;
         let id = item["id"].as_str().unwrap_or("").to_string();
         item["reply_count"] = json!(reply_count(conn, viewer, &id)?);
         item["replies"] = json!(replies(conn, viewer, &id, depth - 1)?);
@@ -209,7 +233,7 @@ pub fn quotes(conn: &Connection, viewer: &str, id: &str) -> anyhow::Result<Vec<V
     let mut st = conn.prepare(&sql)?;
     let mut rows = st.query_map(params![viewer, id], row)?.collect::<Result<Vec<_>, _>>()?;
     for item in &mut rows {
-        hide_unreadable_links(conn, viewer, item)?;
+        for_viewer(conn, viewer, item)?;
         item["reply_count"] = json!(reply_count(conn, viewer, item["id"].as_str().unwrap_or(""))?);
     }
     Ok(rows)
@@ -346,7 +370,7 @@ pub fn search(
     };
     let mut items = Vec::with_capacity(rows.len());
     for (mut item, _) in rows {
-        hide_unreadable_links(conn, &principal.account_id, &mut item)?;
+        for_viewer(conn, &principal.account_id, &mut item)?;
         items.push(item);
     }
     Ok(json!({"items": items, "next_cursor": next_cursor}))

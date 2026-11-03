@@ -210,7 +210,7 @@ private fun ChatFolderEditor(initial: ChatFolders.Custom, isNew: Boolean, rows: 
                 Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Checkbox) {
                     folder = ChatFolders.setChat(folder, row.channel.id, kind, !inside)
                 }.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ChannelDisc(if (row.space.kind == "dm") row.channel.copy(name = row.title) else row.channel, size = 36.dp)
+                    ChatRowDisc(row, 36.dp)
                     Column(Modifier.weight(1f)) {
                         Text(row.title, color = p.ink, fontSize = 15.sp, lineHeight = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(ChatFolders.label(ChatFolders.Settings(), kind) + if (inside && kind in folder.kinds) " · with every ${ChatFolders.label(ChatFolders.Settings(), kind).lowercase()} chat" else "",

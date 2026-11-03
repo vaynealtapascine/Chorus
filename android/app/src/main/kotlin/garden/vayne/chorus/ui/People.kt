@@ -30,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -75,6 +76,8 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
     var threadPostId by rememberSaveable { mutableStateOf<String?>(null) }
     // a followed system's shared member profiles (D-101): account id to its name
     var friend by rememberSaveable { mutableStateOf<Pair<String, String>?>(null) }
+    // the member a post's author tap opened their profile on
+    var friendMember by rememberSaveable { mutableStateOf<String?>(null) }
     val reactMember = Reply.speaker(model)?.takeIf { member ->
         member.createdByAccountId == null || member.createdByAccountId == chorus.device?.accountId
     }
@@ -134,7 +137,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
     }
 
     friend?.let { (id, name) ->
-        FriendProfiles(chorus, id, name) { friend = null }
+        FriendProfiles(chorus, id, name, onClose = { friend = null; friendMember = null }, initialMember = friendMember)
         return
     }
 
@@ -142,6 +145,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
         val id = threadPostId!!
         BackHandler { threadPostId = null }
         JournalThread(chorus, model, id, onClose = { threadPostId = null },
+            onProfile = { account, member -> friendMember = member; friend = account to "" },
             onReply = { threadPostId = null; onReplyPost(id) })
         return
     }
@@ -208,7 +212,8 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                     Text("Shared posts", color = p.ink2, fontWeight = FontWeight.SemiBold)
                     for (post in posts) SharedPostPreview(post, f.account.shownName, chorus, model,
                         reactMember?.id, !busy, onThread = { threadPostId = it.id },
-                        onReply = { onReplyPost(it.id) }) { selected ->
+                        onReply = { onReplyPost(it.id) },
+                        onProfile = { account, member -> friendMember = member; friend = account to f.account.shownName }) { selected ->
                         val member = reactMember ?: return@SharedPostPreview
                         if (busy) return@SharedPostPreview
                         busy = true; error = null
@@ -419,7 +424,8 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                     Text("Shared posts", color = p.ink2, fontWeight = FontWeight.SemiBold)
                     for (post in posts) SharedPostPreview(post, f.account.shownName, chorus, model,
                         reactMember?.id, !busy, onThread = { threadPostId = it.id },
-                        onReply = { onReplyPost(it.id) }) { selected ->
+                        onReply = { onReplyPost(it.id) },
+                        onProfile = { account, member -> friendMember = member; friend = account to f.account.shownName }) { selected ->
                         val member = reactMember ?: return@SharedPostPreview
                         if (busy) return@SharedPostPreview
                         busy = true; error = null
@@ -520,7 +526,9 @@ private fun FollowAdvanced(ceiling: JSONObject, enabled: Boolean, onChange: (Str
 internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Chorus, model: Model,
     reactMemberId: String? = null,
     enabled: Boolean = true, onThread: ((SharedPost) -> Unit)? = null,
-    onReply: ((SharedPost) -> Unit)? = null, onReact: (SharedPost) -> Unit = {}) {
+    onReply: ((SharedPost) -> Unit)? = null,
+    /** Opens an author's profile (account, member) when it is shared with us. */
+    onProfile: ((String, String) -> Unit)? = null, onReact: (SharedPost) -> Unit = {}) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
     var expanded by rememberSaveable(post.id) { mutableStateOf(false) }
@@ -528,9 +536,10 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
     val ctx = LocalContext.current
     val names = post.authorNames.joinToString(" & ").ifBlank { accountName }
     JournalPostFrame(names, compactAgo(post.occurredAt), null, endsWithActions = post.cw == null || revealed, avatar = {
-        Box(Modifier.size(40.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
-            Text(names.take(1), color = p.ink2, style = MaterialTheme.typography.titleSmall)
-        }
+        val profile = post.looks.profile?.takeIf { onProfile != null && post.accountId.isNotEmpty() }
+        Avatar(names.take(1).uppercase(), post.looks.color ?: "#A09184", 40.dp, ring = false, avatarBlob = post.looks.avatarBlob,
+            modifier = if (profile == null) Modifier else Modifier.clip(CircleShape)
+                .clickable(onClickLabel = "Open their profile") { onProfile?.invoke(post.accountId, profile) })
     }, onClick = onThread?.let { open -> { open(post) } }) {
         if (post.cw != null) TextButton(onClick = { revealed = !revealed }) {
             Text("Content warning: ${post.cw} · ${if (revealed) "Hide" else "Show"}")
@@ -545,6 +554,8 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
             }) { Text(if (expanded) "Show less" else "Show more") }
             PollCard(chorus, model, post.id, reactMemberId ?: Reply.speaker(model)?.id, post.poll, post.pollTally)
             JournalMedia(post.attachments, chorus, names, post.occurredAt)
+            if (post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
+                style = MaterialTheme.typography.bodySmall)
             JournalActions(post.reactions, reactMemberId?.let(model::member), enabled,
                 onReply = onThread?.let { { it(post) } } ?: onReply?.let { { it(post) } },
                 onReact = reactMemberId?.let { { onReact(post) } },

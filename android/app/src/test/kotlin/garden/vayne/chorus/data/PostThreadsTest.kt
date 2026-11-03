@@ -80,4 +80,19 @@ class PostThreadsTest {
         assertEquals("gone", detail.replies.single().quotePostId)
         assertEquals(null, detail.replies.single().quoted)
     }
+
+    @Test fun anotherAccountsPostKeepsItsMediaTagsAndWhichProfilesOpen() {
+        val detail = PostThreads.parseDetail(JSONObject("""{"id":"root","text":"Look","cw":"spiders","occurred_at":5,
+            "account_id":"acc","tags":["garden"],
+            "visibility":{"mode":"buckets","bucket_ids":["b1"]},
+            "attachments":[{"id":"a","blob_hash":"h","mime":"image/png","filename":"web.png","alt_text":"A web"},{"id":"nohash"}],
+            "author_cards":[{"id":"kai","name":"Kai","avatar_blob":"pic","profile":true}],"replies":[]}"""))
+        val root = checkNotNull(detail.root)
+        assertEquals(listOf("a"), root.attachments.map { it.id })
+        assertEquals("A web", root.attachments.single().altText)
+        assertEquals(listOf("garden"), root.tags)
+        assertEquals("acc", root.accountId)
+        assertEquals(listOf("kai"), root.profiles)
+        assertEquals("pic", root.avatarBlob)
+    }
 }

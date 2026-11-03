@@ -75,4 +75,18 @@ class PeopleTest {
         assertEquals(emptyList<String>(), posts[1].authorNames)
         assertEquals(emptyList<PostReaction>(), posts[1].reactions)
     }
+
+    @Test fun sharedPostsCarryTagsAndTheirAuthorsLookOnlyWhereTheirProfileOpens() {
+        val post = PeopleApi.sharedPosts(JSONObject("""{"items":[{"id":"p","kind":"note","text":"Hi","occurred_at":1,
+            "account_id":"acc","tags":["garden"," ",3,"cats"],
+            "author_cards":[{"id":"fox","name":"Fox","color":"#aabbcc","avatar_blob":null,"profile":false},
+              {"id":"kai","name":"Kai","avatar_blob":"pic","profile":true}]}]}""")).single()
+        assertEquals(listOf("garden", "cats"), post.tags)
+        assertEquals("acc", post.accountId)
+        assertEquals(listOf("fox", "kai"), post.looks.ids)
+        // the first author's look; a closed profile has no picture and doesn't open
+        assertEquals("#aabbcc", post.looks.color)
+        assertEquals(null, post.looks.avatarBlob)
+        assertEquals("kai", post.looks.profile)
+    }
 }

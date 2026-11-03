@@ -69,6 +69,15 @@ internal fun ChannelDisc(channel: ChatChannel, member: Member? = null, size: Dp 
     }
 }
 
+/** A chat's disc in a list: a DM shows whoever is at the other end ([ChatListRow.icon], or [peer]
+ * for a DM between our members), unless the chat has a picture of its own; anything else, its own. */
+@Composable
+internal fun ChatRowDisc(row: ChatListRow, size: Dp, peer: Member? = null) {
+    val them = row.icon ?: peer
+    if (them != null && row.channel.avatarBlob == null && (row.space.kind == "dm" || row.channel.isMemberDm)) ChatAvatar(them, size)
+    else ChannelDisc(if (row.space.kind == "dm") row.channel.copy(name = row.title) else row.channel, peer, size)
+}
+
 internal data class ChatListRow(val channel: ChatChannel, val space: ChatSpace, val title: String,
     val latest: ChatMessage?, val unread: Int, val sender: String? = null, val muted: Boolean = false, val pinned: Boolean = false,
     /** A private chat in a DM (D-098), or a channel kept to some of our members (D-097): a lock, not a globe or #. */
@@ -77,7 +86,10 @@ internal data class ChatListRow(val channel: ChatChannel, val space: ChatSpace, 
      * someone isn't mistaken for another's. */
     val whose: String? = null,
     /** Archived (`chat_archived:`), with nothing newer since: listed under Archived chats. */
-    val archived: Boolean = false)
+    val archived: Boolean = false,
+    /** Who a DM with another account is with: the member a private chat is kept to on their side,
+     * or the person (their own member) or account at the other end. */
+    val icon: Member? = null)
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -195,9 +207,8 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                             onLongClickLabel = "Chat actions").heightIn(min = if (folders.compact) 56.dp else 70.dp)
                             .padding(horizontal = 12.dp, vertical = if (folders.compact) 4.dp else 8.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // an account DM's channel is just "dm": its disc shows the account
-                        ChannelDisc(if (row.space.kind == "dm") row.channel.copy(name = row.title) else row.channel, peer,
-                            if (folders.compact) 40.dp else 48.dp)
+                        // a DM's disc shows who it is with
+                        ChatRowDisc(row, if (folders.compact) 40.dp else 48.dp, peer)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 if (row.latest?.id in model.polls.polls) ChatIcon(R.drawable.ic_poll)

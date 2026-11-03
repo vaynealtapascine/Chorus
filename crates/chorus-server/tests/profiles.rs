@@ -2,7 +2,7 @@
 //! field only through its own audience too. Audiences of the wrong shape fail closed (the schema
 //! already refuses JSON that doesn't parse).
 
-use chorus_server::{db, profiles};
+use chorus_server::{db, posts, profiles};
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 
@@ -181,6 +181,84 @@ fn blobs_follow_the_profile_and_the_banner_part() {
     assert!(!profiles::blob_visible(&conn, DAVE, "avatar-kai").unwrap());
     assert!(!profiles::blob_visible(&conn, BOB, "avatar-fox").unwrap());
     assert!(!profiles::blob_visible(&conn, CAROL, "banner-nai").unwrap());
+}
+
+#[test]
+fn member_rows_carry_their_banner_and_role_pills_only_where_shared() {
+    let conn = seed();
+    let row = |viewer: &str, id: &str| {
+        let list = profiles::members(&conn, viewer, ALICE).unwrap();
+        list["items"].as_array().unwrap().iter().find(|m| m["id"] == id).cloned().unwrap()
+    };
+    // Kai shares the banner with followers; Roles (named so, no choice made) defaults to followers
+    let kai = row(BOB, "kai");
+    assert_eq!(kai["banner_blob"], "banner-kai");
+    assert_eq!(kai["roles"], json!(["Host"]));
+    assert_eq!(kai["pronouns"], Value::Null, "pronouns are private");
+    // a wrong-shaped parts map hides the banner and every field
+    let amy = row(DAVE, "amy");
+    assert_eq!(amy["banner_blob"], Value::Null);
+    assert_eq!(amy["roles"], json!([]));
+    // a field that isn't shared shows no pills: the owner picks Location as the roles field
+    conn.execute(
+        "INSERT INTO pref(account_id,device_id,key,value,hlc) VALUES (?1,'','members.view',?2,'1:0:1')",
+        params![ALICE, json!({"pills": "all", "role_field": "loc"}).to_string()],
+    )
+    .unwrap();
+    assert_eq!(row(BOB, "kai")["roles"], json!([]), "Location is private");
+    assert_eq!(row(BOB, "nai")["roles"], json!(["Auckland"]), "Nairon shares it with followers");
+    // and pills turned off show none
+    conn.execute("UPDATE pref SET value = '{\"pills\":\"off\"}' WHERE key = 'members.view'", []).unwrap();
+    assert_eq!(row(BOB, "kai")["roles"], json!([]));
+    // the owner sees their own as their Members list does
+    conn.execute("UPDATE pref SET value = '{\"pills\":\"first\"}' WHERE key = 'members.view'", []).unwrap();
+    conn.execute(
+        "UPDATE field_value SET value = '[\"Host\",\"Protector\"]' WHERE member_id = 'kai' AND field_id = 'role'",
+        [],
+    )
+    .unwrap();
+    assert_eq!(row(ALICE, "kai")["roles"], json!(["Host"]));
+}
+
+#[test]
+fn roles_read_like_the_members_list() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/ui_member_list.json")).expect("member list fixture");
+    for case in fixture["roles"].as_array().unwrap() {
+        assert_eq!(json!(profiles::roles_of(&case["value"])), case["roles"], "{}", case["value"]);
+    }
+}
+
+#[test]
+fn post_author_cards_carry_a_picture_only_where_the_profile_opens() {
+    let conn = seed();
+    for (post, author) in [("p-kai", "kai"), ("p-fox", "fox"), ("p-nai", "nai")] {
+        conn.execute(
+            "INSERT INTO post(id,account_id,kind,text,visibility,occurred_at) VALUES (?1,?2,'note','hi','{\"mode\":\"followers\"}',1)",
+            params![post, ALICE],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO post_author(post_id,member_id,position) VALUES (?1,?2,0)", params![post, author])
+            .unwrap();
+    }
+    let card = |viewer: &str, post: &str| posts::one(&conn, viewer, post).unwrap().unwrap()["author_cards"][0].clone();
+    let kai = card(BOB, "p-kai");
+    assert_eq!((kai["profile"].clone(), kai["avatar_blob"].clone()), (json!(true), json!("avatar-kai")));
+    // a private member still signs the post, but their profile and picture stay closed
+    let fox = card(BOB, "p-fox");
+    assert_eq!(fox["name"], "Foxglove");
+    assert_eq!((fox["profile"].clone(), fox["avatar_blob"].clone()), (json!(false), Value::Null));
+    // the bucket member only for those in the live bucket
+    assert_eq!(card(BOB, "p-nai")["avatar_blob"], "avatar-nai");
+    assert_eq!(card(CAROL, "p-nai")["profile"], false);
+    // and exactly the pictures the blob read allows
+    for (viewer, post) in [(BOB, "p-kai"), (BOB, "p-fox"), (BOB, "p-nai"), (CAROL, "p-nai"), (CAROL, "p-kai")] {
+        let c = card(viewer, post);
+        let hash = format!("avatar-{}", c["id"].as_str().unwrap());
+        assert_eq!(profiles::blob_visible(&conn, viewer, &hash).unwrap(), c["profile"] == true, "{viewer} {post}");
+    }
+    // the owner's own members open, private or not
+    assert_eq!(card(ALICE, "p-fox")["avatar_blob"], "avatar-fox");
 }
 
 #[test]

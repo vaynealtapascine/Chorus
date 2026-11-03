@@ -20,7 +20,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.Blobs
 import garden.vayne.chorus.data.Chorus
@@ -33,12 +36,27 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** A friend's members and their profiles (D-101): only what that account shares with us, as the
- *  server decides; fetched when opened, never stored. Nothing about fronting is here. */
+ *  server decides; fetched when opened, never stored. Nothing about fronting is here. Opened on
+ *  [initialMember] (from a post), back returns to where it was opened. A blank [accountName] is
+ *  looked up among the accounts we follow or who follow us. */
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: String, onClose: () -> Unit) {
+internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: String, onClose: () -> Unit,
+    initialMember: String? = null, backEnabled: Boolean = true) {
     val p = LocalChorusPalette.current
-    var memberId by rememberSaveable { mutableStateOf<String?>(null) }
+    var memberId by rememberSaveable(accountId, initialMember) { mutableStateOf(initialMember) }
+    var looked by remember(accountId) { mutableStateOf<String?>(null) }
+    val shownAccount = accountName.ifBlank { looked ?: "Their system" }
+    LaunchedEffect(accountId) {
+        val dev = chorus.device ?: return@LaunchedEffect
+        if (accountName.isNotBlank()) return@LaunchedEffect
+        looked = try {
+            val follows = PeopleApi.list(dev)
+            (follows.following + follows.followers).firstOrNull { it.account.id == accountId }?.account?.shownName
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
+    }
+    // back from the member it was opened on leaves, rather than showing the whole list
+    fun back() { if (memberId != null && memberId != initialMember) memberId = null else onClose() }
     var list by remember { mutableStateOf<List<JSONObject>?>(null) }
     var profile by remember { mutableStateOf<JSONObject?>(null) }
     var missing by remember { mutableStateOf(false) }
@@ -47,7 +65,7 @@ internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: Stri
     var alerts by remember(memberId) { mutableStateOf("none") }
     var alertsBusy by remember(memberId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    BackHandler { if (memberId != null) memberId = null else onClose() }
+    BackHandler(backEnabled) { back() }
     LaunchedEffect(accountId, chorus.device?.session) {
         val dev = chorus.device ?: return@LaunchedEffect
         try {
@@ -74,26 +92,39 @@ internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: Stri
     fun glyph(m: JSONObject) = m.text("sigil") ?: shown(m).take(1).uppercase()
 
     Column(Modifier.fillMaxSize().background(p.bg).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        TextButton(onClick = { if (memberId != null) memberId = null else onClose() }, contentPadding = PaddingValues(0.dp)) {
-            Text("‹ ${if (memberId != null) accountName else "Friends"}")
+        TextButton(onClick = ::back, contentPadding = PaddingValues(0.dp)) {
+            Text("‹ ${if (memberId != null && memberId != initialMember) shownAccount else if (initialMember != null) "Back" else "Friends"}")
         }
         error?.let { Text(it, color = p.danger) }
         val id = memberId
         if (id == null) {
-            Text(accountName, color = p.ink, style = MaterialTheme.typography.headlineSmall)
+            Text(shownAccount, color = p.ink, style = MaterialTheme.typography.headlineSmall)
             val shared = list
             when {
                 shared == null && error == null -> Text("Loading…", color = p.ink3)
-                shared != null && shared.isEmpty() -> Text("$accountName haven't shared any member profiles with you yet.", color = p.ink3)
-                shared != null -> for (m in shared) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.surface)
-                    .clickable { memberId = m.optString("id") }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Avatar(glyph(m), m.text("color") ?: "#A09184", 44.dp, avatarBlob = m.text("avatar_blob"))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(shown(m), color = tonesOf(m.text("color") ?: "#A09184").name, fontWeight = FontWeight.SemiBold)
-                        m.text("pronouns")?.let { Text(it, color = p.ink3, style = MaterialTheme.typography.bodySmall) }
+                shared != null && shared.isEmpty() -> Text("$shownAccount haven't shared any member profiles with you yet.", color = p.ink3)
+                // rows as their Members list shows them (D-100): banner, pronouns and role pills they share
+                shared != null -> for (m in shared) Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.surface)
+                    .clickable { memberId = m.optString("id") }) {
+                    val banner = m.text("banner_blob")
+                    val shadow = if (banner != null) TextStyle(shadow = Shadow(p.surface, blurRadius = 8f)) else TextStyle.Default
+                    if (banner != null) Box(Modifier.matchParentSize(), contentAlignment = Alignment.BottomEnd) { RowBanner(chorus, banner) }
+                    Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Avatar(glyph(m), m.text("color") ?: "#A09184", 44.dp, avatarBlob = m.text("avatar_blob"))
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(shown(m), color = tonesOf(m.text("color") ?: "#A09184").name, fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis, style = shadow, modifier = Modifier.widthIn(max = 220.dp))
+                                m.text("pronouns")?.let { Text(it, color = p.ink3, style = MaterialTheme.typography.bodySmall.merge(shadow),
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)) }
+                            }
+                            val roles = m.optJSONArray("roles")?.let { a -> (0 until a.length()).mapNotNull { a.opt(it) as? String } }.orEmpty()
+                            if (roles.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)) { for (r in roles) RolePill(r) }
+                        }
+                        ChorusIcon(AppIcon.Chevron, modifier = Modifier.padding(start = 8.dp))
                     }
-                    ChorusIcon(AppIcon.Chevron)
                 }
             }
         } else {
@@ -108,7 +139,7 @@ internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: Stri
                         Spacer(Modifier.width(16.dp))
                         Column {
                             Text(shown(m), color = tonesOf(m.text("color") ?: "#A09184").name, style = MaterialTheme.typography.headlineSmall)
-                            Text(listOfNotNull(m.text("pronouns"), accountName).joinToString(" · "), color = p.ink3)
+                            Text(listOfNotNull(m.text("pronouns"), shownAccount).joinToString(" · "), color = p.ink3)
                         }
                     }
                     // ask to hear when they post; their system says yes or no (D-106)
@@ -127,7 +158,7 @@ internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: Stri
                         Spacer(Modifier.width(8.dp))
                         Text(when (alerts) { "active" -> "Post alerts on"; "requested" -> "Requested · Cancel"; else -> "Get post alerts" }, color = p.ink)
                     }
-                    if (alerts == "requested") Text("$accountName will see your request.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+                    if (alerts == "requested") Text("$shownAccount will see your request.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
                     m.text("description")?.let { Text(it, color = p.ink) }
                     val fields = m.optJSONArray("fields") ?: JSONArray()
                     val birthday = m.text("birthday")
@@ -146,7 +177,7 @@ internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: Stri
                         Text("${link.optString("type")} · ${shown(link.getJSONObject("target"))}", color = p.ink)
                         link.text("note")?.let { Text(it, color = p.ink2) }
                     }
-                    Text("You see what $accountName chose to share with you.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+                    Text("You see what $shownAccount chose to share with you.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
