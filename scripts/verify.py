@@ -26,7 +26,7 @@ def run(cmd, cwd=ROOT, env=None):
 
 
 def bundle_budgets(assets):
-    """SPEC §9: initial JS ≤ 200 KB gz (checked on all chunks, which is stricter), wasm ≤ 500 KB gz (D-108)."""
+    """SPEC §9: initial JS ≤ 300 KB gz (D-116; checked on all chunks, which is stricter), wasm ≤ 500 KB gz (D-108)."""
     import gzip
     js = wasm = 0
     for name in os.listdir(assets):
@@ -36,8 +36,8 @@ def bundle_budgets(assets):
             js += size
         elif name.endswith('.wasm'):
             wasm += size
-    print(f'\nbundle: JS {js / 1024:.0f} KB gz (≤ 200), wasm {wasm / 1024:.0f} KB gz (≤ 500)')
-    if js > 200 * 1024 or wasm > 500 * 1024:
+    print(f'\nbundle: JS {js / 1024:.0f} KB gz (≤ 300), wasm {wasm / 1024:.0f} KB gz (≤ 500)')
+    if js > 300 * 1024 or wasm > 500 * 1024:
         print('\n✗ failed: SPEC §9 bundle budget', file=sys.stderr)
         sys.exit(1)
 

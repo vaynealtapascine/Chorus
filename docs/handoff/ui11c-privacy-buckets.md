@@ -57,6 +57,7 @@ The web JS bundle is 204,384 of 204,800 bytes gzipped after UI11c (SPEC §9, sum
 chunks). It went 348 bytes over until `bucket-controls.ts` imported only the fixture fields it
 uses (the validation cases stay out). The next web feature has to trim or move something first.
 UI13 (2026-11-03) did: removing Chat's unreachable inline new-chat form left 204,679 bytes.
+Since D-116 (2026-11-04) the limit is 307,200 bytes (300 KB).
 
 ## Review focus
 
