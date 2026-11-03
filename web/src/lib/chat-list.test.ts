@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ARCHIVED, byActivity, chatPrefs, jumpBack, pushJump, stillArchived, chatTime, dayLabel, folderOf, frontEvents, HIDDEN, HIDE_PRIVATE, hideSpoilers, isPrivate, movePin, orderChats, PINS, previewOf, privateVisible, togglePin } from './chat-list';
+import { ARCHIVED, byActivity, chatPrefs, jumpBack, pushJump, stillArchived, chatTime, dayLabel, folderOf, frontEvents, HIDDEN, HIDE_PRIVATE, hideSpoilers, isPrivate, movePin, orderChats, PINS, previewOf, privateVisible, togglePin, dmFace } from './chat-list';
 import type { ChannelRow, MessageRow, SpaceRow } from './data';
 
 const space = (kind: SpaceRow['kind']): SpaceRow => ({ id: kind, kind, name: kind });
@@ -135,5 +135,17 @@ describe('pins, private chats and cleared chats (D-097)', () => {
     expect(togglePin(['a', 'c'], 'a')).toEqual(['c']);
     expect(movePin(['a', 'b', 'c'], 'c', 'a')).toEqual(['c', 'a', 'b']);
     expect(movePin(['a', 'b', 'c'], 'a', 'c')).toEqual(['b', 'c', 'a']);
+  });
+
+  it("shows a DM as the person's own member, else the account's picture, else nothing", () => {
+    const card = (id: string, account: string, avatar?: string) =>
+      ({ id, account_id: account, name: id, color: '#A09184', sigils: [], proxy_tags: [], avatar_blob: avatar, archived: false, deleted: false });
+    const dm = (kind: string, avatar?: string) => ({ accounts: [{ id: 'me', handle: null, display_name: null, kind: 'system' },
+      { id: 'them', handle: 'june', display_name: null, kind, avatar_blob: avatar }] });
+    expect(dmFace(dm('person'), 'me', [card('x', 'other', 'no'), card('june', 'them', 'pic')])?.avatar_blob).toBe('pic');
+    expect(dmFace(dm('system', 'sys'), 'me', [card('kai', 'them', 'kai')])?.avatar_blob).toBe('sys');
+    expect(dmFace(dm('system'), 'me', [card('kai', 'them', 'kai')])).toBeUndefined();
+    expect(dmFace(dm('person'), 'me', [])).toBeUndefined();
+    expect(dmFace(undefined, 'me', [])).toBeUndefined();
   });
 });

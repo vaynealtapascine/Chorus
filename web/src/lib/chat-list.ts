@@ -1,10 +1,23 @@
 // The desktop chat list (Figma F5.21): one list of every conversation across spaces, newest
 // activity first, split into folders like Android's chat list. Display only: reads stay in data.ts.
-import type { ChannelRow, MessageRow, SpaceRow } from './data';
+import type { ChannelRow, MemberRow, MessageRow, SpaceRow } from './data';
+import type { SpaceInfo } from './spaces';
 import type { Interval } from './sync/client';
 import { privateSides } from './chat-manage';
 
 export type Folder = 'all' | 'internal' | 'shared' | 'direct';
+
+/** Whom a DM with another account shows (Android `ChatPresentation.dmIcon`): a person by their own
+ * member's author card (so only a picture we may read), else the account's own picture; nothing
+ * otherwise. */
+export function dmFace(info: Pick<SpaceInfo, 'accounts'> | undefined, me: string, cards: Iterable<MemberRow>): MemberRow | undefined {
+  const other = info?.accounts.find((a) => a.id !== me);
+  if (!other) return undefined;
+  if (other.kind === 'person') for (const card of cards) if (card.account_id === other.id) return card;
+  if (!other.avatar_blob) return undefined;
+  const name = other.display_name ?? (other.handle ? `@${other.handle}` : 'Someone');
+  return { id: other.id, account_id: other.id, name, color: '#A09184', sigils: [], proxy_tags: [], avatar_blob: other.avatar_blob, archived: false, deleted: false };
+}
 export const FOLDERS: { id: Folder; label: string; icon: string }[] = [
   { id: 'all', label: 'All chats', icon: 'chat' },
   { id: 'internal', label: 'Internal', icon: 'lock' },

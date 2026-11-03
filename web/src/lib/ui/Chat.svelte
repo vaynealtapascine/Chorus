@@ -23,7 +23,7 @@
   import SpaceRail from './SpaceRail.svelte';
   import ChatFolderRail from './ChatFolderRail.svelte';
   import ChatList from './ChatList.svelte';
-  import { chatPrefs, dayLabel, discColor, folderOf, frontEvents, FOLDERS, jumpBack, pushJump } from '../chat-list';
+  import { chatPrefs, dayLabel, discColor, dmFace, folderOf, frontEvents, FOLDERS, jumpBack, pushJump } from '../chat-list';
   import { contains, folderPrefs, label as folderLabel, mutedChat, visible as visibleFolders } from '../chat-folders';
   import AttachmentView from './AttachmentView.svelte';
   import { expandFront } from '../subsystems';
@@ -737,14 +737,6 @@
     }
     return counts;
   });
-  const homeSpace = $derived(ss.find((s) => s.kind === 'internal'));
-  function newChannelIn(name: string) {
-    const slug = name.trim().toLowerCase().replace(/\s+/g, '-');
-    if (!slug || !homeSpace) return;
-    const id = sync.newId();
-    sync.create('channel.create', scopeOf(homeSpace.id), id, { space_id: homeSpace.id, kind: 'text', name: slug });
-    router.go(`/chat/${id}`);
-  }
 
   let newChannel = $state('');
   // may this account add channels and change permissions here? (perms.rs: the owner, admins; in a DM, both)
@@ -860,6 +852,11 @@
     }
     if (current?.kind === 'member_dm' && (space?.kind === 'internal' || sides?.theirs.length)) {
       const m = people.get(sides?.theirs[0] ?? current.member_ids?.find((id) => id !== speaker) ?? current.member_ids?.[0] ?? '');
+      if (m) { const c = core.adaptColor(m.color, dark); return { glyph: m.sigils[0] ?? m.name[0] ?? '?', member: m, style: `background: ${c.ring}; color: ${c.avatar_ink}` }; }
+    }
+    // a DM with another account shows who it is with, as in the list
+    if (space?.kind === 'dm' && current && current.kind !== 'member_dm' && current.kind !== 'thread') {
+      const m = dmFace(directory.get(space.id), sync.accountId, cards);
       if (m) { const c = core.adaptColor(m.color, dark); return { glyph: m.sigils[0] ?? m.name[0] ?? '?', member: m, style: `background: ${c.ring}; color: ${c.avatar_ink}` }; }
     }
     if (space?.kind === 'internal' && current?.kind !== 'thread' && !current?.icon && !current?.color) return { glyph: '#', style: 'background: var(--accent-soft); color: var(--accent)' };
@@ -1150,7 +1147,7 @@
     onedit={() => (foldersAt = '')} {onmenu} /></div>
   <div class="desk-list"><ChatList {projection} {dark} currentId={current?.id} folder={openFolder} folders={folderSettings} {foldersAt}
     onfolders={(at) => (foldersAt = at)} {directory} person={!!self} {onswitch} {viewingAs}
-    onnewchannel={homeSpace && !self ? newChannelIn : undefined} onnewchat={() => (newChat = true)} /></div>
+    onnewchat={() => (newChat = true)} /></div>
   <aside class="channels" aria-label="Channels">
     <div class="channel-title">Chats <a class="icon-button" href="#/search" aria-label="Search messages"><Icon name="search" size={18} /></a></div>
     <SpaceRail spaces={ss} channels={allChannels} currentId={space?.id} {directory} me={sync.accountId} />

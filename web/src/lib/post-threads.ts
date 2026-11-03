@@ -13,7 +13,11 @@ export interface ThreadPost {
   attachments?: AttachmentRow[];
   occurred_at: number;
   authors?: string[];
-  author_cards?: { name?: string | null; display_name?: string | null; color?: string | null }[];
+  /** `profile`: the reader may open this member's profile, and only then `avatar_blob` (D-101). */
+  author_cards?: { id?: string; name?: string | null; display_name?: string | null; color?: string | null;
+    avatar_blob?: string | null; profile?: boolean }[];
+  account_id?: string;
+  tags?: string[] | null;
   /** Replies this reader may see. */
   reply_count?: number;
   reply_to?: string | null;
@@ -22,6 +26,18 @@ export interface ThreadPost {
   quote?: { post_id?: string } | null;
   /** The quoted post, when this reader may read it. */
   quoted?: ThreadPost | null;
+}
+
+/** Where tapping a post's author goes: the first author whose profile this reader may open, on
+ * their account's friend profile page; nowhere when none is shared. */
+export function authorProfileHref(post: ThreadPost): string | null {
+  const card = post.author_cards?.find((c) => c.profile === true && c.id);
+  return post.account_id && card?.id ? `#/people/${encodeURIComponent(post.account_id)}/${encodeURIComponent(card.id)}` : null;
+}
+
+/** A post's tags as text ("#garden  #cats"), or nothing. */
+export function tagLine(tags: readonly unknown[] | null | undefined): string {
+  return (tags ?? []).filter((t): t is string => typeof t === 'string' && t.trim() !== '').map((t) => `#${t.trim()}`).join('  ');
 }
 
 /** The thread view's read: the post, what it answers (oldest first), its replies and reactions. */

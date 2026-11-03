@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localAncestors, quoteView, remoteNames, replyCounts, threadAncestors, threadQuotes, threadReplies } from './post-threads';
+import { localAncestors, quoteView, remoteNames, replyCounts, threadAncestors, threadQuotes, threadReplies, authorProfileHref, tagLine } from './post-threads';
 import type { PostRow } from './posts';
 
 const post = (id: string, reply_to?: string, at = 0, deleted = false): PostRow => ({
@@ -63,5 +63,15 @@ describe('journal threads', () => {
     expect(quoteView('far', byId, name, { id: 'far', text: 'remote', occurred_at: 1, author_cards: [{ name: 'June' }] }))
       .toMatchObject({ names: 'June', post: { text: 'remote' } });
     expect(quoteView('gone', byId, name)).toEqual({ id: 'gone', post: null, names: '' });
+  });
+
+  it("links an author only where their profile is shared, and reads tags", () => {
+    const post = { id: 'p', text: '', occurred_at: 0, account_id: 'acc',
+      author_cards: [{ id: 'fox', name: 'Fox', profile: false }, { id: 'kai', name: 'Kai', profile: true, avatar_blob: 'pic' }] };
+    expect(authorProfileHref(post)).toBe('#/people/acc/kai');
+    expect(authorProfileHref({ ...post, author_cards: [{ id: 'fox', profile: false }] })).toBeNull();
+    expect(authorProfileHref({ ...post, account_id: undefined })).toBeNull();
+    expect(tagLine(['garden', ' ', 3, ' cats '])).toBe('#garden  #cats');
+    expect(tagLine(null)).toBe('');
   });
 });

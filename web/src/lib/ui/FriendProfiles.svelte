@@ -7,17 +7,20 @@
   import { apiBase } from '../sync/device';
   import { sync } from '../sync/client';
   import AvatarImage from './AvatarImage.svelte';
+  import MemberBanner from './MemberBanner.svelte';
   import RichText from './RichText.svelte';
   import Icon from './Icon.svelte';
 
   let { accountId, memberId, dark }: { accountId: string; memberId?: string; dark: boolean } = $props();
 
   interface Card { id: string; name: string; display_name: string | null; pronouns: string | null; color: string | null; sigil: string | null; avatar_blob: string | null }
+  /** A row of their member list: the banner and role pills they share with us, if any. */
+  interface ListCard extends Card { banner_blob?: string | null; roles?: string[] }
   interface Field { id: string; name: string; type: string; value: unknown }
   interface Full extends Card { description: string | null; description_entities: never[]; birthday: string | null; banner_blob: string | null; fields: Field[]; relationships?: {id: string; type: string; target: Card; note?: string}[]; post_alerts?: 'none' | 'requested' | 'active' }
 
   let owner = $state<{ name: string; avatar_blob: string | null } | null>(null);
-  let list = $state<Card[] | null>(null);
+  let list = $state<ListCard[] | null>(null);
   let profile = $state<Full | null>(null);
   let error = $state('');
   let missing = $state(false);
@@ -144,9 +147,13 @@
         {#each list as m (m.id)}
           {@const t = tone(m.color)}
           <li>
-            <a href="#/people/{encodeURIComponent(accountId)}/{encodeURIComponent(m.id)}" style="--ring: {t?.ring ?? 'var(--line)'}">
+            <a href="#/people/{encodeURIComponent(accountId)}/{encodeURIComponent(m.id)}" class:has-banner={!!m.banner_blob} style="--ring: {t?.ring ?? 'var(--line)'}">
+              {#if m.banner_blob}<MemberBanner hash={m.banner_blob} />{/if}
               <span class="avatar small"><AvatarImage hash={m.avatar_blob} glyph={glyph(m)} name={shownName(m)} /></span>
-              <span class="who"><strong style="color: {t?.name ?? 'inherit'}">{shownName(m)}</strong>{#if m.pronouns}<span class="muted">{m.pronouns}</span>{/if}</span>
+              <span class="who">
+                <span class="name-line"><strong style="color: {t?.name ?? 'inherit'}">{shownName(m)}</strong>{#if m.pronouns}<span class="muted">{m.pronouns}</span>{/if}</span>
+                {#if m.roles?.length}<span class="pills">{#each m.roles as r (r)}<span class="pill small" style="--pill: {roleColor(r)}">{r}</span>{/each}</span>{/if}
+              </span>
             </a>
           </li>
         {/each}
@@ -178,9 +185,13 @@
   .pill { font-size: var(--fs-sm); font-weight: 600; padding: 1px 10px; border-radius: var(--r-full); background: color-mix(in srgb, var(--pill) 28%, var(--surface)); border: 1px solid color-mix(in srgb, var(--pill) 55%, transparent); }
   .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 4px; vertical-align: -2px; border: 1px solid var(--line); }
   .cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s-3); }
-  .cards a { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; text-decoration: none; color: var(--ink); }
+  .cards a { position: relative; isolation: isolate; display: flex; align-items: center; gap: var(--s-3); min-height: 76px; padding: var(--s-3) var(--s-4); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; text-decoration: none; color: var(--ink); }
+  .cards a :global(.banner) { border-radius: 0 13px 13px 0; z-index: -1; }
+  .has-banner strong, .has-banner .muted { text-shadow: 0 0 6px var(--surface), 0 0 2px var(--surface); }
+  .name-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .pill.small { font-size: var(--fs-xs); line-height: 1.5; padding: 0 8px; white-space: nowrap; }
   .cards a:hover { border-color: var(--accent); }
-  .who { display: grid; }
+  .who { display: grid; gap: 4px; min-width: 0; }
   .muted, .hint { color: var(--ink-3); margin: 0; }
   .hint { font-size: var(--fs-xs); }
   .error { color: var(--danger); margin: 0; }

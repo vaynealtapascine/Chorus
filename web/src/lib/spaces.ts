@@ -5,7 +5,9 @@ import { apiFetch } from './http';
 import { sync } from './sync/client';
 import type { MemberRow } from './data';
 
-export interface SpaceAccount { id: string; handle: string | null; display_name: string | null; kind: string }
+export interface SpaceAccount { id: string; handle: string | null; display_name: string | null; kind: string;
+  /** The account's own picture (a singlet's is usually on their member instead). */
+  avatar_blob?: string | null }
 /** `guest`: you're not in it; some of its channels are shared with you (channel permissions). */
 export interface SpaceInfo { id: string; kind: 'internal' | 'shared' | 'dm'; name: string | null; owner_account_id: string; guest?: boolean; accounts: SpaceAccount[] }
 interface Card { id: string; account_id: string; name: string | null; display_name: string | null; pronouns: string | null; color: string | null; sigils: string[]; avatar_blob: string | null }
@@ -49,6 +51,7 @@ export async function authorCards(spaceId: string): Promise<{ accounts: SpaceAcc
   const members = (j.members as Card[]).map(
     (c): MemberRow => ({
       id: c.id,
+      account_id: c.account_id,
       name: c.name ?? 'Someone',
       display_name: c.display_name ?? undefined,
       pronouns: c.pronouns ?? undefined,

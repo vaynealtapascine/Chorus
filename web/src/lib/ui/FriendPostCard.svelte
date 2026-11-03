@@ -8,6 +8,8 @@
   import { entryMeta, fullTimestamp, shortAgo } from '../journal-presentation';
   import { shareText } from '../journal-social';
   import { withHeart, type FriendPost } from '../friends-feed';
+  import { authorProfileHref, tagLine } from '../post-threads';
+  import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
   import PostMedia from './PostMedia.svelte';
   import RemotePostPoll from './RemotePostPoll.svelte';
@@ -24,6 +26,10 @@
   const names = $derived((post.author_cards ?? []).map((a) => a.display_name || a.name || '').filter(Boolean).join(' & ') || account);
   const lead = $derived(post.author_cards?.[0]);
   const color = $derived(core.adaptColor(lead?.color ?? '#A09184', dark));
+  // the author's picture and profile, where their system shares that profile with us (D-101)
+  const profileHref = $derived(authorProfileHref(post));
+  const initial = $derived((names.trim()[0] ?? '?').toUpperCase());
+  const tags = $derived(tagLine(post.tags));
   const hearts = $derived((post.reactions ?? []).filter((r) => r.emoji === '💜'));
   const hearted = $derived(!!speaker && hearts.some((r) => r.member_id === speaker));
   const share = $derived(shareText(post.title ?? undefined, post.cw ?? undefined, post.text));
@@ -58,7 +64,8 @@
 
 <article class="post" data-post-id={post.id} style="--avatar-bg: {color.ring}; --avatar-ink: {color.avatar_ink}">
   <div class="frame">
-    <span class="avatar" aria-hidden="true">{(names.trim()[0] ?? '?').toUpperCase()}</span>
+    {#if profileHref}<a class="avatar" href={profileHref} aria-label="Open {names}’s profile"><AvatarImage hash={lead?.avatar_blob} glyph={initial} /></a>
+    {:else}<span class="avatar" aria-hidden="true"><AvatarImage hash={lead?.avatar_blob} glyph={initial} /></span>{/if}
     <div class="main">
       <div class="identity">
         <span class="authors">{names}</span>
@@ -74,6 +81,7 @@
         {#if post.kind === 'entry'}<p class="meta-line">{entryMeta(post.text, post.tags ?? [])}</p>{/if}
         {#if post.attachments?.length}<PostMedia attachments={post.attachments} who={names} occurredAt={post.occurred_at} />{/if}
         <RemotePostPoll {projection} {post} member={speaker} />
+        {#if tags}<p class="tags">{tags}</p>{/if}
         <div class="actions">
           <button class="act" onclick={open} aria-label={post.reply_count ? `Reply (${post.reply_count})` : 'Reply'}><Icon name="reply" size={18} />{#if post.reply_count}<span>{post.reply_count}</span>{/if}</button>
           <button class="act heart" class:on={hearted} disabled={!speaker} title={hearts.map((r) => r.member_name).join(' · ') || undefined}
@@ -96,7 +104,8 @@
 <style>
   .post { padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--line); min-width: 0; }
   .frame { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; }
-  .avatar { display: inline-grid; width: 40px; height: 40px; border-radius: 50%; background: var(--avatar-bg); color: var(--avatar-ink); place-items: center; font-weight: 700; }
+  .avatar { display: inline-grid; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; background: var(--avatar-bg); color: var(--avatar-ink); place-items: center; font-weight: 700; text-decoration: none; }
+  .tags { color: var(--accent); font-size: var(--fs-sm); overflow-wrap: anywhere; }
   .main { display: grid; gap: 4px; min-width: 0; align-content: start; }
   .identity { display: flex; align-items: center; gap: 4px; min-width: 0; line-height: 20px; }
   .authors { font-weight: 600; font-size: 15px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

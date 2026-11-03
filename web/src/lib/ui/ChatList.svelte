@@ -4,7 +4,7 @@
   import { core } from '../core';
   import { chatMembers } from '../subsystems';
   import { channels, latestMessage, members, spaces, unread, fuzzy, type ChannelRow, type MemberRow, type SpaceRow } from '../data';
-  import { ARCHIVED, chatPrefs, chatTime, discColor, folderOf, HIDDEN, movePin, orderChats, PINS, previewOf, privateVisible, stillArchived, togglePin, type Folder } from '../chat-list';
+  import { ARCHIVED, chatPrefs, chatTime, discColor, dmFace, folderOf, HIDDEN, movePin, orderChats, PINS, previewOf, privateVisible, stillArchived, togglePin, type Folder } from '../chat-list';
   import { contains, holds, PREF as FOLDERS_PREF, setChat, toJson, withCustom, type Settings as FolderSettings } from '../chat-folders';
   import ChatFolders from './ChatFolders.svelte';
   import { bodyPresence, frontLayers } from '../front-view';
@@ -14,20 +14,20 @@
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
 
-  let { projection, dark, currentId, folder, folders, foldersAt = null, onfolders, directory, person, onswitch, onnewchannel, onnewchat, viewingAs = null }: {
+  let { projection, dark, currentId, folder, folders, foldersAt = null, onfolders, directory, person, onswitch, onnewchat, viewingAs = null }: {
     projection: Projection; dark: boolean; currentId?: string; folder: string; directory: Map<string, SpaceInfo>;
     /** Chat folders (D-113): the settings, and the folders sheet ("" its list, "new:<chat>", a folder) or null. */
     folders: FolderSettings; foldersAt?: string | null; onfolders: (at: string | null) => void;
-    person: boolean; onswitch: () => void; onnewchannel?: (name: string) => void;
-    /** The pencil opens New chat (NewChat.svelte); without it, the old inline form. */
-    onnewchat?: () => void; viewingAs?: string | null;
+    person: boolean; onswitch: () => void;
+    /** The pencil opens New chat (NewChat.svelte). */
+    onnewchat: () => void; viewingAs?: string | null;
   } = $props();
 
   let query = $state('');
-  // names for other accounts' members a private chat is kept to (D-098), from author cards
+  // other accounts' members in our DMs, from author cards: whom a private chat is kept to (D-098)
+  // and the person at the other end of each DM
   let cards = $state(new Map<string, MemberRow>());
-  const needCards = $derived([...new Set(channels(projection).filter((c) => c.kind === 'member_dm' && c.member_ids?.length &&
-    ss.find((s) => s.id === c.space_id)?.kind === 'dm' && c.member_ids.some((m) => !people.has(m))).map((c) => c.space_id))].sort().join(','));
+  const needCards = $derived(spaces(projection).filter((s) => s.kind === 'dm').map((s) => s.id).sort().join(','));
   let cardsFor = '';
   $effect(() => {
     const want = needCards;
@@ -37,8 +37,6 @@
       authorCards(id).then((c) => { cards = new Map([...cards, ...c.members.map((m) => [m.id, m] as const)]); }).catch(() => {});
     }
   });
-  let composing = $state(false);
-  let newName = $state('');
   const people = $derived(new Map(members(projection).map((m) => [m.id, m])));
   const nameOf = (id: string) => { const m = people.get(id); return m?.display_name ?? m?.name ?? 'Someone'; };
   const ss = $derived(spaces(projection));
@@ -88,7 +86,8 @@
       const preview = previewOf(latest, (id) => (people.has(id) ? nameOf(id) : ''), c.kind !== 'member_dm');
       const notify = (prefs[`${sync.accountId}||notify_channel:${c.id}`] ?? prefs[`||notify_channel:${c.id}`])?.fields.value;
       const partner = c.kind === 'member_dm' && !sides ? people.get(c.member_ids?.[0] ?? '')
-        : sides?.theirs.length ? cards.get(sides.theirs[0]) : undefined;
+        : sides?.theirs.length ? cards.get(sides.theirs[0])
+        : space?.kind === 'dm' ? dmFace(directory.get(space.id), sync.accountId, cards.values()) : undefined;
       const letter = (title.match(/\p{L}|\p{N}/u)?.[0] ?? '#').toUpperCase();
       const disc = c.avatar_blob ? { glyph: c.icon ?? letter, color: c.color ?? discColor(c.id), blob: c.avatar_blob }
         : partner ? { glyph: partner.sigils[0] ?? partner.name[0] ?? '?', color: partner.color, blob: partner.avatar_blob ?? undefined }
@@ -157,13 +156,6 @@
   const here = $derived(expanded.entries.filter((e) => e.subject_type === 'member' && people.has(e.subject_id))
     .sort((a, b) => layers.findIndex((l) => l.id === a.level) - layers.findIndex((l) => l.id === b.level) || Number(b.is_primary) - Number(a.is_primary)));
   const layerName = (id: string) => layers.find((l) => l.id === id)?.name ?? '';
-
-  function create(e: SubmitEvent) {
-    e.preventDefault();
-    if (!newName.trim()) return;
-    onnewchannel?.(newName.trim());
-    newName = ''; composing = false;
-  }
 </script>
 
 <svelte:window onpointerdown={(e) => { if (menuFor && !(e.target as Element).closest?.('.row-menu, .more')) menuFor = null; }}
@@ -171,16 +163,8 @@
 <section class="list" aria-label="Chats">
   <div class="search-row">
     <label class="search"><Icon name="search" size={18} /><input bind:value={query} placeholder="Search" aria-label="Search chats" /></label>
-    <button class="compose" class:on={composing} onclick={() => (onnewchat ? onnewchat() : (composing = !composing))} aria-label="New chat" aria-expanded={composing}><Icon name="edit" size={22} /></button>
+    <button class="compose" onclick={onnewchat} aria-label="New chat"><Icon name="edit" size={22} /></button>
   </div>
-  {#if composing}
-    <div class="compose-panel">
-      {#if onnewchannel}
-        <form onsubmit={create}><input bind:value={newName} placeholder="New channel name" aria-label="New channel name" /><button disabled={!newName.trim()}>Create</button></form>
-      {/if}
-      <a href="#/people" onclick={() => (composing = false)}>Message a friend…</a>
-    </div>
-  {/if}
   {#if archiveView}
     <button class="archive-bar" onclick={() => (showArchived = false)}><Icon name="back" size={18} /> Archived chats <span>A new message brings a chat back</span></button>
   {:else if archivedCount && !query.trim()}
@@ -265,11 +249,7 @@
   .search:focus-within { box-shadow: 0 0 0 2px var(--accent); }
   .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; }
   .compose { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
-  .compose:hover, .compose.on { background: var(--surface-2); color: var(--ink); }
-  .compose-panel { display: grid; gap: 8px; margin: 0 12px 8px; padding: 12px; border-radius: var(--r-md); background: var(--surface); }
-  .compose-panel form { display: flex; gap: 8px; }
-  .compose-panel input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 10px; }
-  .compose-panel button { border: 0; border-radius: var(--r-full); padding: 6px 14px; background: var(--accent); color: var(--on-accent); font-weight: 600; cursor: pointer; }
+  .compose:hover { background: var(--surface-2); color: var(--ink); }
   .archive-bar { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 8px 12px; border: 0; border-radius: var(--r-md);
     background: var(--surface); color: var(--ink-2); font: inherit; font-size: var(--fs-sm); cursor: pointer; text-align: left; }
   .archive-bar:hover { background: var(--surface-2); color: var(--ink); }
@@ -291,8 +271,6 @@
     color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
   .row-menu button:hover { background: var(--surface-3, var(--surface)); }
   .row-menu .danger { color: var(--danger); }
-  .compose-panel button:disabled { opacity: .5; }
-  .compose-panel a { color: var(--accent); text-decoration: none; font-size: var(--fs-sm); }
   .here { min-width: 0; display: flex; align-items: flex-start; gap: 6px; padding: 4px 12px 12px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
   .here-one { flex: none; width: 64px; display: grid; justify-items: center; gap: 4px; border: 0; background: none; color: var(--ink-2); cursor: pointer; padding: 0; font: inherit; }
   .ring { width: 60px; height: 60px; border-radius: 50%; display: grid; place-items: center; border: 2px solid transparent; }

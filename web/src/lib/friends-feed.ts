@@ -3,11 +3,8 @@ import type { ThreadPost } from './post-threads';
 /** A post another account shares with this one, as `GET /posts?account=` returns it. */
 export interface FriendPost extends ThreadPost {
   kind?: 'note' | 'entry' | null;
-  account_id?: string;
   repost_of?: string | null;
-  tags?: string[] | null;
   mood?: string | null;
-  author_cards?: { id?: string; name?: string | null; display_name?: string | null; color?: string | null }[];
   reactions?: { emoji: string; member_id: string; member_name: string }[];
 }
 

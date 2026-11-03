@@ -19,6 +19,8 @@ export interface MemberRow {
   birthday?: string;
   avatar_blob?: string;
   banner_blob?: string;
+  /** Another account's member (an author card): whose it is. */
+  account_id?: string;
   sort_key?: string;
   pinned_post_id?: string;
   archived: boolean;

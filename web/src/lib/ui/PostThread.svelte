@@ -6,8 +6,8 @@
   // accounts' come from `GET /posts/{id}`, read through the server's audience check.
   import { core } from '../core';
   import { members, reactions as allReactions, type MemberRow } from '../data';
-  import { canWriteAs, postReaction, posts } from '../posts';
-  import { quoteView, remoteNames, threadAncestors, threadQuotes, threadReplies, type PostDetail, type ThreadItem, type ThreadPost } from '../post-threads';
+  import { canWriteAs, postReaction, posts, type PostRow } from '../posts';
+  import { authorProfileHref, quoteView, remoteNames, tagLine, threadAncestors, threadQuotes, threadReplies, type PostDetail, type ThreadItem, type ThreadPost } from '../post-threads';
   import QuoteEmbed from './QuoteEmbed.svelte';
   import { apiFetch } from '../http';
   import { apiBase } from '../sync/device';
@@ -98,12 +98,28 @@
   }
   function look(item: ThreadItem) {
     const lead = item.local ? people.get(item.local.authors[0] ?? '') : (item.remote?.authors ?? []).map((a) => people.get(a)).find(Boolean);
-    const color = core.adaptColor(lead?.color ?? item.remote?.author_cards?.[0]?.color ?? '#A09184', dark);
-    return { lead, color, glyph: lead?.sigils[0] ?? itemNames(item)[0] ?? '?' };
+    const card = item.local ? undefined : item.remote?.author_cards?.[0];
+    const color = core.adaptColor(lead?.color ?? card?.color ?? '#A09184', dark);
+    // another account's author: their picture and profile only where that profile is shared with us
+    return { lead, color, glyph: lead?.sigils[0] ?? itemNames(item)[0] ?? '?', blob: lead?.avatar_blob ?? card?.avatar_blob,
+      href: lead || !item.remote ? null : authorProfileHref(item.remote) };
   }
   const when = (at: number) => new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
   const count = (n: number) => `${n} ${n === 1 ? 'reply' : 'replies'}`;
 </script>
+
+<!-- what a post says, shown at once or behind its content warning: the same either way -->
+{#snippet content(item: ThreadItem, post: ThreadPost | PostRow, context: boolean)}
+  {@const tags = tagLine(post.tags)}
+  {#if post.title}<strong>{post.title}</strong>{/if}
+  <div class="text" class:clamp={context}><RichText text={post.text} entities={post.entities ?? []} /></div>
+  {#if quoteFor(item)}<QuoteEmbed quote={quoteFor(item)!} />{/if}
+  {#if item.remote}
+    <RemotePostPoll {projection} post={item.remote} member={speaker} />
+  {/if}
+  {#if !item.local && item.remote?.attachments?.length}<PostMedia attachments={item.remote.attachments} who={itemNames(item)} occurredAt={post.occurred_at} />{/if}
+  {#if tags}<p class="tags">{tags}</p>{/if}
+{/snippet}
 
 {#snippet row(item: ThreadItem, lineBelow: boolean, context: boolean)}
   {@const l = look(item)}
@@ -113,22 +129,14 @@
   <article class="row" class:context class:line-below={lineBelow} data-post-id={item.id}
     style="--avatar-bg: {l.color.ring}; --avatar-ink: {l.color.avatar_ink}; --author: {l.color.name}"
     onclick={(event) => rowClick(event, item.id)}>
-    <span class="avatar" aria-hidden="true"><AvatarImage hash={l.lead?.avatar_blob} glyph={l.glyph} name={itemNames(item)} /></span>
+    {#if l.href}<a class="avatar" href={l.href} aria-label="Open {itemNames(item)}’s profile"><AvatarImage hash={l.blob} glyph={l.glyph} /></a>
+    {:else}<span class="avatar" aria-hidden="true"><AvatarImage hash={l.blob} glyph={l.glyph} name={itemNames(item)} /></span>{/if}
     <div class="row-body">
       <p class="by"><span class="names">{itemNames(item)}</span> · <a href="#/journal/post/{encodeURIComponent(item.id)}" title="Open this post">{when(post.occurred_at)}</a></p>
       {#if post.cw}
-        <details><summary>Content warning: {post.cw}</summary>
-          {#if post.title}<strong>{post.title}</strong>{/if}
-          <div class="text"><RichText text={post.text} entities={post.entities ?? []} /></div>
-        </details>
+        <details><summary>Content warning: {post.cw}</summary>{@render content(item, post, false)}</details>
       {:else}
-        {#if post.title}<strong>{post.title}</strong>{/if}
-        <div class="text" class:clamp={context}><RichText text={post.text} entities={post.entities ?? []} /></div>
-        {#if quoteFor(item)}<QuoteEmbed quote={quoteFor(item)!} />{/if}
-        {#if item.remote}
-          <RemotePostPoll {projection} post={item.remote} member={speaker} />
-        {/if}
-        {#if !item.local && item.remote?.attachments?.length}<PostMedia attachments={item.remote.attachments} who={itemNames(item)} occurredAt={post.occurred_at} />{/if}
+        {@render content(item, post, context)}
       {/if}
       {#if !context && item.replyCount}<a class="count" href="#/journal/post/{encodeURIComponent(item.id)}">{count(item.replyCount)}</a>{/if}
     </div>
@@ -215,7 +223,8 @@
   .row.context { border-bottom: 0; padding-bottom: var(--s-2); }
   /* the thread line: from under this avatar down to the next one */
   .row.line-below::after { content: ''; position: absolute; left: calc(var(--s-4) + 19px); top: calc(var(--s-3) + 44px); bottom: -4px; width: 2px; border-radius: 1px; background: var(--line); }
-  .avatar { display: inline-grid; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; background: var(--avatar-bg); color: var(--avatar-ink); place-items: center; font-weight: 700; }
+  .avatar { display: inline-grid; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; background: var(--avatar-bg); color: var(--avatar-ink); place-items: center; font-weight: 700; text-decoration: none; }
+  .tags { color: var(--accent); font-size: var(--fs-sm); overflow-wrap: anywhere; }
   .row-body { display: grid; gap: var(--s-1); min-width: 0; }
   .by { color: var(--ink-3); font-size: var(--fs-sm); }
   .names { color: var(--author); font-weight: 600; }
