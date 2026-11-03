@@ -62,12 +62,14 @@ private val ProfileTabs = listOf("Posts", "Replies", "Journal", "Media", "Highli
 /** Own member profile (Figma F6.1): banner with the avatar overlapping it, Post / Edit profile,
  * name, pronouns and sigils, where they are in the front right now, counts, bio, groups and the
  * profile's audience; then sticky tabs. Pinning and highlighting live in each post's `⋯`. Local
- * details stay visible offline; the server adds readable outside highlights. */
+ * details stay visible offline; the server adds readable outside highlights. A post opens as its
+ * thread ([onOpenPost]), as in the timeline. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     onClose: () -> Unit, onWrite: () -> Unit, onReply: (String) -> Unit,
-    closeLabel: String = "Journal", writeLabel: String? = null, onOpenProfile: ((String) -> Unit)? = null) {
+    closeLabel: String = "Journal", writeLabel: String? = null, onOpenProfile: ((String) -> Unit)? = null,
+    onOpenPost: ((String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val dev = chorus.device
     val actions = rememberCoroutineScope()
@@ -126,6 +128,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
         if (post.id in highlightedIds) "Remove highlight" to { setHighlight(post.id, false) }
         else "Highlight on profile" to { setHighlight(post.id, true) })
 
+    val openThread = onOpenPost?.let { open -> { post: JournalPost -> open(post.id) } }
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().background(p.bg), state = list, contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "hero") {
@@ -143,7 +146,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
             }
             for (post in shown) item(key = "$tab:${post.id}") {
                 Column(Modifier.animateItem()) {
-                    JournalPostCard(post, model, chorus, onReply = { onReply(it.id) }, extraMenu = menu(post))
+                    JournalPostCard(post, model, chorus, onReply = { onReply(it.id) }, onThread = openThread, onOpenPost = onOpenPost, extraMenu = menu(post))
                 }
             }
         }
@@ -152,7 +155,8 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
                 if (pinned != null) item(key = "pinned:${pinned.id}") {
                     Column(Modifier.animateItem()) {
                         PinnedHeader()
-                        JournalPostCard(pinned, model, chorus, onReply = { onReply(it.id) }, extraMenu = menu(pinned))
+                        JournalPostCard(pinned, model, chorus, onReply = { onReply(it.id) }, onThread = openThread, onOpenPost = onOpenPost,
+                            extraMenu = menu(pinned))
                     }
                 }
                 posts(ownPosts.filter { it.replyTo == null && it.kind != "entry" && it.id != pinned?.id }
@@ -183,12 +187,12 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
                 }
                 for (post in local) item(key = "highlight:${post.id}") {
                     Column(Modifier.animateItem()) {
-                        JournalPostCard(post, model, chorus, onReply = { onReply(it.id) }, extraMenu = menu(post))
+                        JournalPostCard(post, model, chorus, onReply = { onReply(it.id) }, onThread = openThread, onOpenPost = onOpenPost, extraMenu = menu(post))
                     }
                 }
                 for (post in foreign) item(key = "remote-highlight:${post.id}") {
                     Column(Modifier.animateItem()) {
-                        SharedPostPreview(post, member.shownName, chorus, model)
+                        SharedPostPreview(post, member.shownName, chorus, model, onThread = onOpenPost?.let { open -> { open(it.id) } })
                         TextButton(enabled = !busy, onClick = { setHighlight(post.id, false) },
                             modifier = Modifier.padding(start = 60.dp)) { Text("Remove highlight") }
                         HorizontalDivider(color = p.line, thickness = .5.dp)

@@ -73,18 +73,28 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
     var selecting by rememberSaveable { mutableStateOf(false) }
     var picked by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var rolesFor by rememberSaveable { mutableStateOf<String?>(null) }
+    // posts opened from a profile, newline-separated: the last is shown; back returns to the one before
+    var postTrail by rememberSaveable { mutableStateOf("") }
+    val openPosts = postTrail.split('\n').filter { it.isNotEmpty() }
     // members a new folder is being made for (empty: just make the folder)
     var newFolderFor by rememberSaveable { mutableStateOf<List<String>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    SideEffect { if (active) onFocusedRoute(adding || profile != null || reordering) }
-    BackHandler(active && (profile != null || adding || reordering || selecting)) {
-        when { adding -> adding = false; reordering -> reordering = false; selecting -> { selecting = false; picked = emptyList() }; else -> profile = null }
+    SideEffect { if (active) onFocusedRoute(adding || profile != null || reordering || openPosts.isNotEmpty()) }
+    BackHandler(active && (profile != null || adding || reordering || selecting || openPosts.isNotEmpty())) {
+        when { openPosts.isNotEmpty() -> postTrail = openPosts.dropLast(1).joinToString("\n")
+            adding -> adding = false; reordering -> reordering = false; selecting -> { selecting = false; picked = emptyList() }; else -> profile = null }
     }
     if (adding) { MemberEditor(chorus, model, null) { adding = false }; return }
     if (reordering) { MemberReorder(chorus, model) { reordering = false }; return }
+    openPosts.lastOrNull()?.let { id ->
+        JournalThread(chorus, model, id, onClose = { postTrail = openPosts.dropLast(1).joinToString("\n") },
+            onReply = { onJournal(null, id) }, onOpenPost = { next -> postTrail = (openPosts + next).joinToString("\n") })
+        return
+    }
     profile?.let { id ->
         MemberProfile(chorus, model, id, onClose = { profile = null }, onWrite = { onJournal(id, null) },
-            onReply = { onJournal(null, it) }, closeLabel = "Members", writeLabel = "Journal", onOpenProfile = { profile = it })
+            onReply = { onJournal(null, it) }, closeLabel = "Members", writeLabel = "Journal", onOpenProfile = { profile = it },
+            onOpenPost = { postTrail = it })
         return
     }
     val settings = model.memberList

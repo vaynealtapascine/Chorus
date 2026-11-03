@@ -147,7 +147,9 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
     var threadPostId by rememberSaveable { mutableStateOf<String?>(null) }
     // the threads under the open one, newline-separated, so back from a reply's thread returns to its parent
     var threadBack by rememberSaveable { mutableStateOf("") }
-    LaunchedEffect(threadPostId) { if (threadPostId == null) threadBack = "" }
+    // the member profile a post was opened from: back from its thread returns there
+    var profileReturn by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(threadPostId) { if (threadPostId == null) { threadBack = ""; profileReturn = null } }
     val threadStack = threadBack.split('\n').filter { it.isNotEmpty() }
     var section by rememberSaveable { mutableStateOf("timeline") }
     var selectedListId by rememberSaveable { mutableStateOf("") }
@@ -274,15 +276,18 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         BackHandler(active && shown == route) { profileId = null }
         MemberProfile(chorus, model, id, onClose = { profileId = null },
             onWrite = { launchDraft("write", author = id) },
-            onReply = { postId -> launchDraft("reply", postId, id) }, onOpenProfile = { profileId = it })
+            onReply = { postId -> launchDraft("reply", postId, id) }, onOpenProfile = { profileId = it },
+            onOpenPost = { post -> threadBack = ""; threadPostId = post; profileReturn = id; profileId = null })
         return@ChorusScene
     }
 
     if (shown.startsWith("thread:")) {
         val id = shown.substringAfter(":")
         val back = {
+            val from = profileReturn.takeIf { threadStack.isEmpty() }
             threadPostId = threadStack.lastOrNull()
             threadBack = threadStack.dropLast(1).joinToString("\n")
+            if (from != null) profileId = from
         }
         BackHandler(active && shown == route) { back() }
         JournalThread(chorus, model, id, onClose = back, onReply = { launchDraft("reply", id) },
