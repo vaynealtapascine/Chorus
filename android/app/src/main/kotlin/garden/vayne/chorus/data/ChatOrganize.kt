@@ -32,6 +32,7 @@ object ChatOrganize {
      */
     fun privateVisible(channel: ChatChannel, space: ChatSpace, front: List<Entry>, viewingAs: String?, hidePrivate: Boolean,
         own: Set<String>? = null, switched: List<Entry> = front, inside: (List<String>) -> List<String> = { it }): Boolean {
+        if (channel.invalidMembership) return false
         val mine = own?.let { ChatManage.sides(channel, space, it)?.mine }
         if (!mine.isNullOrEmpty()) return here(switched, inside(mine))
         if (!hidePrivate || !isPrivate(channel, space)) return true
@@ -45,12 +46,13 @@ object ChatOrganize {
      * bound to the model. A thread is as visible as the channel its parent message is in.
      */
     fun shown(model: Model, viewingAs: String? = null): (String?) -> Boolean {
-        val own = model.members.mapTo(HashSet()) { it.id }
+        val own = model.knownMemberIds
         val spaces = model.spaces.associateBy { it.id }
         val channels = model.channels.associateBy { it.id }
         val messageChannel = model.searchMessages.associate { it.id to it.channelId }
         fun ok(id: String?, depth: Int): Boolean {
             val c = channels[id ?: return false] ?: return false
+            if (c.invalidMembership) return false
             if (c.kind == "thread" && depth < 4) {
                 val home = c.parentMessageId?.let { messageChannel[it] }
                 return home != null && ok(home, depth + 1)
@@ -61,6 +63,25 @@ object ChatOrganize {
                 inside = { Subsystems.including(model, it) })
         }
         return { ok(it, 0) }
+    }
+
+    /**
+     * Whether a chat opens now: [shown], and its channel viewable by [account] as far as the
+     * replica knows its permissions ([ChannelPermissions.canView]); a thread goes by its parent
+     * message's channel. The server stays the authority; this keeps a revoked chat shut until its
+     * messages are gone.
+     */
+    fun openable(model: Model, viewingAs: String?, account: String): (String?) -> Boolean {
+        val base = shown(model, viewingAs)
+        val byChannel = model.channels.associateBy { it.id }
+        val parents = model.searchMessages.associate { it.id to it.channelId }
+        fun permitted(id: String?, seen: MutableSet<String>): Boolean {
+            val c = byChannel[id] ?: return false
+            if (c.invalidMembership || seen.size > 256 || !seen.add(c.id)) return false
+            return if (c.kind == "thread") permitted(parents[c.parentMessageId], seen)
+                else ChannelPermissions.canView(model.channelPermissionState, c, account)
+        }
+        return { id -> base(id) && permitted(id, HashSet()) }
     }
 
     /** Revalidate retained message actions against today's channel, audience and clear cutoff. */

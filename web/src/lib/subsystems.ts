@@ -77,3 +77,22 @@ export function expandFront<T extends Entry>(p: Projection, accountId: string, e
   }
   return { entries: out, via };
 }
+
+/** D-110 chat membership, bound once per projection. Follow member links downward only;
+ * ordinary nested groups do not include people unless their member is explicitly inside. */
+export function chatMembers(p: Projection, accountId: string): (ids: string[]) => string[] {
+  const links = memberSubsystems(p, accountId);
+  const subsystems = new Set(groups(p).filter(g => g.kind === 'subsystem').map(g => g.id));
+  const active = new Set(members(p).filter(m => !m.deleted && !m.archived).map(m => m.id));
+  const inGroup = membership(p);
+  return ids => {
+    const out = new Set(ids);
+    for (const id of out) {
+      const group = links.get(id);
+      if (group && subsystems.has(group)) for (const part of inGroup.get(group) ?? []) {
+        if (active.has(part)) out.add(part);
+      }
+    }
+    return [...out];
+  };
+}

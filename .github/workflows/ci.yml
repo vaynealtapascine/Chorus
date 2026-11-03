@@ -72,6 +72,9 @@ jobs:
         working-directory: web
       - run: npm run check
         working-directory: web
+      # Mounted Search regressions exercise real Svelte client state in Chromium.
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
       - run: npm test
         working-directory: web
       - run: npm run build

@@ -520,3 +520,9 @@ Legacy event/selection Unicode glyphs and unsupplied alternate font/theme contro
 UI1 system rules. Android has build evidence but no native visual verification in this session;
 web capture evidence cannot establish native rendering parity. These limits are carried forward
 in `UI_REDESIGN.md` instead of being described as verified design behavior.
+
+D-114 search: This chat opens in the current conversation with an exact scope label and a Close
+action. Full search offers All chats, Journal, Saved and the existing Switches tool. Result cards
+reuse Chat/Journal presentation, preserve CW/spoilers and provide Open message/thread. Visible
+neighbors stay in chronological order around a clearly labelled match. Loading, no matches,
+unavailable chat and offline coverage have explicit quiet text; no hidden-context placeholders.

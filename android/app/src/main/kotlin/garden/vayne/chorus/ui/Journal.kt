@@ -91,7 +91,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     onShareConsumed: () -> Unit = {}, externalNewEntry: Long? = null,
     onExternalNewEntryConsumed: () -> Unit = {}, active: Boolean = true,
     onFocusedRoute: (Boolean) -> Unit = {}, externalOpenProfile: String? = null,
-    onExternalProfileConsumed: () -> Unit = {}) {
+    onExternalProfileConsumed: () -> Unit = {}, onSearch: (String) -> Unit = {}) {
     val owner = chorus.editorOwner
     val account = chorus.device?.accountId
     if (owner.isBlank() || account == null) return
@@ -119,7 +119,7 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
         JournalLoaded(chorus, model, session, externalReplyPost, onExternalReplyConsumed,
             externalOpenPost, onExternalOpenConsumed, sharedDraft, onShareConsumed,
             externalNewEntry, onExternalNewEntryConsumed, active, onFocusedRoute,
-            externalOpenProfile, onExternalProfileConsumed)
+            externalOpenProfile, onExternalProfileConsumed, onSearch)
     }
 }
 
@@ -129,7 +129,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
     externalReplyPost: String?, onExternalReplyConsumed: () -> Unit, externalOpenPost: String?,
     onExternalOpenConsumed: () -> Unit, sharedDraft: SharedDraft?, onShareConsumed: () -> Unit,
     externalNewEntry: Long?, onExternalNewEntryConsumed: () -> Unit, active: Boolean,
-    onFocusedRoute: (Boolean) -> Unit, externalOpenProfile: String?, onExternalProfileConsumed: () -> Unit) {
+    onFocusedRoute: (Boolean) -> Unit, externalOpenProfile: String?, onExternalProfileConsumed: () -> Unit, onSearch: (String) -> Unit) {
     val draftState by session.state.collectAsState()
     fun <T> field(get: (garden.vayne.chorus.data.JournalDraft) -> T,
         set: garden.vayne.chorus.data.JournalDraft.(T) -> garden.vayne.chorus.data.JournalDraft) =
@@ -481,9 +481,11 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                     else author?.let { "Posting as ${it.shownName}" } ?: "Your system’s stories", color = p.ink3,
                     style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            ChatIconButton(R.drawable.ic_search, "Search Journal") { onSearch("Posts") }
             Box {
                 ChatIconButton(R.drawable.ic_more, "Journal options") { feedMenu = true }
                 DropdownMenu(feedMenu, { feedMenu = false }) {
+                    DropdownMenuItem(text = { Text("Search saved posts") }, onClick = {feedMenu=false;onSearch("Saved")})
                     DropdownMenuItem(text = { Text("Saved") }, onClick = { feedMenu = false; section = "saved" })
                     DropdownMenuItem(text = { Text("Lists") }, onClick = { feedMenu = false; section = "lists" })
                     DropdownMenuItem(text = { Text("Feeds") }, onClick = { feedMenu = false; section = "feeds" })

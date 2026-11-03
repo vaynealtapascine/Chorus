@@ -8,7 +8,7 @@ import org.junit.Test
 class PostSearchApiTest {
     @Test fun queryAndCursorUseTheServerAudienceFilteredEndpoint() {
         val path = PostSearchApi.path(LocalSearchQuery(listOf("violet", "garden"), before = 200, after = 100), "next+/=")
-        assertTrue(path.startsWith("/search/posts?q=violet+garden&limit=25"))
+        assertTrue(path.startsWith("/search/posts?q=%22violet%22*+%22garden%22*&limit=25"))
         assertTrue("before=200" in path)
         assertTrue("after=100" in path)
         assertTrue("cursor=next%2B%2F%3D" in path)

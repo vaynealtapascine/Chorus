@@ -919,7 +919,7 @@ async fn friends_share_spaces_and_dms() {
     let chan = p.rows["channel"].iter().find(|(_, r)| r.fields["space_id"] == dm.as_str()).unwrap().0.clone();
     assert_eq!(
         http.get(&avatar_url).bearer_auth(tok(&friend)).send().await.unwrap().status(),
-        403,
+        404,
         "DM membership alone does not expose unrelated member avatars"
     );
     phone
@@ -949,7 +949,7 @@ async fn friends_share_spaces_and_dms() {
     assert_eq!(cards["members"][0]["name"], "Kai");
     assert_eq!(cards["members"][0]["avatar_blob"], avatar_hash);
     assert_eq!(http.get(&avatar_url).bearer_auth(tok(&friend)).send().await.unwrap().status(), 200);
-    assert_eq!(http.get(&avatar_url).bearer_auth(tok(&stranger)).send().await.unwrap().status(), 403);
+    assert_eq!(http.get(&avatar_url).bearer_auth(tok(&stranger)).send().await.unwrap().status(), 404);
     assert_eq!(cards["accounts"].as_array().unwrap().len(), 2);
     let r = http.get(url(&format!("/spaces/{dm}/authors"))).bearer_auth(tok(&stranger)).send().await.unwrap();
     assert_eq!(r.status(), 404);
@@ -1174,7 +1174,7 @@ async fn friends_share_spaces_and_dms() {
     assert_eq!(r.status(), 404);
     assert_eq!(
         http.get(&avatar_url).bearer_auth(tok(&friend)).send().await.unwrap().status(),
-        403,
+        404,
         "leaving the space revokes access to its authors' avatars"
     );
 }

@@ -60,6 +60,7 @@
 
 <div class="journal-layout"><section class="journal">
   <header><h1 class="display">Journal</h1>{#if self}<a href="#/profile/{self.id}">My profile</a>{:else}<label>React as <select bind:value={actingAs} aria-label="React as member"><option value="">Current front</option>{#each active as person (person.id)}<option value={person.id}>{person.display_name ?? person.name}</option>{/each}</select></label>{/if}</header>
+  <a href="#/search/saved">Search saved posts</a>
   <nav aria-label="Journal sections">{#each SECTIONS as [id, label] (id)}<button class:on={section === id} aria-current={section === id ? 'page' : undefined} onclick={() => (section = id)}>{label}</button>{/each}</nav>
   {#if section === 'lists'}<JournalLists {projection} {dark} />{:else if section === 'feeds'}<JournalFeeds {projection} {dark} />
   {:else if section === 'friends'}<JournalFriends {projection} {speaker} speakerName={speaker ? name(speaker) : ''} {dark} />
@@ -95,7 +96,7 @@
   {/if}
 </section>
 <aside class="journal-context" aria-label="Journal shortcuts">
-  <a class="context-search" href="#/search"><Icon name="search" size={18} />Search posts and members</a>
+  <a class="context-search" href="#/search/posts"><Icon name="search" size={18} />Search Journal</a>
   <section><h2>Your journal</h2><button onclick={() => (section = 'timeline')}><Icon name="journal" size={18} />{self ? 'My timeline' : 'System timeline'}</button><button onclick={() => (section = 'friends')}><Icon name="friends" size={18} />Friends’ posts</button><button onclick={() => (section = 'saved')}><Icon name="bookmark" size={18} />Saved posts</button><button onclick={() => (section = 'feeds')}><Icon name="layers" size={18} />Your feeds</button><button onclick={() => (section = 'lists')}><Icon name="members" size={18} />Member lists</button></section>
   <section><h2>{self ? 'Sharing your posts' : 'Writing together'}</h2><p>{self ? 'The audience on each post controls who can read it.' : "Choose who's speaking before posting. The audience on each post controls who can read it."}</p><a href="#/settings">Privacy and preferences</a></section>
 </aside></div>

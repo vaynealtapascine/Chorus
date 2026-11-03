@@ -816,3 +816,54 @@ root` although `src/profiles.rs` and its `mod` line were there. `touch` the chan
   latches/CompletableDeferred gates, real core markup preflight, and injected stage/commit reads.
   They do not prove native IME/layout behavior or SQLite/device process-kill behavior. No device,
   deployment, push, service, dependency or parked web-file changes were made.
+
+### 2026-11-02 — UI11b search privacy adapters
+
+FTS bm25 depends on the entire indexed corpus, including unreadable rows. Even after SQL audience
+filtering, putting that score in an opaque base64 cursor can expose hidden-corpus changes. Search
+now sorts chronologically; cursors contain only a visible anchor and no corpus-dependent score.
+The score field is the constant zero for wire compatibility. Search candidate filtering occurs
+before limiting/paging, not by trimming a page afterwards. Context independently checks visibility
+and walks past unreadable rows without exposing their ids or how many were skipped.
+
+Android's old SearchDocument omitted message visibility/account metadata; checking only a chat's
+availability was insufficient. Preserve those fields and bind the existing canonical chat/member
+rules per model before core matching/limits and before every rich-card/context render. Read full
+message cards on demand on the store worker instead of adding all history payloads to Model.parse.
+Web typed row caches depend on immutable projection row replacement: regression fixtures must
+replace a changed row rather than mutating its fields in place under an existing cached identity.
+
+Blob GET/HEAD now return the same missing response for unreadable hashes. Upload ownership
+failures still use 403. Search grants nothing to blobs; a recipient's message reference is checked
+against their current front/channel view, while uploaders retain existing account-owned access.
+
+
+### 2026-11-02 — UI11b integration with subsystem chats
+
+Main `0ac29cc` added recursive `perms::with_parts` to D-098's `kept_to`. Search must call that
+same helper after strict membership validation, rather than call `kept_to` (which intentionally
+skips internal spaces) or expand the current front (which would grant upward access). Native
+SearchVisibility supplies `Subsystems.including`; web binds a downward membership walker per
+projection for search, chat jumps and the list. Message-level audiences still use literal front
+members. Keep listed-member ownership even after member deletion; otherwise an external chat
+with only a deleted own entry can accidentally become unrestricted. Expanded parts still require
+live group membership and active/nondeleted members. Shared `ui_search_subsystems.json` runs
+against Rust canonical/SQL/FTS/context, web and Android; blob GET/HEAD additionally recheck nested
+thread ancestry and membership/archive revocations. Scoped search is now D-114 (the initial
+integration used D-112; renumbered again 2026-11-03 to preserve UI12's D-111/D-112/D-113).
+Main's D-110 is unchanged. No new dependency, schema or op kind.
+
+## Client permission checks read the projection, not the server's tables (2026-11-03)
+
+Android 0.1.706 listed every chat and then opened each as "Private chat". The UI11b open gate
+(`ChannelPermissions.canView`, also used by search on both clients) read a space's owner from
+`owner_account_id`/`created_by_account_id` and a role from `space_member` rows with
+`is_present`, the server's SQL shape. The core projection had neither: spaces carried no creator,
+joins live in the `space_member` *set*, and `space.set_role` rows never `exists`. The shared
+fixtures (`ui_search*.json`) were written by hand in the SQL shape, so every test passed. The fix:
+the core stamps a space's creator (projection v5), both clients read membership from the join set
+(`ChannelPermissions.role`, web `searchView`), the fixtures are projection-shaped, and
+`fixtures/project/space_owner_membership.json` plus `ChatOpenTest` (Android) and a
+`search-view.test.ts` case (web) run real ops through the real core, list → open. **When client
+code reads projection rows, build its test model from ops through `project`, not from
+hand-written rows.**

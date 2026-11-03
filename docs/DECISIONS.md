@@ -128,6 +128,18 @@ default the owner has not contradicted; these may be revisited if implementation
 
 | D-112 | **Reply jumps leave a trail back (owner request, 2026-11-02).** Tapping a reply, quote or forward that jumps within the same chat (D-104) remembers the message it was tapped on, newest last, once each. The jump-to-latest arrow then first returns to the newest remembered message (ringing it) and forgets it, one jump at a time; with nothing left it goes to the latest message. Reaching the latest message, or opening another chat, forgets the trail; starts that have since left the view are skipped. Device-local, not synced. Android (`ChatJump.push/back`) and web (`pushJump`/`jumpBack`). | Owner request; claude-opus-5.5 |
 
+| D-114 | **Scoped search (UI11b, owner approved, 2026-11-02).** Web and Android offer This chat (in-place, exact channel), All chats (only chats available to the current recorded Body front), Journal (notes/entries/replies, no chat or switch matches) and Saved (bookmarked readable posts). Keep existing switch search as a separate scope. Search message cards reuse the chat renderer and show at most one independently visible chronological neighbor before and after, ordered by occurred time then id, skipping hidden/deleted neighbors without placeholders or gap counts. Journal results reuse post cards. Current-front message search filters permission, space, inherited thread-parent audience, private-chat availability, members-only audience and clear cutoff before counting/paging; no Read as override. Use visible chronological anchors, never hidden FTS-rank statistics. Recheck every request and drop stale async pages after scope/front/permission/session changes. Own local replica results work offline; shared posts require a live server audience check. No new op kind/schema, no follower-front reveal grants. | Owner authorization; GPT-6-sol |
+
+UI11b scoped search was originally numbered D-110 on its unmerged branch, then D-112 during
+integration with main `0ac29cc`. On 2026-11-03 the owner requested **D-114** after concurrent
+UI12 work claimed D-111 (archived chats), D-112 (reply-jump trail) and D-113 (custom folders).
+Read-only inspection of `ui12` at `073e928` in `F:/DunBuild/chorus-af` confirmed the committed
+D-111/D-112 records; the owner's coordination update reserves D-113 for folders. D-114 was
+unused in both decision sets. This renumbers the scoped-search record/references only, with
+no behavior change or UI12 merge. Preserve UI12's IDs and D-110 subsystem chats. Authorized by
+the owner's 2026-11-03 coordination instruction; recorded by GPT-6-sol.
+Web also applies D-110 to chat/search eligibility; its info labels still name the listed members.
+
 ## Versions
 
 Pin here as they are adopted (tool/library → version → date → why).
@@ -160,3 +172,4 @@ Pin here as they are adopted (tool/library → version → date → why).
 | Server allocator and SQLite build | mimalloc 0.1.52 (`default-features = false`), the server binary's `#[global_allocator]`; bundled SQLite built with `LIBSQLITE3_FLAGS="-DSQLITE_DEFAULT_MEMSTATUS=0 -USQLITE_ENABLE_MEMORY_MANAGEMENT"` (`.cargo/config.toml`) | 2026-09-25 | R26: a 1M-op rebuild spent a third of its time in glibc malloc/free and SQLite's memory-statistics mutex. Both are drop-in: no API or data change. mimalloc builds its C source with the `cc` crate (MSVC on Windows). NOTES.md 2026-09-25. |
 | http-body | 1.1.0 (already in the tree through axum) | 2026-09-26 | R35: `drain.rs` implements `http_body::Body` for the request body it watches, to keep axum's size hint. |
 | Android test libs | org.json 20240303 (testImplementation) | 2026-09-23 | Android's org.json is a stub in JVM tests. From Maven Central (google() is scoped to Google groups). |
+

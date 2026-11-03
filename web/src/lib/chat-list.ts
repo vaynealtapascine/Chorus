@@ -142,7 +142,7 @@ export function stillArchived(archivedAt: number | undefined, latestAt: number |
 }
 
 /** Only DMs between members and channels limited to some members are anyone's private chats. */
-export function isPrivate(channel: { kind: string; member_ids?: string[] }, space: { kind: string } | undefined): boolean {
+export function isPrivate(channel: { kind: string; member_ids?: string[]; invalid_membership?: boolean }, space: { kind: string } | undefined): boolean {
   return space?.kind === 'internal' && (channel.kind === 'member_dm' || !!channel.member_ids?.length);
 }
 
@@ -155,18 +155,20 @@ const hereIn = (front: FrontEntry[], members: string[]) =>
  * while one of them is here by the front exactly as switched (`switched`, default `front`), never
  * by "Read as", whatever `chat.hide_private` says. */
 export function privateVisible(
-  channel: { kind: string; member_ids?: string[] },
+  channel: { kind: string; member_ids?: string[]; invalid_membership?: boolean },
   space: { kind: string } | undefined,
   front: FrontEntry[],
   viewingAs: string | null,
   hidePrivate: boolean,
   own?: (memberId: string) => boolean,
   switched: FrontEntry[] = front,
+  inside: (ids: string[]) => string[] = ids => ids,
 ): boolean {
+  if (channel.invalid_membership) return false;
   const mine = own && privateSides(channel, space, own)?.mine;
-  if (mine?.length) return hereIn(switched, mine);
+  if (mine?.length) return hereIn(switched, inside(mine));
   if (!hidePrivate || !isPrivate(channel, space)) return true;
-  const members = channel.member_ids ?? [];
+  const members = inside(channel.member_ids ?? []);
   if (viewingAs && members.includes(viewingAs)) return true;
   return hereIn(front, members);
 }

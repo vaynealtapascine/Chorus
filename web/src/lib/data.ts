@@ -340,6 +340,7 @@ export interface ChannelRow {
   parent_message_id?: string;
   /** A member DM's members; a channel kept to some members; a private chat's people (D-098). */
   member_ids?: string[];
+  invalid_membership?: boolean;
   icon?: string;
   color?: string;
   /** Representative image (D-088), a blob hash. */
@@ -478,6 +479,7 @@ export function channels(p: Projection, spaceId?: string, includeDeleted = false
       topic: str(r.fields.topic),
       category: str(r.fields.category),
       parent_message_id: str(r.fields.parent_message_id),
+      invalid_membership: r.fields.member_ids != null && (!Array.isArray(r.fields.member_ids) || !r.fields.member_ids.every((m: unknown) => typeof m === 'string')),
       member_ids: Array.isArray(r.fields.member_ids) ? r.fields.member_ids.filter((m): m is string => typeof m === 'string') : undefined,
       icon: str(r.fields.icon),
       color: str(r.fields.color),

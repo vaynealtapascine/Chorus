@@ -1,0 +1,738 @@
+{
+  "projection": {
+    "rows": {
+      "space": {
+        "home": {
+          "exists": true,
+          "fields": {
+            "kind": "internal",
+            "created_by_account_id": "account"
+          },
+          "clocks": {}
+        },
+        "dm": {
+          "exists": true,
+          "fields": {
+            "kind": "dm",
+            "created_by_account_id": "other"
+          },
+          "clocks": {}
+        }
+      },
+      "member": {
+        "garden": {
+          "exists": true,
+          "fields": {
+            "name": "garden",
+            "created_by_account_id": "account"
+          },
+          "clocks": {}
+        },
+        "nested": {
+          "exists": true,
+          "fields": {
+            "name": "nested",
+            "created_by_account_id": "account"
+          },
+          "clocks": {}
+        },
+        "leaf": {
+          "exists": true,
+          "fields": {
+            "name": "leaf",
+            "created_by_account_id": "account"
+          },
+          "clocks": {}
+        },
+        "outside": {
+          "exists": true,
+          "fields": {
+            "name": "outside",
+            "created_by_account_id": "account"
+          },
+          "clocks": {}
+        }
+      },
+      "member_group": {
+        "g": {
+          "exists": true,
+          "fields": {
+            "name": "g",
+            "kind": "subsystem",
+            "created_by_account_id": "account"
+          },
+          "clocks": {}
+        },
+        "n": {
+          "exists": true,
+          "fields": {
+            "name": "n",
+            "kind": "subsystem",
+            "created_by_account_id": "account"
+          },
+          "clocks": {}
+        }
+      },
+      "pref": {
+        "account||member_subsystem:garden": {
+          "exists": true,
+          "fields": {
+            "value": "g"
+          },
+          "clocks": {}
+        },
+        "account||member_subsystem:nested": {
+          "exists": true,
+          "fields": {
+            "value": "n"
+          },
+          "clocks": {}
+        }
+      },
+      "space_member": {},
+      "channel_permission": {},
+      "channel": {
+        "root": {
+          "exists": true,
+          "fields": {
+            "space_id": "home",
+            "kind": "member_dm",
+            "name": "Garden",
+            "member_ids": [
+              "garden"
+            ]
+          },
+          "clocks": {}
+        },
+        "private-dm": {
+          "exists": true,
+          "fields": {
+            "space_id": "dm",
+            "kind": "member_dm",
+            "name": "Garden with friend",
+            "member_ids": [
+              "garden"
+            ]
+          },
+          "clocks": {}
+        },
+        "leaf-chat": {
+          "exists": true,
+          "fields": {
+            "space_id": "home",
+            "kind": "member_dm",
+            "name": "Leaf",
+            "member_ids": [
+              "leaf"
+            ]
+          },
+          "clocks": {}
+        },
+        "child": {
+          "exists": true,
+          "fields": {
+            "space_id": "home",
+            "kind": "thread",
+            "name": "Child",
+            "parent_message_id": "hit"
+          },
+          "clocks": {}
+        }
+      },
+      "message": {
+        "before": {
+          "exists": true,
+          "fields": {
+            "channel_id": "root",
+            "account_id": "account",
+            "text": "needle before",
+            "authors": [
+              "garden"
+            ],
+            "occurred_at": 10
+          },
+          "clocks": {}
+        },
+        "hit": {
+          "exists": true,
+          "fields": {
+            "channel_id": "root",
+            "account_id": "account",
+            "text": "needle hit",
+            "authors": [
+              "garden"
+            ],
+            "occurred_at": 20
+          },
+          "clocks": {}
+        },
+        "hidden": {
+          "exists": true,
+          "fields": {
+            "channel_id": "root",
+            "account_id": "account",
+            "text": "needle hidden",
+            "authors": [
+              "garden"
+            ],
+            "occurred_at": 25,
+            "visibility": {
+              "mode": "members",
+              "member_ids": [
+                "garden"
+              ]
+            }
+          },
+          "clocks": {}
+        },
+        "after": {
+          "exists": true,
+          "fields": {
+            "channel_id": "root",
+            "account_id": "account",
+            "text": "needle after",
+            "authors": [
+              "garden"
+            ],
+            "occurred_at": 30
+          },
+          "clocks": {}
+        },
+        "thread-hit": {
+          "exists": true,
+          "fields": {
+            "channel_id": "child",
+            "account_id": "account",
+            "text": "needle thread-hit",
+            "authors": [
+              "garden"
+            ],
+            "occurred_at": 40
+          },
+          "clocks": {}
+        },
+        "dm-hit": {
+          "exists": true,
+          "fields": {
+            "channel_id": "private-dm",
+            "account_id": "account",
+            "text": "needle dm-hit",
+            "authors": [
+              "garden"
+            ],
+            "occurred_at": 50
+          },
+          "clocks": {}
+        },
+        "leaf-hit": {
+          "exists": true,
+          "fields": {
+            "channel_id": "leaf-chat",
+            "account_id": "account",
+            "text": "needle leaf-hit",
+            "authors": [
+              "garden"
+            ],
+            "occurred_at": 60
+          },
+          "clocks": {}
+        }
+      }
+    },
+    "sets": {
+      "group_membership": {
+        "g|{\"member_id\":\"nested\"}": true,
+        "n|{\"member_id\":\"leaf\"}": true
+      },
+      "space_member": {
+        "home|{\"account_id\":\"account\"}": true,
+        "dm|{\"account_id\":\"account\"}": true
+      }
+    },
+    "fronts": {
+      "account": {
+        "current": [],
+        "switches": [],
+        "intervals": []
+      }
+    },
+    "opaque": 0
+  },
+  "cases": [
+    {
+      "name": "nested active member includes subsystem chats and thread ancestors",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "after",
+        "before",
+        "dm-hit",
+        "hit",
+        "leaf-hit",
+        "thread-hit"
+      ],
+      "context": [
+        "before",
+        "hit",
+        "after"
+      ],
+      "rows": {},
+      "sets": {}
+    },
+    {
+      "name": "co-conscious nested member includes subsystem chats",
+      "front": [
+        "leaf"
+      ],
+      "level": "cocon",
+      "visible": [
+        "after",
+        "before",
+        "dm-hit",
+        "hit",
+        "leaf-hit",
+        "thread-hit"
+      ],
+      "context": [
+        "before",
+        "hit",
+        "after"
+      ],
+      "rows": {},
+      "sets": {}
+    },
+    {
+      "name": "present is not a search viewer",
+      "front": [
+        "leaf"
+      ],
+      "level": "present",
+      "visible": [],
+      "context": [],
+      "rows": {},
+      "sets": {}
+    },
+    {
+      "name": "fronting subsystem never gains a chat kept to its child",
+      "front": [
+        "garden"
+      ],
+      "level": "front",
+      "visible": [
+        "after",
+        "before",
+        "dm-hit",
+        "hidden",
+        "hit",
+        "thread-hit"
+      ],
+      "context": [
+        "before",
+        "hit",
+        "hidden"
+      ],
+      "rows": {},
+      "sets": {}
+    },
+    {
+      "name": "unrelated front has no private chat access",
+      "front": [
+        "outside"
+      ],
+      "level": "front",
+      "visible": [],
+      "context": [],
+      "rows": {},
+      "sets": {}
+    },
+    {
+      "name": "removed child no longer reaches parent chats",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {},
+      "sets": {
+        "n|{\"member_id\":\"leaf\"}": false
+      }
+    },
+    {
+      "name": "archived child is not included",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {
+        "member": {
+          "leaf": {
+            "archived_at": 7
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "deleted child is not included",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {
+        "member": {
+          "leaf": {
+            "deleted_at": 7
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "archived intermediate stops recursion",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {
+        "member": {
+          "nested": {
+            "archived_at": 7
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "deleted subsystem group stops recursion",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {
+        "member_group": {
+          "n": {
+            "deleted_at": 7
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "ordinary group does not expand",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {
+        "member_group": {
+          "n": {
+            "kind": "group"
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "cleared subsystem link stops recursion",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {
+        "pref": {
+          "account||member_subsystem:nested": {
+            "value": null
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "archived parent channel removes hits context and inherited thread",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "dm-hit",
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {
+        "channel": {
+          "root": {
+            "archived_at": 7
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "archived child channel leaves parent context",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "after",
+        "before",
+        "dm-hit",
+        "hit",
+        "leaf-hit"
+      ],
+      "context": [
+        "before",
+        "hit",
+        "after"
+      ],
+      "rows": {
+        "channel": {
+          "child": {
+            "archived_at": 7
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "members-only parent audience is not expanded",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "after",
+        "before",
+        "dm-hit",
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {
+        "message": {
+          "hit": {
+            "visibility": {
+              "mode": "members",
+              "member_ids": [
+                "garden"
+              ]
+            }
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "clear cutoff applies before ancestor and context",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "after",
+        "dm-hit",
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {
+        "pref": {
+          "account||chat_hidden:root": {
+            "value": 20
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "cycles terminate without upward access",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "after",
+        "before",
+        "dm-hit",
+        "hit",
+        "leaf-hit",
+        "thread-hit"
+      ],
+      "context": [
+        "before",
+        "hit",
+        "after"
+      ],
+      "rows": {},
+      "sets": {
+        "n|{\"member_id\":\"garden\"}": true
+      }
+    },
+    {
+      "name": "malformed list fails before expansion [\"garden\", 42]",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {
+        "channel": {
+          "root": {
+            "member_ids": [
+              "garden",
+              42
+            ]
+          },
+          "private-dm": {
+            "member_ids": [
+              "garden",
+              42
+            ]
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "malformed list fails before expansion 42",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {
+        "channel": {
+          "root": {
+            "member_ids": 42
+          },
+          "private-dm": {
+            "member_ids": 42
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "malformed list fails before expansion {}",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {
+        "channel": {
+          "root": {
+            "member_ids": {}
+          },
+          "private-dm": {
+            "member_ids": {}
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "malformed list fails before expansion \"garden\"",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "visible": [
+        "leaf-hit"
+      ],
+      "context": [],
+      "rows": {
+        "channel": {
+          "root": {
+            "member_ids": "garden"
+          },
+          "private-dm": {
+            "member_ids": "garden"
+          }
+        }
+      },
+      "sets": {}
+    },
+    {
+      "name": "deleted listed member retains external chat restriction",
+      "front": [
+        "outside"
+      ],
+      "level": "front",
+      "rows": {
+        "member": {
+          "garden": {
+            "deleted_at": 7
+          }
+        }
+      },
+      "sets": {},
+      "visible": [],
+      "context": []
+    },
+    {
+      "name": "explicit listed ownership and active inside members survive root tombstone",
+      "front": [
+        "leaf"
+      ],
+      "level": "front",
+      "rows": {
+        "member": {
+          "garden": {
+            "deleted_at": 7
+          }
+        }
+      },
+      "sets": {},
+      "visible": [
+        "after",
+        "before",
+        "dm-hit",
+        "hit",
+        "leaf-hit",
+        "thread-hit"
+      ],
+      "context": [
+        "before",
+        "hit",
+        "after"
+      ]
+    }
+  ]
+}

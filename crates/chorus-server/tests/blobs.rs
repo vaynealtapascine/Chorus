@@ -158,7 +158,7 @@ async fn resume_range_and_stranger_denied() {
     let r = client.head(&url).bearer_auth("alice-token").send().await.unwrap();
     assert_eq!(r.status(), 206);
     assert_eq!(r.headers()["upload-offset"], "6");
-    assert_eq!(client.head(&url).bearer_auth("bob-token").send().await.unwrap().status(), 403);
+    assert_eq!(client.head(&url).bearer_auth("bob-token").send().await.unwrap().status(), 404);
     let bob_put = |range: &str, body: &'static [u8]| {
         client.put(&url).bearer_auth("bob-token").header("content-range", range).body(body)
     };
@@ -174,7 +174,7 @@ async fn resume_range_and_stranger_denied() {
     assert_eq!(r.headers()["content-range"], "bytes 7-12/13");
     assert!(r.headers()["cache-control"].to_str().unwrap().contains("immutable"));
     assert_eq!(r.bytes().await.unwrap(), "chorus");
-    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 403);
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 404);
 }
 
 #[tokio::test]
@@ -223,7 +223,7 @@ async fn shared_attachment_requires_public_structured_visibility() {
     assert_eq!(r.headers()["x-content-type-options"], "nosniff");
     assert!(r.headers()["content-security-policy"].to_str().unwrap().contains("sandbox"));
     for (rule, expected) in
-        [(r#"{"mode":"all"}"#, 200), (r#"{"mode":"system_only"}"#, 403), (r#"{"mode":"members","member_ids":[]}"#, 403)]
+        [(r#"{"mode":"all"}"#, 200), (r#"{"mode":"system_only"}"#, 404), (r#"{"mode":"members","member_ids":[]}"#, 404)]
     {
         s.state.db.lock().unwrap().execute("UPDATE message SET visibility=?1 WHERE id='m'", [rule]).unwrap();
         assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), expected, "{rule}");
@@ -267,8 +267,8 @@ async fn post_attachment_tracks_current_post_audience() {
         .unwrap();
     }
     let read = || client.get(&url).bearer_auth("bob-token");
-    assert_eq!(read().send().await.unwrap().status(), 403);
-    assert_eq!(client.head(&url).bearer_auth("bob-token").send().await.unwrap().status(), 403);
+    assert_eq!(read().send().await.unwrap().status(), 404);
+    assert_eq!(client.head(&url).bearer_auth("bob-token").send().await.unwrap().status(), 404);
     {
         let c = s.state.db.lock().unwrap();
         c.execute("UPDATE post SET visibility='{\"mode\":\"server\"}' WHERE id='p'", []).unwrap();
@@ -278,7 +278,7 @@ async fn post_attachment_tracks_current_post_audience() {
         let c = s.state.db.lock().unwrap();
         c.execute("UPDATE post SET visibility='{\"mode\":\"followers\"}' WHERE id='p'", []).unwrap();
     }
-    assert_eq!(read().send().await.unwrap().status(), 403);
+    assert_eq!(read().send().await.unwrap().status(), 404);
     {
         let c = s.state.db.lock().unwrap();
         c.execute(
@@ -293,7 +293,7 @@ async fn post_attachment_tracks_current_post_audience() {
         let c = s.state.db.lock().unwrap();
         c.execute("UPDATE follow SET status='ended' WHERE id='f'", []).unwrap();
     }
-    assert_eq!(read().send().await.unwrap().status(), 403);
+    assert_eq!(read().send().await.unwrap().status(), 404);
     {
         let c = s.state.db.lock().unwrap();
         c.execute("UPDATE follow SET status='active' WHERE id='f'", []).unwrap();
@@ -304,7 +304,7 @@ async fn post_attachment_tracks_current_post_audience() {
         c.execute("UPDATE post SET visibility='{\"mode\":\"buckets\",\"bucket_ids\":[\"b\"]}' WHERE id='p'", [])
             .unwrap();
     }
-    assert_eq!(read().send().await.unwrap().status(), 403);
+    assert_eq!(read().send().await.unwrap().status(), 404);
     {
         let c = s.state.db.lock().unwrap();
         c.execute(
@@ -319,17 +319,17 @@ async fn post_attachment_tracks_current_post_audience() {
         let c = s.state.db.lock().unwrap();
         c.execute("UPDATE bucket_assignment SET removed_hlc='2:0:1' WHERE bucket_id='b'", []).unwrap();
     }
-    assert_eq!(read().send().await.unwrap().status(), 403);
+    assert_eq!(read().send().await.unwrap().status(), 404);
     {
         let c = s.state.db.lock().unwrap();
         c.execute("UPDATE post SET visibility='not-json' WHERE id='p'", []).unwrap();
     }
-    assert_eq!(read().send().await.unwrap().status(), 403);
+    assert_eq!(read().send().await.unwrap().status(), 404);
     {
         let c = s.state.db.lock().unwrap();
         c.execute("UPDATE post SET visibility='{\"mode\":\"server\"}',deleted_at=1 WHERE id='p'", []).unwrap();
     }
-    assert_eq!(read().send().await.unwrap().status(), 403);
+    assert_eq!(read().send().await.unwrap().status(), 404);
 }
 
 #[tokio::test]
@@ -388,7 +388,7 @@ async fn follower_avatar_is_unavailable_until_member_is_revealed() {
         .unwrap();
         c.execute("INSERT INTO follow(id,follower_account_id,target_account_id,status,created_at) VALUES ('f1','bob','alice','active',0)", []).unwrap();
     }
-    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 403);
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 404);
     {
         let c = s.state.db.lock().unwrap();
         c.execute("INSERT INTO follower_front_view(follower_account_id,target_account_id,entries,revealed_at) VALUES ('bob','alice',?1,1)",
@@ -400,7 +400,7 @@ async fn follower_avatar_is_unavailable_until_member_is_revealed() {
         let c = s.state.db.lock().unwrap();
         c.execute("UPDATE member SET avatar_blob = NULL, banner_blob = ?1 WHERE id = 'm1'", [&digest]).unwrap();
     }
-    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 403);
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 404);
     assert_eq!(client.get(&url).bearer_auth("alice-token").send().await.unwrap().status(), 200);
 }
 
@@ -427,7 +427,7 @@ async fn account_avatar_is_readable_to_an_active_follower() {
         let c = s.state.db.lock().unwrap();
         c.execute("UPDATE account SET avatar_blob = ?1 WHERE id = 'alice'", [&digest]).unwrap();
     }
-    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 403);
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 404);
     {
         let c = s.state.db.lock().unwrap();
         c.execute("INSERT INTO follow(id,follower_account_id,target_account_id,status,created_at) VALUES ('f1','bob','alice','active',0)", []).unwrap();
@@ -467,7 +467,7 @@ async fn channel_images_follow_current_view_permission_and_thread_parent_privacy
         c.execute("INSERT INTO scope_access(account_id,scope) VALUES ('bob','space:s')", []).unwrap();
     }
     let status = || client.get(&url).bearer_auth("bob-token").send();
-    assert_eq!(status().await.unwrap().status(), 403, "scope access alone is insufficient");
+    assert_eq!(status().await.unwrap().status(), 404, "scope access alone is insufficient");
     {
         let c = s.state.db.lock().unwrap();
         c.execute(r#"INSERT INTO channel_permission(channel_id,target_type,target_id,allow,deny,hlc) VALUES ('c','account','bob','["view"]','[]','0:0:0')"#, []).unwrap();
@@ -477,7 +477,7 @@ async fn channel_images_follow_current_view_permission_and_thread_parent_privacy
         let c = s.state.db.lock().unwrap();
         c.execute(r#"UPDATE channel_permission SET allow='[]',deny='["view"]' WHERE channel_id='c'"#, []).unwrap();
     }
-    assert_eq!(status().await.unwrap().status(), 403, "revoking view revokes the image");
+    assert_eq!(status().await.unwrap().status(), 404, "revoking view revokes the image");
     {
         let c = s.state.db.lock().unwrap();
         c.execute(r#"UPDATE channel_permission SET allow='["view"]',deny='[]' WHERE channel_id='c'"#, []).unwrap();
@@ -485,5 +485,127 @@ async fn channel_images_follow_current_view_permission_and_thread_parent_privacy
         c.execute("UPDATE channel SET avatar_blob=NULL WHERE id='c'", []).unwrap();
         c.execute("INSERT INTO channel(id,space_id,kind,name,parent_message_id,avatar_blob,created_at) VALUES ('t','s','thread','Thread','private',?1,0)", [&digest]).unwrap();
     }
-    assert_eq!(status().await.unwrap().status(), 403, "a private thread parent keeps its image private");
+    assert_eq!(status().await.unwrap().status(), 404, "a private thread parent keeps its image private");
+}
+
+#[tokio::test]
+async fn private_chat_attachment_rechecks_recipient_front_even_with_a_retained_hash() {
+    let s = Server::new().await;
+    let client = reqwest::Client::new();
+    let bytes = b"current-front-only-media";
+    let blob = hash(bytes);
+    let url = format!("{}/{}", s.base, blob);
+    assert_eq!(
+        client
+            .put(&url)
+            .bearer_auth("alice-token")
+            .header("content-range", format!("bytes 0-{}/{}", bytes.len() - 1, bytes.len()))
+            .body(bytes.to_vec())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        201
+    );
+    {
+        let conn = s.state.db.lock().unwrap();
+        for (member, group, part) in
+            [("bob-garden", "garden-group", "bob-nested"), ("bob-nested", "nested-group", "bob-member")]
+        {
+            conn.execute("INSERT INTO member(id,account_id,name,created_at) VALUES (?1,'bob',?1,0)", [member]).unwrap();
+            conn.execute(
+                "INSERT INTO member_group(id,account_id,name,kind,created_at) VALUES (?1,'bob',?1,'subsystem',0)",
+                [group],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO group_membership(group_id,member_id,added_hlc) VALUES (?1,?2,'1')",
+                rusqlite::params![group, part],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO pref(account_id,device_id,key,value,hlc) VALUES ('bob','',?1,?2,'1')",
+                rusqlite::params![format!("member_subsystem:{member}"), serde_json::json!(group).to_string()],
+            )
+            .unwrap();
+        }
+        conn.execute("INSERT INTO member(id,account_id,name,created_at) VALUES ('bob-member','bob','Bob',0)", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO space(id,kind,owner_account_id,created_at) VALUES ('private-space','dm','alice',0)",
+            [],
+        )
+        .unwrap();
+        for account in ["alice", "bob"] {
+            conn.execute("INSERT INTO scope_access(account_id,scope) VALUES (?1,'space:private-space')", [account])
+                .unwrap();
+            conn.execute("INSERT INTO space_member(space_id,account_id,role,joined_hlc) VALUES ('private-space',?1,'member','1')",[account]).unwrap();
+        }
+        conn.execute("INSERT INTO channel(id,space_id,kind,name,member_ids,created_at) VALUES ('private-channel','private-space','member_dm','Private','[\"bob-garden\"]',0)",[]).unwrap();
+        conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text) VALUES ('private-message','private-channel','alice','alice-device',1,'photo')",[]).unwrap();
+        conn.execute("INSERT INTO channel(id,space_id,kind,name,parent_message_id,created_at) VALUES ('private-thread','private-space','thread','Thread','private-message',0)",[]).unwrap();
+        conn.execute("INSERT INTO message(id,channel_id,account_id,device_id,occurred_at,text) VALUES ('private-thread-message','private-thread','alice','alice-device',2,'thread photo')",[]).unwrap();
+        conn.execute("INSERT INTO attachment(id,account_id,blob_hash,mime,created_at) VALUES ('private-photo','alice',?1,'image/png',0)",[&blob]).unwrap();
+        conn.execute("INSERT INTO item_attachment(owner_type,owner_id,attachment_id,position) VALUES ('message','private-thread-message','private-photo',0)",[]).unwrap();
+    }
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 404);
+    {
+        let conn = s.state.db.lock().unwrap();
+        conn.execute("INSERT INTO front_interval(id,account_id,subject_type,subject_id,level,is_primary,position,start_at,start_switch_id,start_tz_offset_min) VALUES ('bob-live','bob','member','bob-member','front',1,0,0,'switch',0)",[]).unwrap();
+    }
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 200);
+    // Each revocation independently hides the retained hash through inherited thread privacy.
+    for (deny, restore) in [
+        (
+            "UPDATE group_membership SET removed_hlc='2' WHERE member_id='bob-member'",
+            "UPDATE group_membership SET removed_hlc=NULL WHERE member_id='bob-member'",
+        ),
+        (
+            "UPDATE member SET archived_at=3 WHERE id='bob-member'",
+            "UPDATE member SET archived_at=NULL WHERE id='bob-member'",
+        ),
+        (
+            "UPDATE member SET deleted_at=3 WHERE id='bob-member'",
+            "UPDATE member SET deleted_at=NULL WHERE id='bob-member'",
+        ),
+        (
+            "UPDATE member SET archived_at=3 WHERE id='bob-nested'",
+            "UPDATE member SET archived_at=NULL WHERE id='bob-nested'",
+        ),
+        (
+            "UPDATE member_group SET deleted_at=3 WHERE id='nested-group'",
+            "UPDATE member_group SET deleted_at=NULL WHERE id='nested-group'",
+        ),
+        (
+            "UPDATE channel SET member_ids='[\"bob-garden\",42]' WHERE id='private-channel'",
+            "UPDATE channel SET member_ids='[\"bob-garden\"]' WHERE id='private-channel'",
+        ),
+        (
+            "UPDATE channel SET archived_at=3 WHERE id='private-channel'",
+            "UPDATE channel SET archived_at=NULL WHERE id='private-channel'",
+        ),
+        (
+            "UPDATE channel SET archived_at=3 WHERE id='private-thread'",
+            "UPDATE channel SET archived_at=NULL WHERE id='private-thread'",
+        ),
+        (
+            "UPDATE channel SET member_ids='[\"bob-member\"]' WHERE id='private-channel'; UPDATE front_interval SET subject_id='bob-garden' WHERE id='bob-live'",
+            "UPDATE channel SET member_ids='[\"bob-garden\"]' WHERE id='private-channel'; UPDATE front_interval SET subject_id='bob-member' WHERE id='bob-live'",
+        ),
+    ] {
+        s.state.db.lock().unwrap().execute_batch(deny).unwrap();
+        for method in [reqwest::Method::GET, reqwest::Method::HEAD] {
+            assert_eq!(
+                client.request(method, &url).bearer_auth("bob-token").send().await.unwrap().status(),
+                404,
+                "{deny}"
+            );
+        }
+        s.state.db.lock().unwrap().execute_batch(restore).unwrap();
+        assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 200, "{restore}");
+    }
+    {
+        s.state.db.lock().unwrap().execute("UPDATE front_interval SET end_at=2 WHERE id='bob-live'", []).unwrap();
+    }
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 404);
 }

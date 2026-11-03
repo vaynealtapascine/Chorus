@@ -118,6 +118,10 @@ import garden.vayne.chorus.data.ChatCompose
 import garden.vayne.chorus.data.RichTextEdit
 import garden.vayne.chorus.data.ChatEdit
 import garden.vayne.chorus.data.ChatSpace
+import garden.vayne.chorus.data.SearchAncestors
+import garden.vayne.chorus.data.SearchJump
+import garden.vayne.chorus.data.SearchVisibility
+import garden.vayne.chorus.data.Api
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.Polls
@@ -178,6 +182,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val p = LocalChorusPalette.current
     val heldMessages by chorus.heldMessages.collectAsState()
     val syncStatus by chorus.status.collectAsState()
+    var searchHere by rememberSaveable { mutableStateOf(false) }
     var infoOpen by rememberSaveable { mutableStateOf(false) }
     var readerOpen by remember { mutableStateOf(false) }
     var conversationOpen by rememberSaveable { mutableStateOf(false) }
@@ -395,9 +400,46 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val clearedAt = channel?.id?.let { model.accountPrefs.hiddenChats[it] }
     // someone's private chat that isn't ours to look at now (D-097, D-098): its words stay out and
     // nothing is marked read
-    val shownNow = remember(model, viewingAs) { ChatOrganize.shown(model, viewingAs) }
+    val jumpSession=chorus.device?.session
+    val history = remember(channel?.id,jumpSession) { ChatHistory() }
+    history.bind(model,syncStatus,chorus.device?.accountId.orEmpty())
+    DisposableEffect(history) { onDispose { history.latest() } }
+    val jumpTarget=jumpTo ?: history.target
+    LaunchedEffect(jumpTarget,model,channel?.id,jumpSession,syncStatus) {
+        val id=jumpTarget ?: return@LaunchedEffect
+        val c=channel ?: return@LaunchedEffect
+        val dev=chorus.device ?: return@LaunchedEffect
+        val request=history.begin(id)
+        try {
+            // Ordinary/local targets never wait for an unrelated thread's missing parent.
+            val dependencies=if(syncStatus==Status.Live) SearchAncestors.load(model,dev,listOf(c.id)) else emptyMap()
+            val rows=SearchJump.load(model,dev.accountId,c.id,id,dependencies,
+                local={view->chorus.searchWindow(c.id,id,view)},remote={
+                    if(syncStatus!=Status.Live) emptyList() else {
+                        val target=SearchVisibility.parseCard(Api.call("GET",dev.base,"/messages/$id",null,dev.session))
+                        val page=Api.call("GET",dev.base,"/channels/${c.id}/messages?around=$id&limit=99",null,dev.session).getJSONArray("items")
+                        (0 until page.length()).map {SearchVisibility.parseCard(page.getJSONObject(it))}.filter {it.id!=target.id} + target
+                    }
+                })
+            if(history.owns(request)) {
+                if(rows.messages.isNotEmpty()) history.loaded(request,rows)
+                else {error="That message isn't available here.";jumpTo=null;history.latest()}
+            }
+        } catch(e:CancellationException) {throw e}
+        catch(_:Exception) {if(history.owns(request)) {error="That message isn't available here.";jumpTo=null;history.latest()}}
+    }
+    val loadedHistory=history.window(model)
+    val jumpVisibility=remember(model,loadedHistory) {SearchVisibility(model,chorus.device?.accountId.orEmpty(),ancestors=loadedHistory?.ancestors.orEmpty())}
+    val shownNow = remember(model, viewingAs, loadedHistory) {
+        val base=ChatOrganize.openable(model,viewingAs,chorus.device?.accountId.orEmpty())
+        val byChannel=model.channels.associateBy {it.id}
+        val guard:(String?)->Boolean={id -> base(id) ||
+            (loadedHistory!=null && byChannel[id]?.kind=="thread" && loadedHistory.messages.any {it.channelId==id && jumpVisibility.message(it)})}
+        guard
+    }
     val locked = channel != null && !shownNow(channel.id)
-    val messages = if (locked) emptyList() else model.chatMessages[channel?.id].orEmpty().filter {
+    val messages = if (locked) emptyList() else history.messages(model,model.chatMessages[channel?.id].orEmpty()).filter {
+        (loadedHistory==null || jumpVisibility.message(it)) &&
         space != null && memberVisible(it, space.kind, model.current, viewingAs) &&
             accountVisible(it, space.kind, chorus.device?.accountId.orEmpty()) && (clearedAt == null || it.occurredAt > clearedAt)
     }
@@ -515,7 +557,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         return
     }
 
-    val ownIds = remember(model.members) { model.members.mapTo(HashSet()) { it.id } }
+    val ownIds = model.knownMemberIds
     // names for other accounts' members a private chat is kept to (D-098), from those DMs' author cards
     var privateCards by remember { mutableStateOf<Map<String, ForeignAuthor>>(emptyMap()) }
     val needCards = model.channels.filter { c -> c.kind == "member_dm" && c.memberIds.any { it !in ownIds } &&
@@ -613,7 +655,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 chorus.create("message.forward", chorus.newId(), ChatForward.bundle(row.channel.id, speaker, items, from.name, ids), scope = scope)
                 bundleForward = emptyList()
                 openChat(row)
-                followNext = true
+                history.sent(); jumpTo = null; followNext = true
             } catch (e: Exception) { error = e.message ?: "Could not forward the messages." }
             finally { busy = false }
         }
@@ -646,7 +688,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 chorus.create("message.forward", chorus.newId(), ChatForward.payload(row.channel.id, speaker, message, from.name, ids), scope = scope)
                 forwarding = null; forwardConfirm = null
                 openChat(row)
-                followNext = true
+                history.sent(); jumpTo = null; followNext = true
             } catch (e: Exception) { error = e.message ?: "Could not forward the message." }
             finally { busy = false }
         }
@@ -782,6 +824,13 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
     val partnerFront = dmPartner?.let { other -> chorus.device?.let { friendViews[garden.vayne.chorus.data.FriendFronts.key(it.accountId, other.id)] } }
         ?.let { garden.vayne.chorus.data.FriendFronts.line(it.frontNames) }
+    if (searchHere && channel != null) {
+        androidx.activity.compose.BackHandler { searchHere = false }
+        ContentSearch(chorus, model, syncStatus == garden.vayne.chorus.data.Status.Live,
+            onClose = {searchHere=false}, onOpenMessage = {jumpTo=it.id; searchHere=false},
+            onOpenPost = {}, channelId = channel.id)
+        return@ChorusScene
+    }
     Row(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         if (arrangingPins) ArrangePins(listRows.filter { it.pinned }, if (expanded) Modifier.width(320.dp) else Modifier.weight(1f),
             { arrangingPins = false }) { savePins(it); arrangingPins = false }
@@ -791,7 +840,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             onNewChannel = { editChannel = false; channelEditor = true }, onRowAction = rowAction, previews = listPreviews)
         if (expanded) VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
         if (pane == "info" && !expanded && channel != null && space != null && !paneLocked) {
-            ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; onSearch() },
+            ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; searchHere = true },
                 { infoOpen = false }, model.accountPrefs.channelNotify(channel.id, space.kind), ::setNotify,
                 onShowMessage = { infoOpen = false; jumpTo = it }, modifier = Modifier.weight(1f), title = infoTitle(channel, space),
                 subtitle = infoSubtitle(channel, space), connections = connections, foreign = foreignAuthors + privateCards,
@@ -819,7 +868,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     partnerFront ?: space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }.orEmpty()),
                     color = if (typingLabel != null || syncStatus != Status.Live) p.accent else p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
             }
-            ChatIconButton(R.drawable.ic_search, "Search messages", onSearch)
+            ChatIconButton(R.drawable.ic_search, "Search this chat", { searchHere = true })
             Box {
                 ChatIconButton(R.drawable.ic_more, "Conversation options") { headerMenu = true }
                 DropdownMenu(headerMenu, { headerMenu = false }) {
@@ -863,7 +912,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         if (error != null) Text(error.orEmpty(), color = p.danger, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(16.dp))
         if (space == null) Text("No spaces yet. Start a chat with someone you follow.", color = p.ink2, modifier = Modifier.padding(24.dp))
         else {
-        if (searchHit != null && searchHit.channelId == channel?.id) {
+        if (searchHit != null && searchHit.channelId == channel?.id && SearchVisibility(model,chorus.device?.accountId.orEmpty()).document(searchHit)) {
             var revealed by rememberSaveable(searchHit.id) { mutableStateOf(false) }
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
                 .background(p.surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -924,7 +973,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         val everywhere = remember(model, viewingAs) {
             model.chatMessages.filterKeys { shownNow(it) }.values.flatten().associateBy { it.id }
         }
-        LaunchedEffect(newest, readerId, currentPane) {
+        LaunchedEffect(newest, readerId, currentPane, history.target, followNext) {
             if (!currentPane) return@LaunchedEffect
             if (newest != null && ((newest != snapshot.reading.newest && listState.firstVisibleItemIndex <= 2) || followNext))
                 listState.animateScrollToItem(0)
@@ -934,15 +983,18 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         // where each reply jump here started, newest last (D-112): the down arrow first goes back
         // one jump at a time, then to the latest message; reaching the latest forgets the trail
         var jumpBack by remember(channel.id) { mutableStateOf(listOf<String>()) }
-        val atLatest = listState.firstVisibleItemIndex == 0
+        // an older window from search (history.target) isn't the latest, even at its newest message
+        val atLatest = listState.firstVisibleItemIndex == 0 && history.target == null
         LaunchedEffect(atLatest) { if (atLatest) jumpBack = emptyList() }
         // after the opening position, so coming back from chat info lands on the chosen message
-        LaunchedEffect(jumpTo, currentPane) {
+        LaunchedEffect(jumpTo, messages, currentPane) {
             if (!currentPane) return@LaunchedEffect
             val id = jumpTo ?: return@LaunchedEffect
             val at = messages.asReversed().indexOfFirst { it.id == id }
             // a third of the way up, not against the composer
-            if (at >= 0) { listState.animateScrollToItem(at, -listState.layoutInfo.viewportSize.height / 3); flashId = id }
+            if (at < 0) return@LaunchedEffect // The guarded containing window is still loading.
+            listState.animateScrollToItem(at, -listState.layoutInfo.viewportSize.height / 3)
+            flashId = id
             jumpTo = null
         }
         LaunchedEffect(flashId) { if (flashId != null) { delay(1600); flashId = null } }
@@ -1022,7 +1074,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             }
         }
         val returnTo = garden.vayne.chorus.data.ChatJump.back(jumpBack, messages.mapTo(HashSet()) { it.id })
-        if (listState.firstVisibleItemIndex > 1 || unreadCount > 0 || returnTo != null) Column(
+        if (history.target != null || jumpTo != null || listState.firstVisibleItemIndex > 1 || unreadCount > 0 || returnTo != null) Column(
             Modifier.align(Alignment.BottomEnd).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (unreadMentions.isNotEmpty()) ChatJumpButton("@", unreadMentions.size, "${unreadMentions.size} unread mentions for $readerName") {
                 actions.launch { val at = messages.asReversed().indexOfFirst { it.id == unreadMentions.last().id }; if (at >= 0) listState.animateScrollToItem(at) }
@@ -1030,7 +1082,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             ChatJumpButton(null, unreadCount, if (returnTo != null) "Back to where you jumped from"
                 else if (unreadCount > 0) "Jump to latest message · $unreadCount unread" else "Jump to latest message") {
                 if (returnTo != null) { jumpBack = returnTo.rest; jumpTo = returnTo.id }
-                else { jumpBack = emptyList(); actions.launch { listState.animateScrollToItem(0) } }
+                else { jumpBack = emptyList(); history.latest(); jumpTo = null; followNext = true }
             }
         }
         }
@@ -1300,8 +1352,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                         accountId = senderAccount,
                                         quote = quoted.takeIf { it.isNotEmpty() }?.let { q -> ChatForward.quote(q, model.channels.find { it.id == q.first().channelId }?.name ?: channel.name, quotePart) })
                                     if (pollOn) payload.put("poll", Polls.draft(pollOptions.toList(), pollMultiple).getOrThrow())
-                                    followNext = true
                                     chorus.create("message.send", chorus.newId(), payload, scope = scope)
+                                    history.sent(); jumpTo = null; followNext = true
                                     val alsoTo = threadParentChannel?.takeIf { alsoSend && channel.kind == "thread" }
                                     val parent = threadParent
                                     if (alsoTo != null && parent != null) chorus.create("message.send", chorus.newId(),
@@ -1339,7 +1391,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
         if (expanded && channel != null && space != null && !paneLocked) {
             VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
-            ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], onSearch,
+            ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { searchHere = true },
                 notifyLevel = model.accountPrefs.channelNotify(channel.id, space.kind), onNotify = ::setNotify,
                 onShowMessage = { jumpTo = it }, modifier = Modifier.width(260.dp), title = infoTitle(channel, space),
                 subtitle = infoSubtitle(channel, space), connections = connections, foreign = foreignAuthors + privateCards,
@@ -1684,7 +1736,7 @@ private fun EditedMark() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
+internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: Map<String, ForeignAuthor>,
     chorus: Chorus, unseenBy: List<String>, held: HeldMessage?, actingMemberId: String?, onReply: () -> Unit,
     /** Authors whose messages sit on our side (D-103); null: just the acting speaker's. */
     aligned: Set<String>? = null,
@@ -1721,10 +1773,10 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
     LaunchedEffect(held?.until) {
         while (held != null) { delay(1_000); now = System.currentTimeMillis() }
     }
-    val authors = message.authors.map { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
+    val authors = message.authors.map { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: message.authorCards[it]?.name ?: "Someone" }
         .joinToString(" & ").ifEmpty { "Someone" }
     // another account's members come from the space's author cards (their picture, colour and sigil)
-    fun author(id: String) = model.member(id) ?: foreignAuthors[id]?.member
+    fun author(id: String) = model.member(id) ?: foreignAuthors[id]?.member ?: message.authorCards[id]?.member
     val own = if (aligned != null) ChatPresentation.own(message, chorus.device?.accountId.orEmpty(), aligned)
         else ChatPresentation.own(message, chorus.device?.accountId.orEmpty(), actingMemberId)
     val member = message.authors.firstOrNull()?.let(::author)
@@ -1789,7 +1841,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 .then(if (quote != null && onJump != null && interactive) Modifier.clickable(onClickLabel = "Show the message this replies to") { onJump(quote.id) } else Modifier)) {
                 Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(quoteColor))
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    Text((quote?.authors?.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
+                    Text((quote?.authors?.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: message.authorCards[it]?.name ?: "Someone" }
                         ?: "Reply") + (quoteElsewhere?.let { " · in $it" } ?: ""), color = quoteColor, fontSize = 12.sp, lineHeight = 16.sp)
                     Text(spoilerPreview(if (quote != null) ChatPresentation.preview(quote) else "Message unavailable in this view"),
                         color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
@@ -1803,7 +1855,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 .then(if (onJump != null && interactive) Modifier.clickable(onClickLabel = "Show the original message") { onJump(item.messageId) } else Modifier)) {
                 Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(sourceColor))
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    Text("Forwarded from " + item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }
+                    Text("Forwarded from " + item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: message.authorCards[it]?.name ?: "Someone" }
                         .ifEmpty { "Someone" }, color = sourceColor, fontSize = 12.sp, lineHeight = 16.sp)
                     Text(listOfNotNull(item.channelName, ChatPresentation.dateLabel(item.occurredAt)).joinToString(" · "),
                         color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
@@ -1822,7 +1874,7 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                 .then(if (onJump != null && interactive) Modifier.clickable(onClickLabel = "Show the quoted message") { onJump(item.messageId) } else Modifier)) {
                 Box(Modifier.width(2.dp).heightIn(min = 24.dp).background(tint))
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    if (item.authors.isNotEmpty()) Text(item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" } +
+                    if (item.authors.isNotEmpty()) Text(item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: message.authorCards[it]?.name ?: "Someone" } +
                         (item.channelName?.let { " · #$it" } ?: ""), color = tint, fontSize = 12.sp, lineHeight = 16.sp)
                     Text(item.text, color = p.ink2, fontSize = 14.sp, lineHeight = 19.sp, maxLines = 8, overflow = TextOverflow.Ellipsis)
                 }
@@ -1865,12 +1917,13 @@ private fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors: 
                     onPlainClick = { if (interactive) { if (selecting && onSelect != null) onSelect() else menuOpen = true } },
                     onLongClick = if (settled) openActions else null, onDoubleClick = heart)
             if (linked != null) ChatLinkEmbeds(message.text, message.entities, chorus, model, linked,
-                { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: "Someone" }, onJump.takeIf { interactive })
+                { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: message.authorCards[it]?.name ?: "Someone" }, onJump.takeIf { interactive })
             for (attachment in message.attachments) {
                 ChatAttachmentView(attachment, chorus, authors, message.occurredAt)
             }
             // Same resolved acting speaker as the composer: explicit selection or channel default.
-            PollCard(chorus, model, message.id, garden.vayne.chorus.data.Polls.chatMember(model, actingMemberId))
+            PollCard(chorus, model, message.id, garden.vayne.chorus.data.Polls.chatMember(model, actingMemberId),
+                definition=model.polls.polls[message.id] ?: message.poll, remoteTally=message.pollTally)
         }
         if (thread != null && thread.replies > 0) Row(Modifier.heightIn(min = 48.dp)
             .then(if (onThread != null) Modifier.clickable(onClickLabel = "Open thread", onClick = onThread) else Modifier),

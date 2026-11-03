@@ -265,7 +265,7 @@ fn listed_in(conn: &Connection, account: &str, channel: &str) -> rusqlite::Resul
 /// A chat with a member who is a subsystem (D-092) includes everyone inside them, recursively
 /// (owner, 2026-11-02): the `member_subsystem:<id>` account pref names their subsystem group, and
 /// its present, active members are inside. One with someone inside never reaches the subsystem.
-fn with_parts(conn: &Connection, account: &str, mut ids: Vec<String>) -> rusqlite::Result<Vec<String>> {
+pub(crate) fn with_parts(conn: &Connection, account: &str, mut ids: Vec<String>) -> rusqlite::Result<Vec<String>> {
     if ids.is_empty() {
         return Ok(ids);
     }

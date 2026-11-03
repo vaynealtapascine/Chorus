@@ -27,6 +27,7 @@ schemaless things, and a set of `v_*` views (§6) that pre-join the common quest
 | JSON | TEXT with `CHECK (json_valid(x))`. Used for: entities, settings, visibility, clocks, snapshots. |
 | Soft delete | `deleted_at` (tombstone). Queries/views exclude them. |
 | Trash stamps | For `message`, `post`, `member`, `member_group` and `channel` the reference projection also carries `created_by_account_id` (first create) and `deleted_by_account_id` (latest delete, cleared on restore). Only those two accounts may restore (`core::restore::allowed`, D-053). |
+| Space owner and members | The reference projection stamps `space` rows with `created_by_account_id` as well: the creator, which is the server's `space.owner_account_id`. Who is in a space is the `space_member` **set** (`space.join`/`space.leave`, keyed `<space>|{"account_id":…}`); `space_member` rows carry only the role from `space.set_role` and never `exists`. A role counts while the join is present, else it is `member` (perms.rs). Since projection v5. |
 | LWW clocks | Tables with field-level last-writer-wins carry `clocks` JSON: `{"name": "<hlc>", ...}`. Only the merge code reads it. |
 | HLC | String `"<physical_ms, 12 hex>-<counter, 4 hex>-<device short_id, 8 hex>"`, zero-padded, e.g. `"01a0c27d1e3f-0003-a1b2c3d4"`; plain string comparison = HLC order. See SYNC.md §3. |
 | Rich text | `text` (plain UTF-8) + `entities` JSON array `[{"type":"bold","offset":0,"length":5}, ...]`. Offsets/lengths are in **UTF-16 code units** (Telegram-compatible; what Android and JS use natively). |
@@ -930,3 +931,26 @@ pushes (SYNC.md §7.3), and are projected in their old order. What the bundle ca
 - **Server-scope ops** (custom emoji) stay with the old server.
 - **Devices.** The import prints a one-time device invite instead. The round trip is tested
   (`tests/import.rs`): the same ops, CSV tables and files.
+
+D-114 search adds read-only scopes and visible context, without changing sync delivery, the op
+catalogue, projections or schema. Bookmarks remain ordinary account-scoped `pref.set` values;
+a bookmark never grants post, author or blob access. Current-front search pages are ephemeral.
+
+UI11b membership hardening: new `channel.create`/`channel.set` writes accept absent or null
+`member_ids`, or an array containing only strings (including an empty array). Projection/replay
+still accepts legacy ops without rewriting them. Current-front reads treat a non-array or mixed
+persisted membership as unavailable, including through thread ancestors, context and known-hash
+blob references; clients retain an explicit invalid flag rather than interpreting it as an empty
+unrestricted list. SQL NULL remains the absent membership value.
+
+
+UI11b/main integration (D-110 + D-114): current search validates the entire stored channel
+membership array before any expansion, then expands its own listed members with the same
+`perms::with_parts` relation used by `kept_to`, including internal member chats. Only present,
+active members of a live linked subsystem group are added, recursively and never upward. A
+listed member's ownership survives their tombstone, so deleting a listed member cannot turn a
+restricted external chat into an unrestricted one. Explicit list entries keep their existing
+meaning. The recorded Body front and message-level `visibility.member_ids` are never expanded.
+Canonical point reads, SQL pre-limit selection, context, inherited thread parents and blob
+reads use this relation. At integrated main `0ac29cc`, archived channels and their descendants
+remain excluded from current search; forthcoming D-111 archive behavior is outside this merge.

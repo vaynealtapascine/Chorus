@@ -95,3 +95,5 @@ pub fn open_and_migrate(cfg: &config::Config) -> anyhow::Result<Connection> {
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
+
+pub mod search_view;

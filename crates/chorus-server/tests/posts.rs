@@ -1031,3 +1031,32 @@ fn sqlite_export_carries_retained_legacy_history() {
     drop(exported);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn saved_search_rechecks_post_audience_and_does_not_expose_hidden_rank() {
+    let mut conn = db::open_memory().unwrap();
+    db::migrate(&mut conn).unwrap();
+    for account in [ALICE, BOB] {
+        conn.execute("INSERT INTO account(id,kind,created_at) VALUES (?1,'person',0)", [account]).unwrap();
+    }
+    for (id, mode, at) in [("saved", "server", 20), ("unsaved", "server", 30), ("hidden", "private", 40)] {
+        conn.execute("INSERT INTO post(id,account_id,kind,text,entities,visibility,occurred_at,device_id) VALUES (?1,?2,'note','garden','[]',?3,?4,?2)",params![id,ALICE,format!("{{\"mode\":\"{mode}\"}}"),at]).unwrap();
+        conn.execute("INSERT INTO post_fts(rowid,title,text,tags) SELECT rowid,'',text,'' FROM post WHERE id=?1", [id])
+            .unwrap();
+    }
+    for id in ["saved", "hidden"] {
+        conn.execute(
+            "INSERT INTO pref(account_id,device_id,key,value,hlc) VALUES (?1,'',?2,'true','1')",
+            params![BOB, format!("bookmark:{id}")],
+        )
+        .unwrap();
+    }
+    let q = posts::PostSearch { q: "garden".into(), saved: true, limit: Some(1), ..Default::default() };
+    let bob = api_data::Principal::owner(BOB);
+    let page = posts::search(&conn, &bob, &q).unwrap();
+    assert_eq!(page["items"].as_array().unwrap().len(), 1);
+    assert_eq!(page["items"][0]["id"], "saved");
+    assert!(page["next_cursor"].is_null());
+    conn.execute("UPDATE post SET visibility='{\"mode\":\"private\"}' WHERE id='saved'", []).unwrap();
+    assert_eq!(posts::search(&conn, &bob, &q).unwrap()["items"], json!([]));
+}

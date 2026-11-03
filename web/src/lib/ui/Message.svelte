@@ -25,6 +25,7 @@
 
   let {
     m,
+    readOnly = false,
     cont,
     people,
     dark,
@@ -61,6 +62,7 @@
     embedLookup,
   }: {
     m: MessageRow;
+    readOnly?: boolean;
     cont: boolean;
     /** The last of a run from the same authors: it carries their face (Figma F5.21). */
     last?: boolean;
@@ -159,6 +161,7 @@
   // where there's no hover, a tap on the bubble opens its actions, which carry the time
   // (owner, 2026-11-02); links, buttons and a text selection keep their own clicks
   function tapBubble(e: MouseEvent) {
+    if (readOnly) return;
     if ((e.target as Element).closest('a, button, input, textarea, video, audio, [role="button"]')) return;
     if (getSelection()?.isCollapsed === false) return;
     if (selecting) { onselect(); return; }
@@ -201,7 +204,7 @@
     {#if thread}<button class="link" onclick={onthread}>Open thread · {thread.replyCount} {thread.replyCount === 1 ? 'reply' : 'replies'}</button>{/if}
   </div></div>
 {:else}
-  <div class="msg-row" class:out class:cont class:last use:swipeReply={{ enabled: !heldUntil && !selecting, onreply }}>
+  <div class="msg-row" class:out class:cont class:last use:swipeReply={{ enabled: !readOnly && !heldUntil && !selecting, onreply }}>
   <span class="swipe-hint" aria-hidden="true"><Icon name="action-reply" size={18} /></span>
   {#if out}{@render aside()}{/if}
   {#if !out}
@@ -310,7 +313,7 @@
         <div class="reacts">
           {#each [...reacts] as [emoji, who] (emoji)}
             {@const mine = !!speaker && who.includes(speaker)}
-            <button class="react" class:mine onclick={() => onreact(emoji, !mine)} title={who.map(nameOf).join(', ')}>
+            <button class="react" class:mine disabled={readOnly} onclick={() => onreact(emoji, !mine)} title={who.map(nameOf).join(', ')}>
               {#if emoji.startsWith('custom:') && emojiById.has(emoji.slice(7))}
                 {@const custom = emojiById.get(emoji.slice(7))!}
                 <EmojiImage hash={custom.blob_hash} name={custom.name} />
@@ -353,7 +356,7 @@
       </p>
     {/if}
     <!-- a held message isn't sent yet: only Cancel, nothing covering it (narrow screens) -->
-    {#if !heldUntil}
+    {#if !heldUntil && !readOnly}
     <button class="action-trigger" bind:this={actionTrigger} popovertarget={menuId} aria-label="Message actions" title="Message actions"><Icon name="more" size={18} /></button>
     <div class="actions" bind:this={actionMenu} id={menuId} popover="auto" ontoggle={(e) => { if (e.newState === 'open') placeActions(); }} role="group" aria-label="Message actions">
       <p class="when"><time datetime={new Date(m.occurred_at).toISOString()}>{when}</time>{m.edited ? ' · edited' : ''}</p>
@@ -382,7 +385,7 @@
 <!-- beside the bubble: "edited" always, the time on hover where there is one (owner, 2026-11-02) -->
 {#snippet aside()}
   <span class="aside" class:bare={!m.edited}>
-    {#if m.edited}<button class="edited" onclick={toggleHistory} aria-expanded={!!history} title="Edit history">edited</button>{/if}
+    {#if m.edited}{#if readOnly}<span class="edited">edited</span>{:else}<button class="edited" onclick={toggleHistory} aria-expanded={!!history} title="Edit history">edited</button>{/if}{/if}
     <time class="stamp" datetime={new Date(m.occurred_at).toISOString()}>{time(m.occurred_at)}</time>
   </span>
 {/snippet}

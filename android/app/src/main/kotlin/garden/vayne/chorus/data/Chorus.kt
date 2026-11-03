@@ -405,6 +405,14 @@ class Chorus private constructor(private val ctx: Context) {
     /** The projection as last applied (store thread only). */
     private var projectionCache: JSONObject? = null
 
+    suspend fun searchCards(ids: Set<String>): Map<String, ChatMessage> = withContext(dispatcher) {
+        projectionCache?.let { Model.messageCards(it, ids) }.orEmpty()
+    }
+
+    suspend fun searchWindow(channel:String, target:String, view:SearchVisibility):List<ChatMessage> = withContext(dispatcher) {
+        projectionCache?.let {Model.channelWindow(it,channel,100,target,view::message).messages}.orEmpty()
+    }
+
     /** Older Stage rows come from the same local projection as Chat, on the store thread. */
     suspend fun stageWindow(channelId: String, limit: Int, spaceKind: String, front: List<Entry>,
         viewingAs: String?): ChannelWindow = withContext(dispatcher) {

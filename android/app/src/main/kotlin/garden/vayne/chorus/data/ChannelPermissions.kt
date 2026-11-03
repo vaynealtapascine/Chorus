@@ -14,6 +14,18 @@ object ChannelPermissions {
         val rows = p.optJSONObject("rows")
         for (table in listOf("space", "space_member", "channel", "channel_permission"))
             put(table, JSONObject((rows?.optJSONObject(table) ?: JSONObject()).toString()))
+        // who is in each space, `space|account`: joins and leaves are the projection's `space_member`
+        // set, keyed `space|{"account_id":…}`; its `space_member` rows only carry `space.set_role`
+        val joined = JSONObject()
+        p.optJSONObject("sets")?.optJSONObject("space_member")?.let { set ->
+            for (key in set.keys()) {
+                val bar = key.indexOf('|')
+                if (bar <= 0 || !set.optBoolean(key)) continue
+                val account = runCatching { JSONObject(key.substring(bar + 1)).opt("account_id") as? String }.getOrNull()
+                if (!account.isNullOrEmpty()) joined.put("${key.substring(0, bar)}|$account", true)
+            }
+        }
+        put("joined", joined)
     }
     fun fields(state: JSONObject, table: String, id: String): JSONObject {
         val row = state.optJSONObject(table)?.optJSONObject(id)
@@ -42,13 +54,25 @@ object ChannelPermissions {
             .put("allow", JSONArray(allow)).put("deny", JSONArray(deny))
     }
     /** [owner] is the space's owner from the server's directory (`GET /spaces`): the replica doesn't carry it. */
-    fun canManage(state: JSONObject, channel: ChatChannel, account: String, owner: String? = null): Boolean {
+    fun canManage(state: JSONObject, channel: ChatChannel, account: String, owner: String? = null): Boolean = can(state,channel,account,"manage",owner)
+    fun canView(state: JSONObject, channel: ChatChannel, account: String): Boolean = can(state,channel,account,"view")
+    /**
+     * The account's role in [space] while it is in it, as the server's `space_member` has it
+     * (perms.rs): a present join, with the role `space.set_role` gave it, else `member`. A role
+     * without a join (set before joining, or kept after leaving) is no membership.
+     */
+    fun role(state: JSONObject, space: String, account: String): String? {
+        if (state.optJSONObject("joined")?.optBoolean("$space|$account") != true) return null
+        val row = state.optJSONObject("space_member")?.optJSONObject("$space|$account")?.optJSONObject("fields")
+        return (row?.opt("role") as? String)?.takeIf { it.isNotEmpty() } ?: "member"
+    }
+    private fun can(state: JSONObject, channel: ChatChannel, account: String, permission: String, owner: String? = null): Boolean {
         // Threads use their parent's permissions; controls belong on the parent channel.
         if (channel.kind == "thread" || account.isBlank()) return false
         val space = fields(state, "space", channel.spaceId)
-        if (owner == account || space.optString("owner_account_id") == account) return true
-        val member = fields(state, "space_member", "${channel.spaceId}|$account")
-        val role = member.optString("role").takeIf { it.isNotEmpty() }
+        // the projection stamps a space's creator, which is the server's owner (core model.rs)
+        if (owner == account || (space.opt("owner_account_id") ?: space.opt("created_by_account_id")) == account) return true
+        val role = role(state, channel.spaceId, account)
         if (role == "admin" || (role != null && space.optString("kind") == "dm")) return true
         fun allowed(permission: String): Boolean {
             val levels = mutableListOf(Target("account", account, account))
@@ -64,7 +88,7 @@ object ChannelPermissions {
             return (0 until roles.length()).mapNotNull { roles.optJSONObject(it) }
                 .any { it.optString("id") == role && permission in list(it, "perms") }
         }
-        return allowed("view") && allowed("manage")
+        return allowed("view") && allowed(permission)
     }
     fun targets(state: JSONObject, channel: ChatChannel, people: List<SpaceAccount>): List<Target> {
         val targets = mutableListOf(Target("role", "everyone", "Everyone in this space"),
