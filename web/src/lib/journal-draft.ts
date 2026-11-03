@@ -19,15 +19,15 @@ export interface JournalDraft {
   lostFiles: number;
 }
 
-export const emptyDraft = (visibility: JournalDraft['visibility'] = 'private'): JournalDraft => ({
-  kind: 'note', title: '', body: '', cw: '', mood: '', tags: '', visibility, bucketIds: [], authors: null,
+export const emptyDraft = (visibility: JournalDraft['visibility'] = 'private', bucketIds: string[] = []): JournalDraft => ({
+  kind: 'note', title: '', body: '', cw: '', mood: '', tags: '', visibility, bucketIds, authors: null,
   quote: null, pollOn: false, pollOptions: ['', ''], pollMultiple: false, lostFiles: 0,
 });
 
 /** Worth keeping: anything the writer typed or chose beyond the context's defaults. */
-export function occupied(d: JournalDraft, defaultVisibility: JournalDraft['visibility'] = 'private'): boolean {
+export function occupied(d: JournalDraft, defaultVisibility: JournalDraft['visibility'] = 'private', defaultBuckets: string[] = []): boolean {
   return !!(d.body.trim() || d.title.trim() || d.cw.trim() || d.mood.trim() || d.tags.trim() || d.quote || d.pollOn ||
-    d.authors !== null || d.visibility !== defaultVisibility || d.bucketIds.length || d.lostFiles);
+    d.authors !== null || d.visibility !== defaultVisibility || d.bucketIds.join() !== defaultBuckets.join() || d.lostFiles);
 }
 
 /** Length-prefixed so a context id can never alias another account's key. */

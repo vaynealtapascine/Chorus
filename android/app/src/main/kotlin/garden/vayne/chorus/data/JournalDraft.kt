@@ -31,15 +31,23 @@ data class JournalDraft(val id: String, val revision: Long = 0, val body: String
     val files: List<JournalDraftFile> = emptyList(), val editing: Boolean = false,
     val advanced: Boolean = false, val sendingPost: String? = null,
     val launches: List<JournalLaunch> = emptyList(), val recovery: String? = null,
-    val receipts: List<String> = emptyList()) {
+    val receipts: List<String> = emptyList(),
+    /** The writer picked this audience, rather than it being the account's default (D-117). */
+    val audienceChosen: Boolean = false) {
     val occupied: Boolean get() = body.isNotEmpty() || title.isNotEmpty() || files.isNotEmpty() ||
         authors != null || cw.isNotEmpty() || tags.isNotEmpty() || mood.isNotEmpty() || reply != null ||
-        quote != null || poll || options.any { it.isNotEmpty() } || audience != "private" || buckets.isNotEmpty() || recovery != null
+        quote != null || poll || options.any { it.isNotEmpty() } || audienceChosen || recovery != null
+
+    /** A draft nobody has started shows the account's default audience. Once it holds anything,
+     * what it shows stays, so a default changed on another device never widens words being written. */
+    fun following(default: Audience): JournalDraft =
+        if (occupied || (audience == default.mode && buckets == default.buckets)) this
+        else copy(audience = default.mode, buckets = default.buckets)
 
     fun encode(): String = JSONObject().put("version", 1).put("id", id).put("revision", revision)
         .put("body", body).put("start", selectionStart).put("end", selectionEnd).put("title", title)
         .put("kind", kind).put("authors", authors?.let { JSONArray(it) } ?: JSONObject.NULL).put("authorHint", authorHint)
-        .put("audience", audience).put("buckets", JSONArray(buckets)).put("cw", cw).put("tags", tags).put("mood", mood)
+        .put("audience", audience).put("buckets", JSONArray(buckets)).put("audienceChosen", audienceChosen).put("cw", cw).put("tags", tags).put("mood", mood)
         .put("reply", reply).put("quote", quote).put("poll", poll).put("options", JSONArray(options)).put("multiple", multiple)
         .put("files", JSONArray(files.map { it.json() })).put("editing", editing).put("advanced", advanced)
         .put("sendingPost", sendingPost).put("launches", JSONArray(launches.map { it.json() })).put("recovery", recovery)
@@ -67,7 +75,11 @@ data class JournalDraft(val id: String, val revision: Long = 0, val body: String
                 selectionStart = field(0) { j.getInt("start") }, selectionEnd = field(0) { j.getInt("end") },
                 title = text("title"), kind = text("kind"),
                 authors = if (j.has("authors") && j.isNull("authors")) null else strings("authors"), authorHint = text("authorHint"),
-                audience = text("audience"), buckets = strings("buckets"), cw = text("cw"), tags = text("tags"), mood = text("mood"),
+                audience = text("audience"), buckets = strings("buckets"),
+                // a draft from before D-117 only left Only us if the writer chose to
+                audienceChosen = if (j.has("audienceChosen")) j.optBoolean("audienceChosen") else
+                    j.optString("audience", "private") != "private" || (j.optJSONArray("buckets")?.length() ?: 0) > 0,
+                cw = text("cw"), tags = text("tags"), mood = text("mood"),
                 reply = nullable("reply"), quote = nullable("quote"), poll = field(false) { j.getBoolean("poll") },
                 options = strings("options"), multiple = field(false) { j.getBoolean("multiple") },
                 files = field(emptyList()) { files(j.getJSONArray("files")) },

@@ -3,7 +3,7 @@
   import QuoteEmbed from './QuoteEmbed.svelte';
   import AudienceChip from './AudienceChip.svelte';
   import { validBucketAudience } from '../bucket-controls';
-  import type { Audience } from '../profile-audience';
+  import { audienceOf, liveAudience, POST_AUDIENCE, type Audience } from '../profile-audience';
   import { core } from '../core';
   import { buckets, members, selfMember } from '../data';
   import { canWriteAs, posts } from '../posts';
@@ -19,6 +19,14 @@
   const active = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
   const availableBuckets = $derived(buckets(projection));
   const chipBuckets = $derived(availableBuckets.map((b) => ({ id: b.id, name: b.name, icon: b.icon })));
+  // a new post starts with the account's default audience (D-117); a reply with the thread's
+  const savedDefault = $derived((projection.rows.pref?.[`||${POST_AUDIENCE}`] ?? projection.rows.pref?.[`${sync.accountId}||${POST_AUDIENCE}`])?.fields.value);
+  const accountDefault = $derived(liveAudience(audienceOf(savedDefault), new Set(availableBuckets.map((b) => b.id))));
+  const start = $derived<Audience>(replyTo ? { mode: defaultVisibility } : accountDefault);
+  const startBuckets = $derived(start.mode === 'buckets' ? start.bucket_ids : []);
+  function useByDefault(on: boolean) {
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: POST_AUDIENCE, value: on ? $state.snapshot(audience) : null });
+  }
   const MAX_FILES = 10;
 
   // one saved draft per composer context, like Android's (the main composer, or a thread's reply box)
@@ -38,7 +46,7 @@
     if (loadedKey === key) return;
     let saved: JournalDraft | null = null;
     try { saved = decodeDraft(sessionStorage.getItem(key)); } catch { /* storage unavailable */ }
-    draft = saved ?? emptyDraft(defaultVisibility);
+    draft = saved ?? emptyDraft(start.mode, startBuckets);
     // only words, files or a quote count as something to restore; a remembered author or audience is quiet
     restored = !!saved && !!(saved.body.trim() || saved.title.trim() || saved.cw.trim() || saved.quote || saved.pollOn || saved.lostFiles);
     pending = [];
@@ -48,7 +56,7 @@
     if (loadedKey !== key) return;
     const value = { ...draft, lostFiles: draft.lostFiles + pending.length };
     try {
-      if (occupied(value, defaultVisibility)) sessionStorage.setItem(key, encodeDraft(value));
+      if (occupied(value, start.mode, startBuckets)) sessionStorage.setItem(key, encodeDraft(value));
       else sessionStorage.removeItem(key);
     } catch { /* a full browser store must not interrupt writing */ }
   });
@@ -105,7 +113,7 @@
   function discard() {
     for (const item of pending) if (item.url) URL.revokeObjectURL(item.url);
     pending = [];
-    draft = emptyDraft(defaultVisibility);
+    draft = emptyDraft(start.mode, startBuckets);
     restored = false;
     error = '';
   }
@@ -151,8 +159,8 @@
         ...(pollDraft.poll ? { poll: pollDraft.poll } : {}),
       });
       if (sync.status === 'live') void flushUploads(sync.device);
-      // keep who is writing and where it goes; clear what was said
-      draft = { ...emptyDraft(sending.visibility), authors: sending.authors, bucketIds: sending.bucketIds };
+      // keep who is writing and where it goes, unless new posts have a default; clear what was said
+      draft = { ...(savedDefault && !replyTo ? emptyDraft(start.mode, startBuckets) : emptyDraft(sending.visibility, sending.bucketIds)), authors: sending.authors };
       for (const item of files) if (item.url) URL.revokeObjectURL(item.url);
       pending = [];
       restored = false;
@@ -200,7 +208,8 @@
         <label><input type="checkbox" bind:checked={draft.pollMultiple} /> Allow more than one choice</label>
       {/if}
     </div></details>
-    <span class="audience"><AudienceChip label="This post" value={audience} own buckets={chipBuckets} onchange={setAudience} /></span>
+    <span class="audience"><AudienceChip label="This post" value={audience} own buckets={chipBuckets} onchange={setAudience}
+      defaultAudience={replyTo ? undefined : accountDefault} onusedefault={useByDefault} /></span>
     <button class="primary" disabled={!canPost}>{busy ? 'Posting…' : replyTo ? 'Reply' : 'Post'}</button>
   </div>
   {#if error}<p class="error" role="alert">{error}</p>{/if}

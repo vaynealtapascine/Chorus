@@ -23,6 +23,10 @@ describe('journal drafts', () => {
     expect(occupied({ ...emptyDraft(), body: 'x' })).toBe(true);
     expect(occupied({ ...emptyDraft(), authors: ['kai'] })).toBe(true);
     expect(occupied({ ...emptyDraft(), lostFiles: 1 })).toBe(true);
+    // a draft at the account's default audience holds nothing yet; any other choice is kept
+    expect(occupied(emptyDraft('buckets', ['b1']), 'buckets', ['b1'])).toBe(false);
+    expect(occupied(emptyDraft('buckets', ['b2']), 'buckets', ['b1'])).toBe(true);
+    expect(occupied(emptyDraft('buckets', ['b1']))).toBe(true);
   });
 
   it('scopes keys by account without aliasing', () => {

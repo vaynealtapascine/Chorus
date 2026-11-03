@@ -97,7 +97,10 @@ class JournalDraftSession(private val storage: EditorDraftStore, val owner: Stri
                     else -> "${before.body}\n${launch.text}"
                 }, files = before.files + launch.files)
                 "entry" -> next.copy(kind = "entry")
-                "reply" -> next.copy(reply = launch.post, quote = null, audience = launch.audience ?: before.audience)
+                // the account's default is for new posts: a reply starts from what was chosen, or Only us
+                "reply" -> next.copy(reply = launch.post, quote = null,
+                    audience = launch.audience ?: if (before.audienceChosen) before.audience else "private",
+                    buckets = if (before.audienceChosen) before.buckets else emptyList())
                 "quote" -> next.copy(quote = launch.post, reply = null)
                 else -> next
             }

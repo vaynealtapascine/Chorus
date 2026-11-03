@@ -14,5 +14,14 @@
     { "name": "custom field follows its default", "profile": { "mode": "followers" }, "parts": {}, "key": "f-roles", "default": { "mode": "server" }, "audience": { "mode": "server" }, "label": "Everyone here" },
     { "name": "custom field with no default is private", "profile": { "mode": "followers" }, "parts": {}, "key": "f-loc", "default": null, "audience": { "mode": "private" }, "label": "Only us" },
     { "name": "custom field's own choice wins", "profile": { "mode": "followers" }, "parts": { "f-loc": { "mode": "followers" } }, "key": "f-loc", "default": { "mode": "private" }, "audience": { "mode": "followers" }, "label": "Friends" }
+  ],
+  "post_default": [
+    {"name": "nothing chosen is only us", "value": null, "audience": {"mode": "private"}},
+    {"name": "friends", "value": {"mode": "followers"}, "audience": {"mode": "followers"}},
+    {"name": "everyone here", "value": {"mode": "server"}, "audience": {"mode": "server"}},
+    {"name": "buckets stay while they live", "value": {"mode": "buckets", "bucket_ids": ["b2", "b1"]}, "audience": {"mode": "buckets", "bucket_ids": ["b2", "b1"]}},
+    {"name": "a deleted bucket drops out", "value": {"mode": "buckets", "bucket_ids": ["gone", "b1"]}, "audience": {"mode": "buckets", "bucket_ids": ["b1"]}},
+    {"name": "with every bucket gone it is only us", "value": {"mode": "buckets", "bucket_ids": ["gone"]}, "audience": {"mode": "private"}},
+    {"name": "a malformed one is only us", "value": {"mode": "everyone"}, "audience": {"mode": "private"}}
   ]
 }

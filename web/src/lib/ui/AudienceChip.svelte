@@ -2,7 +2,7 @@
   // Who can see one profile part, field, or the whole profile (D-101). A chip that opens a small
   // menu: (follow the profile / field default), Only us, Friends, chosen buckets (past eight,
   // the rest fold under "N more", D-115) and everyone on this server.
-  import { audienceLabel, isPrivate, type Audience } from '../profile-audience';
+  import { audienceLabel, isPrivate, sameAudience, type Audience } from '../profile-audience';
   import Icon from './Icon.svelte';
   import BucketLabel from './BucketLabel.svelte';
   import BucketGlyph from './BucketGlyph.svelte';
@@ -16,6 +16,8 @@
     label,
     limited = false,
     onchange,
+    defaultAudience,
+    onusedefault,
   }: {
     /** What it's actually shared with now. */
     value: Audience;
@@ -29,6 +31,9 @@
     /** The profile itself is only us, so this can't reach anyone yet. */
     limited?: boolean;
     onchange: (a: Audience | null) => void;
+    /** A new post's chip (D-117): the audience new posts start with, and making the one shown it. */
+    defaultAudience?: Audience;
+    onusedefault?: (on: boolean) => void;
   } = $props();
 
   let open = $state(false);
@@ -80,6 +85,11 @@
         {#if listed.folded}<button class="more" onclick={() => (allBuckets = true)}>{listed.folded} more {listed.folded === 1 ? 'bucket' : 'buckets'}…</button>{/if}
       {/if}
       <button role="menuitemradio" aria-checked={(own || !inherit) && value.mode === 'server'} onclick={() => pick({ mode: 'server' })}><Icon name="globe" size={16} /> Everyone here <span class="sub">any account on this server</span></button>
+      {#if onusedefault && defaultAudience}
+        {@const isDefault = sameAudience(value, defaultAudience)}
+        <!-- Only us is the built-in default: there's nothing to turn off -->
+        <label class="bucket by-default"><input type="checkbox" checked={isDefault} disabled={isDefault && value.mode === 'private'} onchange={(e) => onusedefault(e.currentTarget.checked)} /> Use this audience by default</label>
+      {/if}
     </div>
   {/if}
 </span>
@@ -97,5 +107,6 @@
   .sub { width: 100%; padding-left: 24px; font-size: var(--fs-xs); color: var(--ink-3); font-weight: 400; }
   .bucket { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: var(--fs-sm); color: var(--ink); cursor: pointer; }
   .bucket input { accent-color: var(--accent); }
+  .by-default { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--line); }
   .more { color: var(--ink-3) !important; font-size: var(--fs-xs) !important; }
 </style>

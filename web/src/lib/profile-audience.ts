@@ -80,6 +80,16 @@ export function isPrivate(a: Audience, liveBuckets: Set<string>): boolean {
   return a.mode === 'private' || (a.mode === 'buckets' && !a.bucket_ids.some((id) => liveBuckets.has(id)));
 }
 
+/** Who a new Journal post starts out shared with (D-117), an account pref. */
+export const POST_AUDIENCE = 'journal.default_audience';
+
+/** Without buckets that no longer exist; with none left it reaches nobody, so it's private. */
+export function liveAudience(a: Audience, liveBuckets: Set<string>): Audience {
+  if (a.mode !== 'buckets') return a;
+  const ids = a.bucket_ids.filter((id) => liveBuckets.has(id));
+  return ids.length ? { mode: 'buckets', bucket_ids: ids } : PRIVATE;
+}
+
 export function sameAudience(a: Audience, b: Audience): boolean {
   if (a.mode !== b.mode) return false;
   if (a.mode === 'buckets' && b.mode === 'buckets') return [...a.bucket_ids].sort().join() === [...b.bucket_ids].sort().join();

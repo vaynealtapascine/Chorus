@@ -19,12 +19,14 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
 /** Who can see one profile part, field, or the whole profile (D-101): a chip with a menu of
  *  [inherit] ("Same as profile" / "Field default"), Only us, Friends, chosen buckets (past eight
  *  the rest fold under "N more", D-115) and everyone on this server. [onChange] gets `null` for
- *  [inherit]. */
+ *  [inherit]. With [onUseByDefault] (a new post's chip, D-117) the menu ends with a checkbox that
+ *  makes the audience shown the one [defaultAudience] new posts start with. */
 @Composable
 internal fun AudienceChip(label: String, value: Audience, own: Boolean, buckets: List<Pair<String, String>>,
     onChange: (Audience?) -> Unit, inherit: String? = null, limited: Boolean = false, enabled: Boolean = true, person: Boolean = false,
     /** Live buckets by id (D-115): each bucket wears its icon and colour as everywhere else. */
-    looks: Map<String, garden.vayne.chorus.data.PrivacyBucket> = emptyMap()) {
+    looks: Map<String, garden.vayne.chorus.data.PrivacyBucket> = emptyMap(),
+    defaultAudience: Audience? = null, onUseByDefault: ((Boolean) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     var open by remember { mutableStateOf(false) }
     var allBuckets by remember { mutableStateOf(false) }
@@ -68,6 +70,13 @@ internal fun AudienceChip(label: String, value: Audience, own: Boolean, buckets:
                     onClick = { allBuckets = true })
             }
             item("Everyone here", "any account on this server", choosing && value.mode == "server") { onChange(Audience("server")) }
+            if (onUseByDefault != null && defaultAudience != null) {
+                val isDefault = value.same(defaultAudience)
+                HorizontalDivider(color = p.line)
+                // Only us is the built-in default: there's nothing to turn off
+                DropdownMenuItem(text = { Text("Use this audience by default") }, enabled = !(isDefault && value.mode == "private"),
+                    leadingIcon = { Checkbox(isDefault, null) }, onClick = { onUseByDefault(!isDefault) })
+            }
         }
     }
 }

@@ -27,6 +27,10 @@ data class Audience(val mode: String, val buckets: List<String> = emptyList()) {
 
     fun same(other: Audience): Boolean = mode == other.mode && (mode != "buckets" || buckets.sorted() == other.buckets.sorted())
 
+    /** Without buckets that no longer exist; with none left it reaches nobody, so it's private. */
+    fun live(liveBuckets: Set<String>): Audience = if (mode != "buckets") this
+        else buckets.filter { it in liveBuckets }.let { if (it.isEmpty()) PRIVATE else Audience("buckets", it) }
+
     /** Incomparable bucket selections may add readers, so warn conservatively. */
     fun possiblyWidens(previous: Audience): Boolean {
         val ranks = mapOf("private" to 0, "buckets" to 1, "followers" to 2, "server" to 3)

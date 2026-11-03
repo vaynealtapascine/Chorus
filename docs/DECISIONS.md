@@ -146,6 +146,8 @@ Web also applies D-110 to chat/search eligibility; its info labels still name th
 
 | D-116 | **Web JS budget: 300 KB gzipped (owner, 2026-11-04), superseding SPEC §9's 200 KB.** The bundle had reached the old limit (204,679 of 204,800 bytes), so each web feature had to find bytes to remove first. `verify.py` still sums every chunk, so code-splitting doesn't change the check. Wasm stays at 500 KB (D-108). | Owner |
 
+| D-117 | **A default audience for new Journal posts (owner request, 2026-11-04).** The audience menu of a new post or entry ends with "Use this audience by default"; it saves the account pref `journal.default_audience`, shared by the account's devices and readable by nobody else. New posts start there; a bucket that no longer exists drops out, and with none left, or a malformed value, the post starts as Only us. Replies are left out, since they start from their thread's audience. A draft with anything in it keeps the audience it shows, so a default changed on another device never widens words being written. | Owner |
+
 ## Versions
 
 Pin here as they are adopted (tool/library → version → date → why).

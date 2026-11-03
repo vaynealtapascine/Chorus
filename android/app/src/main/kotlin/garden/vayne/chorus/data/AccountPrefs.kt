@@ -20,7 +20,9 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
     /** Archived chats: channel id → when (`chat_archived:<id>`); a newer message brings one back. */
     val archivedChats: Map<String, Long> = emptyMap(),
     /** Chat folders and the chat list's display (`chat_folders`, D-113). */
-    val chatFolders: ChatFolders.Settings = ChatFolders.Settings()) {
+    val chatFolders: ChatFolders.Settings = ChatFolders.Settings(),
+    /** Who a new Journal post starts out shared with (`journal.default_audience`, D-117). */
+    val postAudience: Audience = Audience.PRIVATE) {
     fun isSaved(postId: String): Boolean = postId in bookmarks
 
     /** A channel's chat notifications; DMs default to everything, other channels to mentions (as on web). */
@@ -55,7 +57,7 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
                 value(ChatOrganize.HIDE_PRIVATE) != false,
                 keyed(prefs, accountId, ChatOrganize.HIDDEN).mapNotNull { (channel, at) -> (at as? Number)?.let { channel to it.toLong() } }.toMap(),
                 keyed(prefs, accountId, ChatOrganize.ARCHIVED).mapNotNull { (channel, at) -> (at as? Number)?.let { channel to it.toLong() } }.toMap(),
-                ChatFolders.parse(value(ChatFolders.PREF)))
+                ChatFolders.parse(value(ChatFolders.PREF)), ProfileAudience.of(value(POST_AUDIENCE)))
         }
 
         /** Account-wide (no device) prefs under [prefix], by the rest of the key; a pending local
@@ -89,6 +91,11 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
             }
             return (stamped + pending).filterValues { it }.keys
         }
+
+        const val POST_AUDIENCE = "journal.default_audience"
+
+        /** The audience new posts start with; null goes back to the built-in Only us (D-117). */
+        fun postAudiencePayload(audience: Audience?): JSONObject = payload(POST_AUDIENCE, audience?.toJson() ?: JSONObject.NULL)
 
         const val BOOKMARK = "bookmark:"
 

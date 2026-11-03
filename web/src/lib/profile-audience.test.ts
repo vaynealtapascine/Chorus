@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fixture from '../../../fixtures/ui_profile_audience.json';
-import { audienceLabel, audienceOf, effectiveAudience, isPrivate, ownAudience, possiblyWidens, sameAudience, withAudience } from './profile-audience';
+import { audienceLabel, audienceOf, effectiveAudience, isPrivate, liveAudience, ownAudience, possiblyWidens, sameAudience, withAudience } from './profile-audience';
 
 const names = new Map(Object.entries(fixture.buckets));
 const live = new Set(Object.keys(fixture.buckets));
@@ -13,6 +13,12 @@ describe('profile audiences (shared fixture)', () => {
       expect(audienceLabel(a, names)).toBe(c.label);
       expect(isPrivate(a, live)).toBe(c.label === 'Only us');
     });
+  }
+});
+
+describe("a new post's default audience (shared fixture)", () => {
+  for (const c of fixture.post_default) {
+    it(c.name, () => expect(liveAudience(audienceOf(c.value), live)).toEqual(c.audience));
   }
 });
 

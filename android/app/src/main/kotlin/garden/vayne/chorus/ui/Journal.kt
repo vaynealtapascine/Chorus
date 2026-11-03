@@ -187,6 +187,10 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
             draftState.draft.files.filterNot { it.readable(ctx) }.map { it.name }
         }
     }
+    // a new post starts with the account's default audience (D-117)
+    val defaultAudience = model.accountPrefs.postAudience.live(model.sharingBuckets.map { it.first }.toSet())
+    val followed = draftState.draft.following(defaultAudience)
+    if (followed !== draftState.draft) LaunchedEffect(followed) { session.edit { following(defaultAudience) } }
     val mine = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId }
     val author = selectedAuthors?.firstOrNull()?.let { id -> mine.find { it.id == id } }
         ?: mine.find { it.id == authorId } ?: Reply.speaker(model)?.takeIf { it in mine } ?: mine.firstOrNull()
@@ -423,8 +427,18 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
             HorizontalDivider(color = p.line)
             Column(Modifier.fillMaxWidth().background(p.surface)) {
                 AudienceChip("This post", garden.vayne.chorus.data.Audience(audience, bucketIds), own = true, buckets = model.sharingBuckets, person = model.isPerson, enabled = !busy, onChange = { value ->
-                    value?.let { audience = it.mode; bucketIds = it.buckets }
-                }, looks = model.bucketLooks)
+                    value?.let { session.edit { copy(audience = it.mode, buckets = it.buckets, audienceChosen = !it.same(defaultAudience)) } }
+                }, looks = model.bucketLooks, defaultAudience = defaultAudience, onUseByDefault = if (replyTo != null) null else ({ on: Boolean ->
+                    actions.launch {
+                        try {
+                            chorus.create("pref.set", null, garden.vayne.chorus.data.AccountPrefs.postAudiencePayload(
+                                garden.vayne.chorus.data.Audience(audience, bucketIds).takeIf { on }))
+                            // now the default it follows it; taken off, this draft keeps what it shows
+                            session.edit { copy(audienceChosen = !on) }
+                        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                        catch (_: Exception) { error = "Could not save your default audience. Try again." }
+                    }
+                }))
                 HorizontalDivider(color = p.line, thickness = .5.dp)
                 JournalFormatToolbar(bodyValue, !busy) { bodyValue = it; bodyFocus.requestFocus() }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
