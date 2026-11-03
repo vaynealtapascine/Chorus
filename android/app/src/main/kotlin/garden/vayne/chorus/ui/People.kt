@@ -111,6 +111,18 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
         }
     }
 
+    // the bucket being edited (D-115): "" for a new one
+    var editingBucket by rememberSaveable { mutableStateOf<String?>(null) }
+    fun bucketOp(kind: String, id: String, payload: JSONObject) {
+        actions.launch {
+            try { chorus.create(kind, id, payload) } catch (e: Exception) { error = e.message ?: "Could not change this bucket." }
+        }
+    }
+    editingBucket?.let { id ->
+        BucketEditor(model, id.ifEmpty { null }, follows.followers.filter { it.status == "active" }, !busy, { chorus.newId() },
+            onDismiss = { editingBucket = null }) { kind, bucket, payload -> bucketOp(kind, bucket, payload) }
+    }
+
     fun action(block: suspend () -> Unit) {
         if (busy) return
         busy = true; error = null
@@ -272,6 +284,12 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                             FollowPresets.withGrant(model.followCeilings[f.id] ?: JSONObject(), key, id, on)))
                     }
                 }
+                if (!model.isPerson) CeilingControls(model.followCeilings[f.id] ?: JSONObject(), "Their buckets or the default", !busy,
+                    omit = setOf("share_history", "share_stats")) { ceiling ->
+                    action { chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling", ceiling)) }
+                }
+                FollowerBuckets(model, f.account.id, !busy) { bucket, on -> bucketOp(if (on) "bucket.assign" else "bucket.unassign", bucket,
+                    JSONObject().put("follower_account_id", f.account.id)) }
                 Row {
                     TextButton(enabled = !busy, onClick = { action {
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
@@ -283,6 +301,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                 }
             }
         }
+        bucketItems(model) { editingBucket = it ?: "" }
         } else {
         val requests = follows.followers.filter { it.status == "requested" }
         if (requests.isNotEmpty()) {
@@ -340,6 +359,12 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                             FollowPresets.withGrant(model.followCeilings[f.id] ?: JSONObject(), key, id, on)))
                     }
                 }
+                if (!model.isPerson) CeilingControls(model.followCeilings[f.id] ?: JSONObject(), "Their buckets or the default", !busy,
+                    omit = setOf("share_history", "share_stats")) { ceiling ->
+                    action { chorus.create("follow.set_ceiling", f.id, JSONObject().put("ceiling", ceiling)) }
+                }
+                FollowerBuckets(model, f.account.id, !busy) { bucket, on -> bucketOp(if (on) "bucket.assign" else "bucket.unassign", bucket,
+                    JSONObject().put("follower_account_id", f.account.id)) }
                 Row {
                     TextButton(enabled = !busy, onClick = { action {
                         val dev = checkNotNull(chorus.device) { "Not signed in." }
@@ -351,6 +376,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
                 }
             }
         }
+        bucketItems(model) { editingBucket = it ?: "" }
         item {
             Text("Following", color = p.ink, fontWeight = FontWeight.SemiBold)
             if (model.isPerson && follows.following.any { it.account.isSystem }) Text("Systems share who's fronting " +
@@ -530,7 +556,7 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
 }
 
 @Composable
-private fun FollowPresetPicker(label: String, choice: String, onChoice: (String) -> Unit) {
+internal fun FollowPresetPicker(label: String, choice: String, onChoice: (String) -> Unit) {
     val p = LocalChorusPalette.current
     var open by remember { mutableStateOf(false) }
     val labels = mapOf(

@@ -56,8 +56,9 @@ class FollowPresetsTest {
         assertEquals("off", FollowPresets.choiceOf(off, core))
         assertEquals(setOf("head"), FollowPresets.granted(off, "fronts"))
         assertEquals(setOf("quiet"), FollowPresets.granted(off, "layers"))
+        // revoking the last grant keeps an empty list: the follow's own setting wins over its buckets (D-115)
         val revoked = FollowPresets.withGrant(off, "fronts", "head", false)
-        assertEquals(false, revoked.has("fronts"))
+        assertEquals("[]", revoked.getJSONArray("fronts").toString())
         val view = PeopleApi.followerView(JSONObject("""{"entries":[],"fronts":[{"id":"head","name":"Headspace",
             "entries":[{"t":"subject","name":"Ash","level":"quiet"},{"t":"subject","name":"Kai","level":"front"}]}]}"""))
         assertEquals(listOf("Headspace" to listOf("Ash", "Kai")), view.fronts)

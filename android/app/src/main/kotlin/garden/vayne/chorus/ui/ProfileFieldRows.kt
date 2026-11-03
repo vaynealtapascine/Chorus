@@ -116,7 +116,7 @@ internal fun AddFieldDialog(chorus: Chorus, model: Model, onAdded: (ProfileDetai
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Starts as", color = p.ink2, modifier = Modifier.weight(1f))
-                AudienceChip("New field", audience, own = true, buckets = model.sharingBuckets, onChange = { audience = it ?: Audience.PRIVATE })
+                AudienceChip("New field", audience, own = true, buckets = model.sharingBuckets, onChange = { audience = it ?: Audience.PRIVATE }, looks = model.bucketLooks)
             }
         } } },
         confirmButton = { InspectionDialogContent { TextButton(enabled = name.isNotBlank() && !taken, onClick = { confirming = true }) { Text("Next") } } },
@@ -166,7 +166,7 @@ internal fun FieldSettingsDialog(chorus: Chorus, model: Model, def: ProfileDetai
                 supportingText = { if (taken) Text("Another field already has that name.") })
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("For members who haven't chosen", color = p.ink2, modifier = Modifier.weight(1f))
-                AudienceChip("${def.name} by default", audience, own = true, buckets = model.sharingBuckets, onChange = { audience = it ?: Audience.PRIVATE })
+                AudienceChip("${def.name} by default", audience, own = true, buckets = model.sharingBuckets, onChange = { audience = it ?: Audience.PRIVATE }, looks = model.bucketLooks)
             }
             TextButton(onClick = { removing = true }) { Text("Remove from every member…", color = p.danger) }
             error?.let { Text(it, color = p.danger) }

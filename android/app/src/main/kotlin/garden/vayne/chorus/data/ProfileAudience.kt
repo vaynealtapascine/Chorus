@@ -16,7 +16,7 @@ data class Audience(val mode: String, val buckets: List<String> = emptyList()) {
     fun label(bucketNames: Map<String, String> = emptyMap()): String = when (mode) {
         "followers" -> "Friends"
         "server" -> "Everyone here"
-        "buckets" -> buckets.filter { it in bucketNames }.let { named ->
+        "buckets" -> buckets.distinct().filter { it in bucketNames }.let { named ->
             when (named.size) { 0 -> "Only us"; 1 -> bucketNames.getValue(named[0]); else -> "${named.size} buckets" }
         }
         else -> "Only us"

@@ -303,17 +303,61 @@ fn draws() -> Draws {
 
 /// Queue follower notifications after a front change of `account` (inside the ingest tx).
 pub fn on_front_change(conn: &Connection, account: &str, now: i64) -> anyhow::Result<()> {
-    queue_front_change(conn, account, None, now)
+    queue_front_change(conn, account, None, None, now)
 }
 
 pub fn on_front_op(conn: &Connection, account: &str, op: &chorus_core::op::Op, now: i64) -> anyhow::Result<()> {
-    queue_front_change(conn, account, Some(op), now)
+    queue_front_change(conn, account, Some(op), None, now)
+}
+
+/// Does this op change who hears what about the account's front, and when (NOTIFICATIONS §3,
+/// D-115)? A bucket's ceiling or followers, a bucket's deletion, a follow's override, the account
+/// default, or a member's announce policy. A bucket's name or icon doesn't.
+pub fn changes_policy(o: &chorus_core::op::Op) -> bool {
+    let has = |key: &str| o.payload.get(key).is_some();
+    match o.kind.as_str() {
+        "bucket.set" => has("ceiling"),
+        "bucket.delete" | "bucket.assign" | "bucket.unassign" | "follow.set_ceiling" => true,
+        "pref.set" => {
+            o.payload.get("key").and_then(Value::as_str) == Some("follow_ceiling")
+                && o.payload.get("device").and_then(Value::as_str).unwrap_or("").is_empty()
+        }
+        "member.set" => has("notify_policy"),
+        // the account default's older home (still read when there's no pref)
+        "account.set" => o.payload.get("settings").and_then(|s| s.get("follow_ceiling")).is_some(),
+        _ => false,
+    }
+}
+
+/// The account's sharing policy changed: reveals still pending were planned under the old rules,
+/// so they are planned again under the new ones, from the same switch time. A stricter rule makes
+/// a reveal later, smaller or silent; nothing already revealed changes. Under `sequence` stacking
+/// the states between are not revealed separately any more, only where the front is now.
+pub fn on_policy_change(conn: &Connection, account: &str, now: i64) -> anyhow::Result<()> {
+    let newest: Option<String> = conn
+        .query_row(
+            "SELECT payload FROM notification WHERE kind = 'switch' AND delivered_at IS NULL AND cancelled_at IS NULL
+               AND json_extract(payload, '$.target_account_id') = ?1 AND json_extract(payload, '$.state') = 'pending'
+             ORDER BY json_extract(payload, '$.occurred_at') DESC, id DESC LIMIT 1",
+            [account],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(q) = newest.and_then(|p| serde_json::from_str::<Queued>(&p).ok()) else { return Ok(()) };
+    conn.execute(
+        "UPDATE notification SET cancelled_at = ?2 WHERE kind = 'switch' AND delivered_at IS NULL AND cancelled_at IS NULL
+           AND json_extract(payload, '$.target_account_id') = ?1 AND json_extract(payload, '$.state') = 'pending'",
+        params![account, now],
+    )?;
+    let at = Latest { id: None, occurred_at: q.occurred_at, tz_offset_min: q.tz_offset_min, notify: q.notify };
+    queue_front_change(conn, account, None, Some(at), now)
 }
 
 fn queue_front_change(
     conn: &Connection,
     account: &str,
     cause: Option<&chorus_core::op::Op>,
+    replan: Option<Latest>,
     now: i64,
 ) -> anyhow::Result<()> {
     let follows = active_follows(conn, account)?;
@@ -321,7 +365,9 @@ fn queue_front_change(
         return Ok(());
     }
     let current = crate::fronts::current(conn, account)?;
-    let latest = if current.is_some() {
+    let latest = if replan.is_some() {
+        replan
+    } else if current.is_some() {
         cause.and_then(|op| chorus_core::front_history::Event::from_op(account, op).ok().flatten()).map(|e| {
             use chorus_core::front_history::{Action, Change};
             let notify = match e.action {

@@ -50,7 +50,7 @@ fn compact_post_history_migrates_and_rebuilds_without_rewriting_ops() {
     let original_ops = chorus_server::exports::ops_jsonl(&conn, ALICE).unwrap();
     // Exercise migration of an actual pre-0018 derived history, with the same permanent log.
     legacy_history(&conn, &id);
-    conn.execute_batch("DROP TABLE post_revision_diff; UPDATE server_meta SET value='17' WHERE key='schema_version'")
+    conn.execute_batch("DROP TABLE post_revision_diff; ALTER TABLE bucket DROP COLUMN icon; UPDATE server_meta SET value='17' WHERE key='schema_version'")
         .unwrap();
     db::migrate(&mut conn).unwrap();
     assert_eq!(chorus_server::messages::post_revisions(&conn, &current).unwrap(), history);
@@ -141,7 +141,7 @@ fn incomplete_legacy_history_survives_migration_reads_edits_and_rebuild() {
             _ => unreachable!(),
         }
         conn.execute_batch(
-            "DROP TABLE post_revision_diff; UPDATE server_meta SET value='17' WHERE key='schema_version'",
+            "DROP TABLE post_revision_diff; ALTER TABLE bucket DROP COLUMN icon; UPDATE server_meta SET value='17' WHERE key='schema_version'",
         )
         .unwrap();
         db::migrate(&mut conn).unwrap();
@@ -932,7 +932,7 @@ fn legacy_post(conn: &mut Connection, corruption: &str) -> (String, Value) {
         "no_ops" => conn.execute("DELETE FROM op WHERE entity_id=?1", [&id]).unwrap(),
         _ => unreachable!(),
     };
-    conn.execute_batch("DROP TABLE post_revision_diff; UPDATE server_meta SET value='17' WHERE key='schema_version'")
+    conn.execute_batch("DROP TABLE post_revision_diff; ALTER TABLE bucket DROP COLUMN icon; UPDATE server_meta SET value='17' WHERE key='schema_version'")
         .unwrap();
     db::migrate(conn).unwrap();
     (id, current)

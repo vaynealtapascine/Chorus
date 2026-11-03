@@ -66,6 +66,8 @@ export interface EmojiRow {
 export interface BucketRow {
   id: string;
   name: string;
+  icon?: string;
+  color?: string;
   ceiling: Record<string, unknown>;
 }
 
@@ -154,6 +156,8 @@ export function buckets(p: Projection): BucketRow[] {
     .map(([id, row]) => ({
       id,
       name: str(row.fields.name) ?? 'Untitled',
+      icon: str(row.fields.icon),
+      color: str(row.fields.color),
       ceiling: row.fields.ceiling && typeof row.fields.ceiling === 'object' && !Array.isArray(row.fields.ceiling)
         ? row.fields.ceiling as Record<string, unknown> : {},
     }))

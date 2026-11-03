@@ -91,7 +91,7 @@ internal fun ProfileRelationships(chorus: Chorus, model: Model, memberId: String
                 if (link.note != null) Text(link.note, color = p.ink2)
                 if (raw != null) AudienceChip("Relationship", ProfileAudience.of(ProfileAudience.parse(raw.visibility)), true,
                     model.sharingBuckets, onChange = { a -> write("relationship.set", link.id,
-                        JSONObject().put("visibility", (a ?: Audience.PRIVATE).toJson())) }, enabled = !busy)
+                        JSONObject().put("visibility", (a ?: Audience.PRIVATE).toJson())) }, enabled = !busy, looks = model.bucketLooks)
             }
             TextButton(enabled = !busy, onClick = { write("relationship.delete", link.id, JSONObject()) }) {
                 Text("Remove")
@@ -126,7 +126,7 @@ internal fun ProfileRelationships(chorus: Chorus, model: Model, memberId: String
                     modifier = Modifier.fillMaxWidth())
                 targetError?.let { Text(it, color = p.ink2); TextButton(onClick = { refresh++ }) { Text("Refresh shared profiles") } }
                 AudienceChip("New relationship", audience, true, model.sharingBuckets,
-                    onChange = { audience = it ?: Audience.PRIVATE }, enabled = !busy)
+                    onChange = { audience = it ?: Audience.PRIVATE }, enabled = !busy, looks = model.bucketLooks)
                 TextButton(enabled = !busy && chosenType != null && (if (external) label.isNotBlank() else chosenTarget != null),
                     onClick = {
                         val type = chosenType ?: return@TextButton

@@ -1,9 +1,12 @@
 <script lang="ts">
   // Who can see one profile part, field, or the whole profile (D-101). A chip that opens a small
-  // menu: (follow the profile / field default), Only us, Friends, chosen buckets, and under More,
-  // everyone on this server.
+  // menu: (follow the profile / field default), Only us, Friends, chosen buckets (past eight,
+  // the rest fold under "N more", D-115) and everyone on this server.
   import { audienceLabel, isPrivate, type Audience } from '../profile-audience';
   import Icon from './Icon.svelte';
+  import BucketLabel from './BucketLabel.svelte';
+  import BucketGlyph from './BucketGlyph.svelte';
+  import { listedBuckets, type BucketPresentation } from '../bucket-controls';
 
   let {
     value,
@@ -20,7 +23,7 @@
     own: boolean;
     /** "Same as profile" / "Field default" — absent for the profile itself. */
     inherit?: string;
-    buckets: { id: string; name: string }[];
+    buckets: BucketPresentation[];
     /** What this chip is for, for screen readers: "Pronouns". */
     label: string;
     /** The profile itself is only us, so this can't reach anyone yet. */
@@ -29,12 +32,14 @@
   } = $props();
 
   let open = $state(false);
-  let more = $state(false);
+  let allBuckets = $state(false);
   const names = $derived(new Map(buckets.map((b) => [b.id, b.name])));
   const live = $derived(new Set(buckets.map((b) => b.id)));
   const priv = $derived(isPrivate(value, live) || limited);
   // while it follows the profile, ticking a bucket starts its own choice from scratch
   const chosenBuckets = $derived(value.mode === 'buckets' && (own || !inherit) ? value.bucket_ids.filter((id) => live.has(id)) : []);
+  const listed = $derived(listedBuckets(buckets, chosenBuckets, allBuckets));
+  const single = $derived(value.mode === 'buckets' && chosenBuckets.length === 1 ? buckets.find((b) => b.id === chosenBuckets[0]) : undefined);
   const text = $derived(limited && !isPrivate(value, live) ? `${audienceLabel(value, names)} (once shared)` : audienceLabel(value, names));
 
   function pick(a: Audience | null) {
@@ -55,7 +60,8 @@
     aria-label="{label}: {text}{own || !inherit ? '' : ` (${inherit.toLowerCase()})`}. Change who can see it"
     title={own || !inherit ? undefined : inherit}
     onclick={(e) => { e.stopPropagation(); open = !open; }}>
-    <Icon name={priv ? 'lock' : value.mode === 'server' ? 'globe' : 'users'} size={14} />
+    {#if !priv && single}<BucketGlyph icon={single.icon} color={single.color} size={14} />
+    {:else}<Icon name={priv ? 'lock' : value.mode === 'server' ? 'globe' : 'users'} size={14} />{/if}
     <span>{text}</span>
   </button>
   {#if open}
@@ -68,15 +74,12 @@
       <button role="menuitemradio" aria-checked={(own || !inherit) && value.mode === 'followers'} onclick={() => pick({ mode: 'followers' })}><Icon name="users" size={16} /> Friends <span class="sub">everyone who follows us</span></button>
       {#if buckets.length}
         <p class="menu-title">Only some friends</p>
-        {#each buckets as b (b.id)}
-          <label class="bucket"><input type="checkbox" checked={chosenBuckets.includes(b.id)} onchange={(e) => toggleBucket(b.id, e.currentTarget.checked)} /> {b.name}</label>
+        {#each listed.shown as b (b.id)}
+          <label class="bucket"><input type="checkbox" checked={chosenBuckets.includes(b.id)} onchange={(e) => toggleBucket(b.id, e.currentTarget.checked)} /> <BucketLabel bucket={b} /></label>
         {/each}
+        {#if listed.folded}<button class="more" onclick={() => (allBuckets = true)}>{listed.folded} more {listed.folded === 1 ? 'bucket' : 'buckets'}…</button>{/if}
       {/if}
-      {#if more || value.mode === 'server'}
-        <button role="menuitemradio" aria-checked={(own || !inherit) && value.mode === 'server'} onclick={() => pick({ mode: 'server' })}><Icon name="globe" size={16} /> Everyone here <span class="sub">any account on this server</span></button>
-      {:else}
-        <button class="more" onclick={() => (more = true)}>More…</button>
-      {/if}
+      <button role="menuitemradio" aria-checked={(own || !inherit) && value.mode === 'server'} onclick={() => pick({ mode: 'server' })}><Icon name="globe" size={16} /> Everyone here <span class="sub">any account on this server</span></button>
     </div>
   {/if}
 </span>

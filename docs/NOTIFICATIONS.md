@@ -94,6 +94,19 @@ Stored as JSON: defaults on the account, per-bucket (`bucket.ceiling`), per-foll
 (`follow.ceiling`). Effective value per field: follow override → most permissive among the
 follower's buckets → account default.
 
+**Policy changes apply to what is still pending (D-115).** A reveal is planned when the front
+changes, under the policy of that moment. When the policy changes before it is revealed (a
+bucket's ceiling, who is in a bucket, a deleted bucket, a follow override, the account default,
+a member's `notify_policy`), every pending reveal of that account is planned again from the same
+switch time under the new rules (`notifier::on_policy_change`): a stricter rule makes it later,
+smaller or silent, a looser one may make it sooner. Nothing already revealed changes. Under
+`sequence` stacking the states in between are no longer revealed one by one, only the current
+one. A bucket's name and icon are presentation only and never re-plan.
+
+Each bucket (D-115) has a name, an icon (one of the shared set in `fixtures/ui_bucket_controls.json`
+or its own emoji), a colour and its ceiling. Basic shows the presets; Advanced shows every field below, each inherited until
+customized, with the same controls for the account default, a bucket and a follow override.
+
 **Named fronts (D-080, D-084):** front access is a separate limit from notification-layer
 selection. Existing followers remain limited to Body until the owner explicitly grants additional
 fronts in their visibility settings. Apply both the front grant and the front's selected layer

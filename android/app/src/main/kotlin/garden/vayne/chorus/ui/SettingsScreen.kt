@@ -283,7 +283,10 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
                     }
                 }
                 if (ceilingChoice == "custom") Text("Custom ceiling is active. Choose a preset to replace it.", color = p.ink2)
-                Text("Set each follower's access in People.", color = p.ink2)
+                CeilingControls(prefs.followCeiling, "Built-in default", !busy, omit = setOf("share_history", "share_stats")) {
+                    save("follow_ceiling", it)
+                }
+                Text("Set buckets and each follower's access in People.", color = p.ink2)
             }
         }
         item {

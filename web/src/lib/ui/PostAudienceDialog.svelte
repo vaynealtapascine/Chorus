@@ -7,7 +7,7 @@
   import AudienceChip from './AudienceChip.svelte';
 
   let { projection, postId, current, onclose }: { projection: Projection; postId: string; current: Audience; onclose: () => void } = $props();
-  const buckets = $derived(bucketRows(projection).map((b) => ({ id: b.id, name: b.name })));
+  const buckets = $derived(bucketRows(projection).map((b) => ({ id: b.id, name: b.name, icon: b.icon })));
   // svelte-ignore state_referenced_locally
   let choice = $state<Audience>(current);
   let error = $state('');

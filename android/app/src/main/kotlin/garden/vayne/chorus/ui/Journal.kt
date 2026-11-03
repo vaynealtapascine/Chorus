@@ -408,7 +408,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
             Column(Modifier.fillMaxWidth().background(p.surface)) {
                 AudienceChip("This post", garden.vayne.chorus.data.Audience(audience, bucketIds), own = true, buckets = model.sharingBuckets, person = model.isPerson, enabled = !busy, onChange = { value ->
                     value?.let { audience = it.mode; bucketIds = it.buckets }
-                })
+                }, looks = model.bucketLooks)
                 HorizontalDivider(color = p.line, thickness = .5.dp)
                 JournalFormatToolbar(bodyValue, !busy) { bodyValue = it; bodyFocus.requestFocus() }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -11,13 +11,14 @@ object FollowPresets {
     fun ceiling(choice: String, previous: JSONObject = JSONObject(), core: (String) -> String = { notifyPreset(it) }): JSONObject {
         require(choice in choices)
         val next = if (choice == "inherit") JSONObject() else JSONObject(core(choice))
-        for (key in KEPT) {
+        for (key in if (choice == "inherit") KEPT else previous.keys().asSequence().filter { it !in PRESET_KEYS }.toList()) {
             if (previous.has(key) && !previous.isNull(key)) next.put(key, previous.get(key))
         }
         return next
     }
 
     /** Sharing toggles and front/layer grants (D-084) are independent of the Basic preset. */
+    val PRESET_KEYS = listOf("switch_notifications", "levels", "announce_leaving", "delay", "time", "digest_only")
     private val KEPT = listOf("share_history", "share_stats", "fronts", "layers")
 
     fun granted(ceiling: JSONObject, key: String): Set<String> =
@@ -29,15 +30,17 @@ object FollowPresets {
         val next = granted(previous, key).filter { it != id }.toMutableList()
         if (on) next.add(id)
         val out = JSONObject(previous.toString())
-        if (next.isEmpty()) out.remove(key) else out.put(key, JSONArray(next.sorted()))
+        out.put(key, JSONArray(next.sorted()))
         return out
     }
 
+    /** The Basic preset [override] matches, read from the preset's own fields only, so an Advanced
+     *  detail (a daily limit, quiet hours…) doesn't turn it into "custom" (as on the web). */
     fun choiceOf(override: JSONObject, core: (String) -> String = { notifyPreset(it) }): String {
-        val base = JSONObject(override.toString())
-        for (key in KEPT) base.remove(key)
+        fun own(j: JSONObject) = JSONObject().apply { for (key in PRESET_KEYS) if (j.has(key)) put(key, j.get(key)) }
+        val base = own(override)
         if (base.length() == 0) return "inherit"
-        return choices.drop(1).firstOrNull { canonical(base) == canonical(JSONObject(core(it))) } ?: "custom"
+        return choices.drop(1).firstOrNull { canonical(base) == canonical(own(JSONObject(core(it)))) } ?: "custom"
     }
 
     /** Advanced follower permissions remain separate from the Basic notification preset. */

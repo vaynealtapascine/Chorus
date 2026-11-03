@@ -1,4 +1,6 @@
 <script lang="ts">
+  import CeilingControls from './CeilingControls.svelte';
+  import { withPreset } from '../bucket-controls';
   import { appearance, setTheme, type ThemeMode } from '../appearance.svelte';
   import { notifyPreset } from '../core/pkg/chorus_wasm.js';
   import { contentWarningsAutoExpand, readPerMember, segmentParsing, selfMember } from '../data';
@@ -17,6 +19,8 @@
     { id: 'close', label: 'Close' },
     { id: 'gentle', label: 'Gentle' },
     { id: 'private', label: 'Private' },
+    { id: 'digest', label: 'Digest' },
+    { id: 'off', label: 'Off' },
   ];
   const presetValues = Object.fromEntries(presets.map((p) => [p.id, JSON.parse(notifyPreset(p.id))]));
   // sharing toggles and front/layer grants (D-084) are independent of the preset
@@ -31,7 +35,7 @@
     savePref('notify_chat', { ...kinds, [key]: enabled });
   }
   function sharing(id: string) {
-    savePref('follow_ceiling', { ...presetValues[id], ...Object.fromEntries(KEPT.filter((key) => key in ceiling).map((key) => [key, ceiling[key]])) });
+    savePref('follow_ceiling', withPreset(ceiling, presetValues[id]));
   }
   function sharingDetail(key: 'share_history' | 'share_stats', enabled: boolean) {
     savePref('follow_ceiling', { ...ceiling, [key]: enabled });
@@ -118,6 +122,7 @@
           {#each presets as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
         </select>
       </label>
+      <CeilingControls {ceiling} inherited="Built-in default" omit={['share_history', 'share_stats']} onchange={(c) => savePref('follow_ceiling', c)} />
       <p class="muted">Set buckets and each follower’s access on <a href="#/people">People</a>.</p>
     </section>
   {/if}

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { core } from '../core';
+  import BucketLabel from './BucketLabel.svelte';
   import { buckets, fieldDefs, fieldValues, groupPath, groups, members, membership, selfMember, type ProxyTag } from '../data';
   import { router } from '../router.svelte';
   import { sync, type Projection } from '../sync/client';
@@ -209,7 +210,7 @@
         {#if announce === 'buckets'}
           <div class="wide checks" aria-label={`Announce ${m.name} to buckets`}>
             {#each sharingBuckets as bucket (bucket.id)}
-              <label class="check"><input type="checkbox" checked={announceBucketIds.includes(bucket.id)} onchange={(e) => setAnnounceBucket(bucket.id, e.currentTarget.checked)} /> {bucket.name}</label>
+              <label class="check"><input type="checkbox" checked={announceBucketIds.includes(bucket.id)} onchange={(e) => setAnnounceBucket(bucket.id, e.currentTarget.checked)} /> <BucketLabel {bucket} /></label>
             {/each}
             {#if !sharingBuckets.length}<span class="hint">Create a sharing bucket on the People page first.</span>{/if}
           </div>

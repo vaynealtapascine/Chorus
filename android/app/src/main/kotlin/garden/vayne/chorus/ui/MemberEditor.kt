@@ -161,13 +161,13 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
             fun setPart(key: String, a: Audience?) { parts = ProfileAudience.with(partsNow, key, a).toString() }
             @Composable fun partChip(key: String, label: String) = AudienceChip(label, ProfileAudience.effective(ProfileAudience.parse(profileAudience), partsNow, key),
                 own = ProfileAudience.own(partsNow, key) != null, buckets = liveBuckets, onChange = { setPart(key, it) },
-                inherit = "Same as profile", limited = closed, enabled = !busy)
+                inherit = "Same as profile", limited = closed, enabled = !busy, looks = model.bucketLooks)
             HorizontalDivider(color = p.line)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Profile", color = p.ink, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 Text("Who can open it ", color = p.ink3, style = MaterialTheme.typography.bodySmall)
                 AudienceChip("${name.ifBlank { "This member" }}'s profile", profileNow, own = true, buckets = liveBuckets,
-                    onChange = { profileAudience = (it ?: Audience.PRIVATE).toJson().toString() }, enabled = !busy)
+                    onChange = { profileAudience = (it ?: Audience.PRIVATE).toJson().toString() }, enabled = !busy, looks = model.bucketLooks)
             }
             Text(if (closed) "Only your system can see this profile right now. Share it with friends, then open up or keep each part below."
                 else "Friends who can open it see each part below that's shared with them.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
@@ -201,7 +201,7 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
                 val fallback = ProfileAudience.of(JSONObject(def.defaultVisibility))
                 PartHeader(def.name, {
                     AudienceChip(def.name, ProfileAudience.own(partsNow, id) ?: fallback, own = ProfileAudience.own(partsNow, id) != null,
-                        buckets = liveBuckets, onChange = { setPart(id, it) }, inherit = "Field default", limited = closed, enabled = !busy)
+                        buckets = liveBuckets, onChange = { setPart(id, it) }, inherit = "Field default", limited = closed, enabled = !busy, looks = model.bucketLooks)
                 }, onSettings = if (live != null) ({ settingsFor = id }) else null)
                 FieldValueEditor(chorus, def, row.getString("type"), values[i], !busy,
                     onValue = { value -> values = values.toMutableList().apply { set(i, value) } }, onError = { error = it })
@@ -223,6 +223,16 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
                 OutlinedTextField(sigil, { sigil = it }, label = { Text("Representative characters") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
                 if (!model.isPerson) ColourField(color, { color = it }, modifier = Modifier.fillMaxWidth(), enabled = !busy)
                 Text("Start a message with one or more members' representative characters, then a space.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+                // who hears when this member fronts (NOTIFICATIONS §2.4): saved as it's chosen, like the web
+                model.member(id)?.let { saved ->
+                    MemberAnnounce(model, saved, !busy) { policy ->
+                        actions.launch {
+                            try { chorus.create("member.set", id, JSONObject().put("notify_policy", policy), expectedEditorOwner = owner) }
+                            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                            catch (e: Exception) { error = e.message }
+                        }
+                    }
+                }
                 if (baseline != null) OutlinedButton(enabled = !busy && !dirty, onClick = {
                     actions.launch {
                         busy = true

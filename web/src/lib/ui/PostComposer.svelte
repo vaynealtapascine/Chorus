@@ -2,6 +2,7 @@
   import Icon from './Icon.svelte';
   import QuoteEmbed from './QuoteEmbed.svelte';
   import AudienceChip from './AudienceChip.svelte';
+  import { validBucketAudience } from '../bucket-controls';
   import type { Audience } from '../profile-audience';
   import { core } from '../core';
   import { buckets, members, selfMember } from '../data';
@@ -17,7 +18,7 @@
   let { projection, initialAuthors = [], replyTo, defaultVisibility = 'private', onsent }: { projection: Projection; initialAuthors?: string[]; replyTo?: string; defaultVisibility?: 'private' | 'followers' | 'server'; onsent?: () => void } = $props();
   const active = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
   const availableBuckets = $derived(buckets(projection));
-  const chipBuckets = $derived(availableBuckets.map((b) => ({ id: b.id, name: b.name })));
+  const chipBuckets = $derived(availableBuckets.map((b) => ({ id: b.id, name: b.name, icon: b.icon })));
   const MAX_FILES = 10;
 
   // one saved draft per composer context, like Android's (the main composer, or a thread's reply box)
@@ -110,7 +111,7 @@
   }
 
   const canPost = $derived(!busy && authors.length > 0 && (!!draft.body.trim() || pending.length > 0) &&
-    (draft.visibility !== 'buckets' || draft.bucketIds.length > 0));
+    validBucketAudience(audience, availableBuckets));
 
   async function send(e: SubmitEvent) {
     e.preventDefault();

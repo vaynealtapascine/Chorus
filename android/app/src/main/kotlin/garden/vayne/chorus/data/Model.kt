@@ -26,6 +26,7 @@ data class Member(
     /** Who can open the profile and each part's own audience, as stored JSON text (D-101). */
     val visibility: String? = null,
     val fieldVisibility: String? = null,
+    val notifyPolicy: String? = null,
 ) {
     val shownName: String get() = displayName ?: name
     val glyph: String get() = sigils.firstOrNull() ?: name.take(1).uppercase()
@@ -98,7 +99,7 @@ data class JournalPost(
 )
 
 data class MemberList(val id: String, val name: String, val description: String?, val memberIds: Set<String>)
-data class SavedFeed(val id: String, val name: String, val description: String?, val query: String, val visibility: String)
+data class SavedFeed(val id: String, val name: String, val description: String?, val query: String, val visibility: String, val audience: Audience = Audience(visibility))
 data class SavedStage(val id: String, val name: String, val channelId: String, val definition: JSONObject)
 data class FrontSpan(val memberId: String, val startAt: Long, val endAt: Long?)
 data class FrontInterval(val id: String, val subjectType: String, val subjectId: String,
@@ -154,6 +155,8 @@ class Model(
     val memberList: MemberListSettings = MemberListSettings(),
     /** Sharing buckets, id → name, by name (audiences, D-101). */
     val sharingBuckets: List<Pair<String, String>> = emptyList(),
+    val privacyBuckets: List<PrivacyBucket> = emptyList(),
+    val bucketAssignments: Map<String, Set<String>> = emptyMap(),
     /** Retain tombstones for rejecting stale network search cards without hydrating their bodies. */
     val deletedMessageIds: Set<String> = emptySet(),
     val deletedPostIds: Set<String> = emptySet(),
@@ -176,6 +179,8 @@ class Model(
     val active: List<Member> get() = members.filter { !it.archived }
     /** The server creates one self member for a person account. */
     val isPerson: Boolean get() = members.any { it.isSelf }
+    /** Live buckets by id (D-115), for showing a bucket's look wherever an audience is chosen. */
+    val bucketLooks: Map<String, PrivacyBucket> by lazy { privacyBuckets.associateBy { it.id } }
 
     /** Members most recently switched in, newest first (for the quick-switch grid). */
     fun recents(limit: Int = 12): List<String> {
@@ -327,6 +332,7 @@ class Model(
                         f.str("sort_key"), f.optJSONArray("description_entities")?.toString() ?: "[]", f.str("birthday"),
                         f.opt("visibility")?.takeIf { it != JSONObject.NULL }?.toString(),
                         f.opt("field_visibility")?.takeIf { it != JSONObject.NULL }?.toString(),
+                        f.opt("notify_policy")?.takeIf { it != JSONObject.NULL }?.toString(),
                     )
                 }
                 .sortedWith(compareBy<Member> { it.shownName.lowercase(java.util.Locale.ROOT) }.thenBy { it.id })
@@ -454,7 +460,7 @@ class Model(
                 .sortedWith(compareBy<MemberList> { it.name.lowercase() }.thenBy { it.id })
             val savedFeeds = rows(p, "feed").filter { (_, f) -> !f.present("deleted_at") && f.present("query_ast") && !f.str("query").isNullOrBlank() }
                 .map { (id, f) -> SavedFeed(id, f.str("name") ?: "Untitled", f.str("description"), f.str("query").orEmpty(),
-                    f.optJSONObject("visibility")?.str("mode") ?: "private") }
+                    f.optJSONObject("visibility")?.str("mode") ?: "private", ProfileAudience.of(f.opt("visibility"))) }
                 .sortedWith(compareBy<SavedFeed> { it.name.lowercase() }.thenBy { it.id })
             val savedStages = rows(p, "stage").filter { (_, f) -> !f.present("deleted_at") && f.optJSONObject("definition") != null }
                 .map { (id, f) -> SavedStage(id, f.str("name") ?: "Untitled", f.getJSONObject("definition").str("channel_id").orEmpty(),
@@ -473,6 +479,7 @@ class Model(
                 spaceRoles = rows(p, "space_member").mapNotNull { (key, f) -> f.str("role")?.let { key to it } }.toMap(),
                 channelPermissionState = ChannelPermissions.snapshot(p), memberList = MemberListPrefs.parse(p, accountId),
                 sharingBuckets = ProfileAudience.buckets(p),
+                privacyBuckets = BucketControls.buckets(p), bucketAssignments = BucketControls.assignments(p),
                 deletedMessageIds = rows(p, "message").filter {it.second.present("deleted_at")}.mapTo(HashSet()) {it.first},
                 deletedPostIds = rows(p, "post").filter {it.second.present("deleted_at")}.mapTo(HashSet()) {it.first},
                 deletedMemberIds = rows(p, "member").filter {it.second.present("deleted_at")}.mapTo(HashSet()) {it.first})

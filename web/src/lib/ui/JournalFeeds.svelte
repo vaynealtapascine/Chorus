@@ -1,4 +1,8 @@
 <script lang="ts">
+  import AudienceChip from './AudienceChip.svelte';
+  import { audienceOf, type Audience } from '../profile-audience';
+  import { validBucketAudience } from '../bucket-controls';
+  import { buckets } from '../data';
   import { core } from '../core';
   import { members, reactions, type MemberRow } from '../data';
   import { feedCandidates, feedContext, filterFeed, savedFeeds } from '../feeds';
@@ -40,7 +44,8 @@
   let saveError = $state('');
   let copied = $state(false);
   // who can open this feed (SPEC §6.4): the filter is shared, each reader sees only posts they can read
-  let sharing = $state<'private' | 'followers'>('private');
+  let sharing = $state<Audience>({ mode: 'private' });
+  const sharingBuckets = $derived(buckets(projection));
   const filtersByFronting = (q: string | null) => /(^|[\s(-])fronting:/i.test(q ?? '');
   const usesFronting = $derived(filtersByFronting(query));
   // D-069: said wherever such a feed is shared or read
@@ -100,18 +105,19 @@
     name = feed.name;
     description = feed.description ?? '';
     query = feed.query;
-    sharing = feed.visibility.mode === 'followers' ? 'followers' : 'private';
+    sharing = audienceOf(feed.visibility);
     saveError = '';
   }
-  function clear() { selected = name = description = query = saveError = ''; sharing = 'private'; }
+  function clear() { selected = name = description = query = saveError = ''; sharing = { mode: 'private' }; }
   function save(e: SubmitEvent) {
     e.preventDefault();
     saveError = '';
     try {
+      if (!validBucketAudience(sharing, sharingBuckets)) throw new Error('Choose existing buckets before sharing.');
       const ast = core.feedParse(query);
       const id = selected || sync.newId();
       sync.create('feed.set', sync.accountScope, id, { name: name.trim(), description: description.trim() || null,
-        query: query.trim(), query_ast: ast, visibility: { mode: sharing } });
+        query: query.trim(), query_ast: ast, visibility: sharing });
       selected = id;
     } catch (cause) { saveError = cause instanceof Error ? cause.message : String(cause); }
   }
@@ -132,13 +138,8 @@
     <label>Description <input bind:value={description} maxlength="200" /></label>
     <label>Filter <textarea bind:value={query} required rows="3" spellcheck="false" placeholder="from:@kai kind:entry -tag:vent"></textarea></label>
     <p class="hint">Use <code>from:</code>, <code>kind:</code>, <code>tag:</code>, <code>mood:</code>, <code>has:</code>, <code>reply:</code>, <code>in:</code>, <code>since:</code>, <code>until:</code>, <code>fronting:</code>, <code>or</code>, parentheses and <code>-</code> to exclude. Names resolve from this account's members, groups and lists.</p>
-    <label>Who can open it
-      <select bind:value={sharing}>
-        <option value="private">Only us</option>
-        <option value="followers">Our followers</option>
-      </select>
-    </label>
-    {#if sharing === 'followers'}
+    <div>Who can open it <AudienceChip label="This feed" value={sharing} own buckets={sharingBuckets} onchange={(a) => (sharing = a ?? { mode: 'private' })} /></div>
+    {#if sharing.mode !== 'private'}
       {#if usesFronting}<p class="banner" role="note">{FRONTING_NOTE}. Each follower only sees what their notifications have already shown them, no sooner.</p>{/if}
       <p class="hint">Followers get the filter, not the posts: each of them only sees posts they can already read.</p>
     {/if}
@@ -187,7 +188,6 @@
 
 <style>
   .feeds, .editor, .preview, .shared { display: grid; gap: var(--s-3); }
-  select { padding: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); font: inherit; }
   p, h2 { margin: 0; }
   h2 { font-size: var(--fs-md); }
   .muted, .hint { color: var(--ink-3); font-size: var(--fs-sm); }

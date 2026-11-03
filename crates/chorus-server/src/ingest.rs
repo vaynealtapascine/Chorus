@@ -249,6 +249,13 @@ fn store_and_project(
     {
         crate::notifier::on_front_op(conn, account, o, now)?;
     }
+    // a changed sharing policy applies to reveals still pending, not only to the next switch (D-115)
+    if !preserved
+        && crate::notifier::changes_policy(o)
+        && let Some(account) = o.scope.strip_prefix("account:")
+    {
+        crate::notifier::on_policy_change(conn, account, now)?;
+    }
     // Offline parents may arrive after the front operation. Retain the reference throughout,
     // but only schedule its reveal once the subject is known to belong to this account.
     if !preserved

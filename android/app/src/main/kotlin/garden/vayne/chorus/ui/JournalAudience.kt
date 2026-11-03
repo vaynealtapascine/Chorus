@@ -34,7 +34,7 @@ internal fun JournalAudienceDialog(post: JournalPost, model: Model, chorus: Chor
         title = { Text("Who can see this post?") },
         text = { Column {
             AudienceChip("This post", choice, own = true, buckets = model.sharingBuckets,
-                person = model.isPerson, enabled = !busy, onChange = { it?.let { choice = it } })
+                person = model.isPerson, enabled = !busy, onChange = { it?.let { choice = it } }, looks = model.bucketLooks)
             if (widening) Text("More people will be able to read this post.", color = p.ink2,
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
             if (error != null) Text(error.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodySmall,

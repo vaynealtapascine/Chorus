@@ -5,7 +5,9 @@
   import { pollOf } from '../polls';
   import { sync, type Projection } from '../sync/client';
   import { core } from '../core';
-  import type { MemberRow } from '../data';
+  import { buckets, type MemberRow } from '../data';
+  import { bucketAudience } from '../bucket-controls';
+  import BucketGlyph from './BucketGlyph.svelte';
   import { canWriteAs, type PostRow } from '../posts';
   import { audienceOf } from '../profile-audience';
   import PostAudienceDialog from './PostAudienceDialog.svelte';
@@ -84,7 +86,7 @@
   const iconSize = $derived(full ? 22 : 18);
   const threadHref = $derived(`#/journal/post/${encodeURIComponent(post.id)}`);
   const audienceLabel = $derived(post.visibility.mode === 'private' ? 'Only your system' : post.visibility.mode === 'followers' ? 'Followers'
-    : post.visibility.mode === 'buckets' ? 'Selected buckets' : 'Everyone on this server');
+    : post.visibility.mode === 'buckets' ? projection ? bucketAudience(audienceOf(post.visibility), buckets(projection)) : 'Selected buckets' : 'Everyone on this server');
 
   function heart() {
     if (!speaker) return;
@@ -150,7 +152,7 @@
         <span class="authors">{#each post.authors as id, i (id)}{#if i} &amp; {/if}<a href="#/profile/{id}">{name(id)}</a>{/each}</span>
         <span class="when">· <a href={threadHref} title={fullTimestamp(post.occurred_at)}><time datetime={new Date(post.occurred_at).toISOString()}>{shortAgo(post.occurred_at)}</time></a>{#if post.edited} · edited{/if}</span>
         {#if post.visibility.mode === 'private' || post.visibility.mode === 'followers'}<span class="lock" title={audienceLabel} role="img" aria-label={audienceLabel}><Icon name="lock" size={14} /></span>
-        {:else if post.visibility.mode === 'buckets'}<span class="audience">{audienceLabel}</span>{/if}
+        {:else if post.visibility.mode === 'buckets'}{@const b = projection ? buckets(projection).find((x) => post.visibility.bucket_ids?.includes(x.id)) : undefined}<span class="audience"><BucketGlyph icon={b?.icon} color={b?.color} size={14} />{audienceLabel}</span>{/if}
     </div>
     <div class="main">
       {#if post.reply_to && !inThread}<a class="reply-ref" href="#/journal/post/{encodeURIComponent(post.reply_to)}">Replying to {replyToNames ?? 'a post'}</a>{/if}

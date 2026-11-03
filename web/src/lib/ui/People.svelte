@@ -2,6 +2,10 @@
   // Follows (M6.1): follow someone by handle; accept followers and choose how much they see.
   // Follows live in the followed account's scope, so accepting and the privacy preset are ordinary
   // ops; asking to follow, unfollowing and your own prefs go through /api/v1/follows.
+  import BucketLabel from './BucketLabel.svelte';
+  import CeilingControls from './CeilingControls.svelte';
+  import BucketIconPicker from './BucketIconPicker.svelte';
+  import { DEFAULT_BUCKET_ICON, withPreset, canonical, PRESET_KEYS } from '../bucket-controls';
   import { notifyPreset } from '../core/pkg/chorus_wasm.js';
   import { bucketAssignments, buckets, members, selfMember, type AttachmentRow } from '../data';
   import { postReaction } from '../posts';
@@ -119,6 +123,8 @@
   ) as Record<string, unknown>);
   const defaultPreset = $derived(presetOf(defaultCeiling));
   let newBucket = $state('');
+  // the bucket whose delete is being confirmed
+  let deleting = $state<string | null>(null);
   let newBucketPreset = $state('gentle');
 
   // sharing toggles and front/layer grants (D-084) are independent of the preset
@@ -134,15 +140,16 @@
   const grantableLayers = $derived(named ? Object.values(named.layers).filter((l) => !l.deleted && !['front', 'cocon', 'present'].includes(l.id))
     .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name)) : []);
   function presetOf(ceiling: unknown): string {
-    const raw = JSON.stringify(withoutSharing((ceiling ?? {}) as Record<string, unknown>));
-    return PRESETS.find((p) => JSON.stringify(JSON.parse(presetJson[p.id])) === raw)?.id ?? (raw === '{}' ? 'gentle' : 'custom');
+    const c = (ceiling ?? {}) as Record<string, unknown>;
+    const raw = canonical(Object.fromEntries(Object.entries(c).filter(([k]) => PRESET_KEYS.includes(k))));
+    return PRESETS.find((p) => canonical(JSON.parse(presetJson[p.id])) === raw)?.id ?? (raw === '{}' ? 'inherit' : 'custom');
   }
 
   function addBucket(e: SubmitEvent) {
     e.preventDefault();
     if (!newBucket.trim()) return;
     sync.create('bucket.set', sync.accountScope, sync.newId(), {
-      name: newBucket.trim(), ceiling: JSON.parse(presetJson[newBucketPreset]),
+      name: newBucket.trim(), icon: DEFAULT_BUCKET_ICON, ceiling: newBucketPreset === 'inherit' ? {} : JSON.parse(presetJson[newBucketPreset]),
     });
     newBucket = '';
   }
@@ -321,7 +328,7 @@
 
   function setPreset(id: string, preset: string) {
     const base = preset === 'inherit' ? {} : JSON.parse(presetJson[preset]);
-    sync.create('follow.set_ceiling', sync.accountScope, id, { ceiling: { ...base, ...grantsOf(followCeiling(id)) } });
+    sync.create('follow.set_ceiling', sync.accountScope, id, { ceiling: preset === 'inherit' ? { ...grantsOf(followCeiling(id)) } : withPreset(followCeiling(id), base) });
   }
 
   const granted = (id: string, key: 'fronts' | 'layers') => {
@@ -333,8 +340,8 @@
     const c = followCeiling(id);
     const next = granted(id, key).filter((x) => x !== value);
     if (on) next.push(value);
+    // an empty list stays: this follower's own setting wins over any bucket's grants (D-115)
     const ceiling = { ...c, [key]: next };
-    if (!next.length) delete (ceiling as Record<string, unknown>)[key];
     sync.create('follow.set_ceiling', sync.accountScope, id, { ceiling });
   }
 
@@ -436,6 +443,7 @@
           </select>
         </label>
         {/if}
+        {#if isSystem}<CeilingControls ceiling={followCeiling(f.id)} inherited="Their buckets or the default" onchange={(ceiling) => sync.create('follow.set_ceiling', sync.accountScope, f.id, { ceiling })} />{/if}
         {#if isSystem && (grantableFronts.length || grantableLayers.length)}
           <details class="grants">
             <summary>Additional fronts and layers</summary>
@@ -462,7 +470,7 @@
           <div class="bucket-checks" aria-label={`Buckets for ${name(f.account)}`}>
             {#each ownBuckets as bucket (bucket.id)}
               <label><input type="checkbox" checked={assignments.get(bucket.id)?.has(f.account.id) ?? false}
-                onchange={(e) => assign(bucket.id, f.account.id, e.currentTarget.checked)} /> {bucket.name}</label>
+                onchange={(e) => assign(bucket.id, f.account.id, e.currentTarget.checked)} /> <BucketLabel {bucket} /></label>
             {/each}
           </div>
         {/if}
@@ -483,24 +491,33 @@
     <form class="bucket-new" onsubmit={addBucket}>
       <input bind:value={newBucket} placeholder="Bucket name" aria-label="New bucket name" />
       {#if isSystem}<select bind:value={newBucketPreset} aria-label="New bucket ceiling">
-        {#each PRESETS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
+        <option value="inherit">Account default</option>{#each PRESETS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
       </select>{/if}
       <button class="primary">Create bucket</button>
     </form>
     {#each ownBuckets as bucket (bucket.id)}
       {@const preset = presetOf(bucket.ceiling)}
       <div class="card bucket-row">
+        <BucketLabel {bucket} /><span class="hint">{assignments.get(bucket.id)?.size ?? 0} {(assignments.get(bucket.id)?.size ?? 0) === 1 ? 'follower' : 'followers'}</span>
+        <BucketIconPicker icon={bucket.icon} color={bucket.color} name={bucket.name}
+          onicon={(icon) => sync.create('bucket.set', sync.accountScope, bucket.id, { icon })}
+          oncolor={(color) => sync.create('bucket.set', sync.accountScope, bucket.id, { color })} />
         <label>Name <input value={bucket.name} aria-label={`Rename ${bucket.name}`} onchange={(e) => {
           const name = e.currentTarget.value.trim();
           if (name && name !== bucket.name) sync.create('bucket.set', sync.accountScope, bucket.id, { name });
         }} /></label>
         {#if isSystem}<label>Ceiling <select value={preset} aria-label={`Ceiling for ${bucket.name}`} onchange={(e) => sync.create('bucket.set', sync.accountScope, bucket.id, {
-          ceiling: JSON.parse(presetJson[e.currentTarget.value]),
+          ceiling: e.currentTarget.value === 'inherit' ? {} : withPreset(bucket.ceiling, JSON.parse(presetJson[e.currentTarget.value])),
         })}>
           {#if preset === 'custom'}<option value="custom" disabled>Custom (Advanced)</option>{/if}
-          {#each PRESETS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
+          <option value="inherit">Account default</option>{#each PRESETS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
         </select></label>{/if}
-        <button class="ghost" onclick={() => sync.create('bucket.delete', sync.accountScope, bucket.id, {})}>Delete</button>
+        {#if isSystem}<CeilingControls ceiling={bucket.ceiling} inherited="Account default" onchange={(ceiling) => sync.create('bucket.set', sync.accountScope, bucket.id, { ceiling })} />{/if}
+        {#if deleting === bucket.id}
+          <span class="hint">Delete “{bucket.name}”? Anything shared only with it goes back to just you.</span>
+          <button class="ghost danger" onclick={() => { sync.create('bucket.delete', sync.accountScope, bucket.id, {}); deleting = null; }}>Delete</button>
+          <button class="ghost" onclick={() => (deleting = null)}>Keep</button>
+        {:else}<button class="ghost" onclick={() => (deleting = bucket.id)}>Delete</button>{/if}
       </div>
     {/each}
     {#if isSystem}<p class="hint">Set the default for new followers in <a href="#/settings">Settings</a>.</p>{/if}
@@ -695,6 +712,7 @@
     padding: var(--s-2) var(--s-4); font-weight: 600; cursor: pointer;
   }
   .ghost { background: none; border: 0; color: var(--accent); cursor: pointer; }
+  .ghost.danger { color: var(--danger); }
   .error { color: var(--danger); margin: 0; }
   .notes-head { display: flex; justify-content: space-between; align-items: baseline; }
   .note { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: baseline; padding: var(--s-2) 0; border-bottom: 1px solid var(--line); }

@@ -451,7 +451,10 @@ impl World {
                 let slot = self.rng.below(2) as u8;
                 entity = Some(new_id(1_700_000_000_000, [choice + 40, acct as u8, slot, 0, 0, 0, 0, 0, 0, 1]));
                 let (kind, payload) = match choice {
-                    0 => ("bucket.set", json!({"name": format!("bucket{slot}"), "ceiling": {}})),
+                    0 => (
+                        "bucket.set",
+                        json!({"name": format!("bucket{slot}"), "icon": "friends", "ceiling": {"delay":{"min_s":60,"max_s":120}}}),
+                    ),
                     1 => ("stage.save", json!({"name": format!("card{slot}"), "definition": {"selected": []}})),
                     2 => ("feed.set", json!({"name": format!("feed{slot}"), "query": "kind:entry"})),
                     3 => (

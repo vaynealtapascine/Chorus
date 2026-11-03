@@ -1,0 +1,419 @@
+{
+  "description": "UI11c (D-115) privacy bucket controls, shared by web (bucket-controls.ts) and Android (BucketControls.kt): the built-in icons a bucket may wear (or any short custom glyph, such as an emoji: up to custom_icon_max UTF-16 units, every code point non-ASCII), its colour swatches (any #RRGGBB is allowed), how many buckets an audience menu lists before folding the rest away, the Advanced notification ceiling fields in display order, and which values each field accepts. Notification semantics stay in chorus-core::notify; this is input and presentation only.",
+  "icons": [
+    "friends",
+    "members",
+    "heart",
+    "lock",
+    "globe",
+    "chat",
+    "journal",
+    "front",
+    "layers",
+    "bell",
+    "bookmark",
+    "folder"
+  ],
+  "default_icon": "friends",
+  "custom_icon_max": 16,
+  "swatches": [
+    "#B99CE8",
+    "#F08C7F",
+    "#EEAA62",
+    "#DCA3CC",
+    "#8FB8E8",
+    "#86BFA5",
+    "#42A397",
+    "#A09184"
+  ],
+  "menu_collapse_after": 8,
+  "fields": [
+    {
+      "key": "switch_notifications",
+      "label": "Switch notifications",
+      "hint": "Off still reveals the front on schedule, without a ping",
+      "kind": "bool",
+      "default": true
+    },
+    {
+      "key": "levels",
+      "label": "Layers they hear about",
+      "kind": "levels",
+      "default": [
+        "front",
+        "cocon"
+      ],
+      "choices": [
+        "front",
+        "cocon",
+        "present"
+      ]
+    },
+    {
+      "key": "announce_leaving",
+      "label": "Say who left",
+      "kind": "bool",
+      "default": false
+    },
+    {
+      "key": "hidden_subjects",
+      "label": "Members they can't see",
+      "kind": "enum",
+      "default": "omit",
+      "choices": [
+        "omit",
+        "someone"
+      ]
+    },
+    {
+      "key": "delay",
+      "label": "Random delay",
+      "hint": "Hides when you switched as it happens",
+      "kind": "range",
+      "default": {
+        "min_s": 300,
+        "max_s": 1200
+      }
+    },
+    {
+      "key": "extra_delay",
+      "label": "Extra delay, when a switch asks for it",
+      "kind": "range",
+      "default": {
+        "min_s": 1800,
+        "max_s": 7200
+      }
+    },
+    {
+      "key": "allow_now",
+      "label": "Allow “notify now”",
+      "kind": "bool",
+      "default": true
+    },
+    {
+      "key": "time",
+      "label": "Time shown",
+      "hint": "Hides the exact time afterwards",
+      "kind": "time",
+      "default": {
+        "mode": "round",
+        "round_min": 15
+      },
+      "choices": [
+        "exact",
+        "round",
+        "jitter",
+        "part_of_day",
+        "hidden"
+      ]
+    },
+    {
+      "key": "stacking",
+      "label": "Several switches in a row",
+      "kind": "enum",
+      "default": "collapse",
+      "choices": [
+        "collapse",
+        "sequence"
+      ]
+    },
+    {
+      "key": "digest_only",
+      "label": "Digest only",
+      "kind": "bool",
+      "default": false
+    },
+    {
+      "key": "max_per_day",
+      "label": "Most pings a day",
+      "hint": "Past it, the rest go in the digest",
+      "kind": "limit",
+      "default": null
+    },
+    {
+      "key": "quiet_hours",
+      "label": "Quiet hours",
+      "hint": "Your system's time; pings wait, the reveal doesn't",
+      "kind": "quiet",
+      "default": null
+    },
+    {
+      "key": "share_current_front",
+      "label": "Show who's here now",
+      "kind": "bool",
+      "default": true
+    },
+    {
+      "key": "share_history",
+      "label": "Look back at who fronted",
+      "kind": "bool",
+      "default": false
+    },
+    {
+      "key": "share_stats",
+      "label": "Fronting stats",
+      "kind": "bool",
+      "default": false
+    }
+  ],
+  "choice_labels": {
+    "front": "Front",
+    "cocon": "Co-conscious",
+    "present": "Present",
+    "omit": "Left out",
+    "someone": "Shown as “someone”",
+    "exact": "Exact",
+    "round": "Rounded",
+    "jitter": "Nudged",
+    "part_of_day": "Part of day",
+    "hidden": "Not shown",
+    "collapse": "Only the latest",
+    "sequence": "Each one, in order"
+  },
+  "limits": {
+    "range_max_s": 604800,
+    "minutes_max": 1440,
+    "per_day_max": 1000
+  },
+  "cases": [
+    {
+      "key": "delay",
+      "value": {
+        "min_s": 0,
+        "max_s": 60
+      },
+      "ok": true
+    },
+    {
+      "key": "delay",
+      "value": {
+        "min_s": 60,
+        "max_s": 0
+      },
+      "ok": false
+    },
+    {
+      "key": "delay",
+      "value": {
+        "min_s": -1,
+        "max_s": 3
+      },
+      "ok": false
+    },
+    {
+      "key": "delay",
+      "value": {
+        "min_s": 0,
+        "max_s": 604801
+      },
+      "ok": false
+    },
+    {
+      "key": "delay",
+      "value": {
+        "min_s": 1.5,
+        "max_s": 3
+      },
+      "ok": false
+    },
+    {
+      "key": "extra_delay",
+      "value": {
+        "min_s": 1800,
+        "max_s": 7200
+      },
+      "ok": true
+    },
+    {
+      "key": "max_per_day",
+      "value": null,
+      "ok": true
+    },
+    {
+      "key": "max_per_day",
+      "value": 0,
+      "ok": true
+    },
+    {
+      "key": "max_per_day",
+      "value": 1001,
+      "ok": false
+    },
+    {
+      "key": "max_per_day",
+      "value": "3",
+      "ok": false
+    },
+    {
+      "key": "time",
+      "value": {
+        "mode": "jitter",
+        "jitter_min": 30
+      },
+      "ok": true
+    },
+    {
+      "key": "time",
+      "value": {
+        "mode": "round",
+        "round_min": 0
+      },
+      "ok": false
+    },
+    {
+      "key": "time",
+      "value": {
+        "mode": "round"
+      },
+      "ok": false
+    },
+    {
+      "key": "time",
+      "value": {
+        "mode": "part_of_day"
+      },
+      "ok": true
+    },
+    {
+      "key": "time",
+      "value": {
+        "mode": "sometimes"
+      },
+      "ok": false
+    },
+    {
+      "key": "quiet_hours",
+      "value": {
+        "from": "23:00",
+        "to": "08:00"
+      },
+      "ok": true
+    },
+    {
+      "key": "quiet_hours",
+      "value": {
+        "from": "25:00",
+        "to": "08:00"
+      },
+      "ok": false
+    },
+    {
+      "key": "quiet_hours",
+      "value": null,
+      "ok": true
+    },
+    {
+      "key": "levels",
+      "value": [
+        "front",
+        "cocon"
+      ],
+      "ok": true
+    },
+    {
+      "key": "levels",
+      "value": [],
+      "ok": true
+    },
+    {
+      "key": "levels",
+      "value": [
+        "wrong"
+      ],
+      "ok": false
+    },
+    {
+      "key": "levels",
+      "value": [
+        "front",
+        "front"
+      ],
+      "ok": false
+    },
+    {
+      "key": "hidden_subjects",
+      "value": "someone",
+      "ok": true
+    },
+    {
+      "key": "hidden_subjects",
+      "value": "nobody",
+      "ok": false
+    },
+    {
+      "key": "switch_notifications",
+      "value": false,
+      "ok": true
+    },
+    {
+      "key": "switch_notifications",
+      "value": "false",
+      "ok": false
+    },
+    {
+      "key": "unknown_field",
+      "value": true,
+      "ok": false
+    }
+  ],
+  "icon_cases": [
+    {
+      "value": "heart",
+      "shown": "heart"
+    },
+    {
+      "value": "🦊",
+      "shown": "🦊"
+    },
+    {
+      "value": "👩‍👩‍👧",
+      "shown": "👩‍👩‍👧"
+    },
+    {
+      "value": "★",
+      "shown": "★"
+    },
+    {
+      "value": "bogus",
+      "shown": "friends"
+    },
+    {
+      "value": "a🦊",
+      "shown": "friends"
+    },
+    {
+      "value": "",
+      "shown": "friends"
+    },
+    {
+      "value": null,
+      "shown": "friends"
+    },
+    {
+      "value": "🦊🦊🦊🦊🦊🦊🦊🦊🦊",
+      "shown": "friends"
+    }
+  ],
+  "color_cases": [
+    {
+      "value": "#42a397",
+      "shown": "#42A397"
+    },
+    {
+      "value": "#42A397",
+      "shown": "#42A397"
+    },
+    {
+      "value": "red",
+      "shown": null
+    },
+    {
+      "value": "#42A39",
+      "shown": null
+    },
+    {
+      "value": null,
+      "shown": null
+    }
+  ]
+}

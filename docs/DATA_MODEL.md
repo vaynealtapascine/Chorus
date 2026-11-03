@@ -669,10 +669,12 @@ CREATE TABLE feed (
 );
 
 -- ─── privacy, follows, notifications ─────────────────────────────────
-CREATE TABLE bucket (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT NULL, color TEXT, sort_key TEXT, ceiling TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(ceiling)), deleted_at INTEGER, clocks TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE bucket (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, name TEXT NOT NULL, icon TEXT, color TEXT, sort_key TEXT, ceiling TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(ceiling)), deleted_at INTEGER, clocks TEXT NOT NULL DEFAULT '{}');
 CREATE TABLE bucket_assignment (bucket_id TEXT NOT NULL, follower_account_id TEXT NOT NULL, added_hlc TEXT, removed_hlc TEXT,
   is_present INTEGER GENERATED ALWAYS AS (added_hlc IS NOT NULL AND (removed_hlc IS NULL OR added_hlc > removed_hlc)) STORED,
   PRIMARY KEY (bucket_id, follower_account_id));
+-- bucket.icon (migration 0019, D-115): a built-in icon from fixtures/ui_bucket_controls.json or the bucket's own emoji;
+--   NULL or anything else reads as the default. bucket.color: #RRGGBB or NULL. Both are presentation only.
 
 CREATE TABLE follow (
   id TEXT PRIMARY KEY,

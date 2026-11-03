@@ -20,6 +20,12 @@ object Feeds {
             .put("visibility", JSONObject().put("mode", audience))
     }
 
+    fun definition(name: String, description: String, query: String, audience: Audience, liveBuckets: Set<String>,
+        parse: (String) -> String = ::feedParse): JSONObject {
+        val valid = PostCompose.validatedAudience(audience, liveBuckets)
+        return definition(name, description, query, "private", parse).put("visibility", valid.toJson())
+    }
+
     fun usesFronting(query: String): Boolean = Regex("(^|[\\s(-])fronting:", RegexOption.IGNORE_CASE).containsMatchIn(query)
 
     fun parseList(j: JSONObject): List<FeedInfo> {

@@ -470,6 +470,9 @@ to change. Newest last. Format: `YYYY-MM-DD agent — area — finding`.
   stay in the append-only log and are excluded from the core state. Restore tests now construct
   the actual historical schema from the migration prefix: lowering a current database's schema
   version leaves later additive tables in place and is not a faithful upgrade fixture.
+  (2026-11-03: three `tests/posts.rs` cases still lower it to 17 to re-run 0018; SQLite has no
+  `ADD COLUMN IF NOT EXISTS`, so they also drop `bucket.icon` from 0019. A new `ADD COLUMN`
+  migration must be undone there the same way.)
 
 - 2026-10-26 — The network digest cannot identify projection semantics: unchanged op IDs and
   stamps can acquire new meaning after an app upgrade. UI snapshots now use a separate versioned

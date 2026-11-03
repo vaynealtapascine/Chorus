@@ -31,6 +31,7 @@ import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.SharedPost
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import kotlinx.coroutines.launch
+import androidx.compose.ui.Alignment
 import org.json.JSONObject
 
 /** Saved definitions are local; matching posts are read through the server's audience filter. */
@@ -45,7 +46,9 @@ internal fun JournalFeeds(chorus: Chorus, model: Model, onTimeline: () -> Unit) 
     var name by rememberSaveable { mutableStateOf("") }
     var description by rememberSaveable { mutableStateOf("") }
     var query by rememberSaveable { mutableStateOf("") }
-    var audience by rememberSaveable { mutableStateOf("private") }
+    // who can open it (SPEC §6.4): any audience a post can have, buckets included (D-115)
+    var audienceJson by rememberSaveable { mutableStateOf(garden.vayne.chorus.data.Audience.PRIVATE.toJson().toString()) }
+    val audience = garden.vayne.chorus.data.ProfileAudience.of(JSONObject(audienceJson))
     var posts by remember { mutableStateOf<List<SharedPost>>(emptyList()) }
     var loadedId by remember { mutableStateOf("") }
     var cursor by remember { mutableStateOf<String?>(null) }
@@ -111,7 +114,7 @@ internal fun JournalFeeds(chorus: Chorus, model: Model, onTimeline: () -> Unit) 
                     if (!selected.shared) TextButton(onClick = {
                         editingId = selected.id; name = selected.name; description = selected.description.orEmpty()
                         query = selected.query
-                        audience = model.savedFeeds.find { it.id == selected.id }?.visibility ?: "private"
+                        audienceJson = (model.savedFeeds.find { it.id == selected.id }?.audience ?: garden.vayne.chorus.data.Audience.PRIVATE).toJson().toString()
                     }) { Text("Edit") }
                 }
             }
@@ -141,7 +144,7 @@ internal fun JournalFeeds(chorus: Chorus, model: Model, onTimeline: () -> Unit) 
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(if (editingId.isEmpty()) "New feed" else "Edit feed", color = p.ink, fontWeight = FontWeight.SemiBold)
                 if (editingId.isNotEmpty()) TextButton(onClick = {
-                    editingId = ""; name = ""; description = ""; query = ""; audience = "private"
+                    editingId = ""; name = ""; description = ""; query = ""; audienceJson = garden.vayne.chorus.data.Audience.PRIVATE.toJson().toString()
                 }) { Text("New feed") }
                 OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth())
@@ -151,11 +154,12 @@ internal fun JournalFeeds(chorus: Chorus, model: Model, onTimeline: () -> Unit) 
                     modifier = Modifier.fillMaxWidth())
                 Text("Try from:, kind:, tag:, mood:, has:, reply:, in:, since:, until:, fronting:, or, and - to exclude.",
                     color = p.ink2)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    JournalChoice("Only this account", audience == "private") { audience = "private" }
-                    JournalChoice("Followers", audience == "followers") { audience = "followers" }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Who can open it", color = p.ink2)
+                    AudienceChip("This feed", audience, own = true, buckets = model.sharingBuckets, person = model.isPerson,
+                        onChange = { audienceJson = (it ?: garden.vayne.chorus.data.Audience.PRIVATE).toJson().toString() }, looks = model.bucketLooks)
                 }
-                if (audience == "followers") {
+                if (audience.mode != "private") {
                     Text("Followers get this filter and only posts they can already read.", color = p.ink2)
                     if (Feeds.usesFronting(query)) Text(
                         "This feed shows who was fronting when posts were written, as far as each follower's notifications have shown them.",
@@ -165,7 +169,7 @@ internal fun JournalFeeds(chorus: Chorus, model: Model, onTimeline: () -> Unit) 
                     busy = true; error = null
                     actions.launch {
                         try {
-                            val payload = Feeds.definition(name, description, query, audience)
+                            val payload = Feeds.definition(name, description, query, audience, model.privacyBuckets.map { it.id }.toSet())
                             val id = editingId.ifEmpty { chorus.newId() }
                             chorus.create("feed.set", id, payload)
                             editingId = id; selectedId = id; loadedId = ""; posts = emptyList(); cursor = null; refresh++
@@ -178,7 +182,7 @@ internal fun JournalFeeds(chorus: Chorus, model: Model, onTimeline: () -> Unit) 
                     actions.launch {
                         try {
                             chorus.create("feed.delete", editingId, JSONObject())
-                            selectedId = ""; editingId = ""; name = ""; description = ""; query = ""; audience = "private"
+                            selectedId = ""; editingId = ""; name = ""; description = ""; query = ""; audienceJson = garden.vayne.chorus.data.Audience.PRIVATE.toJson().toString()
                             posts = emptyList(); loadedId = ""; cursor = null; refresh++
                         } catch (e: Exception) { error = e.message ?: "Could not delete this feed." }
                         finally { busy = false }

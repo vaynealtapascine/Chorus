@@ -498,6 +498,103 @@ fn bucket_ceiling_inherits_and_folds_while_member_policy_restricts_reveal() {
     assert_eq!(v["time"]["mode"], "part_of_day");
 }
 
+/// Reveals still waiting, as (id, due_at).
+fn pending_reveals(w: &World) -> Vec<(String, i64)> {
+    let mut st = w
+        .c
+        .prepare("SELECT id, due_at FROM notification WHERE kind = 'switch' AND delivered_at IS NULL AND cancelled_at IS NULL ORDER BY id")
+        .unwrap();
+    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap()
+}
+
+/// D-115: a policy made stricter after a switch applies to its reveal still pending, from the
+/// same switch time; a rename or a new icon changes nothing.
+#[test]
+fn a_stricter_bucket_holds_back_a_reveal_already_pending() {
+    let mut w = World::new();
+    let friend = w.friend.clone();
+    let close = new_id(2, [33; 10]);
+    let kai = w.member("Kai", json!({"announce": "everyone"}));
+    w.push(
+        "bucket.set",
+        &close,
+        json!({"name": "Close", "ceiling": {"delay": {"min_s": 0, "max_s": 0}, "time": {"mode": "exact"}}}),
+        NOW - 8_000,
+    );
+    let (follow, _) = follows::request(&w.c, &w.friend, "@stars", NOW - 5_000).unwrap();
+    w.push("follow.accept", &follow, json!({}), NOW - 4_000);
+    w.push("bucket.assign", &close, json!({"follower_account_id": friend}), NOW - 3_000);
+
+    w.switch(&[&kai], NOW);
+    let planned = pending_reveals(&w);
+    assert_eq!(planned.len(), 1);
+    assert_eq!(planned[0].1, NOW + SETTLE);
+    // renaming the bucket or giving it an icon leaves the plan alone
+    w.push("bucket.set", &close, json!({"name": "Closest", "icon": "friends"}), NOW + 5_000);
+    assert_eq!(pending_reveals(&w), planned);
+
+    // ten minutes now, decided before the reveal: it waits ten minutes from the switch
+    w.push(
+        "bucket.set",
+        &close,
+        json!({"ceiling": {"delay": {"min_s": 600, "max_s": 600}, "time": {"mode": "exact"}}}),
+        NOW + 6_000,
+    );
+    let replanned = pending_reveals(&w);
+    assert_eq!(replanned.len(), 1);
+    assert_eq!(replanned[0].1, NOW + SETTLE + 600_000);
+    notifier::process_due(&w.c, NOW + SETTLE).unwrap();
+    assert!(w.view().is_empty());
+    assert!(w.inbox().is_empty());
+    notifier::process_due(&w.c, NOW + SETTLE + 600_000).unwrap();
+    assert_eq!(w.view(), ["Kai"]);
+    let v = notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().unwrap();
+    assert_eq!(v["since"], NOW);
+}
+
+#[test]
+fn leaving_a_bucket_before_the_reveal_keeps_its_member_hidden() {
+    let mut w = World::new();
+    let friend = w.friend.clone();
+    let close = new_id(2, [34; 10]);
+    let restricted = w.member("Restricted", json!({"announce": {"buckets": [close]}}));
+    w.push("bucket.set", &close, json!({"name": "Close", "ceiling": {}}), NOW - 8_000);
+    let (follow, _) = follows::request(&w.c, &w.friend, "@stars", NOW - 5_000).unwrap();
+    w.push("follow.accept", &follow, json!({}), NOW - 4_000);
+    w.push(
+        "follow.set_ceiling",
+        &follow,
+        json!({"ceiling": {"delay": {"min_s": 60, "max_s": 60}, "time": {"mode": "exact"}}}),
+        NOW - 3_500,
+    );
+    w.push("bucket.assign", &close, json!({"follower_account_id": friend}), NOW - 3_000);
+
+    w.switch(&[&restricted], NOW);
+    assert_eq!(pending_reveals(&w).len(), 1);
+    w.push("bucket.unassign", &close, json!({"follower_account_id": friend}), NOW + 10_000);
+    assert!(pending_reveals(&w).is_empty());
+    notifier::process_due(&w.c, NOW + SETTLE + 60_000).unwrap();
+    assert!(w.view().is_empty());
+    assert!(w.inbox().is_empty());
+
+    // a stricter follow override, and a member no longer announced, also re-plan what's pending
+    w.push("bucket.assign", &close, json!({"follower_account_id": friend}), NOW + 100_000);
+    w.switch(&[], NOW + 110_000);
+    w.switch(&[&restricted], NOW + 200_000);
+    assert_eq!(pending_reveals(&w)[0].1, NOW + 200_000 + SETTLE + 60_000);
+    w.push(
+        "follow.set_ceiling",
+        &follow,
+        json!({"ceiling": {"delay": {"min_s": 300, "max_s": 300}, "time": {"mode": "exact"}}}),
+        NOW + 201_000,
+    );
+    assert_eq!(pending_reveals(&w)[0].1, NOW + 200_000 + SETTLE + 300_000);
+    w.push("member.set", &restricted, json!({"notify_policy": {"announce": "nobody"}}), NOW + 202_000);
+    assert!(pending_reveals(&w).is_empty());
+    notifier::process_due(&w.c, NOW + 200_000 + SETTLE + 300_000).unwrap();
+    assert!(w.view().is_empty());
+}
+
 #[test]
 fn a_followers_quiet_hours_are_in_their_own_time_zone() {
     let (mut w, kai, _, _) = world();

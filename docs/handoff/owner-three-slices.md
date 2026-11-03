@@ -17,7 +17,7 @@ Implementation agents do not deploy or change services/settings.
    message before and after as context, and full post cards. Enforce channel/member visibility
    independently for every result and each context message; no existence leaks from counts,
    context gaps, blobs, snippets or cursors. Shared core filters and conformance where needed.
-3. **Privacy buckets (UI11c, pending).** Customizable notification controls, name and icon for
+3. **Privacy buckets (UI11c, D-115; see `ui11c-privacy-buckets.md`).** Customizable notification controls, name and icon for
    each bucket; use the same bucket presentation everywhere privacy is controlled. Preserve
    system ceilings, follower filters, delay/fuzz/digest and reveal-time invariants. Update both
    clients, specs, tests and deployment notes.
