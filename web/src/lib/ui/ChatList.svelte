@@ -5,6 +5,8 @@
   import { chatMembers } from '../subsystems';
   import { channels, latestMessage, members, spaces, unread, fuzzy, type ChannelRow, type MemberRow, type SpaceRow } from '../data';
   import { ARCHIVED, chatPrefs, chatTime, discColor, folderOf, HIDDEN, movePin, orderChats, PINS, previewOf, privateVisible, stillArchived, togglePin, type Folder } from '../chat-list';
+  import { contains, holds, PREF as FOLDERS_PREF, setChat, toJson, withCustom, type Settings as FolderSettings } from '../chat-folders';
+  import ChatFolders from './ChatFolders.svelte';
   import { bodyPresence, frontLayers } from '../front-view';
   import { authorCards, spaceTitle, type SpaceInfo } from '../spaces';
   import { privateSides } from '../chat-manage';
@@ -12,8 +14,10 @@
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
 
-  let { projection, dark, currentId, folder, directory, person, onswitch, onnewchannel, onnewchat, viewingAs = null }: {
-    projection: Projection; dark: boolean; currentId?: string; folder: Folder; directory: Map<string, SpaceInfo>;
+  let { projection, dark, currentId, folder, folders, foldersAt = null, onfolders, directory, person, onswitch, onnewchannel, onnewchat, viewingAs = null }: {
+    projection: Projection; dark: boolean; currentId?: string; folder: string; directory: Map<string, SpaceInfo>;
+    /** Chat folders (D-113): the settings, and the folders sheet ("" its list, "new:<chat>", a folder) or null. */
+    folders: FolderSettings; foldersAt?: string | null; onfolders: (at: string | null) => void;
     person: boolean; onswitch: () => void; onnewchannel?: (name: string) => void;
     /** The pencil opens New chat (NewChat.svelte); without it, the old inline form. */
     onnewchat?: () => void; viewingAs?: string | null;
@@ -135,7 +139,15 @@
   }
   // a search looks through archived chats too
   const shown = $derived(rows.filter((r) => (query.trim() ? fuzzy(query, `${r.title} ${r.text}`) !== null
-    : archiveView ? r.stowed : !r.stowed && (folder === 'all' || r.folder === folder))));
+    : archiveView ? r.stowed : !r.stowed && contains(folders, folder, r.channel.id, r.folder, r.unread, r.muted))));
+  // a chat's folders, from its menu: tick the folders of our own it belongs in
+  let foldersFor = $state<string | null>(null);
+  function toggleFolder(r: Row, id: string) {
+    const f = folders.custom.find((c) => c.id === id);
+    if (!f) return;
+    const next = withCustom(folders, setChat(f, r.channel.id, r.folder, !holds(f, r.channel.id, r.folder)));
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: FOLDERS_PREF, value: toJson(next) });
+  }
 
   // who is here now: the Body's presence, innermost layer first
   const layers = $derived(frontLayers(projection, sync.accountId));
@@ -174,7 +186,7 @@
   {:else if archivedCount && !query.trim()}
     <button class="archive-bar" onclick={() => (showArchived = true)}><Icon name="archive" size={18} /> Archived chats ({archivedCount})</button>
   {/if}
-  {#if !person && here.length && !archiveView}
+  {#if !person && folders.showHere && here.length && !archiveView}
     <div class="here" aria-label="Here now">
       {#each here as e (e.subject_id)}
         {@const m = people.get(e.subject_id)!}
@@ -195,7 +207,7 @@
         ondragover={(e) => { if (dragging && r.pinned) { e.preventDefault(); dropOn = r.id; } }}
         ondragleave={() => { if (dropOn === r.id) dropOn = null; }}
         ondrop={(e) => { e.preventDefault(); drop(r.id); }}>
-      <a class="row" class:on={r.channel.id === currentId} class:pinned={r.pinned} href="#/chat/{r.channel.id}" aria-current={r.channel.id === currentId ? 'page' : undefined}
+      <a class="row" class:on={r.channel.id === currentId} class:pinned={r.pinned} class:compact={folders.compact} href="#/chat/{r.channel.id}" aria-current={r.channel.id === currentId ? 'page' : undefined}
         draggable={r.pinned} ondragstart={(e) => { dragging = r.id; e.dataTransfer?.setData('text/plain', r.id); }} ondragend={() => { dragging = null; dropOn = null; }}
         oncontextmenu={(e) => { e.preventDefault(); menuFor = r.id; }}>
         <span class="disc" style="background: {core.adaptColor(r.disc.color, dark).ring}; color: {core.adaptColor(r.disc.color, dark).avatar_ink}">
@@ -217,11 +229,20 @@
         </span>
       </a>
       <button class="more" aria-label="Chat actions for {r.title}" aria-haspopup="menu" aria-expanded={menuFor === r.id}
-        onclick={() => (menuFor = menuFor === r.id ? null : r.id)}><Icon name="more" size={18} /></button>
+        onclick={() => { foldersFor = null; menuFor = menuFor === r.id ? null : r.id; }}><Icon name="more" size={18} /></button>
       {#if menuFor === r.id}
         <div class="row-menu" role="menu">
           <button role="menuitem" onclick={() => { menuFor = null; savePins(togglePin(organize.pins, r.id)); }}><Icon name="pin" size={16} /> {r.pinned ? 'Unpin' : 'Pin to top'}</button>
           <button role="menuitem" onclick={() => archive(r)}><Icon name="archive" size={16} /> {r.stowed ? 'Unarchive' : 'Archive'}</button>
+          {#if foldersFor === r.id}
+            {#each folders.custom as f (f.id)}
+              <button role="menuitemcheckbox" aria-checked={holds(f, r.channel.id, r.folder)} onclick={() => toggleFolder(r, f.id)}>
+                <span class="tick">{holds(f, r.channel.id, r.folder) ? '✓' : ''}</span> {f.name || 'Folder'}</button>
+            {/each}
+            <button role="menuitem" onclick={() => { menuFor = null; foldersFor = null; onfolders(`new:${r.channel.id}`); }}><Icon name="plus" size={16} /> New folder…</button>
+          {:else}
+            <button role="menuitem" onclick={() => (folders.custom.length ? (foldersFor = r.id) : (menuFor = null, onfolders(`new:${r.channel.id}`)))}><Icon name="folder" size={16} /> Folders…</button>
+          {/if}
           <button role="menuitem" class="danger" onclick={() => remove(r)}><Icon name="delete" size={16} /> {r.space?.kind === 'internal' ? 'Delete chat' : 'Clear chat'}</button>
         </div>
       {/if}
@@ -231,6 +252,10 @@
     {/each}
   </div>
 </section>
+{#if foldersAt !== null}
+  <ChatFolders settings={folders} {person} startWith={foldersAt || null} onclose={() => onfolders(null)}
+    chats={rows.map((r) => ({ id: r.channel.id, title: r.title, kind: r.folder, own: r.space?.kind === 'internal' }))} />
+{/if}
 
 <style>
   /* min-width: 0 keeps a long "here now" strip (big subsystems) from widening the list past its column */
@@ -252,6 +277,9 @@
   .row-wrap { position: relative; }
   .row-wrap.drop { box-shadow: inset 0 2px 0 var(--accent); }
   .row.pinned { background: var(--surface); }
+  .row.compact { padding-top: 4px; padding-bottom: 4px; }
+  .row.compact .disc { width: 40px; height: 40px; font-size: 16px; }
+  .tick { display: inline-block; width: 16px; text-align: center; color: var(--accent); }
   .row.pinned[draggable='true'] { cursor: grab; }
   .pin { color: var(--ink-3); display: inline-flex; }
   .more { position: absolute; right: 8px; top: 8px; width: 28px; height: 28px; display: none; place-items: center; border: 0; border-radius: 50%;

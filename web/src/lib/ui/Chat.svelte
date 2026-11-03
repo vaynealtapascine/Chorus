@@ -23,7 +23,8 @@
   import SpaceRail from './SpaceRail.svelte';
   import ChatFolderRail from './ChatFolderRail.svelte';
   import ChatList from './ChatList.svelte';
-  import { chatPrefs, dayLabel, discColor, folderOf, frontEvents, jumpBack, pushJump, type Folder } from '../chat-list';
+  import { chatPrefs, dayLabel, discColor, folderOf, frontEvents, FOLDERS, jumpBack, pushJump } from '../chat-list';
+  import { contains, folderPrefs, label as folderLabel, mutedChat, visible as visibleFolders } from '../chat-folders';
   import AttachmentView from './AttachmentView.svelte';
   import { expandFront } from '../subsystems';
   import Icon from './Icon.svelte';
@@ -49,7 +50,14 @@
     projection: Projection; dark: boolean; channelId?: string; focusId?: string; onswitch?: () => void; onmenu?: () => void;
   } = $props();
   // desktop chat folders (Figma F5.21); the choice lasts for this tab
-  let folder = $state<Folder>((sessionStorage.getItem('chorus.chat.folder') as Folder | null) ?? 'all');
+  let folder = $state<string>(sessionStorage.getItem('chorus.chat.folder') ?? 'all');
+  // chat folders (D-113): which show, in what order, and folders of our own; a hidden or deleted
+  // folder falls back to the first shown, and with none shown every chat is listed
+  const folderSettings = $derived(folderPrefs(projection.rows.pref ?? {}, sync.accountId));
+  const openFolder = $derived(visibleFolders(folderSettings).includes(folder) ? folder : visibleFolders(folderSettings)[0] ?? 'all');
+  const railFolders = $derived(visibleFolders(folderSettings).map((id) => ({ id, label: folderLabel(folderSettings, id),
+    icon: FOLDERS.find((f) => f.id === id)?.icon ?? 'folder' })));
+  let foldersAt = $state<string | null>(null);
   $effect(() => sessionStorage.setItem('chorus.chat.folder', folder));
 
   let showInfo = $state(window.matchMedia('(min-width: 1280px)').matches);
@@ -716,11 +724,16 @@
 
   // chats with something unread, per folder: the rail's badges
   const folderCounts = $derived.by(() => {
-    const counts: Record<Folder, number> = { all: 0, internal: 0, shared: 0, direct: 0 };
+    const counts: Record<string, number> = {};
+    const shown = visibleFolders(folderSettings);
+    const prefs = projection.rows.pref ?? {};
     for (const c of allChannels) {
-      if (c.archived || c.kind === 'thread' || c.id === current?.id || !unread(projection, c.id, sync.accountId)) continue;
-      counts.all++;
-      counts[folderOf(c, ss.find((s) => s.id === c.space_id))]++;
+      if (c.archived || c.kind === 'thread' || c.id === current?.id) continue;
+      const n = unread(projection, c.id, sync.accountId);
+      if (!n) continue;
+      const kind = folderOf(c, ss.find((s) => s.id === c.space_id));
+      const muted = mutedChat(prefs, sync.accountId, c.id);
+      for (const id of shown) if (contains(folderSettings, id, c.id, kind, n, muted)) counts[id] = (counts[id] ?? 0) + 1;
     }
     return counts;
   });
@@ -1133,8 +1146,10 @@
 {/snippet}
 
 <div class="chat" class:with-info={showInfo}>
-  <div class="desk-rail"><ChatFolderRail {folder} counts={folderCounts} person={!!self} onfolder={(f) => (folder = f)} {onmenu} /></div>
-  <div class="desk-list"><ChatList {projection} {dark} currentId={current?.id} {folder} {directory} person={!!self} {onswitch} {viewingAs}
+  <div class="desk-rail"><ChatFolderRail folder={openFolder} folders={railFolders} counts={folderCounts} person={!!self} onfolder={(f) => (folder = f)}
+    onedit={() => (foldersAt = '')} {onmenu} /></div>
+  <div class="desk-list"><ChatList {projection} {dark} currentId={current?.id} folder={openFolder} folders={folderSettings} {foldersAt}
+    onfolders={(at) => (foldersAt = at)} {directory} person={!!self} {onswitch} {viewingAs}
     onnewchannel={homeSpace && !self ? newChannelIn : undefined} onnewchat={() => (newChat = true)} /></div>
   <aside class="channels" aria-label="Channels">
     <div class="channel-title">Chats <a class="icon-button" href="#/search" aria-label="Search messages"><Icon name="search" size={18} /></a></div>

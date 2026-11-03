@@ -1,14 +1,15 @@
 <script lang="ts">
   // The desktop chat's left rail (Figma F5.21): chat folders with unread-chat counts above, the
-  // other destinations below; the menu button opens the full navigation as a drawer.
-  import { FOLDERS, type Folder } from '../chat-list';
+  // other destinations below; the menu button opens the full navigation as a drawer. Which
+  // folders show, in what order, and folders of our own come from the chat_folders pref (D-113).
   import Icon from './Icon.svelte';
 
-  let { folder, counts, person, onfolder, onmenu }: {
-    folder: Folder; counts: Record<Folder, number>; person: boolean; onfolder: (f: Folder) => void; onmenu: () => void;
+  let { folder, folders: all, counts, person, onfolder, onedit, onmenu }: {
+    folder: string; folders: { id: string; label: string; icon: string }[]; counts: Record<string, number>; person: boolean;
+    onfolder: (f: string) => void; onedit: () => void; onmenu: () => void;
   } = $props();
   // a singlet has no members to talk among: their own channels stay under All chats
-  const folders = $derived(person ? FOLDERS.filter((f) => f.id !== 'internal') : FOLDERS);
+  const folders = $derived(person ? all.filter((f) => f.id !== 'internal') : all);
   const destinations = $derived([
     ...(person ? [] : [{ href: '#/members', label: 'Members', icon: 'users' }, { href: '#/', label: 'Fronting', icon: 'target' }]),
     ...(person ? [{ href: '#/journal', label: 'Journal', icon: 'journal' }] : []),
@@ -27,6 +28,7 @@
       {#if counts[f.id]}<span class="badge" class:sun={f.id === 'all'}>{counts[f.id] > 99 ? '99+' : counts[f.id]}</span>{/if}
     </button>
   {/each}
+  <button class="item edit" onclick={onedit} aria-label="Edit chat folders" title="Edit chat folders"><Icon name="sliders" size={20} /><span class="label">Folders</span></button>
   <span class="spacer"></span>
   {#each destinations as d (d.href)}
     <a class="item" href={d.href}><Icon name={d.icon} size={22} /><span class="label">{d.label}</span></a>
@@ -42,7 +44,8 @@
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
   .item:hover { background: var(--surface); color: var(--ink-2); }
   .item.on { background: var(--accent-soft); color: var(--accent); }
-  .label { font-size: 11px; line-height: 14px; font-weight: 500; white-space: nowrap; }
+  .label { font-size: 11px; line-height: 14px; font-weight: 500; white-space: nowrap; max-width: 60px; overflow: hidden; text-overflow: ellipsis; }
+  .edit { opacity: .8; }
   .item.on .label { font-weight: 600; }
   .badge { position: absolute; left: 38px; top: 4px; min-width: 16px; padding: 1px 5px; border-radius: 9px; background: var(--line);
     color: var(--ink); font-size: 10px; line-height: 13px; font-weight: 700; text-align: center; }

@@ -607,7 +607,15 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }.let { rows -> ChatOrganize.order(rows, prefs.chatPins, { it.channel.id }, { it.latest?.occurredAt ?: 0L }, { it.title }) }
     }
     var arrangingPins by rememberSaveable { mutableStateOf(false) }
+    // the chat folders screen (D-113): "" for its list, or "new", "new:<chat>" or a folder to edit
+    var foldersAt by rememberSaveable { mutableStateOf<String?>(null) }
     var removing by remember { mutableStateOf<ChatListRow?>(null) }
+    fun saveFolders(settings: garden.vayne.chorus.data.ChatFolders.Settings) {
+        actions.launch {
+            try { chorus.create("pref.set", null, garden.vayne.chorus.data.ChatFolders.payload(settings)) }
+            catch (e: Exception) { error = e.message ?: "Could not save chat folders." }
+        }
+    }
     fun savePins(pins: List<String>) {
         actions.launch {
             try { chorus.create("pref.set", null, AccountPrefs.payload(ChatOrganize.PINS, ChatOrganize.pinsValue(pins, model.channels.map { it.id }.toSet()))) }
@@ -834,10 +842,19 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     Row(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         if (arrangingPins) ArrangePins(listRows.filter { it.pinned }, if (expanded) Modifier.width(320.dp) else Modifier.weight(1f),
             { arrangingPins = false }) { savePins(it); arrangingPins = false }
+        else if (foldersAt != null) ChatFoldersScreen(model, listRows, { saveFolders(it) },
+            onReadPerMember = { on ->
+                actions.launch {
+                    try { chorus.create("pref.set", null, AccountPrefs.payload("chat.read_per_member", on)) }
+                    catch (e: Exception) { error = e.message ?: "Could not save that setting." }
+                }
+            }, newId = { chorus.newId() }, onClose = { foldersAt = null },
+            modifier = if (expanded) Modifier.width(320.dp) else Modifier.weight(1f), startWith = foldersAt?.ifEmpty { null })
         else if (expanded || pane == "list") ChatListPane(model, listRows, if (expanded) channel?.id else null, readerName,
             openChat, { spaceAction = "new" },
             { switchOpen = true }, onSearch, if (expanded) Modifier.width(240.dp) else Modifier.weight(1f), readerId = readerId,
-            onNewChannel = { editChannel = false; channelEditor = true }, onRowAction = rowAction, previews = listPreviews)
+            onNewChannel = { editChannel = false; channelEditor = true }, onRowAction = rowAction, previews = listPreviews,
+            onEditFolders = { foldersAt = it ?: "" }, onFolders = { saveFolders(it) })
         if (expanded) VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
         if (pane == "info" && !expanded && channel != null && space != null && !paneLocked) {
             ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; searchHere = true },

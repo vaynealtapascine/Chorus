@@ -85,9 +85,16 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
     onOpen: (ChatListRow) -> Unit, onNew: (() -> Unit)?, onSwitch: () -> Unit,
     onSearch: () -> Unit, modifier: Modifier = Modifier, readerId: String? = null, onNewChannel: (() -> Unit)? = null,
     onRowAction: ((ChatListRow, String) -> Unit)? = null,
-    previews: Map<String, String> = emptyMap()) {
+    previews: Map<String, String> = emptyMap(),
+    /** Chat folders (D-113): open their settings, or save a change made here. */
+    onEditFolders: ((String?) -> Unit)? = null, onFolders: ((ChatFolders.Settings) -> Unit)? = null) {
     val p = LocalChorusPalette.current
-    var folder by rememberSaveable { mutableStateOf(ChatPresentation.Folder.All) }
+    val folders = model.accountPrefs.chatFolders
+    // which folder is open stays on this device; a hidden or deleted one falls back to the first shown
+    var chosenFolder by rememberSaveable { mutableStateOf("all") }
+    val folder = chosenFolder.takeIf { it in folders.visible } ?: folders.visible.firstOrNull()
+    // the chat whose folders are being chosen from its long-press menu
+    var foldersFor by remember { mutableStateOf<ChatListRow?>(null) }
     var menu by remember { mutableStateOf(false) }
     // the chat whose long-press menu is open (pin, arrange pins, delete or clear)
     var rowMenu by remember { mutableStateOf<String?>(null) }
@@ -118,10 +125,11 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                         onClick = { menu = false; listed.firstOrNull { it.pinned }?.let { onRowAction(it, "arrange") } })
                     if (!archiveView && archivedRows.isNotEmpty()) DropdownMenuItem(text = { Text("Archived chats (${archivedRows.size})") },
                         onClick = { menu = false; showArchived = true })
+                    if (onEditFolders != null) DropdownMenuItem(text = { Text("Chat folders") }, onClick = { menu = false; onEditFolders(null) })
                 }
             }
         }
-        if (!model.isPerson && !archiveView) {
+        if (!model.isPerson && !archiveView && folders.showHere) {
             val presence = ChatPresentation.presence(model, selected).filter { it.subjectType == "member" }
             Column(Modifier.fillMaxWidth().background(p.surface)) {
                 LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -151,21 +159,28 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                 }
             }
         }
-        if (!archiveView) ScrollableTabRow(folder.ordinal, containerColor = p.surface, contentColor = p.accent, edgePadding = 8.dp,
-            indicator = { positions -> TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(positions[folder.ordinal]), color = p.accent) }) {
-            for (candidate in ChatPresentation.Folder.entries) {
-                val inFolder = listed.filter { candidate == ChatPresentation.Folder.All || ChatPresentation.folder(it.channel, it.space) == candidate }
-                Tab(selected = folder == candidate, onClick = { folder = candidate }, text = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(candidate.label, fontSize = 13.sp, lineHeight = 18.sp, color = if (folder == candidate) p.ink else p.ink3)
-                        val count = inFolder.sumOf { it.unread }
-                        if (count > 0) ChatCount(count, folder == candidate)
-                    }
-                })
+        // the folders shown, in their order (D-113), then a pencil to arrange them; all hidden: no tabs
+        if (!archiveView && folder != null) {
+            val selectedIndex = folders.visible.indexOf(folder)
+            ScrollableTabRow(selectedIndex, containerColor = p.surface, contentColor = p.accent, edgePadding = 8.dp,
+                indicator = { positions -> TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(positions[selectedIndex]), color = p.accent) }) {
+                for (candidate in folders.visible) {
+                    val inFolder = listed.filter { inFolder(folders, candidate, it) }
+                    Tab(selected = folder == candidate, onClick = { chosenFolder = candidate }, text = {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(ChatFolders.label(folders, candidate), fontSize = 13.sp, lineHeight = 18.sp, color = if (folder == candidate) p.ink else p.ink3,
+                                maxLines = 1)
+                            val count = inFolder.sumOf { it.unread }
+                            if (count > 0) ChatCount(count, folder == candidate)
+                        }
+                    })
+                }
+                if (onEditFolders != null) Tab(selected = false, onClick = { onEditFolders(null) }, modifier = Modifier.width(48.dp),
+                    icon = { Icon(painterResource(R.drawable.ic_edit), "Edit chat folders", Modifier.size(18.dp), tint = p.ink3) })
             }
         }
         Box(Modifier.weight(1f)) {
-            val filtered = listed.filter { archiveView || folder == ChatPresentation.Folder.All || ChatPresentation.folder(it.channel, it.space) == folder }
+            val filtered = listed.filter { archiveView || folder == null || inFolder(folders, folder, it) }
             // a chat that moves to the top (pinned, or a new message) is shown, not left just above the
             // view: lazy lists keep the old first row in place
             val listState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -177,10 +192,12 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                     val peer = if (direct) row.channel.memberIds.firstOrNull { it != (readerId ?: ChatSpeaker.pick(model, row.channel.id)) }?.let(model::member) else null
                     Box { Row(Modifier.fillMaxWidth().background(if (selected == row.channel.id) p.accentSoft else if (row.pinned) p.surface else p.bg)
                         .combinedClickable(onClick = { onOpen(row) }, onLongClick = onRowAction?.let { { rowMenu = row.channel.id } },
-                            onLongClickLabel = "Chat actions").heightIn(min = 70.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+                            onLongClickLabel = "Chat actions").heightIn(min = if (folders.compact) 56.dp else 70.dp)
+                            .padding(horizontal = 12.dp, vertical = if (folders.compact) 4.dp else 8.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         // an account DM's channel is just "dm": its disc shows the account
-                        ChannelDisc(if (row.space.kind == "dm") row.channel.copy(name = row.title) else row.channel, peer)
+                        ChannelDisc(if (row.space.kind == "dm") row.channel.copy(name = row.title) else row.channel, peer,
+                            if (folders.compact) 40.dp else 48.dp)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 if (row.latest?.id in model.polls.polls) ChatIcon(R.drawable.ic_poll)
@@ -213,6 +230,8 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                             leadingIcon = { Icon(painterResource(if (row.pinned) R.drawable.ic_unpin else R.drawable.ic_pin), null, Modifier.size(20.dp)) })
                         if (row.pinned && pinnedCount > 1) DropdownMenuItem(text = { Text("Arrange pinned chats") },
                             onClick = { rowMenu = null; onRowAction(row, "arrange") })
+                        if (onFolders != null) DropdownMenuItem(text = { Text("Folders…") }, onClick = { rowMenu = null; foldersFor = row },
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_folder), null, Modifier.size(20.dp)) })
                         DropdownMenuItem(text = { Text(if (row.archived) "Unarchive" else "Archive") },
                             onClick = { rowMenu = null; onRowAction(row, "archive") },
                             leadingIcon = { Icon(painterResource(R.drawable.ic_archive), null, Modifier.size(20.dp)) })
@@ -221,15 +240,15 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                             leadingIcon = { Icon(painterResource(R.drawable.ic_delete), null, Modifier.size(20.dp), tint = p.danger) })
                     }
                     }
-                    HorizontalDivider(Modifier.padding(start = 72.dp), color = p.line, thickness = .5.dp)
+                    HorizontalDivider(Modifier.padding(start = if (folders.compact) 64.dp else 72.dp), color = p.line, thickness = .5.dp)
                 }
                 if (filtered.isEmpty()) item { Column(Modifier.padding(24.dp)) {
                     Text("No chats here yet.", color = p.ink3)
                     if (onNewChannel != null) TextButton(onClick = onNewChannel) { Text("Create a channel") }
                     if (onNew != null) TextButton(onClick = onNew) { Text("Start a chat") }
                 } }
-                if (!archiveView && (folder == ChatPresentation.Folder.Shared || folder == ChatPresentation.Folder.Direct)) item {
-                    Text(if (folder == ChatPresentation.Folder.Shared) "Shared spaces include other systems. Messages show who is speaking; system asides stay inside your system."
+                if (!archiveView && (folder == "shared" || folder == "direct")) item {
+                    Text(if (folder == "shared") "Shared spaces include other systems. Messages show who is speaking; system asides stay inside your system."
                         else "One-to-one chats between your members and with other accounts.", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
                         modifier = Modifier.padding(24.dp))
                 }
@@ -239,7 +258,32 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                 icon = { ChatIcon(R.drawable.ic_edit, "New chat or channel", p.onAccent) }, text = { Text("New chat") })
         }
     }
+    // a chat's folders, from its long-press menu: tick the folders of our own it belongs in
+    foldersFor?.let { row ->
+        val kind = ChatFolders.kindOf(row.channel, row.space)
+        AlertDialog(onDismissRequest = { foldersFor = null }, title = { Text("Folders for ${row.title}") },
+            text = {
+                Column {
+                    if (folders.custom.isEmpty()) Text("You have no folders of your own yet.", color = p.ink3)
+                    for (f in folders.custom) {
+                        val inside = ChatFolders.holds(f, row.channel.id, kind)
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = androidx.compose.ui.semantics.Role.Checkbox) {
+                            onFolders?.invoke(ChatFolders.withCustom(folders, ChatFolders.setChat(f, row.channel.id, kind, !inside)))
+                        }, verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(inside, null)
+                            Text(f.name, color = p.ink, modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { foldersFor = null }) { Text("Done") } },
+            dismissButton = { if (onEditFolders != null) TextButton(onClick = { foldersFor = null; onEditFolders("new:${row.channel.id}") }) { Text("New folder…") } })
+    }
 }
+
+/** Whether [row] shows in folder [id] right now (D-113). */
+private fun inFolder(folders: ChatFolders.Settings, id: String, row: ChatListRow): Boolean =
+    ChatFolders.contains(folders, id, row.channel.id, ChatFolders.kindOf(row.channel, row.space), row.unread, row.muted)
 
 @Composable
 internal fun ChatCount(count: Int, unread: Boolean) {
