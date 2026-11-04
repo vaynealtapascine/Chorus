@@ -491,7 +491,7 @@ fn sparse_current_view_50k_first_screen_stays_within_budget() {
         }
     }
     eprintln!("50k sparse search: {elapsed:?}");
-    // SPEC §9 first-screen budget; release is the mandatory full verification profile.
+    // SPEC §9 first-screen budget; optimised builds (the gate profile, release) enforce it.
     if !cfg!(debug_assertions) {
         assert!(elapsed < std::time::Duration::from_millis(150), "shared DB held for {elapsed:?}");
     }

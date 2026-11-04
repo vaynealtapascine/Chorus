@@ -21,6 +21,15 @@ lto = "thin"
 codegen-units = 1
 strip = true
 
+# The gate's Rust tests (scripts/verify.py, D-118): optimised like release, so the simulator and
+# speed budgets mean the same, without the link-time work that only matters for what ships.
+# Release builds each of the 38 test binaries with thin LTO and one codegen unit.
+[profile.gate]
+inherits = "release"
+lto = "off"
+codegen-units = 16
+strip = false
+
 # Web builds: the bundle budget is bytes over the wire (SPEC §9), so optimise every crate for
 # size — only in `--profile wasm` builds; the server keeps `release`.
 [profile.wasm]

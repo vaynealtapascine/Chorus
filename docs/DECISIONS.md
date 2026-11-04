@@ -148,6 +148,8 @@ Web also applies D-110 to chat/search eligibility; its info labels still name th
 
 | D-117 | **A default audience for new Journal posts (owner request, 2026-11-04).** The audience menu of a new post or entry ends with "Use this audience by default"; it saves the account pref `journal.default_audience`, shared by the account's devices and readable by nobody else. New posts start there; a bucket that no longer exists drops out, and with none left, or a malformed value, the post starts as Only us. Replies are left out, since they start from their thread's audience. A draft with anything in it keeps the audience it shows, so a default changed on another device never widens words being written. | Owner |
 
+| D-118 | **A faster gate (owner request, 2026-11-04).** `verify.py` runs the Rust tests on a `gate` profile: optimised like release, without LTO and with 16 codegen units. Shipped builds keep `release`, and `--release` still tests it. `--changed` runs only the stages a change can affect, which is enough to commit; a full run with `--android` is required before a deploy, and any path not listed in `verify.py` runs everything. Measured, and why Gradle's settings stayed as they were: NOTES 2026-11-04. | Owner |
+
 ## Versions
 
 Pin here as they are adopted (tool/library → version → date → why).

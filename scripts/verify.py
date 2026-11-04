@@ -4,24 +4,80 @@
     python scripts/verify.py            # rust + web (if web/node_modules exists)
     python scripts/verify.py --quick    # skip the long simulator/proptest runs (debug build)
     python scripts/verify.py --android  # also gradle lint + unit tests (needs JDK 17 + SDK)
+    python scripts/verify.py --changed  # only the stages what changed since main can affect (D-118)
+    python scripts/verify.py --changed=REF  # the same, since REF
+    python scripts/verify.py --release  # the Rust tests on the shipping profile (10-15 min after a change)
 
 It also runs scripts/api-check.py (docs/API.md documents every route).
 
-Exits non-zero on the first failure and prints the command that failed.
+Run it in full, with --android, before a deploy (AGENTS.md).
+
+Exits non-zero on the first failure and prints the command that failed, then what each step took.
 """
 import os
 import shutil
 import subprocess
 import sys
+import time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+# What a change under each path can affect (D-118). Clients reach the server over HTTP, so a server
+# change can't break their tests, and no tree's tests read another's files. Core reaches the clients
+# through wasm and FFI and fixtures are the cross-language contract, so those run everything, as
+# does any path not listed here. The quick checks at the start always run (they read docs/ too).
+EVERYTHING = {'rust', 'wasm', 'web', 'android', 'editor'}
+SCOPES = (
+    ('docs/', set()),
+    ('crates/chorus-server/', {'rust'}),
+    ('web/', {'web'}),
+    ('android/', {'android'}),
+    ('tools/pluralspec-editor/', {'editor'}),
+)
+DOCS = {'AGENTS.md', 'CLAUDE.md', 'LICENSE', 'PRODUCT.md', 'PROGRESS.md', 'README.md'}
+
+
+def stages_for(paths):
+    stages = set()
+    for path in paths:
+        if path in DOCS:
+            continue
+        for prefix, scope in SCOPES:
+            if path.startswith(prefix):
+                stages |= scope
+                break
+        else:
+            return set(EVERYTHING)
+    return stages
+
+
+def changed_paths(base):
+    """Everything that differs from where this branch left [base], committed or not."""
+    def git(*args):
+        return subprocess.run(['git', *args], cwd=ROOT, capture_output=True, text=True, encoding='utf-8', check=True).stdout
+    fork = git('merge-base', 'HEAD', base).strip()
+    # --no-renames: a file moved out of a path has to count against that path as well
+    return sorted(set(filter(None, (git('diff', '--name-only', '--no-renames', fork) + git('ls-files', '--others', '--exclude-standard')).split('\n'))))
+
+
+TIMES = []
+
+
+def timings():
+    print('\nTime by step:')
+    for seconds, cmd in TIMES:
+        print(f'{seconds:6.0f}s  {cmd[:90]}')
+    print(f'{sum(t for t, _ in TIMES):6.0f}s  total')
 
 
 def run(cmd, cwd=ROOT, env=None):
     print(f'\n▶ {" ".join(cmd)}', flush=True)
+    started = time.monotonic()
     r = subprocess.run(cmd, cwd=cwd, env={**os.environ, **(env or {})}, shell=(os.name == 'nt' and cmd[0] in ('npm', 'npx')))
+    TIMES.append((time.monotonic() - started, ' '.join(cmd)))
     if r.returncode != 0:
         print(f'\n✗ failed: {" ".join(cmd)}', file=sys.stderr)
+        timings()
         sys.exit(r.returncode)
 
 
@@ -53,25 +109,41 @@ def main():
         os.environ['CARGO_TARGET_DIR'] = roomy
     quick = '--quick' in sys.argv
     android = '--android' in sys.argv
+    stages = set(EVERYTHING)
+    changed = next((a for a in sys.argv if a == '--changed' or a.startswith('--changed=')), None)
+    if changed:
+        base = changed.partition('=')[2] or 'main'
+        paths = changed_paths(base)
+        stages = stages_for(paths)
+        # what changed decides: a change to the Android app is never passed without its tests
+        android = 'android' in stages
+        print(f'{len(paths)} files changed since {base}: {", ".join(sorted(stages)) or "quick checks only"}', flush=True)
 
     if shutil.which('node'):
         run(['node', 'scripts/gen-tokens.mjs', '--check'])
         editor = os.path.join(ROOT, 'tools', 'pluralspec-editor')
-        if os.path.isdir(os.path.join(editor, 'node_modules')):
+        if 'editor' in stages and os.path.isdir(os.path.join(editor, 'node_modules')):
             run(['npm', 'test'], cwd=editor)
     run([sys.executable, 'scripts/projection-check.py'])
     run([sys.executable, 'scripts/api-check.py'])
-    run(['cargo', 'fmt', '--all', '--check'])
-    run(['cargo', 'clippy', '--workspace', '--all-targets', '--', '-D', 'warnings'])
-    if quick:
-        run(['cargo', 'test', '--workspace'], env={'CHORUS_SIM_SEEDS': '50', 'PROPTEST_CASES': '64'})
-    else:
-        # release: the convergence simulator and proptests are CPU-heavy
-        run(['cargo', 'test', '--workspace', '--release'])
-    run(['cargo', 'build', '-p', 'chorus-wasm', '--target', 'wasm32-unknown-unknown', '--profile', 'wasm'])
+    if 'rust' in stages:
+        run(['cargo', 'fmt', '--all', '--check'])
+        run(['cargo', 'clippy', '--workspace', '--all-targets', '--', '-D', 'warnings'])
+        if quick:
+            run(['cargo', 'test', '--workspace'], env={'CHORUS_SIM_SEEDS': '50', 'PROPTEST_CASES': '64'})
+        elif '--release' in sys.argv:
+            run(['cargo', 'test', '--workspace', '--release'])
+        else:
+            # optimised: the convergence simulator and proptests are CPU-heavy, and speed budgets
+            # only hold in optimised builds. Without release's link-time work (Cargo.toml, D-118).
+            run(['cargo', 'test', '--workspace', '--profile', 'gate'])
+    if 'wasm' in stages:
+        run(['cargo', 'build', '-p', 'chorus-wasm', '--target', 'wasm32-unknown-unknown', '--profile', 'wasm'])
 
     web = os.path.join(ROOT, 'web')
-    if os.path.isdir(os.path.join(web, 'node_modules')):
+    if 'web' not in stages:
+        pass
+    elif os.path.isdir(os.path.join(web, 'node_modules')):
         run(['npm', 'run', 'check'], cwd=web)
         run(['npm', 'test'], cwd=web)
         run(['npm', 'run', 'build'], cwd=web)
@@ -96,6 +168,7 @@ def main():
     elif android:
         print('\n(android: no gradlew yet)')
 
+    timings()
     print('\n✓ verify passed')
 
 

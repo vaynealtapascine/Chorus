@@ -773,6 +773,24 @@ treat that tree's `chorus-server` artifacts as fresh: clippy then failed with `n
 root` although `src/profiles.rs` and its `mod` line were there. `touch` the changed crate's
 `lib.rs` (or give the worktree its own `CARGO_TARGET_DIR`) and run the gate again.
 
+## Where the gate's time goes (2026-11-04)
+
+Measured on the owner's PC (Ryzen 5 5600X, target dir on a SATA SSD). After a server change,
+`cargo test --release` took 10-15 min to compile across a dozen earlier gate logs, because release's
+thin LTO and single codegen unit apply to each of the 38 integration test binaries. The `gate`
+profile took 100 s (122 s after a core change), once its first build (8 min, 4 GB) is done. It runs
+the tests about 20% slower (124 s against 101 s), and the 50k search budget (150 ms) held: 58-73 ms
+against 56-126 ms on release, five runs each. Incremental compilation only reached 76 s and costs
+disk F: doesn't have.
+
+Don't bother with these Gradle settings: `--parallel` gained nothing (123-126 s for everything,
+either way, four runs). An earlier 225 s against 144 s was only a cold daemon against a warm one,
+so measure with the daemon warm. A no-op takes about 5 s, so the configuration cache saves 3 s.
+
+A Gradle daemon started from a shell inherits its output handles: piping `gradlew` into another
+command, or wrapping it in a backgrounded `pwsh -File`, can hold that shell open until a time limit
+long after the build is done. Redirect to a file, or end with `gradlew --stop`.
+
 ## Android Journal draft/send lifecycle (2026-11-02)
 
 - `JournalDraftSession` is the UI's actual edit/restore/launch/send path, not a parallel helper.

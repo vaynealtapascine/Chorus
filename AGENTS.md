@@ -49,7 +49,7 @@ same commit and note it in the log.
 
 - **Atomic commits**, conventional-ish prefixes (`feat(core):`, `fix(server):`, `docs:`, `test:`,
   `chore:`). One logical change per commit. Tests land with the code they test.
-- **`python scripts/verify.py` must pass before every commit** (`--quick` while iterating; the full run uses release builds for the simulator).
+- **`python scripts/verify.py` must pass before every commit.** `--changed` runs only the stages a change can affect (D-118), which is enough to commit; `--quick` while iterating. **Run it in full, with `--android`, before a deploy.**
 - **`chorus-core` is pure**: no IO, no clocks, no randomness except through passed-in parameters.
   Everything that must behave identically on server, Android and web lives there.
 - **Conformance fixtures** in `fixtures/` are the cross-language contract (see SYNC.md §9). If a
