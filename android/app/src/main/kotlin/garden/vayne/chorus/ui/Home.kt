@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,6 +45,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
@@ -214,20 +218,21 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             Text("★ ${member.shownName}", color = p.ink, modifier = Modifier.weight(1f))
+                            // 48 dp targets with spoken names: the arrows alone read as "up arrow"
                             Text("↑", color = if (i > 0) p.accent else p.ink3,
                                 modifier = Modifier.clickable(enabled = i > 0) {
                                     val next = pins.toMutableList(); val previous = visiblePins[i - 1]
                                     val pos = next.indexOf(id); val previousPos = next.indexOf(previous)
                                     next[pos] = previous; next[previousPos] = id; setPins(next)
-                                }.padding(8.dp))
+                                }.pinTarget("Move ${member.shownName} up"))
                             Text("↓", color = if (i < visiblePins.lastIndex) p.accent else p.ink3,
                                 modifier = Modifier.clickable(enabled = i < visiblePins.lastIndex) {
                                     val next = pins.toMutableList(); val following = visiblePins[i + 1]
                                     val pos = next.indexOf(id); val followingPos = next.indexOf(following)
                                     next[pos] = following; next[followingPos] = id; setPins(next)
-                                }.padding(8.dp))
+                                }.pinTarget("Move ${member.shownName} down"))
                             Text("Remove", color = p.accent,
-                                modifier = Modifier.clickable { setPins(pins - id) }.padding(8.dp))
+                                modifier = Modifier.clickable { setPins(pins - id) }.pinTarget("Unpin ${member.shownName}"))
                         }
                     }
                 }
@@ -454,3 +459,9 @@ private fun PresenceLine(label: String, names: List<String>) {
             fontSize = 12.sp, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
     }
 }
+
+/** A pin-arranging control: at least 48 dp square, its glyph centred, read out by `label`. */
+private fun Modifier.pinTarget(label: String): Modifier = this
+    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+    .wrapContentSize()
+    .semantics { contentDescription = label }

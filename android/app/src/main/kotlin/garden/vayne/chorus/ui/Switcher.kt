@@ -27,6 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.Chorus
@@ -117,8 +119,12 @@ fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, onClose: () 
                     }) { Text(layerName(e.level)) }
                     TextButton(onClick = {
                         selected.indices.forEach { n -> selected[n] = selected[n].copy(isPrimary = n == index, level = if (n == index) inner else selected[n].level) }
-                    }) { Text(if (e.isPrimary) "★" else "☆") }
-                    TextButton(onClick = { selected.removeAt(index); repairPrimary() }) { Text("×") }
+                    }) { Text(if (e.isPrimary) "★" else "☆", Modifier.semantics {
+                        contentDescription = if (e.isPrimary) "${s?.name ?: "Unknown"} is primary" else "Make ${s?.name ?: "Unknown"} primary"
+                    }) }
+                    TextButton(onClick = { selected.removeAt(index); repairPrimary() }) {
+                        Text("×", Modifier.semantics { contentDescription = "Remove ${s?.name ?: "Unknown"}" })
+                    }
                 }
             }
             OutlinedTextField(query, { query = it }, label = { Text("Search members and subsystems") }, singleLine = true, modifier = Modifier.fillMaxWidth())
