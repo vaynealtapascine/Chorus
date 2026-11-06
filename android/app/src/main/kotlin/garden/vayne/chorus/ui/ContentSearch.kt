@@ -23,6 +23,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.SearchVisibility
@@ -165,8 +166,11 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
                     modifier = Modifier.padding(top = 14.dp))
                 TextButton(onClick = onClose) { Text("Close") }
             }
+            // opening search is asking to type: the field takes the keyboard at once
+            val typing = remember { androidx.compose.ui.focus.FocusRequester() }
+            LaunchedEffect(Unit) { runCatching { typing.requestFocus() } }
             ChorusField(query, { query = it }, label = { Text(if(channelId != null) "Search this chat" else "Search ${if(section == "Messages") "all chats" else if(section == "Posts") "Journal" else section}") },
-                singleLine = true, modifier = Modifier.fillMaxWidth())
+                singleLine = true, modifier = Modifier.fillMaxWidth().focusRequester(typing))
             Text("Try words or from:, in:, has:, before:, after:, is:pinned.", color = p.ink2)
         }
         item {
@@ -184,7 +188,7 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
         else if (query.isBlank()) item { Text("Type to search this scope. Chats use the current front; Journal and Saved contain posts and entries.", color = p.ink2) }
         else if (section == "Messages" && messageResult.error != null)
             item { Text("Search: ${messageResult.error}", color = p.ink2) }
-        else if (shown.isEmpty() && !loading) item { Text("No $section matches on this device${if (online && section != "Switches") " or server" else ""}.", color = p.ink2) }
+        else if (shown.isEmpty() && !loading) item { Text("Nothing in ${when (section) { "Messages" -> "chats"; "Posts" -> "the Journal"; "Saved" -> "saved posts"; else -> section.lowercase() }} matches, on this device${if (online && section != "Switches") " or the server" else ""}.", color = p.ink2) }
         for (doc in shown) item(key = "${doc.kind}:${doc.id}") {
             if (doc.kind == "Messages") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

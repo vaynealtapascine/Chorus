@@ -148,7 +148,7 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
         item {
             Text("Settings", color = p.ink, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(top = 12.dp))
-            Text("Account settings sync across devices. This device settings stay here.", color = p.ink2)
+            Text("Account settings sync across your devices; settings under This device stay on this phone.", color = p.ink2)
             if (!model.isPerson) TextButton(onClick = onOpenInsights) { Text("Insights · Front history") }
             if (error != null) Text(error.orEmpty(), color = p.danger)
         }

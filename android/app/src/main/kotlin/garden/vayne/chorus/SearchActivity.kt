@@ -242,6 +242,7 @@ private fun Launcher(chorus: Chorus, close: () -> Unit) {
             LazyColumn {
                 items(results, key = { "${it.type}:${it.id}" }) { s ->
                     ResultRow(s, multi, selected.any { it.type == s.type && it.id == s.id },
+                        here = model.current.any { it.subjectType == s.type && it.subjectId == s.id },
                         onTap = {
                             if (multi) {
                                 val index = selected.indexOfFirst { it.type == s.type && it.id == s.id }
@@ -256,7 +257,7 @@ private fun Launcher(chorus: Chorus, close: () -> Unit) {
 }
 
 @Composable
-private fun ResultRow(s: Subject, multi: Boolean, selected: Boolean, onTap: () -> Unit,
+private fun ResultRow(s: Subject, multi: Boolean, selected: Boolean, here: Boolean, onTap: () -> Unit,
     onAdd: () -> Unit, onRemove: () -> Unit) {
     val p = LocalChorusPalette.current
     Row(
@@ -268,10 +269,11 @@ private fun ResultRow(s: Subject, multi: Boolean, selected: Boolean, onTap: () -
         Text(s.name, color = tonesOf(s.color).name, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
         if (multi) Text(if (selected) "✓" else "+", color = p.accent, fontSize = 18.sp,
             modifier = Modifier.padding(horizontal = 10.dp))
-        else {
-            Text("Add", color = p.accent, fontSize = 12.sp,
+        // whichever applies: someone here can be removed, anyone else added (seen on the A56, 2026-11-07)
+        else if (!here) Text("Add", color = p.accent, fontSize = 12.sp,
                 modifier = Modifier.clickable(onClick = onAdd).padding(horizontal = 6.dp, vertical = 8.dp)
                     .semantics { contentDescription = "Add ${s.name} to front" })
+        else {
             Text("Remove", color = p.accent, fontSize = 12.sp,
                 modifier = Modifier.clickable(onClick = onRemove).padding(horizontal = 6.dp, vertical = 8.dp)
                     .semantics { contentDescription = "Remove ${s.name} from front" })
