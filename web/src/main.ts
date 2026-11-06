@@ -6,6 +6,7 @@ import { loadCore } from './lib/core';
 import { sync } from './lib/sync/client';
 
 import { pathTarget } from './lib/share-links';
+import { warmIcons } from './lib/icons';
 
 // a shared link (D-109) loads the app at /post/<id> or /message/<id>: open what it points at
 const shared = pathTarget(location.pathname);
@@ -19,6 +20,7 @@ await loadCore();
 await sync.start();
 mount(App, { target: document.getElementById('app')! });
 performance.mark('chorus:mounted');
+warmIcons();
 
 // offline app shell in production builds (plugins/service-worker.ts)
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {

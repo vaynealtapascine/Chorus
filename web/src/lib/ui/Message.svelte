@@ -6,6 +6,7 @@
 </script>
 
 <script lang="ts">
+  import { flushSync } from 'svelte';
   import { core } from '../core';
   import Icon from './Icon.svelte';
   import type { EmojiRow, MemberRow, MessageRow, SnapshotItem, TextRange, ThreadSummary } from '../data';
@@ -122,6 +123,9 @@
 
   let actionMenu = $state<HTMLDivElement>();
   let actionTrigger = $state<HTMLButtonElement>();
+  // the menu's buttons exist only while it is open: a long chat would otherwise build a dozen
+  // icons per message, and every new message would paint them (owner, 2026-11-07)
+  let menuOpen = $state(false);
   const menuId = $derived(`message-actions-${m.id}`);
   function runAction(action: () => unknown) { actionMenu?.hidePopover(); action(); }
   /** Where a tap opened the menu; otherwise it hangs from the ⋯ button. */
@@ -382,7 +386,10 @@
     <!-- a held message isn't sent yet: only Cancel, nothing covering it (narrow screens) -->
     {#if !heldUntil && !readOnly}
     <button class="action-trigger" bind:this={actionTrigger} popovertarget={menuId} aria-label="Message actions" title="Message actions"><Icon name="more" size={18} /></button>
-    <div class="actions" bind:this={actionMenu} id={menuId} popover="auto" ontoggle={(e) => { if (e.newState === 'open') placeActions(); }} role="group" aria-label="Message actions">
+    <div class="actions" bind:this={actionMenu} id={menuId} popover="auto" role="group" aria-label="Message actions"
+      onbeforetoggle={(e) => { if (e.newState === 'open') { menuOpen = true; flushSync(); } }}
+      ontoggle={(e) => { if (e.newState === 'open') placeActions(); else setTimeout(() => { if (!actionMenu?.matches(':popover-open')) menuOpen = false; }, 300); }}>
+      {#if menuOpen}
       <p class="when"><time datetime={new Date(m.occurred_at).toISOString()}>{when}</time>{m.edited ? ' · edited' : ''}</p>
       <button onclick={() => runAction(() => (palette = !palette))} title="React" disabled={!speaker}><Icon name="smile" size={20} />React</button>
       <button onclick={() => runAction(onreply)} title="Reply"><Icon name="action-reply" size={20} />Reply</button>
@@ -399,6 +406,7 @@
       {#if mine}
         <button onclick={() => runAction(onedit)} title="Edit"><Icon name="action-edit" size={20} />Edit</button>
         <button class="delete-action" onclick={() => runAction(ondelete)} title="Delete"><Icon name="delete" size={20} />Delete</button>
+      {/if}
       {/if}
     </div>
     {/if}
