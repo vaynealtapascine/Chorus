@@ -21,6 +21,8 @@
   import More from './lib/ui/More.svelte';
   import Switcher from './lib/ui/Switcher.svelte';
   import Fronts from './lib/ui/Fronts.svelte';
+  import LayersDisplay from './lib/ui/LayersDisplay.svelte';
+  import { frontingUi } from './lib/fronting-ui.svelte';
   import Trash from './lib/ui/Trash.svelte';
   import ThisComputer from './lib/ui/ThisComputer.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
@@ -62,6 +64,7 @@
   let navOpen = $state(false);
   $effect(() => { void router.route; navOpen = false; });
   let switchFront = $state<string | undefined>(undefined);
+  let switchAddTo = $state<string | undefined>(undefined);
   addEventListener('keydown', (e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && sync.device && !person) {
       e.preventDefault();
@@ -102,7 +105,7 @@
     ? [{ path: '/journal', name: 'journal', label: 'Journal', icon: 'journal' }, ...allTabs.filter((t) => !['members', 'home'].includes(t.name))]
     : allTabs);
   const active = $derived(['member', 'profile'].includes(router.route.name) ? 'members' : router.route.name === 'post' ? 'journal' :
-    router.route.name === 'stage' ? 'chat' : router.route.name === 'friend' ? 'people' : ['history', 'fronts'].includes(router.route.name) ? 'home' :
+    router.route.name === 'stage' ? 'chat' : router.route.name === 'friend' ? 'people' : ['history', 'fronts', 'layers'].includes(router.route.name) ? 'home' :
     ['insights', 'data', 'trash', 'settings', 'computer', 'search', 'post-stage'].includes(router.route.name) ? 'more' : router.route.name);
   const account = $derived(projection?.rows.account?.[sync.accountId]?.fields);
   const system = $derived(projection?.rows.system?.[sync.accountId]?.fields);
@@ -124,7 +127,7 @@
     }
     return current.filter((e) => e.layer_id === 'front').map((e) => subjects.get(e.subject_id)?.name).filter(Boolean).join(' & ') || 'No one fronting';
   });
-  const routeTitle = $derived(({ home: person ? 'Home' : 'Fronting', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', post: 'Post', chat: 'Chat', people: 'Friends', friend: 'Friends', history: 'Front history', fronts: 'Fronts', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
+  const routeTitle = $derived(({ home: person ? 'Home' : 'Fronting', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', post: 'Post', chat: 'Chat', people: 'Friends', friend: 'Friends', history: 'Front history', fronts: 'Fronts', layers: 'Layers & display', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
 </script>
 
 <svelte:document onclick={openOwnLink} />
@@ -161,11 +164,18 @@
     </aside>
     {#if navOpen}<button class="scrim" aria-label="Close navigation" onclick={() => (navOpen = false)}></button>{/if}
     <div class="workspace">
-      <header class="app-bar">
-        <div><strong>{routeTitle}</strong><span class="account-subtitle">{accountName}</span></div>
+      <!-- Fronting's subpages carry their own back-arrow bars (Figma F3.4, F3.5, F3.7, F3.9) -->
+      <header class="app-bar" class:subpage={['fronts', 'layers', 'history'].includes(router.route.name) && !person}>
+        <div><strong>{routeTitle}</strong><span class="account-subtitle">{accountName}{#if router.route.name === 'home' && !person}{' · '}{current.length} here now{/if}</span></div>
         <span class="status" data-status={status} role="status"><span class="status-dot"></span>{statusLabel[status]}</span>
+        {#if router.route.name === 'home' && !person}
+          <!-- Fronting's own bar (Figma F3.1): history and Layers & display for the shown front -->
+          <a class="icon-button" href="#/history" aria-label="Front history"><Icon name="history" /></a>
+          <a class="icon-button" href="#/layers/{frontingUi.front ?? sync.accountId}" aria-label="Layers and display"><Icon name="sliders" /></a>
+        {:else}
         <a class="icon-button" href="#/search" aria-label="Search"><Icon name="search" /></a>
-        {#if !person}<button class="icon-button mobile-switch" onclick={() => (switching = true)} aria-label="Open switcher"><Icon name="swap" /></button>{/if}
+        {/if}
+        {#if !person && router.route.name !== 'home'}<button class="icon-button mobile-switch" onclick={() => (switching = true)} aria-label="Open switcher"><Icon name="swap" /></button>{/if}
       </header>
     {#if storageFull}
       <p class="storage-full" role="alert">
@@ -198,7 +208,9 @@
       {:else if router.route.name === 'search'}
         <Search {projection} {dark} initialScope={router.route.id === "saved" ? "saved" : router.route.id === "posts" ? "posts" : "messages"} />
       {:else if router.route.name === 'fronts'}
-          <Fronts {projection} />
+          <Fronts {projection} {dark} />
+      {:else if router.route.name === 'layers'}
+          <LayersDisplay {projection} front={router.route.id ?? sync.accountId} />
         {:else if router.route.name === 'history'}
         <History {projection} {dark} />
       {:else if router.route.name === 'insights'}
@@ -216,13 +228,13 @@
       {:else if router.route.name === 'trash'}
         <Trash {projection} channelId={router.route.id} />
       {:else}
-        <Home {projection} {dark} onswitch={(front?: string) => { switchFront = front; switching = true; }} />
+        <Home {projection} {dark} onswitch={(front?: string, addTo?: string) => { switchFront = front; switchAddTo = addTo; switching = true; }} />
       {/if}
     </main>
     </div>
   </div>
   {#if switching}
-    <Switcher {projection} {dark} front={switchFront} onclose={() => { switching = false; switchFront = undefined; }} />
+    <Switcher {projection} {dark} front={switchFront} addTo={switchAddTo} onclose={() => { switching = false; switchFront = undefined; switchAddTo = undefined; }} />
   {/if}
   <UndoToast />
 {/if}
@@ -258,6 +270,7 @@
   .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); flex: none; }
   .status[data-status='live'] .status-dot { background: var(--ok); }
   .mobile-switch { display: none; }
+  .app-bar.subpage { display: none; }
   main { padding: 24px; max-width: 1200px; margin-inline: auto; min-width: 0; outline: none; }
   .chat-page main { padding: 0; max-width: none; }
   .storage-full { margin: 0; padding: 12px 24px; font-size: var(--fs-sm); background: var(--accent-soft); }

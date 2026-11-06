@@ -1,353 +1,196 @@
 <script lang="ts">
-  import { core } from '../core';
-  import { fuzzy, groups, members } from '../data';
-  import { doFrontSwitch, doSwitch, type Level, type Notify } from '../front.svelte';
+  import { untrack } from 'svelte';
+  // Switch (Figma F3.2; Android Switcher.kt). Each tap places someone on the innermost layer, the
+  // next moves them one layer outward, and past the last layer they are out again. Replace front
+  // starts empty and becomes the whole front; Add to front starts from who is here and changes only
+  // who was tapped. `addTo` opens in Add mode with the first tap landing on that layer.
+  import { fuzzy } from '../data';
+  import { doFrontSwitch, doSwitch, place, type Level, type Notify, type Placement } from '../front.svelte';
   import { frontLayers, frontView } from '../front-view';
   import type { FrontPresence } from '../core/fronts';
+  import * as fd from '../fronting-display';
+  import { ownMembers, whoKey, whoMap, type Who } from '../fronting-subjects';
+  import { groups } from '../data';
   import { sync, type Projection } from '../sync/client';
-  import AvatarImage from './AvatarImage.svelte';
+  import Face from './Face.svelte';
+  import Icon from './Icon.svelte';
 
-  /** `front`: the named front to change (D-080); Body when absent. */
-  let { projection, dark, onclose, front }: { projection: Projection; dark: boolean; onclose: () => void; front?: string } = $props();
-  type Entry = FrontPresence;
+  let { projection, dark, onclose, front, addTo, handover = false }: {
+    projection: Projection; dark: boolean; onclose: () => void; front?: string; addTo?: string; handover?: boolean;
+  } = $props();
   const target = $derived(front ?? sync.accountId);
   const configured = $derived(!!projection.front_systems?.[sync.accountId]);
-  const layers = $derived(frontLayers(projection, sync.accountId));
-  const layerName = (id: string) => layers.find((l) => l.id === id)?.name ?? id;
-  const title = $derived(target === sync.accountId ? "Who's here?" : `Who's in ${frontView(projection, sync.accountId, target).name}?`);
-
-  interface Cand {
-    type: 'member' | 'group';
-    id: string;
-    name: string;
-    color: string;
-    glyph: string;
-    avatarBlob?: string;
-  }
-
-  const cands: Cand[] = $derived([
-    ...members(projection)
-      .filter((m) => !m.deleted && !m.archived)
-      .map((m) => ({ type: 'member' as const, id: m.id, name: m.display_name ?? m.name, color: m.color, glyph: m.sigils[0] ?? m.name[0], avatarBlob: m.avatar_blob })),
-    ...groups(projection)
-      .filter((g) => g.kind === 'subsystem')
-      .map((g) => ({ type: 'group' as const, id: g.id, name: g.name, color: g.color ?? '#A09184', glyph: '◌', avatarBlob: g.avatar_blob })),
-  ]);
-  const byKey = $derived(new Map(cands.map((c) => [`${c.type}:${c.id}`, c])));
-
-  // start from who is here now (a snapshot on open, deliberately not live)
-  const initial = () => frontView(projection, sync.accountId, front ?? sync.accountId).entries.map((e) => ({ ...e })) as Entry[];
-  let selected: Entry[] = $state(initial());
+  const view = $derived(frontView(projection, sync.accountId, target));
+  const display = $derived(fd.displayPrefs(projection.rows.pref, sync.accountId));
+  const scene = $derived(fd.scene(frontLayers(projection, sync.accountId), view.entries, display, target, []));
+  // the cycle: nested layers inner to outer, then the separately listed ones
+  const cycle = $derived([...scene.all.filter((l) => !l.separate), ...scene.all.filter((l) => l.separate)]);
+  const who = $derived(whoMap(projection));
+  // a snapshot on open, deliberately not live
+  const current: FrontPresence[] = untrack(() => frontView(projection, sync.accountId, front ?? sync.accountId).entries.map((e) => ({ ...e })));
+  let add = $state(untrack(() => addTo !== undefined));
+  let placed: FrontPresence[] = $state(untrack(() => (addTo !== undefined ? current.map((e) => ({ ...e })) : [])));
   let query = $state('');
+  let searching = $state(false);
+  let options = $state(untrack(() => handover));
   let note = $state('');
   let atText = $state('');
   let notify: Notify = $state('default');
-  let more = $state(false);
 
-  const key = (e: { subject_type?: string; type?: string; subject_id?: string; id?: string }) =>
-    `${e.subject_type ?? e.type}:${e.subject_id ?? e.id}`;
-  const list = $derived.by(() => {
+  const subjects = $derived.by((): Who[] => {
+    const recents = new Map<string, number>();
+    (projection.fronts[sync.accountId]?.switches ?? []).forEach((s, i) => s.resulting_front.forEach((e) => recents.set(e.subject_id, i)));
+    const members = ownMembers(projection).sort((a, b) => (recents.get(b.id) ?? -1) - (recents.get(a.id) ?? -1));
+    const subs = groups(projection).filter((g) => g.kind === 'subsystem').map((g) => who.get(whoKey('group', g.id))).filter((w): w is Who => !!w);
+    const states = [...who.values()].filter((w) => w.type === 'state');
+    const all = [...members, ...subs, ...states];
     const q = query.trim();
-    const scored = cands
-      .map((c) => ({ c, s: fuzzy(q, c.name) }))
-      .filter((x) => x.s !== null)
-      .sort((a, b) => a.s! - b.s! || a.c.name.localeCompare(b.c.name));
-    return scored.map((x) => x.c);
+    if (!q) return all;
+    return all.map((w) => ({ w, s: fuzzy(q, w.name) })).filter((x) => x.s !== null).sort((a, b) => a.s! - b.s!).map((x) => x.w);
   });
+  const placedOf = (w: Who) => placed.find((e) => e.subject_type === w.type && e.subject_id === w.id);
+  const layerOf = (id: string) => cycle.find((l) => l.id === id);
 
-  function toggle(c: Cand) {
-    const k = `${c.type}:${c.id}`;
-    if (selected.some((e) => key(e) === k)) {
-      selected = selected.filter((e) => key(e) !== k);
+  function mode(toAdd: boolean) {
+    add = toAdd;
+    placed = toAdd ? current.map((e) => ({ ...e })) : [];
+  }
+  function tap(w: Who) {
+    const i = placed.findIndex((e) => e.subject_type === w.type && e.subject_id === w.id);
+    const ids = cycle.map((l) => l.id);
+    if (i < 0) {
+      placed = [...placed, { subject_type: w.type, subject_id: w.id, layer_id: (add && addTo) || ids[0] || 'front', is_primary: false }];
     } else {
-      const inner = layers[0]?.id ?? 'front';
-      const first = !selected.some((e) => e.layer_id === inner);
-      selected = [...selected, { subject_type: c.type, subject_id: c.id, layer_id: inner, is_primary: first }];
+      const next = ids.indexOf(placed[i].layer_id) + 1;
+      placed = next > 0 && next < ids.length ? placed.map((e, j) => (j === i ? { ...e, layer_id: ids[next], is_primary: false } : e)) : placed.filter((_, j) => j !== i);
     }
-    query = '';
   }
-
-  function cycleLevel(i: number) {
-    const e = selected[i];
-    const ids = layers.map((l) => l.id);
-    const next = ids[(ids.indexOf(e.layer_id) + 1) % ids.length] ?? e.layer_id;
-    selected[i] = { ...e, layer_id: next, is_primary: next === ids[0] ? e.is_primary : false };
+  function withPrimary(entries: FrontPresence[]): FrontPresence[] {
+    const inner = cycle[0]?.id;
+    let p = entries.findIndex((e) => e.is_primary && e.layer_id === inner);
+    if (p < 0) p = entries.findIndex((e) => e.layer_id === inner);
+    return entries.map((e, i) => ({ ...e, is_primary: i === p }));
   }
+  const changes = $derived.by((): Placement[] => {
+    if (!add) return [];
+    const moved = placed.flatMap((e): Placement[] => {
+      const was = current.find((c) => c.subject_type === e.subject_type && c.subject_id === e.subject_id);
+      return was?.layer_id === e.layer_id ? [] : [{ type: e.subject_type, id: e.subject_id, layer: e.layer_id, present: !!was }];
+    });
+    const gone = current.filter((c) => !placed.some((e) => e.subject_type === c.subject_type && e.subject_id === c.subject_id))
+      .map((c): Placement => ({ type: c.subject_type, id: c.subject_id, layer: null, present: true }));
+    return [...moved, ...gone];
+  });
+  const name = (type: string, id: string) => who.get(whoKey(type, id))?.name ?? 'Someone';
+  const summary = $derived(add
+    ? changes.map((c) => `${name(c.type, c.id)} ${c.layer ? (layerOf(c.layer)?.name ?? c.layer).toLowerCase() : 'away'}`).join(' · ')
+    : placed.map((e) => `${name(e.subject_type, e.subject_id)} ${(layerOf(e.layer_id)?.name ?? e.layer_id).toLowerCase()}`).join(' · '));
+  const at = $derived(atText ? new Date(atText).getTime() : undefined);
+  const canSwitch = $derived(add ? changes.length > 0 : placed.length > 0);
 
-  function makePrimary(i: number) {
-    const inner = layers[0]?.id ?? 'front';
-    selected = selected.map((e, j) => ({ ...e, is_primary: j === i, layer_id: j === i ? inner : e.layer_id }));
-  }
-
-  function move(i: number, d: -1 | 1) {
-    const j = i + d;
-    if (j < 0 || j >= selected.length) return;
-    const s = [...selected];
-    [s[i], s[j]] = [s[j], s[i]];
-    selected = s;
-  }
-
-  function commit(entries: Entry[]) {
-    const at = atText ? new Date(atText).getTime() : undefined;
-    const inner = layers[0]?.id ?? 'front';
-    const names = entries.filter((e) => e.layer_id === inner).map((e) => byKey.get(key(e))?.name ?? '?');
-    const label = names.length ? `Switched to ${names.join(' & ')}` : 'Switched out';
-    const opts = { note: note.trim() || undefined, at: Number.isFinite(at) ? at : undefined, notify };
-    if (configured) doFrontSwitch(target, entries, label, opts);
-    else doSwitch(entries.map(({ layer_id, ...e }) => ({ ...e, level: layer_id as Level })), label, opts);
+  function commit(entries: FrontPresence[]) {
+    const when = at !== undefined && Number.isFinite(at) ? Math.min(at, Date.now()) : undefined;
+    if (add) {
+      place(changes, `Changed ${view.name}: ${changes.map((c) => name(c.type, c.id)).join(', ')}`, configured ? target : null, when);
+    } else {
+      const inner = entries.filter((e) => e.layer_id === cycle[0]?.id).map((e) => name(e.subject_type, e.subject_id));
+      const label = entries.length ? `Switched ${view.name} to ${(inner.length ? inner : entries.map((e) => name(e.subject_type, e.subject_id))).join(' & ')}` : `Switched ${view.name} out`;
+      const opts = { note: note.trim() || undefined, at: when, notify };
+      if (configured) doFrontSwitch(target, entries, label, opts);
+      else doSwitch(entries.map(({ layer_id, ...e }) => ({ ...e, level: layer_id as Level })), label, opts);
+    }
     onclose();
   }
-
   function onkey(e: KeyboardEvent) {
     if (e.key === 'Escape') onclose();
-    if (e.key === 'Enter' && list.length && query) {
-      e.preventDefault();
-      toggle(list[0]);
-    }
+    if (e.key === 'Enter' && query && subjects.length) { e.preventDefault(); tap(subjects[0]); query = ''; }
   }
 </script>
 
+<svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
 <div class="scrim" onclick={onclose} role="presentation"></div>
-<div class="sheet" role="dialog" aria-modal="true" aria-label="Switch">
-  <div class="top">
-    <h2 class="display">{title}</h2>
-    <button class="ghost" onclick={onclose}>Cancel</button>
+<div class="sheet" role="dialog" aria-modal="true" aria-label="Switch {view.name}">
+  <div class="handle" aria-hidden="true"></div>
+  <header>
+    <div class="titles"><h2>Switch · {view.name}</h2><p>Tap to place someone. Tap again to move them outward.</p></div>
+    <button class="icon-btn" aria-label={searching ? 'Close search' : 'Search'} onclick={() => { searching = !searching; query = ''; }}><Icon name="search" size={22} /></button>
+    <button class="icon-btn" aria-label="Close" onclick={onclose}><Icon name="close" size={22} /></button>
+  </header>
+  <div class="seg" role="tablist" aria-label="How to switch">
+    <button role="tab" aria-selected={!add} class:on={!add} onclick={() => mode(false)}>Replace front</button>
+    <button role="tab" aria-selected={add} class:on={add} onclick={() => mode(true)}>Add to front</button>
   </div>
-
-  {#if selected.length}
-    <ol class="tray">
-      {#each selected as e, i (key(e))}
-        {@const c = byKey.get(key(e))}
-        {@const col = core.adaptColor(c?.color ?? '#A09184', dark)}
-        <li style="--ring: {col.ring}">
-          <span class="avatar small" aria-hidden="true"><AvatarImage hash={c?.avatarBlob} glyph={c?.glyph ?? '?'} name={c?.name} /></span>
-          <span class="nm" style="color: {col.name}">{c?.name ?? 'Unknown'}</span>
-          <button class="lvl" data-level={e.layer_id === layers[0]?.id ? 'front' : e.layer_id} onclick={() => cycleLevel(i)} title="Change layer">{layerName(e.layer_id)}</button>
-          <button class="icon" class:on={e.is_primary} onclick={() => makePrimary(i)} title="Primary" aria-label="Make primary">★</button>
-          <button class="icon" onclick={() => move(i, -1)} aria-label="Move up" disabled={i === 0}>↑</button>
-          <button class="icon" onclick={() => move(i, 1)} aria-label="Move down" disabled={i === selected.length - 1}>↓</button>
-          <button class="icon" onclick={() => (selected = selected.filter((_, j) => j !== i))} aria-label="Remove">✕</button>
-        </li>
-      {/each}
-    </ol>
-  {/if}
-
   <!-- svelte-ignore a11y_autofocus -->
-  <input class="search" bind:value={query} onkeydown={onkey} placeholder="Search members and subsystems" autofocus aria-label="Search" />
-
-  <div class="list">
-    {#each list as c (`${c.type}:${c.id}`)}
-      {@const col = core.adaptColor(c.color, dark)}
-      {@const on = selected.some((e) => key(e) === `${c.type}:${c.id}`)}
-      <button class="cand" class:on style="--ring: {col.ring}; --tint: {col.tint}" onclick={() => toggle(c)}>
-        <span class="avatar" aria-hidden="true"><AvatarImage hash={c.avatarBlob} glyph={c.glyph} name={c.name} /></span>
-        <span style="color: {col.name}">{c.name}</span>
-        {#if c.type === 'group'}<span class="tagline">subsystem</span>{/if}
+  {#if searching}<input class="search" bind:value={query} onkeydown={onkey} placeholder="Search {subjects.length} members" aria-label="Search members" autofocus />{/if}
+  <div class="grid">
+    {#each subjects as w (whoKey(w.type, w.id))}
+      {@const e = placedOf(w)}{@const l = e ? layerOf(e.layer_id) : undefined}
+      <button class="pick" class:on={!!l} style={l ? fd.inkVars(l.style, l.color) : ''} data-style={l?.style} onclick={() => tap(w)}
+        aria-label="{w.name}{l ? `, ${l.name}` : ''}">
+        <span class="ring"><Face who={w} size={52} {dark} /></span>
+        <span class="nm">{w.name}</span>
+        {#if l}<span class="tag">{l.name}</span>{:else}<span class="tag empty"></span>{/if}
       </button>
-    {/each}
+    {:else}<p class="none">{query ? `No one matches “${query}”.` : 'No members yet. Add them in Members.'}</p>{/each}
   </div>
-
-  <button class="ghost more" onclick={() => (more = !more)}>{more ? 'Fewer options' : 'Note, time, notifications…'}</button>
-  {#if more}
-    <div class="opts">
-      <label>Note <input bind:value={note} placeholder="Optional" /></label>
-      <label>Happened at <input type="datetime-local" bind:value={atText} /> <span class="hint">leave empty for now</span></label>
-      <label>
-        Tell followers
-        <select bind:value={notify}>
-          <option value="default">As usual</option>
-          <option value="silent">Silently</option>
-          <option value="now">Right away</option>
-          <option value="extra_delay">With extra delay</option>
-        </select>
-      </label>
-    </div>
-  {/if}
-
-  <div class="actions">
-    <button class="ghost" onclick={() => commit([])}>Switch out</button>
-    <button class="primary" onclick={() => commit(selected)} disabled={!selected.length}>Switch</button>
+  <div class="start">
+    <button class="when" onclick={() => (options = !options)}>
+      <Icon name="clock" size={18} /><span>{at && Number.isFinite(at) ? `Starting ${new Date(at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}` : 'Starting now'}</span>
+      <strong>{options ? 'Done' : 'Change'}</strong>
+    </button>
+    {#if options}
+      <div class="opts">
+        <label>Happened at<input type="datetime-local" bind:value={atText} max={new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} /></label>
+        {#if !add}
+          <label>{handover ? "Handover note for whoever's next" : 'Note (optional)'}<input bind:value={note} /></label>
+          <label>Alerts<select bind:value={notify}><option value="default">Usual alerts</option><option value="silent">Silent</option><option value="now">Alert now</option><option value="extra_delay">Delay</option></select></label>
+        {/if}
+      </div>
+    {/if}
+    {#if !add && !placed.length && current.length}<button class="out" onclick={() => commit([])}>Switch everyone out of {view.name}</button>{/if}
   </div>
+  <button class="confirm" disabled={!canSwitch} onclick={() => commit(withPrimary(placed))}>
+    <strong>Switch</strong><span>{summary || 'Tap someone to place them'}</span>
+  </button>
 </div>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: rgb(27 23 20 / 0.35);
-    z-index: 30;
-  }
-  .sheet {
-    position: fixed;
-    z-index: 31;
-    inset: auto 0 0 0;
-    max-height: 88vh;
-    overflow: auto;
-    margin: 0 auto;
-    max-width: 560px;
-    background: var(--bg);
-    border-radius: var(--r-lg) var(--r-lg) 0 0;
-    box-shadow: var(--shadow-pop);
-    padding: var(--s-5) var(--s-4) calc(var(--s-5) + env(safe-area-inset-bottom));
-    display: grid;
-    gap: var(--s-4);
-  }
-  @media (min-width: 641px) {
-    .sheet {
-      inset: 10vh 0 auto 0;
-      border-radius: var(--r-lg);
-    }
-  }
-  .top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  h2 {
-    font-size: var(--fs-xl);
-  }
-  .tray {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: var(--s-2);
-  }
-  .tray li {
-    display: flex;
-    align-items: center;
-    gap: var(--s-2);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    padding: var(--s-2) var(--s-3);
-  }
-  .nm {
-    flex: 1;
-    font-weight: 500;
-  }
-  .lvl {
-    font-size: var(--fs-xs);
-    border-radius: var(--r-full);
-    border: 1px solid var(--line);
-    background: var(--surface-2);
-    padding: 2px var(--s-2);
-    cursor: pointer;
-    color: var(--ink-2);
-  }
-  .lvl[data-level='front'] {
-    background: var(--accent-soft);
-    color: var(--ink);
-  }
-  .icon {
-    background: none;
-    border: 0;
-    cursor: pointer;
-    color: var(--ink-3);
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-  }
-  .icon.on {
-    color: var(--warn);
-  }
-  .icon:disabled {
-    opacity: 0.3;
-  }
-  .search,
-  .opts input,
-  .opts select {
-    font: inherit;
-    color: var(--ink);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    padding: var(--s-3) var(--s-4);
-  }
-  .opts input,
-  .opts select {
-    border-radius: var(--r-sm);
-    padding: var(--s-2) var(--s-3);
-  }
-  .list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: var(--s-2);
-    max-height: 40vh;
-    overflow: auto;
-  }
-  .cand {
-    display: flex;
-    align-items: center;
-    gap: var(--s-2);
-    padding: var(--s-2);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    cursor: pointer;
-    text-align: left;
-  }
-  .cand.on {
-    background: var(--tint);
-    border-color: var(--ring);
-  }
-  .tagline {
-    margin-left: auto;
-    font-size: var(--fs-xs);
-    color: var(--ink-3);
-  }
-  .avatar {
-    width: 32px;
-    height: 32px;
-    flex: none;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    background: var(--surface-2);
-    box-shadow: 0 0 0 2px var(--ring);
-  }
-  .avatar.small {
-    width: 28px;
-    height: 28px;
-  }
-  .opts {
-    display: grid;
-    gap: var(--s-3);
-  }
-  .opts label {
-    display: grid;
-    gap: var(--s-1);
-    font-size: var(--fs-sm);
-    color: var(--ink-2);
-  }
-  .hint {
-    font-size: var(--fs-xs);
-    color: var(--ink-3);
-  }
-  .more {
-    justify-self: start;
-  }
-  .actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .primary {
-    background: var(--accent);
-    color: var(--on-accent);
-    border: 0;
-    border-radius: var(--r-full);
-    padding: var(--s-3) var(--s-6);
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .primary:disabled {
-    opacity: 0.5;
-  }
-  .ghost {
-    background: none;
-    border: 0;
-    color: var(--accent);
-    cursor: pointer;
-  }
+  .scrim { position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 0, 0.55); }
+  .sheet { position: fixed; z-index: 31; inset: auto 0 0 0; margin: 0 auto; max-width: 560px; max-height: 92vh; overflow: auto; background: var(--surface);
+    border-radius: 20px 20px 0 0; box-shadow: var(--shadow-pop); padding-bottom: env(safe-area-inset-bottom); display: grid; }
+  @media (min-width: 641px) { .sheet { inset: 6vh 0 auto 0; border-radius: 20px; } }
+  .handle { width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: 8px auto 4px; }
+  header { display: flex; align-items: center; gap: 4px; padding: 6px 8px 4px 20px; }
+  .titles { flex: 1; min-width: 0; }
+  h2 { margin: 0; font-size: 18px; line-height: 24px; font-weight: 700; }
+  .titles p { margin: 0; color: var(--ink-3); font-size: 12px; line-height: 16px; }
+  .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 50%; cursor: pointer; }
+  .seg { display: flex; gap: 3px; margin: 8px 16px 6px; padding: 3px; border-radius: 12px; background: var(--surface-2); }
+  .seg button { flex: 1; padding: 8px; min-height: 36px; border: 0; border-radius: 9px; background: none; color: var(--ink-3); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .seg button.on { background: var(--surface); color: var(--ink); font-weight: 600; }
+  .search { margin: 4px 16px; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 0; padding: 10px 12px 6px; max-height: 44vh; overflow: auto; }
+  .pick { display: grid; justify-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; cursor: pointer; min-width: 0; }
+  .ring { padding: 3px; border-radius: 50%; border: 2.5px solid transparent; display: grid; }
+  .pick.on .ring { border-color: var(--l-ring); }
+  .pick[data-style='faint'] .ring, .pick[data-style='dashed'] .ring { border-width: 2px; }
+  .pick[data-style='plain'] .ring { background: var(--line); }
+  .nm { max-width: 100%; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pick.on .nm { font-weight: 600; }
+  .tag { font-size: 10px; line-height: 13px; font-weight: 700; padding: 1px 7px; border-radius: 8px; background: var(--l-tag-fill); color: var(--l-tag-ink); border: 1px var(--l-dash) var(--l-tag-border); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tag.empty { visibility: hidden; height: 15px; padding: 0; border: 0; }
+  .none { grid-column: 1 / -1; color: var(--ink-3); padding: 8px; }
+  .start { border-top: 1px solid var(--line); display: grid; }
+  .when { display: flex; align-items: center; gap: 10px; padding: 10px 20px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; text-align: left; }
+  .when > :global(.icon) { color: var(--ink-2); }
+  .when span { flex: 1; }
+  .when strong { color: var(--accent); font-weight: 600; }
+  .opts { display: grid; gap: 10px; padding: 0 20px 10px; }
+  .opts label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
+  .opts input, .opts select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .out { justify-self: start; margin: 0 20px 6px; padding: 8px 0; border: 0; background: none; color: var(--danger); font: inherit; font-size: 13px; cursor: pointer; }
+  .confirm { display: grid; justify-items: center; gap: 1px; margin: 4px 16px 20px; padding: 12px 16px; border: 0; border-radius: 14px; background: var(--accent); color: var(--on-accent); font: inherit; cursor: pointer; }
+  .confirm strong { font-size: 15px; font-weight: 600; }
+  .confirm span { font-size: 12px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .confirm:disabled { background: var(--surface-3, var(--surface-2)); color: var(--ink-3); cursor: default; }
 </style>

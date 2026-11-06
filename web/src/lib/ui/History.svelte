@@ -1,276 +1,244 @@
 <script lang="ts">
-  import { core } from '../core';
-  import { groups, members } from '../data';
-  import { LEVEL_LABEL } from '../front.svelte';
+  // Front history (Figma F3.7; Android History.kt): a lane timeline per member (day, week or
+  // month), the changes as sentences, review cards when two devices switched together (F3.6), the
+  // saved entries that can be edited, undone or restored, and Log a past switch (F3.5).
+  import { frontLayers, frontList } from '../front-view';
+  import type { FrontPresence } from '../core/fronts';
+  import * as fd from '../fronting-display';
+  import { frontingUi } from '../fronting-ui.svelte';
+  import { whoKey, whoMap } from '../fronting-subjects';
   import { sync, type Projection } from '../sync/client';
   import Reviews from './Reviews.svelte';
+  import LogPastSwitch from './LogPastSwitch.svelte';
+  import Face from './Face.svelte';
+  import Icon from './Icon.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
-  let selected = $state('');
-  let savedView = $state(false);
-  let span = $state<'day' | 'week'>('day');
+  const DAY = 86_400_000;
+  const ZOOMS = [{ id: 'day', label: 'Day', days: 1 }, { id: 'week', label: 'Week', days: 7 }, { id: 'month', label: 'Month', days: 30 }] as const;
+  let zoom = $state<(typeof ZOOMS)[number]>(ZOOMS[0]);
+  let dayOffset = $state(0);
+  let logging = $state(false);
+  let savedOpen = $state(false);
   let shown = $state(200);
   let error = $state('');
-  let editing = $state<string | null>(null);
+  let acting = $state<fd.StoryLine | null>(null);
   let editAt = $state('');
-  const now = Date.now();
-  const to = now;
-  const from = $derived(now - (span === 'day' ? 86_400_000 : 7 * 86_400_000));
+
   const system = $derived(projection.front_systems?.[sync.accountId]?.system);
-  const front = $derived(selected && system?.fronts[selected] ? selected : sync.accountId);
+  const configured = $derived(!!system);
+  const display = $derived(fd.displayPrefs(projection.rows.pref, sync.accountId));
+  const fronts = $derived(fd.ordered(frontList(projection, sync.accountId), sync.accountId, display));
+  const front = $derived(fronts.find((f) => f.id === frontingUi.front)?.id ?? sync.accountId);
   const named = $derived.by(() => { projection.front_systems; return system ? sync.frontHistory(front) : null; });
-  const loading = $derived(!!system && !named);
+  const loading = $derived(configured && !named);
   const fold = $derived(projection.fronts[sync.accountId]);
-  const names = $derived(new Map<string, { name: string; color: string }>([
-    ...members(projection).map((m) => [m.id, { name: m.display_name ?? m.name, color: m.color }] as const),
-    ...groups(projection).map((g) => [g.id, { name: g.name, color: g.color ?? '#A09184' }] as const),
-    ...Object.entries(projection.rows.custom_state ?? {}).filter(([, row]) => row.exists).map(([id, row]) =>
-      [id, { name: String(row.fields.name ?? 'State'), color: String(row.fields.color ?? '#A09184') }] as const),
-  ]));
-  type Entry = { subject_type: string; subject_id: string; layer_id?: string; level?: string; is_primary: boolean };
-  type Row = { id: string; occurred_at: number; entries: Entry[]; resulting_front: Entry[]; note: string | null; retracted: boolean; editable: boolean; state?: string; deleted?: boolean };
-  const who = (e: { subject_id: string }) => names.get(e.subject_id)?.name ?? 'Someone';
-  const layer = (e: { layer_id?: string; level?: string }) => e.layer_id ?? e.level ?? '';
-  const layerName = (id: string) => system?.layers[id]?.name ?? LEVEL_LABEL[id as keyof typeof LEVEL_LABEL] ?? id;
-  const intervals = $derived(system ? (savedView ? named?.saved.intervals : named?.effective.intervals) ?? [] : fold?.intervals ?? []);
+  const layers = $derived(frontLayers(projection, sync.accountId));
+  const scene = $derived(fd.scene(layers, [], display, front, []));
+  const order = $derived([...scene.all.filter((l) => !l.separate), ...scene.all.filter((l) => l.separate)].map((l) => l.id));
+  const who = $derived(whoMap(projection));
+  const name = (type: string, id: string) => who.get(whoKey(type, id))?.name ?? 'Someone';
+  const layerOf = (id: string | null) => (id ? scene.all.find((l) => l.id === id) : undefined);
+  type Saved = { id: string; occurred_at: number; entries: FrontPresence[]; resulting_front: FrontPresence[]; note: string | null; retracted: boolean };
+  const asPresence = (e: { subject_type: string; subject_id: string; level?: string; layer_id?: string; is_primary: boolean }): FrontPresence =>
+    ({ subject_type: e.subject_type as FrontPresence['subject_type'], subject_id: e.subject_id, layer_id: e.layer_id ?? e.level ?? '', is_primary: e.is_primary });
+  const saved = $derived<Saved[]>(configured ? named?.saved.switches ?? []
+    : (fold?.switches ?? []).map((s) => ({ ...s, entries: s.entries.map(asPresence), resulting_front: s.resulting_front.map(asPresence) })));
+  const states = $derived<fd.FrontState[]>(configured
+    ? (named?.effective.changes ?? []).filter((c) => !c.deleted && c.state !== 'unavailable').map((c) => ({ id: c.id, at: c.occurred_at, entries: c.entries }))
+    : saved.filter((s) => !s.retracted).map((s) => ({ id: s.id, at: s.occurred_at, entries: s.resulting_front })));
+  const spans = $derived(configured ? named?.effective.intervals ?? []
+    : (fold?.intervals ?? []).map((i) => ({ ...i, layer_id: i.level })));
+  const lines = $derived(fd.story(states, order, scene.all.filter((l) => !l.separate).at(-1)?.id ?? null, (id) => layerOf(id)?.name ?? id, name));
+  const dayStart = $derived.by(() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - dayOffset); return d.getTime(); });
+  const rangeEnd = $derived(dayStart + DAY);
+  const rangeStart = $derived(rangeEnd - zoom.days * DAY);
+  const now = Date.now();
+  const inRange = $derived(lines.filter((l) => l.at >= rangeStart && l.at < rangeEnd).reverse());
+  const visible = $derived(spans.filter((s) => (s.end_at ?? now) > rangeStart && s.start_at < rangeEnd));
+  // a day zooms to the hours that were used (at least six); the longer views show it all
+  const win = $derived.by((): [number, number] => {
+    if (zoom.id !== 'day' || !visible.length) return [rangeStart, rangeEnd];
+    const h3 = 3 * 3_600_000;
+    let a = Math.floor((Math.min(...visible.map((s) => Math.max(s.start_at, rangeStart))) - rangeStart) / h3) * h3 + rangeStart;
+    let b = Math.min(rangeEnd, Math.ceil((Math.max(...visible.map((s) => Math.min(s.end_at ?? now, rangeEnd))) - rangeStart) / h3) * h3 + rangeStart);
+    if (b - a < 6 * 3_600_000) { a = Math.max(rangeStart, Math.min(a, b - 6 * 3_600_000)); b = Math.min(rangeEnd, Math.max(b, a + 6 * 3_600_000)); }
+    return [a, b];
+  });
   const lanes = $derived.by(() => {
-    const inWin = intervals.filter((i) => (i.end_at ?? to) > from && i.start_at < to);
-    const bySubject = new Map<string, typeof inWin>();
-    for (const i of inWin) {
-      if (!bySubject.has(i.subject_id)) bySubject.set(i.subject_id, []);
-      bySubject.get(i.subject_id)!.push(i);
-    }
-    const total = (list: typeof inWin) => list.reduce((s, i) => s + Math.min(i.end_at ?? to, to) - Math.max(i.start_at, from), 0);
-    return [...bySubject.entries()].sort((a, b) => total(b[1]) - total(a[1]));
+    const by = new Map<string, typeof visible>();
+    for (const s of visible) { const k = whoKey(s.subject_type, s.subject_id); by.set(k, [...(by.get(k) ?? []), s]); }
+    return [...by.entries()].sort((a, b) => Math.min(...a[1].map((s) => s.start_at)) - Math.min(...b[1].map((s) => s.start_at))).slice(0, 12);
   });
-  const pct = (t: number) => ((Math.min(Math.max(t, from), to) - from) / (to - from)) * 100;
-  const rows = $derived.by((): Row[] => {
-    if (!system) return [...(fold?.switches ?? [])].reverse().map((s) => ({ ...s, editable: true }));
-    if (savedView) return [...(named?.saved.switches ?? [])].reverse().map((s) => ({ ...s, editable: true }));
-    return [...(named?.effective.changes ?? [])].reverse().map((s) => ({ ...s, resulting_front: s.entries, note: null, retracted: false, editable: false }));
+  const ticks = $derived.by(() => {
+    const [a, b] = win;
+    const step = zoom.id === 'day' ? 3 * 3_600_000 : zoom.id === 'week' ? DAY : 7 * DAY;
+    const out: number[] = [];
+    for (let t = a; t <= b - (zoom.id === 'day' ? 0 : 1); t += step) out.push(t);
+    return out;
   });
-  const fmt = (t: number) => Number.isFinite(new Date(t).getTime()) ? new Date(t).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : 'Unknown time';
-  const describe = (s: Row) => {
-    const entries = s.retracted ? s.entries : s.resulting_front;
-    if (system) {
-      if (s.deleted) return 'Deleted front';
-      if (s.state === 'unavailable') return 'Source unavailable';
-      return entries.map((e) => `${who(e)} (${layerName(layer(e))})`).join(' & ') || 'No one recorded';
-    }
-    const main = entries.filter((e) => layer(e) === 'front').map(who).join(' & ') || 'No one fronting';
-    const other = entries.filter((e) => layer(e) !== 'front').map((e) => `${who(e)} (${layerName(layer(e))})`);
-    return other.length ? `${main} · ${other.join(', ')}` : main;
-  };
-  function chooseFront() { shown = 200; editing = null; error = ''; }
-  function changeSaved(value: boolean) { savedView = value; chooseFront(); }
-  function changeEntry(action: 'amend' | 'retract' | 'unretract', id: string, extra: Record<string, unknown> = {}) {
+  const pct = (t: number) => ((Math.min(Math.max(t, win[0]), win[1]) - win[0]) / (win[1] - win[0])) * 100;
+  const tick = (t: number) => zoom.id === 'day' ? new Date(t).toLocaleTimeString([], { hour: '2-digit', hour12: false }).slice(0, 2)
+    : zoom.id === 'week' ? new Date(t).toLocaleDateString([], { weekday: 'short' }) : new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' });
+  const stamp = (t: number) => zoom.id === 'day' ? new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : new Date(t).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  const colorOf = (type: string, id: string) => who.get(whoKey(type, id))?.color ?? '#A09184';
+
+  function savedFor(line: fd.StoryLine): Saved | undefined {
+    if (!configured) return saved.find((s) => s.id === line.changeId);
+    const cause = named?.effective.changes.find((c) => c.id === line.changeId)?.causes.find((c) => c.front_id === front);
+    return cause ? saved.find((s) => s.id === cause.op_id) : undefined;
+  }
+  function change(action: 'amend' | 'retract' | 'unretract', id: string, extra: Record<string, unknown> = {}) {
     try {
-      if (system) sync.create('front.change', sync.accountScope, front, { action, target_op_id: id, ...extra });
+      if (configured) sync.create('front.change', sync.accountScope, front, { action, target_op_id: id, ...extra });
       else sync.create(`front.${action}`, sync.accountScope, sync.newId(), { target_op_id: id, ...extra });
       error = ''; return true;
     } catch (e) { error = e instanceof Error ? e.message : 'Could not save the change. Try again.'; return false; }
   }
-  function startEdit(s: Row) {
-    editing = s.id;
-    const d = new Date(s.occurred_at);
-    if (!Number.isFinite(d.getTime())) d.setTime(now);
-    editAt = new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-  }
-  function saveEdit(s: Row) {
-    const t = new Date(editAt).getTime();
-    if (Number.isFinite(t) && changeEntry('amend', s.id, { occurred_at: t })) editing = null;
-  }
+  const local = (t: number) => new Date(t - new Date(t).getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 </script>
 
+{#if logging}
+  <LogPastSwitch {projection} {dark} front={front} {named} onclose={() => (logging = false)} />
+{:else}
 <section class="page">
-  <div class="head">
-    <h1 class="display">History</h1>
-    {#if system}
-      <label class="front-choice">Front<select aria-label="Front history selection" value={front} onchange={(e) => { selected = e.currentTarget.value; chooseFront(); }}>
-        {#each Object.values(system.fronts) as f (f.id)}<option value={f.id}>{f.name}{f.deleted ? ' (deleted)' : ''}</option>{/each}
-      </select></label>
-    {/if}
+  <div class="bar">
+    <a class="back" href="#/" aria-label="Back to Fronting"><Icon name="back" size={22} /></a>
+    <div class="titles"><strong>Front history</strong><span>{new Date(dayStart).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}</span></div>
+    <button class="icon-btn" aria-label="Log a past switch" onclick={() => (logging = true)}><Icon name="plus" size={22} /></button>
   </div>
-  <div class="tools">
-    {#if system}<div class="seg" role="group" aria-label="History view">
-      <button class:on={!savedView} aria-pressed={!savedView} onclick={() => changeSaved(false)}>Front history</button>
-      <button class:on={savedView} aria-pressed={savedView} onclick={() => changeSaved(true)}>Saved entries</button>
-    </div>{/if}
-    <div class="seg" role="group" aria-label="Timeline window">
-      <button class:on={span === 'day'} aria-pressed={span === 'day'} onclick={() => (span = 'day')}>24 hours</button>
-      <button class:on={span === 'week'} aria-pressed={span === 'week'} onclick={() => (span = 'week')}>7 days</button>
-    </div>
+  <div class="seg" role="tablist" aria-label="Zoom">
+    {#each ZOOMS as z (z.id)}<button role="tab" aria-selected={zoom.id === z.id} class:on={zoom.id === z.id} onclick={() => (zoom = z)}>{z.label}</button>{/each}
   </div>
-  {#if system}<p class="muted explanation">{savedView ? 'Edit this front’s saved records here. Past edits keep following active.' : 'Includes inherited changes. Open Saved entries to edit this front’s records.'}</p>{/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#if loading}<p class="muted" role="status">Loading saved history…</p>{/if}
-  {#if system && named}<Reviews {projection} {front} {named} />{/if}
+  {#if configured && fronts.length > 1}
+    <div class="fronts">{#each fronts as f (f.id)}<button class:on={f.id === front} aria-pressed={f.id === front} onclick={() => { frontingUi.front = f.id; shown = 200; }}>{f.name}</button>{/each}</div>
+  {/if}
+  {#if configured && named}<Reviews {projection} {front} {named} />{:else if !configured}<Reviews {projection} />{/if}
+
   <div class="timeline" aria-label="Who was present" aria-busy={loading}>
-    {#each lanes as [subject, ivs] (subject)}
-      {@const n = names.get(subject)}{@const c = core.adaptColor(n?.color ?? '#A09184', dark)}
-      <div class="lane"><span class="lane-name" style="color: {c.name}">{n?.name ?? 'Someone'}</span><div class="track">
-        {#each ivs as i (i.start_at + layer(i))}<span class="bar" data-level={layer(i)} style="left: {pct(i.start_at)}%; width: {Math.max(0.4, pct(i.end_at ?? to) - pct(i.start_at))}%; background: {c.ring}" title="{n?.name ?? ''} · {layerName(layer(i))} · {fmt(i.start_at)}"></span>{/each}
-      </div></div>
-    {:else}{#if !loading}<p class="muted">Nothing recorded in this window.</p>{/if}{/each}
-    <div class="axis"><span>{fmt(from)}</span><span>now</span></div>
+    <div class="axis">
+      <span class="nav"><button aria-label="Earlier" onclick={() => (dayOffset += zoom.days)}>‹</button>{#if dayOffset > 0}<button aria-label="Later" onclick={() => (dayOffset = Math.max(0, dayOffset - zoom.days))}>›</button>{/if}</span>
+      <span class="ticks">{#each ticks.filter((t) => pct(t) <= 92) as t (t)}<span style="left: {pct(t)}%">{tick(t)}</span>{/each}</span>
+    </div>
+    {#each lanes as [k, ivs] (k)}
+      {@const w = who.get(k)}
+      <div class="lane">
+        <span class="lane-name"><Face who={w} size={22} {dark} /><span>{w?.name ?? 'Someone'}</span></span>
+        <span class="track">
+          {#each ivs as i (i.start_at + i.layer_id + i.subject_id)}
+            {@const l = layerOf(i.layer_id)}
+            <span class="bar-seg" data-style={l?.style ?? 'faint'} style="left: {pct(i.start_at)}%; width: max(3px, {pct(i.end_at ?? now) - pct(i.start_at)}%); --c: {colorOf(i.subject_type, i.subject_id)}"
+              title="{w?.name ?? ''} · {l?.name ?? i.layer_id} · {stamp(i.start_at)}"></span>
+          {/each}
+          {#if now >= win[0] && now <= win[1]}<span class="now" style="left: {pct(now)}%"></span>{/if}
+        </span>
+      </div>
+    {:else}{#if !loading}<p class="muted">No one was here in this time.</p>{/if}{/each}
+    <div class="legend">{#each scene.all.filter((l) => !l.separate).slice(0, 3) as l (l.id)}<span><i data-style={l.style}></i>{l.name}</span>{/each}</div>
   </div>
-  <h2>{system ? savedView ? 'Saved entries' : 'Front changes' : 'Switches'}</h2>
-  <ol class="log">
-    {#each rows.slice(0, shown) as s (s.id)}
-      <li class:undone={s.retracted}>
-        <time>{fmt(s.occurred_at)}</time><span class="what">{s.retracted ? 'Undone: ' : ''}{describe(s)}{s.note ? ` — “${s.note}”` : ''}</span>
-        {#if s.editable}
-          {#if editing === s.id}<input type="datetime-local" bind:value={editAt} aria-label="New time" />
-            <button class="ghost" disabled={!Number.isFinite(new Date(editAt).getTime())} onclick={() => saveEdit(s)}>Save</button>
-            <button class="ghost" onclick={() => (editing = null)}>Cancel</button>
-          {:else if s.retracted}<button class="ghost" onclick={() => changeEntry('unretract', s.id)}>Redo</button>
-          {:else}<button class="ghost" onclick={() => startEdit(s)}>Edit time</button><button class="ghost" onclick={() => changeEntry('retract', s.id)}>Undo</button>{/if}
-        {:else if s.state === 'overridden'}<span class="muted">Own override</span>{/if}
-      </li>
-    {:else}{#if !loading}<li class="muted">{system && savedView ? 'No saved entries for this front.' : 'No changes recorded yet.'}</li>{/if}{/each}
-  </ol>
-  {#if rows.length > shown}<button class="ghost older" onclick={() => (shown += 200)}>Show older entries</button>{/if}
+
+  <h2>{zoom.id !== 'day' ? `Last ${zoom.days} days` : dayOffset === 0 ? 'Today' : dayOffset === 1 ? 'Yesterday' : new Date(dayStart).toLocaleDateString([], { dateStyle: 'medium' })}</h2>
+  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if loading}<p class="muted" role="status">Loading saved history…</p>
+  {:else if !inRange.length}<p class="muted">No changes recorded {zoom.id === 'day' ? 'this day' : 'in this time'}.</p>
+  {:else}
+    <ol class="list">
+      {#each inRange.slice(0, shown) as line (line.changeId + line.subjectId + line.text)}
+        {@const l = layerOf(line.layerId)}
+        <li><button onclick={() => { acting = acting === line ? null : line; const s = savedFor(line); editAt = s ? local(s.occurred_at) : ''; }} aria-expanded={acting === line}>
+          <time>{stamp(line.at)}</time><Face who={who.get(whoKey(line.subjectType, line.subjectId))} size={34} {dark} />
+          <span class="what">{line.text}</span>{#if l}<span class="tag" style={fd.inkVars(l.style, l.color)}>{l.name}</span>{/if}
+        </button>
+        {#if acting === line}
+          {@const s = savedFor(line)}
+          <div class="actions">
+            {#if s}
+              {#if s.note}<p class="note">{s.note}</p>{/if}
+              <label>Time <input type="datetime-local" bind:value={editAt} /></label>
+              <button class="link" disabled={!Number.isFinite(new Date(editAt).getTime())} onclick={() => change('amend', s.id, { occurred_at: new Date(editAt).getTime() }) && (acting = null)}>Save time</button>
+              <button class="link" onclick={() => change('retract', s.id) && (acting = null)}>Undo this switch</button>
+            {:else}<p class="muted">{configured ? 'This change came from the front this one follows; edit it there.' : "This entry can't be edited here."}</p>{/if}
+          </div>
+        {/if}</li>
+      {/each}
+    </ol>
+    {#if inRange.length > shown}<button class="link" onclick={() => (shown += 200)}>Show older</button>{/if}
+  {/if}
+  <button class="log" onclick={() => (logging = true)}><Icon name="history" size={20} />Log a past switch</button>
+
+  <button class="saved-head" aria-expanded={savedOpen} onclick={() => (savedOpen = !savedOpen)}>
+    <span><strong>Saved entries</strong><span>Edit, undo or restore what was recorded. Past edits keep following active.</span></span><Icon name="chevron-right" size={18} />
+  </button>
+  {#if savedOpen}
+    <ol class="saved">
+      {#each [...saved].reverse().slice(0, shown) as s (s.id)}
+        <li class:undone={s.retracted}>
+          <span class="what">{(s.retracted ? s.entries : s.resulting_front).map((e) => `${name(e.subject_type, e.subject_id)} (${layerOf(e.layer_id)?.name ?? e.layer_id})`).join(' & ') || 'No one recorded'}{s.note ? ` — “${s.note}”` : ''}</span>
+          <time>{new Date(s.occurred_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}{s.retracted ? ' · undone' : ''}</time>
+          <button class="link" onclick={() => change(s.retracted ? 'unretract' : 'retract', s.id)}>{s.retracted ? 'Redo' : 'Undo'}</button>
+        </li>
+      {:else}<li class="muted">No saved entries.</li>{/each}
+    </ol>
+  {/if}
 </section>
+{/if}
 
 <style>
-  .page {
-    display: grid;
-    gap: var(--s-5);
-  }
-  .tools { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s-3); }
-  .front-choice { display: flex; align-items: center; gap: var(--s-2); color: var(--ink-2); font-size: var(--fs-sm); min-width: 0; }
-  .front-choice select { min-height: 44px; min-width: 0; max-width: min(16rem, 55vw); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-2); font: inherit; }
-  .explanation { margin: 0; font-size: var(--fs-sm); }
+  .page { display: grid; gap: 10px; max-width: 720px; padding-bottom: 32px; }
+  .bar { display: flex; align-items: center; gap: 4px; margin-left: -8px; }
+  .back, .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; color: var(--ink); border: 0; background: none; border-radius: 50%; cursor: pointer; }
+  .titles { flex: 1; display: grid; padding-left: 4px; }
+  .titles strong { font-size: 17px; font-weight: 600; }
+  .titles span { color: var(--ink-3); font-size: 12px; }
+  .seg { display: flex; gap: 3px; padding: 3px; border-radius: 12px; background: var(--surface-2); }
+  .seg button { flex: 1; min-height: 36px; border: 0; border-radius: 9px; background: none; color: var(--ink-3); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .seg button.on { background: var(--surface); color: var(--ink); font-weight: 600; }
+  .fronts { display: flex; gap: 8px; overflow-x: auto; }
+  .fronts button { border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px; cursor: pointer; white-space: nowrap; }
+  .fronts button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .timeline { background: var(--surface); border-radius: 16px; padding: 12px; display: grid; gap: 8px; }
+  .axis, .lane { display: grid; grid-template-columns: 96px 1fr; align-items: center; }
+  .nav { display: flex; gap: 4px; }
+  .nav button { border: 0; background: none; color: var(--accent); font-size: 18px; padding: 0 8px; cursor: pointer; }
+  .ticks { position: relative; height: 16px; }
+  .ticks span { position: absolute; top: 0; color: var(--ink-3); font-size: 11px; }
+  .lane-name { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: 6px; font-size: 13px; }
+  .lane-name > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track { position: relative; height: 22px; border-radius: 4px; background: var(--surface-2); }
+  .bar-seg { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: var(--c); }
+  .bar-seg[data-style='dashed'] { background: color-mix(in oklab, var(--c) 45%, transparent); }
+  .bar-seg[data-style='faint'] { background: none; border: 1.2px dashed var(--c); }
+  .bar-seg[data-style='plain'] { background: var(--line); }
+  .now { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--accent); }
+  .legend { display: flex; justify-content: center; gap: 14px; padding-top: 4px; color: var(--ink-3); font-size: 11px; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend i { width: 14px; height: 10px; border-radius: 3px; background: var(--ink-3); }
+  .legend i[data-style='dashed'] { background: color-mix(in oklab, var(--ink-3) 45%, transparent); }
+  .legend i[data-style='faint'], .legend i[data-style='plain'] { background: none; border: 1px dashed var(--ink-3); }
+  h2 { margin: 8px 4px 0; color: var(--accent); font-size: 13px; font-weight: 600; }
+  .muted { color: var(--ink-3); margin: 4px; }
   .error { color: var(--danger); }
-  .older { justify-self: center; }
-  .head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  h1 {
-    font-size: var(--fs-2xl);
-  }
-  h2 {
-    font-size: var(--fs-sm);
-    font-weight: 600;
-    color: var(--ink-2);
-  }
-  .seg {
-    display: flex;
-    background: var(--surface-2);
-    border-radius: var(--r-full);
-    padding: 3px;
-  }
-  .seg button {
-    border: 0;
-    background: none;
-    min-height: 44px;
-    padding: var(--s-1) var(--s-3);
-    border-radius: var(--r-full);
-    cursor: pointer;
-    color: var(--ink-2);
-    font-size: var(--fs-sm);
-  }
-  .seg button.on {
-    background: var(--surface);
-    color: var(--ink);
-  }
-  .timeline {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    padding: var(--s-4);
-    display: grid;
-    gap: var(--s-2);
-  }
-  .lane {
-    display: grid;
-    grid-template-columns: 6.5em 1fr;
-    align-items: center;
-    gap: var(--s-3);
-  }
-  .lane-name {
-    font-size: var(--fs-sm);
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .track {
-    position: relative;
-    height: 14px;
-    background: var(--surface-2);
-    border-radius: var(--r-full);
-  }
-  .bar {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    border-radius: var(--r-full);
-  }
-  .bar[data-level='cocon'] {
-    opacity: 0.55;
-  }
-  .bar[data-level='present'] {
-    opacity: 0.3;
-  }
-  .axis {
-    display: flex;
-    justify-content: space-between;
-    margin-left: calc(6.5em + var(--s-3));
-    font-size: var(--fs-xs);
-    color: var(--ink-3);
-  }
-  .log {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: var(--s-2);
-  }
-  .log li {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s-1) var(--s-3);
-    align-items: baseline;
-    padding: var(--s-3) var(--s-4);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-  }
-  .log li.undone .what {
-    color: var(--ink-2);
-    text-decoration: line-through;
-  }
-  time {
-    font-size: var(--fs-sm);
-    color: var(--ink-3);
-    min-width: 7.5em;
-  }
-  .what {
-    flex: 1 1 14rem;
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-  .log input {
-    font: inherit;
-    color: var(--ink);
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: var(--r-sm);
-    padding: 2px var(--s-2);
-  }
-  .ghost {
-    background: none;
-    border: 0;
-    color: var(--accent);
-    cursor: pointer;
-    min-height: 44px;
-    font-size: var(--fs-sm);
-  }
-  .ghost:disabled { opacity: 0.5; cursor: default; }
-  .muted {
-    color: var(--ink-3);
-  }
+  .list { list-style: none; margin: 0; padding: 0; background: var(--surface); border-radius: 16px; overflow: hidden; }
+  .list li + li { border-top: 1px solid var(--line); }
+  .list li > button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .list time { width: 64px; flex: none; color: var(--ink-3); font-size: 13px; white-space: nowrap; }
+  .what { flex: 1; min-width: 0; font-size: 15px; line-height: 20px; }
+  .tag { font-size: 11px; line-height: 14px; font-weight: 700; padding: 1px 7px; border-radius: 8px; background: var(--l-tag-fill); color: var(--l-tag-ink); border: 1px var(--l-dash) var(--l-tag-border); white-space: nowrap; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 0 12px 12px 64px; }
+  .actions label { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--ink-2); }
+  .actions input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  .note { margin: 0; width: 100%; color: var(--ink-2); font-size: 14px; }
+  .link { border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 6px 0; }
+  .link:disabled { color: var(--ink-3); }
+  .log { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 15px; font-weight: 500; cursor: pointer; }
+  .saved-head { display: flex; align-items: center; gap: 8px; padding: 8px 4px; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; color: var(--ink-3); }
+  .saved-head > span { flex: 1; display: grid; }
+  .saved-head strong { color: var(--ink-2); font-size: 13px; }
+  .saved-head span span { font-size: 12px; }
+  .saved { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .saved li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 12px; background: var(--surface); border-radius: 14px; }
+  .saved li time { color: var(--ink-3); font-size: 12px; }
+  .saved li .link { grid-row: 1 / 3; grid-column: 2; }
+  .saved li.undone .what { color: var(--ink-3); text-decoration: line-through; }
 </style>

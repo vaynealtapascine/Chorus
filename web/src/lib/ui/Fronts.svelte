@@ -1,28 +1,33 @@
 <script lang="ts">
-  // Fronts and layers (D-080, D-085; Figma F3.4 / F3.9). Every rule — following, overrides,
-  // purpose pools — is resolved in core; this page only writes sparse definitions.
-  import { defineFront, editLayer, resumeFollowing } from '../front.svelte';
+  // Fronts (Figma F3.4; Android FrontsScreen): each front's orbit, how it's set up, whether
+  // Fronting shows it, its order, and new fronts from templates. Following, overrides and purpose
+  // pools are resolved in core (D-080, D-085); this page writes sparse definitions and the
+  // display pref (D-122). Layers live on Layers & display.
+  import { defineFront, resumeFollowing } from '../front.svelte';
   import { frontLayers, frontList, type FrontSummary } from '../front-view';
-  import { members } from '../data';
+  import * as fd from '../fronting-display';
+  import { whoKey, whoMap, type Who } from '../fronting-subjects';
   import { sync, type Projection } from '../sync/client';
   import Icon from './Icon.svelte';
+  import Orbit from './Orbit.svelte';
 
-  let { projection }: { projection: Projection } = $props();
+  let { projection, dark }: { projection: Projection; dark: boolean } = $props();
 
   const account = $derived(sync.accountId);
   const system = $derived(projection.front_systems?.[account]?.system);
-  const fronts = $derived(frontList(projection, account, true));
-  const live = $derived(fronts.filter((f) => !f.deleted));
-  const removed = $derived(fronts.filter((f) => f.deleted));
+  const display = $derived(fd.displayPrefs(projection.rows.pref, account));
+  const all = $derived(frontList(projection, account, true));
+  const live = $derived(fd.ordered(all.filter((f) => !f.deleted), account, display));
+  const removed = $derived(all.filter((f) => f.deleted));
   const layers = $derived(frontLayers(projection, account));
-  const names = $derived(new Map(members(projection).map((m) => [m.id, m.display_name ?? m.name])));
+  const who = $derived(whoMap(projection));
 
   let editing = $state<string | null>(null);
+  let arranging = $state(false);
+  let naming = $state(false);
   let newName = $state('');
-  let newLayer = $state('');
-  const TEMPLATES = ['Online', 'Work', 'Inner world', 'Subsystem'];
+  let dragging = $state<string | null>(null);
 
-  // Purposes each front selects layers for. null = the existing default (D-080/D-085).
   const PURPOSES = [
     { key: 'authorship', label: 'Suggested speakers in chat', hint: 'Who the composer offers first.' },
     { key: 'notifications', label: 'Switch notifications', hint: 'Who followers can hear about (each follower still needs access).' },
@@ -48,85 +53,96 @@
     const now = selection(front, purpose) ?? [];
     setSelection(front, purpose, on ? [...new Set([...now, layer])] : now.filter((l) => l !== layer));
   }
-
-  function counts(f: FrontSummary) {
-    return layers.map((l) => ({ ...l, n: f.entries.filter((e) => e.layer_id === l.id).length })).filter((l) => l.n);
-  }
-  function who(f: FrontSummary) {
-    const inner = layers[0]?.id;
-    const here = f.entries.filter((e) => e.layer_id === inner && e.subject_type === 'member').map((e) => names.get(e.subject_id) ?? 'Someone');
-    return here.length ? here.join(' & ') : 'No one in front';
-  }
-  function badge(f: FrontSummary) {
-    if (f.deleted) return 'Removed';
+  function tag(f: FrontSummary): string {
     if (f.state === 'following') return `Follows ${f.sourceName ?? 'another front'}`;
     if (f.state === 'overridden') return 'Changed by hand';
     if (f.state === 'unavailable') return f.issue === 'cycle' ? 'Following loops' : 'Source unavailable';
-    return f.body ? 'Main' : null;
+    return f.body ? 'Main' : 'Own layers';
   }
-
-  function create(name: string) {
+  const sceneOf = (f: FrontSummary) => fd.scene(layers, f.entries, display, f.id, []);
+  const facesOf = (entries: FrontSummary['entries']) => entries.map((e) => who.get(whoKey(e.subject_type, e.subject_id))).filter((w): w is Who => !!w);
+  function about(f: FrontSummary): string {
+    const own = fd.front(display, f.id).about;
+    if (own) return own;
+    const inner = sceneOf(f).all.find((l) => !l.separate);
+    const names = facesOf(inner?.entries ?? []).map((w) => w.name);
+    return names.length ? `${names.join(' and ')} ${inner!.name.toLowerCase()}` : 'No one here right now';
+  }
+  function create(name: string, template?: (typeof fd.TEMPLATES)[number]) {
     const n = name.trim();
     if (!n) return;
     const id = sync.newId();
     defineFront(id, { name: n, follow_source: null });
+    if (template) fd.save(fd.withFront(display, id, (v) => ({ ...v, icon: template.icon, about: template.about })));
     newName = '';
-    editing = id;
+    naming = false;
   }
-  function rename(f: FrontSummary, value: string) {
-    const n = value.trim();
-    if (n && n !== f.name) defineFront(f.id, { name: n });
-  }
-  function addLayer() {
-    const n = newLayer.trim();
-    if (!n) return;
-    const top = layers.reduce((m, l) => Math.max(m, l.level), -1);
-    editLayer(sync.newId(), { name: n, level: top + 1 });
-    newLayer = '';
-  }
+  function reorder(ids: string[]) { fd.save({ ...display, order: ids }); }
   function move(i: number, d: -1 | 1) {
-    const a = layers[i], b = layers[i + d];
-    if (!a || !b) return;
-    // swap display levels; distinct levels keep the order stable everywhere
-    const [la, lb] = a.level === b.level ? [b.level + d, a.level] : [b.level, a.level];
-    editLayer(a.id, { level: la });
-    editLayer(b.id, { level: lb });
+    const ids = live.map((f) => f.id);
+    const [x] = ids.splice(i, 1);
+    ids.splice(i + d, 0, x);
+    reorder(ids);
   }
+  function drop(on: string) {
+    if (!dragging || dragging === on) return;
+    const ids = live.map((f) => f.id).filter((id) => id !== dragging);
+    ids.splice(ids.indexOf(on), 0, dragging);
+    reorder(ids);
+    dragging = null;
+  }
+  const look = (id: string, f: (v: fd.FrontView) => fd.FrontView) => fd.save(fd.withFront(display, id, f));
 </script>
 
 <div class="fronts">
-  <header>
-    <h1 class="display">Fronts</h1>
-    <p>Each front has its own members and layers, so you can track who's in the body, who's posting and who's in your inner world without mixing them up.</p>
-  </header>
+  <div class="bar">
+    <a class="back" href="#/" aria-label="Back to Fronting"><Icon name="back" size={22} /></a>
+    <div class="titles"><strong>Fronts</strong><span>Separate places someone can be present</span></div>
+    <button class="icon-btn" aria-pressed={arranging} aria-label={arranging ? 'Done arranging' : 'Arrange fronts'} onclick={() => (arranging = !arranging)}><Icon name={arranging ? 'check' : 'pencil'} size={22} /></button>
+  </div>
+  <p class="intro">Each front has its own layers. Track who's in the body, who's posting in Chorus and who's in your inner world, without mixing them up.</p>
 
   <ul class="cards">
-    {#each live as f (f.id)}
-      {@const b = badge(f)}
-      <li class="card" class:open={editing === f.id}>
-        <div class="row">
-          <div class="title">
-            <strong>{f.name}</strong>{#if b}<span class="badge">{b}</span>{/if}
-            <span class="who">{who(f)}</span>
-            <span class="chips">{#each counts(f) as l (l.id)}<span class="chip" class:inner={l.id === layers[0]?.id}>{l.name} {l.n}</span>{/each}</span>
-          </div>
-          <button class="ghost" aria-expanded={editing === f.id} onclick={() => (editing = editing === f.id ? null : f.id)}>
-            <Icon name="edit" size={18} /><span class="sr">Edit {f.name}</span>
-          </button>
+    {#each live as f, i (f.id)}
+      {@const sc = sceneOf(f)}{@const view = fd.front(display, f.id)}
+      <li class="card" class:dragging={dragging === f.id} ondragover={(e) => e.preventDefault()} ondrop={() => drop(f.id)}>
+        <div class="main" role="button" tabindex="0" aria-expanded={editing === f.id} aria-label="Edit {f.name}"
+          onclick={() => (editing = editing === f.id ? null : f.id)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), (editing = editing === f.id ? null : f.id))}>
+          <span class:dim={view.hidden}><Orbit rings={sc.all.filter((l) => !l.separate).slice(0, 3).map((l) => facesOf(l.entries))} {dark} /></span>
+          <span class="text">
+            <span class="name"><strong>{f.name}</strong><span class="badge">{tag(f)}</span></span>
+            <span class="about">{about(f)}</span>
+            <span class="tags">{#each sc.all.filter((l) => l.entries.length) as l (l.id)}<span class="tag" style={fd.inkVars(l.style, l.color)}>{l.name} {l.entries.length}</span>{/each}</span>
+          </span>
         </div>
-        {#if f.state === 'overridden'}
-          <button class="ghost resume" onclick={() => resumeFollowing(f.id)}>Resume following {f.sourceName ?? ''}</button>
-        {/if}
+        <span class="side">
+          {#if arranging}
+            <button class="icon-btn" disabled={i === 0} aria-label="Move {f.name} up" onclick={() => move(i, -1)}>↑</button>
+            <button class="icon-btn" disabled={i === live.length - 1} aria-label="Move {f.name} down" onclick={() => move(i, 1)}>↓</button>
+          {:else}
+            <button class="icon-btn" aria-label={view.hidden ? `Show ${f.name} on Fronting` : `Hide ${f.name} from Fronting`} aria-pressed={!view.hidden}
+              onclick={() => look(f.id, (v) => ({ ...v, hidden: !v.hidden }))}><Icon name={view.hidden ? 'eye-off' : 'eye'} size={20} /></button>
+            <span class="grip" draggable="true" role="button" tabindex="-1" aria-label="Drag to reorder {f.name}" ondragstart={() => (dragging = f.id)} ondragend={() => (dragging = null)}><Icon name="grip" size={18} /></span>
+          {/if}
+        </span>
+        {#if f.state === 'overridden'}<button class="link resume" onclick={() => resumeFollowing(f.id)}>Resume following {f.sourceName ?? ''}</button>{/if}
         {#if editing === f.id}
           <div class="editor">
-            <label>Name <input value={f.name} onchange={(e) => rename(f, e.currentTarget.value)} aria-label={`Name of ${f.name}`} /></label>
+            <label>Name <input value={f.name} onchange={(e) => { const n = e.currentTarget.value.trim(); if (n && n !== f.name) defineFront(f.id, { name: n }); }} /></label>
+            <label>Description <input value={view.about ?? ''} maxlength="140" placeholder={about(f)} onchange={(e) => look(f.id, (v) => ({ ...v, about: e.currentTarget.value.trim() || null }))} /></label>
+            <div class="icons" role="radiogroup" aria-label="Icon">
+              {#each fd.ICONS as k (k)}{@const on = fd.icon(f.id, f.name, account, display) === k}
+                <button role="radio" aria-checked={on} aria-label={k} class:on onclick={() => look(f.id, (v) => ({ ...v, icon: k }))}><Icon name={k} size={18} /></button>
+              {/each}
+            </div>
             <label>Follows
-              <select value={f.source ?? ''} onchange={(e) => defineFront(f.id, { follow_source: e.currentTarget.value || null })} aria-label={`What ${f.name} follows`}>
+              <select value={f.source ?? ''} onchange={(e) => defineFront(f.id, { follow_source: e.currentTarget.value || null })}>
                 <option value="">Nothing — changed by hand</option>
                 {#each live.filter((o) => o.id !== f.id) as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
               </select>
             </label>
             <p class="hint">A following front mirrors its source. Changing it by hand keeps your change until you choose Resume following.</p>
+            <a class="link" href="#/layers/{f.id}">Layers &amp; display for {f.name}</a>
             <details>
               <summary>Who counts for what</summary>
               {#each PURPOSES as p (p.key)}
@@ -136,109 +152,92 @@
                   <p class="hint">{p.hint}</p>
                   <label class="inline"><input type="checkbox" checked={sel === null} onchange={(e) => setSelection(f.id, p.key, e.currentTarget.checked ? null : [])} /> Use the default</label>
                   {#if sel !== null}
-                    <div class="layer-checks">
-                      {#each layers as l (l.id)}
-                        <label class="inline"><input type="checkbox" checked={sel.includes(l.id)} onchange={(e) => toggleLayer(f.id, p.key, l.id, e.currentTarget.checked)} /> {l.name}</label>
-                      {/each}
-                    </div>
+                    <div class="checks">{#each layers as l (l.id)}<label class="inline"><input type="checkbox" checked={sel.includes(l.id)} onchange={(e) => toggleLayer(f.id, p.key, l.id, e.currentTarget.checked)} /> {l.name}</label>{/each}</div>
                     {#if !sel.length}<p class="hint">Nobody is selected.</p>{/if}
                   {/if}
                 </fieldset>
               {/each}
             </details>
-            {#if !f.body}
-              <button class="danger" onclick={() => { defineFront(f.id, { deleted: true }); editing = null; }}>Remove {f.name}</button>
-              <p class="hint">Its history stays; you can restore it below.</p>
-            {/if}
+            {#if !f.body}<button class="danger" onclick={() => { defineFront(f.id, { deleted: true }); editing = null; }}>Remove {f.name}</button>{/if}
           </div>
         {/if}
       </li>
     {/each}
-    <li class="card new">
-      <form onsubmit={(e) => { e.preventDefault(); create(newName); }}>
-        <strong><Icon name="plus" size={18} /> New front</strong>
-        <div class="add">
-          <input bind:value={newName} placeholder="Name, e.g. Headspace" aria-label="New front name" />
+    <li class="new">
+      <button class="new-head" onclick={() => (naming = true)}><span class="plus"><Icon name="plus" size={20} /></span><span><strong>New front</strong><span>Start from a template or build your own</span></span></button>
+      <div class="templates">
+        {#each fd.TEMPLATES as t (t.name)}<button class="pill" onclick={() => create(t.name, t)}>{t.name}</button>{/each}
+        <button class="pill" onclick={() => (naming = true)}>Custom</button>
+      </div>
+      {#if naming}
+        <form class="add" onsubmit={(e) => { e.preventDefault(); create(newName); }}>
+          <!-- svelte-ignore a11y_autofocus -->
+          <input bind:value={newName} placeholder="Name, e.g. Headspace" aria-label="New front name" autofocus />
           <button class="primary" disabled={!newName.trim()}>Add</button>
-        </div>
-        <div class="templates">{#each TEMPLATES as t (t)}<button type="button" class="pill" onclick={() => create(t)}>{t}</button>{/each}</div>
-      </form>
+        </form>
+      {/if}
     </li>
   </ul>
 
   {#if removed.length}
     <details class="removed">
       <summary>Removed fronts ({removed.length})</summary>
-      {#each removed as f (f.id)}
-        <div class="row"><span>{f.name}</span><button class="ghost" onclick={() => defineFront(f.id, { deleted: false })}>Restore</button></div>
-      {/each}
+      {#each removed as f (f.id)}<div class="row"><span>{f.name}</span><button class="link" onclick={() => defineFront(f.id, { deleted: false })}>Restore</button></div>{/each}
     </details>
   {/if}
-
-  <section aria-label="Layers">
-    <h2>Layers · inner to outer</h2>
-    <p class="hint">Layers are shared by every front. Renaming or reordering never rewrites history, and a custom layer never stands in for Fronting, Co-conscious or Present.</p>
-    <ol class="layers">
-      {#each layers as l, i (l.id)}
-        <li>
-          <span class="swatch" class:inner={i === 0}></span>
-          <input value={l.name} aria-label={`Name of layer ${l.name}`} onchange={(e) => { const n = e.currentTarget.value.trim(); if (n && n !== l.name) editLayer(l.id, { name: n }); }} />
-          <button class="icon" onclick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${l.name} inward`}>↑</button>
-          <button class="icon" onclick={() => move(i, 1)} disabled={i === layers.length - 1} aria-label={`Move ${l.name} outward`}>↓</button>
-          {#if l.custom}<button class="icon" onclick={() => editLayer(l.id, { deleted: true })} aria-label={`Remove layer ${l.name}`}>✕</button>{:else}<span class="icon"></span>{/if}
-        </li>
-      {/each}
-    </ol>
-    <form class="add" onsubmit={(e) => { e.preventDefault(); addLayer(); }}>
-      <input bind:value={newLayer} placeholder="Add a layer, e.g. Passive influence" aria-label="New layer name" />
-      <button class="primary" disabled={!newLayer.trim()}>Add</button>
-    </form>
-  </section>
 </div>
 
 <style>
-  .fronts { display: grid; gap: var(--s-5); max-width: 760px; }
-  header p, .hint { color: var(--ink-3); font-size: var(--fs-sm); margin: 0; }
-  h1 { margin: 0 0 var(--s-2); font-size: var(--fs-xl); }
-  h2 { font-size: var(--fs-sm); color: var(--accent); margin: 0 0 var(--s-2); }
-  .cards { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3); }
-  .card { background: var(--surface); border-radius: var(--r-lg); padding: var(--s-4); display: grid; gap: var(--s-3); }
-  .card.new { background: transparent; border: 1px dashed var(--line); }
-  .row { display: flex; gap: var(--s-3); align-items: start; justify-content: space-between; }
-  .title { display: grid; gap: 6px; min-width: 0; }
-  .title strong { font-size: var(--fs-lg, 1.125rem); }
-  .badge { justify-self: start; font-size: var(--fs-xs); padding: 2px 8px; border-radius: var(--r-full); background: var(--surface-2); color: var(--ink-2); }
-  .who { color: var(--ink-2); font-size: var(--fs-sm); }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { font-size: var(--fs-xs); padding: 3px 10px; border-radius: var(--r-full); border: 1px dashed var(--line); color: var(--ink-2); }
-  .chip.inner { border-style: solid; border-color: transparent; background: var(--accent-soft); color: var(--ink); }
-  .editor { display: grid; gap: var(--s-3); border-top: 1px solid var(--line); padding-top: var(--s-3); }
-  .editor label, fieldset { display: grid; gap: var(--s-1); font-size: var(--fs-sm); color: var(--ink-2); }
-  fieldset { border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-3); margin: var(--s-2) 0 0; }
-  legend { color: var(--ink); padding: 0 4px; }
-  .inline { display: flex !important; align-items: center; gap: 8px; min-height: 40px; }
-  .layer-checks { display: flex; flex-wrap: wrap; gap: 0 var(--s-4); }
-  input:not([type='checkbox']), select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-2) var(--s-3); min-height: 44px; min-width: 0; }
-  details summary { cursor: pointer; color: var(--accent); min-height: 40px; display: flex; align-items: center; }
-  .add { display: flex; gap: var(--s-2); }
-  .add input { flex: 1; }
-  .templates { display: flex; flex-wrap: wrap; gap: var(--s-2); }
-  .pill { min-height: 36px; padding: 0 14px; border-radius: var(--r-full); border: 0; background: var(--surface-2); color: var(--ink); cursor: pointer; }
-  .new form { display: grid; gap: var(--s-3); }
-  .new strong { display: flex; align-items: center; gap: 8px; color: var(--accent); }
-  .layers { list-style: none; margin: 0 0 var(--s-3); padding: 0; display: grid; gap: var(--s-2); }
-  .layers li { display: flex; align-items: center; gap: var(--s-2); background: var(--surface); border-radius: var(--r-md); padding: var(--s-2) var(--s-3); }
-  .layers input { flex: 1; background: transparent; border-color: transparent; }
-  .layers input:focus { border-color: var(--line); }
-  .swatch { width: 28px; height: 20px; border-radius: 6px; border: 1.5px dashed var(--ink-3); flex: none; }
-  .swatch.inner { border: 1.5px solid var(--accent); background: var(--accent-soft); }
-  .icon { width: 40px; height: 40px; flex: none; border: 0; background: none; color: var(--ink-2); border-radius: 50%; cursor: pointer; }
-  .icon:disabled { opacity: 0.3; cursor: default; }
-  .ghost { min-height: 40px; border: 0; background: none; color: var(--accent); cursor: pointer; display: flex; align-items: center; gap: 6px; }
-  .resume { justify-self: start; }
-  .primary { border: 0; border-radius: var(--r-full); padding: 0 var(--s-5); min-height: 44px; background: var(--accent); color: var(--on-accent); font-weight: 600; cursor: pointer; }
-  .primary:disabled { opacity: 0.5; cursor: default; }
-  .danger { justify-self: start; min-height: 40px; border: 1px solid var(--danger, #d16969); color: var(--danger, #d16969); background: none; border-radius: var(--r-full); padding: 0 var(--s-4); cursor: pointer; }
-  .removed { color: var(--ink-2); }
-  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .fronts { display: grid; gap: 10px; max-width: 720px; }
+  .bar { display: flex; align-items: center; gap: 4px; margin: 0 0 2px -8px; }
+  .back, .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 50%; cursor: pointer; font: inherit; font-size: 20px; }
+  .back { color: var(--ink); }
+  .icon-btn:disabled { color: var(--ink-3); opacity: 0.5; }
+  .titles { flex: 1; display: grid; padding-left: 4px; }
+  .titles strong { font-size: 17px; font-weight: 600; }
+  .titles span { color: var(--ink-3); font-size: 12px; }
+  .intro { margin: 0 4px 4px; color: var(--ink-2); font-size: 14px; line-height: 20px; }
+  .cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .card { display: grid; grid-template-columns: 1fr auto; gap: 0 4px; background: var(--surface); border-radius: 18px; padding: 12px 4px 12px 12px; }
+  .card.dragging { opacity: 0.5; }
+  .main { display: flex; align-items: center; gap: 14px; cursor: pointer; min-width: 0; border-radius: 12px; }
+  .dim { opacity: 0.5; }
+  .text { display: grid; gap: 4px; min-width: 0; }
+  .name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .name strong { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge { font-size: 11px; color: var(--ink-2); background: var(--surface-2); border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
+  .about { color: var(--ink-2); font-size: 13px; line-height: 17px; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+  .tag { font-size: 11px; line-height: 14px; font-weight: 700; padding: 1px 7px; border-radius: 8px; background: var(--l-tag-fill); color: var(--l-tag-ink); border: 1px var(--l-dash) var(--l-tag-border); }
+  .side { display: grid; justify-items: center; align-content: center; }
+  .grip { width: 40px; height: 40px; display: grid; place-items: center; color: var(--ink-3); cursor: grab; }
+  .resume { grid-column: 1 / -1; justify-self: start; }
+  .link { background: none; border: 0; padding: 8px 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .editor { grid-column: 1 / -1; display: grid; gap: 10px; padding: 12px 8px 4px 0; border-top: 1px solid var(--line); margin-top: 12px; }
+  .editor label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
+  .editor input:not([type='checkbox']), .editor select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .icons { display: flex; gap: 6px; flex-wrap: wrap; }
+  .icons button { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; border: 1px solid transparent; background: var(--surface-2); color: var(--ink-2); cursor: pointer; }
+  .icons button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .hint { margin: 0; color: var(--ink-3); font-size: 12px; }
+  details summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 13px; padding: 6px 0; }
+  fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; margin: 6px 0; }
+  legend { font-weight: 600; font-size: 14px; color: var(--ink); }
+  .inline { display: flex !important; flex-direction: row; align-items: center; gap: 6px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .danger { justify-self: start; background: none; border: 1px solid var(--line); color: var(--danger); border-radius: 12px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  .new { display: grid; gap: 12px; padding: 16px; border: 1px dashed var(--line); border-radius: 18px; }
+  .new-head { display: flex; align-items: center; gap: 12px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; padding: 0; }
+  .new-head > span:last-child { display: grid; }
+  .new-head strong { color: var(--accent); font-size: 15px; font-weight: 600; }
+  .new-head span span { color: var(--ink-3); font-size: 12px; }
+  .plus { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
+  .templates { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill { border: 0; border-radius: 999px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; padding: 7px 12px; cursor: pointer; }
+  .add { display: flex; gap: 8px; }
+  .add input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .primary { border: 0; border-radius: 10px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; padding: 0 16px; cursor: pointer; }
+  .primary:disabled { opacity: 0.5; }
+  .removed summary { color: var(--ink-2); }
+  .removed .row { display: flex; justify-content: space-between; align-items: center; padding: 4px 12px; background: var(--surface); border-radius: 12px; margin-top: 6px; }
 </style>

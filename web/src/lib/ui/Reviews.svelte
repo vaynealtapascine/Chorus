@@ -26,7 +26,9 @@
   const label = (s?: Side) =>
     s ? s.entries.filter((e) => named || e.layer === 'front').map((e) => names.get(e.subject_id) ?? '?').join(' & ') || 'no one' : '?';
   const time = (s?: Side) => (s ? new Date(s.occurred_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
-  const device = (s?: Side) => (s?.device_id === sync.device?.device_id ? 'this device' : 'another device');
+  const deviceNames = $derived(new Map(Object.entries(projection.rows.device ?? {}).map(([id, row]) => [id, String(row.fields.name ?? '')])));
+  const device = (s?: Side) => (s ? deviceNames.get(s.device_id) || (s.device_id === sync.device?.device_id ? 'this device' : 'another device') : '');
+  let picked = $state<Record<string, 'a' | 'b'>>({});
 
   function resolve(id: string, resolution: string) {
     sync.create('front.review_resolve', sync.accountScope, null, { review_id: id, resolution });
@@ -58,59 +60,33 @@
 {#each open as r (r.id)}
   {@const a = byId.get(r.switch_a)}
   {@const b = byId.get(r.switch_b)}
+  <!-- Figma F3.6: two devices switched within a minute; tap the right one, or keep both or merge -->
   <aside class="review" role="status">
-    <p><strong>Two switches landed together.</strong> Both are kept — which was right?</p>
-    <div class="pair">
-      <div><span class="dev">{device(a)} · {time(a)}</span>{label(a)}</div>
-      <div><span class="dev">{device(b)} · {time(b)}</span>{label(b)}</div>
-    </div>
+    <p class="lead">Keep an accurate history across your devices.</p>
+    <p>Two devices switched within a minute.</p>
+    {#each [a, b] as side, i (i)}
+      <button class="side" class:on={picked[r.id] === (i === 0 ? 'a' : 'b')} aria-pressed={picked[r.id] === (i === 0 ? 'a' : 'b')} disabled={!side}
+        onclick={() => (picked = { ...picked, [r.id]: i === 0 ? 'a' : 'b' })}>
+        <span class="dev">{device(side).toUpperCase()} · {time(side)}</span><strong>{label(side)}</strong>
+      </button>
+    {/each}
     <div class="actions">
       <button onclick={() => resolve(r.id, 'keep_both')}>Keep both</button>
-      <button onclick={() => keep(r, 'a')}>Keep first</button>
-      <button onclick={() => keep(r, 'b')}>Keep second</button>
+      <button disabled={!a || !b} title={picked[r.id] ? '' : 'Tap the one that was right first'} onclick={() => picked[r.id] && keep(r, picked[r.id])}>{picked[r.id] ? 'Keep this one' : 'Keep one'}</button>
       <button disabled={!!named && (!a || !b)} onclick={() => merge(r)}>Merge</button>
     </div>
   </aside>
 {/each}
 
 <style>
-  .review {
-    background: color-mix(in oklab, var(--warn) 12%, var(--surface));
-    border: 1px solid color-mix(in oklab, var(--warn) 45%, var(--line));
-    border-radius: var(--r-lg);
-    padding: var(--s-4);
-    display: grid;
-    gap: var(--s-3);
-  }
-  p {
-    margin: 0;
-  }
-  .pair {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--s-3);
-  }
-  .pair div {
-    display: grid;
-    gap: 2px;
-    background: var(--surface);
-    border-radius: var(--r-sm);
-    padding: var(--s-2) var(--s-3);
-  }
-  .dev {
-    font-size: var(--fs-xs);
-    color: var(--ink-3);
-  }
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s-2);
-  }
-  .actions button {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-full);
-    padding: var(--s-1) var(--s-3);
-    cursor: pointer;
-  }
+  .review { background: var(--surface); border-radius: 16px; padding: 14px; display: grid; gap: 10px; }
+  p { margin: 0; font-size: 14px; }
+  .lead { color: var(--ink-2); font-size: 13px; }
+  .side { display: grid; gap: 2px; text-align: left; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; color: var(--ink); font: inherit; cursor: pointer; }
+  .side.on { border-color: var(--accent); }
+  .side strong { font-size: 16px; font-weight: 600; }
+  .dev { font-size: 11px; font-weight: 700; color: var(--ink-2); letter-spacing: 0.02em; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .actions button { background: var(--surface-2); border: 0; border-radius: 8px; padding: 10px 14px; color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .actions button:disabled { color: var(--ink-3); cursor: default; }
 </style>

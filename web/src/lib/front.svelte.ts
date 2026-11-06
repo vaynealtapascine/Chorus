@@ -31,11 +31,12 @@ export type Notify = 'default' | 'silent' | 'now' | 'extra_delay';
 
 /** The one pending undo (SPEC §4.3: 10 s). `front` set = a named-front change (D-080). */
 class UndoState {
-  pending: { opId: string; label: string; until: number; front?: string } | null = $state(null);
+  pending: { opId: string; label: string; until: number; front?: string; more?: string[] } | null = $state(null);
   private timer: ReturnType<typeof setTimeout> | null = null;
 
-  offer(opId: string, label: string, front?: string) {
-    this.pending = { opId, label, until: Date.now() + 10_000, front };
+  /** `more`: further ops of the same action (an Add-mode switch places several people). */
+  offer(opId: string, label: string, front?: string, more: string[] = []) {
+    this.pending = { opId, label, until: Date.now() + 10_000, front, more };
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => (this.pending = null), 10_000);
   }
@@ -43,8 +44,10 @@ class UndoState {
   undo() {
     const p = this.pending;
     if (!p || Date.now() > p.until + 20_000) return;
-    if (p.front) sync.create('front.change', sync.accountScope, p.front, { action: 'retract', target_op_id: p.opId });
-    else sync.create('front.retract', sync.accountScope, sync.newId(), { target_op_id: p.opId });
+    for (const id of [...(p.more ?? []), p.opId]) {
+      if (p.front) sync.create('front.change', sync.accountScope, p.front, { action: 'retract', target_op_id: id });
+      else sync.create('front.retract', sync.accountScope, sync.newId(), { target_op_id: id });
+    }
     this.pending = null;
   }
 
@@ -93,4 +96,26 @@ export function editLayer(layer: string, patch: { name?: string; level?: number;
 
 export function resumeFollowing(front: string) {
   return sync.create('front.change', sync.accountScope, front, { action: 'resume' });
+}
+
+/** One subject's new layer in a front (null: out of it), and whether they are in it now. */
+export interface Placement { type: SubjectType; id: string; layer: string | null; present: boolean; primary?: boolean }
+
+/** Write placements (F3.2 Add mode, F3.3) as one undoable action: add, update (a move) or remove.
+ * `front` is a configured account's named front; unconfigured accounts use the legacy Body ops. */
+export function place(moves: Placement[], label: string, front: string | null, at?: number) {
+  const ids = moves.map((m) => {
+    if (front) {
+      const change: Record<string, unknown> = m.layer === null ? { action: 'remove', subject_type: m.type, subject_id: m.id }
+        : m.present ? { action: 'update', subject_type: m.type, subject_id: m.id, layer_id: m.layer, ...(m.primary !== undefined ? { is_primary: m.primary } : {}) }
+        : { action: 'add', entry: { subject_type: m.type, subject_id: m.id, layer_id: m.layer, is_primary: m.primary ?? false } };
+      if (at !== undefined) change.effective_at = at;
+      return sync.create('front.change', sync.accountScope, front, change);
+    }
+    const [kind, payload] = m.layer === null ? ['front.remove', { subject_type: m.type, subject_id: m.id }]
+      : m.present ? ['front.update', { subject_type: m.type, subject_id: m.id, level: m.layer, ...(m.primary !== undefined ? { is_primary: m.primary } : {}) }]
+      : ['front.add', { entry: { subject_type: m.type, subject_id: m.id, level: m.layer, is_primary: m.primary ?? false } }];
+    return sync.create(kind, sync.accountScope, sync.newId(), payload, { userTime: at });
+  });
+  if (ids.length) undo.offer(ids[ids.length - 1], label, front ?? undefined, ids.slice(0, -1));
 }

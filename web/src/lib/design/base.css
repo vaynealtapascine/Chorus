@@ -70,3 +70,31 @@ time { font-variant-numeric: tabular-nums; }
 
 a { color: var(--accent); }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+
+/* A checkbox drawn as a switch (Figma Toggle v2, F3.3 / F3.9) */
+input[type='checkbox'][role='switch'] {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 40px;
+  height: 24px;
+  margin: 0;
+  border-radius: 12px;
+  background: var(--surface-3, var(--line));
+  cursor: pointer;
+  transition: background var(--t-fast, 120ms) ease;
+}
+input[type='checkbox'][role='switch']::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  transition: transform var(--t-fast, 120ms) ease;
+}
+input[type='checkbox'][role='switch']:checked { background: var(--accent); }
+input[type='checkbox'][role='switch']:checked::before { transform: translateX(16px); background: var(--bg); }
+input[type='checkbox'][role='switch']:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
