@@ -302,6 +302,11 @@ The current web member-hover treatment uses the fast token. Reduced-motion CSS c
 and transition duration. The existing spec's switch settle (≤300 ms) and Android light switch haptic
 remain product guidance; UI1 does not introduce a new motion or haptic system.
 
+What appears arrives instead of popping in (D-125): sheets rise, scrims fade, menus grow from their
+anchor, bars over the composer grow in, and chat messages that arrive while a chat is open slide in
+(the ones it opened with just show). Lists that re-sort (chats, members) glide. Nothing animates on
+first load, and reduced motion turns all of it off.
+
 ## Shapes
 
 Shared small, medium and large radii apply to controls, cards and sheets respectively; full is
@@ -328,14 +333,16 @@ Fields use panel or raised-panel fill, an ink foreground, hairline border and a 
 radius. Main search fields use 12 px × 16 px padding. Placeholder and caret follow `ink-3` and
 `accent`. Use real labels, visible focus and native controls where suitable. Android uses filled
 fields with the label inside (Figma F6.7, `ChorusField`): 12 dp corners, a step-up fill (`surface`
-on a page, `surface2` in a drawer), no outline until focus draws a teal underline; 48 dp targets.
+on a page, `surface2` in a drawer), no outline until focus draws a teal underline. Compact (D-125):
+48 dp with the label as a fixed 12 sp line above 15 sp text, 44 dp without a label; switches are
+40 × 24 (`ChorusSwitch`) with 48 dp touch targets.
 
 ### Drawers (Android, D-124)
 
 Android has no pop-up dialogs or dropdown menus: questions, menus, choices, pickers and short forms
 open as bottom drawers with a grabber, a 19 sp title (optional face and subtitle) and a close ×.
 Content sits in grouped `FormCard`s (16 dp corners, hairline dividers) under teal 13 sp section
-labels; the main action is one wide 50 dp button with 16 dp corners at the foot, Cancel a quiet text
+labels; the main action is one wide 44 dp button with 14 dp corners at the foot (D-125), Cancel a quiet text
 button under it, destructive actions in the danger role. Menu rows are 52 dp with a 22 dp icon,
 the chosen row in teal wash with a check. A drawer opened from a drawer lies over it, 28 dp shorter
 per layer, so the stack shows and closing steps back. Value rows show the label, the value in teal

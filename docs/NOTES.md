@@ -171,6 +171,12 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
 
 ## Web
 
+- Svelte 5 memoizes prop expressions (`people.get(a)?.avatar_blob` passes a derived string), so
+  a child effect re-runs only when the value changes; avatars still flashed because each
+  `AvatarImage` loaded its own object URL. `blob-url.ts` now shares one per hash (2026-11-07).
+- Chasing repaints: a Playwright trace with `disabled-by-default-devtools.timeline.invalidationTracking`
+  names the nodes re-inserted per action (Paint events' clips are whole layers, not dirty rects);
+  a MutationObserver that tells moved nodes from new ones finds re-created images.
 - One browser, several tabs: a Web Locks leader owns the replica and socket; other tabs hand ops
   over a `BroadcastChannel`. State read from the sync client must be copied into `$state` to be
   reactive.
@@ -220,6 +226,13 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
   by request identity; a `ModalBottomSheet` keeps the anchor of small loading content (reserve the
   final size); the Hanken variable font needs explicit `FontVariation` weights; rich-text undo
   provenance needs `TextFieldState`/`InputTransformation`, never inferred from text.
+- Material 3 (1.3.1) text fields with a `label`: while the field is empty and unfocused the layout
+  ignores the given content padding and reserves 16 dp above and below (`calculateHeight` lerps to
+  `TextFieldPadding * 2`), so a labelled field can't be shorter than 56 dp and shrinks when focused.
+  `ChorusField` (D-125) draws its label itself, above the text, and passes none to the DecorationBox.
+- Compose `animateItem()` doesn't animate a lazy list's first layout, so it suits chats (new
+  messages fade in, opening a chat doesn't). Keep `@Suppress` directly above the statement it
+  covers when inserting lines in a lazy item.
 - Never put large drafts in saved-state Bundles (Binder ~1 MB limit crashed a big bio): drafts
   live in the encrypted Store KV with only a reference in the Bundle.
 - `Chorus.create` can throw after its SQLite commit (cancellable `withContext`): Journal
