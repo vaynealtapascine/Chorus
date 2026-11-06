@@ -576,6 +576,13 @@ CREATE TABLE blob (
   is_complete INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE blob_holder (                        -- sent a stored blob's bytes again (D-119)
+  hash TEXT NOT NULL, account_id TEXT NOT NULL,
+  received INTEGER NOT NULL DEFAULT 0, matches INTEGER NOT NULL DEFAULT 1,
+  is_complete INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (hash, account_id)
+);
+
 CREATE TABLE attachment (
   id TEXT PRIMARY KEY, account_id TEXT NOT NULL,
   blob_hash TEXT NOT NULL, filename TEXT, mime TEXT NOT NULL, size INTEGER NOT NULL,

@@ -92,7 +92,15 @@ pub(crate) fn public_ip(ip: IpAddr) -> bool {
 
 fn allowed(ip: IpAddr, targets: WebhookTargets) -> bool {
     match targets {
-        WebhookTargets::Internal => internal_ip(ip) && !ip.to_canonical().is_loopback(),
+        // never loopback, nor link-local (169.254.169.254 is a cloud's metadata service), as push.rs
+        WebhookTargets::Internal => {
+            let ip = ip.to_canonical();
+            let link_local = match ip {
+                IpAddr::V4(v) => v.is_link_local(),
+                IpAddr::V6(v) => (v.segments()[0] & 0xffc0) == 0xfe80,
+            };
+            internal_ip(ip) && !ip.is_loopback() && !link_local
+        }
         WebhookTargets::Public => public_ip(ip),
         WebhookTargets::Any => true,
     }
@@ -105,6 +113,33 @@ const INTERNAL_SUFFIXES: &[&str] = &[".ts.net", ".local", ".lan", ".internal", "
 pub struct Target {
     pub url: reqwest::Url,
     pub pin: Option<SocketAddr>,
+    /// A name that didn't resolve when it was checked (a tailnet/LAN name): the rule every address
+    /// it resolves to at delivery must pass, so a name that later points somewhere refused
+    /// (DNS rebinding) isn't connected to.
+    pub guard: Option<Guard>,
+}
+
+/// The address rule of a [`Target`] whose name is resolved at delivery.
+#[derive(Clone)]
+pub struct Guard(std::sync::Arc<dyn Fn(IpAddr) -> bool + Send + Sync>);
+
+impl std::fmt::Debug for Guard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Guard")
+    }
+}
+
+impl reqwest::dns::Resolve for Guard {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let ok = self.0.clone();
+        Box::pin(async move {
+            let addrs: Vec<SocketAddr> = tokio::net::lookup_host((name.as_str(), 0)).await?.collect();
+            if addrs.is_empty() || !addrs.iter().all(|a| ok(a.ip())) {
+                return Err(format!("{} resolves to an address that isn't allowed", name.as_str()).into());
+            }
+            Ok(Box::new(addrs.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
 }
 
 /// Refuse URLs outside what `targets` allows. Host names are resolved and every address must
@@ -116,7 +151,7 @@ pub async fn check_url(url: &str, targets: WebhookTargets) -> Result<Target, Str
         return Err("webhook URLs must be http or https".into());
     }
     if targets == WebhookTargets::Any {
-        return Ok(Target { url: u, pin: None });
+        return Ok(Target { url: u, pin: None, guard: None });
     }
     let refused = match targets {
         WebhookTargets::Public => "webhooks on this server may only point to public internet addresses",
@@ -130,7 +165,7 @@ pub async fn check_url(url: &str, targets: WebhookTargets) -> Result<Target, Str
 /// `local_ok`: `localhost` may be named (only for a host the operator configured).
 pub(crate) async fn resolve_checked(
     u: reqwest::Url,
-    ok: impl Fn(IpAddr) -> bool + Send,
+    ok: impl Fn(IpAddr) -> bool + Send + Sync + 'static,
     names_ok: bool,
     local_ok: bool,
     refused: &str,
@@ -138,23 +173,24 @@ pub(crate) async fn resolve_checked(
     let refused = || refused.to_string();
     let host = u.host_str().unwrap_or_default().trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase();
     if let Ok(ip) = host.parse::<IpAddr>() {
-        return if ok(ip) { Ok(Target { url: u, pin: None }) } else { Err(refused()) };
+        return if ok(ip) { Ok(Target { url: u, pin: None, guard: None }) } else { Err(refused()) };
     }
     if host.is_empty() || (!local_ok && (host == "localhost" || host.ends_with(".localhost"))) {
         return Err(refused());
     }
     let plausible = names_ok && (!host.contains('.') || INTERNAL_SUFFIXES.iter().any(|s| host.ends_with(s)));
     let port = u.port_or_known_default().unwrap_or(443);
+    let unresolved = |u, ok| Ok(Target { url: u, pin: None, guard: Some(Guard(std::sync::Arc::new(ok))) });
     let addrs: Vec<SocketAddr> = match tokio::net::lookup_host((host.as_str(), port)).await {
         Ok(a) => a.collect(),
-        Err(_) if plausible => return Ok(Target { url: u, pin: None }),
+        Err(_) if plausible => return unresolved(u, ok),
         Err(e) => return Err(format!("can't resolve {host}: {e}")),
     };
     if addrs.is_empty() && plausible {
-        return Ok(Target { url: u, pin: None });
+        return unresolved(u, ok);
     }
     match addrs.first() {
-        Some(first) if addrs.iter().all(|a| ok(a.ip())) => Ok(Target { url: u, pin: Some(*first) }),
+        Some(first) if addrs.iter().all(|a| ok(a.ip())) => Ok(Target { url: u, pin: Some(*first), guard: None }),
         _ => Err(refused()),
     }
 }
@@ -166,6 +202,8 @@ pub(crate) fn pinned_client(target: &Target) -> Result<reqwest::Client, String> 
         .redirect(reqwest::redirect::Policy::none());
     if let (Some(pin), Some(host)) = (target.pin, target.url.host_str()) {
         http = http.resolve(host, pin);
+    } else if let Some(guard) = &target.guard {
+        http = http.dns_resolver(std::sync::Arc::new(guard.clone()));
     }
     http.build().map_err(|e| format!("can't build the request: {e}"))
 }
@@ -187,7 +225,7 @@ pub fn create(conn: &Connection, p: &Principal, url: &str, events: &[String], no
     check_events(events)?;
     let id = chorus_core::id::new_id(now as u64, rand::random());
     let bytes: [u8; 24] = rand::random();
-    let secret = format!("whsec_{}", hex(&bytes));
+    let secret = format!("whsec_{}", crate::hex(&bytes));
     conn.execute(
         "INSERT INTO webhook (id, account_id, url, secret, events, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![id, p.account_id, url, secret, serde_json::to_string(events).map_err(anyhow::Error::from)?, now],
@@ -379,15 +417,11 @@ pub fn deliveries_for(conn: &Connection, fresh: &[Op], now: i64) -> anyhow::Resu
 
 // ─── delivery ────────────────────────────────────────────────────────────────
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
 /// `t=<secs>,v1=<hex HMAC-SHA256(secret, t + "." + body)>`.
 pub fn signature(secret: &str, t_secs: i64, body: &str) -> String {
     let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(secret.as_bytes()).expect("HMAC takes any key length");
     mac.update(format!("{t_secs}.{body}").as_bytes());
-    format!("t={t_secs},v1={}", hex(&mac.finalize().into_bytes()))
+    format!("t={t_secs},v1={}", crate::hex(&mac.finalize().into_bytes()))
 }
 
 /// Make one attempt: `Ok(status)` for 2xx, `Err((status, reason))` otherwise.
@@ -461,7 +495,7 @@ mod tests {
         let s = signature("key", 0, "The quick brown fox jumps over the lazy dog");
         let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(b"key").unwrap();
         mac.update(b"0.The quick brown fox jumps over the lazy dog");
-        assert_eq!(s, format!("t=0,v1={}", hex(&mac.finalize().into_bytes())));
+        assert_eq!(s, format!("t=0,v1={}", crate::hex(&mac.finalize().into_bytes())));
         let known = signature("key", 1, "x");
         assert!(known.starts_with("t=1,v1=") && known.len() == "t=1,v1=".len() + 64);
     }
@@ -471,7 +505,7 @@ mod tests {
         let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(b"key").unwrap();
         mac.update(b"The quick brown fox jumps over the lazy dog");
         assert_eq!(
-            hex(&mac.finalize().into_bytes()),
+            crate::hex(&mac.finalize().into_bytes()),
             "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
         );
     }
@@ -526,6 +560,15 @@ mod tests {
         assert!(check_url("https://box.tail1234.ts.net/hook", Internal).await.is_ok());
         assert!(check_url("http://nas/hook", Internal).await.is_ok());
         assert!(check_url("http://8.8.8.8/hook", Internal).await.is_err());
+        // nor a cloud's metadata service, which is link-local
+        assert!(check_url("http://169.254.169.254/latest", Internal).await.is_err());
+        assert!(check_url("http://[fe80::1]/x", Internal).await.is_err());
+        // a name that doesn't resolve yet is checked again, address by address, when delivered to
+        let later = check_url("http://nas-not-here-yet/hook", Internal).await.unwrap();
+        let guard = later.guard.expect("guarded");
+        assert!(later.pin.is_none());
+        assert!(!(guard.0)("127.0.0.1".parse().unwrap()) && !(guard.0)("169.254.169.254".parse().unwrap()));
+        assert!((guard.0)("192.168.1.9".parse().unwrap()));
         // public: the internet only
         assert!(check_url("http://8.8.8.8/hook", Public).await.is_ok());
         for bad in [

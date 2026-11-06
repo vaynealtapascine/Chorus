@@ -37,16 +37,13 @@ fn internal(e: impl std::fmt::Display) -> BlobError {
 }
 
 fn authenticate(s: &AppState, conn: &rusqlite::Connection, h: &HeaderMap) -> Result<auth::Authed, BlobError> {
-    let token = h
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(BlobError(StatusCode::UNAUTHORIZED, "unauthenticated"))?;
+    let token = auth::bearer(h).ok_or(BlobError(StatusCode::UNAUTHORIZED, "unauthenticated"))?;
     auth::authenticate(conn, token, now_ms(), s.cfg.limits.session_days as i64 * 86_400_000)
         .map_err(|_| BlobError(StatusCode::UNAUTHORIZED, "unauthenticated"))
 }
 
-fn valid_hash(hash: &str) -> bool {
+/// A blob name: a lowercase sha256 hex digest.
+pub(crate) fn valid_hash(hash: &str) -> bool {
     hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
@@ -54,7 +51,7 @@ fn path(s: &AppState, hash: &str) -> Result<PathBuf, BlobError> {
     if !valid_hash(hash) {
         return Err(bad("invalid_hash"));
     }
-    Ok(s.cfg.blob_dir().join(&hash[..2]).join(&hash[2..4]).join(hash))
+    Ok(sharded(&s.cfg.blob_dir(), hash))
 }
 
 #[derive(Clone)]
@@ -64,6 +61,11 @@ struct Row {
     mime: String,
     uploader: String,
     complete: bool,
+}
+
+/// Where a blob's file lives under a blob directory (`ab/cd/abcd…`); `hash` is a [`valid_hash`].
+pub(crate) fn sharded(root: &std::path::Path, hash: &str) -> PathBuf {
+    root.join(&hash[..2]).join(&hash[2..4]).join(hash)
 }
 
 fn row(conn: &rusqlite::Connection, hash: &str) -> Result<Option<Row>, BlobError> {
@@ -98,7 +100,7 @@ fn recover_complete(
 /// The owner sees their own references; readers see attachments of readable messages or posts.
 /// Follower avatars are restricted to entries already revealed by the notifier.
 fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &str) -> Result<bool, BlobError> {
-    if account == uploader {
+    if account == uploader || holds(conn, hash, account)? {
         return Ok(true);
     }
     if crate::spaces::author_avatar_visible(conn, account, hash).map_err(internal)? {
@@ -152,8 +154,8 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
               WHERE (a.blob_hash = ?1 OR a.thumb_blob_hash = ?1)
                 AND {}
            UNION ALL SELECT 1 FROM member m
+              -- Body's view or a granted front's (D-084; a revoked grant's row is deleted)
               JOIN follower_front_view fv ON fv.target_account_id = m.account_id AND fv.follower_account_id = ?2
-                AND fv.front_id = ''
               JOIN follow f ON f.target_account_id = m.account_id AND f.follower_account_id = ?2 AND f.status = 'active'
               WHERE m.avatar_blob = ?1 AND m.deleted_at IS NULL
                 AND EXISTS (SELECT 1 FROM json_each(fv.entries) je
@@ -164,6 +166,74 @@ fn can_read(conn: &rusqlite::Connection, account: &str, hash: &str, uploader: &s
         |r| r.get(0),
     )
     .map_err(internal)
+}
+
+/// Whether `account` sent all of a stored file's bytes after someone else uploaded it.
+fn holds(conn: &rusqlite::Connection, hash: &str, account: &str) -> Result<bool, BlobError> {
+    conn.prepare_cached("SELECT 1 FROM blob_holder WHERE hash = ?1 AND account_id = ?2 AND is_complete")
+        .and_then(|mut st| st.exists(params![hash, account]))
+        .map_err(internal)
+}
+
+/// Whether an op by `account` may name this file (ingest `unproven_blob`): one the server doesn't
+/// have, or one the account uploaded, holds, or can read now.
+pub(crate) fn may_name(conn: &rusqlite::Connection, account: &str, hash: &str) -> anyhow::Result<bool> {
+    let uploader: Option<String> =
+        conn.query_row("SELECT uploaded_by FROM blob WHERE hash = ?1", [hash], |r| r.get(0)).optional()?;
+    let Some(uploader) = uploader else { return Ok(true) };
+    can_read(conn, account, hash, &uploader).map_err(|e| anyhow::anyhow!("blob check: {}", e.1))
+}
+
+/// Someone else stored this file. Answering 200 to the first chunk told anyone who asked that the
+/// server has it (a dedup oracle), and let them name it in an op without having it. So the
+/// bytes are taken as for a new upload and compared with the stored file, and the account then
+/// holds it. The answers are the ones a new upload gets: 202 per chunk, 201 at the end, and
+/// `hash_mismatch` there if any chunk differed.
+#[allow(clippy::too_many_arguments)]
+fn prove(
+    conn: &rusqlite::Connection,
+    dest: &std::path::Path,
+    hash: &str,
+    account: &str,
+    size: u64,
+    (start, end, total): (u64, u64, u64),
+    bytes: &[u8],
+) -> Result<Response, BlobError> {
+    let held: Option<(i64, bool)> = conn
+        .query_row(
+            "SELECT received, matches FROM blob_holder WHERE hash = ?1 AND account_id = ?2",
+            params![hash, account],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(internal)?;
+    // starting again from the beginning is always allowed, as for a new upload
+    let (received, mut matches) = held.filter(|_| start != 0).map_or((0, true), |(r, m)| (r as u64, m));
+    if start != received {
+        return Err(BlobError(StatusCode::CONFLICT, "upload_offset_conflict"));
+    }
+    matches &= total == size && {
+        let mut stored = vec![0u8; bytes.len()];
+        let mut f = fs::File::open(dest).map_err(internal)?;
+        f.seek(SeekFrom::Start(start)).map_err(internal)?;
+        f.read_exact(&mut stored).is_ok() && stored == bytes
+    };
+    let done = end + 1 == total;
+    if done && !matches {
+        conn.execute("DELETE FROM blob_holder WHERE hash = ?1 AND account_id = ?2", params![hash, account])
+            .map_err(internal)?;
+        return Err(bad("hash_mismatch"));
+    }
+    conn.execute(
+        "INSERT INTO blob_holder(hash, account_id, received, matches, is_complete) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(hash, account_id) DO UPDATE SET received = ?3, matches = ?4, is_complete = ?5",
+        params![hash, account, (end + 1) as i64, matches, done],
+    )
+    .map_err(internal)?;
+    if done {
+        return Ok(StatusCode::CREATED.into_response());
+    }
+    Ok((StatusCode::ACCEPTED, [("upload-offset", (end + 1).to_string())]).into_response())
 }
 
 fn content_range(h: &HeaderMap) -> Result<(u64, u64, u64), BlobError> {
@@ -193,7 +263,19 @@ pub async fn head_blob(
     let Some(mut r) = row(&conn, &hash)? else { return Ok(StatusCode::NOT_FOUND.into_response()) };
     recover_complete(&conn, &hash, &dest, &mut r)?;
     if !can_read(&conn, &me.account_id, &hash, &r.uploader)? {
-        return Ok(StatusCode::NOT_FOUND.into_response());
+        // part way through sending the bytes of someone else's file (`prove`): resume like any upload
+        let sent: Option<i64> = conn
+            .query_row(
+                "SELECT received FROM blob_holder WHERE hash = ?1 AND account_id = ?2 AND NOT is_complete",
+                params![hash, me.account_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(internal)?;
+        return Ok(match sent {
+            Some(n) if r.complete => (StatusCode::PARTIAL_CONTENT, [("upload-offset", n.to_string())]).into_response(),
+            _ => StatusCode::NOT_FOUND.into_response(),
+        });
     }
     if r.complete && dest.is_file() {
         return Ok((StatusCode::OK, [(header::CONTENT_LENGTH, r.size.to_string())]).into_response());
@@ -228,9 +310,12 @@ pub async fn put_blob(
     if let Some(r) = &current {
         // content-addressed: a finished blob is the same bytes whoever sends them again (a
         // device re-uploading its files after a restore, SYNC.md §7.3), so that's a success.
-        // Refusing it made the device retry forever. Existence isn't news: HEAD says 403.
+        // Refusing it made the device retry forever. Another account proves it has the bytes.
         if r.complete {
-            return Ok(StatusCode::OK.into_response());
+            if r.uploader == me.account_id || holds(&conn, &hash, &me.account_id)? {
+                return Ok(StatusCode::OK.into_response());
+            }
+            return prove(&conn, &dest, &hash, &me.account_id, r.size, (start, end, total), &bytes);
         }
         if r.uploader != me.account_id {
             return Err(BlobError(StatusCode::FORBIDDEN, "forbidden"));

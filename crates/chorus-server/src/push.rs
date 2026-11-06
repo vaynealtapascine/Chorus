@@ -275,7 +275,7 @@ pub async fn check_endpoint(
         _ => return Err("push endpoints must be https".into()),
     }
     if targets == WebhookTargets::Any {
-        return Ok(crate::webhooks::Target { url: u, pin: None });
+        return Ok(crate::webhooks::Target { url: u, pin: None, guard: None });
     }
     let same =
         |n: &reqwest::Url| n.host_str() == u.host_str() && n.port_or_known_default() == u.port_or_known_default();

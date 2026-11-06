@@ -435,8 +435,11 @@ the apps' parser, mentioning your own members and the server's emoji), `plain` o
 ```
 HEAD /blobs/{sha256}                  200 complete | 206 + Upload-Offset partial | 404 missing or unreadable
 PUT  /blobs/{sha256}                  Content-Range chunks (≤ 4 MB each); verifies hash on completion;
-                                      200 if already complete (from anyone); 403 into another account's
-                                      unfinished upload
+                                      200 if already complete and the caller uploaded or holds it;
+                                      another account's finished blob answers like a new upload (202
+                                      per chunk, 201, or 400 hash_mismatch at the end), comparing the
+                                      bytes, and the caller then holds it (D-119); 403 into another
+                                      account's unfinished upload
 GET  /blobs/{sha256}                  supports Range; Cache-Control immutable
 GET  /blobs/{sha256}?thumb=480        server-side fallback thumbnail if client didn't upload one
 ```

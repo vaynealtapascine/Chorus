@@ -7,16 +7,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::api_data::{DataError, Principal};
+use crate::api_data::{DataError, Principal, need, parse};
 use crate::posts;
-
-fn need(p: &Principal, scope: &'static str) -> Result<(), DataError> {
-    if p.allows(scope) { Ok(()) } else { Err(DataError::Scope(scope)) }
-}
-
-fn parse(s: Option<String>) -> Value {
-    s.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(Value::Null)
-}
 
 /// `GET /profiles/{member_id}` (`read:members`): the member as `/members/{id}` has it (groups,
 /// fields), its relationships, post counts, and — with `read:posts` too — its highlighted posts.

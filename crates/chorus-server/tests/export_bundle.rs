@@ -83,10 +83,10 @@ fn seed() -> Seeded {
     let avatar = vec![7u8; 5000];
     let bobs = b"bob's secret file".to_vec();
     let damaged_bytes = b"not what the hash says".to_vec();
-    let photo_h = blob(&conn, &photo, "image/jpeg", &devices[0], None);
-    let avatar_h = blob(&conn, &avatar, "image/png", &devices[0], None);
-    let bob_h = blob(&conn, &bobs, "text/plain", &devices[1], None);
-    let damaged_h = blob(&conn, &damaged_bytes, "text/plain", &devices[0], Some("ab".repeat(32)));
+    let photo_h = blob(&conn, &photo, "image/jpeg", ALICE, None);
+    let avatar_h = blob(&conn, &avatar, "image/png", ALICE, None);
+    let bob_h = blob(&conn, &bobs, "text/plain", BOB, None);
+    let damaged_h = blob(&conn, &damaged_bytes, "text/plain", ALICE, Some("ab".repeat(32)));
     let missing_h = "cd".repeat(32);
     op(&conn, ALICE, &devices[0], "member.create", serde_json::json!({"name": "Kai", "avatar_blob": avatar_h}));
     op(

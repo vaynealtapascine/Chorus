@@ -69,10 +69,6 @@ fn pem_der(pem: &str) -> anyhow::Result<Vec<u8>> {
     Ok(base64::engine::general_purpose::STANDARD.decode(body)?)
 }
 
-fn b64url(b: &[u8]) -> String {
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b)
-}
-
 /// What sending gave.
 pub enum Outcome {
     Ok,
@@ -101,8 +97,8 @@ impl Fcm {
 
     /// The signed assertion Google's token endpoint trades for an access token.
     fn assertion(&self, now_s: i64) -> anyhow::Result<String> {
-        let header = b64url(br#"{"alg":"RS256","typ":"JWT"}"#);
-        let claims = b64url(
+        let header = crate::push::b64url(br#"{"alg":"RS256","typ":"JWT"}"#);
+        let claims = crate::push::b64url(
             serde_json::json!({
                 "iss": self.email, "scope": SCOPE, "aud": self.token_uri, "iat": now_s, "exp": now_s + 3600,
             })
@@ -114,7 +110,7 @@ impl Fcm {
         self.key
             .sign(&RSA_PKCS1_SHA256, &SystemRandom::new(), signed.as_bytes(), &mut sig)
             .map_err(|_| anyhow::anyhow!("signing failed"))?;
-        Ok(format!("{signed}.{}", b64url(&sig)))
+        Ok(format!("{signed}.{}", crate::push::b64url(&sig)))
     }
 
     async fn access_token(&self, http: &reqwest::Client) -> anyhow::Result<String> {
@@ -154,7 +150,7 @@ impl Fcm {
         };
         let message = serde_json::json!({"message": {
             "token": token,
-            "data": {"c": b64url(record)},
+            "data": {"c": crate::push::b64url(record)},
             // delivered now even to a dozing phone; kept a day if it's off
             "android": {"priority": "high", "ttl": "86400s"},
         }});

@@ -165,16 +165,24 @@ async fn resume_range_and_stranger_denied() {
     assert_eq!(bob_put("bytes 6-12/13", b" chorus").send().await.unwrap().status(), 403, "not bob's upload");
     let r = put("bytes 6-12/13", b" chorus").send().await.unwrap();
     assert_eq!(r.status(), 201);
-    // the same bytes again from anyone (a device re-sending its files after a restore) are done,
-    // not refused: a refusal kept that device retrying forever
+    // Someone else's file answers like a new upload, so a PUT says nothing about what the server
+    // has: wrong bytes are taken chunk by chunk and refused at the end...
+    assert_eq!(bob_put("bytes 0-5/13", b"HELLO,").send().await.unwrap().status(), 202);
+    let r = client.head(&url).bearer_auth("bob-token").send().await.unwrap();
+    assert_eq!((r.status().as_u16(), r.headers()["upload-offset"].to_str().unwrap()), (206, "6"), "resumable");
+    assert_eq!(bob_put("bytes 6-12/13", b" chorus").send().await.unwrap().status(), 400, "hash_mismatch");
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 404);
+    // ...and the same bytes (a device re-sending its files after a restore) are done, not refused
+    // (a refusal kept that device retrying forever); Bob now holds the file and may read it
+    assert_eq!(bob_put("bytes 0-12/13", b"hello, chorus").send().await.unwrap().status(), 201);
     assert_eq!(bob_put("bytes 0-12/13", b"hello, chorus").send().await.unwrap().status(), 200);
+    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 200);
     assert_eq!(client.head(&url).bearer_auth("alice-token").send().await.unwrap().status(), 200);
     let r = client.get(&url).bearer_auth("alice-token").header("range", "bytes=7-12").send().await.unwrap();
     assert_eq!(r.status(), 206);
     assert_eq!(r.headers()["content-range"], "bytes 7-12/13");
     assert!(r.headers()["cache-control"].to_str().unwrap().contains("immutable"));
     assert_eq!(r.bytes().await.unwrap(), "chorus");
-    assert_eq!(client.get(&url).bearer_auth("bob-token").send().await.unwrap().status(), 404);
 }
 
 #[tokio::test]

@@ -65,13 +65,25 @@ fn decode_cursor(query: &MessageQuery) -> Result<Option<Cursor>, DataError> {
 }
 
 /// Ids of the rows of `table` (`member`, `channel`) a `from:`/`in:` value names: its id, or its
-/// name as core folds it (`chorus_core::search::names`).
-fn named(conn: &Connection, table: &str, filters: &[String]) -> Result<Vec<String>, DataError> {
+/// name as core folds it (`chorus_core::search::names`). Channels only in spaces `account` reads
+/// (the hits are limited to those anyway). Members stay server-wide: an account that left a
+/// space still wrote its old messages, and a hit only ever shows a message the reader can see.
+fn named(conn: &Connection, account: &str, table: &str, filters: &[String]) -> Result<Vec<String>, DataError> {
     if filters.is_empty() {
         return Ok(Vec::new());
     }
-    let mut st = conn.prepare_cached(&format!("SELECT id, COALESCE(name, '') FROM {table}"))?;
-    let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let row = |r: &rusqlite::Row<'_>| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?));
+    let mut st;
+    let rows = if table == "channel" {
+        st = conn.prepare_cached(
+            "SELECT id, COALESCE(name, '') FROM channel c WHERE EXISTS
+             (SELECT 1 FROM scope_access sa WHERE sa.account_id = ?1 AND sa.scope = 'space:' || c.space_id)",
+        )?;
+        st.query_map([account], row)?
+    } else {
+        st = conn.prepare_cached(&format!("SELECT id, COALESCE(name, '') FROM {table}"))?;
+        st.query_map([], row)?
+    };
     let mut ids = Vec::new();
     for row in rows {
         let (id, name) = row?;
@@ -119,8 +131,8 @@ pub fn messages(conn: &Connection, principal: &Principal, query: &MessageQuery) 
     if unresolved(&parsed.before) || unresolved(&parsed.after) {
         return Err(DataError::Bad("search: not a date".into()));
     }
-    let authors = named(conn, "member", &parsed.from)?;
-    let channels = named(conn, "channel", &parsed.channels)?;
+    let authors = named(conn, &principal.account_id, "member", &parsed.from)?;
+    let channels = named(conn, &principal.account_id, "channel", &parsed.channels)?;
     let cursor = decode_cursor(query)?;
     let limit = query.limit.unwrap_or(100).clamp(1, 100);
     let mut view = crate::search_view::CurrentView::new(conn, principal)?;

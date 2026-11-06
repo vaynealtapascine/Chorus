@@ -369,10 +369,7 @@ async fn session(State(s): State<AppState>, Json(b): Json<SessionIn>) -> Result<
 }
 
 fn bearer(headers: &axum::http::HeaderMap) -> Result<&str, ApiError> {
-    headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
+    crate::auth::bearer(headers)
         .ok_or_else(|| ApiError(StatusCode::UNAUTHORIZED, "unauthenticated", "missing session".into()))
 }
 

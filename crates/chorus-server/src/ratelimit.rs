@@ -25,6 +25,10 @@ const AUTH_BURST: f64 = 20.0;
 const AUTH_PER_SECOND: f64 = 1.0;
 /// Forget buckets past this many (the full ones: they carry no state worth keeping).
 const MAX_BUCKETS: usize = 10_000;
+/// Credentialed requests from one address also share a bucket this many devices large (a
+/// household behind one connection): a made-up token is a fresh bucket every time, so without it
+/// anyone could skip the limit by sending a new one with each request.
+const DEVICES_PER_ADDRESS: f64 = 4.0;
 
 /// A token bucket: `burst` requests at once, refilled at `per_second`. Also the sync socket's
 /// frame budget (app.rs, OPS.md §9).
@@ -69,6 +73,14 @@ impl Limiter {
         let mut map = self.buckets.lock().unwrap_or_else(|e| e.into_inner());
         if map.len() >= MAX_BUCKETS {
             map.retain(|_, b| b.tokens + now.duration_since(b.at).as_secs_f64() * per_second < burst);
+            // Still full (many made-up tokens, each a little drained): drop the credentials'
+            // buckets, which the address bucket backs; else this scan would run on every request.
+            if map.len() >= MAX_BUCKETS / 2 {
+                map.retain(|k, _| !k.starts_with("cred:"));
+            }
+            if map.len() >= MAX_BUCKETS / 2 {
+                map.clear();
+            }
         }
         map.entry(key).or_insert(Bucket::full(burst, now)).take(burst, per_second, now)
     }
@@ -97,6 +109,10 @@ impl Limiter {
         let key = match credential(headers, query) {
             // hashed, so the table doesn't hold secrets
             Some(c) => {
+                if known {
+                    let share = DEVICES_PER_ADDRESS;
+                    self.take(format!("via:{addr}"), self.burst * share, self.per_second * share, now)?;
+                }
                 let mut h = std::collections::hash_map::DefaultHasher::new();
                 c.hash(&mut h);
                 format!("cred:{:016x}", h.finish())
@@ -109,9 +125,7 @@ impl Limiter {
 }
 
 fn credential<'a>(headers: &'a HeaderMap, query: Option<&'a str>) -> Option<&'a str> {
-    if let Some(t) =
-        headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer "))
-    {
+    if let Some(t) = crate::auth::bearer(headers) {
         return Some(t);
     }
     query?.split('&').find_map(|kv| kv.strip_prefix("token=")).filter(|t| !t.is_empty())
@@ -202,5 +216,33 @@ mod tests {
         for _ in 0..5 {
             assert!(off.check("/me", &Method::GET, &h, None, peer).is_ok());
         }
+    }
+
+    #[test]
+    fn a_new_made_up_token_each_time_still_pays_its_address() {
+        let l = Limiter::new(2, 1.0);
+        let peer = Some("192.0.2.1:9".parse().unwrap());
+        let with = |t: usize| {
+            let mut h = HeaderMap::new();
+            h.insert(header::AUTHORIZATION, HeaderValue::from_str(&format!("Bearer fake-{t}")).unwrap());
+            h
+        };
+        // four devices' worth from one address, whatever the tokens
+        let passed = (0..20).filter(|t| l.check("/me", &Method::GET, &with(*t), None, peer).is_ok()).count();
+        assert_eq!(passed, 8);
+        let other = Some("192.0.2.2:9".parse().unwrap());
+        assert!(l.check("/me", &Method::GET, &with(99), None, other).is_ok(), "another address has its own");
+    }
+
+    #[test]
+    fn a_full_table_forgets_credential_buckets_first() {
+        let l = Limiter::new(2, 1.0);
+        let t0 = Instant::now();
+        for i in 0..MAX_BUCKETS {
+            let _ = l.take(format!("cred:{i}"), 2.0, 1.0, t0);
+        }
+        let _ = l.take("addr:a".into(), 2.0, 1.0, t0);
+        let map = l.buckets.lock().unwrap();
+        assert!(map.len() < 10 && map.contains_key("addr:a"), "{}", map.len());
     }
 }

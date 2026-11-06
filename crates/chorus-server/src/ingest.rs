@@ -110,6 +110,17 @@ pub fn accept(
     if !preserved && !crate::visibility::related_write_allowed(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", "message is private to another account".into(), false), None));
     }
+    // another scope's entity, or a payload naming another account's member, field or file
+    if !preserved && let Some(why) = foreign_scope(conn, &o)? {
+        return Ok((AckResult::err(o.id, "forbidden", why, false), None));
+    }
+    if !preserved && let Some(why) = foreign_reference(conn, &author, &o)? {
+        return Ok((AckResult::err(o.id, "forbidden", why, false), None));
+    }
+    // a file someone else stored: the device holds the op until it has uploaded the bytes itself
+    if !preserved && let Some(why) = unproven_blob(conn, &author, &o)? {
+        return Ok((AckResult::later(o.id, "blob_pending", why, 30_000), None));
+    }
     // speaking as someone else's member (impersonation in a shared space)
     if !preserved && let Some(why) = foreign_item(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
@@ -296,6 +307,131 @@ fn foreign_item(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Optio
         .query_row([id], |r| r.get(0))
         .optional()?;
     Ok(owner.flatten().filter(|a| a != author).map(|_| format!("that {table} belongs to another account")))
+}
+
+/// The row an op writes into, for the rule that an entity lives in the scope it was made in.
+/// Element sets keyed by the entity id belong to their parent row (a bucket's assignments are
+/// the bucket's); sets keyed by the payload alone (reactions, highlights) have no such row.
+fn home_table(spec: &op::KindSpec) -> Option<&'static str> {
+    use op::Action::*;
+    match spec.action {
+        Create | Set | Delete | Restore | Archive | Unarchive | Append | Revise => Some(spec.table),
+        SetAdd | SetRemove => match spec.table {
+            "group_membership" => Some("member_group"),
+            "member_list_item" => Some("member_list"),
+            "bucket_assignment" => Some("bucket"),
+            "space_member" => Some("space"),
+            _ => None,
+        },
+        // a follower's prefs are the one op on a follow kept in the follower's scope (D-066)
+        Special => match spec.kind {
+            "follow.request" | "follow.accept" | "follow.set_ceiling" | "follow.end" => Some("follow"),
+            "message.pin" | "message.unpin" => Some("message"),
+            "space.set_role" | "space.set_roles" => Some("space"),
+            "channel.set_permission" => Some("channel"),
+            _ => None,
+        },
+        Front | NamedFront | Admin => None, // fronts.rs: only in the owning account's scope
+    }
+}
+
+/// The catalogue kinds that write `table`'s rows (see [`home_table`]), as an SQL list.
+fn kinds_writing(table: &str) -> &'static str {
+    static LISTS: std::sync::OnceLock<std::collections::HashMap<&'static str, String>> = std::sync::OnceLock::new();
+    let lists = LISTS.get_or_init(|| {
+        let mut m: std::collections::HashMap<&'static str, Vec<String>> = Default::default();
+        for s in op::CATALOGUE {
+            if let Some(t) = home_table(s) {
+                m.entry(t).or_default().push(format!("'{}'", s.kind));
+            }
+        }
+        m.into_iter().map(|(t, ks)| (t, ks.join(", "))).collect()
+    });
+    lists.get(table).map(String::as_str).unwrap_or("''")
+}
+
+/// An entity lives in the scope it was made in (SYNC.md §3). Projection folds every op on an
+/// entity id into its row, so an op on it from any other scope — one the author can write,
+/// such as their own account — would change someone else's member, bucket, feed or follow.
+/// An entity the server hasn't seen yet passes (made offline, still on its way).
+fn foreign_scope(conn: &Connection, o: &Op) -> anyhow::Result<Option<String>> {
+    let Some(spec) = op::spec(&o.kind) else { return Ok(None) };
+    // an account's and a system's row is keyed by the account id itself
+    if matches!(o.kind.as_str(), "account.set" | "system.set") {
+        return Ok((o.scope.strip_prefix("account:") != o.entity())
+            .then(|| format!("{} belongs to another account", spec.table)));
+    }
+    let (Some(table), Some(id)) = (home_table(spec), o.entity()) else { return Ok(None) };
+    let other: Option<String> = conn
+        .prepare_cached(&format!(
+            "SELECT scope FROM op WHERE entity_id = ?1 AND scope <> ?2 AND status = 'applied'
+             AND kind IN ({}) LIMIT 1",
+            kinds_writing(table)
+        ))?
+        .query_row(params![id, o.scope], |r| r.get(0))
+        .optional()?;
+    let whose = if o.scope.starts_with("space:") { "is in another space" } else { "belongs to another account" };
+    Ok(other.map(|_| format!("that {table} {whose}")))
+}
+
+/// Owner account of a row, if the server has it.
+fn owner_of(conn: &Connection, table: &str, id: &str) -> anyhow::Result<Option<String>> {
+    Ok(conn
+        .prepare_cached(&format!("SELECT account_id FROM {table} WHERE id = ?1"))?
+        .query_row([id], |r| r.get::<_, Option<String>>(0))
+        .optional()?
+        .flatten())
+}
+
+/// Payload ids that must be the author's own: the member and field of a field value, the
+/// profile a highlight goes on, a member put into a group, and the attachments a message or post
+/// carries (else anyone could show another account's private file under their own public post).
+/// Ids the server doesn't know yet pass, as in [`foreign_speaker`].
+fn foreign_reference(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
+    let p = |k: &str| o.payload.get(k).and_then(serde_json::Value::as_str);
+    let mut named: Vec<(&str, &str)> = Vec::new();
+    match o.kind.as_str() {
+        "field.set_value" => {
+            named.extend(p("member_id").map(|m| ("member", m)));
+            named.extend(p("field_id").map(|f| ("field_def", f)));
+        }
+        "highlight.add" | "highlight.remove" | "highlight.reorder" => {
+            named.extend(p("profile_member_id").map(|m| ("member", m)));
+        }
+        // taking another account's member out of one's own group stays possible
+        "group.add_member" => named.extend(p("member_id").map(|m| ("member", m))),
+        "message.send" | "message.edit" | "message.forward" | "post.create" | "post.edit" => {
+            for a in o.payload.get("attachments").and_then(serde_json::Value::as_array).into_iter().flatten() {
+                named.extend(a.as_str().map(|a| ("attachment", a)));
+            }
+        }
+        _ => {}
+    }
+    for (table, id) in named {
+        if owner_of(conn, table, id)?.is_some_and(|a| a != author) {
+            let what = if table == "field_def" { "field" } else { table };
+            return Ok(Some(format!("that {what} belongs to another account")));
+        }
+    }
+    Ok(None)
+}
+
+/// Payload keys that name a stored file (an export packs the files its ops name by these too).
+pub const BLOB_KEYS: &[&str] = &["blob_hash", "thumb_blob_hash", "avatar_blob", "banner_blob"];
+
+/// A file is named by its hash, and naming one is what lets an account read it back
+/// (`blobs::can_read`: one's own attachments, avatars and banners). So an op may name a stored file
+/// only if its author uploaded it, sent its bytes since (`blob_holder`), or can read it now (a
+/// forward copies a readable file). A file the server doesn't have yet passes: its bytes are
+/// still coming, and whoever sends them is its uploader.
+fn unproven_blob(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
+    for key in BLOB_KEYS {
+        let Some(hash) = o.payload.get(*key).and_then(serde_json::Value::as_str) else { continue };
+        if !crate::blobs::may_name(conn, author, hash)? {
+            return Ok(Some(format!("{key} names a file this account hasn't uploaded")));
+        }
+    }
+    Ok(None)
 }
 
 /// Messages, reactions and posts speak as members (`authors`, each segment's `authors`, a

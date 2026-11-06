@@ -4,15 +4,7 @@
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
-use crate::api_data::{DataError, Principal};
-
-fn need(p: &Principal, scope: &'static str) -> Result<(), DataError> {
-    if p.allows(scope) { Ok(()) } else { Err(DataError::Scope(scope)) }
-}
-
-fn parse(s: Option<String>) -> Value {
-    s.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(Value::Null)
-}
+use crate::api_data::{DataError, Principal, need, parse};
 
 /// `GET /me`: the account, how the caller is signed in, and (for devices) the account's devices.
 pub fn me(conn: &Connection, p: &Principal) -> Result<Value, DataError> {

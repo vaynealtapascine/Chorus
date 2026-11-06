@@ -272,16 +272,12 @@ pub fn finish(conn: &Connection, id: &str, outcome: Result<(String, u64), String
 // ─── building the bundle ─────────────────────────────────────────────────────
 
 /// Payload keys that name a blob (attachments, avatars, banners, custom emoji).
-const BLOB_KEYS: &[&str] = &["blob_hash", "thumb_blob_hash", "avatar_blob", "banner_blob"];
+const BLOB_KEYS: &[&str] = crate::ingest::BLOB_KEYS;
 
 struct BlobInfo {
     size: u64,
     mime: String,
     filenames: BTreeSet<String>,
-}
-
-fn valid_hash(h: &str) -> bool {
-    h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
 /// Every blob the account's own applied ops point at, with the names it was sent under.
@@ -293,7 +289,7 @@ fn own_blobs(conn: &Connection, account: &str) -> rusqlite::Result<BTreeMap<Stri
     for payload in rows {
         let Ok(v) = serde_json::from_str::<Value>(&payload?) else { continue };
         for key in BLOB_KEYS {
-            if let Some(h) = v.get(*key).and_then(Value::as_str).filter(|h| valid_hash(h)) {
+            if let Some(h) = v.get(*key).and_then(Value::as_str).filter(|h| crate::blobs::valid_hash(h)) {
                 let names = out.entry(h.to_string()).or_default();
                 if *key == "blob_hash"
                     && let Some(name) = v.get("filename").and_then(Value::as_str).filter(|n| !n.is_empty())
@@ -338,10 +334,6 @@ impl Write for Hashing<'_> {
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
 fn ymd(unix_ms: i64) -> String {
     let (_, date) = crate::zip::dos_time(unix_ms);
     format!("{:04}{:02}{:02}", (date >> 9) + 1980, (date >> 5) & 0xF, date & 0x1F)
@@ -378,6 +370,12 @@ pub fn build(
     let mut blobs: BTreeMap<String, BlobInfo> = BTreeMap::new();
     let mut missing: Vec<String> = Vec::new();
     for (hash, filenames) in names {
+        // naming a hash in an op isn't having the file: ops from before ingest checked that
+        // (`unproven_blob`) could name another account's private one
+        if !crate::blobs::may_name(reader, account, &hash)? {
+            missing.push(hash);
+            continue;
+        }
         let row: Option<(i64, String, bool)> = reader
             .query_row("SELECT size, mime, is_complete FROM blob WHERE hash = ?1", [&hash], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?))
@@ -435,7 +433,7 @@ pub fn build(
             sha = h.sha;
             r.map(|_| ()).map_err(std::io::Error::other)
         })?;
-        let ops_sha = hex(&sha.finalize());
+        let ops_sha = crate::hex(&sha.finalize());
         p.done = op_count;
         p.phase = "csv";
         p.bytes = z.written();
@@ -457,7 +455,7 @@ pub fn build(
             let f = fs::File::open(blob_path(cfg, hash))?;
             let mut sha = Sha256::new();
             z.add(&format!("blobs/{hash}"), f, info.size, |chunk| sha.update(chunk))?;
-            if hex(&sha.finalize()) != *hash {
+            if crate::hex(&sha.finalize()) != *hash {
                 damaged.push(hash.clone());
             }
             p.done += 1;
@@ -504,5 +502,5 @@ pub fn build(
 }
 
 fn blob_path(cfg: &Config, hash: &str) -> PathBuf {
-    cfg.blob_dir().join(&hash[..2]).join(&hash[2..4]).join(hash)
+    crate::blobs::sharded(&cfg.blob_dir(), hash)
 }

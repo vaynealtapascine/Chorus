@@ -55,9 +55,29 @@ pub fn routes() -> Router<AppState> {
     Router::new().route("/home", get(status)).route("/home/setup", post(setup)).route("/home/settings", put(settings))
 }
 
+/// `localhost`, `127.0.0.1` or `[::1]`, with or without a port (a `Host` value or an origin's).
+fn loopback_name(authority: &str) -> bool {
+    let host = match authority.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or_default(),
+        None => authority.split(':').next().unwrap_or_default(),
+    };
+    host.eq_ignore_ascii_case("localhost") || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+}
+
 /// From this PC itself: a loopback peer, and nothing forwarded (a Home install has no proxy).
+/// A web page in this PC's browser connects from loopback too, so the request must also name
+/// this PC: by `Host` (a page whose own name resolves here, DNS rebinding, sends its name) and,
+/// from a page, by `Origin` (any other site's page sends its own).
 fn local_only(peer: &SocketAddr, headers: &HeaderMap) -> Result<(), ApiError> {
-    if peer.ip().is_loopback() && !headers.contains_key("x-forwarded-for") && !headers.contains_key("forwarded") {
+    let header = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
+    let named_here = header("host").is_some_and(loopback_name)
+        && header("origin").is_none_or(|o| o.split_once("://").is_some_and(|(_, a)| loopback_name(a)))
+        && header("sec-fetch-site").is_none_or(|s| s != "cross-site");
+    if peer.ip().is_loopback()
+        && named_here
+        && !headers.contains_key("x-forwarded-for")
+        && !headers.contains_key("forwarded")
+    {
         return Ok(());
     }
     Err(ApiError(
@@ -146,10 +166,7 @@ async fn settings(
     local_only(&peer, &headers)?;
     {
         let conn = s.db();
-        let token = headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
+        let token = crate::auth::bearer(&headers)
             .ok_or_else(|| ApiError(StatusCode::UNAUTHORIZED, "unauthorized", "sign in first".into()))?;
         let who =
             crate::auth::authenticate(&conn, token, crate::now_ms(), s.cfg.limits.session_days as i64 * 86_400_000)?;

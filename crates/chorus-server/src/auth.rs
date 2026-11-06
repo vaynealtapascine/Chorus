@@ -315,6 +315,11 @@ pub struct Authed {
     pub device_id: String,
 }
 
+/// The token of an `Authorization: Bearer …` header.
+pub(crate) fn bearer(headers: &axum::http::HeaderMap) -> Option<&str> {
+    headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?.strip_prefix("Bearer ")
+}
+
 pub fn authenticate(conn: &Connection, token: &str, now: i64, ttl_ms: i64) -> Result<Authed, AuthError> {
     let row: Option<(String, String, i64, Option<i64>)> = conn
         .query_row(
@@ -331,10 +336,17 @@ pub fn authenticate(conn: &Connection, token: &str, now: i64, ttl_ms: i64) -> Re
     if expires_at < now {
         return Err(AuthError::BadSession);
     }
-    conn.execute("UPDATE session SET expires_at = ?2 WHERE token_hash = ?1", params![hash(token), now + ttl_ms])?;
-    conn.execute("UPDATE device SET last_seen_at = ?2 WHERE id = ?1", params![device_id, now])?;
+    // two writes on every request (most of them reads) only to move these on by a few seconds:
+    // once a minute is as fresh as "last seen" and a sliding expiry need to be
+    if expires_at - ttl_ms <= now - TOUCH_EVERY_MS {
+        conn.execute("UPDATE session SET expires_at = ?2 WHERE token_hash = ?1", params![hash(token), now + ttl_ms])?;
+        conn.execute("UPDATE device SET last_seen_at = ?2 WHERE id = ?1", params![device_id, now])?;
+    }
     Ok(Authed { account_id, device_id })
 }
+
+/// How often a session's use moves its expiry and its device's `last_seen_at` on.
+const TOUCH_EVERY_MS: i64 = 60_000;
 
 pub fn challenge(conn: &Connection, device_id: &str, now: i64) -> Result<String, AuthError> {
     let ok = conn

@@ -40,6 +40,16 @@ async fn a_home_install_is_set_up_and_configured_from_this_pc() {
     // anything that came through a proxy isn't "this PC"
     let proxied = http.get(format!("{base}/home")).header("x-forwarded-for", "192.168.1.9").send().await.unwrap();
     assert_eq!(proxied.status(), 403);
+    // nor is another site's page in this PC's browser: by its own name pointed here (DNS
+    // rebinding), or calling across sites
+    let rebound = http.post(format!("{base}/home/setup")).header("host", "evil.example:5250").send().await.unwrap();
+    assert_eq!(rebound.status(), 403);
+    let cross = http.get(format!("{base}/home")).header("origin", "https://evil.example").send().await.unwrap();
+    assert_eq!(cross.status(), 403);
+    let fetched = http.get(format!("{base}/home")).header("sec-fetch-site", "cross-site").send().await.unwrap();
+    assert_eq!(fetched.status(), 403);
+    let ours = http.get(format!("{base}/home")).header("origin", "http://localhost:5250").send().await.unwrap();
+    assert_eq!(ours.status(), 200, "the setup page itself");
 
     // first run: a one-use invite this browser redeems with its own key
     let setup: Value = http.post(format!("{base}/home/setup")).send().await.unwrap().json().await.unwrap();

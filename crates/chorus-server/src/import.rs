@@ -115,14 +115,6 @@ struct Bundle {
     not_in_bundle: Vec<String>,
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn is_hash(h: &str) -> bool {
-    h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
 /// Read and check the bundle; `problems` collects everything wrong (all of it, not the first).
 fn read_bundle(zip: &mut ZipReader<fs::File>, problems: &mut Vec<String>) -> anyhow::Result<Option<Bundle>> {
     let Some(entry) = zip.entry("manifest.json").cloned() else {
@@ -175,7 +167,7 @@ fn read_bundle(zip: &mut ZipReader<fs::File>, problems: &mut Vec<String>) -> any
     if bad_lines > 0 {
         problems.push(format!("{bad_lines} lines of {ops_name} aren't ops"));
     }
-    if manifest["ops"]["sha256"].as_str() != Some(hex(&sha.finalize()).as_str()) {
+    if manifest["ops"]["sha256"].as_str() != Some(crate::hex(&sha.finalize()).as_str()) {
         problems.push(format!("{ops_name} doesn't match the manifest's hash: it was changed or damaged"));
     }
     if manifest["ops"]["count"].as_u64() != Some(ops.len() as u64) {
@@ -198,7 +190,7 @@ fn read_bundle(zip: &mut ZipReader<fs::File>, problems: &mut Vec<String>) -> any
     for b in manifest["blobs"].as_array().into_iter().flatten() {
         let hash = b["hash"].as_str().unwrap_or_default().to_string();
         let name = b["file"].as_str().map_or_else(|| format!("blobs/{hash}"), str::to_string);
-        if !is_hash(&hash) {
+        if !crate::blobs::valid_hash(&hash) {
             problems.push(format!("the manifest names a file {hash:?} that isn't a SHA-256"));
             continue;
         }
@@ -215,7 +207,7 @@ fn read_bundle(zip: &mut ZipReader<fs::File>, problems: &mut Vec<String>) -> any
             sha.update(c);
             Ok(())
         })?;
-        if hex(&sha.finalize()) != hash {
+        if crate::hex(&sha.finalize()) != hash {
             problems.push(format!("{name}: its bytes don't match its hash (damaged)"));
             continue;
         }
@@ -230,7 +222,7 @@ fn read_bundle(zip: &mut ZipReader<fs::File>, problems: &mut Vec<String>) -> any
 }
 
 fn blob_path(cfg: &Config, hash: &str) -> std::path::PathBuf {
-    cfg.blob_dir().join(&hash[..2]).join(&hash[2..4]).join(hash)
+    crate::blobs::sharded(&cfg.blob_dir(), hash)
 }
 
 /// Import the account in `zip` into the database behind `conn` (the server stopped: `main.rs`
@@ -341,7 +333,7 @@ pub fn import_account(
         })?;
         out.sync_all()?;
         drop(out);
-        anyhow::ensure!(hex(&sha.finalize()) == *hash, "blobs/{hash} changed while importing");
+        anyhow::ensure!(crate::hex(&sha.finalize()) == *hash, "blobs/{hash} changed while importing");
         fs::rename(&part, &dest)?;
     }
 

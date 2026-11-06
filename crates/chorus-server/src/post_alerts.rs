@@ -255,24 +255,37 @@ pub fn on_post(conn: &Connection, post_id: &str, now: i64) -> anyhow::Result<()>
         None => title.filter(|t| entry && !t.trim().is_empty()).unwrap_or(text),
     };
     let body: String = body.chars().take(280).collect();
-    let mut sender = json!({"name": who});
-    if let Some(first) = authors.first()
-        && let Some((color, avatar)) = conn
-            .query_row("SELECT color, avatar_blob FROM member WHERE id = ?1", [first], |r| {
-                Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?))
-            })
-            .optional()?
-    {
-        sender["color"] = json!(color);
-        sender["avatar_blob"] = json!(avatar);
-    }
+    let mut followed = conn.prepare_cached(
+        "SELECT 1 FROM post_alert WHERE subscriber_account_id = ?1 AND owner_account_id = ?2 AND member_id = ?3
+         AND status = 'active'",
+    )?;
     for subscriber in subscribers {
+        // the face is the first author this subscriber asked to hear about (the title names all)
+        let mut face = None;
+        for m in &authors {
+            if followed.exists(params![subscriber, account, m])? {
+                face = Some(m);
+                break;
+            }
+        }
+        let face = face.or(authors.first());
+        let mut sender = json!({"name": who});
+        if let Some(m) = face
+            && let Some((color, avatar)) = conn
+                .query_row("SELECT color, avatar_blob FROM member WHERE id = ?1", [m], |r| {
+                    Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?))
+                })
+                .optional()?
+        {
+            sender["color"] = json!(color);
+            sender["avatar_blob"] = json!(avatar);
+        }
         notify(
             conn,
             &subscriber,
             "post",
             json!({"t": "post", "kind": "post", "title": headline, "text": body, "post_id": post_id,
-                   "account_id": account, "member_id": authors.first(), "sender": sender}),
+                   "account_id": account, "member_id": face, "sender": sender}),
             now,
         )?;
     }

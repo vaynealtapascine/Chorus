@@ -35,7 +35,12 @@ pub fn closes_at(conn: &Connection, now: i64) -> anyhow::Result<Option<i64>> {
             now
         }
     };
-    Ok(Some(at + WINDOW_MS).filter(|end| now < *end))
+    if now >= at + WINDOW_MS {
+        // closed for good: a server clock set back later must not open it again
+        db::set_meta(conn, "restore_open", "0")?;
+        return Ok(None);
+    }
+    Ok(Some(at + WINDOW_MS))
 }
 
 pub fn open(conn: &Connection, now: i64) -> anyhow::Result<bool> {
@@ -133,7 +138,9 @@ mod tests {
         assert_eq!(closes_at(&c, NOW).unwrap(), Some(NOW + WINDOW_MS));
         assert!(open(&c, NOW + WINDOW_MS - 1).unwrap());
         assert!(!open(&c, NOW + WINDOW_MS).unwrap());
+        assert!(!open(&c, NOW + WINDOW_MS - 1).unwrap(), "a clock set back doesn't open it again");
         // a window opened before restores were timed starts its clock at the first look
+        db::set_meta(&c, "restore_open", "1").unwrap();
         db::set_meta(&c, "restore_at", "x").unwrap();
         assert_eq!(closes_at(&c, NOW + WINDOW_MS).unwrap(), Some(NOW + 2 * WINDOW_MS));
     }

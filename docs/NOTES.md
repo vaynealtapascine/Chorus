@@ -144,6 +144,21 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
   so back it up before editing it on the server.
 - HTTP push/pull sync fallback is specified in SYNC.md but not implemented.
 
+## Security
+
+- Ingest is where ownership is decided (D-119): projection folds every op on an entity id into its
+  row, whatever scope it came from, so a check that only asks "may the author write this scope?"
+  lets anyone change anything whose id they learn. New op kinds: give them a `home_table` in
+  `ingest.rs`, and list payload ids that must be the author's in `foreign_reference`. Every new
+  attack goes in `tests/privacy_audit.rs` as a test that fails while the hole is open.
+- Naming a blob hash grants reading it (`blobs::can_read` trusts one's own attachments and
+  avatars), so ingest checks hashes too (`unproven_blob`) and a re-upload proves the bytes.
+- `scripts/privacy-audit.sql` counts, read-only, the ops D-119 now refuses that were accepted
+  before it (the server was public from 2026-10-31). Run it on a copy of the live database:
+  `sqlite3 -readonly <copy>/chorus.db < scripts/privacy-audit.sql` (no rows = nothing found;
+  on 2026-11-06 it was empty on the seeded demo). Old ops still re-project on a rebuild; a
+  cleanup would be a purge of those op ids.
+
 ## Sync
 
 - Acks carry the full stamp (account, device, received_at); after a restore old-epoch seqs are

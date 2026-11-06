@@ -84,8 +84,9 @@ fn drop_unused_blob(cfg: &Config, conn: &Connection, hash: &str) -> anyhow::Resu
         return Ok(false);
     }
     conn.execute("DELETE FROM blob WHERE hash = ?1", [hash])?;
-    if hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()) {
-        let path = cfg.blob_dir().join(&hash[..2]).join(&hash[2..4]).join(hash);
+    conn.execute("DELETE FROM blob_holder WHERE hash = ?1", [hash])?;
+    if crate::blobs::valid_hash(hash) {
+        let path = crate::blobs::sharded(&cfg.blob_dir(), hash);
         if path.exists() {
             std::fs::remove_file(path)?;
         }
@@ -123,6 +124,7 @@ fn drop_account_rows(conn: &Connection, account: &str) -> anyhow::Result<()> {
         "DELETE FROM scope_access WHERE account_id = ?1 OR scope = 'account:' || ?1
            OR scope IN (SELECT 'space:' || id FROM space WHERE owner_account_id = ?1)"
             .into(),
+        "DELETE FROM blob_holder WHERE account_id = ?1".into(),
         "DELETE FROM device WHERE account_id = ?1".into(),
         "DELETE FROM account WHERE id = ?1".into(),
     ] {

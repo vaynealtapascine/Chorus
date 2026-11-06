@@ -355,3 +355,13 @@ pub fn members(conn: &Connection, p: &Principal) -> Result<Value, DataError> {
     })?;
     Ok(json!({"items": rows.collect::<Result<Vec<_>, _>>()?}))
 }
+
+/// Refuse a caller whose token lacks `scope` (API.md §2.3).
+pub(crate) fn need(p: &Principal, scope: &'static str) -> Result<(), DataError> {
+    if p.allows(scope) { Ok(()) } else { Err(DataError::Scope(scope)) }
+}
+
+/// A nullable JSON column as a value (`null` when absent or not JSON).
+pub(crate) fn parse(s: Option<String>) -> serde_json::Value {
+    s.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(serde_json::Value::Null)
+}

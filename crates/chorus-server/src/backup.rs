@@ -44,11 +44,8 @@ fn digest(path: &Path) -> anyhow::Result<(String, u64)> {
 }
 
 fn blob_path(root: &Path, hash: &str) -> anyhow::Result<PathBuf> {
-    ensure!(
-        hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
-        "invalid blob hash in manifest"
-    );
-    Ok(root.join(&hash[..2]).join(&hash[2..4]).join(hash))
+    ensure!(crate::blobs::valid_hash(hash), "invalid blob hash in manifest");
+    Ok(crate::blobs::sharded(root, hash))
 }
 
 fn local_stamp() -> anyhow::Result<(String, String)> {
