@@ -145,7 +145,7 @@ fun LogPastSwitch(chorus: Chorus, model: Model, initialFront: String, history: N
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.accentSoft).padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Glyph(R.drawable.ic_history, p.accent, 18.dp)
-                Text("Logging the past doesn't change who's fronting now.", color = p.ink, fontSize = 13.sp)
+                Text("Logging the past doesn't change who's fronting now.", color = p.ink, fontSize = 13.sp, lineHeight = 18.sp)
             }
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.surface)) {
                 Box {
@@ -161,8 +161,8 @@ fun LogPastSwitch(chorus: Chorus, model: Model, initialFront: String, history: N
             }
             SectionLabel("Who was there")
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.surface)) {
-                who.forEachIndexed { i, e ->
-                    val s = model.subject(e.subjectType, e.subjectId) ?: return@forEachIndexed
+                who.forEachIndexed { i, e -> androidx.compose.runtime.key(e.subjectType, e.subjectId) {
+                    val s = model.subject(e.subjectType, e.subjectId) ?: return@key
                     val layer = layers.firstOrNull { it.id == e.level }
                     var open by remember(e.subjectId) { mutableStateOf(false) }
                     Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
@@ -185,7 +185,7 @@ fun LogPastSwitch(chorus: Chorus, model: Model, initialFront: String, history: N
                         BarIcon(R.drawable.ic_close, "Remove ${s.name}", p.ink3, 18.dp) { who.removeAt(i) }
                     }
                     Spacer(Modifier.fillMaxWidth().height(1.dp).background(p.line))
-                }
+                } }
                 Row(Modifier.fillMaxWidth().clickable { picking = true }.padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Glyph(R.drawable.ic_plus, p.accent, 20.dp)

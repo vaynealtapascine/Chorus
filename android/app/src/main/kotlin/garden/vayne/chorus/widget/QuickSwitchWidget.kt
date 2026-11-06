@@ -242,7 +242,7 @@ class QuickSwitchWidget : AppWidgetProvider() {
                 PinnedShortcuts.refresh(app, m)
                 // only redraw when something the widget shows changed
                 val key = listOf(m.current, m.members.map { Triple(it.id, it.shownName, it.color to it.glyph) }, m.groups, m.membership, m.switches.size,
-                    m.namedFronts?.resolved, m.namedFronts?.layers)
+                    m.namedFronts?.resolved, m.namedFronts?.layers, m.accountPrefs.frontingDisplay, m.states)
                 if (key != lastKey) {
                     lastKey = key
                     refreshAll(app, m)

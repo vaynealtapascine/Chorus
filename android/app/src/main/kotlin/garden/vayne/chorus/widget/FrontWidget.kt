@@ -99,6 +99,7 @@ class FrontWidget : AppWidgetProvider() {
                 }
             }
             v.setImageViewBitmap(R.id.f_orbit, orbit(ctx, layers.map { it.second }))
+            v.setContentDescription(R.id.f_orbit, layers.joinToString("; ") { (n, faces) -> "$n: " + faces.joinToString(", ") { it.name }.ifEmpty { "no one" } })
             v.setOnClickPendingIntent(R.id.f_switch, open(ctx, false))
             v.setOnClickPendingIntent(R.id.f_handover, open(ctx, true))
             v.setOnClickPendingIntent(R.id.f_root, PendingIntent.getActivity(ctx, 0,
@@ -115,6 +116,7 @@ class FrontWidget : AppWidgetProvider() {
             val faces = inner?.second.orEmpty()
             v.setTextViewText(R.id.f_n1, when (faces.size) { 0 -> "No one"; 1 -> faces[0].name; else -> "${faces[0].name} + ${faces.size - 1}" })
             v.setImageViewBitmap(R.id.f_faces, faces(ctx, faces))
+            v.setContentDescription(R.id.f_faces, faces.joinToString(", ") { it.name })
             v.setOnClickPendingIntent(R.id.f_root, open(ctx, false))
             return v
         }

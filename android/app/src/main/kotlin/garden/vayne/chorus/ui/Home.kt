@@ -155,7 +155,7 @@ private fun rememberFrontNote(chorus: Chorus, model: Model, frontId: String): St
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: () -> Unit = {}, onLayers: (String) -> Unit = {}) {
+fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (String) -> Unit = {}, onLayers: (String) -> Unit = {}) {
     val p = LocalChorusPalette.current
     val accountId = chorus.device?.accountId.orEmpty()
     val named = model.namedFronts
@@ -216,7 +216,7 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: () 
                                 color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
                         }
                         if (!model.isPerson) {
-                            BarIcon(R.drawable.ic_history, "Front history", p.ink, onClick = onHistory)
+                            BarIcon(R.drawable.ic_history, "Front history", p.ink) { onHistory(frontId) }
                             BarIcon(R.drawable.ic_sliders, "Layers and display", p.ink, onClick = { onLayers(frontId) })
                         }
                     }
@@ -259,6 +259,18 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: () 
                 }
             }
             error?.let { item { Text(it, color = p.danger, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) } }
+            // an unconfigured account's review cards (F3.6) are answered on Front history
+            val reviews = if (named == null) model.reviews.count { it.id !in model.resolvedReviews } else 0
+            if (reviews > 0) item {
+                Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .background(p.surface).clickable { onHistory(frontId) }.padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Glyph(R.drawable.ic_history, p.warn, 18.dp)
+                    Text(if (reviews == 1) "Two devices switched together · review" else "$reviews switches to review", color = p.ink,
+                        fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Glyph(R.drawable.ic_chevron_right, p.ink3, 18.dp)
+                }
+            }
             item {
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (view.preset == Preset.Simple) {
@@ -290,7 +302,7 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: () 
                                 DropdownMenu(menu, { menu = false }) {
                                     DropdownMenuItem({ Text("Switch…") }, { menu = false; switcher = "" })
                                     DropdownMenuItem({ Text("Layers & display") }, { menu = false; onLayers(frontId) })
-                                    DropdownMenuItem({ Text("Front history") }, { menu = false; onHistory() })
+                                    DropdownMenuItem({ Text("Front history") }, { menu = false; onHistory(frontId) })
                                     DropdownMenuItem({ Text("Manage fronts") }, { menu = false; onFronts() })
                                 }
                             }

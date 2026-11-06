@@ -105,4 +105,15 @@ class FrontingDisplayTest {
             "Ama joined Fox", "Nai moved inward", "Ama left", "Vio left", "Nai left"), lines.map { it.text })
         assertEquals(listOf("front", "front", "present", "present", "front", "cocon", null, null, null), lines.map { it.layerId })
     }
+
+    @Test fun leavingTheFrontGivesUpPrimaryAndAnEmptyFrontGainsOne() {
+        val current = listOf(Entry("member", "fox", "front", true), Entry("member", "nai", "cocon", false))
+        // Fox moves out to co-conscious: no longer primary; Nai moves in to an empty front: primary
+        val moves = Front.withPrimary(listOf(Placement("member", "fox", "cocon", true), Placement("member", "nai", "front", true),
+            Placement("member", "vio", "front", false)), current, "front")
+        assertEquals(listOf(false, true, null), moves.map { it.primary })
+        // someone joining a front that already has a primary stays unflagged; an explicit choice wins
+        assertNull(Front.withPrimary(listOf(Placement("member", "ama", "front", false)), current, "front").single().primary)
+        assertEquals(false, Front.withPrimary(listOf(Placement("member", "ama", "front", false, primary = false)), emptyList(), "front").single().primary)
+    }
 }

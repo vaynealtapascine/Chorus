@@ -126,7 +126,7 @@ fun FaceStack(faces: List<Subject>, max: Int = 3, size: Dp = 24.dp, muted: Boole
     Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
         faces.take(max).forEach { s ->
             if (muted) Box(Modifier.size(size).background(LocalChorusPalette.current.line, CircleShape), contentAlignment = Alignment.Center) {
-                Text(s.glyph.take(2), color = LocalChorusPalette.current.onAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(s.glyph.take(2), color = LocalChorusPalette.current.ink2, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             } else Avatar(s.glyph, s.color, size, avatarBlob = s.avatarBlob, ring = false)
         }
     }

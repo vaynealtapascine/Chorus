@@ -264,6 +264,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var frontsOpen by rememberSaveable { mutableStateOf(false) }
     // Layers & display for one front (F3.9); null when closed
     var layersFront by rememberSaveable { mutableStateOf<String?>(null) }
+    // the front Front history opens on (the one Fronting was showing)
+    var historyFront by rememberSaveable { mutableStateOf<String?>(null) }
     var lastAccount by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(chorus.device?.accountId, status) {
         if (status == Status.Loading) return@LaunchedEffect
@@ -332,7 +334,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     }
     if (quickSwitchOpen && !model.isPerson) Switcher(chorus, model, handover = handoverOpen) { quickSwitchOpen = false; handoverOpen = false }
     BackHandler(sharedDraft == null && !linking && !quickSwitchOpen && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen && layersFront == null && routedTab !in navigationTabs) {
-        tab = Tab.More
+        // Front history is a Fronting page (F3.7): back returns there when Fronting is on the bar
+        tab = if (routedTab == Tab.History && Tab.Home in navigationTabs) Tab.Home else Tab.More
     }
 
     when (status) {
@@ -409,7 +412,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     animationSpec = androidx.compose.animation.core.tween(if (motion) 120 else 0), label = "Main destination") { shownTab ->
                 destinationState.SaveableStateProvider(shownTab.name) {
                 when (shownTab) {
-                    Tab.Home -> Home(chorus, model, onFronts = { frontsOpen = true }, onHistory = { tab = Tab.History },
+                    Tab.Home -> Home(chorus, model, onFronts = { frontsOpen = true }, onHistory = { historyFront = it; tab = Tab.History },
                         onLayers = { layersFront = it })
                     Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
                         onStageCapture = { chatStageCapture = it }, onDismissSearchHit = { chatSearchHit = null },
@@ -434,7 +437,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     Tab.Members -> Members(chorus, model, onJournal = { member, post ->
                         journalOpenProfile = member; journalOpenPost = post; tab = Tab.Journal
                     }, active = shownTab == activeTab, onFocusedRoute = { membersFocused = it })
-                    Tab.History -> History(chorus, model, onBack = { tab = Tab.Home })
+                    Tab.History -> History(chorus, model, historyFront, onBack = { tab = Tab.Home })
                     Tab.More -> MoreScreen(person, onMembers = { tab = Tab.Members }, onHome = { tab = Tab.Home }, onChat = { tab = Tab.Chat }, onPeople = { tab = Tab.People }, onJournal = { tab = Tab.Journal }, onHistory = { tab = Tab.History },
                         onInsights = { insightsOpen = true }, onFronts = { frontsOpen = true }, onSettings = { settingsOpen = true },
                         onSearch = { searchSection="Messages"; searchOpen = true }, onLink = { linking = true })

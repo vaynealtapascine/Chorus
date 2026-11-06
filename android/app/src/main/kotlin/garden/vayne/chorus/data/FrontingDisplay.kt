@@ -38,9 +38,10 @@ object FrontingDisplay {
     val ICONS = listOf("target", "message", "book", "briefcase", "monitor", "layers", "globe")
 
     /** New-front templates (F3.4) and the icon and blurb each starts with. */
-    data class Template(val name: String, val icon: String, val about: String)
+    /** `followsBody`: the template starts by following Body (Figma F3.4's Chorus front). */
+    data class Template(val name: String, val icon: String, val about: String, val followsBody: Boolean = false)
     val TEMPLATES = listOf(
-        Template("Online", "message", "Who can post in chats."),
+        Template("Online", "message", "Who can post in chats. Follows Body until changed by hand.", followsBody = true),
         Template("Work", "briefcase", "Who handles work."),
         Template("Inner world", "book", "Inner world. Layers are rooms you named yourselves."),
         Template("Subsystem", "layers", "A subsystem's own front."),

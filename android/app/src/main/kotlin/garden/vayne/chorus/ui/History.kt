@@ -85,7 +85,7 @@ private enum class Zoom(val label: String, val days: Int) { Day("Day", 1), Week(
  * be edited, undone or restored, and Log a past switch (F3.5). Read offline through shared core.
  */
 @Composable
-fun History(chorus: Chorus, model: Model, onBack: () -> Unit = {}) {
+fun History(chorus: Chorus, model: Model, initialFront: String? = null, onBack: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val actions = rememberCoroutineScope()
@@ -93,7 +93,7 @@ fun History(chorus: Chorus, model: Model, onBack: () -> Unit = {}) {
     val named = model.namedFronts
     val configured = named != null
     val fronts = shownFronts(model, account)
-    var selected by rememberSaveable { mutableStateOf("") }
+    var selected by rememberSaveable(initialFront) { mutableStateOf(initialFront.orEmpty()) }
     val front = selected.takeIf { id -> named?.fronts?.containsKey(id) == true } ?: named?.bodyId?.ifEmpty { null } ?: account
     var zoom by rememberSaveable { mutableStateOf(Zoom.Day) }
     var dayOffset by rememberSaveable { mutableIntStateOf(0) }
@@ -111,6 +111,7 @@ fun History(chorus: Chorus, model: Model, onBack: () -> Unit = {}) {
     }
     val history = loaded?.getOrNull()?.takeIf { it.frontId == front }
     val loading = configured && loaded == null
+    androidx.activity.compose.BackHandler(logging) { logging = false }
     if (logging) { LogPastSwitch(chorus, model, front, history) { logging = false }; return }
 
     val scene = FrontScene.build(model, front, emptyList(), account)
@@ -320,8 +321,9 @@ private fun Lanes(model: Model, spans: List<Span>, scene: FrontScene, from: Long
             }
             androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).height(16.dp)) {
                 ticks.forEach { t ->
-                    val f = ((t - start).toFloat() / (end - start)).coerceIn(0f, .92f)
-                    Text(tickFmt.format(Date(t)), color = p.ink3, fontSize = 11.sp, maxLines = 1,
+                    val f = ((t - start).toFloat() / (end - start)).coerceIn(0f, 1f)
+                    // a label too near the end would run into the last one, so it is left out
+                    if (f <= .92f) Text(tickFmt.format(Date(t)), color = p.ink3, fontSize = 11.sp, maxLines = 1,
                         modifier = Modifier.offset(x = maxWidth * f))
                 }
             }
@@ -410,7 +412,7 @@ private fun ReviewCard(chorus: Chorus, model: Model, r: FrontReview, saved: List
                 if (keep == null) onError("Tap the one that was right, then Keep this one.")
                 else run { retract(if (keep == r.switchA) r.switchB else r.switchA); resolve(if (keep == r.switchA) "keep_a" else "keep_b") }
             }
-            ReviewButton("Merge", enabled = a != null && b != null) {
+            ReviewButton("Merge", enabled = a != null && b != null && !a.retracted && !b.retracted) {
                 run {
                     val seen = HashSet<String>()
                     val entries = (a!!.resultingFront + b!!.resultingFront).filter { seen.add("${it.subjectType}:${it.subjectId}") }
@@ -418,7 +420,8 @@ private fun ReviewCard(chorus: Chorus, model: Model, r: FrontReview, saved: List
                         // history only, so following and any override stay as they were (D-083)
                         chorus.create("front.change", frontId, Front.changePayload(entries, at = maxOf(a.occurredAt, b.occurredAt), historyOnly = true))
                         retract(a.id); retract(b.id)
-                    } else chorus.create("front.switch", chorus.newId(), Front.switchPayload(entries))
+                    } else chorus.create("front.switch", chorus.newId(), Front.switchPayload(entries, notify = "silent"),
+                        userTime = maxOf(a.occurredAt, b.occurredAt))
                     resolve("merge")
                 }
             }

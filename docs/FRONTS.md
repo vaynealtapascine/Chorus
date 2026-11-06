@@ -242,7 +242,12 @@ clients cache it per front revision (Android `frontHistoryRevision`, web `FrontH
 it folds again only when fronts change, never per render or keystroke.
 
 Placement (member sheet, Add-mode switch sheet, a layer's +) writes `front.change`
-add/update/remove (legacy accounts: `front.add`/`update`/`remove`), several as one undo. Log a
+add/update/remove (legacy accounts: `front.add`/`update`/`remove`), several as one undo (and
+whatever was written stays undoable if a later write fails). Leaving the innermost layer sends
+`is_primary: false` (core keeps the flag otherwise, so the default speaker would stay) and the
+first to enter an innermost layer with no primary gets `true` (`withPrimary` on both clients).
+The Online template follows Body; the first front an unconfigured account adds asks first,
+since it moves Body onto named fronts. A legacy review Merge is a backdated, silent switch. Log a
 past switch writes a `history_only` switch at From and, unless a saved change already lies in
 (From, Until], another at Until restoring what was saved then (legacy accounts: backdated silent
 `front.switch` ops).

@@ -133,9 +133,38 @@ object Front {
     /** Several placements as one undoable action (the Add-mode switch sheet). */
     suspend fun placeAll(chorus: Chorus, moves: List<Placement>, label: String, frontId: String? = null, at: Long? = null) {
         if (moves.isEmpty()) return
-        val ids = moves.map { place(chorus, it.type, it.id, it.layerId, it.present, frontId, it.primary, at) }
         val target = frontId ?: chorus.device?.accountId?.takeIf { chorus.model.value.namedFronts != null }
-        _undo.value = Undo(ids.last(), label, System.currentTimeMillis(), target, ids.dropLast(1))
+        val model = chorus.model.value
+        val ids = ArrayList<String>()
+        try {
+            for (m in withPrimary(moves, if (target != null) model.namedFronts?.entries(target).orEmpty() else model.current,
+                FrontScene.layers(model).firstOrNull()?.id)) ids += place(chorus, m.type, m.id, m.layerId, m.present, frontId, m.primary, at)
+        } finally {
+            // whatever was written stays undoable, even if a later write failed
+            if (ids.isNotEmpty()) _undo.value = Undo(ids.last(), label, System.currentTimeMillis(), target, ids.dropLast(1))
+        }
+    }
+
+    /**
+     * The primary flag for each move, walking the front as it changes: leaving the innermost layer
+     * gives up primary (core keeps the flag otherwise, and the default speaker would stay), and the
+     * first to enter an innermost layer with no primary becomes it.
+     */
+    internal fun withPrimary(moves: List<Placement>, current: List<Entry>, inner: String?): List<Placement> {
+        val now = current.associateBy { it.subjectType to it.subjectId }.toMutableMap()
+        return moves.map { m ->
+            val key = m.type to m.id
+            val was = now[key]
+            val primary = when {
+                m.primary != null -> m.primary
+                m.layerId == null -> null
+                m.layerId == inner && now.values.none { it.level == inner && it.isPrimary } -> true
+                was?.isPrimary == true && m.layerId != inner -> false
+                else -> null
+            }
+            if (m.layerId == null) now.remove(key) else now[key] = Entry(m.type, m.id, m.layerId, primary ?: (was?.isPrimary == true))
+            m.copy(primary = primary)
+        }
     }
 
     /** One placement, offered for undo (the front card and the member sheet). */

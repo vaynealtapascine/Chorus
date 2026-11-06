@@ -145,14 +145,27 @@ fun FrontsScreen(chorus: Chorus, model: Model, onClose: () -> Unit) {
         try { block(); error = null } catch (e: Exception) { error = e.message ?: "Could not save." }
     }
     fun saveDisplay(next: FrontingDisplay.Settings) = act { chorus.create("pref.set", null, FrontingDisplay.payload(next)) }
-    fun create(name: String, template: FrontingDisplay.Template?) {
+    // the first front an unconfigured account makes moves Body onto named fronts too: ask first
+    var confirming by remember { mutableStateOf<Pair<String, FrontingDisplay.Template?>?>(null) }
+    fun write(name: String, template: FrontingDisplay.Template?) {
         val n = name.trim().ifEmpty { return }
         act {
             val id = chorus.newId()
-            Front.define(chorus, id, JSONObject().put("name", n).put("follow_source", JSONObject.NULL))
+            Front.define(chorus, id, JSONObject().put("name", n).put("follow_source", if (template?.followsBody == true) body else JSONObject.NULL))
             if (template != null) chorus.create("pref.set", null, FrontingDisplay.payload(FrontingDisplay.withFront(display, id) {
                 it.copy(icon = template.icon, about = template.about) }))
         }
+    }
+    fun create(name: String, template: FrontingDisplay.Template?) {
+        if (name.isBlank()) return
+        if (named == null) confirming = name to template else write(name, template)
+    }
+    confirming?.let { (name, template) ->
+        androidx.compose.material3.AlertDialog(onDismissRequest = { confirming = null },
+            title = { Text("Set up fronts?") },
+            text = { Text("Adding “${name.trim()}” turns on separate fronts for this system. Body keeps its history and who's in it; this can't be turned off again, though a front can be removed.") },
+            confirmButton = { TextButton(onClick = { write(name, template); confirming = null }) { Text("Add front") } },
+            dismissButton = { TextButton(onClick = { confirming = null }) { Text("Cancel") } })
     }
     editing?.let { id -> all.firstOrNull { it.id == id }?.let { f ->
         FrontEditor(chorus, model, f, all.filter { !it.deleted && it.id != f.id }, isBody = f.id == body) { editing = null }
@@ -185,6 +198,8 @@ fun FrontsScreen(chorus: Chorus, model: Model, onClose: () -> Unit) {
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     (FrontingDisplay.TEMPLATES.map { it.name } + "Custom").forEach { t ->
+                        // a template already in use isn't offered twice
+                        if (live.any { it.name.equals(t, true) }) return@forEach
                         Text(t, color = p.ink, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.clip(CircleShape).background(p.surface2)
                             .clickable(role = Role.Button) { if (t == "Custom") naming = true else create(t, FrontingDisplay.TEMPLATES.first { it.name == t }) }
                             .padding(horizontal = 12.dp, vertical = 7.dp))

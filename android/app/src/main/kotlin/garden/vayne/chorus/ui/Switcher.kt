@@ -425,7 +425,7 @@ fun MemberStateSheet(chorus: Chorus, model: Model, s: Subject, onClose: () -> Un
     val actions = rememberCoroutineScope()
     val current = model.accountPrefs.memberStatus[s.id]?.text
     val common = (listOf("Tired", "Nonverbal", "Busy") + model.states.map { it.name }).distinct()
-    var picked by remember { mutableStateOf(current?.takeIf { c -> common.any { it.equals(c, true) } }) }
+    var picked by remember { mutableStateOf(current?.let { c -> common.firstOrNull { it.equals(c, true) } }) }
     var custom by remember { mutableStateOf(current?.takeIf { picked == null }.orEmpty()) }
     var own by remember { mutableStateOf(current != null && picked == null) }
     var error by remember { mutableStateOf<String?>(null) }
