@@ -5,6 +5,15 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ProfilePresentationTest {
+    @Test fun birthdaysReadAsDatesWithOrWithoutAYear() {
+        val uk = java.util.Locale.UK
+        val us = java.util.Locale.US
+        assertEquals("5 August 1995", ProfilePresentation.birthday("1995-08-05", uk))
+        assertEquals("5 August", ProfilePresentation.birthday("--08-05", uk))
+        assertEquals("August 5", ProfilePresentation.birthday("--08-05", us))
+        assertEquals("sometime in spring", ProfilePresentation.birthday("sometime in spring", uk))
+    }
+
     private fun member(id: String) = Member(id, id, null, null, "#aaaaaa", emptyList(), null, false)
     private fun post(id: String, kind: String, authors: List<String>, repostOf: String? = null) =
         JournalPost(id, kind, authors, null, "", 0L, null, "private", null, null, emptyList(), repostOf = repostOf)

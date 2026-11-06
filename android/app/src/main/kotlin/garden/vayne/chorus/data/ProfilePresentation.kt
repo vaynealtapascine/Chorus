@@ -10,6 +10,21 @@ object ProfilePresentation {
 
     data class Counts(val posts: Int, val entries: Int, val relationships: Int)
 
+    /** A birthday as written (`YYYY-MM-DD`, or `--MM-DD` without a year) in words: "5 August
+     * 1995", "5 August"; anything else as it is. */
+    fun birthday(value: String, locale: java.util.Locale = java.util.Locale.getDefault()): String {
+        val full = java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.LONG).withLocale(locale)
+        runCatching { return java.time.LocalDate.parse(value).format(full) }
+        return runCatching {
+            val day = java.time.MonthDay.parse(value)
+            // the long pattern without its year ("d MMMM", "MMMM d")
+            val pattern = java.time.format.DateTimeFormatterBuilder.getLocalizedDateTimePattern(
+                java.time.format.FormatStyle.LONG, null, java.time.chrono.IsoChronology.INSTANCE, locale)
+                .replace(Regex("[^dM]*y+[^dM]*"), " ").trim().replace(Regex("\\s+"), " ").trim(',', ' ')
+            day.format(java.time.format.DateTimeFormatter.ofPattern(pattern, locale))
+        }.getOrDefault(value)
+    }
+
     /** Where [memberId] is in the body's confirmed front right now, or null when they aren't. */
     fun frontStatus(model: Model, memberId: String): FrontStatus? {
         // the front as switched (D-102): no "fronting with" a subsystem on profiles

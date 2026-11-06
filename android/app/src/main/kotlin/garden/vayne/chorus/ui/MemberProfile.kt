@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Blobs
 import garden.vayne.chorus.data.ChatAttachment
+import garden.vayne.chorus.data.FrontSpan
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.JournalPresentation
 import garden.vayne.chorus.data.JournalPost
@@ -129,6 +130,12 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
         else "Highlight on profile" to { setHighlight(post.id, true) })
 
     val openThread = onOpenPost?.let { open -> { post: JournalPost -> open(post.id) } }
+    // front time and "last fronted" from Body's named-front history when the account has one (D-080)
+    val historyRevision by chorus.frontHistoryRevision.collectAsState()
+    val spans by produceState(model.frontSpans, model.namedFronts != null, historyRevision) {
+        value = if (model.namedFronts == null) model.frontSpans
+            else runCatching { chorus.frontHistory() }.getOrNull()?.let(ProfileMetrics::spans) ?: model.frontSpans
+    }
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().background(p.bg), state = list, contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "hero") {
@@ -137,7 +144,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
                     else "Make a subsystem", onSubsystem = { subsystemOpen = true })
         }
         item(key = "details") {
-            ProfileDetails(member, model, error, onTab = { tab = it }, onInside = { subsystemOpen = true }, onOpenProfile = onOpenProfile)
+            ProfileDetails(member, model, spans, error, onTab = { tab = it }, onInside = { subsystemOpen = true }, onOpenProfile = onOpenProfile)
         }
         stickyHeader(key = "tabs") { ProfileTabRow(tab) { tab = it } }
         fun posts(shown: List<JournalPost>, empty: String) {
@@ -200,7 +207,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
                 }
             }
             else -> item(key = "about") {
-                ProfileAbout(chorus, model, member, bundle, Modifier.animateItem())
+                ProfileAbout(chorus, model, member, bundle, spans, Modifier.animateItem())
             }
         }
     }
@@ -302,7 +309,7 @@ internal fun ProfilePill(label: String, icon: Int?, filled: Boolean, description
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ProfileDetails(member: Member, model: Model, error: String?, onTab: (String) -> Unit, onInside: () -> Unit,
+private fun ProfileDetails(member: Member, model: Model, spans: List<FrontSpan>, error: String?, onTab: (String) -> Unit, onInside: () -> Unit,
     onOpenProfile: ((String) -> Unit)?) {
     val p = LocalChorusPalette.current
     val counts = ProfilePresentation.counts(model, member.id)
@@ -321,7 +328,7 @@ private fun ProfileDetails(member: Member, model: Model, error: String?, onTab: 
                 if (sigils.isNotEmpty()) ProfileChip(sigils.joinToString(" "))
                 if (subsystem != null) ProfileChip("Subsystem", R.drawable.ic_layers)
             }
-        if (!model.isPerson) FrontLine(model, member.id)
+        if (!model.isPerson) FrontLine(model, member.id, spans)
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             ProfileStat(counts.posts, "post", "posts") { onTab("Posts") }
             ProfileStat(counts.entries, "entry", "entries") { onTab("Journal") }
@@ -349,7 +356,7 @@ private fun ProfileDetails(member: Member, model: Model, error: String?, onTab: 
 
 /** "● Steering · 2h 04m" while they're in the front; otherwise when they last were. */
 @Composable
-private fun FrontLine(model: Model, memberId: String) {
+private fun FrontLine(model: Model, memberId: String, spans: List<FrontSpan>) {
     val p = LocalChorusPalette.current
     val now by produceState(System.currentTimeMillis()) {
         while (true) { delay(30_000); value = System.currentTimeMillis() }
@@ -361,7 +368,7 @@ private fun FrontLine(model: Model, memberId: String) {
         Text(listOfNotNull(status.layer + status.with?.let { " with $it" }.orEmpty(),
             status.since?.let { ProfilePresentation.duration(now - it) }).joinToString(" · "),
             color = p.accent, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp, lineHeight = 16.sp))
-    } else ProfileMetrics.compute(model, memberId, now).lastFrontAt?.let { last ->
+    } else ProfileMetrics.compute(model, memberId, now, spans).lastFrontAt?.let { last ->
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(painterResource(R.drawable.ic_history), null, Modifier.size(14.dp), tint = p.ink3)
             Text("Last fronted " + JournalPresentation.shortAgo(last, now) { "on " + DateFormat.getDateInstance().format(Date(it)) }
@@ -460,11 +467,11 @@ private fun MediaRow(cells: List<Pair<JournalPost, ChatAttachment>>, chorus: Cho
 
 /** Everything that doesn't fit the header: fields, front time, counts and relationships. */
 @Composable
-private fun ProfileAbout(chorus: Chorus, model: Model, member: Member, bundle: ProfileBundle?, modifier: Modifier) {
+private fun ProfileAbout(chorus: Chorus, model: Model, member: Member, bundle: ProfileBundle?, spans: List<FrontSpan>, modifier: Modifier) {
     val p = LocalChorusPalette.current
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
     var linkError by remember { mutableStateOf<String?>(null) }
-    val metrics = ProfileMetrics.compute(model, member.id)
+    val metrics = ProfileMetrics.compute(model, member.id, spans = spans)
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         @Composable fun AboutRow(label: String, value: String, onClick: (() -> Unit)? = null) {
             Column(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
@@ -476,7 +483,7 @@ private fun ProfileAbout(chorus: Chorus, model: Model, member: Member, bundle: P
         }
         if (member.displayName != null && member.name != member.displayName) AboutRow("Name", member.name)
         if (!member.pronouns.isNullOrBlank()) AboutRow("Pronouns", member.pronouns)
-        if (member.birthday != null) AboutRow("Birthday", member.birthday)
+        if (member.birthday != null) AboutRow("Birthday", ProfilePresentation.birthday(member.birthday))
         for (field in model.profileFields[member.id].orEmpty()) {
             if (MemberCustomization.validWebsite(field.value)) AboutRow(field.name, field.value) {
                 runCatching { uri.openUri(field.value) }.onFailure { linkError = "No app could open this website." }

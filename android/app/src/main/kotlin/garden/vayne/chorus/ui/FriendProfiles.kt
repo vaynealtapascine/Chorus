@@ -205,7 +205,7 @@ private fun FriendMemberProfile(chorus: Chorus, model: garden.vayne.chorus.data.
             val birthday = m.text("birthday")
             if (birthday != null || fields.length() > 0) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.surface).padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                birthday?.let { FriendField("Birthday") { Text(if (it.startsWith("--")) it.drop(2) else it, color = p.ink) } }
+                birthday?.let { FriendField("Birthday") { Text(garden.vayne.chorus.data.ProfilePresentation.birthday(it), color = p.ink) } }
                 for (i in 0 until fields.length()) {
                     val f = fields.getJSONObject(i)
                     FriendField(f.optString("name")) { FriendValue(f.optString("type"), f.opt("value")) }
