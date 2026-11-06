@@ -154,8 +154,12 @@
   const spaceRow = (r: Row) => (r.grouped && r.space ? { id: r.space.id, name: r.space.name } : null);
   const entries: (Row | SpaceEntry<Row>)[] = $derived(query.trim() || archiveView ? shown
     : orderChats(withSpaces(shown, spaceRow), organize.pins));
-  const inside = $derived(openSpace && !query.trim() && !archiveView
-    ? orderChats(rows.filter((r) => !r.stowed && r.space?.id === openSpace), organize.pins) : null);
+  const spaceChats = $derived.by(() => {
+    if (!openSpace || query.trim() || archiveView) return null;
+    const list = orderChats(rows.filter((r) => !r.stowed && r.space?.id === openSpace), organize.pins);
+    // a space left with nothing listed (all archived, or gone) falls back to the whole list
+    return list.length ? list : null;
+  });
   const insideTitle = $derived(ss.find((s) => s.id === openSpace)?.name ?? '');
   // opening one of its channels from elsewhere (a link, search) shows the space's channels around it
   let seen: string | undefined;
@@ -221,7 +225,7 @@
       <button class="switch" onclick={onswitch} aria-label="Switch who is here" title="Switch · Ctrl/⌘ S"><Icon name="swap" size={18} /></button>
     </div>
   {/if}
-  {#if tabs.length > 1 && !archiveView && !inside && !query.trim()}
+  {#if tabs.length > 1 && !archiveView && !spaceChats && !query.trim()}
     <div class="folder-tabs" role="tablist" aria-label="Chat folders">
       {#each tabs as t (t.id)}
         <button role="tab" aria-selected={folder === t.id} class:on={folder === t.id} onclick={() => onfolder?.(t.id)}>
@@ -229,17 +233,17 @@
       {/each}
     </div>
   {/if}
-  {#if inside}
+  {#if spaceChats}
     {@const c = core.adaptColor(discColor(openSpace ?? ''), dark)}
     <div class="space-head">
       <button class="back" onclick={() => (openSpace = null)} aria-label="Back to chats"><Icon name="back" size={20} /></button>
       <span class="disc small" style="background: {c.ring}; color: {c.avatar_ink}">{letter(insideTitle)}</span>
-      <span class="space-name"><strong>{insideTitle}</strong><small>{inside.length} {inside.length === 1 ? 'channel' : 'channels'}</small></span>
+      <span class="space-name"><strong>{insideTitle}</strong><small>{spaceChats.length} {spaceChats.length === 1 ? 'channel' : 'channels'}</small></span>
     </div>
   {/if}
   <div class="rows">
-    {#if inside}
-      {#each inside as r (r.channel.id)}{@render chatRow(r, true)}{/each}
+    {#if spaceChats}
+      {#each spaceChats as r (r.channel.id)}{@render chatRow(r, true)}{/each}
     {:else}
     {#each entries as e (e.id)}
       {#if isSpaceEntry(e)}
