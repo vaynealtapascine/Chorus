@@ -1,23 +1,32 @@
 package garden.vayne.chorus.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -25,14 +34,17 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TimePickerDefaults
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -51,6 +64,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -203,9 +217,9 @@ internal fun DrawerButton(text: String, onClick: () -> Unit, kind: ButtonKind = 
         ButtonKind.Quiet -> Color.Transparent to p.ink2
     }
     val on = enabled && !busy
-    Box(modifier.fillMaxWidth().heightIn(min = 50.dp).clip(RoundedCornerShape(16.dp))
+    Box(modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(14.dp))
         .background(if (on || kind == ButtonKind.Quiet) fill else p.surface3)
-        .clickable(enabled = on, role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        .clickable(enabled = on, role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center) {
         if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = ink, strokeWidth = 2.dp)
         else Text(text, color = if (on) ink else p.ink3, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
@@ -228,7 +242,7 @@ internal fun FormDivider() {
 @Composable
 internal fun FormValueRow(label: String, value: String, icon: Int? = null, enabled: Boolean = true, onClick: () -> Unit) {
     val p = LocalChorusPalette.current
-    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+    Row(Modifier.fillMaxWidth().heightIn(min = 46.dp).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         icon?.let { Glyph(it, p.ink2, 20.dp) }
         Text(label, color = if (enabled) p.ink else p.ink3, fontSize = 15.sp, modifier = Modifier.weight(1f))
@@ -255,7 +269,8 @@ internal fun FormNote(text: String, icon: Int? = null, warning: Boolean = false,
 
 /**
  * A filled field with its label inside (F6.7 "NAME", "DESCRIPTION"): the app's text field, in place
- * of Material's outlined one, with the same parameters.
+ * of Material's outlined one, with the same parameters. Compact (owner, 2026-11-07): 48 dp with a
+ * label, 44 without, where Material's own field is 56.
  */
 @Composable
 internal fun ChorusField(value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
@@ -264,9 +279,12 @@ internal fun ChorusField(value: String, onValueChange: (String) -> Unit, modifie
     prefix: (@Composable () -> Unit)? = null, supportingText: (@Composable () -> Unit)? = null, isError: Boolean = false,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default, keyboardActions: KeyboardActions = KeyboardActions.Default,
     singleLine: Boolean = false, maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE, minLines: Int = 1) {
-    TextField(value, onValueChange, modifier, enabled, readOnly, fieldText(), label, placeholder, leadingIcon, trailingIcon,
-        prefix, null, supportingText, isError, keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
-        singleLine = singleLine, maxLines = maxLines, minLines = minLines, shape = RoundedCornerShape(12.dp), colors = fieldColors())
+    val interaction = remember { MutableInteractionSource() }
+    BasicTextField(value, onValueChange, modifier.fieldSize(label != null), enabled, readOnly, fieldText(enabled),
+        keyboardOptions, keyboardActions, singleLine, maxLines, minLines, interactionSource = interaction,
+        cursorBrush = SolidColor(if (isError) LocalChorusPalette.current.danger else LocalChorusPalette.current.accent)) { inner ->
+        FieldDecoration(value, inner, enabled, singleLine, interaction, isError, label, placeholder, leadingIcon, trailingIcon, prefix, supportingText)
+    }
 }
 
 @Composable
@@ -276,13 +294,47 @@ internal fun ChorusField(value: TextFieldValue, onValueChange: (TextFieldValue) 
     prefix: (@Composable () -> Unit)? = null, supportingText: (@Composable () -> Unit)? = null, isError: Boolean = false,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default, keyboardActions: KeyboardActions = KeyboardActions.Default,
     singleLine: Boolean = false, maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE, minLines: Int = 1) {
-    TextField(value, onValueChange, modifier, enabled, readOnly, fieldText(), label, placeholder, leadingIcon, trailingIcon,
-        prefix, null, supportingText, isError, keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
-        singleLine = singleLine, maxLines = maxLines, minLines = minLines, shape = RoundedCornerShape(12.dp), colors = fieldColors())
+    val interaction = remember { MutableInteractionSource() }
+    BasicTextField(value, onValueChange, modifier.fieldSize(label != null), enabled, readOnly, fieldText(enabled),
+        keyboardOptions, keyboardActions, singleLine, maxLines, minLines, interactionSource = interaction,
+        cursorBrush = SolidColor(if (isError) LocalChorusPalette.current.danger else LocalChorusPalette.current.accent)) { inner ->
+        FieldDecoration(value.text, inner, enabled, singleLine, interaction, isError, label, placeholder, leadingIcon, trailingIcon, prefix, supportingText)
+    }
+}
+
+private fun Modifier.fieldSize(labelled: Boolean) = defaultMinSize(minWidth = 160.dp, minHeight = if (labelled) 48.dp else 44.dp)
+
+// The label sits above the text as a small line, like [ChoiceField]'s: Material's floating label
+// keeps an empty field at 56 dp (it pads 16 dp above and below until the label moves up).
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FieldDecoration(text: String, inner: @Composable () -> Unit, enabled: Boolean, singleLine: Boolean,
+    interaction: MutableInteractionSource, isError: Boolean, label: (@Composable () -> Unit)?, placeholder: (@Composable () -> Unit)?,
+    leadingIcon: (@Composable () -> Unit)?, trailingIcon: (@Composable () -> Unit)?, prefix: (@Composable () -> Unit)?,
+    supportingText: (@Composable () -> Unit)?) {
+    val p = LocalChorusPalette.current
+    val colors = fieldColors()
+    val focused by interaction.collectIsFocusedAsState()
+    val field: @Composable () -> Unit = if (label == null) inner else { {
+        Column {
+            CompositionLocalProvider(LocalContentColor provides when { isError -> p.danger; focused -> p.accent; else -> p.ink3 },
+                LocalTextStyle provides LocalTextStyle.current.merge(TextStyle(fontSize = 12.sp, lineHeight = 16.sp))) { label() }
+            Box {
+                if (text.isEmpty() && placeholder != null) CompositionLocalProvider(LocalContentColor provides p.ink3,
+                    LocalTextStyle provides fieldText(enabled).copy(color = p.ink3)) { placeholder() }
+                inner()
+            }
+        }
+    } }
+    TextFieldDefaults.DecorationBox(text, field, enabled, singleLine, VisualTransformation.None, interaction, isError,
+        null, placeholder.takeIf { label == null }, leadingIcon, trailingIcon, prefix, null, supportingText, RoundedCornerShape(12.dp), colors,
+        contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(start = 14.dp, top = if (label != null) 6.dp else 11.dp,
+            end = 14.dp, bottom = if (label != null) 6.dp else 11.dp))
 }
 
 @Composable
-private fun fieldText() = TextStyle(color = LocalChorusPalette.current.ink, fontSize = 16.sp, lineHeight = 22.sp, fontFamily = HankenGrotesk)
+private fun fieldText(enabled: Boolean = true) = TextStyle(color = LocalChorusPalette.current.let { if (enabled) it.ink else it.ink3 },
+    fontSize = 15.sp, lineHeight = 21.sp, fontFamily = HankenGrotesk)
 
 @Composable
 internal fun fieldColors(): androidx.compose.material3.TextFieldColors {
@@ -371,12 +423,12 @@ internal fun <T> ChoiceDrawer(open: Boolean, title: String, options: List<T>, se
 @Composable
 internal fun ChoiceField(label: String, value: String, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     val p = LocalChorusPalette.current
-    Row(modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(12.dp)).background(cardColor())
-        .clickable(enabled = enabled, role = Role.DropdownList, onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
+    Row(modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).background(cardColor())
+        .clickable(enabled = enabled, role = Role.DropdownList, onClick = onClick).padding(horizontal = 14.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
-            Text(value, color = if (enabled) p.ink else p.ink3, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(value, color = if (enabled) p.ink else p.ink3, fontSize = 15.sp, lineHeight = 21.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Glyph(R.drawable.ic_chevron_down, p.ink3, 18.dp)
     }
@@ -392,5 +444,24 @@ internal fun ChoiceChip(text: String, onClick: () -> Unit, active: Boolean = fal
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(text, color = if (active) p.accent else p.ink2, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         Glyph(R.drawable.ic_chevron_down, if (active) p.accent else p.ink3, 14.dp)
+    }
+}
+
+/**
+ * A switch the size of the web's (40 × 24, owner, 2026-11-07: Material's is 52 × 32); the thumb
+ * slides and the track fades. [onCheckedChange] null when the row around it toggles.
+ */
+@Composable
+internal fun ChorusSwitch(checked: Boolean, onCheckedChange: ((Boolean) -> Unit)?, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    val p = LocalChorusPalette.current
+    val thumb by animateDpAsState(if (checked) 19.dp else 3.dp, tween(150), label = "switch thumb")
+    val track by animateColorAsState(if (checked) p.accent else p.surface3, tween(150), label = "switch track")
+    val knob by animateColorAsState(if (checked) p.bg else p.ink3, tween(150), label = "switch knob")
+    Box(modifier.then(if (onCheckedChange != null) Modifier.minimumInteractiveComponentSize()
+            .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange) else Modifier),
+        contentAlignment = Alignment.Center) {
+        Box(Modifier.size(40.dp, 24.dp).clip(CircleShape).background(track.copy(alpha = if (enabled) 1f else .5f))) {
+            Box(Modifier.offset(x = thumb, y = 3.dp).size(18.dp).background(knob, CircleShape))
+        }
     }
 }

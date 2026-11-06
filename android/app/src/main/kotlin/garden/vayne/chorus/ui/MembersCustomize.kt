@@ -70,11 +70,11 @@ internal fun MembersCustomizeSheet(chorus: Chorus, model: Model, onError: (Strin
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("A line of their bio", color = p.ink, modifier = Modifier.weight(1f))
-                Switch(view.bio, { setView(view.copy(bio = it)) })
+                ChorusSwitch(view.bio, { setView(view.copy(bio = it)) })
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Their banner behind the row", color = p.ink, modifier = Modifier.weight(1f))
-                Switch(view.banners, { setView(view.copy(banners = it)) })
+                ChorusSwitch(view.banners, { setView(view.copy(banners = it)) })
             }
             HorizontalDivider(color = p.line)
             Text("Folders", color = p.ink3, style = MaterialTheme.typography.labelMedium)

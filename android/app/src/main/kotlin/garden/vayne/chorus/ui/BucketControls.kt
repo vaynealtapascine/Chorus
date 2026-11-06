@@ -126,7 +126,7 @@ private fun CeilingFieldRow(f: CeilingField, ceiling: JSONObject, inherited: Str
         if (!custom) { Text(inherited, color = p.ink3, fontSize = 13.sp); return@Column }
         when (f.kind) {
             "bool" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Switch(value == true, { put(it) }, enabled = enabled, modifier = Modifier.semantics { contentDescription = f.label })
+                ChorusSwitch(value == true, { put(it) }, enabled = enabled, modifier = Modifier.semantics { contentDescription = f.label })
                 Text(if (value == true) "On" else "Off", color = p.ink2)
             }
             "enum" -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -158,14 +158,14 @@ private fun CeilingFieldRow(f: CeilingField, ceiling: JSONObject, inherited: Str
                 }
             }
             "limit" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Switch(value != null, { put(if (it) 10 else null) }, enabled = enabled, modifier = Modifier.semantics { contentDescription = "Limit pings a day" })
+                ChorusSwitch(value != null, { put(if (it) 10 else null) }, enabled = enabled, modifier = Modifier.semantics { contentDescription = "Limit pings a day" })
                 if (value != null) WholeNumber("A day", (value as Number).toLong(), 0, BucketControls.PER_DAY_MAX, enabled) { put(it.toInt()) }
                 else Text("No limit", color = p.ink2)
             }
             "quiet" -> {
                 val q = value as? JSONObject
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Switch(q != null, { put(if (it) JSONObject().put("from", "23:00").put("to", "08:00") else null) }, enabled = enabled,
+                    ChorusSwitch(q != null, { put(if (it) JSONObject().put("from", "23:00").put("to", "08:00") else null) }, enabled = enabled,
                         modifier = Modifier.semantics { contentDescription = "Quiet hours" })
                     Text(if (q == null) "None" else "${q.optString("from")}–${q.optString("to")}", color = p.ink2)
                 }

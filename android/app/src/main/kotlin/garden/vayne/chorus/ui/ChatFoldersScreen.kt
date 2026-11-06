@@ -102,7 +102,7 @@ internal fun ChatFoldersScreen(model: Model, rows: List<ChatListRow>, onSave: (C
                                 Text(folderSummary(settings, id, rows) + if (shown) "" else " · hidden", color = p.ink3, fontSize = 12.sp,
                                     lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
-                            Switch(shown, { on -> onSave(settings.copy(hidden = if (on) settings.hidden - id else settings.hidden + id)) },
+                            ChorusSwitch(shown, { on -> onSave(settings.copy(hidden = if (on) settings.hidden - id else settings.hidden + id)) },
                                 modifier = Modifier.semantics { contentDescription = "Show ${ChatFolders.label(settings, id)}" })
                             Box(Modifier.size(44.dp).semantics {
                                 contentDescription = "Drag ${ChatFolders.label(settings, id)}"
@@ -245,7 +245,7 @@ private fun DisplaySwitch(title: String, subtitle: String, on: Boolean, onChange
             Text(title, color = p.ink, fontSize = 15.sp, lineHeight = 20.sp)
             Text(subtitle, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
         }
-        Switch(on, null)
+        ChorusSwitch(on, null)
     }
 }
 

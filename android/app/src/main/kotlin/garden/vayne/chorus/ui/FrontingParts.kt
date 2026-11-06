@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -143,8 +141,7 @@ fun ToggleRow(title: String, checked: Boolean, subtitle: String? = null, enabled
             Text(title, color = if (enabled) p.ink else p.ink3, fontSize = 15.sp, lineHeight = 20.sp)
             subtitle?.let { Text(it, color = p.ink3, fontSize = 13.sp, lineHeight = 17.sp) }
         }
-        Switch(checked, null, enabled = enabled, colors = SwitchDefaults.colors(checkedTrackColor = p.accent,
-            checkedThumbColor = p.bg, uncheckedTrackColor = p.surface3, uncheckedThumbColor = p.ink3, uncheckedBorderColor = p.surface3))
+        ChorusSwitch(checked, null, enabled = enabled)
     }
 }
 
@@ -155,7 +152,7 @@ fun Segmented(options: List<String>, selected: Int, modifier: Modifier = Modifie
     Row(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.surface2).padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp)) {
         options.forEachIndexed { i, label ->
-            Box(Modifier.weight(1f).heightIn(min = 36.dp).clip(RoundedCornerShape(9.dp))
+            Box(Modifier.weight(1f).heightIn(min = 32.dp).clip(RoundedCornerShape(9.dp))
                 .background(if (i == selected) p.surface else Color.Transparent)
                 .clickable(role = Role.Tab) { onSelect(i) }.semantics { contentDescription = label + if (i == selected) ", selected" else "" },
                 contentAlignment = Alignment.Center) {
