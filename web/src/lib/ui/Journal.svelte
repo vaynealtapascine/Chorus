@@ -115,6 +115,8 @@
   .journal { width: 100%; max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); align-content: start; min-width: 0; }
   header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s-3); }
   h1, p { margin: 0; }
+  /* switching sections fades the new one in */
+  .timeline { animation: chorus-fade-in var(--t-fast) var(--ease); }
   nav { display: flex; gap: var(--s-2); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
   nav button { flex: none; border: 0; background: none; padding: var(--s-2) var(--s-3); cursor: pointer; color: var(--ink-3); white-space: nowrap; }
   nav button.on { border-bottom: 2px solid var(--accent); font-weight: 600; color: var(--ink); }

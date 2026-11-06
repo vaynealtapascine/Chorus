@@ -275,6 +275,8 @@
   @media (max-width: 1023px) { .app-bar.subpage { display: none; } }
   main { padding: 24px; max-width: 1200px; margin-inline: auto; min-width: 0; outline: none; }
   .chat-page main { padding: 0; max-width: none; }
+  /* a page fades in when you go to it (owner, 2026-11-07) */
+  main > :global(*) { animation: chorus-fade-in var(--t-fast) var(--ease); }
   .storage-full { margin: 0; padding: 12px 24px; font-size: var(--fs-sm); background: var(--accent-soft); }
   /* wide screens: the sidebar and the page sit together in the middle; the sidebar keeps its width
      and takes the left margin as padding (it used to shrink to ~100 px past 1800 px) */

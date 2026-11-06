@@ -98,3 +98,24 @@ input[type='checkbox'][role='switch']::before {
 input[type='checkbox'][role='switch']:checked { background: var(--accent); }
 input[type='checkbox'][role='switch']:checked::before { transform: translateX(16px); background: var(--bg); }
 input[type='checkbox'][role='switch']:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Motion (owner, 2026-11-07): what appears arrives instead of popping in. Matched by plain class
+   name (Svelte keeps it beside its hash) at no specificity, so a component can still override;
+   reduced motion shortens all of it to nothing (above). */
+@keyframes chorus-fade-in { from { opacity: 0; } }
+@keyframes chorus-pop-in { from { opacity: 0; transform: translateY(-4px) scale(.97); } }
+@keyframes chorus-rise-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes chorus-sheet-in { from { opacity: 0; transform: translateY(40px); } }
+@keyframes chorus-slide-in { from { opacity: 0; transform: translateX(24px); } }
+:where(.scrim, .more-overlay) { animation: chorus-fade-in var(--t-base) var(--ease); }
+:where(.sheet) { animation: chorus-sheet-in var(--t-base) var(--ease); }
+:where(.menu, .row-menu, .palette, .mention-suggestions, .emoji-suggestions) { animation: chorus-pop-in var(--t-fast) var(--ease); transform-origin: top; }
+dialog[open] { animation: chorus-pop-in var(--t-base) var(--ease); }
+dialog[open]::backdrop { animation: chorus-fade-in var(--t-base) var(--ease); }
+/* Popover menus fade and grow in, and fade out (closing keeps them shown until it ends) */
+[popover] {
+  transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease),
+    overlay var(--t-fast) allow-discrete, display var(--t-fast) allow-discrete;
+}
+[popover]:not(:popover-open) { opacity: 0; transform: scale(.97); }
+@starting-style { [popover]:popover-open { opacity: 0; transform: scale(.97); } }

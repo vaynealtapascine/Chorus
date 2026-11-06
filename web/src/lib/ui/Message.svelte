@@ -63,8 +63,11 @@
     postOf,
     embedLookup,
     profileOf,
+    fresh = false,
   }: {
     m: MessageRow;
+    /** Arrived while the chat was open: it slides in instead of appearing. */
+    fresh?: boolean;
     readOnly?: boolean;
     cont: boolean;
     /** The last of a run from the same authors: it carries their face (Figma F5.21). */
@@ -229,7 +232,7 @@
     {#if thread}<button class="link" onclick={onthread}>Open thread · {thread.replyCount} {thread.replyCount === 1 ? 'reply' : 'replies'}</button>{/if}
   </div></div>
 {:else}
-  <div class="msg-row" class:out class:cont class:last use:swipeReply={{ enabled: !readOnly && !heldUntil && !selecting, onreply }}>
+  <div class="msg-row" class:out class:cont class:last class:fresh use:swipeReply={{ enabled: !readOnly && !heldUntil && !selecting, onreply }}>
   <span class="swipe-hint" aria-hidden="true"><Icon name="action-reply" size={18} /></span>
   {#if out}{@render aside()}{/if}
   {#if !out}
@@ -428,6 +431,7 @@
      speaking here on the right; names open a run, time and a sent tick close each bubble. */
   .msg-row { position: relative; display: flex; align-items: flex-end; gap: 8px; padding: 2px 64px 2px 0; min-width: 0; touch-action: pan-y pinch-zoom; }
   .msg-row:not(.cont) { margin-top: 6px; }
+  .msg-row.fresh { animation: chorus-rise-in var(--t-base) var(--ease); }
   .msg-row.out { justify-content: flex-end; padding: 2px 0 2px 72px; }
   .slot { flex: none; width: 32px; height: 32px; }
   .slot .avatar { width: 32px; height: 32px; font-size: 13px; font-weight: 700; }

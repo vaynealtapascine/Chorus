@@ -71,6 +71,8 @@
     return () => wide.removeEventListener('change', on);
   });
   const listing = $derived(compact && !channelId);
+  // messages newer than the moment a chat opened slide in; the ones it opened with just show
+  const openedAt = $derived.by(() => { void channelId; return Date.now(); });
   // a new channel in the shared space open here (its managers; our own space's come from New chat)
   let addingChannel = $state(false);
   // "Read as": whose view of hidden messages and members' chats this is (none: whoever is here)
@@ -1357,6 +1359,7 @@
           {m}
           cont={line.cont}
           last={line.last}
+          fresh={m.occurred_at > openedAt}
           tag={tagOf(m)}
           {people}
           {dark}
@@ -1678,7 +1681,11 @@
   .mention-suggestions button { display: flex; justify-content: space-between; gap: 12px; text-align: left; padding: 8px; }
   .mention-suggestions button.active { background: var(--surface-2); outline: 1px solid var(--line); }
   .mention-suggestions small { color: var(--ink-3); }
-  .jump-latest { align-self: flex-end; margin: 8px 16px; border-radius: 24px; padding: 8px 14px; background: var(--surface-2); }
+  .jump-latest { align-self: flex-end; margin: 8px 16px; border-radius: 24px; padding: 8px 14px; background: var(--surface-2); animation: chorus-pop-in var(--t-fast) var(--ease); }
+  /* bars over the composer, the info panel and in-chat search arrive rather than pop in */
+  .bar, .reply-in, .not-sent li, .msg-options { animation: chorus-rise-in var(--t-fast) var(--ease); }
+  .room-info { animation: chorus-slide-in var(--t-base) var(--ease); }
+  .search-overlay { animation: chorus-fade-in var(--t-fast) var(--ease); }
   .history-message { display: grid; gap: var(--s-2); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
   .history-message button { width: fit-content; font: inherit; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); padding: var(--s-2); cursor: pointer; }
   .history-message p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
