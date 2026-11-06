@@ -14,14 +14,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -57,6 +60,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
@@ -105,8 +109,12 @@ internal fun Drawer(onDismiss: () -> Unit, title: String? = null, subtitle: Stri
     footer: (@Composable ColumnScope.() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
     val p = LocalChorusPalette.current
     val depth = LocalDrawerDepth.current
-    // each layer stops a little lower than the one under it, so the stack shows
-    val tallest = LocalConfiguration.current.screenHeightDp.dp * .92f - (depth * 28).dp
+    // each layer stops a little lower than the one under it, so the stack shows. screenHeightDp
+    // counts the system bars on Android 15+, and Material adds its 48 dp grabber above the content:
+    // a long drawer reached the status bar at 92% (seen on the A56, 2026-11-07)
+    val density = LocalDensity.current
+    val bars = with(density) { (WindowInsets.statusBars.getTop(this) + WindowInsets.navigationBars.getBottom(this)).toDp() }
+    val tallest = LocalConfiguration.current.screenHeightDp.dp - maxOf(bars, 48.dp) - 72.dp - (depth * 28).dp
     ChorusSheet(onDismissRequest = { if (dismissible) onDismiss() }, skipPartiallyExpanded = true, containerColor = p.surface) {
         InspectionDialogContent {
             run {
@@ -315,7 +323,15 @@ private fun FieldDecoration(text: String, inner: @Composable () -> Unit, enabled
     val p = LocalChorusPalette.current
     val colors = fieldColors()
     val focused by interaction.collectIsFocusedAsState()
-    val field: @Composable () -> Unit = if (label == null) inner else { {
+    // empty and not being typed in: the label reads as the field's prompt, in the text's place
+    val resting = label != null && text.isEmpty() && !focused
+    val field: @Composable () -> Unit = if (label == null) inner else if (resting) { {
+        Box {
+            CompositionLocalProvider(LocalContentColor provides if (isError) p.danger else p.ink3,
+                LocalTextStyle provides LocalTextStyle.current.merge(fieldText(enabled).copy(color = Color.Unspecified))) { label!!() }
+            inner()
+        }
+    } } else { {
         Column {
             CompositionLocalProvider(LocalContentColor provides when { isError -> p.danger; focused -> p.accent; else -> p.ink3 },
                 LocalTextStyle provides LocalTextStyle.current.merge(TextStyle(fontSize = 12.sp, lineHeight = 16.sp))) { label() }
@@ -328,18 +344,24 @@ private fun FieldDecoration(text: String, inner: @Composable () -> Unit, enabled
     } }
     TextFieldDefaults.DecorationBox(text, field, enabled, singleLine, VisualTransformation.None, interaction, isError,
         null, placeholder.takeIf { label == null }, leadingIcon, trailingIcon, prefix, null, supportingText, RoundedCornerShape(12.dp), colors,
-        contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(start = 14.dp, top = if (label != null) 6.dp else 11.dp,
-            end = 14.dp, bottom = if (label != null) 6.dp else 11.dp))
+        contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(start = 14.dp, end = 14.dp,
+            top = when { label == null -> 11.dp; resting -> 11.dp; else -> 6.dp },
+            bottom = when { label == null -> 11.dp; resting -> 12.dp; else -> 5.dp }))
 }
 
 @Composable
 private fun fieldText(enabled: Boolean = true) = TextStyle(color = LocalChorusPalette.current.let { if (enabled) it.ink else it.ink3 },
     fontSize = 15.sp, lineHeight = 21.sp, fontFamily = HankenGrotesk)
 
+/** A field's fill: a wash of ink over whatever it sits on, so it shows on a page, in a drawer and in
+ * any card (a fixed step-up colour vanished inside cards of the same colour). */
+@Composable
+internal fun fieldFill(): Color = LocalChorusPalette.current.ink.copy(alpha = .05f)
+
 @Composable
 internal fun fieldColors(): androidx.compose.material3.TextFieldColors {
     val p = LocalChorusPalette.current
-    val fill = cardColor()
+    val fill = fieldFill()
     return TextFieldDefaults.colors(
         focusedContainerColor = fill, unfocusedContainerColor = fill, disabledContainerColor = fill.copy(alpha = .6f), errorContainerColor = fill,
         focusedIndicatorColor = p.accent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent,
@@ -423,7 +445,7 @@ internal fun <T> ChoiceDrawer(open: Boolean, title: String, options: List<T>, se
 @Composable
 internal fun ChoiceField(label: String, value: String, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     val p = LocalChorusPalette.current
-    Row(modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).background(cardColor())
+    Row(modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).background(fieldFill())
         .clickable(enabled = enabled, role = Role.DropdownList, onClick = onClick).padding(horizontal = 14.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {

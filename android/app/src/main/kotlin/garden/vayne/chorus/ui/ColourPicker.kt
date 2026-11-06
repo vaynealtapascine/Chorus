@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import kotlin.math.roundToInt
 
@@ -54,12 +55,12 @@ internal fun ColourField(value: String, onChange: (String) -> Unit, modifier: Mo
     var open by rememberSaveable { mutableStateOf(false) }
     val p = LocalChorusPalette.current
     // a field-like row, as the filled fields around it (D-124)
-    Row(modifier.fillMaxWidth().heightIn(min = 56.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)).background(cardColor())
-        .clickable(enabled = enabled, onClickLabel = "Choose $label") { open = true }.padding(horizontal = 16.dp, vertical = 8.dp),
+    Row(modifier.fillMaxWidth().heightIn(min = 48.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)).background(fieldFill())
+        .clickable(enabled = enabled, onClickLabel = "Choose $label") { open = true }.padding(horizontal = 14.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f)) {
-            Text(label, color = p.ink3, style = MaterialTheme.typography.labelMedium)
-            Text(ColourValue.normalize(value) ?: value, color = if (enabled) p.ink else p.ink3, style = MaterialTheme.typography.bodyLarge)
+            Text(label, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+            Text(ColourValue.normalize(value) ?: value, color = if (enabled) p.ink else p.ink3, fontSize = 15.sp, lineHeight = 21.sp)
         }
         Box(Modifier.size(28.dp).background(ColourValue.rgb(value), CircleShape).border(1.dp, p.line, CircleShape))
     }
