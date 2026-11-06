@@ -121,6 +121,8 @@
   .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; color: var(--ink); border: 0; background: none; border-radius: 50%; cursor: pointer; }
   .icon-btn.accent { color: var(--accent); }
   .titles { flex: 1; display: grid; padding-left: 4px; }
+  /* the desktop app bar already names the page */
+  @media (min-width: 1024px) { .titles { visibility: hidden; } }
   .titles strong { font-size: 17px; font-weight: 600; }
   .titles span { color: var(--ink-3); font-size: 12px; }
   .banner { display: flex; align-items: center; gap: 10px; margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); font-size: 13px; }

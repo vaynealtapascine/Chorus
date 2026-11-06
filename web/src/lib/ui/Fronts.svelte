@@ -71,8 +71,10 @@
   function create(name: string, template?: (typeof fd.TEMPLATES)[number]) {
     const n = name.trim();
     if (!n) return;
+    // the first front an unconfigured account makes moves Body onto named fronts too: ask first
+    if (!system && !confirm(`Adding “${n}” turns on separate fronts for this system. Body keeps its history and who's in it; this can't be turned off again, though a front can be removed.`)) return;
     const id = sync.newId();
-    defineFront(id, { name: n, follow_source: null });
+    defineFront(id, { name: n, follow_source: template?.followsBody ? account : null });
     if (template) fd.save(fd.withFront(display, id, (v) => ({ ...v, icon: template.icon, about: template.about })));
     newName = '';
     naming = false;
@@ -166,7 +168,8 @@
     <li class="new">
       <button class="new-head" onclick={() => (naming = true)}><span class="plus"><Icon name="plus" size={20} /></span><span><strong>New front</strong><span>Start from a template or build your own</span></span></button>
       <div class="templates">
-        {#each fd.TEMPLATES as t (t.name)}<button class="pill" onclick={() => create(t.name, t)}>{t.name}</button>{/each}
+        <!-- a template already in use isn't offered twice -->
+        {#each fd.TEMPLATES.filter((t) => !live.some((f) => f.name.toLowerCase() === t.name.toLowerCase())) as t (t.name)}<button class="pill" onclick={() => create(t.name, t)}>{t.name}</button>{/each}
         <button class="pill" onclick={() => (naming = true)}>Custom</button>
       </div>
       {#if naming}
@@ -194,6 +197,7 @@
   .back { color: var(--ink); }
   .icon-btn:disabled { color: var(--ink-3); opacity: 0.5; }
   .titles { flex: 1; display: grid; padding-left: 4px; }
+  @media (min-width: 1024px) { .titles { visibility: hidden; } }
   .titles strong { font-size: 17px; font-weight: 600; }
   .titles span { color: var(--ink-3); font-size: 12px; }
   .intro { margin: 0 4px 4px; color: var(--ink-2); font-size: 14px; line-height: 20px; }

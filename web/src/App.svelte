@@ -23,6 +23,7 @@
   import Fronts from './lib/ui/Fronts.svelte';
   import LayersDisplay from './lib/ui/LayersDisplay.svelte';
   import { frontingUi } from './lib/fronting-ui.svelte';
+  import { displayPrefs, front as fdFront } from './lib/fronting-display';
   import Trash from './lib/ui/Trash.svelte';
   import ThisComputer from './lib/ui/ThisComputer.svelte';
   import UndoToast from './lib/ui/UndoToast.svelte';
@@ -113,6 +114,7 @@
   const self = $derived(projection ? selfMember(projection) : undefined);
   const accountName = $derived(String(system?.name ?? account?.display_name ?? (self ? self.display_name ?? self.name : 'Your system')));
   const bodyFront = $derived(frontView(projection, sync.accountId));
+  const homeSimple = $derived(fdFront(displayPrefs(projection?.rows.pref, sync.accountId), frontingUi.front ?? sync.accountId).preset === 'simple');
   const current = $derived(bodyFront.entries);
   const subjects = $derived(new Map([
     ...members(projection ?? { rows: {}, sets: {}, fronts: {}, opaque: 0 }).map((m) => [m.id, { name: m.display_name ?? m.name, color: m.color, glyph: m.sigils[0] ?? m.name[0], blob: m.avatar_blob }] as const),
@@ -166,7 +168,7 @@
     <div class="workspace">
       <!-- Fronting's subpages carry their own back-arrow bars (Figma F3.4, F3.5, F3.7, F3.9) -->
       <header class="app-bar" class:subpage={['fronts', 'layers', 'history'].includes(router.route.name) && !person}>
-        <div><strong>{routeTitle}</strong><span class="account-subtitle">{accountName}{#if router.route.name === 'home' && !person}{' · '}{current.length} here now{/if}</span></div>
+        <div><strong>{routeTitle}</strong><span class="account-subtitle">{accountName}{#if router.route.name === 'home' && !person}{' · '}{homeSimple ? 'simple view' : `${current.length} here now`}{/if}</span></div>
         <span class="status" data-status={status} role="status"><span class="status-dot"></span>{statusLabel[status]}</span>
         {#if router.route.name === 'home' && !person}
           <!-- Fronting's own bar (Figma F3.1): history and Layers & display for the shown front -->
@@ -270,7 +272,7 @@
   .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); flex: none; }
   .status[data-status='live'] .status-dot { background: var(--ok); }
   .mobile-switch { display: none; }
-  .app-bar.subpage { display: none; }
+  @media (max-width: 1023px) { .app-bar.subpage { display: none; } }
   main { padding: 24px; max-width: 1200px; margin-inline: auto; min-width: 0; outline: none; }
   .chat-page main { padding: 0; max-width: none; }
   .storage-full { margin: 0; padding: 12px 24px; font-size: var(--fs-sm); background: var(--accent-soft); }

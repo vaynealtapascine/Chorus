@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { displayPrefs, duration, icon, memberStatuses, ordered, parse, scene, shortAbout, story, toJson, type Settings } from './fronting-display';
+import { withPrimary, displayPrefs, duration, icon, memberStatuses, ordered, parse, scene, shortAbout, story, toJson, type Settings } from './fronting-display';
 import type { FrontPresence } from './core/fronts';
 
 const p = (id: string, layer_id: string, is_primary = false): FrontPresence => ({ subject_type: 'member', subject_id: id, layer_id, is_primary });
@@ -73,5 +73,13 @@ describe('fronting display (D-122, F3)', () => {
     const lines = story(states, ['front', 'cocon', 'present'], 'present', (id) => id, (_, id) => id[0].toUpperCase() + id.slice(1));
     expect(lines.map((l) => l.text)).toEqual(['Ama started fronting', 'Fox took over from Ama', 'Vio came close', 'Nai came close',
       'Ama joined Fox', 'Nai moved inward', 'Ama left', 'Vio left', 'Nai left']);
+  });
+
+  it('gives up primary when leaving the front, and gives it to the first into an empty one', () => {
+    const current = [p('fox', 'front', true), p('nai', 'cocon')];
+    type Move = { type: string; id: string; layer: string | null; primary?: boolean };
+    const moves = withPrimary<Move>([{ type: 'member', id: 'fox', layer: 'cocon' }, { type: 'member', id: 'nai', layer: 'front' }, { type: 'member', id: 'vio', layer: 'front' }], current, 'front');
+    expect(moves.map((m) => m.primary)).toEqual([false, true, undefined]);
+    expect(withPrimary<Move>([{ type: 'member', id: 'ama', layer: 'front' }], current, 'front')[0].primary).toBeUndefined();
   });
 });

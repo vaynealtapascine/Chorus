@@ -91,7 +91,7 @@
   function commit(entries: FrontPresence[]) {
     const when = at !== undefined && Number.isFinite(at) ? Math.min(at, Date.now()) : undefined;
     if (add) {
-      place(changes, `Changed ${view.name}: ${changes.map((c) => name(c.type, c.id)).join(', ')}`, configured ? target : null, when);
+      place(changes, `Changed ${view.name}: ${changes.map((c) => name(c.type, c.id)).join(', ')}`, configured ? target : null, current, cycle[0]?.id, when);
     } else {
       const inner = entries.filter((e) => e.layer_id === cycle[0]?.id).map((e) => name(e.subject_type, e.subject_id));
       const label = entries.length ? `Switched ${view.name} to ${(inner.length ? inner : entries.map((e) => name(e.subject_type, e.subject_id))).join(' & ')}` : `Switched ${view.name} out`;
@@ -102,7 +102,6 @@
     onclose();
   }
   function onkey(e: KeyboardEvent) {
-    if (e.key === 'Escape') onclose();
     if (e.key === 'Enter' && query && subjects.length) { e.preventDefault(); tap(subjects[0]); query = ''; }
   }
 </script>

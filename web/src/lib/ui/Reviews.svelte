@@ -52,7 +52,9 @@
       const k = `${e.subject_type}:${e.subject_id}`;
       return seen.has(k) ? false : (seen.add(k), true);
     });
-    sync.create('front.switch', sync.accountScope, sync.newId(), { entries: entries.map(({ layer, ...e }) => ({ ...e, level: layer })) });
+    // backdated and silent: a merge corrects the past, it doesn't switch anyone now
+    sync.create('front.switch', sync.accountScope, sync.newId(), { entries: entries.map(({ layer, ...e }) => ({ ...e, level: layer })), notify: 'silent' },
+      { userTime: Math.max(byId.get(r.switch_a)?.occurred_at ?? 0, byId.get(r.switch_b)?.occurred_at ?? 0) || undefined });
     resolve(r.id, 'merge');
   }
 </script>
@@ -72,7 +74,7 @@
     {/each}
     <div class="actions">
       <button onclick={() => resolve(r.id, 'keep_both')}>Keep both</button>
-      <button disabled={!a || !b} title={picked[r.id] ? '' : 'Tap the one that was right first'} onclick={() => picked[r.id] && keep(r, picked[r.id])}>{picked[r.id] ? 'Keep this one' : 'Keep one'}</button>
+      <button disabled={!a || !b || !picked[r.id]} title={picked[r.id] ? '' : 'Tap the one that was right first'} onclick={() => picked[r.id] && keep(r, picked[r.id])}>{picked[r.id] ? 'Keep this one' : 'Keep one'}</button>
       <button disabled={!!named && (!a || !b)} onclick={() => merge(r)}>Merge</button>
     </div>
   </aside>

@@ -1,6 +1,7 @@
 // Front helpers shared by Home, Switcher and History (SPEC §4.3).
 import { sync } from './sync/client';
 import type { FrontPresence } from './core/fronts';
+import { withPrimary } from './fronting-display';
 
 export type Level = 'front' | 'cocon' | 'present';
 export type SubjectType = 'member' | 'group' | 'state';
@@ -103,19 +104,26 @@ export interface Placement { type: SubjectType; id: string; layer: string | null
 
 /** Write placements (F3.2 Add mode, F3.3) as one undoable action: add, update (a move) or remove.
  * `front` is a configured account's named front; unconfigured accounts use the legacy Body ops. */
-export function place(moves: Placement[], label: string, front: string | null, at?: number) {
-  const ids = moves.map((m) => {
-    if (front) {
-      const change: Record<string, unknown> = m.layer === null ? { action: 'remove', subject_type: m.type, subject_id: m.id }
-        : m.present ? { action: 'update', subject_type: m.type, subject_id: m.id, layer_id: m.layer, ...(m.primary !== undefined ? { is_primary: m.primary } : {}) }
-        : { action: 'add', entry: { subject_type: m.type, subject_id: m.id, layer_id: m.layer, is_primary: m.primary ?? false } };
-      if (at !== undefined) change.effective_at = at;
-      return sync.create('front.change', sync.accountScope, front, change);
-    }
-    const [kind, payload] = m.layer === null ? ['front.remove', { subject_type: m.type, subject_id: m.id }]
-      : m.present ? ['front.update', { subject_type: m.type, subject_id: m.id, level: m.layer, ...(m.primary !== undefined ? { is_primary: m.primary } : {}) }]
-      : ['front.add', { entry: { subject_type: m.type, subject_id: m.id, level: m.layer, is_primary: m.primary ?? false } }];
-    return sync.create(kind, sync.accountScope, sync.newId(), payload, { userTime: at });
-  });
-  if (ids.length) undo.offer(ids[ids.length - 1], label, front ?? undefined, ids.slice(0, -1));
+export function place(moves: Placement[], label: string, front: string | null, current: FrontPresence[], inner: string | undefined, at?: number) {
+  const ids: string[] = [];
+  try {
+    for (const m of withPrimary(moves, current, inner)) ids.push(write(m, front, at));
+  } finally {
+    // whatever was written stays undoable, even if a later write failed
+    if (ids.length) undo.offer(ids[ids.length - 1], label, front ?? undefined, ids.slice(0, -1));
+  }
+}
+
+function write(m: Placement, front: string | null, at?: number): string {
+  if (front) {
+    const change: Record<string, unknown> = m.layer === null ? { action: 'remove', subject_type: m.type, subject_id: m.id }
+      : m.present ? { action: 'update', subject_type: m.type, subject_id: m.id, layer_id: m.layer, ...(m.primary !== undefined ? { is_primary: m.primary } : {}) }
+      : { action: 'add', entry: { subject_type: m.type, subject_id: m.id, layer_id: m.layer, is_primary: m.primary ?? false } };
+    if (at !== undefined) change.effective_at = at;
+    return sync.create('front.change', sync.accountScope, front, change);
+  }
+  const [kind, payload] = m.layer === null ? ['front.remove', { subject_type: m.type, subject_id: m.id }]
+    : m.present ? ['front.update', { subject_type: m.type, subject_id: m.id, level: m.layer, ...(m.primary !== undefined ? { is_primary: m.primary } : {}) }]
+    : ['front.add', { entry: { subject_type: m.type, subject_id: m.id, level: m.layer, is_primary: m.primary ?? false } }];
+  return sync.create(kind, sync.accountScope, sync.newId(), payload, { userTime: at });
 }

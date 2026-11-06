@@ -63,12 +63,15 @@
   const scene = $derived(fd.scene(layers, selected?.entries ?? [], display, frontId, own.map((m) => m.id)));
   // when each subject arrived: the front's effective history, cached per front change (never per render)
   const since = $derived.by(() => {
+    // a front delta (or the replica finishing its load) brings a new history to read
+    void projection.front_systems;
     const out = new Map<string, number>();
     const intervals = configured ? sync.frontHistory(frontId)?.effective.intervals ?? [] : projection.fronts[sync.accountId]?.intervals ?? [];
     for (const i of intervals) if (i.end_at === null) out.set(i.subject_id, Math.min(out.get(i.subject_id) ?? Infinity, i.start_at));
     return out;
   });
   const note = $derived.by(() => {
+    void projection.front_systems;
     if (view.preset !== 'complete') return null;
     const rows = configured ? sync.frontHistory(frontId)?.saved.switches ?? [] : projection.fronts[sync.accountId]?.switches ?? [];
     return [...rows].reverse().find((r) => !r.retracted)?.note || null;
@@ -76,7 +79,9 @@
   const frontSince = $derived(since.size ? Math.min(...since.values()) : null);
   let now = $state(Date.now());
   $effect(() => { const t = setInterval(() => (now = Date.now()), 30_000); return () => clearInterval(t); });
-  const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  // an unconfigured account's review cards (F3.6) are answered on Front history
+  const reviews = $derived(configured ? 0 : (projection.reviews?.[sync.accountId] ?? []).filter((r) => !projection.rows.front_review?.[r.id]?.fields?.resolution).length);
   const showEmpty = $derived(!view.hideEmpty || view.preset === 'complete');
   const rings = $derived(scene.nested.filter((l, i) => i === 0 || showEmpty || l.entries.length));
   let awayOpen = $state<boolean | null>(null);
@@ -160,6 +165,10 @@
         {:else if selected.state === 'overridden'}<span>Changed by hand · not following {selected.sourceName ?? 'its source'}</span><button class="link" onclick={() => resumeFollowing(selected.id)}>Resume following</button>
         {:else}<span>{selected.issue === 'cycle' ? 'Following loops back on itself' : 'Its source is unavailable'} · showing nothing as current</span>{/if}
       </div>
+    {/if}
+
+    {#if reviews}
+      <a class="review-row" href="#/history"><Icon name="history" size={18} /><span>{reviews === 1 ? 'Two devices switched together · review' : `${reviews} switches to review`}</span><Icon name="chevron-right" size={18} /></a>
     {/if}
 
     {#if view.preset === 'simple'}
@@ -347,7 +356,10 @@
   .sep-title strong { font-size: 14px; font-weight: 700; }
   .stack { display: flex; }
   .stack > :global(*) + :global(*) { margin-left: -6px; }
-  .mute-face { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--line); color: var(--on-accent); font-size: 11px; font-weight: 700; }
+  .mute-face { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--line); color: var(--ink-2); font-size: 11px; font-weight: 700; }
+  .review-row { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 12px; background: var(--surface); color: var(--ink); font-size: 14px; text-decoration: none; }
+  .review-row span { flex: 1; }
+  .review-row :global(.icon:first-child) { color: var(--warn); }
   .away, .other { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px 10px 14px; border: 0; border-radius: 16px; background: var(--surface); color: var(--ink-3); font: inherit; cursor: pointer; text-align: left; }
   .away .info { font-size: 14px; font-weight: 500; }
   .other { gap: 12px; padding: 10px 12px; color: var(--ink); }

@@ -20,8 +20,9 @@ export const PRESETS: { id: Preset; label: string; about: string }[] = [
 ];
 /** Front icons a system can pick (web icon names). */
 export const ICONS = ['target', 'message', 'book', 'briefcase', 'monitor', 'layers', 'globe'];
-export const TEMPLATES = [
-  { name: 'Online', icon: 'message', about: 'Who can post in chats.' },
+/** `followsBody`: the template starts by following Body (Figma F3.4's Chorus front). */
+export const TEMPLATES: { name: string; icon: string; about: string; followsBody?: boolean }[] = [
+  { name: 'Online', icon: 'message', about: 'Who can post in chats. Follows Body until changed by hand.', followsBody: true },
   { name: 'Work', icon: 'briefcase', about: 'Who handles work.' },
   { name: 'Inner world', icon: 'book', about: 'Inner world. Layers are rooms you named yourselves.' },
   { name: 'Subsystem', icon: 'layers', about: "A subsystem's own front." },
@@ -183,6 +184,26 @@ export function scene(layers: { id: string; name: string }[], entries: FrontPres
     unlisted: entries.filter((e) => !known.has(e.layer_id)), away: members.filter((id) => !present.has(id)),
     awayShown: !view.hiddenLayers.includes(AWAY), here: entries.length,
   };
+}
+
+/** The primary flag for each placement, walking the front as it changes (Android Front.withPrimary):
+ * leaving the innermost layer gives up primary (core keeps the flag otherwise, so the default
+ * speaker would stay), and the first to enter an innermost layer with no primary becomes it. */
+export function withPrimary<M extends { type: string; id: string; layer: string | null; primary?: boolean }>(
+  moves: M[], current: FrontPresence[], inner: string | undefined): M[] {
+  const now = new Map(current.map((e) => [`${e.subject_type}:${e.subject_id}`, e]));
+  return moves.map((m) => {
+    const key = `${m.type}:${m.id}`;
+    const was = now.get(key);
+    let primary = m.primary;
+    if (primary === undefined && m.layer !== null) {
+      if (m.layer === inner && ![...now.values()].some((e) => e.layer_id === inner && e.is_primary)) primary = true;
+      else if (was?.is_primary && m.layer !== inner) primary = false;
+    }
+    if (m.layer === null) now.delete(key);
+    else now.set(key, { subject_type: m.type as FrontPresence['subject_type'], subject_id: m.id, layer_id: m.layer, is_primary: primary ?? was?.is_primary ?? false });
+    return primary === undefined ? m : { ...m, primary };
+  });
 }
 
 export interface StoryLine { changeId: string; at: number; subjectType: string; subjectId: string; text: string; layerId: string | null }

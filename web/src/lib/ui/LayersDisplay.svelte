@@ -21,6 +21,7 @@
 
   let editing = $state<string | 'new' | null>(null);
   let dragging = $state<string | null>(null);
+  let arranging = $state(false);
   let speakers = $state(false);
   let newState = $state('');
   let draft = $state({ name: '', about: '', style: null as fd.Style | null, color: null as string | null, separate: false });
@@ -76,6 +77,7 @@
   <div class="bar">
     <a class="back" href="#/" aria-label="Back to Fronting"><Icon name="back" size={22} /></a>
     <div class="titles"><strong>Layers &amp; display</strong><span>{summary?.name ?? 'Body'} · each front can be set up differently</span></div>
+    <button class="icon-btn" aria-pressed={arranging} aria-label={arranging ? 'Done arranging' : 'Arrange layers'} onclick={() => (arranging = !arranging)}><Icon name={arranging ? 'check' : 'pencil'} size={22} /></button>
   </div>
 
   <h2>Preset</h2>
@@ -99,11 +101,11 @@
         <span class="grip" draggable="true" role="button" tabindex="-1" aria-label="Drag to reorder {l.name}" ondragstart={() => (dragging = l.id)} ondragend={() => (dragging = null)}><Icon name="grip" size={18} /></span>
         <span class="swatch" style={fd.inkVars(l.style, l.color)} data-style={l.style}></span>
         <button class="text" onclick={() => open(l.id)} aria-label="Edit {l.name}"><strong>{l.name}</strong><span>{l.about ?? (l.separate ? 'Listed separately' : '')}</span></button>
-        <span class="keys">
+        {#if arranging}<span class="keys">
           <button class="mini" disabled={i === 0} aria-label="Move {l.name} inward" onclick={() => move(i, -1)}>↑</button>
           <button class="mini" disabled={i === scene.all.length - 1} aria-label="Move {l.name} outward" onclick={() => move(i, 1)}>↓</button>
-        </span>
-        <button class="icon-btn" aria-pressed={!l.hidden} aria-label={l.hidden ? `Show ${l.name} on Fronting` : `Hide ${l.name} on Fronting`} onclick={() => toggleHidden(l.id)}><Icon name={l.hidden ? 'eye-off' : 'eye'} size={20} /></button>
+        </span>{:else}
+        <button class="icon-btn" aria-pressed={!l.hidden} aria-label={l.hidden ? `Show ${l.name} on Fronting` : `Hide ${l.name} on Fronting`} onclick={() => toggleHidden(l.id)}><Icon name={l.hidden ? 'eye-off' : 'eye'} size={20} /></button>{/if}
       </div>
     {/each}
     <div class="layer-row">
@@ -170,7 +172,9 @@
   .page { display: grid; gap: 6px; max-width: 720px; padding-bottom: 32px; }
   .bar { display: flex; align-items: center; gap: 4px; margin-left: -8px; }
   .back { width: 44px; height: 44px; display: grid; place-items: center; color: var(--ink); border-radius: 50%; }
-  .titles { display: grid; padding-left: 4px; }
+  .titles { flex: 1; display: grid; padding-left: 4px; }
+  /* the desktop app bar already names the page */
+  @media (min-width: 1024px) { .titles { visibility: hidden; } }
   .titles strong { font-size: 17px; font-weight: 600; }
   .titles span { color: var(--ink-3); font-size: 12px; }
   h2 { margin: 16px 4px 6px; color: var(--accent); font-size: 13px; font-weight: 600; }
@@ -194,8 +198,8 @@
   .text.static { cursor: default; }
   .text strong { font-size: 15px; font-weight: 500; }
   .text span { color: var(--ink-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .keys { display: flex; opacity: 0; }
-  .layer-row:hover .keys, .layer-row:focus-within .keys { opacity: 1; }
+  .keys { display: flex; }
+  .mini { width: 40px !important; height: 44px !important; font-size: 18px !important; }
   .mini { width: 28px; height: 36px; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
   .mini:disabled { color: var(--ink-3); }
   .icon-btn { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 50%; cursor: pointer; }

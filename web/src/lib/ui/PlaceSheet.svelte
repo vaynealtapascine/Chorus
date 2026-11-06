@@ -36,22 +36,23 @@
     picked = match ?? null; own = !!status && !match; custom = match ? '' : status ?? '';
   });
   const stateText = $derived(own ? custom.trim() || null : picked);
-  const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const frontName = $derived(here?.name ?? 'Body');
 
   function save() {
     if (chosen === (entry?.layer_id ?? null)) return onclose();
     place([{ type: who.type, id: who.id, layer: chosen, present: !!entry }],
-      chosen === null ? `${who.name} left ${frontName}` : `${who.name} is ${layerName(chosen).toLowerCase()} in ${frontName}`, configured ? front : null);
+      chosen === null ? `${who.name} left ${frontName}` : `${who.name} is ${layerName(chosen).toLowerCase()} in ${frontName}`, configured ? front : null,
+      here?.entries ?? [], nested[0]?.id);
     onclose();
   }
   function remove() {
-    place([{ type: who.type, id: who.id, layer: null, present: true }], `${who.name} left ${frontName}`, configured ? front : null);
+    place([{ type: who.type, id: who.id, layer: null, present: true }], `${who.name} left ${frontName}`, configured ? front : null, here?.entries ?? [], nested[0]?.id);
     onclose();
   }
   function toggleOther(f: (typeof fronts)[number], on: boolean) {
     const present = f.entries.some((e) => e.subject_type === who.type && e.subject_id === who.id);
-    place([{ type: who.type, id: who.id, layer: on ? nested[0]?.id ?? 'front' : null, present }], on ? `${who.name} is in ${f.name}` : `${who.name} left ${f.name}`, f.id);
+    place([{ type: who.type, id: who.id, layer: on ? nested[0]?.id ?? 'front' : null, present }], on ? `${who.name} is in ${f.name}` : `${who.name} left ${f.name}`, f.id, f.entries, nested[0]?.id);
   }
   function setState(text: string | null) { fd.setStatus(who.id, text); stateView = false; }
 </script>
