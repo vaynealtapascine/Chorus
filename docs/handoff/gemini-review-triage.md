@@ -34,9 +34,8 @@ and payload ids/files an op names must be the author's to name. Tests a13–a18 
 | SEC-17 `/relationship-targets` lists all accounts | Rejected (as a leak) | It returns only cards each member's own visibility allows (`server` = everyone on the server, by design). Cost is O(accounts) per call: fine at this size |
 | §5 side channels | Agreed | Matches NOTIFICATIONS.md §5 |
 
-Not yet done: whether anyone used these holes on the public server (open since 2026-10-31). Ingest
-now refuses them, but ops accepted earlier stay in the log and re-project on a rebuild. Check the
-live log read-only with `scripts/privacy-audit.sql` (docs/NOTES.md §Security) before deciding on a cleanup purge.
+Checked after the deploy (2026-11-06): `scripts/privacy-audit.sql` on the live database (2,571
+ops, read-only) found no op of the kinds D-119 now refuses, so nothing needs purging.
 
 ## BUGS_FOUND.md
 

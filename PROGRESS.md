@@ -22,9 +22,9 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 ## Now
 
-- **In progress:** SEC1 — cross-account write holes (privacy audit + Gemini review)
-- **Owner:** claude-opus-5.5 (2026-11-06)
-- **Next concrete step:** full gate (`verify.py --android`), then deploy the server (security fix: the live server still has the holes) and run `scripts/privacy-audit.sql` on a copy of the live DB.
+- **In progress:** —
+- **Owner:** —
+- **Next concrete step:** claim the next unticked task on the board
 - **Notes:** fixes committed on main (D-119; verdicts per finding in `docs/handoff/gemini-review-triage.md`). Gemini's raw reviews stay untracked in `gemini_review/`. A parallel thread (chat list/menus/profiles, branch `t3/chat-list-menus-profiles`) holds D-120/D-121 and rebases onto main.
 
 ### SEC1: what is done and what is left
@@ -38,16 +38,14 @@ Also from Gemini's review: rate limiter bypass, Chorus Home DNS rebinding, webho
 and link-local targets, per-request auth writes, restore window reopening, post alert faces,
 named-front avatars, search channel scoping, helper consolidation, three Android a11y fixes.
 
-Left: deploy; the live-DB audit (NOTES §Security); Q23 (poll votes of deleted members); the
+Deployed 2026-11-06; the live-DB audit found nothing. Left: Q23 (poll votes of deleted members); the
 *Open* rows of the triage file (device checks: nav-bar inset, predictive back).
 
-### State (checked 2026-11-05)
+### State (checked 2026-11-06)
 
-- **Live** on `ns2-up-net-nz` (https://chorus.vayne.garden): server + web from `fa4c6c0`
-  (bundle `F:/DunBuild/chorus-linux/chorus-linux-fa4c6c0.tar.gz`), Android **0.1.722**.
-  `main` = `a9c3c2e` = deployed code + D-118 gate change (no app change). GitHub: the local
-  `origin/main` ref is `fa4c6c0`, so main is ahead of what was last pushed (M12.2 asks for a push
-  after each commit; check `git status -sb`).
+- **Live** on `ns2-up-net-nz` (https://chorus.vayne.garden): server + web from `b141e58`
+  (D-119 security fix), Android **0.1.728** (deployed 2026-11-06). Push main to GitHub after
+  each commit (M12.2; check `git status -sb`).
 - **Checkouts:** the main checkout (clean) and `F:/DunBuild/chorus-buckets` (branch `ui13`, at
   a9c3c2e, plus the untracked audit file above). Work happens on `main`; use a worktree only when
   something must stay out of a deploy.
@@ -95,7 +93,7 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 
 ### Security
 
-- [~] SEC1 Cross-account writes and reads found by the privacy audit and Gemini's review (`docs/handoff/gemini-review-triage.md`).
+- [x] SEC1 Cross-account writes and reads found by the privacy audit and Gemini's review (`docs/handoff/gemini-review-triage.md`).
 
 ### UI — Owner's Figma redesign
 
@@ -148,3 +146,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`. Entries befo
 - 2026-11-04 claude-opus-5.5 — Removed five unused worktrees (their WIP saved as `wip:` commits); D-118 faster gate (`gate` profile, `verify.py --changed`).
 - 2026-11-05 claude-opus-5.5 — Compacted PROGRESS.md, docs/NOTES.md and docs/handoff/ (finished batch handoffs deleted; recoverable from a9c3c2e). Preserved the untracked privacy audit on `wip/privacy-audit` and made it the next task.
 - 2026-11-06 claude-opus-5.5 — SEC1: ownership at ingest (D-119; privacy audit a01–a18 pass), blob possession (`blob_holder`), and the merited Gemini review findings (rate limit, Home rebinding, webhook DNS guard, auth writes, restore window, helper consolidation, three Android a11y fixes); verdicts in `docs/handoff/gemini-review-triage.md`, Q23 opened (285362d, 0778d34).
+- 2026-11-06 claude-opus-5.5 — SEC1 Deployed b141e58 (server, web, Android 0.1.728) to ns2. scripts/privacy-audit.sql on the live DB (2571 ops, read-only): no op of the kinds D-119 now refuses, so the holes were not used.
