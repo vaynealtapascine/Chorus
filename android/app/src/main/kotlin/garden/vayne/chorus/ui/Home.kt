@@ -1,5 +1,6 @@
 package garden.vayne.chorus.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -270,7 +271,9 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (St
                 }
             }
             item {
-                Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // who is here grows and shrinks rather than jumping when someone switches in or out
+                val sizeMotion = if (rememberChorusMotion()) ChorusMotion.settle<androidx.compose.ui.unit.IntSize>() else androidx.compose.animation.core.snap()
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).animateContentSize(sizeMotion), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (view.preset == Preset.Simple) {
                         SimpleCard(model, scene, frontSince, ::lineFor, ::took, ::open, time)
                         if (!display.hintDismissed) Row(Modifier.fillMaxWidth().background(p.surface2, RoundedCornerShape(16.dp)).padding(12.dp),
@@ -323,12 +326,14 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (St
                             if (!awayOpen) FaceStack(scene.away.map { Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob) }, muted = true)
                             Glyph(if (awayOpen) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right, p.ink3, 18.dp)
                         }
-                        if (awayOpen) FlowRow(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        Presence(Unit.takeIf { awayOpen }) {
+                        FlowRow(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             scene.away.take(200).forEach { m ->
                                 val s = Subject("member", m.id, m.shownName, m.color, m.glyph, m.avatarBlob)
                                 FaceChip(s, null, faint = true) { placing = s }
                             }
+                        }
                         }
                     }
                     val others = tabs.filter { it.id != frontId }

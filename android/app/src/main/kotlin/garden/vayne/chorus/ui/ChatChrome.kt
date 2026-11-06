@@ -223,17 +223,21 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
             // a chat that moves to the top (pinned, or a new message) is shown, not left just above the
             // view: lazy lists keep the old first row in place
             val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+            val motion = rememberChorusMotion()
             val first = entries.firstOrNull()?.let { (it as? ChatOrganize.SpaceEntry<*>)?.spaceId ?: (it as ChatListRow).channel.id }
             LaunchedEffect(first) { if (listState.firstVisibleItemIndex <= 1) listState.scrollToItem(0) }
             LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 88.dp)) {
                 items(entries, key = { (it as? ChatOrganize.SpaceEntry<*>)?.let { e -> "space:${e.spaceId}" } ?: (it as ChatListRow).channel.id }) { entry ->
+                    // a chat that moves (a new message, a pin) glides to its place
+                    val rowMotion = Modifier.animateItem(fadeInSpec = if (motion) ChorusMotion.tween(true) else null,
+                        placementSpec = if (motion) ChorusMotion.settle() else null, fadeOutSpec = if (motion) ChorusMotion.tween(true, ChorusMotion.Quick) else null)
                     @Suppress("UNCHECKED_CAST")
-                    if (entry is ChatOrganize.SpaceEntry<*>) { SpaceEntryRow(entry as ChatOrganize.SpaceEntry<ChatListRow>, folders.compact,
-                        onOpen = { openSpace = entry.spaceId }, onAction = onSpaceAction); return@items }
+                    if (entry is ChatOrganize.SpaceEntry<*>) { Box(rowMotion) { SpaceEntryRow(entry as ChatOrganize.SpaceEntry<ChatListRow>, folders.compact,
+                        onOpen = { openSpace = entry.spaceId }, onAction = onSpaceAction) }; return@items }
                     val row = entry as ChatListRow
                     val direct = row.channel.isMemberDm && row.space.kind == "internal"
                     val peer = row.peer(model, readerId)
-                    Box { Row(Modifier.fillMaxWidth().background(if (selected == row.channel.id) p.accentSoft else if (row.pinned) p.surface else p.bg)
+                    Box(rowMotion) { Row(Modifier.fillMaxWidth().background(if (selected == row.channel.id) p.accentSoft else if (row.pinned) p.surface else p.bg)
                         .combinedClickable(onClick = { onOpen(row) }, onLongClick = onRowAction?.let { { rowMenu = row.channel.id } },
                             onLongClickLabel = "Chat actions").heightIn(min = if (folders.compact) 56.dp else 70.dp)
                             .padding(horizontal = 12.dp, vertical = if (folders.compact) 4.dp else 8.dp),

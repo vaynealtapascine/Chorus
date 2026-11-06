@@ -87,3 +87,23 @@ internal fun ChorusScene(route: String, depth: Int, modifier: Modifier = Modifie
         }
     }
 }
+
+/**
+ * Shows [content] while [value] is non-null, growing in and fading, then shrinking away; while it
+ * leaves it keeps showing the last value (owner, 2026-11-07: bars and banners arrive instead of
+ * popping in). Reduced motion shows and hides it at once.
+ */
+@Composable
+internal fun <T : Any> Presence(value: T?, modifier: Modifier = Modifier, content: @Composable (T) -> Unit) {
+    val motion = rememberChorusMotion()
+    // a plain holder, not state: it only needs to outlive the frames of the exit
+    val last = remember { arrayOfNulls<Any>(1) }
+    if (value != null) last[0] = value
+    AnimatedVisibility(value != null, modifier,
+        enter = if (motion) expandVertically(ChorusMotion.tween(true), Alignment.Top) + fadeIn(ChorusMotion.tween(true)) else EnterTransition.None,
+        exit = if (motion) shrinkVertically(ChorusMotion.tween(true, ChorusMotion.Quick), Alignment.Top) + fadeOut(ChorusMotion.tween(true, ChorusMotion.Quick))
+            else ExitTransition.None) {
+        @Suppress("UNCHECKED_CAST")
+        (last[0] as T?)?.let { content(it) }
+    }
+}

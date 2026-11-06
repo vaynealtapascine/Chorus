@@ -133,6 +133,12 @@ import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import kotlinx.coroutines.Dispatchers
@@ -1048,6 +1054,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 }
             }
         }
+        val listMotion = rememberChorusMotion()
         Box(Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(Modifier.fillMaxSize(), state = listState, reverseLayout = true,
             contentPadding = PaddingValues(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1058,7 +1065,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 val timelinePlan = ChatPresentation.timelinePlan(older?.occurredAt, message.occurredAt, newer == null, frontLines)
                 val groupStart = !ChatPresentation.grouped(older, message) || message.id == firstUnread
                 val groupEnd = !ChatPresentation.grouped(message, newer) || newer?.id == firstUnread
-                Column(Modifier.padding(top = if (groupStart) 8.dp else 0.dp)) {
+                // a new message fades in and the others make room (not on opening the chat)
+                Column(Modifier.animateItem(fadeInSpec = if (listMotion) ChorusMotion.tween(true) else null,
+                    placementSpec = if (listMotion) ChorusMotion.settle() else null,
+                    fadeOutSpec = if (listMotion) ChorusMotion.tween(true, ChorusMotion.Quick) else null)
+                    .padding(top = if (groupStart) 8.dp else 0.dp)) {
                 if (readerName != null && message.id == firstUnread) Text("${unreadCount} unread for $readerName",
                     color = p.accent, fontSize = 12.sp, lineHeight = 16.sp, textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).background(p.surface).padding(vertical = 6.dp))
@@ -1115,8 +1126,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             }
         }
         val returnTo = garden.vayne.chorus.data.ChatJump.back(jumpBack, messages.mapTo(HashSet()) { it.id })
-        if (history.target != null || jumpTo != null || listState.firstVisibleItemIndex > 1 || unreadCount > 0 || returnTo != null) Column(
-            Modifier.align(Alignment.BottomEnd).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        androidx.compose.animation.AnimatedVisibility(history.target != null || jumpTo != null || listState.firstVisibleItemIndex > 1 || unreadCount > 0 || returnTo != null,
+            Modifier.align(Alignment.BottomEnd),
+            enter = if (listMotion) fadeIn(ChorusMotion.tween(true, ChorusMotion.Quick)) + scaleIn(ChorusMotion.pop(), .6f) else EnterTransition.None,
+            exit = if (listMotion) fadeOut(ChorusMotion.tween(true, ChorusMotion.Quick)) + scaleOut(ChorusMotion.tween(true, ChorusMotion.Quick), .6f) else ExitTransition.None) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (unreadMentions.isNotEmpty()) ChatJumpButton("@", unreadMentions.size, "${unreadMentions.size} unread mentions for $readerName") {
                 actions.launch { val at = messages.asReversed().indexOfFirst { it.id == unreadMentions.last().id }; if (at >= 0) listState.animateScrollToItem(at) }
             }
@@ -1127,14 +1141,15 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             }
         }
         }
-        undoDelete?.let { gone ->
+        }
+        Presence(undoDelete) { gone ->
             Row(Modifier.fillMaxWidth().background(p.surface2).padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Message deleted", color = p.ink, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = { delete(gone, restore = true) }) { Text("Undo") }
             }
         }
-        if (selectedIds.isNotEmpty()) {
-            val picked = messages.filter { it.id in selectedIds }
+        Presence(selectedIds.takeIf { it.isNotEmpty() }) { chosen ->
+            val picked = messages.filter { it.id in chosen }
             Row(Modifier.fillMaxWidth().background(p.surface2).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 ChatIconButton(R.drawable.ic_close, "Cancel selection") { selectedIds = emptyList() }
                 Text("${picked.size} selected", color = p.ink, fontSize = 15.sp, modifier = Modifier.weight(1f))
@@ -1180,19 +1195,21 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     }
                 }
             }
-            if (quoting.isNotEmpty()) Row(Modifier.fillMaxWidth().background(p.surface2, RoundedCornerShape(10.dp)).padding(start = 12.dp),
+            Presence(quoting.takeIf { it.isNotEmpty() }) { quoted ->
+            Row(Modifier.fillMaxWidth().background(p.surface2, RoundedCornerShape(10.dp)).padding(start = 12.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ChatIcon(R.drawable.ic_format_quote, tint = p.accent)
                 Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                    Text(if (quoting.size == 1) "Quote " + quoting[0].authors.joinToString(" & ", transform = ::nameOf) else "Quote ${quoting.size} messages",
+                    Text(if (quoted.size == 1) "Quote " + quoted[0].authors.joinToString(" & ", transform = ::nameOf) else "Quote ${quoted.size} messages",
                         color = p.accent, fontSize = 13.sp, lineHeight = 18.sp)
-                    Text(spoilerPreview(quotePart?.let { r -> quoting.singleOrNull()?.text?.let { t -> "“" + t.substring(r.first, (r.last + 1).coerceAtMost(t.length)) + "”" } }
-                        ?: quoting.joinToString(" · ") { ChatPresentation.preview(it) }), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
+                    Text(spoilerPreview(quotePart?.let { r -> quoted.singleOrNull()?.text?.let { t -> "“" + t.substring(r.first.coerceAtMost(t.length), (r.last + 1).coerceAtMost(t.length)) + "”" } }
+                        ?: quoted.joinToString(" · ") { ChatPresentation.preview(it) }), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2)
                 }
                 ChatIconButton(R.drawable.ic_close, "Cancel quote") { quoting = emptyList(); quotePart = null }
             }
+            }
             val target = messages.find { it.id == replyTo } ?: carriedReply?.takeIf { it.id == replyTo }
-            if (target != null) {
+            Presence(target) { target ->
                 Row(Modifier.fillMaxWidth().background(p.surface2, RoundedCornerShape(10.dp)).padding(start = 12.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChatIcon(R.drawable.ic_reply, tint = p.accent)
@@ -1203,7 +1220,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     }
                     ChatIconButton(R.drawable.ic_close, "Cancel reply") { replyTo = null; carriedReply = null }
                 }
-            } else if (replyTo != null) {
+            }
+            if (target == null && replyTo != null) {
                 TextButton(onClick = { replyTo = null; carriedReply = null }) { Text("Reply target unavailable · Cancel") }
             }
             val audienceLabel = when (audience) {

@@ -1,5 +1,6 @@
 package garden.vayne.chorus.ui
 
+import androidx.compose.animation.core.animateFloatAsState
 import garden.vayne.chorus.designsystem.R
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -140,6 +141,7 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
     val here = model.current
 
     Box(Modifier.fillMaxSize()) {
+        val motion = rememberChorusMotion()
         LazyColumn(Modifier.padding(horizontal = 16.dp), state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -182,8 +184,9 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
                         .then(if (folder != null) Modifier.clickable { toggleCollapsed(folder.id) } else Modifier)
                         .padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val turn by animateFloatAsState(if (open) 90f else 0f, ChorusMotion.tween(motion, ChorusMotion.Quick), label = "folder chevron")
                         if (folder != null) ChorusIcon(AppIcon.Chevron, if (open) "Fold up ${folder.name}" else "Open ${folder.name}",
-                            Modifier.size(16.dp).rotate(if (open) 90f else 0f))
+                            Modifier.size(16.dp).rotate(turn))
                         Text(folder?.name ?: "Not in a folder", color = if (folder != null) p.ink2 else p.ink3, fontWeight = FontWeight.SemiBold,
                             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                         Text("${s.members.size}", color = p.ink3, style = MaterialTheme.typography.bodySmall)
@@ -195,11 +198,16 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
                         modifier = Modifier.fillMaxWidth().border(1.dp, p.line, RoundedCornerShape(12.dp)).padding(12.dp))
                 }
                 items(s.members, key = { it.id }) { m ->
+                    // opening a folder fades its members in; moving one glides it
+                    Box(Modifier.animateItem(fadeInSpec = if (motion) ChorusMotion.tween(true) else null,
+                        placementSpec = if (motion) ChorusMotion.settle() else null,
+                        fadeOutSpec = if (motion) ChorusMotion.tween(true, ChorusMotion.Quick) else null)) {
                     MemberRow(chorus, model, m, here.find { it.subjectId == m.id && it.subjectType == "member" }?.level,
                         selecting = selecting, picked = m.id in picked, foldered = foldered,
                         onOpen = { if (selecting) picked = if (m.id in picked) picked - m.id else picked + m.id else profile = m.id },
                         onMove = { file(listOf(m.id), it) }, onNewFolder = { newFolderFor = listOf(m.id) },
                         onRoles = { rolesFor = m.id }, onSelect = { selecting = true; picked = listOf(m.id) })
+                    }
                 }
             }
             item { Spacer(Modifier.height(if (selecting) 96.dp else 24.dp)) }
