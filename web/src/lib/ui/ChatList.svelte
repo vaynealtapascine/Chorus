@@ -13,6 +13,7 @@
   import { sync, type Projection } from '../sync/client';
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
+  import { longPress } from '../long-press';
 
   let { projection, dark, currentId, folder, folders, foldersAt = null, onfolders, directory, person, onswitch, onnewchat, viewingAs = null }: {
     projection: Projection; dark: boolean; currentId?: string; folder: string; directory: Map<string, SpaceInfo>;
@@ -193,7 +194,8 @@
         ondrop={(e) => { e.preventDefault(); drop(r.id); }}>
       <a class="row" class:on={r.channel.id === currentId} class:pinned={r.pinned} class:compact={folders.compact} href="#/chat/{r.channel.id}" aria-current={r.channel.id === currentId ? 'page' : undefined}
         draggable={r.pinned} ondragstart={(e) => { dragging = r.id; e.dataTransfer?.setData('text/plain', r.id); }} ondragend={() => { dragging = null; dropOn = null; }}
-        oncontextmenu={(e) => { e.preventDefault(); menuFor = r.id; }}>
+        oncontextmenu={(e) => { e.preventDefault(); foldersFor = null; menuFor = r.id; }}
+        use:longPress={{ enabled: true, onpress: () => { foldersFor = null; menuFor = r.id; } }}>
         <span class="disc" style="background: {core.adaptColor(r.disc.color, dark).ring}; color: {core.adaptColor(r.disc.color, dark).avatar_ink}">
           {#if r.disc.blob}<AvatarImage hash={r.disc.blob} glyph={r.disc.glyph} name={r.title} />{:else}{r.disc.glyph}{/if}
         </span>
@@ -282,7 +284,9 @@
     border: 1.5px dashed var(--line); background: none; color: var(--accent); cursor: pointer; }
   .switch:hover { border-color: var(--accent); }
   .rows { flex: 1; overflow-y: auto; min-height: 0; }
-  .row { display: flex; align-items: center; gap: 12px; padding: 2px 0 2px 12px; color: inherit; text-decoration: none; transition: background var(--t-fast) var(--ease); }
+  /* a held finger opens the chat's menu, not the browser's link preview */
+  .row { display: flex; align-items: center; gap: 12px; padding: 2px 0 2px 12px; color: inherit; text-decoration: none; transition: background var(--t-fast) var(--ease);
+    -webkit-touch-callout: none; user-select: none; }
   .row:hover { background: var(--surface); }
   .row.on { background: var(--accent-soft); }
   .disc { flex: none; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; font-weight: 700; font-size: 20px; }

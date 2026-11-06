@@ -17,6 +17,7 @@
   import EmojiImage from './EmojiImage.svelte';
   import { sync, type Revision } from '../sync/client';
   import { swipeReply } from '../swipe-reply';
+  import { longPress } from '../long-press';
   import { linkTo } from '../share-links';
   import LinkEmbeds from './LinkEmbeds.svelte';
 
@@ -169,6 +170,23 @@
     anchor = { left: e.clientX, bottom: e.clientY };
     actionMenu.showPopover();
   }
+  // a right click or a held finger opens the same menu where it is (owner, 2026-11-06); links and
+  // media keep the browser's own, and Shift + right click always does
+  const OWN_MENU = 'a, img, video, audio, input, textarea';
+  function openActionsAt(x: number, y: number) {
+    if (readOnly || heldUntil || !actionMenu) return;
+    anchor = { left: x, bottom: y };
+    if (actionMenu.matches(':popover-open')) placeActions();
+    else actionMenu.showPopover();
+  }
+  function rightClick(e: MouseEvent) {
+    if (readOnly || heldUntil || e.shiftKey || (e.target as Element).closest(OWN_MENU)) return;
+    e.preventDefault();
+    openActionsAt(e.clientX, e.clientY);
+  }
+  function copyText() {
+    void navigator.clipboard?.writeText(selectedRange()?.text ?? m.text);
+  }
   const when = $derived(new Date(m.occurred_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }));
   let body: HTMLElement | undefined = $state();
 
@@ -211,7 +229,8 @@
     <span class="slot">{#if last}{@const a = m.authors[0] ?? ''}<span class="avatar" style="--ring: {color(a).ring}; --avatar-ink: {color(a).avatar_ink}" title={nameOf(a)}><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></span>{/if}</span>
   {/if}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="msg" class:cont class:self={out} class:pinned={m.pinned} class:selected data-message-id={m.id} onclick={tapBubble}>
+  <div class="msg" class:cont class:self={out} class:pinned={m.pinned} class:selected data-message-id={m.id} onclick={tapBubble}
+    oncontextmenu={rightClick} use:longPress={{ enabled: !readOnly && !heldUntil, skip: OWN_MENU, onpress: ({ x, y }) => openActionsAt(x, y) }}>
     {#if !cont || selecting}
       <div class="head">
         {#if selecting}<button class="select-toggle" aria-label={selected ? 'Deselect message' : 'Select message'} aria-pressed={selected} onclick={onselect}>{selected ? '☑' : '□'}</button>{/if}
@@ -364,6 +383,7 @@
       <button onclick={() => runAction(onreply)} title="Reply"><Icon name="action-reply" size={20} />Reply</button>
       <button onclick={() => runAction(onreplyin)} title="Reply in another channel"><Icon name="action-reply" size={20} />Reply in another channel</button>
       {#if onreplyprivately}<button onclick={() => runAction(onreplyprivately)} title="Reply privately"><Icon name="chat" size={20} />Reply privately</button>{/if}
+      {#if m.text}<button onclick={() => runAction(copyText)} title="Copy the selected words, or the whole message"><Icon name="copy" size={20} />Copy text</button>{/if}
       <button onclick={() => runAction(quote)} title="Quote (select text first to quote part)"><Icon name="copy" size={20} />Quote selection or message</button>
       <button onclick={() => runAction(() => onforward(selectedRange() ?? undefined))} title="Forward selection or message"><Icon name="forward" size={20} />Forward</button>
       <button onclick={() => runAction(() => navigator.clipboard?.writeText(linkTo(location.origin, { kind: 'message', id: m.id })))} title="Copy a link to this message: it shows as a preview in a chat"><Icon name="copy" size={20} />Copy link</button>
