@@ -395,12 +395,14 @@ pub fn relationship_write_allowed(conn: &Connection, author: &str, o: &chorus_co
             .query_row(
                 "SELECT to_kind,to_id FROM relationship WHERE id=?1 AND account_id=?2",
                 params![id, author],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)),
+                // a set without `to_kind` upserts the row with it empty
+                |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?)),
             )
             .optional()?,
         None => None,
     };
-    let kind = o.payload.get("to_kind").and_then(Value::as_str).or_else(|| existing.as_ref().map(|e| e.0.as_str()));
+    let kind =
+        o.payload.get("to_kind").and_then(Value::as_str).or_else(|| existing.as_ref().and_then(|e| e.0.as_deref()));
     if !o.payload.as_object().is_some_and(|p| p.contains_key("to_kind") || p.contains_key("to_id")) {
         return Ok(true);
     }

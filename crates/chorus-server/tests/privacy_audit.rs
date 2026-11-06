@@ -689,3 +689,12 @@ fn a23_an_open_restore_window_still_refuses_cross_account_writes() {
     let (ack2, _) = ingest::accept(&w.c, &s, o, NOW, true).unwrap();
     assert!(ack2.error.is_some(), "restore push must not edit another account's post");
 }
+
+#[test]
+fn a24_a_relationship_set_without_a_target_is_answered_not_an_error() {
+    // found by ingest_fuzz: the first empty set upserts a row whose to_kind is empty
+    let w = World::new();
+    let rel = w.id();
+    assert_eq!(w.push(&w.mallory, "relationship.set", &rel, json!({})), None);
+    assert_eq!(w.push(&w.mallory, "relationship.set", &rel, json!({})), None);
+}
