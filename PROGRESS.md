@@ -22,28 +22,24 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 ## Now
 
-- **In progress:** -
-- **Owner:** -
-- **Next concrete step:** fix the cross-account write holes found by the privacy audit (see *Open: privacy audit* below), then the phone/browser checks listed under *State*.
-- **Notes:** handoff compacted 2026-11-05 by claude-opus-5.5; state below checked against the repo and the live server that day.
+- **In progress:** SEC1 — cross-account write holes (privacy audit + Gemini review)
+- **Owner:** claude-opus-5.5 (2026-11-06)
+- **Next concrete step:** full gate (`verify.py --android`), then deploy the server (security fix: the live server still has the holes) and run `scripts/privacy-audit.sql` on a copy of the live DB.
+- **Notes:** fixes committed on main (D-119; verdicts per finding in `docs/handoff/gemini-review-triage.md`). Gemini's raw reviews stay untracked in `gemini_review/`. A parallel thread (chat list/menus/profiles, branch `t3/chat-list-menus-profiles`) holds D-120/D-121 and rebases onto main.
 
-### Open: privacy audit (top priority, security)
+### SEC1: what is done and what is left
 
-`crates/chorus-server/tests/privacy_audit.rs` is on branch **`wip/privacy-audit`** (232a384; it was
-left untracked in `F:/DunBuild/chorus-buckets` on 2026-11-04 and is still there). An ordinary
-account (Mallory) pushes ops through the real `ingest::accept` at another account's (Alice's)
-entities. On main a9c3c2e **11 of 12 attacks succeed** (log: `F:/DunBuild/af/privacy-audit-1.log`):
-approve her own follow request (`follow.accept`), rewrite her follow ceiling (`follow.set_ceiling`),
-make Alice's private member public / rename / delete it (`member.set`, `member.delete`), add
-herself to Alice's bucket (`bucket.assign`), change a bucket's ceiling (`bucket.set`), share
-Alice's private feed (`feed.set`), write a field value on Alice's member (`field.set_value`), end
-Bob's follow of Alice (`follow.end`), attach Alice's private file to her own public post
-(`post.create` with a foreign attachment id), highlight a post on Alice's member
-(`highlight.add`). Only a06 (opening a private custom field with `field.set`) had no effect, and
-even there the op was accepted. The likely pattern (not yet confirmed in code): the op is in Mallory's own scope, but projection applies it to the entity id wherever it lives. The server is
-public (D-095), so a01 alone lets anyone follow anyone and read followers-only posts and fronts.
-Fix at ingest (entity ownership per kind, the way D-073 did for message edits), make every case
-pass, add the test to the gate, deploy, and record the rule in DATA_MODEL/NOTES.
+Done (D-119, `tests/privacy_audit.rs` a01–a18 in the gate): ingest refuses an op on an entity
+made in another scope, `account.set`/`system.set` for another account, payload ids of another
+account (field values, highlights, group members, attachments), and blob hashes the author neither
+uploaded, holds nor can read (`blob_pending`, held). Re-uploads of another account's blob prove the
+bytes (`blob_holder`, migration 0020; ends the dedup oracle). Exports pack only readable files.
+Also from Gemini's review: rate limiter bypass, Chorus Home DNS rebinding, webhook DNS rebinding
+and link-local targets, per-request auth writes, restore window reopening, post alert faces,
+named-front avatars, search channel scoping, helper consolidation, three Android a11y fixes.
+
+Left: deploy; the live-DB audit (NOTES §Security); Q23 (poll votes of deleted members); the
+*Open* rows of the triage file (device checks: nav-bar inset, predictive back).
 
 ### State (checked 2026-11-05)
 
@@ -67,7 +63,7 @@ pass, add the test to the gate, deploy, and record the rule in DATA_MODEL/NOTES.
 - Ship in slices: commit → full gate (`verify.py --android`) → `pwsh scripts/deploy-linux.ps1
   [-Android] [-NoBuild]` → log line with the Android version. Phones update on next app start.
 - No release (`v*` tag) until the owner says so. Spec changes that alter user-visible behaviour
-  go through `docs/OPEN_QUESTIONS.md` (open now: Q21, Q22).
+  go through `docs/OPEN_QUESTIONS.md` (open now: Q21, Q22, Q23).
 - Production checks use the test account `claudetest` (its device is the owner's Chrome
   profile), never the owner's account. Mutations go to the emulator or an isolated demo server
   (`docs/OPS.md` §8 "Demo data"; `F:/DunBuild/ui8-demo` is a seeded two-account demo on 5283).
@@ -79,7 +75,7 @@ pass, add the test to the gate, deploy, and record the rule in DATA_MODEL/NOTES.
 
 | Branch | What |
 | --- | --- |
-| `wip/privacy-audit` | the audit above — next task |
+| `wip/privacy-audit` | the audit test, now on main (SEC1); can be deleted |
 | `wip/push-transport-choice` | Android "Notifications arrive by" choice (unfinished; its D-098 number is taken — renumber) |
 | `wip/ui7-slice3` | UI7 slice 3 Journal composer, partial |
 | `wip/ui7-slice1` | UI7 slice 1 chat feel, mostly redone in UI8 slice 6 |
@@ -96,6 +92,10 @@ Done and collapsed (details in git history): S1–S12 spec; A1 audit; M0.1–M0.
 M2.1–M2.6, M2.8; M3.1–M3.5; M4.1–M4.2; M5.1–M5.7, M5.9–M5.13; M6.1–M6.3; M7.2d, M7.4, M7.5;
 M8.3; M9.1–M9.4; M10.1–M10.3; M11.1; M12.1; M13.1–M13.4, M13.6; M14.1–M14.3, M14.11; L6; UI1,
 UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
+
+### Security
+
+- [~] SEC1 Cross-account writes and reads found by the privacy audit and Gemini's review (`docs/handoff/gemini-review-triage.md`).
 
 ### UI — Owner's Figma redesign
 
@@ -147,3 +147,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`. Entries befo
 - 2026-11-04 claude-opus-5.5 — D-116 web JS budget 300 KB; D-117 default audience for new Journal posts. Deployed fa4c6c0, Android 0.1.722.
 - 2026-11-04 claude-opus-5.5 — Removed five unused worktrees (their WIP saved as `wip:` commits); D-118 faster gate (`gate` profile, `verify.py --changed`).
 - 2026-11-05 claude-opus-5.5 — Compacted PROGRESS.md, docs/NOTES.md and docs/handoff/ (finished batch handoffs deleted; recoverable from a9c3c2e). Preserved the untracked privacy audit on `wip/privacy-audit` and made it the next task.
+- 2026-11-06 claude-opus-5.5 — SEC1: ownership at ingest (D-119; privacy audit a01–a18 pass), blob possession (`blob_holder`), and the merited Gemini review findings (rate limit, Home rebinding, webhook DNS guard, auth writes, restore window, helper consolidation, three Android a11y fixes); verdicts in `docs/handoff/gemini-review-triage.md`, Q23 opened (285362d, 0778d34).
