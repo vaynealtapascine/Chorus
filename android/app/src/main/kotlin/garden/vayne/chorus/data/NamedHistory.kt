@@ -19,7 +19,9 @@ data class NamedFrontInterval(val id: String, val frontId: String, val presence:
 
 data class NamedHistory(val frontId: String, val saved: List<SwitchRow>,
     val ownIntervals: List<NamedFrontInterval>, val changes: List<EffectiveFrontChange>,
-    val intervals: List<NamedFrontInterval>) {
+    val intervals: List<NamedFrontInterval>,
+    /** This front's concurrent-switch review cards, resolved or not (F3.6). */
+    val reviews: List<FrontReview> = emptyList()) {
     companion object {
         private fun string(o: JSONObject, key: String): String? =
             if (o.has(key) && !o.isNull(key)) o.getString(key) else null
@@ -37,13 +39,14 @@ data class NamedHistory(val frontId: String, val saved: List<SwitchRow>,
                 s.getString("id"), s.getString("kind"), s.getLong("occurred_at"),
                 NamedFronts.presence(s.optJSONArray("entries")).map { it.displayEntry() },
                 NamedFronts.presence(s.optJSONArray("resulting_front")).map { it.displayEntry() },
-                string(s, "note"), s.getBoolean("retracted")) }
+                string(s, "note"), s.getBoolean("retracted"), string(s, "device_id")) }
             val changes = rows(effective.optJSONArray("changes")) { c -> EffectiveFrontChange(
                 c.getString("id"), c.getLong("occurred_at"), NamedFronts.presence(c.optJSONArray("entries")),
                 string(c, "source"), c.getString("state"), string(c, "issue"), c.getBoolean("deleted"),
                 rows(c.optJSONArray("causes")) { FrontCause(it.getString("op_id"), it.getString("front_id"), it.getBoolean("recorded_time_estimated")) }) }
             return NamedHistory(front, saved, rows(history?.optJSONArray("intervals"), ::interval),
-                changes, rows(effective.optJSONArray("intervals"), ::interval))
+                changes, rows(effective.optJSONArray("intervals"), ::interval),
+                FrontReview.list(own.optJSONObject("reviews")?.optJSONArray(front)))
         }
     }
 }

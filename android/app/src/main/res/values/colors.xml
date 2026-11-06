@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Widget colours: mirror design/tokens.json (Light). values-night holds Dark. -->
+<!-- Widget colours: mirror design/tokens.json (Light). values-night holds Dark (D-079, Figma F3.8). -->
 <resources>
-    <color name="w_bg">#FFFBF7F2</color>
-    <color name="w_surface">#FFFFFFFF</color>
-    <color name="w_surface2">#FFF4EDE4</color>
-    <color name="w_line">#FFE4D8CA</color>
-    <color name="w_ink">#FF2B2521</color>
-    <color name="w_ink2">#FF6F6259</color>
-    <color name="w_ink3">#FFA09184</color>
-    <color name="w_accent">#FFC0694E</color>
-    <color name="w_accent_soft">#FFF6E1D8</color>
+    <color name="w_bg">#FFFFFFFF</color>
+    <color name="w_surface">#FFF7F6F2</color>
+    <color name="w_surface2">#FFEFEEE9</color>
+    <color name="w_line">#FFD8DAD4</color>
+    <color name="w_ink">#FF202529</color>
+    <color name="w_ink2">#FF565F60</color>
+    <color name="w_ink3">#FF626A68</color>
+    <color name="w_accent">#FF247D73</color>
+    <color name="w_accent_soft">#FFE0EFEB</color>
+    <color name="w_on_accent">#FFFFFFFF</color>
 </resources>

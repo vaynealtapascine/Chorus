@@ -22,7 +22,11 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
     /** Chat folders and the chat list's display (`chat_folders`, D-113). */
     val chatFolders: ChatFolders.Settings = ChatFolders.Settings(),
     /** Who a new Journal post starts out shared with (`journal.default_audience`, D-117). */
-    val postAudience: Audience = Audience.PRIVATE) {
+    val postAudience: Audience = Audience.PRIVATE,
+    /** How Fronting shows each front and layer (`fronting.display`, D-122). */
+    val frontingDisplay: FrontingDisplay.Settings = FrontingDisplay.Settings(),
+    /** What members are up to while here (`member_status:<id>`, D-122). */
+    val memberStatus: Map<String, MemberStatus> = emptyMap()) {
     fun isSaved(postId: String): Boolean = postId in bookmarks
 
     /** A channel's chat notifications; DMs default to everything, other channels to mentions (as on web). */
@@ -57,7 +61,9 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
                 value(ChatOrganize.HIDE_PRIVATE) != false,
                 keyed(prefs, accountId, ChatOrganize.HIDDEN).mapNotNull { (channel, at) -> (at as? Number)?.let { channel to it.toLong() } }.toMap(),
                 keyed(prefs, accountId, ChatOrganize.ARCHIVED).mapNotNull { (channel, at) -> (at as? Number)?.let { channel to it.toLong() } }.toMap(),
-                ChatFolders.parse(value(ChatFolders.PREF)), ProfileAudience.of(value(POST_AUDIENCE)))
+                ChatFolders.parse(value(ChatFolders.PREF)), ProfileAudience.of(value(POST_AUDIENCE)),
+                FrontingDisplay.parse(value(FrontingDisplay.PREF)),
+                keyed(prefs, accountId, FrontingDisplay.STATUS).mapNotNull { (member, v) -> FrontingDisplay.status(v)?.let { member to it } }.toMap())
         }
 
         /** Account-wide (no device) prefs under [prefix], by the rest of the key; a pending local

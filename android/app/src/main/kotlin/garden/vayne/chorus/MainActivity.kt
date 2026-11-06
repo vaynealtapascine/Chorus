@@ -41,6 +41,7 @@ import garden.vayne.chorus.ui.AppIcon
 import garden.vayne.chorus.ui.ChorusIcon
 import garden.vayne.chorus.ui.MoreScreen
 import garden.vayne.chorus.ui.FrontsScreen
+import garden.vayne.chorus.ui.LayersDisplayScreen
 import garden.vayne.chorus.ui.Switcher
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -87,6 +88,9 @@ private data class OpenPostRequest(val id: Long, val postId: String?, val messag
 class MainActivity : ComponentActivity() {
     companion object {
         const val ACTION_OPEN_CHAT = "garden.vayne.chorus.OPEN_CHAT"
+        /** Open the switch sheet (the front widget's Switch and Handover, F3.8). */
+        const val ACTION_SWITCH = "garden.vayne.chorus.SWITCH"
+        const val EXTRA_HANDOVER = "garden.vayne.chorus.HANDOVER"
         const val EXTRA_OPEN_CHANNEL = "garden.vayne.chorus.OPEN_CHANNEL"
         const val EXTRA_OPEN_SPACE = "garden.vayne.chorus.OPEN_SPACE"
         const val EXTRA_OPEN_POST = "garden.vayne.chorus.OPEN_POST"
@@ -101,6 +105,8 @@ class MainActivity : ComponentActivity() {
     private var openChatRequest = mutableStateOf<OpenChatRequest?>(null)
     private var nextOpenChatId = 0L
     private var openPostRequest = mutableStateOf<OpenPostRequest?>(null)
+    /** A switch sheet asked for from outside: null none, else whether it is a handover. */
+    private var switchRequest = mutableStateOf<Boolean?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -108,6 +114,7 @@ class MainActivity : ComponentActivity() {
         inviteLink.value = inviteFrom(intent)
         sharedDraft.value = SharedDraft.from(intent, ++nextShareId)
         if (intent.action == "garden.vayne.chorus.NEW_ENTRY") newEntryRequest.value = ++nextEntryId
+        if (intent.action == ACTION_SWITCH) switchRequest.value = intent.getBooleanExtra(EXTRA_HANDOVER, false)
         openChatFrom(intent)?.let { openChatRequest.value = it }
         openPostFrom(intent)?.let { openPostRequest.value = it }
         val chorus = Chorus.get(this)
@@ -128,7 +135,8 @@ class MainActivity : ComponentActivity() {
             openChatRequest = openChatRequest.value,
             onOpenChatConsumed = { openChatRequest.value = null },
             openPostRequest = openPostRequest.value,
-            onOpenPostConsumed = { openPostRequest.value = null }) } } } }
+            onOpenPostConsumed = { openPostRequest.value = null },
+            switchRequest = switchRequest.value, onSwitchConsumed = { switchRequest.value = null }) } } } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -136,6 +144,7 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         inviteFrom(intent)?.let { inviteLink.value = it }
         SharedDraft.from(intent, ++nextShareId)?.let { sharedDraft.value = it }
+        if (intent.action == ACTION_SWITCH) switchRequest.value = intent.getBooleanExtra(EXTRA_HANDOVER, false)
         if (intent.action == "garden.vayne.chorus.NEW_ENTRY") {
             sharedDraft.value = null
             newEntryRequest.value = ++nextEntryId
@@ -206,7 +215,8 @@ private enum class Tab(val label: String, val icon: AppIcon) { Home("Fronting", 
 private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     onShareDismissed: () -> Unit, newEntryRequest: Long?, onNewEntryConsumed: () -> Unit,
     openChatRequest: OpenChatRequest? = null, onOpenChatConsumed: () -> Unit = {},
-    openPostRequest: OpenPostRequest? = null, onOpenPostConsumed: () -> Unit = {}) {
+    openPostRequest: OpenPostRequest? = null, onOpenPostConsumed: () -> Unit = {},
+    switchRequest: Boolean? = null, onSwitchConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val context = LocalContext.current
     val navPrefs = remember { context.getSharedPreferences("chorus.navigation", 0) }
@@ -252,6 +262,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var searchSection by rememberSaveable { mutableStateOf("Messages") }
     var insightsOpen by rememberSaveable { mutableStateOf(false) }
     var frontsOpen by rememberSaveable { mutableStateOf(false) }
+    // Layers & display for one front (F3.9); null when closed
+    var layersFront by rememberSaveable { mutableStateOf<String?>(null) }
     var lastAccount by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(chorus.device?.accountId, status) {
         if (status == Status.Loading) return@LaunchedEffect
@@ -263,7 +275,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             journalReplyPost = null; journalOpenPost = null; journalOpenProfile = null
             chatShare = null; journalShare = null; journalNewEntry = null; sharedChannel = null
             onShareDismissed()
-            searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
+            searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null
         }
         lastAccount = account
     }
@@ -271,7 +283,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         if (newEntryRequest == null || status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
         journalNewEntry = newEntryRequest
         journalReplyPost = null; journalOpenPost = null
-        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
+        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null
         tab = Tab.Journal
         onNewEntryConsumed()
     }
@@ -281,7 +293,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         chatSpace = req.spaceId ?: model.channels.find { it.id == req.channelId }?.spaceId
         chatChannel = req.channelId
         chatSearchHit = null
-        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
+        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null
         tab = Tab.Chat
         onOpenChatConsumed()
     }
@@ -289,7 +301,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     LaunchedEffect(openPostRequest?.id, status) {
         val req = openPostRequest ?: return@LaunchedEffect
         if (status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
-        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
+        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null
         if (req.messageId != null) {
             // only where this reader may see it now (its chat shown, its audience including who's here)
             val m = garden.vayne.chorus.data.ChatOrganize.actionMessage(model, req.messageId, null, chorus.device?.accountId.orEmpty())
@@ -305,13 +317,21 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         } else tab = Tab.People
         onOpenPostConsumed()
     }
-    BackHandler(sharedDraft != null || settingsOpen || searchOpen || insightsOpen || frontsOpen) {
+    BackHandler(sharedDraft != null || settingsOpen || searchOpen || insightsOpen || frontsOpen || layersFront != null) {
         if (sharedDraft != null) onShareDismissed()
-        else if (searchOpen) searchOpen = false else if (insightsOpen) insightsOpen = false else if (frontsOpen) frontsOpen = false else settingsOpen = false
+        else if (searchOpen) searchOpen = false else if (insightsOpen) insightsOpen = false else if (layersFront != null) layersFront = null
+        else if (frontsOpen) frontsOpen = false else settingsOpen = false
     }
     if (linking && status != Status.NoDevice && status != Status.Loading) DeviceLink(chorus) { linking = false }
-    if (quickSwitchOpen && !model.isPerson) Switcher(chorus, model) { quickSwitchOpen = false }
-    BackHandler(sharedDraft == null && !linking && !quickSwitchOpen && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen && routedTab !in navigationTabs) {
+    var handoverOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(switchRequest, status) {
+        val handover = switchRequest ?: return@LaunchedEffect
+        if (status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
+        tab = Tab.Home; handoverOpen = handover; quickSwitchOpen = true
+        onSwitchConsumed()
+    }
+    if (quickSwitchOpen && !model.isPerson) Switcher(chorus, model, handover = handoverOpen) { quickSwitchOpen = false; handoverOpen = false }
+    BackHandler(sharedDraft == null && !linking && !quickSwitchOpen && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen && layersFront == null && routedTab !in navigationTabs) {
         tab = Tab.More
     }
 
@@ -325,13 +345,16 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             val person = model.isPerson
             val activeTab = routedTab
             val destinations = navigationTabs
-            fun select(t: Tab) { tab = t; settingsOpen = false; searchOpen = false; insightsOpen = false; frontsOpen = false }
+            fun select(t: Tab) { tab = t; settingsOpen = false; searchOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null }
             if (expanded && !chatStageCapture) NavigationRail(containerColor = p.surface) {
                 destinations.forEach { t -> NavigationRailItem(selected = t == activeTab || (t == Tab.More && activeTab !in destinations),
                     onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = { Text(t.label) }) }
             }
             Column(Modifier.weight(1f).navigationBarsPadding()) {
-            val chatOwnChrome = (activeTab in listOf(Tab.Chat, Tab.Journal) || (activeTab == Tab.Members && membersFocused)) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
+            // Fronting, its history and its subpages draw their own Figma bars (F3.1, F3.4, F3.7, F3.9)
+            val frontingChrome = !person && !searchOpen && !settingsOpen && !insightsOpen && sharedDraft == null &&
+                (frontsOpen || layersFront != null || activeTab == Tab.Home || activeTab == Tab.History)
+            val chatOwnChrome = frontingChrome || (activeTab in listOf(Tab.Chat, Tab.Journal) || (activeTab == Tab.Members && membersFocused)) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
             if (chatOwnChrome && !chatStageCapture) Box(Modifier.fillMaxWidth().background(p.surface).statusBarsPadding())
             if (!chatStageCapture && !chatOwnChrome) Row(
                 Modifier.fillMaxWidth().background(p.surface).statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
@@ -343,9 +366,9 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     Text(if (status == Status.Live) "Chorus · synced" else if (status == Status.Connecting) "Connecting…" else "Offline · saved on this device",
                         fontSize = 12.sp, color = p.ink3)
                 }
-                IconButton(onClick = { searchSection=if(activeTab==Tab.Journal) "Posts" else "Messages"; searchOpen = !searchOpen; settingsOpen = false; insightsOpen = false; frontsOpen = false }) { ChorusIcon(if (searchOpen) AppIcon.Close else AppIcon.Search, if (searchOpen) "Close search" else "Search") }
+                IconButton(onClick = { searchSection=if(activeTab==Tab.Journal) "Posts" else "Messages"; searchOpen = !searchOpen; settingsOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null }) { ChorusIcon(if (searchOpen) AppIcon.Close else AppIcon.Search, if (searchOpen) "Close search" else "Search") }
                 if (!person) IconButton(onClick = { quickSwitchOpen = true }) { ChorusIcon(AppIcon.Swap, "Open switcher") }
-                IconButton(onClick = { settingsOpen = !settingsOpen; searchOpen = false; insightsOpen = false; frontsOpen = false }) { ChorusIcon(if (settingsOpen) AppIcon.Close else AppIcon.Settings, if (settingsOpen) "Close settings" else "Settings") }
+                IconButton(onClick = { settingsOpen = !settingsOpen; searchOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null }) { ChorusIcon(if (settingsOpen) AppIcon.Close else AppIcon.Settings, if (settingsOpen) "Close settings" else "Settings") }
             }
             if (!chatStageCapture) garden.vayne.chorus.ui.UpdateBanner()
             Box(Modifier.weight(1f)) {
@@ -355,7 +378,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         journalShare = sharedDraft
                         journalReplyPost = null; journalOpenPost = null
                         tab = Tab.Journal
-                        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
+                        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null
                         onShareDismissed()
                     },
                     onChannel = { selected ->
@@ -363,7 +386,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         sharedChannel = selected.id
                         chatSpace = selected.spaceId; chatChannel = selected.id; chatSearchHit = null
                         tab = Tab.Chat
-                        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false
+                        searchOpen = false; settingsOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null
                         onShareDismissed()
                     })
                 else if (searchOpen) ContentSearch(chorus, model, status == Status.Live,
@@ -379,13 +402,15 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         journalReplyPost = null; journalOpenPost = id; tab = Tab.Journal; searchOpen = false
                     })
                 else if (insightsOpen) InsightsScreen(chorus, model) { insightsOpen = false }
+                else if (layersFront != null && !model.isPerson) LayersDisplayScreen(chorus, model, layersFront!!) { layersFront = null }
                 else if (frontsOpen && !model.isPerson) FrontsScreen(chorus, model) { frontsOpen = false }
                 else if (settingsOpen) SettingsScreen(chorus, model) { insightsOpen = true; settingsOpen = false }
                 else androidx.compose.animation.Crossfade(targetState = activeTab,
                     animationSpec = androidx.compose.animation.core.tween(if (motion) 120 else 0), label = "Main destination") { shownTab ->
                 destinationState.SaveableStateProvider(shownTab.name) {
                 when (shownTab) {
-                    Tab.Home -> Home(chorus, model, onFronts = { frontsOpen = true })
+                    Tab.Home -> Home(chorus, model, onFronts = { frontsOpen = true }, onHistory = { tab = Tab.History },
+                        onLayers = { layersFront = it })
                     Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
                         onStageCapture = { chatStageCapture = it }, onDismissSearchHit = { chatSearchHit = null },
                         sharedDraft = chatShare, sharedChannel = sharedChannel,
@@ -409,7 +434,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     Tab.Members -> Members(chorus, model, onJournal = { member, post ->
                         journalOpenProfile = member; journalOpenPost = post; tab = Tab.Journal
                     }, active = shownTab == activeTab, onFocusedRoute = { membersFocused = it })
-                    Tab.History -> History(chorus, model)
+                    Tab.History -> History(chorus, model, onBack = { tab = Tab.Home })
                     Tab.More -> MoreScreen(person, onMembers = { tab = Tab.Members }, onHome = { tab = Tab.Home }, onChat = { tab = Tab.Chat }, onPeople = { tab = Tab.People }, onJournal = { tab = Tab.Journal }, onHistory = { tab = Tab.History },
                         onInsights = { insightsOpen = true }, onFronts = { frontsOpen = true }, onSettings = { settingsOpen = true },
                         onSearch = { searchSection="Messages"; searchOpen = true }, onLink = { linking = true })
@@ -419,7 +444,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             }
             // The bar and viewport resize together during push/pop; focused routes own their
             // chrome. The shell applies the system navigation inset exactly once.
-            val focused = !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen &&
+            val focused = (frontsOpen || layersFront != null) && !searchOpen && !settingsOpen && !insightsOpen ||
+                !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen &&
                 ((activeTab == Tab.Chat && chatFocused) || (activeTab == Tab.Journal && journalFocused) || (activeTab == Tab.Members && membersFocused))
             androidx.compose.animation.AnimatedVisibility(
                 visible = !expanded && sharedDraft == null && !chatStageCapture && !WindowInsets.isImeVisible && !focused,
@@ -429,7 +455,10 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 containerColor = p.surface, tonalElevation = 0.dp, windowInsets = WindowInsets(0, 0, 0, 0),
             ) {
                 destinations.forEach { t -> NavigationBarItem(
-                    selected = (t == activeTab || (t == Tab.More && activeTab !in destinations)) && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen,
+                    // Front history belongs to Fronting (F3.7) when Fronting is on the bar
+                    selected = (t == activeTab || (t == Tab.Home && activeTab == Tab.History) ||
+                        (t == Tab.More && activeTab !in destinations && !(activeTab == Tab.History && Tab.Home in destinations))) &&
+                        !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen,
                     onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = {
                         Text(t.label, fontSize = 11.sp, lineHeight = 16.sp, maxLines = 1,
                             overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)

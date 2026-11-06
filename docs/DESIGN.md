@@ -351,12 +351,14 @@ Native navigation uses Material components with the shared palette and local ico
 
 ### Current front and switcher
 
-The implemented front card shows the existing **single** current front within three nested levels:
-Present contains Co-conscious, which contains Fronting. Fronting member rows show identity,
-primary designation when set, since time and elapsed minutes. Empty levels say "No one".
-The card and explicit Switch action open the existing ordered-set switcher; quick switch and Undo
-remain available. Named fronts, independent configurable layers, following/resume-following and
-per-purpose layer selection are approved pending work (D-080), not UI1 behavior.
+Fronting follows Figma Flows → F3 (D-122, `docs/FRONTS.md` §Fronting display). Each front is a
+tab; the selected front's layers nest inside each other, inner first, each drawn by its look
+(solid accent box for the front itself, dashed accent, faint dashed grey, plain). The innermost
+layer lists member rows (face, name, state or pronouns · since, time in front, ⋯); outer layers
+list face chips. Layers marked "listed separately" are rows of their own inside the card; Away
+(own members not in the front) sits under it, collapsed. A Switch button opens the tap-to-place
+sheet; a member's face opens where they are, and their state. Simple shows only the front itself
+with one line for everyone else; Complete also shows empty layers and the latest note.
 
 ### Chat and actions
 

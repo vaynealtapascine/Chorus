@@ -53,7 +53,18 @@ data class SwitchRow(
     val resultingFront: List<Entry>,
     val note: String?,
     val retracted: Boolean,
+    /** The device that recorded it, for review cards (F3.6). */
+    val deviceId: String? = null,
 )
+
+/** Two devices switched at nearly the same time with different results (SYNC.md §5.7, F3.6). */
+data class FrontReview(val id: String, val switchA: String, val switchB: String) {
+    companion object {
+        fun list(a: org.json.JSONArray?): List<FrontReview> = if (a == null) emptyList() else List(a.length()) {
+            val r = a.getJSONObject(it); FrontReview(r.getString("id"), r.getString("switch_a"), r.getString("switch_b"))
+        }
+    }
+}
 
 /** One subject that can front: a member or a subsystem acting as one. */
 data class Subject(val type: String, val id: String, val name: String, val color: String, val glyph: String, val avatarBlob: String? = null)
@@ -162,6 +173,16 @@ class Model(
     val deletedPostIds: Set<String> = emptySet(),
     /** Keep ownership after deletion so a private external chat never becomes unrestricted. */
     val deletedMemberIds: Set<String> = emptySet(),
+    /** Live custom states that can front (`custom_state`), by name. */
+    val states: List<CustomState> = emptyList(),
+    /** The system's own name (`system.name`), for Fronting's subtitle. */
+    val systemName: String? = null,
+    /** Unresolved legacy review cards (configured accounts read theirs from front history). */
+    val reviews: List<FrontReview> = emptyList(),
+    /** device id → its name, where this account's devices are known. */
+    val deviceNames: Map<String, String> = emptyMap(),
+    /** Review cards already answered (`front.review_resolve`). */
+    val resolvedReviews: Set<String> = emptySet(),
 ) {
     val knownMemberIds: Set<String> = members.mapTo(HashSet()) { it.id }.apply { addAll(deletedMemberIds) }
     private val memberById = members.associateBy { it.id }
@@ -173,6 +194,7 @@ class Model(
     fun subject(type: String, id: String): Subject? = when (type) {
         "member" -> memberById[id]?.let { Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob) }
         "group" -> groupById[id]?.let { Subject("group", it.id, it.name, it.color ?: "#A09184", "◌") }
+        "state" -> states.firstOrNull { it.id == id }?.let { Subject("state", it.id, it.name, it.color ?: "#A39E92", it.icon ?: "?") }
         else -> null
     }
 
@@ -378,7 +400,7 @@ class Model(
                     SwitchRow(
                         s.getString("id"), s.optString("kind"), s.getLong("occurred_at"),
                         entries(s.optJSONArray("entries")), entries(s.optJSONArray("resulting_front")),
-                        s.str("note"), s.optBoolean("retracted"),
+                        s.str("note"), s.optBoolean("retracted"), s.str("device_id"),
                     )
                 }
             } ?: emptyList()
@@ -482,7 +504,15 @@ class Model(
                 privacyBuckets = BucketControls.buckets(p), bucketAssignments = BucketControls.assignments(p),
                 deletedMessageIds = rows(p, "message").filter {it.second.present("deleted_at")}.mapTo(HashSet()) {it.first},
                 deletedPostIds = rows(p, "post").filter {it.second.present("deleted_at")}.mapTo(HashSet()) {it.first},
-                deletedMemberIds = rows(p, "member").filter {it.second.present("deleted_at")}.mapTo(HashSet()) {it.first})
+                deletedMemberIds = rows(p, "member").filter {it.second.present("deleted_at")}.mapTo(HashSet()) {it.first},
+                states = rows(p, "custom_state").filter { (_, f) -> !f.present("deleted_at") }
+                    .map { (id, f) -> CustomState(id, f.str("name") ?: "State", f.str("description"), f.str("color"), f.str("icon")) }
+                    .sortedBy { it.name.lowercase() },
+                systemName = rows(p, "system").firstOrNull { it.first == accountId }?.second?.str("name"),
+                reviews = FrontReview.list(p.optJSONObject("reviews")?.optJSONArray(accountId))
+                    .filter { r -> rows(p, "front_review").none { it.first == r.id && it.second.present("resolution") } },
+                deviceNames = rows(p, "device").mapNotNull { (id, f) -> f.str("name")?.let { id to it } }.toMap(),
+                resolvedReviews = rows(p, "front_review").filter { it.second.present("resolution") }.mapTo(HashSet()) { it.first })
         }
     }
 }

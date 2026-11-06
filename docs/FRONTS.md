@@ -217,6 +217,36 @@ runtime named-front field/kinds. Bump it for later shape/recognition/semantic ch
 the saved op identities/stamps match.
 The network scope digest and server SQL cache version are separate contracts.
 
+## Fronting display (D-122, Figma F3)
+
+Display choices are account prefs, so no server change and no new op kinds:
+
+- `fronting.display` (one value, last write wins, like `chat_folders`): `layers` maps a layer ID
+  to `{style: solid|dashed|faint|plain, about, separate, color}`; `fronts` maps a front ID to
+  `{icon, about, hidden, preset: simple|detailed|complete, hidden_layers, hide_empty,
+  collapse_away, show_time, show_others}`; `order` is the fronts' order; `hint_dismissed`. The
+  pseudo-layer `away` (never a real layer ID) may appear in `hidden_layers`. Missing values fall
+  back to: the first nested layer solid, the second dashed, the rest faint, separate layers plain;
+  the original three layers have built-in descriptions; Body's icon is `target`, a template's
+  name picks its icon, otherwise `layers`; Detailed with every switch on.
+- `member_status:<member id>` = `{text, at}` or null: a member's state while here (F3.10).
+
+Parsers: Android `data/FrontingDisplay.kt` (with `FrontScene`, `FrontStory`), web
+`lib/fronting-display.ts`; both have matching unit tests (`FrontingDisplayTest`,
+`fronting-display.test.ts`), including the history sentences. Nothing here changes layer meaning
+or purpose pools: reordering layers on Layers & display writes `front.layer` levels, and
+"Suggested speakers" writes the front's `authorship_layers`.
+
+Fronting now reads the shown front's effective history to show when each member arrived; both
+clients cache it per front revision (Android `frontHistoryRevision`, web `FrontHistoryCache`), so
+it folds again only when fronts change, never per render or keystroke.
+
+Placement (member sheet, Add-mode switch sheet, a layer's +) writes `front.change`
+add/update/remove (legacy accounts: `front.add`/`update`/`remove`), several as one undo. Log a
+past switch writes a `history_only` switch at From and, unless a saved change already lies in
+(From, Until], another at Until restoring what was saved then (legacy accounts: backdated silent
+`front.switch` ops).
+
 ## Event contract
 
 All events are private to `account:<system id>`. Body's stable front ID is the account ID.

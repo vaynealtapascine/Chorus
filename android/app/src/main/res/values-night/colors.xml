@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="w_bg">#FF1B1714</color>
-    <color name="w_surface">#FF231E1A</color>
-    <color name="w_surface2">#FF2B2520</color>
-    <color name="w_line">#FF3A322B</color>
-    <color name="w_ink">#FFF1E9E0</color>
-    <color name="w_ink2">#FFBCAEA1</color>
-    <color name="w_ink3">#FF85776B</color>
-    <color name="w_accent">#FFE08A6D</color>
-    <color name="w_accent_soft">#FF3E2A22</color>
+    <color name="w_bg">#FF1E2026</color>
+    <color name="w_surface">#FF15161A</color>
+    <color name="w_surface2">#FF272A31</color>
+    <color name="w_line">#FF34373F</color>
+    <color name="w_ink">#FFFBF3E5</color>
+    <color name="w_ink2">#FFB1ACA1</color>
+    <color name="w_ink3">#FFA39E92</color>
+    <color name="w_accent">#FF42A397</color>
+    <color name="w_accent_soft">#FF1D2F30</color>
+    <color name="w_on_accent">#FF101018</color>
 </resources>

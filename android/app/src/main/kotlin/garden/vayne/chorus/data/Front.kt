@@ -13,7 +13,12 @@ enum class Mode(val label: String) {
 }
 
 /** The one pending undo (SPEC §4.3: offered 10 s; taps up to 30 s after the switch still count). */
-data class Undo(val opId: String, val label: String, val at: Long, val frontId: String? = null)
+data class Undo(val opId: String, val label: String, val at: Long, val frontId: String? = null,
+    /** Further ops written by the same action (an Add-mode sheet places several people). */
+    val more: List<String> = emptyList())
+
+/** One subject's new layer in a front (null: out of it), and whether they are in it now. */
+data class Placement(val type: String, val id: String, val layerId: String?, val present: Boolean, val primary: Boolean? = null)
 
 /** Front actions shared by the app, the widget and the search launcher. */
 object Front {
@@ -81,6 +86,7 @@ object Front {
     suspend fun undo(chorus: Chorus): Boolean {
         val u = _undo.value ?: return false
         if (System.currentTimeMillis() - u.at > 30_000) return false
+        u.more.forEach { retract(chorus, it, frontId = u.frontId) }
         retract(chorus, u.opId, frontId = u.frontId)
         _undo.value = null
         return true
@@ -96,6 +102,45 @@ object Front {
     fun dismiss(opId: String) {
         if (_undo.value?.opId == opId) _undo.value = null
     }
+
+    /**
+     * Put one subject on a layer of a front, or take them out of it (`layerId` null: Away; F3.3).
+     * `present` says whether they are in the front now, so a move is an update, not a second entry.
+     * Returns the op ID; the caller decides whether it is the undo.
+     */
+    suspend fun place(chorus: Chorus, type: String, id: String, layerId: String?, present: Boolean,
+        frontId: String? = null, primary: Boolean? = null, at: Long? = null): String {
+        val target = frontId ?: chorus.device?.accountId?.takeIf { chorus.model.value.namedFronts != null }
+        if (target == null) {
+            val (kind, payload) = when {
+                layerId == null -> "front.remove" to JSONObject().put("subject_type", type).put("subject_id", id)
+                present -> "front.update" to JSONObject().put("subject_type", type).put("subject_id", id).put("level", layerId)
+                    .also { if (primary != null) it.put("is_primary", primary) }
+                else -> "front.add" to JSONObject().put("entry", Entry(type, id, layerId, primary == true).toJson())
+            }
+            return chorus.create(kind, chorus.newId(), payload, userTime = at)
+        }
+        val change = when {
+            layerId == null -> JSONObject().put("action", "remove").put("subject_type", type).put("subject_id", id)
+            present -> JSONObject().put("action", "update").put("subject_type", type).put("subject_id", id).put("layer_id", layerId)
+                .also { if (primary != null) it.put("is_primary", primary) }
+            else -> JSONObject().put("action", "add").put("entry", FrontPresence(type, id, layerId, primary == true).toJson())
+        }
+        if (at != null) change.put("effective_at", at)
+        return chorus.create("front.change", target, change)
+    }
+
+    /** Several placements as one undoable action (the Add-mode switch sheet). */
+    suspend fun placeAll(chorus: Chorus, moves: List<Placement>, label: String, frontId: String? = null, at: Long? = null) {
+        if (moves.isEmpty()) return
+        val ids = moves.map { place(chorus, it.type, it.id, it.layerId, it.present, frontId, it.primary, at) }
+        val target = frontId ?: chorus.device?.accountId?.takeIf { chorus.model.value.namedFronts != null }
+        _undo.value = Undo(ids.last(), label, System.currentTimeMillis(), target, ids.dropLast(1))
+    }
+
+    /** One placement, offered for undo (the front card and the member sheet). */
+    suspend fun placeOne(chorus: Chorus, move: Placement, label: String, frontId: String? = null) =
+        placeAll(chorus, listOf(move), label, frontId)
 
     /** Sparse named-front definition edit (D-080); missing fields stay as they are. */
     suspend fun define(chorus: Chorus, frontId: String, patch: JSONObject) {
