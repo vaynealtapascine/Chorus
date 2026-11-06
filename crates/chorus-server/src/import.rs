@@ -179,6 +179,8 @@ fn read_bundle(zip: &mut ZipReader<fs::File>, problems: &mut Vec<String>) -> any
             problems.push(format!("op {} is in the bundle twice", o.id));
         } else if o.account_id.as_deref() != Some(account.as_str()) {
             problems.push(format!("op {} wasn't written by this account", o.id));
+        } else if o.scope != "server" && !o.scope.starts_with("space:") && o.scope != format!("account:{account}") {
+            problems.push(format!("op {} is in another account's scope ({})", o.id, o.scope));
         } else if o.device_id.is_none() || o.occurred_at.is_none() || o.received_at.is_none() {
             problems.push(format!("op {} lacks its server stamps (device, times)", o.id));
         } else if let Err(e) = op::validate(o) {
@@ -254,16 +256,28 @@ pub fn import_account(
         }
     }
     let mut clashing = 0u64;
+    let mut foreign = 0u64;
     {
         let mut st = conn.prepare_cached("SELECT 1 FROM op WHERE id = ?1")?;
         for o in &b.ops {
             if st.exists([&o.id])? {
                 clashing += 1;
             }
+            if o.scope != "server"
+                && (ingest::foreign_scope(conn, o)?.is_some()
+                    || ingest::foreign_item(conn, &b.account, o)?.is_some()
+                    || ingest::foreign_reference(conn, &b.account, o)?.is_some()
+                    || ingest::foreign_speaker(conn, &b.account, o)?.is_some())
+            {
+                foreign += 1;
+            }
         }
     }
     if clashing > 0 {
         problems.push(format!("{clashing} of its op ids are already on this server"));
+    }
+    if foreign > 0 {
+        problems.push(format!("{foreign} of its ops target entities owned by another account on this server"));
     }
     if !problems.is_empty() {
         anyhow::bail!("refused, nothing was imported:\n  - {}", problems.join("\n  - "));

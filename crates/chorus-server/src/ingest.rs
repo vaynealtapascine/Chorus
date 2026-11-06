@@ -104,17 +104,17 @@ pub fn accept(
     {
         return Ok((AckResult::err(o.id, "forbidden", "a person's self profile must stay active".into(), false), None));
     }
-    if !preserved && let Some(why) = crate::fronts::write_denied(conn, &author, &o)? {
+    if let Some(why) = crate::fronts::write_denied(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
     }
-    if !preserved && !crate::visibility::related_write_allowed(conn, &author, &o)? {
+    if !crate::visibility::related_write_allowed(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", "message is private to another account".into(), false), None));
     }
     // another scope's entity, or a payload naming another account's member, field or file
-    if !preserved && let Some(why) = foreign_scope(conn, &o)? {
+    if let Some(why) = foreign_scope(conn, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
     }
-    if !preserved && let Some(why) = foreign_reference(conn, &author, &o)? {
+    if let Some(why) = foreign_reference(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
     }
     // a file someone else stored: the device holds the op until it has uploaded the bytes itself
@@ -125,10 +125,10 @@ pub fn accept(
     if !preserved && let Some(why) = foreign_item(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
     }
-    if !preserved && let Some(why) = foreign_speaker(conn, &author, &o)? {
+    if let Some(why) = foreign_speaker(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));
     }
-    if !preserved && !crate::profiles::relationship_write_allowed(conn, &author, &o)? {
+    if !crate::profiles::relationship_write_allowed(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", "relationship target unavailable".into(), false), None));
     }
     // channel permissions (perms.rs, D-047)
@@ -142,7 +142,8 @@ pub fn accept(
     }
     // Follow requests and a follower's prefs are written by the server on the follower's behalf
     // (follows.rs); a client forging one could make someone else receive its switches.
-    if !preserved && matches!(o.kind.as_str(), "follow.request" | "follow.set_prefs") && s.device_id != SERVER_DEVICE {
+    let server_authored = s.device_id == SERVER_DEVICE || (preserved && o.device_id.as_deref() == Some(SERVER_DEVICE));
+    if matches!(o.kind.as_str(), "follow.request" | "follow.set_prefs") && !server_authored {
         return Ok((
             AckResult::err(o.id, "forbidden", format!("{} goes through /api/v1/follows", o.kind), false),
             None,
@@ -290,7 +291,7 @@ fn store_and_project(
 /// change an attachment's fields (alt text, spoiler) or send a second create for an existing id,
 /// which would overwrite its text or file. (Moderation of messages goes through the channel
 /// rules in `perms.rs`: delete, restore and pin.)
-fn foreign_item(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
+pub(crate) fn foreign_item(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
     let Some(spec) = op::spec(&o.kind) else { return Ok(None) };
     let table = match (spec.table, spec.action) {
         ("relationship", op::Action::Set | op::Action::Delete) => "relationship",
@@ -354,7 +355,7 @@ fn kinds_writing(table: &str) -> &'static str {
 /// entity id into its row, so an op on it from any other scope — one the author can write,
 /// such as their own account — would change someone else's member, bucket, feed or follow.
 /// An entity the server hasn't seen yet passes (made offline, still on its way).
-fn foreign_scope(conn: &Connection, o: &Op) -> anyhow::Result<Option<String>> {
+pub(crate) fn foreign_scope(conn: &Connection, o: &Op) -> anyhow::Result<Option<String>> {
     let Some(spec) = op::spec(&o.kind) else { return Ok(None) };
     // an account's and a system's row is keyed by the account id itself
     if matches!(o.kind.as_str(), "account.set" | "system.set") {
@@ -387,13 +388,17 @@ fn owner_of(conn: &Connection, table: &str, id: &str) -> anyhow::Result<Option<S
 /// profile a highlight goes on, a member put into a group, and the attachments a message or post
 /// carries (else anyone could show another account's private file under their own public post).
 /// Ids the server doesn't know yet pass, as in [`foreign_speaker`].
-fn foreign_reference(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
+pub(crate) fn foreign_reference(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
     let p = |k: &str| o.payload.get(k).and_then(serde_json::Value::as_str);
     let mut named: Vec<(&str, &str)> = Vec::new();
     match o.kind.as_str() {
         "field.set_value" => {
             named.extend(p("member_id").map(|m| ("member", m)));
             named.extend(p("field_id").map(|f| ("field_def", f)));
+        }
+        "relationship.set" => {
+            named.extend(p("from_member_id").map(|m| ("member", m)));
+            named.extend(p("type_id").map(|t| ("relationship_type", t)));
         }
         "highlight.add" | "highlight.remove" | "highlight.reorder" => {
             named.extend(p("profile_member_id").map(|m| ("member", m)));
@@ -409,7 +414,11 @@ fn foreign_reference(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<
     }
     for (table, id) in named {
         if owner_of(conn, table, id)?.is_some_and(|a| a != author) {
-            let what = if table == "field_def" { "field" } else { table };
+            let what = match table {
+                "field_def" => "field",
+                "relationship_type" => "relationship type",
+                _ => table,
+            };
             return Ok(Some(format!("that {what} belongs to another account")));
         }
     }
@@ -439,7 +448,7 @@ fn unproven_blob(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Opti
 /// An id the server doesn't know yet passes (a member created offline, still on its way); one
 /// that belongs to another account is refused, or anyone in a shared space could post as someone
 /// else's member.
-fn foreign_speaker(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
+pub(crate) fn foreign_speaker(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<Option<String>> {
     let k = o.kind.as_str();
     if !(k.starts_with("message.") || k.starts_with("reaction.") || k.starts_with("post.")) {
         return Ok(None);

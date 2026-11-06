@@ -191,6 +191,51 @@ pub(crate) fn read_row(marks: Vec<ReadMark>, manual: Option<ReadMark>) -> Option
     Some(row)
 }
 
+/// Columns managed by the op envelope, server, or dedicated actions rather than free-form payloads.
+const MANAGED_FIELDS: &[&str] = &[
+    "id",
+    "clocks",
+    "created_at",
+    "account_id",
+    "updated_at",
+    "deleted_at",
+    "archived_at",
+    "revision_count",
+    "received_at",
+    "device_id",
+    "occurred_at",
+    "occurred_local",
+    "tz_offset_min",
+    "edited_at",
+    "owner_account_id",
+    "created_by",
+    "hlc",
+    "seq",
+    "reply_to_id",
+    "repost_of_id",
+    "pinned_at",
+    "pinned_by_member",
+    "thread_channel_id",
+    "created_by_account_id",
+    "deleted_by_account_id",
+];
+
+/// Structural fields set when a message or post is created and never altered by an edit.
+const REVISE_IMMUTABLE_FIELDS: &[&str] = &[
+    "message_id",
+    "post_id",
+    "channel_id",
+    "visibility",
+    "reply_to",
+    "repost_of",
+    "quote",
+    "forward_of_id",
+    "forward_snapshot",
+    "kind",
+    "sent_offline",
+    "poll",
+];
+
 /// Apply one op to a projection (the body of [`project`]; also used by the incremental
 /// [`crate::projector::Projector`], so both share exactly one definition of every op's effect).
 pub(crate) fn apply_op<'a>(
@@ -210,6 +255,9 @@ pub(crate) fn apply_op<'a>(
     match spec.action {
         Action::Create | Action::Append => {
             let mut fields = payload.clone();
+            for k in MANAGED_FIELDS {
+                fields.remove(*k);
+            }
             // a space's creator is its owner, as the server's `space.owner_account_id` (first create)
             if trash_item || spec.table == "space" {
                 fields.insert("created_by_account_id".into(), json!(o.account_id));
@@ -222,15 +270,20 @@ pub(crate) fn apply_op<'a>(
             row.exists = true;
         }
         Action::Set => {
-            let row = set_fields(p, spec.table, entity, o.hlc, &payload);
+            let mut fields = payload.clone();
+            for k in MANAGED_FIELDS {
+                fields.remove(*k);
+            }
+            let row = set_fields(p, spec.table, entity, o.hlc, &fields);
             if op::set_upserts(spec.table) {
                 row.exists = true;
             }
         }
         Action::Revise => {
             let mut fields = payload.clone();
-            fields.remove("message_id");
-            fields.remove("post_id");
+            for k in MANAGED_FIELDS.iter().chain(REVISE_IMMUTABLE_FIELDS.iter()) {
+                fields.remove(*k);
+            }
             fields.insert("edited_at".into(), json!(o.time()));
             let row = set_fields(p, spec.table, entity, o.hlc, &fields);
             row.edits += 1;

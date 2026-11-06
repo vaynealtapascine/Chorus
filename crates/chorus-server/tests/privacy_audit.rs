@@ -442,3 +442,250 @@ fn a18_naming_a_stored_file_takes_having_it() {
     let fresh = json!({"blob_hash": "d".repeat(64), "filename": "y.png", "mime": "image/png", "size": 10});
     assert_eq!(w.push(&w.mallory, "post.attachment", &w.id(), fresh), None, "a file still on its way passes");
 }
+
+#[test]
+fn a19_an_edit_or_send_cannot_inject_managed_columns_or_move_a_message() {
+    let w = World::new();
+    let space = w.space(&w.alice);
+    let scope = format!("space:{space}");
+    ingest::grant(&w.c, &w.mallory, &scope).unwrap();
+    assert_eq!(w.push_in(&w.alice, &scope, "space.join", &space, json!({"account_id": w.mallory})), None);
+    let (ch1, ch2) = (w.id(), w.id());
+    for ch in [&ch1, &ch2] {
+        assert_eq!(
+            w.push_in(&w.alice, &scope, "channel.create", ch, json!({"space_id": space, "kind": "text", "name": "c"})),
+            None
+        );
+    }
+    let rin = w.member(&w.mallory, "Rin", json!({"mode": "server"}));
+    let msg = w.id();
+    assert_eq!(
+        w.push_in(
+            &w.mallory,
+            &scope,
+            "message.send",
+            &msg,
+            json!({
+                "channel_id": ch1,
+                "authors": [rin],
+                "text": "hi",
+                "entities": [],
+                "account_id": w.alice,
+                "pinned_at": 12345
+            })
+        ),
+        None
+    );
+    assert_eq!(
+        w.push_in(
+            &w.mallory,
+            &scope,
+            "message.edit",
+            &msg,
+            json!({
+                "message_id": msg,
+                "text": "moved?",
+                "entities": [],
+                "account_id": w.alice,
+                "channel_id": ch2,
+                "pinned_at": 99999,
+                "visibility": {"mode": "private"}
+            })
+        ),
+        None
+    );
+    let (owner, channel, pinned, vis): (String, String, Option<i64>, Option<String>) =
+        w.c.query_row("SELECT account_id, channel_id, pinned_at, visibility FROM message WHERE id = ?1", [&msg], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .unwrap();
+    assert_eq!(owner, w.mallory, "an edit or send cannot forge message ownership");
+    assert_eq!(channel, ch1, "an edit cannot move a message to another channel");
+    assert_eq!(pinned, None, "payloads cannot inject pinned_at");
+    assert_eq!(vis, None, "an edit cannot mutate message visibility");
+}
+
+#[test]
+fn a20_a_relationship_cannot_name_or_read_another_accounts_relationship_type() {
+    let w = World::new();
+    let rt = w.id();
+    assert_eq!(w.push(&w.alice, "reltype.set", &rt, json!({"name": "SecretBond", "inverse_name": "Secret"})), None);
+    let rin = w.member(&w.mallory, "Rin", json!({"mode": "server"}));
+    let kai = w.member(&w.alice, "Kai", json!({"mode": "server"}));
+    let rel = w.id();
+    let refused = w.push(
+        &w.mallory,
+        "relationship.set",
+        &rel,
+        json!({"from_member_id": rin, "to_kind": "member", "to_id": kai, "type_id": rt}),
+    );
+    assert!(w.refused(refused), "Mallory named Alice's relationship_type");
+    let foreign_from = w.push(
+        &w.mallory,
+        "relationship.set",
+        &w.id(),
+        json!({"from_member_id": kai, "to_kind": "external", "to_label": "X"}),
+    );
+    assert!(w.refused(foreign_from), "Mallory named Alice's member as from_member_id");
+}
+
+#[test]
+fn a21_private_asides_and_threads_refuse_foreign_reactions_threads_and_forwards() {
+    let w = World::new();
+    let space = w.space(&w.alice);
+    let scope = format!("space:{space}");
+    ingest::grant(&w.c, &w.mallory, &scope).unwrap();
+    assert_eq!(w.push_in(&w.alice, &scope, "space.join", &space, json!({"account_id": w.mallory})), None);
+    let ch = w.id();
+    assert_eq!(
+        w.push_in(&w.alice, &scope, "channel.create", &ch, json!({"space_id": space, "kind": "text", "name": "c"})),
+        None
+    );
+    let kai = w.member(&w.alice, "Kai", json!({"mode": "server"}));
+    let rin = w.member(&w.mallory, "Rin", json!({"mode": "server"}));
+    let aside = w.id();
+    assert_eq!(
+        w.push_in(
+            &w.alice,
+            &scope,
+            "message.send",
+            &aside,
+            json!({"channel_id": ch, "authors": [kai], "text": "private note", "entities": [], "visibility": {"mode": "private"}})
+        ),
+        None
+    );
+    let thread = w.id();
+    assert_eq!(
+        w.push_in(
+            &w.alice,
+            &scope,
+            "channel.create",
+            &thread,
+            json!({"space_id": space, "kind": "thread", "name": "T", "parent_message_id": aside})
+        ),
+        None
+    );
+    let in_thread = w.id();
+    assert_eq!(
+        w.push_in(
+            &w.alice,
+            &scope,
+            "message.send",
+            &in_thread,
+            json!({"channel_id": thread, "authors": [kai], "text": "inside private thread", "entities": []})
+        ),
+        None
+    );
+    let tries = [
+        w.push_in(
+            &w.mallory,
+            &scope,
+            "reaction.add",
+            &aside,
+            json!({"target_type": "message", "target_id": aside, "emoji": "👀", "member_id": rin}),
+        ),
+        w.push_in(
+            &w.mallory,
+            &scope,
+            "channel.create",
+            &w.id(),
+            json!({"space_id": space, "kind": "thread", "name": "Spy", "parent_message_id": aside}),
+        ),
+        w.push_in(
+            &w.mallory,
+            &scope,
+            "message.forward",
+            &w.id(),
+            json!({"channel_id": ch, "authors": [rin], "text": "", "entities": [], "forward_of_id": aside}),
+        ),
+        w.push_in(
+            &w.mallory,
+            &scope,
+            "message.send",
+            &w.id(),
+            json!({"channel_id": thread, "authors": [rin], "text": "intrude", "entities": []}),
+        ),
+        w.push_in(
+            &w.mallory,
+            &scope,
+            "reaction.add",
+            &in_thread,
+            json!({"target_type": "message", "target_id": in_thread, "emoji": "👀", "member_id": rin}),
+        ),
+    ];
+    assert!(tries.into_iter().all(|e| w.refused(e)), "Mallory interacted with Alice's private aside or thread");
+}
+
+#[test]
+fn a22_private_posts_refuse_foreign_reposts_quotes_highlights_and_space_reactions() {
+    let w = World::new();
+    let kai = w.member(&w.alice, "Kai", json!({"mode": "private"}));
+    let secret = w.post(&w.alice, &[&kai], "secret entry", json!({"mode": "private"}));
+    let rin = w.member(&w.mallory, "Rin", json!({"mode": "server"}));
+    let mine = w.space(&w.mallory);
+    let tries = [
+        w.push(
+            &w.mallory,
+            "post.create",
+            &w.id(),
+            json!({"kind": "note", "authors": [rin], "text": "", "entities": [], "repost_of": secret, "visibility": {"mode": "server"}}),
+        ),
+        w.push(
+            &w.mallory,
+            "post.create",
+            &w.id(),
+            json!({"kind": "note", "authors": [rin], "text": "q", "entities": [], "quote": {"post_id": secret}, "visibility": {"mode": "server"}}),
+        ),
+        w.push(&w.mallory, "highlight.add", &w.id(), json!({"profile_member_id": rin, "post_id": secret})),
+        w.push_in(
+            &w.mallory,
+            &format!("space:{mine}"),
+            "reaction.add",
+            &secret,
+            json!({"target_type": "post", "target_id": secret, "emoji": "👀", "member_id": rin}),
+        ),
+    ];
+    assert!(tries.into_iter().all(|e| w.refused(e)), "Mallory referenced or reacted to Alice's private post");
+}
+
+#[test]
+fn a23_an_open_restore_window_still_refuses_cross_account_writes() {
+    let w = World::new();
+    let kai = w.member(&w.alice, "Kai", json!({"mode": "private"}));
+    let secret = w.post(&w.alice, &[&kai], "secret", json!({"mode": "private"}));
+    db::set_meta(&w.c, "restore_open", "1").unwrap();
+    let mut o = Op {
+        id: w.id(),
+        kind: "member.set".into(),
+        v: 1,
+        scope: format!("account:{}", w.mallory),
+        entity_id: Some(kai),
+        hlc: Hlc::new(NOW as u64 + 50_000, 0, 1),
+        device_at: NOW,
+        tz_offset_min: 0,
+        mono: None,
+        boot_id: None,
+        time_source: TimeSource::Auto,
+        seen_seq: 0,
+        member_id: None,
+        payload: json!({"name": "Hijacked"}),
+        seq: None,
+        account_id: Some(w.mallory.clone()),
+        device_id: Some("dev".into()),
+        occurred_at: Some(NOW),
+        received_at: Some(NOW),
+    };
+    let s = ingest::Session {
+        account_id: w.mallory.clone(),
+        device_id: "dev".into(),
+        sample: ClockSample { server_time: NOW, mono: None, boot_id: None, offset_ms: 0 },
+    };
+    let (ack1, _) = ingest::accept(&w.c, &s, o.clone(), NOW, true).unwrap();
+    assert!(ack1.error.is_some(), "restore push must not cross scopes");
+    o.id = w.id();
+    o.kind = "post.edit".into();
+    o.entity_id = Some(secret.clone());
+    o.payload = json!({"post_id": secret, "text": "overwritten", "entities": []});
+    let (ack2, _) = ingest::accept(&w.c, &s, o, NOW, true).unwrap();
+    assert!(ack2.error.is_some(), "restore push must not edit another account's post");
+}

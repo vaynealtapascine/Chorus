@@ -442,7 +442,9 @@ user action
    `reconcile-status` shows every device back, or 7 days after the restore at the latest, D-067),
    the server keeps a restore-pushed op's original
    author, device and times and only assigns a new `seq`; known ids are no-ops that return the
-   stored stamp. Outside the window, restore pushes are treated as fresh ops from the pusher.
+   stored stamp. Outside the window, restore pushes are treated as fresh ops from the pusher. The claimed
+   author still passes the ownership checks (scope, payload references, speaker, private asides;
+   D-123); only the checks that depend on current state are skipped.
 4. Device pulls each scope from zero; ops it already holds are replaced by the server's copies.
 5. Files: the restored server's blobs are as old as its backup, so a file uploaded since (for an
    op the device restores, or one still in its outbox) is gone. After a `welcome` with

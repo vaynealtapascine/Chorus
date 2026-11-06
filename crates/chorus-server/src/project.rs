@@ -273,15 +273,15 @@ fn prepare(cols: &[String], table: &str, id: &str, ops: Vec<Op>) -> anyhow::Resu
     vals.insert("id".into(), Value::String(id.into()));
     vals.insert("clocks".into(), row.clocks.to_json());
     if let Some(f) = first {
-        vals.entry("created_at".into()).or_insert(Value::from(f.time()));
-        if let Some(a) = account_of(&f.scope) {
-            vals.entry("account_id".into()).or_insert(Value::String(a.into()));
+        vals.insert("created_at".into(), Value::from(f.time()));
+        if let Some(a) = account_of(&f.scope).map(str::to_string).or_else(|| f.account_id.clone()) {
+            vals.insert("account_id".into(), Value::String(a));
         }
         if table == "system" {
             vals.insert("account_id".into(), Value::String(id.into()));
         }
         if table == "space" {
-            vals.entry("owner_account_id".into()).or_insert(Value::from(f.account_id.clone()));
+            vals.insert("owner_account_id".into(), Value::from(f.account_id.clone()));
         }
         if matches!(table, "message" | "post") {
             vals.insert("device_id".into(), Value::from(f.device_id.clone()));
@@ -305,7 +305,7 @@ fn prepare(cols: &[String], table: &str, id: &str, ops: Vec<Op>) -> anyhow::Resu
         vals.insert("updated_at".into(), Value::from(last.time()));
     }
     if table == "custom_emoji" {
-        vals.entry("created_by".into()).or_insert(Value::from(first.and_then(|f| f.account_id.clone())));
+        vals.insert("created_by".into(), Value::from(first.and_then(|f| f.account_id.clone())));
     }
     let (names, values): (Vec<String>, Vec<Sql>) =
         vals.iter().filter(|(k, _)| cols.contains(k)).map(|(k, v)| (k.clone(), to_sql(v))).unzip();

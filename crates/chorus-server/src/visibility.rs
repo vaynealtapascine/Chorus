@@ -46,20 +46,90 @@ fn visible_attachment_sql(account: &str) -> String {
     )
 }
 
-/// A participant cannot mutate a private aside owned by another account, even with a guessed
-/// message id. Normal public-message authorization remains in the existing scope rules.
-pub fn related_write_allowed(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<bool> {
-    if o.kind == "post.create"
-        && let Some(parent) = o.payload.get("reply_to").and_then(Value::as_str)
-    {
-        let readable = crate::posts::readable_sql("?2");
-        let sql = format!("SELECT p.deleted_at IS NULL AND {readable} FROM post p WHERE p.id=?1");
-        // Own offline replies may reach the server before their parent. An existing parent,
-        // including one owned by another account, must be readable when the reply is accepted.
-        let visible: Option<bool> = conn.query_row(&sql, params![parent, author], |r| r.get(0)).optional()?;
-        return Ok(visible.unwrap_or(true));
+fn post_readable(conn: &Connection, author: &str, id: &str) -> rusqlite::Result<bool> {
+    let readable = crate::posts::readable_sql("?2");
+    let sql = format!("SELECT p.deleted_at IS NULL AND {readable} FROM post p WHERE p.id=?1");
+    // Own offline references may reach the server before their target. An existing post,
+    // including one owned by another account, must be readable when the referencing op is accepted.
+    Ok(conn.query_row(&sql, params![id, author], |r| r.get(0)).optional()?.unwrap_or(true))
+}
+
+/// A message row's owner and stored visibility: the author's own, or not an aside.
+fn own_or_public(owner: Option<&str>, visibility: Option<&str>, author: &str) -> bool {
+    owner == Some(author)
+        || visibility.is_none_or(|s| serde_json::from_str::<Value>(s).is_ok_and(|v| is_public(Some(&v))))
+}
+
+/// A message (and, in a thread, its parent) the author may act on; an unknown id passes.
+fn message_accessible(conn: &Connection, author: &str, id: &str) -> rusqlite::Result<bool> {
+    let row: Option<(Option<String>, Option<String>, Option<String>)> = conn
+        .query_row(
+            "SELECT m.account_id, m.visibility,
+                    (SELECT tc.parent_message_id FROM channel tc WHERE tc.id = m.channel_id AND tc.kind = 'thread')
+             FROM message m WHERE m.id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    let Some((owner, visibility, thread_parent)) = row else { return Ok(true) };
+    if !own_or_public(owner.as_deref(), visibility.as_deref(), author) {
+        return Ok(false);
     }
-    if matches!(o.kind.as_str(), "post.react" | "post.unreact") {
+    if let Some(parent) = thread_parent {
+        let parent_row: Option<(Option<String>, Option<String>)> = conn
+            .query_row("SELECT account_id, visibility FROM message WHERE id = ?1", [parent], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .optional()?;
+        if let Some((p_owner, p_vis)) = parent_row
+            && !own_or_public(p_owner.as_deref(), p_vis.as_deref(), author)
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn channel_accessible(conn: &Connection, author: &str, channel_id: &str) -> rusqlite::Result<bool> {
+    let parent: Option<Option<String>> = conn
+        .query_row("SELECT parent_message_id FROM channel WHERE id = ?1 AND kind = 'thread'", [channel_id], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    if let Some(Some(parent_id)) = parent {
+        return message_accessible(conn, author, &parent_id);
+    }
+    Ok(true)
+}
+
+/// A participant cannot mutate a private aside or private post owned by another account, even with
+/// a guessed id. Normal public-message authorization remains in the existing scope rules.
+pub fn related_write_allowed(conn: &Connection, author: &str, o: &Op) -> anyhow::Result<bool> {
+    if o.kind == "post.create" {
+        for post_id in [
+            o.payload.get("reply_to").and_then(Value::as_str),
+            o.payload.get("repost_of").and_then(Value::as_str),
+            o.payload.get("quote").and_then(|q| q.get("post_id")).and_then(Value::as_str),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if !post_readable(conn, author, post_id)? {
+                return Ok(false);
+            }
+        }
+        return Ok(true);
+    }
+    if o.kind == "highlight.add" {
+        if let Some(post_id) = o.payload.get("post_id").and_then(Value::as_str) {
+            return Ok(post_readable(conn, author, post_id)?);
+        }
+        return Ok(true);
+    }
+    if matches!(o.kind.as_str(), "post.react" | "post.unreact")
+        || (matches!(o.kind.as_str(), "reaction.add" | "reaction.remove")
+            && o.payload.get("target_type").and_then(Value::as_str) == Some("post"))
+    {
         let Some(target) = o.payload.get("target_id").and_then(Value::as_str) else { return Ok(false) };
         let Some(member) = o.payload.get("member_id").and_then(Value::as_str) else { return Ok(false) };
         let owned: bool = conn.query_row(
@@ -70,32 +140,54 @@ pub fn related_write_allowed(conn: &Connection, author: &str, o: &Op) -> anyhow:
         if !owned {
             return Ok(false);
         }
-        let readable = crate::posts::readable_sql("?2");
-        let sql = format!("SELECT p.deleted_at IS NULL AND {readable} FROM post p WHERE p.id=?1");
-        // A reaction may sync before its post. The row, once present, is always checked through
-        // the same audience predicate as GET /posts; an absent target reveals no post data.
-        let visible: Option<bool> = conn.query_row(&sql, params![target, author], |r| r.get(0)).optional()?;
-        return Ok(visible.unwrap_or(true));
+        return Ok(post_readable(conn, author, target)?);
     }
-    let message_id = if matches!(o.kind.as_str(), "message.send" | "message.forward") {
-        o.payload.get("reply_to").and_then(Value::as_str)
-    } else if o.kind.starts_with("message.") || o.kind.starts_with("reaction.") || o.kind.starts_with("read.") {
-        o.payload
-            .get("message_id")
-            .and_then(Value::as_str)
-            .or_else(|| o.kind.starts_with("message.").then(|| o.entity()).flatten())
-    } else {
-        None
-    };
-    let Some(id) = message_id else { return Ok(true) };
-    let row: Option<(Option<String>, Option<String>)> = conn
-        .query_row("SELECT account_id, visibility FROM message WHERE id=?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
-        .optional()?;
-    let Some((owner, visibility)) = row else { return Ok(true) };
-    if owner.as_deref() == Some(author) {
+    if o.kind == "channel.create" {
+        if let Some(parent) = o.payload.get("parent_message_id").and_then(Value::as_str) {
+            return Ok(message_accessible(conn, author, parent)?);
+        }
         return Ok(true);
     }
-    Ok(visibility.as_deref().is_none_or(|s| serde_json::from_str::<Value>(s).is_ok_and(|v| is_public(Some(&v)))))
+    if o.kind.starts_with("channel.") {
+        if let Some(cid) = o.entity() {
+            return Ok(channel_accessible(conn, author, cid)?);
+        }
+        return Ok(true);
+    }
+    if matches!(o.kind.as_str(), "message.send" | "message.forward") {
+        if let Some(cid) = o.payload.get("channel_id").and_then(Value::as_str)
+            && !channel_accessible(conn, author, cid)?
+        {
+            return Ok(false);
+        }
+        for key in ["reply_to", "forward_of_id"] {
+            if let Some(mid) = o.payload.get(key).and_then(Value::as_str)
+                && !message_accessible(conn, author, mid)?
+            {
+                return Ok(false);
+            }
+        }
+        return Ok(true);
+    }
+    if o.kind.starts_with("message.") || o.kind.starts_with("reaction.") || o.kind.starts_with("read.") {
+        if let Some(cid) = o.payload.get("channel_id").and_then(Value::as_str)
+            && !channel_accessible(conn, author, cid)?
+        {
+            return Ok(false);
+        }
+        let message_id = o
+            .payload
+            .get("target_id")
+            .and_then(Value::as_str)
+            .or_else(|| o.payload.get("message_id").and_then(Value::as_str))
+            .or_else(|| {
+                (o.kind.starts_with("message.") || o.kind.starts_with("reaction.")).then(|| o.entity()).flatten()
+            });
+        if let Some(id) = message_id {
+            return Ok(message_accessible(conn, author, id)?);
+        }
+    }
+    Ok(true)
 }
 
 /// What the sync rule needs to know about the things an op points at, for one account.
