@@ -211,6 +211,11 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
   needs "Install unknown apps", later ones install silently when the app is left.
 - Battery Saver cuts background network: WorkManager defers sync until the app opens.
 - `member_dm` is the schema's kind for members' DMs, not `dm`.
+- A labelled return out of Compose's inline `key(...) { }` (e.g. `?: return@key`) compiles and
+  runs in debug, but the release dexer (R8 `dexBuilderRelease`) fails with "Method name
+  '<anonymous>' in class '$$$$$NON_LOCAL_RETURN$$$$$' cannot be represented in dex format". Use
+  an `if` instead. The gate builds debug only, so `deploy-linux.ps1 -Android` is where it shows
+  (2026-11-06); `gradlew :app:dexBuilderRelease --offline` checks it in about a minute.
 - Compose (pinned 1.7.6): `produceState` keeps its old value while a new key loads — key results
   by request identity; a `ModalBottomSheet` keeps the anchor of small loading content (reserve the
   final size); the Hanken variable font needs explicit `FontVariation` weights; rich-text undo

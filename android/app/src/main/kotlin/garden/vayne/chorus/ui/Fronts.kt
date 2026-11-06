@@ -197,9 +197,8 @@ fun FrontsScreen(chorus: Chorus, model: Model, onClose: () -> Unit) {
                     }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    (FrontingDisplay.TEMPLATES.map { it.name } + "Custom").forEach { t ->
-                        // a template already in use isn't offered twice
-                        if (live.any { it.name.equals(t, true) }) return@forEach
+                    // a template already in use isn't offered twice
+                    (FrontingDisplay.TEMPLATES.map { it.name } + "Custom").filter { t -> live.none { it.name.equals(t, true) } }.forEach { t ->
                         Text(t, color = p.ink, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.clip(CircleShape).background(p.surface2)
                             .clickable(role = Role.Button) { if (t == "Custom") naming = true else create(t, FrontingDisplay.TEMPLATES.first { it.name == t }) }
                             .padding(horizontal = 12.dp, vertical = 7.dp))
