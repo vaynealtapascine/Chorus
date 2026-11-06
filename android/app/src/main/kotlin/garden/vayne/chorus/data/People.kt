@@ -217,6 +217,8 @@ object PeopleApi {
     }
 
     /** The server applies current post audience rules before returning these rows. */
-    suspend fun posts(dev: DeviceRecord, accountId: String): List<SharedPost> =
-        sharedPosts(Api.call("GET", dev.base, "/posts?account=$accountId&limit=5", null, dev.session))
+    /** One page of what [accountId] shares with us, newest first, older than [before] when given. */
+    suspend fun posts(dev: DeviceRecord, accountId: String, before: Long? = null): List<SharedPost> =
+        sharedPosts(Api.call("GET", dev.base, "/posts?account=$accountId&limit=${FriendsFeed.PAGE}" +
+            (before?.let { "&before=$it" } ?: ""), null, dev.session))
 }

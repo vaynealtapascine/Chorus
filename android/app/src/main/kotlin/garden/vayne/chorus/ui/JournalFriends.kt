@@ -3,6 +3,7 @@ package garden.vayne.chorus.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -14,27 +15,52 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
 internal fun JournalFriends(chorus: Chorus, model: Model, onThread: (String) -> Unit, onReply: (String) -> Unit,
     onProfile: ((String, String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
-    var posts by remember { mutableStateOf(listOf<Pair<String, SharedPost>>()) }
+    // each followed account's pages so far; older ones load near the bottom (owner, 2026-11-07)
+    var sources by remember { mutableStateOf(listOf<FriendsFeed.Source>()) }
+    val posts = remember(sources) { FriendsFeed.shown(sources) }
     var loading by remember { mutableStateOf(true) }
+    var loadingOlder by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var refresh by remember { mutableStateOf(0) }
     LaunchedEffect(chorus.device?.session, refresh) {
-        posts = emptyList(); loading = true; error = null
+        sources = emptyList(); loading = true; error = null
         try {
             val dev = checkNotNull(chorus.device)
             val following = PeopleApi.list(dev).following.filter { it.status == "active" }
-            val loaded = mutableListOf<Pair<String, SharedPost>>()
+            val loaded = mutableListOf<FriendsFeed.Source>()
             for (follow in following) {
-                try { loaded += PeopleApi.posts(dev, follow.account.id).map { follow.account.shownName to it } }
+                try {
+                    val page = PeopleApi.posts(dev, follow.account.id)
+                    loaded += FriendsFeed.Source(follow.account.id, follow.account.shownName, page, page.size >= FriendsFeed.PAGE)
+                }
                 catch (e: kotlinx.coroutines.CancellationException) { throw e }
                 catch (_: Exception) { error = "Some friends’ posts could not be loaded. Try again when connected." }
             }
-            posts = loaded.sortedByDescending { it.second.occurredAt }
+            sources = loaded
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (_: Exception) { error = "Friends’ posts need a connection. Your own journal is available in ${if (model.isPerson) "My posts" else "Our system"}." }
         finally { loading = false }
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
+    val list = rememberLazyListState()
+    val nearEnd by remember { derivedStateOf { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= list.layoutInfo.totalItemsCount - 4 } == true } }
+    LaunchedEffect(nearEnd, sources, loading) {
+        if (!nearEnd || loading || loadingOlder) return@LaunchedEffect
+        val waiting = FriendsFeed.toLoad(sources).takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
+        val dev = chorus.device ?: return@LaunchedEffect
+        loadingOlder = true
+        try {
+            val next = sources.toMutableList()
+            for (i in waiting) {
+                val s = next[i]
+                val page = PeopleApi.posts(dev, s.accountId, before = s.oldest)
+                next[i] = s.copy(posts = s.posts + page, more = page.size >= FriendsFeed.PAGE)
+            }
+            sources = next
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { error = "Older posts could not be loaded. Try again when connected." }
+        finally { loadingOlder = false }
+    }
+    LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = 80.dp)) {
         if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
         if (error != null) item { Column(Modifier.padding(20.dp)) {
             Text(error.orEmpty(), color = p.ink2)
@@ -46,5 +72,6 @@ internal fun JournalFriends(chorus: Chorus, model: Model, onThread: (String) -> 
             SharedPostPreview(post, name, chorus, model, onThread = { onThread(it.id) }, onReply = { onReply(it.id) }, onProfile = onProfile)
             HorizontalDivider(color = p.line)
         }
+        if (loadingOlder) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp)) }
     }
 }

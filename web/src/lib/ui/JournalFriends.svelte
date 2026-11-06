@@ -4,14 +4,20 @@
   import { apiFetch } from '../http';
   import { apiBase } from '../sync/device';
   import { sync, type Projection } from '../sync/client';
-  import { friendsFeed, type FriendPost, type FriendPosts } from '../friends-feed';
+  import { FRIEND_PAGE, friendsFeed, olderToLoad, type FriendPost, type FriendPosts } from '../friends-feed';
   import FriendPostCard from './FriendPostCard.svelte';
 
   let { projection, speaker, speakerName, dark }: { projection: Projection; speaker: string | null; speakerName: string; dark: boolean } = $props();
   interface Follow { status: string; account: { id: string; handle: string | null; display_name: string | null } }
-  let items = $state<{ account: string; post: FriendPost }[]>([]);
+  // each followed account's pages so far (older ones load at the bottom, owner 2026-11-07)
+  let sources = $state.raw<(FriendPosts & { id: string })[]>([]);
+  const items = $derived(friendsFeed(sources));
+  const hasOlder = $derived(olderToLoad(sources).length > 0);
   let loading = $state(true);
+  let loadingOlder = $state(false);
   let error = $state('');
+  const page = async (id: string, before?: number) =>
+    (await api(`/posts?account=${encodeURIComponent(id)}&limit=${FRIEND_PAGE}${before === undefined ? '' : `&before=${before}`}`)).items as FriendPost[];
 
   async function api(path: string) {
     const r = await apiFetch(`${apiBase()}${path}`, { headers: { authorization: `Bearer ${sync.device?.session ?? ''}` } });
@@ -22,18 +28,40 @@
     loading = true; error = '';
     try {
       const following = ((await api('/follows')).following as Follow[]).filter((f) => f.status === 'active');
-      const sources: FriendPosts[] = [];
+      const loaded: (FriendPosts & { id: string })[] = [];
       for (const f of following) {
         const account = f.account.display_name || (f.account.handle ? `@${f.account.handle}` : 'Someone');
-        try { sources.push({ account, posts: (await api(`/posts?account=${encodeURIComponent(f.account.id)}&limit=5`)).items as FriendPost[] }); }
+        try { const posts = await page(f.account.id); loaded.push({ id: f.account.id, account, posts, more: posts.length >= FRIEND_PAGE }); }
         catch { error = 'Some friends’ posts could not be loaded. Try again when connected.'; }
       }
-      items = friendsFeed(sources);
+      sources = loaded;
     } catch {
       error = 'Friends’ posts need a connection. Your own journal is available in Our system.';
     } finally { loading = false; }
   }
   $effect(() => { void sync.device?.session; void load(); });
+  /** The next page for the accounts the feed is waiting on. */
+  async function loadOlder() {
+    if (loadingOlder || loading) return;
+    loadingOlder = true;
+    try {
+      const next = [...sources];
+      for (const i of olderToLoad(next)) {
+        const s = next[i];
+        const posts = await page(s.id, Math.min(...s.posts.map((p) => p.occurred_at)));
+        next[i] = { ...s, posts: [...s.posts, ...posts], more: posts.length >= FRIEND_PAGE };
+      }
+      sources = next;
+    } catch {
+      error = 'Older posts could not be loaded. Try again when connected.';
+    } finally { loadingOlder = false; }
+  }
+  // the bottom of the list coming into view asks for older posts
+  function nearEnd(node: HTMLElement) {
+    const seen = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) void loadOlder(); }, { rootMargin: '600px' });
+    seen.observe(node);
+    return { destroy: () => seen.disconnect() };
+  }
 </script>
 
 <div class="friends" aria-busy={loading}>
@@ -44,11 +72,14 @@
   {:else}
     {#if !loading && !error}<p class="quiet">No shared posts yet. Posts from accounts you follow will appear here.</p>{/if}
   {/each}
+  <!-- re-created after each page, so a list still short of the screen keeps loading -->
+  {#if hasOlder}{#key sources}<div class="quiet older" use:nearEnd><button onclick={loadOlder} disabled={loadingOlder}>{loadingOlder ? 'Loading older posts…' : 'Older posts'}</button></div>{/key}{/if}
 </div>
 
 <style>
   .friends { display: grid; border-top: 1px solid var(--line); }
   .quiet { margin: 0; padding: 20px 16px; color: var(--ink-3); }
   .quiet p { margin: 0 0 8px; }
+  .older { text-align: center; }
   .quiet button { border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 0; }
 </style>
