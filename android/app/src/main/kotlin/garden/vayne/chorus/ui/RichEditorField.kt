@@ -79,7 +79,7 @@ internal fun RichEditorField(controller: RichEditorController, label: String, en
     minLines: Int = 3, maxLines: Int = Int.MAX_VALUE, formatting: Boolean = false) {
     val field = controller.field
     val interaction = remember { MutableInteractionSource() }
-    val colors = OutlinedTextFieldDefaults.colors()
+    val colors = fieldColors()
     val main = remember { Handler(Looper.getMainLooper()) }
     val interceptor = remember(controller, enabled) { PlatformTextInputInterceptor { request, next ->
         next.startInputMethod(PlatformTextInputMethodRequest { info ->
@@ -115,9 +115,13 @@ internal fun RichEditorField(controller: RichEditorController, label: String, en
                     true
                 } else false
             }, decorator = TextFieldDecorator { inner ->
-                OutlinedTextFieldDefaults.DecorationBox(value = field.text.toString(), innerTextField = inner, enabled = enabled,
+                // filled, label inside, as ChorusField (D-124)
+                TextFieldDefaults.DecorationBox(value = field.text.toString(), innerTextField = inner, enabled = enabled,
                     singleLine = false, visualTransformation = VisualTransformation.None, interactionSource = interaction,
-                    label = { Text(label) }, colors = colors)
+                    label = { Text(label) }, colors = colors, container = {
+                        TextFieldDefaults.Container(enabled, false, interaction, colors = colors,
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    })
             })
     }
     Row {

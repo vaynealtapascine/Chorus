@@ -1,5 +1,6 @@
 package garden.vayne.chorus.ui
 
+import androidx.compose.ui.draw.clip
 import garden.vayne.chorus.InspectionDialogContent
 
 import androidx.compose.foundation.background
@@ -52,13 +53,15 @@ internal object ColourValue {
 internal fun ColourField(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, label: String = "Colour", enabled: Boolean = true) {
     var open by rememberSaveable { mutableStateOf(false) }
     val p = LocalChorusPalette.current
-    OutlinedButton(onClick = { open = true }, enabled = enabled, modifier = modifier.heightIn(min = 56.dp)) {
-        Box(Modifier.size(24.dp).background(ColourValue.rgb(value), CircleShape).border(1.dp, p.ink3, CircleShape))
-        Spacer(Modifier.width(10.dp))
-        Column(horizontalAlignment = Alignment.Start) {
-            Text(label)
-            Text(ColourValue.normalize(value) ?: value, style = MaterialTheme.typography.labelSmall, color = p.ink2)
+    // a field-like row, as the filled fields around it (D-124)
+    Row(modifier.fillMaxWidth().heightIn(min = 56.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)).background(cardColor())
+        .clickable(enabled = enabled, onClickLabel = "Choose $label") { open = true }.padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(label, color = p.ink3, style = MaterialTheme.typography.labelMedium)
+            Text(ColourValue.normalize(value) ?: value, color = if (enabled) p.ink else p.ink3, style = MaterialTheme.typography.bodyLarge)
         }
+        Box(Modifier.size(28.dp).background(ColourValue.rgb(value), CircleShape).border(1.dp, p.line, CircleShape))
     }
     if (open) ColourPicker(value, onDismiss = { open = false }, onApply = { onChange(it); open = false })
 }

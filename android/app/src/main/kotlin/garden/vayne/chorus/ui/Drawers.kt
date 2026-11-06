@@ -33,7 +33,6 @@ import androidx.compose.material3.TimePickerDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -71,7 +70,8 @@ import java.util.TimeZone
  * label inside, grouped rows with their value in the accent, notes and one wide button.
  */
 
-/** How many drawers lie under this one: 0 outside any drawer, 1 in the first. */
+/** How many drawers lie under this one: 0 outside any drawer, 1 in the first. Every
+ * [ChorusSheet] counts, so a field or card in an older sheet still steps up from it. */
 internal val LocalDrawerDepth = staticCompositionLocalOf { 0 }
 
 /** A grouped card's fill: a step up from whatever it sits on. */
@@ -95,7 +95,7 @@ internal fun Drawer(onDismiss: () -> Unit, title: String? = null, subtitle: Stri
     val tallest = LocalConfiguration.current.screenHeightDp.dp * .92f - (depth * 28).dp
     ChorusSheet(onDismissRequest = { if (dismissible) onDismiss() }, skipPartiallyExpanded = true, containerColor = p.surface) {
         InspectionDialogContent {
-            CompositionLocalProvider(LocalDrawerDepth provides depth + 1) {
+            run {
                 Column(Modifier.fillMaxWidth().heightIn(max = tallest).imePadding()) {
                     if (title != null) DrawerHeader(title, subtitle, leading, if (dismissible) onDismiss else null)
                     Column(Modifier.weight(1f, fill = false).then(if (scroll) Modifier.verticalScroll(rememberScrollState()) else Modifier)
@@ -285,7 +285,7 @@ internal fun ChorusField(value: TextFieldValue, onValueChange: (TextFieldValue) 
 private fun fieldText() = TextStyle(color = LocalChorusPalette.current.ink, fontSize = 16.sp, lineHeight = 22.sp, fontFamily = HankenGrotesk)
 
 @Composable
-private fun fieldColors(): androidx.compose.material3.TextFieldColors {
+internal fun fieldColors(): androidx.compose.material3.TextFieldColors {
     val p = LocalChorusPalette.current
     val fill = cardColor()
     return TextFieldDefaults.colors(
@@ -342,7 +342,7 @@ internal fun DateTimeDrawer(initial: Long, onPick: (Long) -> Unit, onDismiss: ()
         }) {
         if (!timeOnly) Segmented(listOf("Date", "Time"), tab) { tab = it }
         if (tab == 0 && !timeOnly) DatePicker(date, title = null, headline = null, showModeToggle = false,
-            colors = DatePickerDefaults.colors(containerColor = Color.Transparent, selectedDayContainerColor = p.accent,
+            colors = DatePickerDefaults.colors(containerColor = p.surface, selectedDayContainerColor = p.accent,
                 selectedDayContentColor = p.onAccent, todayDateBorderColor = p.accent, todayContentColor = p.accent,
                 dayContentColor = p.ink, weekdayContentColor = p.ink3, navigationContentColor = p.ink2,
                 yearContentColor = p.ink, selectedYearContainerColor = p.accent, selectedYearContentColor = p.onAccent,
