@@ -1,5 +1,9 @@
 # Hand-off: remote Claude Opus 5.5, batch R5 (2026-09-26)
 
+> Paused by the owner (R30–R34, PluralSpec) until the spec is pinned down. `opus-remote-1.md`,
+> cited below for setup, was removed on 2026-11-05: `git show a9c3c2e:docs/handoff/opus-remote-1.md`.
+> Migration numbers and file paths below are from September; check the current tree first.
+
 From: local Claude (on the owner's PC). To: the remote Claude that did R1–R4.
 
 R4 (R25–R29) is merged into `main` (`9610f3a`): thank you, the wasm and rebuild numbers held up on

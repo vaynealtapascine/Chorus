@@ -7,12 +7,17 @@ transitions for actions. Implement Figma features (Chorus — Flows Copy, `389A1
 page `3:5`) that are not built yet. Account for subsystems (groups that front as a unit, and later
 members containing members) everywhere members are chosen or shown.
 
-Each slice must install over the owner's phone without losing data: commit, run the gate, then
-`scripts/deploy.ps1 -Android` from the main checkout after fast-forwarding `main` to
-`feat/figma-ui-redesign` (worktree `F:/DunBuild/chorus-ui-redesign`). Phones pick the APK up on
-the next app start. The owner's phone is logged in to the real account: inspect it read-only
-(no sends, edits or opening unread chats); do mutations on the emulator's fictional demo
-(`docs/OPS.md`, demo server on 5265).
+Each slice must install over the owner's phone without losing data: commit on `main`, run the
+full gate, then `pwsh scripts/deploy-linux.ps1 -Android` (the old `feat/figma-ui-redesign`
+worktree and `deploy.ps1` route are retired). Phones pick the APK up on the next app start. The
+owner's phone is logged in to the real account: inspect it read-only (no sends, edits or opening
+unread chats); do mutations on the emulator's fictional demo (`docs/OPS.md` §8).
+
+State checked 2026-11-05: slices 0, 2, 4, 4b and W1 are done. Much of slice 1 landed through UI8
+slice 6 (swipe to reply, double-tap heart, haptics, Draft:/typing previews) and D-097 (list by
+activity); chat mentions autocomplete (slice 5) landed in UI8 on both clients; slice 7's folder
+editor, compact rows and pinned chats landed in UI12d/D-097. Re-check the remaining items of
+slices 1, 5 and 7 against the app before starting them.
 
 ## Settled for UI7 (no owner question needed)
 
@@ -71,4 +76,5 @@ unless the slice says otherwise. Atomic commits with tests for logic (`data/` he
 tests). Do not touch devices, deploy, push or merge; the coordinator inspects and ships.
 Gate: Android lint + JVM tests (`lintDebug testDebugUnitTest --offline`) with
 `CARGO_TARGET_DIR=F:\DunBuild\chorus-target` (prebuilt host core library; don't run cargo) and
-your own `CHORUS_GRADLE_BUILD_DIR`.
+your own `CHORUS_GRADLE_BUILD_DIR`. The coordinator runs the full `verify.py --android` before
+shipping.

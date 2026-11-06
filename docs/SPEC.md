@@ -296,7 +296,8 @@ Each relationship has its own audience including selected privacy buckets. On-se
 include visible members/fragments and singlets (their self member). A shared relationship is
 shown only when its source profile, audience and target profile all allow the reader. Hidden
 or deleted targets omit the whole relationship; links grant no extra identity, blob or history
-access. See D-107 and `docs/handoff/owner-three-slices.md` for the ordered owner plan.
+access. See D-107 (the owner's ordered plan was `docs/handoff/owner-three-slices.md`, now in git
+history at a9c3c2e).
 
 ### 6.4 Lists and feeds
 

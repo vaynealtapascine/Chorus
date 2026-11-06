@@ -180,7 +180,7 @@ IDs; whole-front change counts omit layer scope and are labelled accordingly. Da
 explicitly explain member-hours. Actual-component SSR/wasm tests cover selected, empty, error and
 legacy states; static layout captures cover compact/desktop in both themes. Live/hydrated Insights
 and native rendering remain unverified under the recorded policy blocks. The scoped review and
-verification record is `docs/handoff/ui-insights-2026-10-26.md`.
+verification record was `docs/handoff/ui-insights-2026-10-26.md` (in git history at a9c3c2e).
 
 Web current and history consumers now read Body canonically once an account is configured.
 `front-view.ts` `bodyPresence` (display, Chat/Search/Stage viewer filters, Members' Here badge) and
