@@ -1,7 +1,5 @@
 package garden.vayne.chorus.ui
 
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,8 +18,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -97,12 +93,12 @@ fun LogPastSwitch(chorus: Chorus, model: Model, initialFront: String, history: N
         val sameDay = today.get(Calendar.YEAR) == c.get(Calendar.YEAR) && today.get(Calendar.DAY_OF_YEAR) == c.get(Calendar.DAY_OF_YEAR)
         return if (sameDay) "Today · ${time.format(Date(t))}" else DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(t))
     }
-    fun pick(t: Long, set: (Long) -> Unit) {
-        val c = Calendar.getInstance().apply { timeInMillis = t }
-        DatePickerDialog(ctx, { _, y, m, d ->
-            TimePickerDialog(ctx, { _, h, min -> c.set(y, m, d, h, min, 0); c.set(Calendar.MILLISECOND, 0); set(c.timeInMillis) },
-                c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), android.text.format.DateFormat.is24HourFormat(ctx)).show()
-        }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
+    // which end is being picked: "from" or "until"
+    var picking_ by remember { mutableStateOf<String?>(null) }
+    fun pick(which: String) { picking_ = which }
+    picking_?.let { which ->
+        DateTimeDrawer(if (which == "from") from else until, { t -> if (which == "from") from = t else until = t; picking_ = null },
+            { picking_ = null }, if (which == "from") "From" else "Until", latest = System.currentTimeMillis())
     }
     fun save() {
         error = when {
@@ -148,16 +144,14 @@ fun LogPastSwitch(chorus: Chorus, model: Model, initialFront: String, history: N
                 Text("Logging the past doesn't change who's fronting now.", color = p.ink, fontSize = 13.sp, lineHeight = 18.sp)
             }
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.surface)) {
-                Box {
-                    PastRow(R.drawable.ic_target, "Front", frontName(named?.fronts?.get(frontId))) { if (configured) frontMenu = true }
-                    DropdownMenu(frontMenu, { frontMenu = false }) {
-                        shownFronts(model, account).forEach { f -> DropdownMenuItem({ Text(frontName(f)) }, { frontId = f.id; who.clear(); frontMenu = false }) }
-                    }
-                }
+                PastRow(R.drawable.ic_target, "Front", frontName(named?.fronts?.get(frontId))) { if (configured) frontMenu = true }
+                val fronts = shownFronts(model, account)
+                ChoiceDrawer(frontMenu, "Which front", fronts, fronts.firstOrNull { it.id == frontId }, { frontName(it) },
+                    { f -> frontId = f.id; who.clear(); frontMenu = false }, { frontMenu = false })
                 Spacer(Modifier.fillMaxWidth().height(1.dp).background(p.line))
-                PastRow(R.drawable.ic_clock, "From", label(from)) { pick(from) { from = it } }
+                PastRow(R.drawable.ic_clock, "From", label(from)) { pick("from") }
                 Spacer(Modifier.fillMaxWidth().height(1.dp).background(p.line))
-                PastRow(R.drawable.ic_clock, "Until", label(until)) { pick(until) { until = it } }
+                PastRow(R.drawable.ic_clock, "Until", label(until)) { pick("until") }
             }
             SectionLabel("Who was there")
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.surface)) {
@@ -180,9 +174,8 @@ fun LogPastSwitch(chorus: Chorus, model: Model, initialFront: String, history: N
                                 Text(layer?.name ?: e.level, color = ink.label, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                                 Glyph(R.drawable.ic_chevron_down, ink.label, 14.dp)
                             }
-                            DropdownMenu(open, { open = false }) {
-                                layers.forEach { l -> DropdownMenuItem({ Text(l.name) }, { who[i] = e.copy(level = l.id); open = false }) }
-                            }
+                            ChoiceDrawer(open, "Where ${s.name} was", layers, layer, { it.name },
+                                { l -> who[i] = e.copy(level = l.id); open = false }, { open = false }, describe = { it.about })
                         }
                         BarIcon(R.drawable.ic_close, "Remove ${s.name}", p.ink3, 18.dp) { who.removeAt(i) }
                     }

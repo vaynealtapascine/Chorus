@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -68,9 +67,9 @@ internal fun JournalLists(chorus: Chorus, model: Model, selectedId: String, onSe
         item {
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("List name") }, singleLine = true,
+                ChorusField(name, { name = it }, label = { Text("List name") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(description, { description = it }, label = { Text("Description (optional)") },
+                ChorusField(description, { description = it }, label = { Text("Description (optional)") },
                     modifier = Modifier.fillMaxWidth())
                 TextButton(enabled = !busy && name.isNotBlank(), onClick = {
                     val id = chorus.newId()

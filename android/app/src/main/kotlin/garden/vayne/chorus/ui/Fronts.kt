@@ -24,7 +24,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -161,11 +160,8 @@ fun FrontsScreen(chorus: Chorus, model: Model, onClose: () -> Unit) {
         if (named == null) confirming = name to template else write(name, template)
     }
     confirming?.let { (name, template) ->
-        androidx.compose.material3.AlertDialog(onDismissRequest = { confirming = null },
-            title = { Text("Set up fronts?") },
-            text = { Text("Adding “${name.trim()}” turns on separate fronts for this system. Body keeps its history and who's in it; this can't be turned off again, though a front can be removed.") },
-            confirmButton = { TextButton(onClick = { write(name, template); confirming = null }) { Text("Add front") } },
-            dismissButton = { TextButton(onClick = { confirming = null }) { Text("Cancel") } })
+        ConfirmDrawer("Set up fronts?", "Adding “${name.trim()}” turns on separate fronts for this system. Body keeps its history and who's in it; this can't be turned off again, though a front can be removed.",
+            "Add front", { write(name, template); confirming = null }, { confirming = null }, icon = R.drawable.ic_layers)
     }
     editing?.let { id -> all.firstOrNull { it.id == id }?.let { f ->
         FrontEditor(chorus, model, f, all.filter { !it.deleted && it.id != f.id }, isBody = f.id == body) { editing = null }
@@ -205,7 +201,7 @@ fun FrontsScreen(chorus: Chorus, model: Model, onClose: () -> Unit) {
                     }
                 }
                 if (naming) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(newName, { newName = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.weight(1f))
+                    ChorusField(newName, { newName = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.weight(1f))
                     TextButton(onClick = { create(newName, null); newName = ""; naming = false }, enabled = newName.isNotBlank()) { Text("Add") }
                 }
             }
@@ -296,11 +292,11 @@ private fun FrontEditor(chorus: Chorus, model: Model, front: NamedFront, others:
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(frontName(front), color = p.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.weight(1f))
+                ChorusField(name, { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.weight(1f))
                 if (name.isNotBlank() && name.trim() != front.name) TextButton(onClick = { define(JSONObject().put("name", name.trim())) }) { Text("Save") }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(about, { about = it.take(140) }, label = { Text("Description") }, modifier = Modifier.weight(1f))
+                ChorusField(about, { about = it.take(140) }, label = { Text("Description") }, modifier = Modifier.weight(1f))
                 if (about.trim() != display.front(front.id).about.orEmpty()) TextButton(onClick = { look { it.copy(about = about.trim().ifEmpty { null }) } }) { Text("Save") }
             }
             Text("Icon", color = p.ink2, fontSize = 13.sp)

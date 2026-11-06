@@ -23,8 +23,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -296,15 +294,13 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (St
                             Text(frontName(front), color = p.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                             Text(listOfNotNull(frontSince?.let { "since ${time.format(Date(it))}" }, "${scene.here} here").joinToString(" · "),
                                 color = p.ink3, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            Box {
-                                Box(Modifier.size(32.dp).clip(CircleShape).clickable { menu = true }.semantics { contentDescription = "${frontName(front)} options" },
-                                    contentAlignment = Alignment.Center) { Glyph(R.drawable.ic_more_vert, p.ink3, 20.dp) }
-                                DropdownMenu(menu, { menu = false }) {
-                                    DropdownMenuItem({ Text("Switch…") }, { menu = false; switcher = "" })
-                                    DropdownMenuItem({ Text("Layers & display") }, { menu = false; onLayers(frontId) })
-                                    DropdownMenuItem({ Text("Front history") }, { menu = false; onHistory(frontId) })
-                                    DropdownMenuItem({ Text("Manage fronts") }, { menu = false; onFronts() })
-                                }
+                            Box(Modifier.size(32.dp).clip(CircleShape).clickable { menu = true }.semantics { contentDescription = "${frontName(front)} options" },
+                                contentAlignment = Alignment.Center) { Glyph(R.drawable.ic_more_vert, p.ink3, 20.dp) }
+                            MenuDrawer(menu, { menu = false }, frontName(front), "${scene.here} here") {
+                                MenuRow("Switch…", R.drawable.ic_swap) { menu = false; switcher = "" }
+                                MenuRow("Layers & display", R.drawable.ic_layers) { menu = false; onLayers(frontId) }
+                                MenuRow("Front history", R.drawable.ic_history) { menu = false; onHistory(frontId) }
+                                MenuRow("Manage fronts", R.drawable.ic_sliders) { menu = false; onFronts() }
                             }
                         }
                         note?.let { Text(it, color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(horizontal = 4.dp)) }

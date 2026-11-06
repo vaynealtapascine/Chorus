@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -114,7 +113,7 @@ internal fun ProfileRelationships(chorus: Chorus, model: Model, memberId: String
                     TextButton(onClick = { external = false }) { Text(if (external) "○ Member" else "✓ Member") }
                     TextButton(onClick = { external = true }) { Text(if (external) "✓ Outside Chorus" else "○ Outside Chorus") }
                 }
-                if (external) OutlinedTextField(label, { label = it.take(100) },
+                if (external) ChorusField(label, { label = it.take(100) },
                     label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 else if (candidates.isEmpty()) Text("Add another member to link a relationship.", color = p.ink2)
                 else LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -122,7 +121,7 @@ internal fun ProfileRelationships(chorus: Chorus, model: Model, memberId: String
                         JournalChoice(member.second, member.first == chosenTarget?.first) { targetId = member.first }
                     }
                 }
-                OutlinedTextField(note, { note = it.take(300) }, label = { Text("Note (optional)") },
+                ChorusField(note, { note = it.take(300) }, label = { Text("Note (optional)") },
                     modifier = Modifier.fillMaxWidth())
                 targetError?.let { Text(it, color = p.ink2); TextButton(onClick = { refresh++ }) { Text("Refresh shared profiles") } }
                 AudienceChip("New relationship", audience, true, model.sharingBuckets,
@@ -142,10 +141,10 @@ internal fun ProfileRelationships(chorus: Chorus, model: Model, memberId: String
         Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Relationship types", color = p.ink, fontWeight = FontWeight.SemiBold)
-            OutlinedTextField(typeName, { typeName = it.take(60) }, label = { Text("Type name") },
+            ChorusField(typeName, { typeName = it.take(60) }, label = { Text("Type name") },
                 singleLine = true, modifier = Modifier.fillMaxWidth())
             TextButton(onClick = { symmetric = !symmetric }) { Text(if (symmetric) "✓ Same in both directions" else "○ Same in both directions") }
-            if (!symmetric) OutlinedTextField(inverse, { inverse = it.take(60) },
+            if (!symmetric) ChorusField(inverse, { inverse = it.take(60) },
                 label = { Text("Reverse name (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             TextButton(enabled = !busy && typeName.isNotBlank(), onClick = {
                 val name = typeName.trim()

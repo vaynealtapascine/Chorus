@@ -35,16 +35,17 @@ internal fun JournalFormatToolbar(value: TextFieldValue, enabled: Boolean, onMap
         item { FormatButton(R.drawable.ic_format_list_ol, "Numbered text", ready) { change(EditorFormatting.mappedLines(value, "", numbered = true)) } }
         item { FormatButton(R.drawable.ic_link, "Insert link", ready) { linkSelection = value; url = ""; linkError = null; linkOpen = true } }
     }
-    if (linkOpen) AlertDialog(onDismissRequest = { linkOpen = false }, title = { Text("Insert link") }, text = {
-        Column {
-            OutlinedTextField(url, { url = it; linkError = null }, label = { Text("Link URL") }, singleLine = true,
-                isError = linkError != null, modifier = Modifier.fillMaxWidth())
-            if (linkError != null) Text(linkError.orEmpty(), color = p.danger)
-        }
-    }, confirmButton = { TextButton(enabled = url.isNotBlank(), onClick = {
-        runCatching { EditorFormatting.mappedLink(linkSelection, url.trim()) }.onSuccess { change(it); linkOpen = false }
-            .onFailure { linkError = it.message }
-    }) { Text("Insert") } }, dismissButton = { TextButton(onClick = { linkOpen = false }) { Text("Cancel") } })
+    if (linkOpen) Drawer({ linkOpen = false }, "Insert link", "On the selected words, or as its own text", footer = {
+        DrawerButton("Insert link", {
+            runCatching { EditorFormatting.mappedLink(linkSelection, url.trim()) }.onSuccess { change(it); linkOpen = false }
+                .onFailure { linkError = it.message }
+        }, enabled = url.isNotBlank())
+    }) {
+        ChorusField(url, { url = it; linkError = null }, label = { Text("Link URL") }, placeholder = { Text("https://") }, singleLine = true,
+            isError = linkError != null, modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri))
+        if (linkError != null) FormNote(linkError.orEmpty(), warning = true)
+    }
 }
 
 @Composable

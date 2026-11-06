@@ -1,8 +1,9 @@
 package garden.vayne.chorus.ui
 
+import androidx.compose.ui.unit.sp
+import garden.vayne.chorus.designsystem.R
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -30,17 +31,8 @@ internal fun JournalAudienceDialog(post: JournalPost, model: Model, chorus: Chor
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val widening = choice.possiblyWidens(post.audience)
-    AlertDialog(onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Who can see this post?") },
-        text = { Column {
-            AudienceChip("This post", choice, own = true, buckets = model.sharingBuckets,
-                person = model.isPerson, enabled = !busy, onChange = { it?.let { choice = it } }, looks = model.bucketLooks)
-            if (widening) Text("More people will be able to read this post.", color = p.ink2,
-                style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
-            if (error != null) Text(error.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 8.dp))
-        } },
-        confirmButton = { TextButton(enabled = !busy && !choice.same(post.audience), onClick = {
+    Drawer(onDismiss, "Who can see this post?", "Tap the audience to change it.", dismissible = !busy, footer = {
+        DrawerButton(if (widening) "Make visible" else "Change audience", {
             busy = true; error = null
             scope.launch {
                 try {
@@ -50,6 +42,16 @@ internal fun JournalAudienceDialog(post: JournalPost, model: Model, chorus: Chor
                 catch (_: Exception) { error = "Could not change the audience. Try again." }
                 finally { busy = false }
             }
-        }) { Text(if (widening) "Make visible" else "Change audience") } },
-        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") } })
+        }, enabled = !choice.same(post.audience), busy = busy)
+    }) {
+        FormCard {
+            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Audience", color = p.ink, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                AudienceChip("This post", choice, own = true, buckets = model.sharingBuckets,
+                    person = model.isPerson, enabled = !busy, onChange = { it?.let { choice = it } }, looks = model.bucketLooks)
+            }
+        }
+        if (widening) FormNote("More people will be able to read this post.", R.drawable.ic_globe, warning = true)
+        if (error != null) FormNote(error.orEmpty(), warning = true)
+    }
 }

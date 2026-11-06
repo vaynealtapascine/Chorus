@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -255,9 +254,9 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
                 if (active.isNotEmpty()) {
                     Text("Quiet hours for people you follow", color = p.ink2)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(quietFrom, { quietFrom = it.take(5) }, label = { Text("From") },
+                        ChorusField(quietFrom, { quietFrom = it.take(5) }, label = { Text("From") },
                             singleLine = true, modifier = Modifier.weight(1f))
-                        OutlinedTextField(quietTo, { quietTo = it.take(5) }, label = { Text("Until") },
+                        ChorusField(quietTo, { quietTo = it.take(5) }, label = { Text("Until") },
                             singleLine = true, modifier = Modifier.weight(1f))
                     }
                     Text("Use 24-hour time, in your local time zone.", color = p.ink2)

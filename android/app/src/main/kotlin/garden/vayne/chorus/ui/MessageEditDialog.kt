@@ -32,22 +32,12 @@ internal fun MessageEditDialog(chorus: Chorus, model: Model, id: String, viewing
         if (!busy) try { editor.finish(); onDone() }
         catch (e: Exception) { error = "Could not discard this draft. Try again." }
     }
-    AlertDialog(onDismissRequest = ::close, title = { Text("Edit message") }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (controllers.size > 1) Text("Each part keeps its original speaker.")
-            for ((i, controller) in controllers.withIndex()) {
-                RichEditorField(controller, if (controllers.size == 1) "Message" else "Part ${i + 1} · " +
-                    original.segments[i].authors.map { model.member(it)?.shownName ?: "Someone" }.joinToString(" & "),
-                    enabled = !busy, minLines = 2, maxLines = 6)
-            }
-            (error ?: editor.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        }
-    }, confirmButton = { TextButton(enabled = !busy && controllers.any { it.value.text.isNotBlank() }, onClick = {
+    fun save() {
         val current = ChatOrganize.actionMessage(chorus.model.value, original.id, viewingAs, account.orEmpty())
         if (account == null || original.accountId != account || current == null || current.text != original.text ||
             current.entities != original.entities || current.segments != original.segments || current.accountId != account) {
             error = "The message changed. Close Edit and reopen it."
-            return@TextButton
+            return
         }
         val space = model.channels.find { it.id == original.channelId }?.spaceId
         busy = true; error = null
@@ -68,7 +58,15 @@ internal fun MessageEditDialog(chorus: Chorus, model: Model, id: String, viewing
             catch (e: Exception) { error = e.message ?: "Could not edit the message." }
             finally { busy = false }
         }
-    }) { Text(if (busy) "Saving…" else "Save") } }, dismissButton = {
-        TextButton(enabled = !busy, onClick = ::close) { Text("Cancel") }
-    })
+    }
+    Drawer(::close, "Edit message", if (controllers.size > 1) "Each part keeps its original speaker." else null, dismissible = !busy, footer = {
+        DrawerButton("Save", ::save, enabled = controllers.any { it.value.text.isNotBlank() }, busy = busy)
+    }) {
+        for ((i, controller) in controllers.withIndex()) {
+            RichEditorField(controller, if (controllers.size == 1) "Message" else "Part ${i + 1} · " +
+                original.segments[i].authors.map { model.member(it)?.shownName ?: "Someone" }.joinToString(" & "),
+                enabled = !busy, minLines = 2, maxLines = 6)
+        }
+        (error ?: editor.error)?.let { FormNote(it, warning = true) }
+    }
 }

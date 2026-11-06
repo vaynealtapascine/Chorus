@@ -1,5 +1,6 @@
 package garden.vayne.chorus.ui
 
+import garden.vayne.chorus.designsystem.R
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -142,7 +143,7 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
         LazyColumn(Modifier.padding(horizontal = 16.dp), state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(query, { query = it }, label = { Text("Search members") },
+                    ChorusField(query, { query = it }, label = { Text("Search members") },
                         placeholder = { Text("${eligible.size} members") }, singleLine = true, modifier = Modifier.weight(1f))
                     Spacer(Modifier.width(8.dp))
                     Button(onClick = { adding = true }) { Text("Add") }
@@ -224,12 +225,8 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
     rolesFor?.let { id -> model.member(id)?.let { RolesDialog(chorus, model, it) { rolesFor = null } } ?: run { rolesFor = null } }
     newFolderFor?.let { ids ->
         var name by remember { mutableStateOf("") }
-        AlertDialog(onDismissRequest = { newFolderFor = null }, title = { InspectionDialogContent { Text("New folder") } },
-            text = { InspectionDialogContent { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Name") }, placeholder = { Text("e.g. Littles") }, singleLine = true)
-                Text("Folders only sort this list; they don't change groups, fronting or who sees what.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
-            } } },
-            confirmButton = { InspectionDialogContent { TextButton(enabled = name.isNotBlank(), onClick = {
+        Drawer({ newFolderFor = null }, "New folder", if (ids.isEmpty()) null else "With ${ids.size} ${if (ids.size == 1) "member" else "members"}", footer = {
+            DrawerButton(if (ids.isEmpty()) "Add folder" else "Add and move", enabled = name.isNotBlank(), onClick = {
                 val id = chorus.newId()
                 val folders = MemberListPrefs.addFolder(settings.folders, id, name)
                 write("Could not make the folder. Try again.") {
@@ -238,8 +235,11 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
                 }
                 if (ids.isNotEmpty()) { selecting = false; picked = emptyList() }
                 newFolderFor = null
-            }) { Text(if (ids.isEmpty()) "Add folder" else "Add and move") } } },
-            dismissButton = { InspectionDialogContent { TextButton(onClick = { newFolderFor = null }) { Text("Cancel") } } })
+            })
+        }) {
+            ChorusField(name, { name = it }, label = { Text("Name") }, placeholder = { Text("e.g. Littles") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            FormNote("Folders only sort this list; they don't change groups, fronting or who sees what.", R.drawable.ic_folder)
+        }
     }
 }
 
@@ -292,17 +292,15 @@ private fun MemberRow(chorus: Chorus, model: Model, m: Member, level: String?, s
                 if (!selecting) ChorusIcon(AppIcon.Chevron, modifier = Modifier.padding(start = 8.dp))
             }
         }
-        DropdownMenu(menu, { menu = false }) {
+        MenuDrawer(menu, { menu = false }, m.shownName, m.pronouns, leading = { Avatar(m.glyph, m.color, 40.dp, avatarBlob = m.avatarBlob, ring = false) }) {
+            MenuRow("Roles…", R.drawable.ic_members) { menu = false; onRoles() }
+            if (foldered) MenuRow("Select several", R.drawable.ic_check) { menu = false; onSelect() }
             if (foldered) {
-                Text("Move to", color = p.ink3, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-                for (f in settings.folders) DropdownMenuItem({ Text(f.name, fontWeight = if (settings.folderOf[m.id] == f.id) FontWeight.SemiBold else null) },
-                    { menu = false; onMove(f.id) })
-                DropdownMenuItem({ Text("Not in a folder", fontWeight = if (m.id !in settings.folderOf) FontWeight.SemiBold else null) }, { menu = false; onMove(null) })
-                DropdownMenuItem({ Text("New folder…") }, { menu = false; onNewFolder() })
-                HorizontalDivider()
+                SectionLabel("Move to")
+                for (f in settings.folders) MenuRow(f.name, R.drawable.ic_folder, selected = settings.folderOf[m.id] == f.id) { menu = false; onMove(f.id) }
+                MenuRow("Not in a folder", selected = m.id !in settings.folderOf) { menu = false; onMove(null) }
+                MenuRow("New folder…", R.drawable.ic_plus) { menu = false; onNewFolder() }
             }
-            DropdownMenuItem({ Text("Roles…") }, { menu = false; onRoles() })
-            if (foldered) DropdownMenuItem({ Text("Select several") }, { menu = false; onSelect() })
         }
     }
 }
@@ -338,9 +336,9 @@ internal fun RolePill(role: String, on: Boolean = true, onClick: (() -> Unit)? =
 
 @Composable
 private fun FolderMenu(open: Boolean, folders: List<MemberFolder>, current: String?, onDismiss: () -> Unit, onMove: (String?) -> Unit, onNewFolder: () -> Unit) {
-    DropdownMenu(open, onDismiss) {
-        for (f in folders) DropdownMenuItem({ Text(f.name, fontWeight = if (current == f.id) FontWeight.SemiBold else null) }, { onMove(f.id) })
-        DropdownMenuItem({ Text("Not in a folder") }, { onMove(null) })
-        DropdownMenuItem({ Text("New folder…") }, onNewFolder)
+    MenuDrawer(open, onDismiss, "Move to") {
+        for (f in folders) MenuRow(f.name, R.drawable.ic_folder, selected = current == f.id) { onMove(f.id) }
+        MenuRow("Not in a folder", selected = current == null) { onMove(null) }
+        MenuRow("New folder…", R.drawable.ic_plus, onClick = onNewFolder)
     }
 }

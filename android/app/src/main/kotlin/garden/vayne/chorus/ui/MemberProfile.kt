@@ -214,14 +214,10 @@ private fun ProfileHero(member: Member, chorus: Chorus, closeLabel: String, onCl
     val p = LocalChorusPalette.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     ProfileHeroFrame(chorus, member.bannerBlob, member.color, member.glyph, member.avatarBlob, closeLabel, onClose,
-        menu = { close ->
-            DropdownMenuItem(text = { Text("Edit profile") }, onClick = { close(); onEdit() },
-                leadingIcon = { Icon(painterResource(R.drawable.ic_edit), null, Modifier.size(20.dp), tint = p.ink2) })
-            if (subsystemLabel != null) DropdownMenuItem(text = { Text(subsystemLabel) }, onClick = { close(); onSubsystem() },
-                leadingIcon = { Icon(painterResource(R.drawable.ic_layers), null, Modifier.size(20.dp), tint = p.ink2) })
-            DropdownMenuItem(text = { Text("Copy name") }, onClick = {
-                close(); clipboard.setText(androidx.compose.ui.text.AnnotatedString(member.shownName))
-            }, leadingIcon = { Icon(painterResource(R.drawable.ic_copy), null, Modifier.size(20.dp), tint = p.ink2) })
+        menuTitle = member.shownName, menu = { close ->
+            MenuRow("Edit profile", R.drawable.ic_edit) { close(); onEdit() }
+            if (subsystemLabel != null) MenuRow(subsystemLabel, R.drawable.ic_layers) { close(); onSubsystem() }
+            MenuRow("Copy name", R.drawable.ic_copy) { close(); clipboard.setText(androidx.compose.ui.text.AnnotatedString(member.shownName)) }
         }) {
         ProfilePill(writeLabel ?: "Post", if (writeLabel == null) R.drawable.ic_edit else R.drawable.ic_journal,
             filled = true, description = if (writeLabel == null) "Post as ${member.shownName}" else "Open ${member.shownName}’s journal",
@@ -235,7 +231,7 @@ private fun ProfileHero(member: Member, chorus: Chorus, closeLabel: String, onCl
  * its lower edge on a ring of the page colour, and the profile's actions beside it. */
 @Composable
 internal fun ProfileHeroFrame(chorus: Chorus, bannerBlob: String?, color: String, glyph: String, avatarBlob: String?,
-    closeLabel: String, onClose: () -> Unit, menu: (@Composable ColumnScope.(close: () -> Unit) -> Unit)? = null,
+    closeLabel: String, onClose: () -> Unit, menuTitle: String? = null, menu: (@Composable ColumnScope.(close: () -> Unit) -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit) {
     val p = LocalChorusPalette.current
     var open by remember { mutableStateOf(false) }
@@ -244,7 +240,9 @@ internal fun ProfileHeroFrame(chorus: Chorus, bannerBlob: String?, color: String
         HeroButton(R.drawable.ic_back, "Back to $closeLabel", onClose, Modifier.align(Alignment.TopStart).padding(12.dp))
         if (menu != null) Box(Modifier.align(Alignment.TopEnd).padding(12.dp)) {
             HeroButton(R.drawable.ic_more, "More profile options", { open = true })
-            DropdownMenu(open, { open = false }) { menu { open = false } }
+            MenuDrawer(open, { open = false }, menuTitle, leading = if (menuTitle != null) { { Avatar(glyph, color, 40.dp, avatarBlob = avatarBlob, ring = false) } } else null) {
+                menu { open = false }
+            }
         }
         Box(Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 10.dp).size(92.dp)
             .background(p.bg, CircleShape), contentAlignment = Alignment.Center) {

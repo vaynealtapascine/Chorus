@@ -1,5 +1,7 @@
 package garden.vayne.chorus.ui
 
+import garden.vayne.chorus.designsystem.R
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -50,13 +52,9 @@ internal fun MembersCustomizeSheet(chorus: Chorus, model: Model, onError: (Strin
                 val from = settings.roleField
                 if (settings.roleFields.isNotEmpty()) {
                     var open by remember { mutableStateOf(false) }
-                    Box {
-                        OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) { Text("Roles come from: ${from?.name ?: "choose a field"}") }
-                        DropdownMenu(open, { open = false }) {
-                            for (d in settings.roleFields) DropdownMenuItem({ Text(d.name, fontWeight = if (d.id == from?.id) FontWeight.SemiBold else null) },
-                                { open = false; setView(view.copy(roleField = d.id)) })
-                        }
-                    }
+                    ChoiceField("Roles come from", from?.name ?: "Choose a field") { open = true }
+                    ChoiceDrawer(open, "Roles come from", settings.roleFields, from, { it.name },
+                        { d -> open = false; setView(view.copy(roleField = d.id)) }, { open = false })
                 }
                 if (!settings.hasRolesField) TextButton(onClick = {
                     val id = chorus.newId()
@@ -84,7 +82,7 @@ internal fun MembersCustomizeSheet(chorus: Chorus, model: Model, onError: (Strin
             settings.folders.forEachIndexed { i, f ->
                 var name by remember(f.id, f.name) { mutableStateOf(f.name) }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    OutlinedTextField(name, { name = it }, singleLine = true, modifier = Modifier.weight(1f), label = { Text("Folder") },
+                    ChorusField(name, { name = it }, singleLine = true, modifier = Modifier.weight(1f), label = { Text("Folder") },
                         supportingText = { Text("${model.members.count { !it.archived && settings.folderOf[it.id] == f.id }} members") })
                     if (name.trim() != f.name && name.isNotBlank()) TextButton(onClick = { setFolders(MemberListPrefs.renameFolder(settings.folders, f.id, name)) }) { Text("Rename") }
                     TextButton(enabled = i > 0, onClick = { setFolders(MemberListPrefs.moveFolder(settings.folders, f.id, -1)) }) { Text("↑") }
@@ -96,10 +94,9 @@ internal fun MembersCustomizeSheet(chorus: Chorus, model: Model, onError: (Strin
         }
     }
     deleting?.let { f ->
-        AlertDialog(onDismissRequest = { deleting = null }, title = { InspectionDialogContent { Text("Delete “${f.name}”?") } },
-            text = { InspectionDialogContent { Text("The people in it stay; they just move out of the folder.") } },
-            confirmButton = { InspectionDialogContent { TextButton(onClick = { setFolders(MemberListPrefs.removeFolder(settings.folders, f.id)); deleting = null }) { Text("Delete") } } },
-            dismissButton = { InspectionDialogContent { TextButton(onClick = { deleting = null }) { Text("Keep") } } })
+        ConfirmDrawer("Delete “${f.name}”?", "The people in it stay; they just move out of the folder.", "Delete folder",
+            { setFolders(MemberListPrefs.removeFolder(settings.folders, f.id)); deleting = null }, { deleting = null },
+            danger = true, cancel = "Keep", icon = R.drawable.ic_folder)
     }
 }
 
@@ -135,22 +132,22 @@ internal fun RolesDialog(chorus: Chorus, model: Model, member: Member, onDismiss
                 .put("value", MemberListPrefs.toggled(field, chosen, pick)))
         }
     }
-    AlertDialog(onDismissRequest = onDismiss, title = { InspectionDialogContent { Text("${member.shownName}'s ${field?.name?.lowercase() ?: "roles"}") } },
-        text = { InspectionDialogContent { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (field == null) Text("Set up a Roles field in Customize first.", color = p.ink2)
-            else {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (c in (field.choices + chosen).distinct()) RolePill(c, on = c in chosen) { setValue(MemberListPrefs.toggled(field, chosen, c)) }
-                }
-                Text(if (field.type == "select") "One at a time." else "Tap to add or remove.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(adding, { adding = it }, singleLine = true, label = { Text("New role") }, modifier = Modifier.weight(1f))
-                    TextButton(enabled = adding.isNotBlank(), onClick = ::add) { Text("Add") }
-                }
+    Drawer(onDismiss, field?.name ?: "Roles", member.shownName,
+        leading = { Avatar(member.glyph, member.color, 40.dp, avatarBlob = member.avatarBlob, ring = false) },
+        footer = { DrawerButton("Done", onDismiss) }) {
+        if (field == null) FormNote("Set up a Roles field in Customize first.", R.drawable.ic_members)
+        else {
+            SectionLabel(if (field.type == "select") "Pick one" else "Tap to add or remove")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (c in (field.choices + chosen).distinct()) RolePill(c, on = c in chosen) { setValue(MemberListPrefs.toggled(field, chosen, c)) }
             }
-            error?.let { Text(it, color = p.danger) }
-        } } },
-        confirmButton = { InspectionDialogContent { TextButton(onClick = onDismiss) { Text("Done") } } })
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ChorusField(adding, { adding = it }, singleLine = true, label = { Text("New role") }, modifier = Modifier.weight(1f))
+                DrawerButton("Add", ::add, ButtonKind.Neutral, enabled = adding.isNotBlank(), modifier = Modifier.width(88.dp))
+            }
+        }
+        error?.let { FormNote(it, warning = true) }
+    }
 }
 
 /** Subsystems and groups: add, nest and remove (web's "Groups…"). */
@@ -169,49 +166,39 @@ internal fun GroupsSheet(chorus: Chorus, model: Model, onDismiss: () -> Unit) {
         catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Exception) { error = "Could not save that. Try again." }
     }
-    ChorusSheet(onDismissRequest = onDismiss, containerColor = p.surface, skipPartiallyExpanded = true) {
-        Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Subsystems & groups", color = p.ink, style = MaterialTheme.typography.titleMedium)
-            if (model.groups.isEmpty()) Text("No subsystems or groups yet.", color = p.ink3)
-            for (g in model.groups) Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(model.groupPath(g), color = p.ink)
-                    Text("${if (g.isSubsystem) "Subsystem" else "Group"} · ${model.membership[g.id]?.size ?: 0}", color = p.ink3, style = MaterialTheme.typography.bodySmall)
-                }
-                TextButton(onClick = { removing = g }) { Text("Remove") }
-            }
-            HorizontalDivider(color = p.line)
-            OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                SegmentedButton(subsystem, { subsystem = true }, SegmentedButtonDefaults.itemShape(0, 2)) { Text("Subsystem") }
-                SegmentedButton(!subsystem, { subsystem = false }, SegmentedButtonDefaults.itemShape(1, 2)) { Text("Group") }
-            }
-            val subsystems = model.groups.filter { it.isSubsystem }
-            if (subsystems.isNotEmpty()) {
-                var open by remember { mutableStateOf(false) }
-                Box {
-                    OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(parent?.let(model::group)?.let { "Inside ${model.groupPath(it)}" } ?: "Top level")
+    Drawer(onDismiss, "Subsystems & groups", "${model.groups.size} so far") {
+        if (model.groups.isEmpty()) FormNote("No subsystems or groups yet. A subsystem holds members of its own; a group just gathers members.", R.drawable.ic_layers)
+        else FormCard {
+            model.groups.forEachIndexed { i, g ->
+                if (i > 0) FormDivider()
+                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(model.groupPath(g), color = p.ink, fontSize = 15.sp)
+                        Text("${if (g.isSubsystem) "Subsystem" else "Group"} · ${model.membership[g.id]?.size ?: 0}", color = p.ink3, fontSize = 12.sp)
                     }
-                    DropdownMenu(open, { open = false }) {
-                        DropdownMenuItem({ Text("Top level") }, { parent = null; open = false })
-                        for (g in subsystems) DropdownMenuItem({ Text("Inside ${model.groupPath(g)}") }, { parent = g.id; open = false })
-                    }
+                    BarIcon(R.drawable.ic_close, "Remove ${g.name}", p.ink3, 18.dp) { removing = g }
                 }
             }
-            Button(enabled = name.isNotBlank(), onClick = {
-                val payload = JSONObject().put("name", name.trim()).put("kind", if (subsystem) "subsystem" else "group").apply { parent?.let { put("parent_id", it) } }
-                send { chorus.create("group.create", chorus.newId(), payload) }
-                name = ""
-            }) { Text("Add") }
-            error?.let { Text(it, color = p.danger) }
         }
-    }
-    removing?.let { g ->
-        AlertDialog(onDismissRequest = { removing = null }, title = { InspectionDialogContent { Text("Remove ${g.name}?") } },
-            text = { InspectionDialogContent { Text("Its members stay; they just leave the ${if (g.isSubsystem) "subsystem" else "group"}.") } },
-            confirmButton = { InspectionDialogContent { TextButton(onClick = { send { chorus.create("group.delete", g.id, JSONObject()) }; removing = null }) { Text("Remove") } } },
-            dismissButton = { InspectionDialogContent { TextButton(onClick = { removing = null }) { Text("Keep") } } })
+        SectionLabel("Add one")
+        ChorusField(name, { name = it }, singleLine = true, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
+        Segmented(listOf("Subsystem", "Group"), if (subsystem) 0 else 1) { subsystem = it == 0 }
+        val subsystems = model.groups.filter { it.isSubsystem }
+        if (subsystems.isNotEmpty()) {
+            var open by remember { mutableStateOf(false) }
+            ChoiceField("Where", parent?.let(model::group)?.let { "Inside ${model.groupPath(it)}" } ?: "Top level") { open = true }
+            ChoiceDrawer(open, "Where it goes", listOf<garden.vayne.chorus.data.Group?>(null) + subsystems, parent?.let(model::group),
+                { g -> if (g == null) "Top level" else "Inside ${model.groupPath(g)}" }, { g -> parent = g?.id; open = false }, { open = false })
+        }
+        DrawerButton("Add ${if (subsystem) "subsystem" else "group"}", {
+            val payload = JSONObject().put("name", name.trim()).put("kind", if (subsystem) "subsystem" else "group").apply { parent?.let { put("parent_id", it) } }
+            send { chorus.create("group.create", chorus.newId(), payload) }
+            name = ""
+        }, enabled = name.isNotBlank())
+        error?.let { FormNote(it, warning = true) }
+        removing?.let { g ->
+            ConfirmDrawer("Remove ${g.name}?", "Its members stay; they just leave the ${if (g.isSubsystem) "subsystem" else "group"}.", "Remove",
+                { send { chorus.create("group.delete", g.id, JSONObject()) }; removing = null }, { removing = null }, danger = true, cancel = "Keep")
+        }
     }
 }

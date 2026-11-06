@@ -22,9 +22,9 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 ## Now
 
-- **In progress:** —
-- **Owner:** —
-- **Next concrete step:** claim the next unticked task on the board
+- **In progress:** UI16
+- **Owner:** claude-opus-5.5, 2026-11-07
+- **Next concrete step:** migrate each AlertDialog/DropdownMenu/picker in android/app/.../ui to Drawers.kt (MenuDrawer, ConfirmDrawer, DateTimeDrawer, ChorusField)
 - **Notes:** fixes committed on main (D-119; verdicts per finding in `docs/handoff/gemini-review-triage.md`). Gemini's raw reviews stay untracked in `gemini_review/`. A parallel thread (chat list/menus/profiles, branch `t3/chat-list-menus-profiles`) holds D-120/D-121 and rebases onto main.
 
 ### SEC1: what is done and what is left
@@ -97,6 +97,7 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 
 ### UI — Owner's Figma redesign
 
+- [~] UI16 Android drawers and forms (owner, 2026-11-07, D-124): every dialog, dropdown and date/time picker becomes a drawer (layered when opened from a drawer); forms and displays in the Figma style (grouped cards, filled fields, notes, wide buttons); person accounts (singlets) see no system words.
 - [~] UI15 Fronting as the Figma F3 screens (owner, 2026-11-06, D-122; deployed 9911350, Android 0.1.744): Fronting, switch sheet, member sheet + state, Fronts, Layers & display, Front history with lanes/sentences/reviews, Log a past switch (web + Android), Android front widget. Reviewed by a separate Opus agent against the Figma; its high/medium findings fixed (b6911fa, 28fca66). Checked on the emulator and the web demo at 400 px. Left: device check of the front widget on a home screen; F3.8's unread widget and lock-screen chip (not possible on phones); F3.3's rename/+ on separate layers; Fronts card blurb without the "since" time; web drag-to-reorder doesn't work on touch (arrange mode does).
 - [x] UI14 Chat list, menus and profiles (owner, 2026-11-06, D-120): one Telegram-style list on every width with shared spaces as forum entries (web + Android); web channel names as written; web right-click / hold menus on messages and rows; faces in chat open the profile; one Twitter-like profile for our members and friends' (web + Android). Deployed 31f8b14 (server, web, Android 0.1.737); not yet seen on a phone (web checked at 1280 and 400 px on the demo).
 - [~] UI2 Independent named fronts and layers (D-080, `docs/FRONTS.md`). Code complete and live. Left: a native/live visual check; Home shows no review cards for configured accounts (they are on History); follower revealed-front reads stay Body-only by design (D-084).

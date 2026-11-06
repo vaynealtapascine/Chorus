@@ -46,12 +46,10 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -370,27 +368,17 @@ internal fun AttachmentEditor(a: PendingAttachment, onSave: (PendingAttachment) 
         if (a.mime.startsWith("image/") || a.mime.startsWith("video/"))
             value = withContext(Dispatchers.IO) { runCatching { ctx.contentResolver.loadThumbnail(a.uri, Size(720, 720), null) }.getOrNull() }
     }
-    AlertDialog(onDismissRequest = onDismiss, containerColor = p.surface,
-        title = { Text(a.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                preview?.let { Image(it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp))) }
-                if (a.mime.startsWith("image/")) OutlinedTextField(alt, { alt = it }, label = { Text("Alt text") },
-                    placeholder = { Text("Describe the image for people who can't see it") }, minLines = 2,
-                    modifier = Modifier.fillMaxWidth())
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(spoiler, role = Role.Switch) { spoiler = it },
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Spoiler", color = p.ink, fontSize = 15.sp, lineHeight = 20.sp)
-                        Text("Hidden until someone taps it", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
-                    }
-                    Switch(spoiler, null)
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { onSave(a.copy(alt = alt, spoiler = spoiler)) }) { Text("Done") } },
-        dismissButton = { TextButton(onClick = onRemove) { Text("Remove", color = p.danger) } })
+    Drawer(onDismiss, a.name, a.mime.substringBefore('/').replaceFirstChar { it.uppercase() }, footer = {
+        DrawerButton("Done", { onSave(a.copy(alt = alt, spoiler = spoiler)) })
+        DrawerButton("Remove attachment", onRemove, ButtonKind.Quiet)
+    }) {
+        preview?.let { Image(it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(16.dp)).background(p.surface2)) }
+        if (a.mime.startsWith("image/")) ChorusField(alt, { alt = it }, label = { Text("Alt text") },
+            placeholder = { Text("Describe the image for people who can't see it") }, minLines = 2,
+            modifier = Modifier.fillMaxWidth())
+        FormCard { ToggleRow("Spoiler", spoiler, "Hidden until someone taps it") { spoiler = it } }
+    }
 }
 
 /** A chip under the composer for something the message carries (audience, warning, poll); tap to change it. */

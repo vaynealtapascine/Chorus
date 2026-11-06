@@ -326,8 +326,20 @@ is visibly muted. Error/destructive actions use the danger role and a clear text
 
 Fields use panel or raised-panel fill, an ink foreground, hairline border and a small or medium
 radius. Main search fields use 12 px × 16 px padding. Placeholder and caret follow `ink-3` and
-`accent`. Use real labels, visible focus and native controls where suitable. Android uses Material
-fields, with the existing 48 dp interaction target requirement.
+`accent`. Use real labels, visible focus and native controls where suitable. Android uses filled
+fields with the label inside (Figma F6.7, `ChorusField`): 12 dp corners, a step-up fill (`surface`
+on a page, `surface2` in a drawer), no outline until focus draws a teal underline; 48 dp targets.
+
+### Drawers (Android, D-124)
+
+Android has no pop-up dialogs or dropdown menus: questions, menus, choices, pickers and short forms
+open as bottom drawers with a grabber, a 19 sp title (optional face and subtitle) and a close ×.
+Content sits in grouped `FormCard`s (16 dp corners, hairline dividers) under teal 13 sp section
+labels; the main action is one wide 50 dp button with 16 dp corners at the foot, Cancel a quiet text
+button under it, destructive actions in the danger role. Menu rows are 52 dp with a 22 dp icon,
+the chosen row in teal wash with a check. A drawer opened from a drawer lies over it, 28 dp shorter
+per layer, so the stack shows and closing steps back. Value rows show the label, the value in teal
+and a chevron (F3.5); notes are teal wash for context, red wash for what leaves a space (F5.20).
 
 ### Chips
 
@@ -369,7 +381,7 @@ stay visible before Send. Advanced chat and custom emoji tools remain collapsed 
 
 The message actions trigger opens a browser popover with text-labelled 48 px rows and downloaded
 icons. It is bounded to the viewport, scrolls when tall and reserves danger colour for Delete.
-Copy/quote/forward/reply/thread/pin/edit actions remain subject to existing permissions. Android retains its native menus and sheets. Poll creation sits in the composer
+Copy/quote/forward/reply/thread/pin/edit actions remain subject to existing permissions. On Android the same actions open as a drawer (D-124), with the reactions and the message above them. Poll creation sits in the composer
 options ("Add a poll") and voting on the poll card under the message (D-081, POLLS.md), not in these message controls.
 
 ### Journal and settings

@@ -6,7 +6,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
@@ -44,7 +43,7 @@ internal fun JournalPollDraftFields(on: Boolean, onToggle: (Boolean) -> Unit, op
     Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(on, onToggle); Text("Add a poll") }
     if (!on) return
     options.forEachIndexed { index, text ->
-        OutlinedTextField(text, { value -> onOptions(options.mapIndexed { i, old -> if (i == index) value.take(200) else old }) },
+        ChorusField(text, { value -> onOptions(options.mapIndexed { i, old -> if (i == index) value.take(200) else old }) },
             label = { Text("Option ${index + 1}") }, singleLine = true, modifier = Modifier.fillMaxWidth())
     }
     if (options.size < Polls.MAX_OPTIONS) TextButton(onClick = { onOptions(options + "") }) { Text("Add option") }

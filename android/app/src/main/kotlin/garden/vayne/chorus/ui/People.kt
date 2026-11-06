@@ -16,9 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -153,7 +150,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
             Text("People", color = p.ink, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                OutlinedTextField(target, { target = it }, label = { Text("@handle") }, singleLine = true,
+                ChorusField(target, { target = it }, label = { Text("@handle") }, singleLine = true,
                     modifier = Modifier.weight(1f))
                 TextButton(enabled = !busy && target.isNotBlank(), onClick = {
                     action {
@@ -536,14 +533,12 @@ internal fun FollowPresetPicker(label: String, choice: String, onChoice: (String
         "digest" to "Digest · daily summary", "off" to "Off · no switch alerts",
         "custom" to "Custom (Advanced)",
     )
-    Column {
-        Text(label, color = p.ink2)
-        TextButton(onClick = { open = true }) { Text("${labels[choice] ?: labels.getValue("custom")} ▾") }
-        DropdownMenu(open, onDismissRequest = { open = false }) {
-            for (option in FollowPresets.choices) DropdownMenuItem(text = { Text(labels.getValue(option)) }, onClick = {
-                open = false
-                onChoice(option)
-            })
+    val current = labels[choice] ?: labels.getValue("custom")
+    ChoiceField(label, current) { open = true }
+    MenuDrawer(open, { open = false }, label, "How soon and how exactly they hear about switches") {
+        for (option in FollowPresets.choices) {
+            val (name, about) = labels.getValue(option).split(" · ", limit = 2).let { it[0] to it.getOrNull(1) }
+            MenuRow(name, subtitle = about, selected = option == choice || (option == "custom" && choice !in labels)) { open = false; onChoice(option) }
         }
     }
 }

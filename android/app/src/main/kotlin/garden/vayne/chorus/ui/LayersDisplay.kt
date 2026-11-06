@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -155,7 +154,7 @@ fun LayersDisplayScreen(chorus: Chorus, model: Model, frontId: String, onClose: 
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(newState, { newState = it.take(40) }, label = { Text("New state") }, singleLine = true, modifier = Modifier.weight(1f))
+                    ChorusField(newState, { newState = it.take(40) }, label = { Text("New state") }, singleLine = true, modifier = Modifier.weight(1f))
                     TextButton(enabled = newState.isNotBlank(), onClick = {
                         val n = newState.trim(); newState = ""
                         act { chorus.create("state.create", chorus.newId(), JSONObject().put("name", n).put("icon", "?")) }
@@ -223,8 +222,8 @@ private fun LayerEditor(chorus: Chorus, model: Model, layer: SceneLayer?, onClos
     ChorusSheet(onDismissRequest = onClose, skipPartiallyExpanded = true, containerColor = p.surface) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(if (layer == null) "New layer" else layer.name, color = p.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            OutlinedTextField(name, { name = it.take(40) }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(about, { about = it.take(80) }, label = { Text("Description, e.g. In control · counts as fronting") }, modifier = Modifier.fillMaxWidth())
+            ChorusField(name, { name = it.take(40) }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            ChorusField(about, { about = it.take(80) }, label = { Text("Description, e.g. In control · counts as fronting") }, modifier = Modifier.fillMaxWidth())
             Text("Look", color = p.ink2, fontSize = 13.sp)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(style == null, onClick = { style = null }, label = { Text("Automatic") })

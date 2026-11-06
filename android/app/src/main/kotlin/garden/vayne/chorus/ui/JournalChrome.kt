@@ -93,12 +93,26 @@ internal fun JournalPostFrame(names: String, time: String, audience: String?, fu
 @Composable
 internal fun JournalOverflow(label: String, items: List<Pair<String, () -> Unit>>) {
     var open by remember { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { open = true }, modifier = Modifier.size(40.dp)) { ChatIcon(R.drawable.ic_more, label, LocalChorusPalette.current.ink3) }
-        DropdownMenu(open, { open = false }) {
-            for ((text, action) in items) DropdownMenuItem(text = { Text(text) }, onClick = { open = false; action() })
-        }
+    IconButton(onClick = { open = true }, modifier = Modifier.size(40.dp)) { ChatIcon(R.drawable.ic_more, label, LocalChorusPalette.current.ink3) }
+    MenuDrawer(open, { open = false }, "This post") {
+        for ((text, action) in items) MenuRow(text, overflowIcon(text), danger = text.startsWith("Delete")) { open = false; action() }
     }
+}
+
+/** A post menu's icon, by what the item says. */
+private fun overflowIcon(text: String): Int? = when {
+    text.startsWith("Edit history") -> R.drawable.ic_history
+    text.startsWith("Edit") -> R.drawable.ic_edit
+    text.startsWith("Open") -> R.drawable.ic_chevron_right
+    text.startsWith("Copy") -> R.drawable.ic_copy
+    text.contains("audience") -> R.drawable.ic_eye
+    text.startsWith("Delete") -> R.drawable.ic_delete
+    text.startsWith("Pin") || text.startsWith("Unpin") -> R.drawable.ic_pin
+    text.startsWith("Save") || text.startsWith("Remove from saved") -> R.drawable.ic_bookmark
+    text.startsWith("Mute") || text.startsWith("Unmute") -> R.drawable.ic_bell_off
+    text.startsWith("Share") -> R.drawable.ic_share
+    text.startsWith("Report") -> R.drawable.ic_format_eye_off
+    else -> null
 }
 
 /** `25m`, `3h`, `2d`, then a date: the muted time after a name. */
@@ -129,9 +143,7 @@ internal fun JournalAudiencePicker(audience: String, person: Boolean, onChoose: 
             Text(JournalPresentation.audience(audience, person), style = MaterialTheme.typography.labelMedium, maxLines = 2)
             ChatIcon(R.drawable.ic_chevron_down, tint = p.accent)
         }
-        DropdownMenu(open, { open = false }) {
-            for (mode in JournalPresentation.AUDIENCES) DropdownMenuItem(
-                text = { Text(JournalPresentation.audience(mode, person)) }, onClick = { onChoose(mode); open = false })
-        }
+        ChoiceDrawer(open, "Who can see it", JournalPresentation.AUDIENCES, audience, { JournalPresentation.audience(it, person) },
+            { onChoose(it); open = false }, { open = false })
     }
 }

@@ -1,11 +1,26 @@
 package garden.vayne.chorus.widget
 
-import android.app.AlertDialog
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import garden.vayne.chorus.designsystem.ChorusTheme
+import garden.vayne.chorus.designsystem.LocalChorusPalette
+import garden.vayne.chorus.ui.ConfirmDrawer
+import garden.vayne.chorus.ui.Drawer
+import garden.vayne.chorus.ui.MenuRow
+import garden.vayne.chorus.ui.SectionLabel
 import androidx.lifecycle.lifecycleScope
 import garden.vayne.chorus.R
 import garden.vayne.chorus.data.Chorus
@@ -27,8 +42,7 @@ class WidgetConfigureActivity : ComponentActivity() {
             val model = chorus.awaitModel()
             val accountId = chorus.device?.accountId
             if (accountId == null || model.isPerson) {
-                AlertDialog.Builder(this@WidgetConfigureActivity).setMessage("Open Chorus with a system account first.")
-                    .setPositiveButton("OK") { _, _ -> finish() }.setOnCancelListener { finish() }.show()
+                setContent { ChorusTheme { WidgetBlocked { finish() } } }
                 return@launch
             }
             val options = listOf(WidgetScope()) +
@@ -38,7 +52,7 @@ class WidgetConfigureActivity : ComponentActivity() {
                 "subsystem" -> "Subsystem · ${model.group(scope.id)?.name.orEmpty()}"
                 "group" -> "Group · ${model.group(scope.id)?.name.orEmpty()}"
                 else -> "All members"
-            } }.toTypedArray()
+            } }
             fun save(scope: WidgetScope) {
                 if (chorus.device?.accountId != accountId) { finish(); return }
                 WidgetState(this@WidgetConfigureActivity).setScope(widgetId, accountId, scope)
@@ -47,20 +61,33 @@ class WidgetConfigureActivity : ComponentActivity() {
                 setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
                 finish()
             }
-            fun advanced() {
-                var selected = options.indexOf(WidgetState(this@WidgetConfigureActivity).scope(widgetId, accountId)).coerceAtLeast(0)
-                AlertDialog.Builder(this@WidgetConfigureActivity).setTitle("Widget contents · Advanced")
-                    .setSingleChoiceItems(labels, selected) { _, index -> selected = index }
-                    .setNegativeButton("Cancel") { _, _ -> finish() }
-                    .setPositiveButton("Save") { _, _ -> save(options[selected]) }
-                    .setOnCancelListener { finish() }.show()
-            }
-            AlertDialog.Builder(this@WidgetConfigureActivity).setTitle("Quick switch widget")
-                .setMessage("Show all your members, or choose a group for this widget.")
-                .setNegativeButton("Cancel") { _, _ -> finish() }
-                .setNeutralButton("Advanced…") { _, _ -> advanced() }
-                .setPositiveButton("All members") { _, _ -> save(WidgetScope()) }
-                .setOnCancelListener { finish() }.show()
+            val current = options.indexOf(WidgetState(this@WidgetConfigureActivity).scope(widgetId, accountId)).coerceAtLeast(0)
+            setContent { ChorusTheme { WidgetSetup(labels.toList(), current, { save(options[it]) }) { finish() } } }
         }
     }
+}
+
+/** Which members this widget shows: All in Basic, a subsystem or group behind Advanced (a drawer, D-124). */
+@Composable
+private fun WidgetSetup(labels: List<String>, current: Int, onPick: (Int) -> Unit, onCancel: () -> Unit) {
+    var advanced by remember { mutableStateOf(current > 0) }
+    Box(Modifier.fillMaxSize().background(LocalChorusPalette.current.bg))
+    Drawer(onCancel, "Quick switch widget", "Show all your members, or choose a group for this widget.") {
+        MenuRow(labels[0], garden.vayne.chorus.designsystem.R.drawable.ic_members, selected = current == 0) { onPick(0) }
+        if (labels.size > 1) {
+            if (!advanced) MenuRow("Choose a subsystem or group…", garden.vayne.chorus.designsystem.R.drawable.ic_sliders,
+                subtitle = "Advanced") { advanced = true }
+            else {
+                SectionLabel("Advanced")
+                for (i in 1 until labels.size) MenuRow(labels[i], garden.vayne.chorus.designsystem.R.drawable.ic_layers, selected = i == current) { onPick(i) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WidgetBlocked(onClose: () -> Unit) {
+    Box(Modifier.fillMaxSize().background(LocalChorusPalette.current.bg))
+    ConfirmDrawer("Open Chorus first", "Sign in with a system account, then add the widget again.", "OK", onClose, onClose,
+        icon = garden.vayne.chorus.designsystem.R.drawable.ic_swap)
 }

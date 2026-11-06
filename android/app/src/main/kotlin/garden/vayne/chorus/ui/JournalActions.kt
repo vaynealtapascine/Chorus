@@ -88,15 +88,13 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
                 onClick = { repostMenu = true }) {
                 PopIcon(R.drawable.ic_repost, reposted, tint, icon)
             }
-            DropdownMenu(repostMenu, { repostMenu = false }) {
-                DropdownMenuItem(text = { Text(if (reposted) "Undo repost" else "Repost") }, enabled = enabled,
-                    leadingIcon = { Icon(painterResource(R.drawable.ic_repost), null, Modifier.size(20.dp), tint = p.ink2) }, onClick = {
+            MenuDrawer(repostMenu, { repostMenu = false }, if (reposted) "Reposted" else "Repost") {
+                MenuRow(if (reposted) "Undo repost" else "Repost", R.drawable.ic_repost, enabled = enabled,
+                    subtitle = null) {
                     repostMenu = false
                     if (reposted) onUndoRepost?.invoke() else onRepost()
-                })
-                if (onQuote != null) DropdownMenuItem(text = { Text("Quote") },
-                    leadingIcon = { Icon(painterResource(R.drawable.ic_format_quote), null, Modifier.size(20.dp), tint = p.ink2) },
-                    onClick = { repostMenu = false; onQuote() })
+                }
+                if (onQuote != null) MenuRow("Quote", R.drawable.ic_format_quote, "Repost with your own words") { repostMenu = false; onQuote() }
             }
         }
     }
@@ -123,13 +121,9 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
             ActionButton(null, p.ink3, "Share", large, onClick = { if (onCopyLink != null) shareMenu = true else onShare?.invoke() }) {
                 Icon(painterResource(R.drawable.ic_share), null, Modifier.size(icon), tint = p.ink3)
             }
-            DropdownMenu(shareMenu, { shareMenu = false }) {
-                DropdownMenuItem(text = { Text("Copy link") },
-                    leadingIcon = { Icon(painterResource(R.drawable.ic_copy), null, Modifier.size(20.dp), tint = p.ink2) },
-                    onClick = { shareMenu = false; onCopyLink?.invoke() })
-                if (onShare != null) DropdownMenuItem(text = { Text("Share…") },
-                    leadingIcon = { Icon(painterResource(R.drawable.ic_share), null, Modifier.size(20.dp), tint = p.ink2) },
-                    onClick = { shareMenu = false; onShare() })
+            MenuDrawer(shareMenu, { shareMenu = false }, "Share") {
+                MenuRow("Copy link", R.drawable.ic_link, "Opens for people who can already read it") { shareMenu = false; onCopyLink?.invoke() }
+                if (onShare != null) MenuRow("Share…", R.drawable.ic_share, "Send the text to another app") { shareMenu = false; onShare() }
             }
         }
     }
@@ -140,17 +134,18 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
             key(name) { if (i < actions.lastIndex) Box(Modifier.weight(1f)) { action() } else action() }
         }
     }
-    if (disclose && member != null) AlertDialog(onDismissRequest = { disclose = false },
-        title = { Text("React as ${member.shownName}?") },
-        text = { Text("Post readers can see this member’s name with the reaction. You’ll only be asked once on this device.") },
-        confirmButton = { TextButton(enabled = enabled, onClick = {
+    if (disclose && member != null) ConfirmDrawer("React as ${member.shownName}?",
+        "Post readers can see this member’s name with the reaction. You’ll only be asked once on this device.", "Heart", {
             notice.edit().putBoolean(NAME_NOTICE, true).apply()
             disclose = false; onReact?.invoke()
-        }) { Text("Heart") } },
-        dismissButton = { TextButton(onClick = { disclose = false }) { Text("Cancel") } })
-    if (who) AlertDialog(onDismissRequest = { who = false }, title = { Text("Reactions") },
-        text = { Text(reactions.joinToString(" · ") { "${it.emoji} ${it.memberName}" }) },
-        confirmButton = { TextButton(onClick = { who = false }) { Text("Done") } })
+        }, { disclose = false }, enabled = enabled, icon = R.drawable.ic_heart)
+    MenuDrawer(who, { who = false }, "Reactions", "${reactions.size} ${if (reactions.size == 1) "reaction" else "reactions"}") {
+        for (r in reactions) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(r.emoji, fontSize = 20.sp)
+            Text(r.memberName, color = p.ink, fontSize = 16.sp)
+        }
+    }
 }
 
 /** How far each action's target reaches past its icon; the row bleeds as far on both sides. */

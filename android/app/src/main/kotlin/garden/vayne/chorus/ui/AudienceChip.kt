@@ -45,37 +45,31 @@ internal fun AudienceChip(label: String, value: Audience, own: Boolean, buckets:
             else garden.vayne.chorus.data.BucketControls.single(value, looks)?.let { BucketGlyph(it.icon, it.color, 14.dp) }
             Text(text, color = if (private) p.ink3 else p.accent, style = MaterialTheme.typography.labelMedium, maxLines = 1)
         }
-        DropdownMenu(open, { open = false }) {
-            Text("Who can see ${label.lowercase()}", color = p.ink3, style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-            @Composable fun item(title: String, sub: String?, on: Boolean, pick: () -> Unit) = DropdownMenuItem(
-                text = { Column {
-                    Text(title, fontWeight = if (on) FontWeight.SemiBold else null, color = if (on) p.accent else p.ink)
-                    sub?.let { Text(it, color = p.ink3, style = MaterialTheme.typography.bodySmall) }
-                } }, onClick = { pick(); open = false })
+        MenuDrawer(open, { open = false }, "Who can see ${label.lowercase()}") {
+            @Composable fun item(title: String, sub: String?, on: Boolean, pick: () -> Unit) =
+                MenuRow(title, subtitle = sub, selected = on) { pick(); open = false }
             inherit?.let { item(it, null, !own) { onChange(null) } }
             item(if (person) "Only me" else "Only us", null, choosing && value.mode == "private") { onChange(Audience.PRIVATE) }
             item("Friends", if (person) "everyone who follows me" else "everyone who follows us", choosing && value.mode == "followers") { onChange(Audience("followers")) }
             if (buckets.isNotEmpty()) {
-                Text("Only some friends", color = p.ink3, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                SectionLabel("Only some friends")
                 val (shown, folded) = garden.vayne.chorus.data.BucketControls.listed(buckets, { it.first }, chosenBuckets, allBuckets)
-                for ((id, name) in shown) DropdownMenuItem(
-                    text = { BucketLabel(name, looks[id]?.icon, looks[id]?.color) },
-                    leadingIcon = { Checkbox(id in chosenBuckets, null) },
-                    onClick = {
+                for ((id, name) in shown) Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(12.dp))
+                    .clickable {
                         val next = if (id in chosenBuckets) chosenBuckets - id else chosenBuckets + id
                         onChange(if (next.isEmpty()) Audience.PRIVATE else Audience("buckets", next))
-                    })
-                if (folded > 0) DropdownMenuItem(text = { Text("$folded more ${if (folded == 1) "bucket" else "buckets"}…", color = p.accent) },
-                    onClick = { allBuckets = true })
+                    }.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(id in chosenBuckets, null)
+                    BucketLabel(name, looks[id]?.icon, looks[id]?.color)
+                }
+                if (folded > 0) MenuRow("$folded more ${if (folded == 1) "bucket" else "buckets"}…") { allBuckets = true }
             }
             item("Everyone here", "any account on this server", choosing && value.mode == "server") { onChange(Audience("server")) }
             if (onUseByDefault != null && defaultAudience != null) {
                 val isDefault = value.same(defaultAudience)
-                HorizontalDivider(color = p.line)
+                MenuDivider()
                 // Only us is the built-in default: there's nothing to turn off
-                DropdownMenuItem(text = { Text("Use this audience by default") }, enabled = !(isDefault && value.mode == "private"),
-                    leadingIcon = { Checkbox(isDefault, null) }, onClick = { onUseByDefault(!isDefault) })
+                ToggleRow("Use this audience by default", isDefault, enabled = !(isDefault && value.mode == "private")) { onUseByDefault(!isDefault) }
             }
         }
     }

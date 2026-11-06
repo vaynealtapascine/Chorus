@@ -1,5 +1,7 @@
 package garden.vayne.chorus.ui
 
+import garden.vayne.chorus.designsystem.R
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -72,7 +74,7 @@ internal fun FieldValueEditor(chorus: Chorus, def: ProfileDetail, type: String, 
                 for (c in (def.choices + chosen).distinct()) RolePill(c, on = c in chosen) { if (enabled) toggle(c) }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(adding, { adding = it }, singleLine = true, enabled = enabled, label = { Text("New choice") }, modifier = Modifier.weight(1f))
+                ChorusField(adding, { adding = it }, singleLine = true, enabled = enabled, label = { Text("New choice") }, modifier = Modifier.weight(1f))
                 TextButton(enabled = enabled && adding.isNotBlank(), onClick = ::add) { Text("Add") }
             }
         }
@@ -84,7 +86,7 @@ internal fun FieldValueEditor(chorus: Chorus, def: ProfileDetail, type: String, 
             ColourField(value.ifBlank { "#888888" }, onValue, label = def.name, enabled = enabled, modifier = Modifier.weight(1f))
             if (value.isNotBlank()) TextButton(enabled = enabled, onClick = { onValue("") }) { Text("Clear") }
         }
-        else -> OutlinedTextField(value, onValue, enabled = enabled, modifier = Modifier.fillMaxWidth(),
+        else -> ChorusField(value, onValue, enabled = enabled, modifier = Modifier.fillMaxWidth(),
             singleLine = type != "long_text", minLines = if (type == "long_text") 3 else 1,
             placeholder = { Text(when (type) { "url" -> "https://…"; "date" -> "YYYY-MM-DD"; else -> "Add ${def.name.lowercase()}" }, color = p.ink3) },
             keyboardOptions = KeyboardOptions(keyboardType = when (type) { "number" -> KeyboardType.Decimal; "url" -> KeyboardType.Uri; else -> KeyboardType.Text }))
@@ -103,32 +105,31 @@ internal fun AddFieldDialog(chorus: Chorus, model: Model, onAdded: (ProfileDetai
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val taken = model.profileDetails.definitions.any { it.name.trim().equals(name.trim(), ignoreCase = true) }
-    if (!confirming) AlertDialog(onDismissRequest = onDismiss, title = { InspectionDialogContent { Text("Add a field") } },
-        text = { InspectionDialogContent { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(name, { name = it.take(60) }, singleLine = true, label = { Text("Name") }, placeholder = { Text("e.g. Favourite food") },
-                isError = taken, supportingText = { if (taken) Text("There's already a field called that.") })
-            var open by remember { mutableStateOf(false) }
-            Box {
-                OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) { Text("Kind: ${typeLabel(type)}") }
-                DropdownMenu(open, { open = false }) {
-                    for ((t, label) in FIELD_TYPES) DropdownMenuItem({ Text(label, fontWeight = if (t == type) FontWeight.SemiBold else null) }, { type = t; open = false })
-                }
+    val person = model.isPerson
+    Drawer(onDismiss, "Add a field", if (person) "A detail on your profile" else "A detail on every member's profile", footer = {
+        DrawerButton("Next", { confirming = true }, enabled = name.isNotBlank() && !taken)
+    }) {
+        ChorusField(name, { name = it.take(60) }, singleLine = true, label = { Text("Name") }, placeholder = { Text("e.g. Favourite food") },
+            isError = taken, supportingText = if (taken) { { Text("There's already a field called that.") } } else null, modifier = Modifier.fillMaxWidth())
+        var open by remember { mutableStateOf(false) }
+        ChoiceField("Kind", typeLabel(type)) { open = true }
+        ChoiceDrawer(open, "What kind of field", FIELD_TYPES.toList(), FIELD_TYPES.toList().firstOrNull { it.first == type }, { it.second },
+            { type = it.first; open = false }, { open = false })
+        FormCard {
+            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Starts as", color = p.ink, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                AudienceChip("New field", audience, own = true, buckets = model.sharingBuckets, person = person,
+                    onChange = { audience = it ?: Audience.PRIVATE }, looks = model.bucketLooks)
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Starts as", color = p.ink2, modifier = Modifier.weight(1f))
-                AudienceChip("New field", audience, own = true, buckets = model.sharingBuckets, onChange = { audience = it ?: Audience.PRIVATE }, looks = model.bucketLooks)
-            }
-        } } },
-        confirmButton = { InspectionDialogContent { TextButton(enabled = name.isNotBlank() && !taken, onClick = { confirming = true }) { Text("Next") } } },
-        dismissButton = { InspectionDialogContent { TextButton(onClick = onDismiss) { Text("Cancel") } } })
-    else AlertDialog(onDismissRequest = { if (!busy) confirming = false },
-        title = { InspectionDialogContent { Text("Add “${name.trim()}” to every member?") } },
-        text = { InspectionDialogContent { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("It's a ${typeLabel(type).lowercase()} field. Every member gets an empty one to fill in, and it starts as " +
-                "${audience.label(model.sharingBuckets.toMap()).lowercase().let { if (it == "only us") "only us" else "shared with $it" }}; each member can change that for themselves.")
-            error?.let { Text(it, color = p.danger) }
-        } } },
-        confirmButton = { InspectionDialogContent { TextButton(enabled = !busy, onClick = {
+        }
+        if (confirming) ConfirmDrawer(if (person) "Add “${name.trim()}”?" else "Add “${name.trim()}” to every member?",
+            audience.label(model.sharingBuckets.toMap()).lowercase().let { shown ->
+                val start = if (shown == "only us") (if (person) "only you" else "only us") else "shared with $shown"
+                if (person) "It's a ${typeLabel(type).lowercase()} field on your profile. It starts as $start; you can change that any time."
+                else "It's a ${typeLabel(type).lowercase()} field. Every member gets an empty one to fill in, and it starts as $start; each member can change that for themselves."
+            }, "Add field", busy = busy, cancel = "Not yet", onDismiss = { confirming = false }, icon = R.drawable.ic_plus, content = {
+                error?.let { FormNote(it, warning = true) }
+            }, onConfirm = {
             busy = true
             scope.launch {
                 try {
@@ -140,8 +141,8 @@ internal fun AddFieldDialog(chorus: Chorus, model: Model, onAdded: (ProfileDetai
                 } catch (e: kotlinx.coroutines.CancellationException) { throw e }
                 catch (e: Exception) { error = "Could not add the field. Try again."; busy = false }
             }
-        }) { Text("Add field") } } },
-        dismissButton = { InspectionDialogContent { TextButton(enabled = !busy, onClick = { confirming = false }) { Text("Not yet") } } })
+        })
+    }
 }
 
 /** A field's own settings, for every member: its name, who sees it on members who haven't chosen, or removing it. */
@@ -159,27 +160,28 @@ internal fun FieldSettingsDialog(chorus: Chorus, model: Model, def: ProfileDetai
         catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Exception) { error = "Could not save that. Try again." }
     }
-    if (!removing) AlertDialog(onDismissRequest = onDismiss, title = { InspectionDialogContent { Text(def.name) } },
-        text = { InspectionDialogContent { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("${typeLabel(def.type)} field, on every member.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(name, { name = it.take(60) }, singleLine = true, label = { Text("Name") }, isError = taken,
-                supportingText = { if (taken) Text("Another field already has that name.") })
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("For members who haven't chosen", color = p.ink2, modifier = Modifier.weight(1f))
-                AudienceChip("${def.name} by default", audience, own = true, buckets = model.sharingBuckets, onChange = { audience = it ?: Audience.PRIVATE }, looks = model.bucketLooks)
-            }
-            TextButton(onClick = { removing = true }) { Text("Remove from every member…", color = p.danger) }
-            error?.let { Text(it, color = p.danger) }
-        } } },
-        confirmButton = { InspectionDialogContent { TextButton(enabled = name.isNotBlank() && !taken, onClick = {
+    val person = model.isPerson
+    Drawer(onDismiss, def.name, if (person) "${typeLabel(def.type)} field on your profile" else "${typeLabel(def.type)} field, on every member", footer = {
+        DrawerButton("Save", {
             val payload = JSONObject()
             if (name.trim() != def.name) payload.put("name", name.trim())
             if (!audience.same(ProfileAudience.of(JSONObject(def.defaultVisibility)))) payload.put("default_visibility", audience.toJson())
             if (payload.length() == 0) onDismiss() else send(payload)
-        }) { Text("Save") } } },
-        dismissButton = { InspectionDialogContent { TextButton(onClick = onDismiss) { Text("Cancel") } } })
-    else AlertDialog(onDismissRequest = { removing = false }, title = { InspectionDialogContent { Text("Remove “${def.name}” from every member?") } },
-        text = { InspectionDialogContent { Text("It disappears from every profile, including any friend who could see it. Nothing is erased: it stays in your history and exports.") } },
-        confirmButton = { InspectionDialogContent { TextButton(onClick = { send(JSONObject(), "field.delete_def") }) { Text("Remove field", color = p.danger) } } },
-        dismissButton = { InspectionDialogContent { TextButton(onClick = { removing = false }) { Text("Keep it") } } })
+        }, enabled = name.isNotBlank() && !taken)
+        DrawerButton(if (person) "Remove field…" else "Remove from every member…", { removing = true }, ButtonKind.Quiet)
+    }) {
+        ChorusField(name, { name = it.take(60) }, singleLine = true, label = { Text("Name") }, isError = taken,
+            supportingText = if (taken) { { Text("Another field already has that name.") } } else null, modifier = Modifier.fillMaxWidth())
+        FormCard {
+            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (person) "Who sees it" else "For members who haven't chosen", color = p.ink, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                AudienceChip("${def.name} by default", audience, own = true, buckets = model.sharingBuckets, person = person,
+                    onChange = { audience = it ?: Audience.PRIVATE }, looks = model.bucketLooks)
+            }
+        }
+        error?.let { FormNote(it, warning = true) }
+        if (removing) ConfirmDrawer(if (person) "Remove “${def.name}”?" else "Remove “${def.name}” from every member?",
+            "It disappears from ${if (person) "your profile" else "every profile"}, including for any friend who could see it. Nothing is erased: it stays in your history and exports.",
+            "Remove field", { send(JSONObject(), "field.delete_def") }, { removing = false }, danger = true, cancel = "Keep it")
+    }
 }

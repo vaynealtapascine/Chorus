@@ -1,7 +1,5 @@
 package garden.vayne.chorus.ui
 
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -149,14 +147,13 @@ fun History(chorus: Chorus, model: Model, initialFront: String? = null, onBack: 
         pending = id
         try { block(); error = null } catch (e: Exception) { error = e.message ?: "Could not save the change. Try again." } finally { pending = null }
     }
-    fun editTime(row: SwitchRow) {
-        val initial = Calendar.getInstance().apply { timeInMillis = row.occurredAt }
-        DatePickerDialog(ctx, { _, y, m, d ->
-            TimePickerDialog(ctx, { _, h, min ->
-                val c = (initial.clone() as Calendar).apply { set(y, m, d, h, min, 0); set(Calendar.MILLISECOND, 0) }
-                act(row.id) { Front.amendTime(chorus, row.id, c.timeInMillis, frontId = front.takeIf { configured }) }
-            }, initial.get(Calendar.HOUR_OF_DAY), initial.get(Calendar.MINUTE), android.text.format.DateFormat.is24HourFormat(ctx)).show()
-        }, initial.get(Calendar.YEAR), initial.get(Calendar.MONTH), initial.get(Calendar.DAY_OF_MONTH)).show()
+    var retiming by remember { mutableStateOf<SwitchRow?>(null) }
+    fun editTime(row: SwitchRow) { retiming = row }
+    retiming?.let { row ->
+        DateTimeDrawer(row.occurredAt, { t ->
+            retiming = null
+            act(row.id) { Front.amendTime(chorus, row.id, t, frontId = front.takeIf { configured }) }
+        }, { retiming = null }, "When it happened")
     }
     acting?.let { line ->
         val row = savedFor(line)

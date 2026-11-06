@@ -2,9 +2,12 @@ package garden.vayne.chorus.ui
 
 import android.content.Intent
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import garden.vayne.chorus.designsystem.LocalChorusPalette
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,24 +26,24 @@ fun DeviceLink(chorus: Chorus, onClose: () -> Unit) {
     LaunchedEffect(Unit) {
         try { link = chorus.deviceInvite() } catch (e: Exception) { error = e.message ?: "Could not create a link." }
     }
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text("Link another device") },
-        text = {
-            when {
-                link != null -> SelectionContainer { Text("Open this one-use link on the other device within a day:\n\n$link") }
-                error != null -> Text(error.orEmpty())
-                else -> Text("Making a link…")
+    Drawer(onClose, "Link another device", "A one-use link that works for a day.", footer = {
+        if (link != null) DrawerButton("Share link", {
+            context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, link)
+            }, "Share Chorus invite"))
+        })
+        DrawerButton("Close", onClose, ButtonKind.Quiet)
+    }) {
+        when {
+            link != null -> {
+                FormNote("Open it on the other device. Anyone with it can join this account until it's used, so send it only to yourself.",
+                    garden.vayne.chorus.designsystem.R.drawable.ic_lock)
+                FormCard { SelectionContainer { Text(link.orEmpty(), color = LocalChorusPalette.current.ink, fontSize = 14.sp,
+                    modifier = Modifier.padding(16.dp)) } }
             }
-        },
-        confirmButton = {
-            if (link != null) TextButton(onClick = {
-                context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, link)
-                }, "Share Chorus invite"))
-            }) { Text("Share") }
-        },
-        dismissButton = { TextButton(onClick = onClose) { Text("Close") } },
-    )
+            error != null -> FormNote(error.orEmpty(), warning = true)
+            else -> Text("Making a link…", color = LocalChorusPalette.current.ink2)
+        }
+    }
 }

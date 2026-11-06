@@ -146,17 +146,16 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                     color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
             }
             ChatIconButton(R.drawable.ic_search, "Search chats", onSearch)
-            Box {
-                ChatIconButton(R.drawable.ic_more, "Chat options") { menu = true }
-                DropdownMenu(menu, { menu = false }) {
-                    if (onNewChannel != null) DropdownMenuItem(text = { Text("New channel") }, onClick = { menu = false; onNewChannel() })
-                    if (onNew != null) DropdownMenuItem(text = { Text("New message") }, onClick = { menu = false; onNew() })
-                    if (onRowAction != null && pinnedCount > 1) DropdownMenuItem(text = { Text("Arrange pinned chats") },
-                        onClick = { menu = false; listed.firstOrNull { it.pinned }?.let { onRowAction(it, "arrange") } })
-                    if (!archiveView && archivedRows.isNotEmpty()) DropdownMenuItem(text = { Text("Archived chats (${archivedRows.size})") },
-                        onClick = { menu = false; showArchived = true })
-                    if (onEditFolders != null) DropdownMenuItem(text = { Text("Chat folders") }, onClick = { menu = false; onEditFolders(null) })
+            ChatIconButton(R.drawable.ic_more, "Chat options") { menu = true }
+            MenuDrawer(menu, { menu = false }, "Chats") {
+                if (onNew != null) MenuRow("New message", R.drawable.ic_edit) { menu = false; onNew() }
+                if (onNewChannel != null) MenuRow("New channel", R.drawable.ic_plus) { menu = false; onNewChannel() }
+                if (onRowAction != null && pinnedCount > 1) MenuRow("Arrange pinned chats", R.drawable.ic_pin) {
+                    menu = false; listed.firstOrNull { it.pinned }?.let { onRowAction(it, "arrange") }
                 }
+                if (!archiveView && archivedRows.isNotEmpty()) MenuRow("Archived chats", R.drawable.ic_archive,
+                    "${archivedRows.size} ${if (archivedRows.size == 1) "chat" else "chats"}") { menu = false; showArchived = true }
+                if (onEditFolders != null) MenuRow("Chat folders", R.drawable.ic_folder) { menu = false; onEditFolders(null) }
             }
         }
         if (!model.isPerson && !archiveView && inside == null && folders.showHere) {
@@ -261,19 +260,17 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                             }
                         }
                     }
-                    if (onRowAction != null) DropdownMenu(rowMenu == row.channel.id, { rowMenu = null }) {
-                        DropdownMenuItem(text = { Text(if (row.pinned) "Unpin" else "Pin to top") }, onClick = { rowMenu = null; onRowAction(row, "pin") },
-                            leadingIcon = { Icon(painterResource(if (row.pinned) R.drawable.ic_unpin else R.drawable.ic_pin), null, Modifier.size(20.dp)) })
-                        if (row.pinned && pinnedCount > 1) DropdownMenuItem(text = { Text("Arrange pinned chats") },
-                            onClick = { rowMenu = null; onRowAction(row, "arrange") })
-                        if (onFolders != null) DropdownMenuItem(text = { Text("Folders…") }, onClick = { rowMenu = null; foldersFor = row },
-                            leadingIcon = { Icon(painterResource(R.drawable.ic_folder), null, Modifier.size(20.dp)) })
-                        DropdownMenuItem(text = { Text(if (row.archived) "Unarchive" else "Archive") },
-                            onClick = { rowMenu = null; onRowAction(row, "archive") },
-                            leadingIcon = { Icon(painterResource(R.drawable.ic_archive), null, Modifier.size(20.dp)) })
-                        DropdownMenuItem(text = { Text(if (row.space.kind == "internal") "Delete chat" else "Clear chat", color = p.danger) },
-                            onClick = { rowMenu = null; onRowAction(row, "remove") },
-                            leadingIcon = { Icon(painterResource(R.drawable.ic_delete), null, Modifier.size(20.dp), tint = p.danger) })
+                    if (onRowAction != null) MenuDrawer(rowMenu == row.channel.id, { rowMenu = null }, row.title,
+                        leading = { ChatRowDisc(row, 40.dp) }) {
+                        MenuRow(if (row.pinned) "Unpin" else "Pin to top", if (row.pinned) R.drawable.ic_unpin else R.drawable.ic_pin) {
+                            rowMenu = null; onRowAction(row, "pin")
+                        }
+                        if (row.pinned && pinnedCount > 1) MenuRow("Arrange pinned chats", R.drawable.ic_grip) { rowMenu = null; onRowAction(row, "arrange") }
+                        if (onFolders != null) MenuRow("Folders…", R.drawable.ic_folder) { rowMenu = null; foldersFor = row }
+                        MenuRow(if (row.archived) "Unarchive" else "Archive", R.drawable.ic_archive) { rowMenu = null; onRowAction(row, "archive") }
+                        MenuRow(if (row.space.kind == "internal") "Delete chat" else "Clear chat", R.drawable.ic_delete, danger = true) {
+                            rowMenu = null; onRowAction(row, "remove")
+                        }
                     }
                     }
                     HorizontalDivider(Modifier.padding(start = if (folders.compact) 64.dp else 72.dp), color = p.line, thickness = .5.dp)
@@ -284,7 +281,9 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                     if (onNew != null) TextButton(onClick = onNew) { Text("Start a chat") }
                 } }
                 if (!archiveView && inside == null && (folder == "shared" || folder == "direct")) item {
-                    Text(if (folder == "shared") "Shared spaces include other systems. Messages show who is speaking; system asides stay inside your system."
+                    Text(if (model.isPerson) { if (folder == "shared") "Group chats with friends. In a system, each member writes as themselves, so names change as they switch."
+                        else "One-to-one chats with friends. A system's members each write under their own name." }
+                        else if (folder == "shared") "Shared spaces include other systems. Messages show who is speaking; system asides stay inside your system."
                         else "One-to-one chats between your members and with other accounts.", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
                         modifier = Modifier.padding(24.dp))
                 }
@@ -297,23 +296,23 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
     // a chat's folders, from its long-press menu: tick the folders of our own it belongs in
     foldersFor?.let { row ->
         val kind = ChatFolders.kindOf(row.channel, row.space)
-        AlertDialog(onDismissRequest = { foldersFor = null }, title = { Text("Folders for ${row.title}") },
-            text = {
-                Column {
-                    if (folders.custom.isEmpty()) Text("You have no folders of your own yet.", color = p.ink3)
-                    for (f in folders.custom) {
-                        val inside = ChatFolders.holds(f, row.channel.id, kind)
-                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = androidx.compose.ui.semantics.Role.Checkbox) {
-                            onFolders?.invoke(ChatFolders.withCustom(folders, ChatFolders.setChat(f, row.channel.id, kind, !inside)))
-                        }, verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(inside, null)
-                            Text(f.name, color = p.ink, modifier = Modifier.padding(start = 8.dp))
-                        }
+        Drawer({ foldersFor = null }, "Folders", row.title, footer = { DrawerButton("Done", { foldersFor = null }) }) {
+            if (folders.custom.isEmpty()) Text("You have no folders of your own yet.", color = p.ink3, modifier = Modifier.padding(horizontal = 4.dp))
+            else FormCard {
+                folders.custom.forEachIndexed { i, f ->
+                    if (i > 0) FormDivider()
+                    val inside = ChatFolders.holds(f, row.channel.id, kind)
+                    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(role = androidx.compose.ui.semantics.Role.Checkbox) {
+                        onFolders?.invoke(ChatFolders.withCustom(folders, ChatFolders.setChat(f, row.channel.id, kind, !inside)))
+                    }.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Glyph(R.drawable.ic_folder, p.ink2, 20.dp)
+                        Text(f.name, color = p.ink, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                        Checkbox(inside, null)
                     }
                 }
-            },
-            confirmButton = { TextButton(onClick = { foldersFor = null }) { Text("Done") } },
-            dismissButton = { if (onEditFolders != null) TextButton(onClick = { foldersFor = null; onEditFolders("new:${row.channel.id}") }) { Text("New folder…") } })
+            }
+            if (onEditFolders != null) MenuRow("New folder with this chat", R.drawable.ic_plus) { foldersFor = null; onEditFolders("new:${row.channel.id}") }
+        }
     }
 }
 
@@ -358,12 +357,12 @@ private fun SpaceEntryRow(entry: ChatOrganize.SpaceEntry<ChatListRow>, compact: 
                 }
             }
         }
-        if (onAction != null) DropdownMenu(menu, { menu = false }) {
-            DropdownMenuItem(text = { Text("Show channels") }, onClick = { menu = false; onOpen() })
-            DropdownMenuItem(text = { Text(if (entry.pinned) "Unpin" else "Pin to top") }, onClick = { menu = false; onAction(entry.rows, if (entry.pinned) "unpin" else "pin") },
-                leadingIcon = { Icon(painterResource(if (entry.pinned) R.drawable.ic_unpin else R.drawable.ic_pin), null, Modifier.size(20.dp)) })
-            DropdownMenuItem(text = { Text("Archive all") }, onClick = { menu = false; onAction(entry.rows, "archive") },
-                leadingIcon = { Icon(painterResource(R.drawable.ic_archive), null, Modifier.size(20.dp)) })
+        if (onAction != null) MenuDrawer(menu, { menu = false }, entry.name) {
+            MenuRow("Show channels", R.drawable.ic_chat) { menu = false; onOpen() }
+            MenuRow(if (entry.pinned) "Unpin" else "Pin to top", if (entry.pinned) R.drawable.ic_unpin else R.drawable.ic_pin) {
+                menu = false; onAction(entry.rows, if (entry.pinned) "unpin" else "pin")
+            }
+            MenuRow("Archive all", R.drawable.ic_archive) { menu = false; onAction(entry.rows, "archive") }
         }
     }
     HorizontalDivider(Modifier.padding(start = if (compact) 64.dp else 72.dp), color = p.line, thickness = .5.dp)
@@ -381,14 +380,8 @@ internal fun ChatCount(count: Int, unread: Boolean) {
 }
 
 @Composable
-internal fun ChatActionRow(resource: Int, label: String, danger: Boolean = false, action: () -> Unit) {
-    val p = LocalChorusPalette.current
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = action).padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        ChatIcon(resource, tint = if (danger) p.danger else p.ink2)
-        Text(label, color = if (danger) p.danger else p.ink, fontSize = 15.sp, lineHeight = 20.sp)
-    }
-}
+internal fun ChatActionRow(resource: Int, label: String, danger: Boolean = false, action: () -> Unit) =
+    MenuRow(label, resource, danger = danger, onClick = action)
 
 @Composable
 internal fun ChatCreationChoice(resource: Int, title: String, description: String, prominent: Boolean = false, action: () -> Unit) {

@@ -105,10 +105,9 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
             endCrop()
         })
     }
-    if (discard) AlertDialog(onDismissRequest = { discard = false }, title = { InspectionDialogContent { Text("Discard profile changes?") } },
-        text = { InspectionDialogContent { Text("Your saved profile will stay as it was.") } },
-        confirmButton = { InspectionDialogContent { TextButton(onClick = { try { editor.finish(); onDone() } catch (e: Exception) { error = "Could not discard this draft. Try again."; discard = false } }) { Text("Discard") } } },
-        dismissButton = { InspectionDialogContent { TextButton(onClick = { discard = false }) { Text("Keep editing") } } })
+    if (discard) ConfirmDrawer("Discard profile changes?", "Your saved profile will stay as it was.", "Discard changes",
+        { try { editor.finish(); onDone() } catch (e: Exception) { error = "Could not discard this draft. Try again."; discard = false } },
+        { discard = false }, danger = true, cancel = "Keep editing")
 
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -150,7 +149,7 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
                 OutlinedButton(enabled = !busy, onClick = { pickingBanner = false; picker.launch("image/*") }) { Text("Choose avatar") }
                 if (avatar != null) TextButton(enabled = !busy, onClick = { avatar = null }) { Text("Remove avatar") }
             }
-            OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
+            ChorusField(name, { name = it }, label = { Text("Name") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
                 supportingText = { Text("Name, colour and avatar show wherever ${name.ifBlank { "they" }} do: your chats, and friends who can open the profile.") })
 
             // ─── the profile: every part with its own audience (D-101) ───
@@ -172,13 +171,13 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
             Text(if (closed) "Only your system can see this profile right now. Share it with friends, then open up or keep each part below."
                 else "Friends who can open it see each part below that's shared with them.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
             PartHeader("Display name", { partChip("display_name", "Display name") })
-            OutlinedTextField(display, { display = it }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Add a display name", color = p.ink3) })
+            ChorusField(display, { display = it }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Add a display name", color = p.ink3) })
             PartHeader("Pronouns", { partChip("pronouns", "Pronouns") })
-            OutlinedTextField(pronouns, { pronouns = it }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Add pronouns", color = p.ink3) })
+            ChorusField(pronouns, { pronouns = it }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Add pronouns", color = p.ink3) })
             PartHeader("Bio", { partChip("description", "Bio") })
             RichEditorField(bioEditor, "Bio", enabled = !busy, formatting = true)
             PartHeader("Birthday", { partChip("birthday", "Birthday") })
-            OutlinedTextField(birthday, { birthday = it }, supportingText = { Text("YYYY-MM-DD, or --MM-DD without a year") },
+            ChorusField(birthday, { birthday = it }, supportingText = { Text("YYYY-MM-DD, or --MM-DD without a year") },
                 singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
             PartHeader("Banner", { partChip("banner", "Banner") })
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -220,7 +219,7 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
               if (model.isPerson) ColourField(color, { color = it }, modifier = Modifier.fillMaxWidth(), enabled = !busy)
             if (!model.isPerson) TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Hide more details" else "More details") }
             if (advanced && !model.isPerson) {
-                OutlinedTextField(sigil, { sigil = it }, label = { Text("Representative characters") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
+                ChorusField(sigil, { sigil = it }, label = { Text("Representative characters") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
                 if (!model.isPerson) ColourField(color, { color = it }, modifier = Modifier.fillMaxWidth(), enabled = !busy)
                 Text("Start a message with one or more members' representative characters, then a space.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
                 // who hears when this member fronts (NOTIFICATIONS §2.4): saved as it's chosen, like the web

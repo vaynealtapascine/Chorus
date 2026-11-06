@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -148,11 +147,11 @@ internal fun JournalFeeds(chorus: Chorus, model: Model, onTimeline: () -> Unit, 
                 if (editingId.isNotEmpty()) TextButton(onClick = {
                     editingId = ""; name = ""; description = ""; query = ""; audienceJson = garden.vayne.chorus.data.Audience.PRIVATE.toJson().toString()
                 }) { Text("New feed") }
-                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true,
+                ChorusField(name, { name = it }, label = { Text("Name") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(description, { description = it }, label = { Text("Description (optional)") },
+                ChorusField(description, { description = it }, label = { Text("Description (optional)") },
                     modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(query, { query = it }, label = { Text("Filter") }, minLines = 2,
+                ChorusField(query, { query = it }, label = { Text("Filter") }, minLines = 2,
                     modifier = Modifier.fillMaxWidth())
                 Text("Try from:, kind:, tag:, mood:, has:, reply:, in:, since:, until:, fronting:, or, and - to exclude.",
                     color = p.ink2)

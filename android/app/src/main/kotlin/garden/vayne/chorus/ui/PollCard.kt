@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -94,7 +93,7 @@ fun PollDraftFields(on: Boolean, onToggle: (Boolean) -> Unit, options: SnapshotS
     }
     if (!on) return
     options.forEachIndexed { i, text ->
-        OutlinedTextField(text, { options[i] = it.take(200) }, label = { Text("Option ${i + 1}") },
+        ChorusField(text, { options[i] = it.take(200) }, label = { Text("Option ${i + 1}") },
             singleLine = true, modifier = Modifier.fillMaxWidth())
     }
     if (options.size < Polls.MAX_OPTIONS) TextButton(onClick = { options.add("") }) { Text("Add option") }

@@ -66,14 +66,14 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
                         val changeable = editable && theirs != "owner" && account.id != me
                         Text(ChatManage.roleLabel(theirs) + if (changeable) " ▾" else "", color = if (changeable) p.accent else p.ink3, fontSize = 13.sp,
                             modifier = Modifier.then(if (changeable) Modifier.clickable { roleMenu = true } else Modifier).padding(8.dp))
-                        DropdownMenu(roleMenu, { roleMenu = false }) {
-                            for ((id, label) in ChatManage.ROLES) DropdownMenuItem(text = { Text(label) }, onClick = {
+                        MenuDrawer(roleMenu, { roleMenu = false }, "${account.shownName}'s role", space.name) {
+                            for ((id, label) in ChatManage.ROLES) MenuRow(label, selected = id == theirs) {
                                 roleMenu = false
                                 actions.launch {
                                     try { chorus.create("space.set_role", space.id, JSONObject().put("account_id", account.id).put("role", id), scope = scope) }
                                     catch (e: Exception) { error = e.message ?: "Could not change the role." }
                                 }
-                            })
+                            }
                         }
                     }
                     if (owner && account.id != me) ChatIconButton(R.drawable.ic_close, "Remove ${account.shownName}") { removing = account }
@@ -101,8 +101,9 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
             if (!model.isPerson && sides == null && writers.isNotEmpty()) {
                 var choosing by remember { mutableStateOf(false) }
                 PanelLink(R.drawable.ic_lock, "Start a private chat as…") { choosing = true }
-                DropdownMenu(choosing, { choosing = false }) {
-                    for (m in writers.sortedByDescending { it.id == speakerId }) DropdownMenuItem(text = { Text(m.shownName) }, onClick = {
+                MenuDrawer(choosing, { choosing = false }, "Start a private chat", "Only the member you pick writes and reads it here.") {
+                    for (m in writers.sortedByDescending { it.id == speakerId }) MenuRow(m.shownName, subtitle = m.pronouns?.takeIf { it.isNotBlank() },
+                        leading = { Avatar(m.glyph, m.color, 36.dp, avatarBlob = m.avatarBlob, ring = false) }) {
                         choosing = false
                         val found = ChatManage.existingPrivate(model.channels, space.id, m.id, own)
                         if (found != null) onOpenChannel(found.id) else actions.launch {
@@ -112,7 +113,7 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
                                 onOpenChannel(id)
                             } catch (e: Exception) { error = e.message ?: "Could not start the private chat." }
                         }
-                    })
+                    }
                 }
             }
         }
@@ -130,55 +131,63 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
         val inside = directory?.accounts.orEmpty().mapTo(HashSet()) { it.id }
         var chosen by remember { mutableStateOf(listOf<String>()) }
         var busy by remember { mutableStateOf(false) }
-        AlertDialog(onDismissRequest = { if (!busy) adding = false }, title = { Text("Add people") }, text = {
-            Column {
-                val candidates = connections.filter { it.id !in inside }
-                if (candidates.isEmpty()) Text("Everyone you're connected to is already here. Follow someone in Friends to add them.", color = p.ink2)
-                for (a in candidates) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .toggleable(a.id in chosen, role = Role.Checkbox) { on -> chosen = if (on) chosen + a.id else chosen - a.id },
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(a.id in chosen, onCheckedChange = null)
-                    Text(a.shownName, modifier = Modifier.padding(start = 8.dp))
+        val candidates = connections.filter { it.id !in inside }
+        Drawer({ adding = false }, "Add people", space.name, dismissible = !busy, footer = {
+            DrawerButton(if (chosen.size > 1) "Add ${chosen.size}" else "Add", {
+                val dev = chorus.device
+                if (dev != null) {
+                    busy = true
+                    actions.launch {
+                        try { Spaces.add(dev, space.id, chosen); adding = false; onChanged() }
+                        catch (e: Exception) { error = e.message ?: "Could not add them. Try again when connected." }
+                        finally { busy = false }
+                    }
+                }
+            }, enabled = chosen.isNotEmpty(), busy = busy)
+        }) {
+            if (candidates.isEmpty()) FormNote("Everyone you're connected to is already here. Follow someone in Friends to add them.", R.drawable.ic_friends)
+            else FormCard {
+                candidates.forEachIndexed { i, a ->
+                    if (i > 0) FormDivider()
+                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                        .toggleable(a.id in chosen, role = Role.Checkbox) { on -> chosen = if (on) chosen + a.id else chosen - a.id }
+                        .padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(Modifier.size(36.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
+                            Text(a.shownName.removePrefix("@").take(1).uppercase(), color = p.ink2)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(a.shownName, color = p.ink, fontSize = 15.sp)
+                            Text(if (a.isSystem) "a system" else "one person", color = p.ink3, fontSize = 12.sp)
+                        }
+                        Checkbox(a.id in chosen, onCheckedChange = null)
+                    }
                 }
             }
-        }, confirmButton = { TextButton(enabled = !busy && chosen.isNotEmpty(), onClick = {
-            val dev = chorus.device ?: return@TextButton
-            busy = true
-            actions.launch {
-                try { Spaces.add(dev, space.id, chosen); adding = false; onChanged() }
-                catch (e: Exception) { error = e.message ?: "Could not add them. Try again when connected." }
-                finally { busy = false }
-            }
-        }) { Text("Add") } }, dismissButton = { TextButton(onClick = { adding = false }) { Text("Cancel") } })
+        }
     }
     removing?.let { account ->
-        AlertDialog(onDismissRequest = { removing = null }, title = { Text("Remove ${account.shownName}?") },
-            text = { Text("They stop seeing ${space.name}. You can add them back later.") },
-            confirmButton = { TextButton(onClick = {
-                removing = null
-                actions.launch {
-                    try { chorus.create("space.leave", space.id, JSONObject().put("account_id", account.id), scope = scope); onChanged() }
-                    catch (e: Exception) { error = e.message ?: "Could not remove them." }
-                }
-            }) { Text("Remove", color = p.danger) } },
-            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } })
+        ConfirmDrawer("Remove ${account.shownName}?", "They stop seeing ${space.name}. You can add them back later.", "Remove", {
+            removing = null
+            actions.launch {
+                try { chorus.create("space.leave", space.id, JSONObject().put("account_id", account.id), scope = scope); onChanged() }
+                catch (e: Exception) { error = e.message ?: "Could not remove them." }
+            }
+        }, { removing = null }, danger = true, icon = R.drawable.ic_close)
     }
     if (leaving) {
         val deletes = space.kind == "shared" && role == "owner"
-        AlertDialog(onDismissRequest = { leaving = false },
-            title = { Text(if (deletes) "Delete ${space.name}?" else if (space.kind == "dm") "Leave this conversation?" else "Leave ${space.name}?") },
-            text = { Text(if (deletes) "It leaves everyone's chats. It stays in the history and can be restored." else "You can be added back later.") },
-            confirmButton = { TextButton(onClick = {
+        ConfirmDrawer(if (deletes) "Delete ${space.name}?" else if (space.kind == "dm") "Leave this conversation?" else "Leave ${space.name}?",
+            if (deletes) "It leaves everyone's chats. It stays in the history and can be restored." else "You can be added back later.",
+            if (deletes) "Delete" else "Leave", {
                 leaving = false
-                val dev = chorus.device ?: return@TextButton
-                actions.launch {
+                val dev = chorus.device
+                if (dev != null) actions.launch {
                     try {
                         if (deletes) chorus.create("space.delete", space.id, JSONObject(), scope = scope) else Spaces.leave(dev, space.id)
                         onLeft()
                     } catch (e: Exception) { error = e.message ?: "Could not do that. Try again when connected." }
                 }
-            }) { Text(if (deletes) "Delete" else "Leave", color = p.danger) } },
-            dismissButton = { TextButton(onClick = { leaving = false }) { Text("Cancel") } })
+            }, { leaving = false }, danger = true, icon = if (deletes) null else R.drawable.ic_back)
     }
 }
 

@@ -1,8 +1,6 @@
 package garden.vayne.chorus.ui
 
 import android.app.Activity
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
@@ -25,7 +23,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,6 +55,7 @@ import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.StagePlan
 import garden.vayne.chorus.designsystem.LocalChorusPalette
+import garden.vayne.chorus.designsystem.R
 import garden.vayne.chorus.designsystem.Tokens
 import java.text.DateFormat
 import java.util.Calendar
@@ -172,33 +170,24 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                     JournalChoice("Hide channel name", hideHeader) { hideHeader = !hideHeader }
                     JournalChoice("Hide reply bars", hideReplyBars) { hideReplyBars = !hideReplyBars }
                 }
-                if (timeMode == "shift") OutlinedTextField(shiftText,
+                if (timeMode == "shift") ChorusField(shiftText,
                     { shiftText = it.filter { c -> c.isDigit() || c == '-' }.take(7) },
                     label = { Text("Shift times by minutes") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                 if (timeMode == "start") {
-                    val ctx = LocalContext.current
-                    TextButton(onClick = {
-                        val day = Calendar.getInstance().apply { timeInMillis = startAt }
-                        DatePickerDialog(ctx, { _, year, month, date ->
-                            val chosen = Calendar.getInstance().apply {
-                                timeInMillis = startAt
-                                set(Calendar.YEAR, year); set(Calendar.MONTH, month); set(Calendar.DAY_OF_MONTH, date)
-                            }
-                            TimePickerDialog(ctx, { _, hour, minute ->
-                                chosen.set(Calendar.HOUR_OF_DAY, hour); chosen.set(Calendar.MINUTE, minute)
-                                chosen.set(Calendar.SECOND, 0); chosen.set(Calendar.MILLISECOND, 0)
-                                startAt = chosen.timeInMillis
-                            }, day.get(Calendar.HOUR_OF_DAY), day.get(Calendar.MINUTE), false).show()
-                        }, day.get(Calendar.YEAR), day.get(Calendar.MONTH), day.get(Calendar.DAY_OF_MONTH)).show()
-                    }) { Text("First shown time: ${DateFormat.getDateTimeInstance().format(Date(startAt))}") }
+                    var pickingStart by remember { mutableStateOf(false) }
+                    FormCard(Modifier.padding(horizontal = 16.dp)) {
+                        FormValueRow("First shown time", DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(startAt)),
+                            R.drawable.ic_clock) { pickingStart = true }
+                    }
+                    if (pickingStart) DateTimeDrawer(startAt, { startAt = it; pickingStart = false }, { pickingStart = false }, "First shown time")
                 }
                 for (id in authorIds) {
                     val realName = model.member(id)?.shownName ?: foreignAuthors[id]?.name ?: "Someone"
                     JournalChoice("Only $realName", id in onlyMembers) {
                         onlyMembers = if (id in onlyMembers) onlyMembers - id else onlyMembers + id
                     }
-                    OutlinedTextField(fakeNames[id].orEmpty(), { value ->
+                    ChorusField(fakeNames[id].orEmpty(), { value ->
                         fakeNames = fakeNames.toMutableMap().apply {
                             if (value.isBlank()) remove(id) else put(id, value)
                         }
@@ -243,7 +232,7 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                 }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(saveName, { saveName = it }, label = { Text("Name this stage") },
+                ChorusField(saveName, { saveName = it }, label = { Text("Name this stage") },
                     singleLine = true, modifier = Modifier.weight(1f), enabled = !busy)
                 TextButton(enabled = !busy && saveName.isNotBlank(), onClick = {
                     val name = saveName.trim()

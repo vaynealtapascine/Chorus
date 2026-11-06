@@ -31,7 +31,7 @@ internal fun JournalFriends(chorus: Chorus, model: Model, onThread: (String) -> 
             }
             posts = loaded.sortedByDescending { it.second.occurredAt }
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-        catch (_: Exception) { error = "Friends’ posts need a connection. Your own journal is available in Our system." }
+        catch (_: Exception) { error = "Friends’ posts need a connection. Your own journal is available in ${if (model.isPerson) "My posts" else "Our system"}." }
         finally { loading = false }
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {

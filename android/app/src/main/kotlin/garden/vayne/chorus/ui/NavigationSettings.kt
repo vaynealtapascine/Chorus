@@ -42,16 +42,10 @@ internal fun NavigationSettings(selected: List<String>, person: Boolean, onChang
     }
     if (open) {
         var draft by rememberSaveable { mutableStateOf(selected) }
-        ChorusSheet(onDismissRequest = { open = false }, skipPartiallyExpanded = true) {
+        Drawer({ open = false }, "Bottom navigation", "Choose up to four destinations. More always stays at the end.") {
 
-            InspectionDialogContent {
-                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Bottom navigation", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                        TextButton(modifier = Modifier.heightIn(min = 48.dp), onClick = { open = false }) { Text("Cancel") }
-                    }
-                    Text("Choose up to four destinations. More always stays at the end.", style = MaterialTheme.typography.bodyMedium)
+            run {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Preview", style = MaterialTheme.typography.labelLarge)
                     Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(vertical = 12.dp)) {
                         (draft + "More").forEach { name ->

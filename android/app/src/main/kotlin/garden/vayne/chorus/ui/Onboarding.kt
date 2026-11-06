@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
@@ -114,7 +113,7 @@ fun Onboarding(chorus: Chorus, initialLink: String?) {
                     null -> {
                         Text("A cozy place for plural systems and the people close to them. Paste the invite link you were given.", color = p.ink2)
                         OnboardingCard {
-                            OutlinedTextField(
+                            ChorusField(
                                 value = link, onValueChange = { link = it; error = null },
                                 label = { Text("Invite link") }, placeholder = { Text("https://…/i/…") },
                                 singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -147,13 +146,13 @@ fun Onboarding(chorus: Chorus, initialLink: String?) {
                             }
                         } else Text("Give your system (or yourself) a name to start.", color = p.ink2)
                         OnboardingCard {
-                            OutlinedTextField(
+                            ChorusField(
                                 value = name, onValueChange = { name = it },
                                 label = { Text(when { step.isEmpty() -> "Name (your system, or you)"; kind == "system" -> "Your system's name"; else -> "Your name" }) },
                                 placeholder = { Text(if (kind == "system") "The Stars" else "Alex") },
                                 singleLine = true, modifier = Modifier.fillMaxWidth(),
                             )
-                            OutlinedTextField(
+                            ChorusField(
                                 value = handle, onValueChange = { v -> handle = v.removePrefix("@").lowercase().filter { it in 'a'..'z' || it in '0'..'9' || it == '_' }.take(32) },
                                 label = { Text("Handle (optional)") }, prefix = { Text("@") },
                                 supportingText = { Text("Friends follow you with it.") },

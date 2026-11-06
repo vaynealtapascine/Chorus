@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Surface
 import androidx.compose.material3.IconButton
-import androidx.compose.ui.window.Dialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateListOf
@@ -55,9 +54,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Button
 import androidx.compose.runtime.remember
@@ -89,7 +85,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -910,23 +905,27 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     color = if (typingLabel != null || syncStatus != Status.Live) p.accent else p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
             }
             ChatIconButton(R.drawable.ic_search, "Search this chat", { searchHere = true })
-            Box {
-                ChatIconButton(R.drawable.ic_more, "Conversation options") { headerMenu = true }
-                DropdownMenu(headerMenu, { headerMenu = false }) {
-                    if (channel != null && !expanded) DropdownMenuItem(text = { Text("Chat info") }, onClick = { headerMenu = false; infoOpen = true })
-                    if (paneEditable) DropdownMenuItem(text = { Text(if (channel?.kind == "member_dm") "Edit chat" else "Edit channel") },
-                        onClick = { headerMenu = false; editChannel = true; channelEditor = true })
-                    DropdownMenuItem(text = { Text("New chat…") }, onClick = { headerMenu = false; spaceAction = "new" })
-                    if (channel != null) DropdownMenuItem(text = { Text("Notifications…") }, onClick = { headerMenu = false; notifyOpen = true })
-                    if (channel != null) DropdownMenuItem(text = { Text("Stage mode") }, onClick = { headerMenu = false; stageSelection = emptyList(); staging = true })
-                    DropdownMenuItem(text = { Text("Message options") }, onClick = { headerMenu = false; attachPage = ""; moreOpen = !moreOpen })
-                    if (space?.kind == "internal" && !model.isPerson) {
-                        DropdownMenuItem(text = { Text("Read as…") }, onClick = { headerMenu = false; readerOpen = true })
-                    }
-                    val canLeave = space != null && space.kind != "internal" && directory[space.id]?.let {
-                        space.kind != "shared" || it.ownerAccountId != chorus.device?.accountId } == true
-                    if (canLeave) DropdownMenuItem(text = { Text("Leave space") }, onClick = { headerMenu = false; spaceAction = "leave" })
+            ChatIconButton(R.drawable.ic_more, "Conversation options") { headerMenu = true }
+            MenuDrawer(headerMenu, { headerMenu = false }, channel?.name ?: "Chats",
+                space?.let { spaceLabel(it, directory[it.id], chorus.device?.accountId.orEmpty()) }) {
+                if (channel != null && !expanded) MenuRow("Chat info", R.drawable.ic_chat) { headerMenu = false; infoOpen = true }
+                if (paneEditable) MenuRow(if (channel?.kind == "member_dm") "Edit chat" else "Edit channel", R.drawable.ic_edit) {
+                    headerMenu = false; editChannel = true; channelEditor = true
                 }
+                if (channel != null) MenuRow("Notifications", R.drawable.ic_bell,
+                    subtitle = notifyLabel(model.accountPrefs.channelNotify(channel.id, space?.kind.orEmpty()))) { headerMenu = false; notifyOpen = true }
+                if (channel != null) MenuRow("Stage mode", R.drawable.ic_layers, "Pick messages to show as a scene") {
+                    headerMenu = false; stageSelection = emptyList(); staging = true
+                }
+                MenuRow("Message options", R.drawable.ic_sliders) { headerMenu = false; attachPage = ""; moreOpen = !moreOpen }
+                if (space?.kind == "internal" && !model.isPerson) {
+                    MenuRow("Read as…", R.drawable.ic_eye, "Whose unread messages to show") { headerMenu = false; readerOpen = true }
+                }
+                MenuDivider()
+                MenuRow("New chat", R.drawable.ic_plus) { headerMenu = false; spaceAction = "new" }
+                val canLeave = space != null && space.kind != "internal" && directory[space.id]?.let {
+                    space.kind != "shared" || it.ownerAccountId != chorus.device?.accountId } == true
+                if (canLeave) MenuRow("Leave space", R.drawable.ic_back, danger = true) { headerMenu = false; spaceAction = "leave" }
             }
         }
         // F5.2: the pinned banner; tapping shows the pin and steps to the next one
@@ -1226,7 +1225,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 })
                 add(AttachOption("cw", "Warning", R.drawable.ic_format_eye_off, cw.isNotBlank()) {
                     Text("Readers see the warning first and tap to show the message.", color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp)
-                    OutlinedTextField(cw, { cw = it }, label = { Text("Content warning") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    ChorusField(cw, { cw = it }, label = { Text("Content warning") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     if (cw.isNotBlank()) TextButton(onClick = { cw = "" }) { Text("Remove the warning") }
                 })
                 add(AttachOption("audience", "Who sees", R.drawable.ic_lock, audience != "all") {
@@ -1452,7 +1451,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             InspectionDialogContent {
                 Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f).imePadding().padding(horizontal = 20.dp)) {
                     Text("Read as…", style = MaterialTheme.typography.titleLarge)
-                    OutlinedTextField(value = readerQuery, onValueChange = { readerQuery = it },
+                    ChorusField(value = readerQuery, onValueChange = { readerQuery = it },
                         label = { Text("Search members") }, singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp))
                     LazyColumn(Modifier.fillMaxWidth().weight(1f).selectableGroup()) {
@@ -1571,30 +1570,20 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
     }
     forwardConfirm?.takeIf { forwardableMessage != null && shownNow(it.channel.id) }?.let { row ->
-        AlertDialog(onDismissRequest = { forwardConfirm = null }, title = { Text("Forward outside this chat?") },
-            text = { Text("This shares a snapshot of the message with ${row.title}. Its original audience doesn't follow it there.") },
-            confirmButton = { TextButton(enabled = !busy, onClick = { forwarding?.let { forward(it, row) } }) { Text("Forward") } },
-            dismissButton = { TextButton(onClick = { forwardConfirm = null }) { Text("Cancel") } })
+        ConfirmDrawer("Forward outside this chat?", "This shares a snapshot of the message with ${row.title}. Its original audience doesn't follow it there.",
+            "Forward", { forwarding?.let { forward(it, row) } }, { forwardConfirm = null }, busy = busy, icon = R.drawable.ic_forward) {
+            FormNote("${row.title} will see it.", R.drawable.ic_globe, warning = true, title = "This leaves ${space?.name?.takeIf { space.kind != "dm" } ?: "this chat"}")
+        }
     }
     deleting?.takeIf { ChatOrganize.actionMessage(model, it.id, viewingAs, chorus.device?.accountId.orEmpty()) != null }?.let { message ->
-        AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Delete this message?") },
-            text = { Text("It disappears for everyone in this chat. You can undo right after.") },
-            confirmButton = { TextButton(onClick = { deleting = null; delete(message) }) { Text("Delete", color = p.danger) } },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } })
+        ConfirmDrawer("Delete this message?", "It disappears for everyone in this chat. You can undo right after.", "Delete",
+            { deleting = null; delete(message) }, { deleting = null }, danger = true)
     }
     if (notifyOpen && channel != null && space != null) {
         val level = model.accountPrefs.channelNotify(channel.id, space.kind)
-        AlertDialog(onDismissRequest = { notifyOpen = false }, title = { Text("Notifications for ${channel.name}") }, text = {
-            Column {
-                for ((value, label) in listOf("all" to "All messages", "mentions" to "Mentions only", "none" to "Off (muted)")) {
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { setNotify(value); notifyOpen = false },
-                        verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.RadioButton(level == value, { setNotify(value); notifyOpen = false })
-                        Text(label, color = p.ink)
-                    }
-                }
-            }
-        }, confirmButton = { TextButton(onClick = { notifyOpen = false }) { Text("Done") } })
+        ChoiceDrawer(true, "Notifications", listOf("all", "mentions", "none"), level, ::notifyLabel,
+            { setNotify(it); notifyOpen = false }, { notifyOpen = false }, subtitle = channel.name,
+            describe = { when (it) { "all" -> "Every new message"; "mentions" -> "Only when someone names you"; else -> "Nothing from this chat" } })
     }
     if (channelEditor) ChannelEditor(chorus, model, space?.id?.takeIf { space?.kind != "dm" },
         channel.takeIf { editChannel }, onDismiss = { channelEditor = false }, onSaved = { home, id ->
@@ -1618,8 +1607,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         ChatCreationChoice(R.drawable.ic_thread, "New channel", "A place for a topic, plans or shared notes", prominent = true) {
                             spaceAction = ""; editChannel = false; channelEditor = true
                         }
-                        ChatCreationChoice(R.drawable.ic_members, "Direct message", "Write to a member or a connected account") { choice = "direct" }
-                        ChatCreationChoice(R.drawable.ic_globe, "New shared space", "Invite connected accounts to a group chat") { choice = "shared" }
+                        ChatCreationChoice(R.drawable.ic_members, "Direct message",
+                            if (model.isPerson) "Write to a friend, or a system you follow" else "Write to a member or a connected account") { choice = "direct" }
+                        ChatCreationChoice(R.drawable.ic_globe, "New shared space",
+                            if (model.isPerson) "A group chat with friends and their systems" else "Invite connected accounts to a group chat") { choice = "shared" }
                     } else if (choice == "direct") {
                         DirectMessagePicker(model.active.filter { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId },
                             connections, busy, syncStatus == Status.Live, error,
@@ -1654,7 +1645,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                         finally { busy = false }
                                     }
                                 }
-                            }, privateChats = !model.isPerson, onAccount = { speaker, account, keepPrivate ->
+                            }, privateChats = !model.isPerson, person = model.isPerson, onAccount = { speaker, account, keepPrivate ->
                                 val dev = chorus.device
                                 if (!busy && dev != null) {
                                     busy = true; error = null
@@ -1686,7 +1677,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                             })
                     } else {
                         Text("Messages show who is speaking to everyone in the space.", style = MaterialTheme.typography.bodySmall, color = p.ink3)
-                        OutlinedTextField(newSpaceName, { newSpaceName = it.take(80) }, label = { Text("Shared space name") }, singleLine = true,
+                        ChorusField(newSpaceName, { newSpaceName = it.take(80) }, label = { Text("Shared space name") }, singleLine = true,
                             modifier = Modifier.fillMaxWidth())
                         if (connections.isEmpty()) Text("Connect with an account in Friends before inviting them.", style = MaterialTheme.typography.bodyMedium, color = p.ink2)
                         for (account in connections) Row(Modifier.fillMaxWidth().clickable {
@@ -1715,29 +1706,27 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
     }
     if (spaceAction == "leave" && space != null) {
-        AlertDialog(onDismissRequest = { spaceAction = "" }, title = { Text("Leave this space?") },
-            text = { Text("You can be added back later.") },
-            confirmButton = { TextButton(onClick = {
-                val dev = chorus.device ?: return@TextButton
+        ConfirmDrawer("Leave ${space.name.ifBlank { "this space" }}?", "You can be added back later.", "Leave", {
+            val dev = chorus.device
+            if (dev != null) {
                 busy = true; error = null; spaceAction = ""
                 actions.launch {
                     try { Spaces.leave(dev, space.id); selectedSpace = ""; selectedChannel = ""; refresh++ }
                     catch (e: Exception) { error = e.message ?: "Could not leave the space." }
                     finally { busy = false }
                 }
-            }) { Text("Leave") } },
-            dismissButton = { TextButton(onClick = { spaceAction = "" }) { Text("Cancel") } })
+            }
+        }, { spaceAction = "" }, danger = true, icon = R.drawable.ic_back)
     }
     removing?.let { row ->
         // our own channels and members' DMs are deleted for the system; a DM with another account or a
         // shared channel is only cleared for us (they keep it; it comes back when someone writes)
         val own = row.space.kind == "internal"
         val name = if (row.channel.isMemberDm) "this chat" else if (row.space.kind == "dm") "your chat with ${row.title}" else "#${row.title}"
-        AlertDialog(onDismissRequest = { removing = null },
-            title = { Text(if (own) "Delete $name?" else "Clear $name?") },
-            text = { Text(if (own) "It's deleted for everyone in your system, messages and all." else
-                "It leaves your chats and its messages leave your view, on all your devices. It comes back if someone writes again; they keep everything.") },
-            confirmButton = { TextButton(onClick = {
+        ConfirmDrawer(if (own) "Delete $name?" else "Clear $name?",
+            if (own) (if (model.isPerson) "It's deleted on all your devices, messages and all." else "It's deleted for everyone in your system, messages and all.") else
+                "It leaves your chats and its messages leave your view, on all your devices. It comes back if someone writes again; they keep everything.",
+            if (own) "Delete" else "Clear", danger = true, onDismiss = { removing = null }, onConfirm = {
                 removing = null; error = null
                 actions.launch {
                     try {
@@ -1750,8 +1739,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         if (selectedChannel == row.channel.id) { selectedChannel = ""; conversationOpen = false }
                     } catch (e: Exception) { error = e.message ?: "Could not remove the chat." }
                 }
-            }) { Text(if (own) "Delete" else "Clear", color = LocalChorusPalette.current.danger) } },
-            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } })
+            })
     }
 }
 
@@ -1993,19 +1981,18 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
         if (!own && edited) EditedMark()
     }
     }
-    if (menuOpen) Dialog(onDismissRequest = { menuOpen = false }) {
+    if (menuOpen) Drawer({ menuOpen = false }) {
         var allEmoji by remember(message.id) { mutableStateOf(false) }
         // what it said before (SPEC §5.3), fetched when asked and shown under the message here
         var history by remember(message.id, message.text, message.cw) { mutableStateOf<List<MessageRevision>?>(null) }
         var historyError by remember(message.id) { mutableStateOf<String?>(null) }
-        Column(Modifier.fillMaxWidth().heightIn(max = 680.dp).verticalScroll(rememberScrollState())
-            .semantics { contentDescription = "Message actions" },
-            horizontalAlignment = if (own) Alignment.End else Alignment.Start, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.fillMaxWidth().semantics { contentDescription = "Message actions" },
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (held == null && onReact != null) ReactionPicker(reactions, actingMemberId, allEmoji, { allEmoji = !allEmoji }) { emoji, on ->
                 menuOpen = false; onReact(emoji, on)
             }
-            Column(Modifier.widthIn(min = 120.dp, max = 300.dp).background(if (own) p.accentSoft else p.surface2, RoundedCornerShape(16.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Column(Modifier.fillMaxWidth().background(if (own) p.accentSoft else p.surface2, RoundedCornerShape(16.dp))
+                .padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp)
                 Text(spoilerPreview(ChatPresentation.preview(message)), color = p.ink, maxLines = 4, fontSize = 15.sp, lineHeight = 20.sp)
                 Text(ChatPresentation.dateLabel(message.occurredAt) + ", " +
@@ -2028,8 +2015,8 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
                     if (revisionRevealed) Text(revision.text, color = p.ink, fontSize = 14.sp, lineHeight = 19.sp)
                 }
             }
-        Surface(shape = RoundedCornerShape(12.dp), color = p.surface, modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)) {
-            Column(Modifier.padding(vertical = 4.dp)) {
+        run {
+            Column(Modifier.fillMaxWidth()) {
                 val seen = model.readMarks[message.channelId].orEmpty().filter { mark ->
                     mark.member.isNotEmpty() && !ReadTracking.needsMark(message.occurredAt, message.id, listOf(mark), mark.member)
                 }.mapNotNull { model.member(it.member) }
@@ -2131,9 +2118,9 @@ private fun ReactionChips(reactions: List<ChatReaction>, member: String?, modifi
                     modifier = Modifier.background(if (mine) p.accentSoft else p.surface3, RoundedCornerShape(12.dp))
                         .then(if (mine) Modifier.border(1.dp, p.accent, RoundedCornerShape(12.dp)) else Modifier)
                         .padding(horizontal = 8.dp, vertical = 2.dp))
-                DropdownMenu(who, { who = false }) {
-                    Text("${r.emoji}  $names", color = p.ink, fontSize = 14.sp, lineHeight = 20.sp,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                MenuDrawer(who, { who = false }, "Reacted with ${r.emoji}", "${r.memberIds.size} ${if (r.memberIds.size == 1) "reaction" else "reactions"}") {
+                    for (id in r.memberIds) Text(nameOf(id), color = p.ink, fontSize = 16.sp, lineHeight = 22.sp,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp))
                 }
             }
         }
@@ -2277,3 +2264,5 @@ private fun TimelineMarker(marker: ChatPresentation.TimelineMarker) {
         }
     }
 }
+
+private fun notifyLabel(level: String) = when (level) { "all" -> "All messages"; "mentions" -> "Mentions only"; else -> "Off (muted)" }

@@ -373,13 +373,13 @@ internal fun MediaViewer(a: ChatAttachment, chorus: Chorus, who: String, at: Lon
                     if (at > 0) Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(at)),
                         color = Color.White.copy(alpha = .7f), fontSize = 12.sp)
                 }
-                if (revealed || onShowMessage != null) Box {
+                if (revealed || onShowMessage != null) {
                     IconButton(onClick = { menu = true }) { ChatIcon(R.drawable.ic_more, "Photo options", Color.White) }
-                    DropdownMenu(menu, { menu = false }) {
-                        if (onShowMessage != null) DropdownMenuItem(text = { Text("Show in chat") }, onClick = { menu = false; onShowMessage() })
-                        if (revealed) DropdownMenuItem(text = { Text("Open in another app") }, onClick = {
+                    MenuDrawer(menu, { menu = false }, a.filename.ifBlank { "Photo" }) {
+                        if (onShowMessage != null) MenuRow("Show in chat", R.drawable.ic_chat) { menu = false; onShowMessage() }
+                        if (revealed) MenuRow("Open in another app", R.drawable.ic_share) {
                             menu = false; scope.launch { openError = openAttachment(ctx, chorus, a) }
-                        })
+                        }
                     }
                 }
             }

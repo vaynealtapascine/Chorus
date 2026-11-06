@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -166,7 +165,7 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
                     modifier = Modifier.padding(top = 14.dp))
                 TextButton(onClick = onClose) { Text("Close") }
             }
-            OutlinedTextField(query, { query = it }, label = { Text(if(channelId != null) "Search this chat" else "Search ${if(section == "Messages") "all chats" else if(section == "Posts") "Journal" else section}") },
+            ChorusField(query, { query = it }, label = { Text(if(channelId != null) "Search this chat" else "Search ${if(section == "Messages") "all chats" else if(section == "Posts") "Journal" else section}") },
                 singleLine = true, modifier = Modifier.fillMaxWidth())
             Text("Try words or from:, in:, has:, before:, after:, is:pinned.", color = p.ink2)
         }

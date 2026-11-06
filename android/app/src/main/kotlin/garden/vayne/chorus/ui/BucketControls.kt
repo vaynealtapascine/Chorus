@@ -188,9 +188,9 @@ private fun MinutesRange(minS: Long, maxS: Long, enabled: Boolean, save: (Long, 
     val b = to.trim().toDoubleOrNull()?.let { Math.round(it * 60) }
     val ok = a != null && b != null && a in 0..BucketControls.RANGE_MAX_S && b in a..BucketControls.RANGE_MAX_S
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(from, { from = it }, Modifier.weight(1f), enabled = enabled, singleLine = true, label = { Text("From (min)") },
+        ChorusField(from, { from = it }, Modifier.weight(1f), enabled = enabled, singleLine = true, label = { Text("From (min)") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = !ok)
-        OutlinedTextField(to, { to = it }, Modifier.weight(1f), enabled = enabled, singleLine = true, label = { Text("To (min)") },
+        ChorusField(to, { to = it }, Modifier.weight(1f), enabled = enabled, singleLine = true, label = { Text("To (min)") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = !ok)
         TextButton(enabled = enabled && ok && (a != minS || b != maxS), onClick = { save(a!!, b!!) }) { Text("Save") }
     }
@@ -201,7 +201,7 @@ private fun WholeNumber(label: String, current: Long, min: Long, max: Long, enab
     var text by remember(current) { mutableStateOf(current.toString()) }
     val n = text.trim().toLongOrNull()?.takeIf { it in min..max }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(text, { text = it }, Modifier.width(140.dp), enabled = enabled, singleLine = true, label = { Text(label) },
+        ChorusField(text, { text = it }, Modifier.width(140.dp), enabled = enabled, singleLine = true, label = { Text(label) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), isError = n == null)
         TextButton(enabled = enabled && n != null && n != current, onClick = { save(n!!) }) { Text("Save") }
     }
@@ -211,7 +211,7 @@ private fun WholeNumber(label: String, current: Long, min: Long, max: Long, enab
 private fun ClockField(label: String, current: String, enabled: Boolean, modifier: Modifier, save: (String) -> Unit) {
     var text by remember(current) { mutableStateOf(current) }
     val ok = Regex("([01][0-9]|2[0-3]):[0-5][0-9]").matches(text)
-    OutlinedTextField(text, { text = it.take(5); if (Regex("([01][0-9]|2[0-3]):[0-5][0-9]").matches(text) && text != current) save(text) },
+    ChorusField(text, { text = it.take(5); if (Regex("([01][0-9]|2[0-3]):[0-5][0-9]").matches(text) && text != current) save(text) },
         modifier, enabled = enabled, singleLine = true, label = { Text("$label (HH:MM)") }, isError = !ok,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
 }
@@ -281,11 +281,9 @@ internal fun BucketEditor(model: Model, bucketId: String?, followers: List<Follo
     }
     var preset by rememberSaveable(id) { mutableStateOf("inherit") }
     var confirmDelete by remember { mutableStateOf(false) }
-    ChorusSheet(onDismissRequest = onDismiss, skipPartiallyExpanded = true) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(if (bucket == null) "New bucket" else "Edit bucket", color = p.ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-            OutlinedTextField(name, { name = it.take(60) }, Modifier.fillMaxWidth(), enabled = enabled, singleLine = true, label = { Text("Name") })
+    Drawer(onDismiss, if (bucket == null) "New bucket" else "Edit bucket", "A group of followers who see the same things") {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            ChorusField(name, { name = it.take(60) }, Modifier.fillMaxWidth(), enabled = enabled, singleLine = true, label = { Text("Name") })
             if (bucket != null && name.isNotBlank() && name.trim() != bucket.name)
                 TextButton(enabled = enabled, onClick = { create("bucket.set", id, JSONObject().put("name", name.trim())) }) { Text("Save name") }
             Text("Icon", color = p.ink2, fontSize = 13.sp)
@@ -304,7 +302,7 @@ internal fun BucketEditor(model: Model, bucketId: String?, followers: List<Follo
             // its own icon: any emoji or symbol
             val ownIcon = !BucketControls.isBuiltIn(bucket?.icon ?: icon)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(emoji, { emoji = it.take(BucketControls.CUSTOM_ICON_MAX) }, Modifier.width(150.dp), enabled = enabled,
+                ChorusField(emoji, { emoji = it.take(BucketControls.CUSTOM_ICON_MAX) }, Modifier.width(150.dp), enabled = enabled,
                     singleLine = true, label = { Text("Or an emoji") }, isError = emoji.isNotBlank() && !BucketControls.isCustomIcon(emoji.trim()))
                 if (BucketControls.isCustomIcon(emoji.trim()) && emoji.trim() != (bucket?.icon ?: icon))
                     TextButton(enabled = enabled, onClick = { setIcon(emoji.trim()) }) { Text("Use it") }

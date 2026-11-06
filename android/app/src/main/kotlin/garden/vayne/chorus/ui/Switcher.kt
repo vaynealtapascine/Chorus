@@ -1,7 +1,5 @@
 package garden.vayne.chorus.ui
 
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,7 +30,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -190,15 +187,8 @@ fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, addTo: Strin
             } catch (e: Exception) { error = e.message; busy = false }
         }
     }
-    fun pickTime() {
-        val c = Calendar.getInstance().apply { timeInMillis = at ?: System.currentTimeMillis() }
-        DatePickerDialog(ctx, { _, y, m, d ->
-            TimePickerDialog(ctx, { _, h, min ->
-                c.set(y, m, d, h, min, 0); c.set(Calendar.MILLISECOND, 0)
-                at = c.timeInMillis.coerceAtMost(System.currentTimeMillis())
-            }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), android.text.format.DateFormat.is24HourFormat(ctx)).show()
-        }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
-    }
+    var pickingTime by remember { mutableStateOf(false) }
+    fun pickTime() { pickingTime = true }
 
     ChorusSheet(onDismissRequest = onClose, skipPartiallyExpanded = true, containerColor = p.surface) {
         SheetHeader("Switch · $frontLabel", "Tap to place someone. Tap again to move them outward.", onClose, actions = {
@@ -234,8 +224,10 @@ fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, addTo: Strin
                     FilterChip(at == null, onClick = { at = null }, label = { Text("Now") })
                     FilterChip(at != null, onClick = { pickTime() }, label = { Text(if (at == null) "Earlier…" else "Change time") })
                 }
+                if (pickingTime) DateTimeDrawer(at ?: System.currentTimeMillis(), { at = it; pickingTime = false }, { pickingTime = false },
+                    "When the switch happened", latest = System.currentTimeMillis())
                 if (!add) {
-                    OutlinedTextField(note, { note = it }, label = { Text(if (handover) "Handover note for whoever's next" else "Note (optional)") }, modifier = Modifier.fillMaxWidth())
+                    ChorusField(note, { note = it }, label = { Text(if (handover) "Handover note for whoever's next" else "Note (optional)") }, modifier = Modifier.fillMaxWidth())
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("default" to "Usual alerts", "silent" to "Silent", "now" to "Alert now", "extra_delay" to "Delay").forEach { (value, label) ->
                             FilterChip(notify == value, onClick = { notify = value }, label = { Text(label) })
@@ -445,7 +437,7 @@ fun MemberStateSheet(chorus: Chorus, model: Model, s: Subject, onClose: () -> Un
                         .padding(horizontal = 12.dp, vertical = 7.dp))
             }
         }
-        if (own) OutlinedTextField(custom, { custom = it.take(80) }, label = { Text("In your own words") }, singleLine = true,
+        if (own) ChorusField(custom, { custom = it.take(80) }, label = { Text("In your own words") }, singleLine = true,
             modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth())
         error?.let { Text(it, color = p.danger, modifier = Modifier.padding(horizontal = 20.dp)) }
         Row(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

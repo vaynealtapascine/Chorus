@@ -133,7 +133,7 @@ private fun JournalAuthorsSheet(ids: List<String>, mine: List<Member>, onChoose:
                 HorizontalDivider(color = p.line, modifier = Modifier.padding(top = 8.dp))
                 Text("Add a co-author", color = p.ink2, style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 4.dp))
-                if (others.size > 8) OutlinedTextField(filter, { filter = it }, placeholder = { Text("Search members") }, singleLine = true,
+                if (others.size > 8) ChorusField(filter, { filter = it }, placeholder = { Text("Search members") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp))
                 val query = filter.trim()
                 val shown = others.filter { query.isEmpty() || it.shownName.contains(query, ignoreCase = true) || it.name.contains(query, ignoreCase = true) }

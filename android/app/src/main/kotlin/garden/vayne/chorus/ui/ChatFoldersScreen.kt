@@ -184,12 +184,12 @@ private fun ChatFolderEditor(initial: ChatFolders.Custom, isNew: Boolean, rows: 
         }
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp)) {
             item {
-                OutlinedTextField(folder.name, { folder = folder.copy(name = it.take(40)) }, label = { Text("Folder name") }, singleLine = true,
+                ChorusField(folder.name, { folder = folder.copy(name = it.take(40)) }, label = { Text("Folder name") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp))
             }
             item { FolderSection("Every chat of a kind") }
-            for ((kind, title, subtitle) in listOf(Triple("internal", "Internal chats", "Your system’s own channels and DMs"),
-                Triple("shared", "Shared spaces", "Spaces with other systems"), Triple("direct", "Direct messages", "One-to-one chats"))) item(key = "kind:$kind") {
+            for ((kind, title, subtitle) in listOf(Triple("internal", "Internal chats", "Your own channels and DMs"),
+                Triple("shared", "Shared spaces", "Spaces shared with other accounts"), Triple("direct", "Direct messages", "One-to-one chats"))) item(key = "kind:$kind") {
                 DisplaySwitch(title, subtitle, kind in folder.kinds) { on -> folder = ChatFolders.setKind(folder, kind, on) { kindOf[it] } }
             }
             item { FolderSection("Only show") }
@@ -197,7 +197,7 @@ private fun ChatFolderEditor(initial: ChatFolders.Custom, isNew: Boolean, rows: 
             item { DisplaySwitch("Chats that aren’t muted", "Leave muted chats out", folder.hideMuted) { folder = folder.copy(hideMuted = it) } }
             item { FolderSection("Chats (${rows.count { ChatFolders.holds(folder, it.channel.id, kindOf[it.channel.id].orEmpty()) }})") }
             item {
-                OutlinedTextField(query, { query = it }, placeholder = { Text("Search chats") }, singleLine = true,
+                ChorusField(query, { query = it }, placeholder = { Text("Search chats") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp))
             }
             val q = query.trim()
@@ -226,10 +226,8 @@ private fun ChatFolderEditor(initial: ChatFolders.Custom, isNew: Boolean, rows: 
             }
         }
     }
-    if (confirmDelete) AlertDialog(onDismissRequest = { confirmDelete = false }, title = { Text("Delete ${initial.name.ifBlank { "this folder" }}?") },
-        text = { Text("Its chats stay where they are; only the folder goes.") },
-        confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("Delete", color = p.danger) } },
-        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Keep") } })
+    if (confirmDelete) ConfirmDrawer("Delete ${initial.name.ifBlank { "this folder" }}?", "Its chats stay where they are; only the folder goes.",
+        "Delete folder", { confirmDelete = false; onDelete() }, { confirmDelete = false }, danger = true, cancel = "Keep", icon = R.drawable.ic_folder)
 }
 
 @Composable
@@ -262,8 +260,8 @@ internal fun folderIcon(id: String): Int = when (id) {
 /** "Every chat", or what one of our own folders takes: "3 chats · Shared spaces · unread". */
 private fun folderSummary(settings: ChatFolders.Settings, id: String, rows: List<ChatListRow>): String = when (id) {
     "all" -> "Every chat"
-    "internal" -> "Your system’s own channels and DMs"
-    "shared" -> "Spaces with other systems"
+    "internal" -> "Your own channels and DMs"
+    "shared" -> "Spaces shared with other accounts"
     "direct" -> "One-to-one chats"
     else -> settings.custom(id)?.let { f ->
         val count = rows.count { ChatFolders.holds(f, it.channel.id, ChatFolders.kindOf(it.channel, it.space)) }

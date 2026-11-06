@@ -59,17 +59,13 @@ internal fun JournalAttachments(files: List<PendingAttachment>, enabled: Boolean
     }
     val chosen = editing
     val index = files.indexOfFirst { it.uri == chosen?.uri }
-    if (chosen != null && index >= 0) ChorusSheet(onDismissRequest = { editing = null }, containerColor = p.surface) {
+    if (chosen != null && index >= 0) {
         val file = files[index]
-        Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(file.name, style = MaterialTheme.typography.titleMedium)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(file.spoiler, onCheckedChange = { onChange(index, file.copy(spoiler = it)) })
-                Text("Hide as spoiler", style = MaterialTheme.typography.bodyMedium)
-            }
-            if (file.mime.startsWith("image/")) OutlinedTextField(file.alt, { onChange(index, file.copy(alt = it)) },
-                label = { Text("Image description (alt text)") }, modifier = Modifier.fillMaxWidth())
-            TextButton(onClick = { editing = null }) { Text("Done") }
+        Drawer({ editing = null }, file.name, footer = { DrawerButton("Done", { editing = null }) }) {
+            if (file.mime.startsWith("image/")) ChorusField(file.alt, { onChange(index, file.copy(alt = it)) },
+                label = { Text("Image description (alt text)") }, placeholder = { Text("Describe the image for people who can't see it") },
+                minLines = 2, modifier = Modifier.fillMaxWidth())
+            FormCard { ToggleRow("Hide as spoiler", file.spoiler, "Hidden until someone taps it") { onChange(index, file.copy(spoiler = it)) } }
         }
     }
 }

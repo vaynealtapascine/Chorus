@@ -42,29 +42,16 @@ internal fun ChatPermissions(chorus: Chorus, model: Model, channel: ChatChannel,
         Text("Permissions", style = MaterialTheme.typography.titleMedium)
         Text("A person's setting beats their role's, then Everyone's. Deny wins at the same level. Owners, admins and DM participants always have access.",
             style = MaterialTheme.typography.bodySmall)
-        Box {
-            OutlinedButton(onClick = { targetOpen = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                Text("For: ${target.label}")
-            }
-            DropdownMenu(expanded = targetOpen, onDismissRequest = { targetOpen = false }) {
-                targets.forEach { item -> DropdownMenuItem(text = { Text(item.label) }, onClick = {
-                    selected = "${item.type}|${item.id}"; targetOpen = false
-                }) }
-            }
-        }
-        ChannelPermissions.labels.forEach { (permission, label) ->
-            var open by remember(selected, permission) { mutableStateOf(false) }
-            Box {
-                OutlinedButton(onClick = { open = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                    Text(label, Modifier.weight(1f))
-                    Text(draft[permission]?.name ?: "Inherit")
-                }
-                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                    ChannelPermissions.Choice.entries.forEach { choice -> DropdownMenuItem(
-                        text = { Text("$label: ${choice.name}") }, onClick = {
-                            draft = draft + (permission to choice); open = false
-                        }) }
-                }
+        ChoiceField("For", target.label, enabled = !busy) { targetOpen = true }
+        ChoiceDrawer(targetOpen, "Whose permissions", targets, target, { it.label },
+            { item -> selected = "${item.type}|${item.id}"; targetOpen = false }, { targetOpen = false })
+        FormCard {
+            ChannelPermissions.labels.entries.forEachIndexed { i, (permission, label) ->
+                var open by remember(selected, permission) { mutableStateOf(false) }
+                if (i > 0) FormDivider()
+                FormValueRow(label, draft[permission]?.name ?: "Inherit", enabled = !busy) { open = true }
+                ChoiceDrawer(open, label, ChannelPermissions.Choice.entries, draft[permission] ?: ChannelPermissions.Choice.Inherit, { it.name },
+                    { choice -> draft = draft + (permission to choice); open = false }, { open = false }, subtitle = "For ${target.label}")
             }
         }
         if (target.type == "account" && info?.accounts?.none { it.id == target.id } == true &&
@@ -94,7 +81,7 @@ internal fun ChatPermissions(chorus: Chorus, model: Model, channel: ChatChannel,
         }
         HorizontalDivider()
         Text("Slow mode", style = MaterialTheme.typography.titleMedium)
-        OutlinedTextField(value = slow, onValueChange = { slow = it }, label = { Text("Seconds between messages") },
+        ChorusField(value = slow, onValueChange = { slow = it }, label = { Text("Seconds between messages") },
             modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !busy, isError = seconds == null,
             supportingText = { Text(if (seconds == null) "Enter a whole number from 0 to 21600." else "0 turns slow mode off. Managers are exempt.") })
         Text("Messages sent too soon wait on this device until they can send. You can cancel a waiting message.",

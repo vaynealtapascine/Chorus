@@ -82,15 +82,10 @@ internal fun ColourPicker(initial: String, onDismiss: () -> Unit, onApply: (Stri
     }
     val swatches = listOf("#42A397", "#86BFA5", "#6D9ED2", "#A58BCC", "#D08EA4", "#C0694E", "#E0B560", "#B1ACA1")
     val recent = remember { prefs.getString("recent", "").orEmpty().split(',').mapNotNull(ColourValue::normalize).distinct().take(8) }
-    ChorusSheet(onDismissRequest = onDismiss, skipPartiallyExpanded = true, containerColor = p.surface) {
+    Drawer(onDismiss, "Choose colour") {
 
-        InspectionDialogContent {
-                Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Choose colour", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                    TextButton(modifier = Modifier.heightIn(min = 48.dp), onClick = onDismiss) { Text("Cancel") }
-                }
+        run {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Actual identity preview, with the shared core's theme-aware contrast adaptation.
                 val tones = tonesOf(current)
                 Row(Modifier.fillMaxWidth().background(tones.tint, RoundedCornerShape(16.dp)).padding(14.dp),
@@ -113,7 +108,7 @@ internal fun ColourPicker(initial: String, onDismiss: () -> Unit, onApply: (Stri
                 ColourSlider("Saturation", saturation, 0f..1f, "${(saturation * 100).roundToInt()} percent") { saturation = it; hex = ColourValue.hex(hue, it, brightness) }
                 ColourSlider("Brightness", brightness, 0f..1f, "${(brightness * 100).roundToInt()} percent") { brightness = it; hex = ColourValue.hex(hue, saturation, it) }
                 TextButton(modifier = Modifier.heightIn(min = 48.dp), onClick = { precision = !precision }) { Text(if (precision) "Hide hex value" else "Enter hex value") }
-                if (precision) OutlinedTextField(hex, { raw ->
+                if (precision) ChorusField(hex, { raw ->
                     hex = raw.take(7)
                     ColourValue.normalize(hex)?.let { choose(it) }
                 }, label = { Text("Hex colour") }, supportingText = { Text("Six digits, for example #42A397") }, singleLine = true,

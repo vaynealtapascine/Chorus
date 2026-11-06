@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -220,15 +218,9 @@ internal fun InsightsScreen(chorus: Chorus, model: Model, onClose: () -> Unit) {
 private fun InsightChoice(label: String, value: String, options: List<Pair<String,String>>, onValue: (String) -> Unit) {
     val p=LocalChorusPalette.current
     var expanded by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxWidth()) {
-        TextButton(onClick={expanded=true},modifier=Modifier.fillMaxWidth()) {
-            Text("$label: ${options.find { it.first==value }?.second ?: value}",color=p.ink,maxLines=2)
-        }
-        DropdownMenu(expanded=expanded,onDismissRequest={expanded=false}) {
-            options.forEach { (id,name) -> DropdownMenuItem(text={Text(name)},modifier=Modifier.semantics { selected=id==value },
-                onClick={onValue(id);expanded=false}) }
-        }
-    }
+    ChoiceField(label, options.find { it.first == value }?.second ?: value) { expanded = true }
+    ChoiceDrawer(expanded, label, options, options.find { it.first == value }, { it.second },
+        { onValue(it.first); expanded = false }, { expanded = false })
 }
 
 private fun charts(data: InsightsSnapshot, names: Map<String, String>, days: Int, systemZone: String?): List<InsightChart> {

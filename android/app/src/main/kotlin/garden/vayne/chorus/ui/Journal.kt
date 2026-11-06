@@ -34,7 +34,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import garden.vayne.chorus.designsystem.R
 import garden.vayne.chorus.data.JournalPresentation
 import androidx.compose.ui.unit.sp
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -232,17 +231,15 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
             session.resolveLaunch(true); profileId = null; threadPostId = null; section = "timeline"
         }
     }
-    if (pendingLaunch != null && !busy && draftState.draft.occupied) AlertDialog(
-        onDismissRequest = { session.resolveLaunch(false) }, title = { Text("You have a Journal draft") },
-        text = { Text(when (pendingLaunch.kind) {
+    if (pendingLaunch != null && !busy && draftState.draft.occupied) ConfirmDrawer("You have a Journal draft",
+        when (pendingLaunch.kind) {
             "share" -> "Add the shared text and files to this draft? Your author choices and other details will stay."
             "entry" -> "Continue this draft as a journal entry? Your text, author choices and other details will stay."
             "reply" -> "Use this draft for the new reply? Your text and author choices will stay. Check the reply and audience before posting."
             "quote" -> "Use this draft to quote the selected post? Your text and author choices will stay."
             else -> "Continue your saved draft?"
-        }) }, confirmButton = { TextButton(onClick = {
-            session.resolveLaunch(true); profileId = null; threadPostId = null; section = "timeline"
-        }) { Text("Use draft") } }, dismissButton = { TextButton(onClick = { session.resolveLaunch(false); editing = true }) { Text("Keep draft") } })
+        }, "Use draft", { session.resolveLaunch(true); profileId = null; threadPostId = null; section = "timeline" },
+        { session.resolveLaunch(false); editing = true }, cancel = "Keep draft as it is", icon = R.drawable.ic_edit)
 
     LaunchedEffect(externalOpenPost) {
         if (externalOpenPost != null) {
@@ -408,9 +405,9 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                     }
                 }
                 if (editorOptions && !busy) {
-                    item { OutlinedTextField(cw, { cw = it }, label = { Text("Content warning (optional)") }, modifier = Modifier.fillMaxWidth()) }
-                    item { OutlinedTextField(mood, { mood = it }, label = { Text("Mood (optional)") }, modifier = Modifier.fillMaxWidth()) }
-                    item { OutlinedTextField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, modifier = Modifier.fillMaxWidth()) }
+                    item { ChorusField(cw, { cw = it }, label = { Text("Content warning (optional)") }, modifier = Modifier.fillMaxWidth()) }
+                    item { ChorusField(mood, { mood = it }, label = { Text("Mood (optional)") }, modifier = Modifier.fillMaxWidth()) }
+                    item { ChorusField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, modifier = Modifier.fillMaxWidth()) }
                     item { Column { JournalPollDraftFields(pollOn, { pollOn = it }, pollOptions, { pollOptions = it }, pollMultiple) { pollMultiple = it } } }
                 }
                 if (draftState.draft.recovery != null) item {
@@ -516,17 +513,15 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                     style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             ChatIconButton(R.drawable.ic_search, "Search Journal") { onSearch("Posts") }
-            Box {
-                ChatIconButton(R.drawable.ic_more, "Journal options") { feedMenu = true }
-                DropdownMenu(feedMenu, { feedMenu = false }) {
-                    DropdownMenuItem(text = { Text("Search saved posts") }, onClick = {feedMenu=false;onSearch("Saved")})
-                    DropdownMenuItem(text = { Text("Saved") }, onClick = { feedMenu = false; section = "saved" })
-                    DropdownMenuItem(text = { Text("Lists") }, onClick = { feedMenu = false; section = "lists" })
-                    DropdownMenuItem(text = { Text("Feeds") }, onClick = { feedMenu = false; section = "feeds" })
-                    if (model.isPerson) model.members.firstOrNull { it.isSelf }?.let { self ->
-                        DropdownMenuItem(text = { Text("Profile") }, onClick = { feedMenu = false; profileId = self.id })
-                    }
+            ChatIconButton(R.drawable.ic_more, "Journal options") { feedMenu = true }
+            MenuDrawer(feedMenu, { feedMenu = false }, "Journal") {
+                if (model.isPerson) model.members.firstOrNull { it.isSelf }?.let { self ->
+                    MenuRow("My profile", leading = { ChatAvatar(self, 24.dp) }) { feedMenu = false; profileId = self.id }
                 }
+                MenuRow("Saved", R.drawable.ic_bookmark) { feedMenu = false; section = "saved" }
+                MenuRow("Search saved posts", R.drawable.ic_search) { feedMenu = false; onSearch("Saved") }
+                MenuRow("Lists", R.drawable.ic_friends, "People as audiences and feeds") { feedMenu = false; section = "lists" }
+                MenuRow("Feeds", R.drawable.ic_sliders) { feedMenu = false; section = "feeds" }
             }
         }
         ScrollableTabRow(selectedTabIndex = listOf("system", "friends", "entries").indexOf(journalTab).coerceAtLeast(0),
@@ -656,9 +651,9 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
             }, contentAlignment = Alignment.TopCenter) {
                 post.authors.firstNotNullOfOrNull(model::member)?.let { ChatAvatar(it, 40.dp) }
             }
-            DropdownMenu(authorsOpen, { authorsOpen = false }) {
-                for (id in post.authors) model.member(id)?.let { member -> DropdownMenuItem(text = { Text(member.shownName) },
-                    onClick = { authorsOpen = false; onProfile?.invoke(id) }) }
+            MenuDrawer(authorsOpen, { authorsOpen = false }, "Written together", "Open a profile") {
+                for (id in post.authors) model.member(id)?.let { member -> MenuRow(member.shownName, subtitle = member.pronouns,
+                    leading = { ChatAvatar(member, 36.dp) }) { authorsOpen = false; onProfile?.invoke(id) } }
             }
         }
     }, overflow = {
@@ -921,9 +916,9 @@ private fun JournalReplyBar(author: Member?, authors: List<Member>, onPick: ((St
                 ChatAvatar(author, 32.dp, label = "Replying as ${author.shownName}")
                 if (canPick) Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_chevron_down), null, Modifier.size(16.dp), tint = p.ink3)
             }
-            DropdownMenu(picking, { picking = false }) {
-                for (member in authors) DropdownMenuItem(text = { Text(member.shownName) }, leadingIcon = { ChatAvatar(member, 32.dp) },
-                    onClick = { picking = false; onPick?.invoke(member.id) })
+            MenuDrawer(picking, { picking = false }, "Reply as") {
+                for (member in authors) MenuRow(member.shownName, subtitle = member.pronouns, selected = member.id == author.id,
+                    leading = { ChatAvatar(member, 36.dp) }) { picking = false; onPick?.invoke(member.id) }
             }
         }
         Box(Modifier.weight(1f).heightIn(min = 44.dp).clip(CircleShape).background(p.surface2)
