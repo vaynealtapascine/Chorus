@@ -134,7 +134,7 @@ fun People(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPo
     }
 
     friend?.let { (id, name) ->
-        FriendProfiles(chorus, id, name, onClose = { friend = null; friendMember = null }, initialMember = friendMember)
+        FriendProfiles(chorus, model, id, name, onClose = { friend = null; friendMember = null }, initialMember = friendMember)
         return
     }
 

@@ -89,4 +89,10 @@ class PeopleTest {
         assertEquals(null, post.looks.avatarBlob)
         assertEquals("kai", post.looks.profile)
     }
+
+    @Test fun aMemberProfileListsOnlyTopLevelPosts() {
+        val kept = PeopleApi.topLevel(JSONObject("""{"items":[{"id":"top","reply_to":null},{"id":"reply","reply_to":"top"},{"id":"again","repost_of":"top"},{"id":"plain"}]}"""))
+        val ids = (0 until kept.getJSONArray("items").length()).map { kept.getJSONArray("items").getJSONObject(it).getString("id") }
+        assertEquals(listOf("top", "plain"), ids)
+    }
 }

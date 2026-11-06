@@ -41,7 +41,7 @@ import org.json.JSONObject
  *  looked up among the accounts we follow or who follow us. */
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: String, onClose: () -> Unit,
+internal fun FriendProfiles(chorus: Chorus, model: garden.vayne.chorus.data.Model, accountId: String, accountName: String, onClose: () -> Unit,
     initialMember: String? = null, backEnabled: Boolean = true) {
     val p = LocalChorusPalette.current
     var memberId by rememberSaveable(accountId, initialMember) { mutableStateOf(initialMember) }
@@ -91,13 +91,31 @@ internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: Stri
     fun shown(m: JSONObject) = m.text("display_name") ?: m.text("name") ?: "Someone"
     fun glyph(m: JSONObject) = m.text("sigil") ?: shown(m).take(1).uppercase()
 
+
+    val id = memberId
+    if (id != null) {
+        FriendMemberProfile(chorus, model, accountId, id, shownAccount, profile, missing, error,
+            backLabel = if (id != initialMember) shownAccount else "Back", onBack = ::back,
+            alerts = alerts, alertsBusy = alertsBusy, onAlerts = {
+                val dev = chorus.device
+                if (dev != null) {
+                    alertsBusy = true
+                    scope.launch {
+                        try { alerts = PeopleApi.setPostAlerts(dev, accountId, id, alerts == "none"); error = null }
+                        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                        catch (e: Exception) { error = e.message ?: "Could not change post alerts." }
+                        finally { alertsBusy = false }
+                    }
+                }
+            })
+        return
+    }
     Column(Modifier.fillMaxSize().background(p.bg).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         TextButton(onClick = ::back, contentPadding = PaddingValues(0.dp)) {
             Text("‹ ${if (memberId != null && memberId != initialMember) shownAccount else if (initialMember != null) "Back" else "Friends"}")
         }
         error?.let { Text(it, color = p.danger) }
-        val id = memberId
-        if (id == null) {
+        run {
             Text(shownAccount, color = p.ink, style = MaterialTheme.typography.headlineSmall)
             val shared = list
             when {
@@ -127,59 +145,80 @@ internal fun FriendProfiles(chorus: Chorus, accountId: String, accountName: Stri
                     }
                 }
             }
-        } else {
-            val m = profile
+        }
+    }
+}
+
+/** One of their members, on the profile every member has (owner, 2026-11-06): the shared hero with
+ * Post alerts beside the avatar, name and pronouns, bio, then Posts (theirs we may read, top level)
+ * and About (fields and relationships). */
+@Composable
+private fun FriendMemberProfile(chorus: Chorus, model: garden.vayne.chorus.data.Model, accountId: String, memberId: String,
+    shownAccount: String, m: JSONObject?, missing: Boolean, error: String?, backLabel: String, onBack: () -> Unit,
+    alerts: String, alertsBusy: Boolean, onAlerts: () -> Unit) {
+    val p = LocalChorusPalette.current
+    fun JSONObject.text(key: String) = optString(key).takeIf { !isNull(key) && it.isNotBlank() }
+    fun shown(x: JSONObject) = x.text("display_name") ?: x.text("name") ?: "Someone"
+    var tab by rememberSaveable(memberId) { mutableStateOf("Posts") }
+    val posts by produceState<List<garden.vayne.chorus.data.SharedPost>?>(null, accountId, memberId, chorus.device?.session) {
+        val dev = chorus.device ?: return@produceState
+        value = try { PeopleApi.memberPosts(dev, accountId, memberId) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { emptyList() }
+    }
+    Column(Modifier.fillMaxSize().background(p.bg).verticalScroll(rememberScrollState())) {
+        if (m == null) {
+            TextButton(onClick = onBack, modifier = Modifier.padding(8.dp)) { Text("‹ $backLabel") }
+            error?.let { Text(it, color = p.danger, modifier = Modifier.padding(horizontal = 16.dp)) }
+            Text(if (missing) "This profile isn't shared with you." else "Loading…", color = p.ink3, modifier = Modifier.padding(16.dp))
+            return@Column
+        }
+        val color = m.text("color") ?: "#A09184"
+        ProfileHeroFrame(chorus, m.text("banner_blob"), color, m.text("sigil") ?: shown(m).take(1).uppercase(), m.text("avatar_blob"),
+            backLabel, onBack) {
+            // ask to hear when they post; their system says yes or no (D-106)
+            if (m.has("post_alerts")) ProfilePill(when (alerts) { "active" -> "Post alerts on"; "requested" -> "Requested · Cancel"; else -> "Get post alerts" },
+                garden.vayne.chorus.designsystem.R.drawable.ic_bell, filled = alerts == "active", onClick = { if (!alertsBusy) onAlerts() })
+        }
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(shown(m), color = tonesOf(color).name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text(listOfNotNull(m.text("pronouns"), shownAccount).joinToString(" · "), color = p.ink3)
+            if (alerts == "requested") Text("$shownAccount will see your request.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+            error?.let { Text(it, color = p.danger) }
+            m.text("description")?.let { Text(it, color = p.ink) }
+        }
+        TabRow(if (tab == "Posts") 0 else 1, containerColor = p.bg, contentColor = p.accent) {
+            for (name in listOf("Posts", "About")) Tab(selected = tab == name, onClick = { tab = name },
+                text = { Text(name, color = if (tab == name) p.ink else p.ink3) })
+        }
+        if (tab == "Posts") {
+            val shownPosts = posts
             when {
-                missing -> Text("This profile isn't shared with you.", color = p.ink3)
-                m == null -> Text("Loading…", color = p.ink3)
-                else -> {
-                    m.text("banner_blob")?.let { FriendBanner(chorus, it) }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Avatar(glyph(m), m.text("color") ?: "#A09184", 72.dp, avatarBlob = m.text("avatar_blob"))
-                        Spacer(Modifier.width(16.dp))
-                        Column {
-                            Text(shown(m), color = tonesOf(m.text("color") ?: "#A09184").name, style = MaterialTheme.typography.headlineSmall)
-                            Text(listOfNotNull(m.text("pronouns"), shownAccount).joinToString(" · "), color = p.ink3)
-                        }
-                    }
-                    // ask to hear when they post; their system says yes or no (D-106)
-                    if (m.has("post_alerts")) OutlinedButton(enabled = !alertsBusy, onClick = {
-                        val dev = chorus.device ?: return@OutlinedButton
-                        alertsBusy = true
-                        scope.launch {
-                            try { alerts = PeopleApi.setPostAlerts(dev, accountId, id, alerts == "none"); error = null }
-                            catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                            catch (e: Exception) { error = e.message ?: "Could not change post alerts." }
-                            finally { alertsBusy = false }
-                        }
-                    }) {
-                        Icon(painterResource(garden.vayne.chorus.designsystem.R.drawable.ic_bell),
-                            null, Modifier.size(18.dp), tint = if (alerts == "active") p.accent else p.ink2)
-                        Spacer(Modifier.width(8.dp))
-                        Text(when (alerts) { "active" -> "Post alerts on"; "requested" -> "Requested · Cancel"; else -> "Get post alerts" }, color = p.ink)
-                    }
-                    if (alerts == "requested") Text("$shownAccount will see your request.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
-                    m.text("description")?.let { Text(it, color = p.ink) }
-                    val fields = m.optJSONArray("fields") ?: JSONArray()
-                    val birthday = m.text("birthday")
-                    if (birthday != null || fields.length() > 0) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.surface).padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        birthday?.let { FriendField("Birthday") { Text(if (it.startsWith("--")) it.drop(2) else it, color = p.ink) } }
-                        for (i in 0 until fields.length()) {
-                            val f = fields.getJSONObject(i)
-                            FriendField(f.optString("name")) { FriendValue(f.optString("type"), f.opt("value")) }
-                        }
-                    }
-                    val links = m.optJSONArray("relationships") ?: JSONArray()
-                    if (links.length() > 0) Text("Relationships", color = p.ink, style = MaterialTheme.typography.titleMedium)
-                    for (i in 0 until links.length()) {
-                        val link = links.getJSONObject(i)
-                        Text("${link.optString("type")} · ${shown(link.getJSONObject("target"))}", color = p.ink)
-                        link.text("note")?.let { Text(it, color = p.ink2) }
-                    }
-                    Text("You see what $shownAccount chose to share with you.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+                shownPosts == null -> Text("Loading…", color = p.ink3, modifier = Modifier.padding(16.dp))
+                shownPosts.isEmpty() -> Text("No posts shared with you yet.", color = p.ink3, modifier = Modifier.padding(16.dp))
+                else -> for (post in shownPosts) {
+                    SharedPostPreview(post, shownAccount, chorus, model)
+                    HorizontalDivider(color = p.line, thickness = .5.dp)
                 }
             }
+        } else Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            val fields = m.optJSONArray("fields") ?: JSONArray()
+            val birthday = m.text("birthday")
+            if (birthday != null || fields.length() > 0) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.surface).padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                birthday?.let { FriendField("Birthday") { Text(if (it.startsWith("--")) it.drop(2) else it, color = p.ink) } }
+                for (i in 0 until fields.length()) {
+                    val f = fields.getJSONObject(i)
+                    FriendField(f.optString("name")) { FriendValue(f.optString("type"), f.opt("value")) }
+                }
+            }
+            val links = m.optJSONArray("relationships") ?: JSONArray()
+            if (links.length() > 0) Text("Relationships", color = p.ink, style = MaterialTheme.typography.titleMedium)
+            for (i in 0 until links.length()) {
+                val link = links.getJSONObject(i)
+                Text("${link.optString("type")} · ${shown(link.getJSONObject("target"))}", color = p.ink)
+                link.text("note")?.let { Text(it, color = p.ink2) }
+            }
+            Text("You see what $shownAccount chose to share with you.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -213,12 +252,3 @@ private fun FriendValue(type: String, value: Any?) {
     }
 }
 
-@Composable
-private fun FriendBanner(chorus: Chorus, hash: String) {
-    val ctx = LocalContext.current
-    val dev = chorus.device
-    val image by produceState<android.graphics.Bitmap?>(null, hash, dev?.session) {
-        value = withContext(Dispatchers.IO) { runCatching { Blobs.image(ctx, hash, dev, kind = "profile", maxPx = 1500, maxBytes = 10L * 1024 * 1024) }.getOrNull() }
-    }
-    image?.let { Image(it.asImageBitmap(), "Profile banner", Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop) }
-}

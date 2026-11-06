@@ -90,7 +90,9 @@ fun Journal(chorus: Chorus, model: Model, externalReplyPost: String? = null,
     onExternalOpenConsumed: () -> Unit = {}, sharedDraft: SharedDraft? = null,
     onShareConsumed: () -> Unit = {}, externalNewEntry: Long? = null,
     onExternalNewEntryConsumed: () -> Unit = {}, active: Boolean = true,
-    onFocusedRoute: (Boolean) -> Unit = {}, externalOpenProfile: String? = null,
+    onFocusedRoute: (Boolean) -> Unit = {},
+    /** A profile to open: our member's id, or "<account> <member>" for another account's (from Chat). */
+    externalOpenProfile: String? = null,
     onExternalProfileConsumed: () -> Unit = {}, onSearch: (String) -> Unit = {}) {
     val owner = chorus.editorOwner
     val account = chorus.device?.accountId
@@ -197,7 +199,9 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
 
     LaunchedEffect(externalOpenProfile) {
         if (externalOpenProfile != null) {
-            editing = false; threadPostId = null; profileId = externalOpenProfile
+            editing = false; threadPostId = null
+            if (' ' in externalOpenProfile) { profileId = null; friendProfile = externalOpenProfile }
+            else { friendProfile = null; profileId = externalOpenProfile }
             onExternalProfileConsumed()
         }
     }
@@ -271,7 +275,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         else if (threadPostId != null) threadDepth else if (section != "timeline") 1 else 0) { shown ->
     if (shown.startsWith("friend:")) {
         val (account, member) = shown.substringAfter(":").split(' ').let { it[0] to it.getOrElse(1) { "" } }
-        FriendProfiles(chorus, account, "", onClose = { if (shown == route) friendProfile = null },
+        FriendProfiles(chorus, model, account, "", onClose = { if (shown == route) friendProfile = null },
             initialMember = member.ifEmpty { null }, backEnabled = active && shown == route)
         return@ChorusScene
     }

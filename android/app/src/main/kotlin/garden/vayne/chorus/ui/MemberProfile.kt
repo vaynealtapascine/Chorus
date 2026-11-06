@@ -207,52 +207,64 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
     if (subsystemOpen) SubsystemSheet(chorus, model, member) { subsystemOpen = false }
 }
 
-/** Banner (or a soft wash in the member's colour) with back and `⋯` floating on it, the avatar
- * overlapping its lower edge on a ring of the page colour, and the two profile actions. */
+/** Our member's hero: the shared [ProfileHeroFrame] with Post / Edit profile and the `⋯` menu. */
 @Composable
 private fun ProfileHero(member: Member, chorus: Chorus, closeLabel: String, onClose: () -> Unit,
     writeLabel: String?, onWrite: () -> Unit, onEdit: () -> Unit, subsystemLabel: String?, onSubsystem: () -> Unit) {
     val p = LocalChorusPalette.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
-    var menu by remember { mutableStateOf(false) }
+    ProfileHeroFrame(chorus, member.bannerBlob, member.color, member.glyph, member.avatarBlob, closeLabel, onClose,
+        menu = { close ->
+            DropdownMenuItem(text = { Text("Edit profile") }, onClick = { close(); onEdit() },
+                leadingIcon = { Icon(painterResource(R.drawable.ic_edit), null, Modifier.size(20.dp), tint = p.ink2) })
+            if (subsystemLabel != null) DropdownMenuItem(text = { Text(subsystemLabel) }, onClick = { close(); onSubsystem() },
+                leadingIcon = { Icon(painterResource(R.drawable.ic_layers), null, Modifier.size(20.dp), tint = p.ink2) })
+            DropdownMenuItem(text = { Text("Copy name") }, onClick = {
+                close(); clipboard.setText(androidx.compose.ui.text.AnnotatedString(member.shownName))
+            }, leadingIcon = { Icon(painterResource(R.drawable.ic_copy), null, Modifier.size(20.dp), tint = p.ink2) })
+        }) {
+        ProfilePill(writeLabel ?: "Post", if (writeLabel == null) R.drawable.ic_edit else R.drawable.ic_journal,
+            filled = true, description = if (writeLabel == null) "Post as ${member.shownName}" else "Open ${member.shownName}’s journal",
+            onClick = onWrite)
+        ProfilePill("Edit profile", null, filled = false, onClick = onEdit)
+    }
+}
+
+/** Every profile's hero, ours or a friend's (Figma F6.1; owner, 2026-11-06): the banner (or a soft
+ * wash in the member's colour) with back and an optional `⋯` floating on it, the avatar overlapping
+ * its lower edge on a ring of the page colour, and the profile's actions beside it. */
+@Composable
+internal fun ProfileHeroFrame(chorus: Chorus, bannerBlob: String?, color: String, glyph: String, avatarBlob: String?,
+    closeLabel: String, onClose: () -> Unit, menu: (@Composable ColumnScope.(close: () -> Unit) -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit) {
+    val p = LocalChorusPalette.current
+    var open by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().height(184.dp)) {
-        ProfileBanner(member, chorus, Modifier.fillMaxWidth().height(128.dp))
+        ProfileBanner(bannerBlob, color, chorus, Modifier.fillMaxWidth().height(128.dp))
         HeroButton(R.drawable.ic_back, "Back to $closeLabel", onClose, Modifier.align(Alignment.TopStart).padding(12.dp))
-        Box(Modifier.align(Alignment.TopEnd).padding(12.dp)) {
-            HeroButton(R.drawable.ic_more, "More profile options", { menu = true })
-            DropdownMenu(menu, { menu = false }) {
-                DropdownMenuItem(text = { Text("Edit profile") }, onClick = { menu = false; onEdit() },
-                    leadingIcon = { Icon(painterResource(R.drawable.ic_edit), null, Modifier.size(20.dp), tint = p.ink2) })
-                if (subsystemLabel != null) DropdownMenuItem(text = { Text(subsystemLabel) }, onClick = { menu = false; onSubsystem() },
-                    leadingIcon = { Icon(painterResource(R.drawable.ic_layers), null, Modifier.size(20.dp), tint = p.ink2) })
-                DropdownMenuItem(text = { Text("Copy name") }, onClick = {
-                    menu = false; clipboard.setText(androidx.compose.ui.text.AnnotatedString(member.shownName))
-                }, leadingIcon = { Icon(painterResource(R.drawable.ic_copy), null, Modifier.size(20.dp), tint = p.ink2) })
-            }
+        if (menu != null) Box(Modifier.align(Alignment.TopEnd).padding(12.dp)) {
+            HeroButton(R.drawable.ic_more, "More profile options", { open = true })
+            DropdownMenu(open, { open = false }) { menu { open = false } }
         }
         Box(Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 10.dp).size(92.dp)
             .background(p.bg, CircleShape), contentAlignment = Alignment.Center) {
-            Avatar(member.glyph, member.color, 84.dp, avatarBlob = member.avatarBlob, ring = false)
+            Avatar(glyph, color, 84.dp, avatarBlob = avatarBlob, ring = false)
         }
-        Row(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ProfilePill(writeLabel ?: "Post", if (writeLabel == null) R.drawable.ic_edit else R.drawable.ic_journal,
-                filled = true, description = if (writeLabel == null) "Post as ${member.shownName}" else "Open ${member.shownName}’s journal",
-                onClick = onWrite)
-            ProfilePill("Edit profile", null, filled = false, onClick = onEdit)
-        }
+        Row(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+            content = actions)
     }
 }
 
 @Composable
-private fun ProfileBanner(member: Member, chorus: Chorus, modifier: Modifier) {
+private fun ProfileBanner(bannerBlob: String?, color: String, chorus: Chorus, modifier: Modifier) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val dev = chorus.device
-    val tone = tonesOf(member.color).ring
-    val image by produceState<android.graphics.Bitmap?>(null, member.bannerBlob, dev?.session) {
+    val tone = tonesOf(color).ring
+    val image by produceState<android.graphics.Bitmap?>(null, bannerBlob, dev?.session) {
         value = null
-        value = member.bannerBlob?.let { hash -> withContext(Dispatchers.IO) {
-            Blobs.image(ctx, hash, dev, kind = "profile", maxPx = 1500, maxBytes = 10L * 1024 * 1024)
+        value = bannerBlob?.let { hash -> withContext(Dispatchers.IO) {
+            runCatching { Blobs.image(ctx, hash, dev, kind = "profile", maxPx = 1500, maxBytes = 10L * 1024 * 1024) }.getOrNull()
         } }
     }
     Box(modifier.background(p.surface2)) {
@@ -279,7 +291,7 @@ private fun HeroButton(icon: Int, description: String, onClick: () -> Unit, modi
 }
 
 @Composable
-private fun ProfilePill(label: String, icon: Int?, filled: Boolean, description: String = label, onClick: () -> Unit) {
+internal fun ProfilePill(label: String, icon: Int?, filled: Boolean, description: String = label, onClick: () -> Unit) {
     val p = LocalChorusPalette.current
     val ink = if (filled) p.onAccent else p.ink
     Row(Modifier.height(34.dp).clip(CircleShape).background(if (filled) p.accent else p.surface2)

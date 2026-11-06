@@ -200,6 +200,22 @@ object PeopleApi {
         Api.call(if (approve) "PUT" else "DELETE", dev.base, "/alerts/$memberId/$accountId", null, dev.session)
     }
 
+    /** One member's posts and entries this reader may read, for their profile (owner, 2026-11-06):
+     * the same audience rules, top level only (no replies or reposts). */
+    suspend fun memberPosts(dev: DeviceRecord, accountId: String, memberId: String): List<SharedPost> =
+        sharedPosts(topLevel(Api.call("GET", dev.base, "/posts?account=$accountId&author=$memberId&limit=50", null, dev.session)))
+
+    /** Only the rows that answer nothing and repeat nothing. */
+    fun topLevel(j: JSONObject): JSONObject {
+        val items = j.optJSONArray("items") ?: org.json.JSONArray()
+        val kept = org.json.JSONArray()
+        for (i in 0 until items.length()) {
+            val post = items.getJSONObject(i)
+            if ((!post.has("reply_to") || post.isNull("reply_to")) && (!post.has("repost_of") || post.isNull("repost_of"))) kept.put(post)
+        }
+        return JSONObject().put("items", kept)
+    }
+
     /** The server applies current post audience rules before returning these rows. */
     suspend fun posts(dev: DeviceRecord, accountId: String): List<SharedPost> =
         sharedPosts(Api.call("GET", dev.base, "/posts?account=$accountId&limit=5", null, dev.session))

@@ -178,7 +178,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     sharedChannel: String? = null, onShareConsumed: () -> Unit = {}, onSearch: () -> Unit = {},
     active: Boolean = true, onFocusedRoute: (Boolean) -> Unit = {}, onOpenConsumed: () -> Unit = {},
     /** A link to a message (D-109): open its chat at it. */
-    requestedMessage: String? = null) {
+    requestedMessage: String? = null,
+    /** A face in a message opens its profile in the Journal (owner, 2026-11-06): our member's id, or
+     * "<account> <member>" for another account's, whose server read decides what shows (D-101). */
+    onOpenProfile: (String) -> Unit = {}) {
     val p = LocalChorusPalette.current
     val heldMessages by chorus.heldMessages.collectAsState()
     val syncStatus by chorus.status.collectAsState()
@@ -1089,6 +1092,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         heldMessages[message.id] == null)
                         ({ editingMessageId = message.id }) else null,
                     onJump = { target -> showMessage(target, message.id) }, flash = message.id == flashId,
+                    onProfile = { account, id -> onOpenProfile(if (account == null || account == chorus.device?.accountId) id else "$account $id") },
                     linked = { id -> garden.vayne.chorus.data.ChatOrganize.actionMessage(model, id, viewingAs, chorus.device?.accountId.orEmpty()) })
                 for (marker in timelinePlan.after) TimelineMarker(marker)
                 }
@@ -1793,7 +1797,9 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
     /** What its links point at (D-109): a message this reader may see here now, else null. */
     linked: ((String) -> ChatMessage?)? = null,
     /** Just jumped to: a moment's ring. */
-    flash: Boolean = false) {
+    flash: Boolean = false,
+    /** Opens an author's profile: (their account when not ours, member id). */
+    onProfile: ((String?, String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var revealed by rememberSaveable(message.id) { mutableStateOf(false) }
@@ -1841,7 +1847,9 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
         if (!own) {
             Box(Modifier.width(28.dp), contentAlignment = Alignment.BottomCenter) {
                 if (showAvatar) {
-                    if (member != null) ChatAvatar(member, 28.dp)
+                    if (member != null) Box(Modifier.clip(CircleShape).then(if (onProfile != null) Modifier.clickable(onClickLabel = "Open ${member.shownName}’s profile") {
+                        onProfile(if (model.member(member.id) != null) null else foreignAuthors[member.id]?.accountId ?: message.accountId, member.id)
+                    } else Modifier)) { ChatAvatar(member, 28.dp) }
                     else Box(Modifier.size(28.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
                         Text(authors.take(1), color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
                     }
