@@ -264,7 +264,8 @@ The shared spacing rhythm is a four-point scale from `spacing` in frontmatter. C
   hidden as required by D-003.
 - **Chat:** 260 px channel list and flexible conversation at wide widths. From 1280 px an open
   information panel occupies another 260 px column; below that it overlays from the right. Compact
-  web channels form a horizontal strip. Android opens a foldered chat list, then pushes the chosen
+  web (<1024 px) works like Android (D-120): `#/chat` is the chat list with folder tabs, and a chat
+  opens over it with a back arrow. Android opens a foldered chat list, then pushes the chosen
   conversation; from 840 dp a 240 dp list, flexible conversation and 220 dp read-only context
   pane sit beside one another. Android actions use a native dimmed dialog; send-as and attachment
   options use native bottom sheets. The conversation scrolls within its area, keeping the composer
@@ -392,7 +393,7 @@ This inventory is retained from the v1 design spec; `PROGRESS.md` owns its imple
 | **Home** | Front card (avatars, levels, since/duration), quick switch row (pinned + recent), review cards, "today" timeline snippet, unread summary | Switch |
 | **Switcher** | Search, pinned, recent, groups tree, selected tray (drag order, level toggle, star primary), note, time, notify choice | Switch |
 | **Front history** | Lane timeline (zoom day/week/month), list view, edit/insert switch | — |
-| **Chat** | Spaces rail, channel list, message list, composer | Send |
+| **Chat** | Chat list (spaces as forum entries, D-120), message list, composer | Send |
 | **Thread / Pins / Search** | Side panel (web) / full screen (Android) | — |
 | **Members** | Grid/list toggle, search, filter chips (group, state, archived), sort | Add member |
 | **Member editor** | Basic fields; sections for Proxy & sigils, Custom fields, Privacy, Notifications | Save draft (Android) / auto-save (web) |

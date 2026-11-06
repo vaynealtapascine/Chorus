@@ -187,6 +187,12 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
 
 ## Android
 
+- Building Android in a worktree while another checkout builds (2026-11-06, claude-opus-5.5): give the worktree its own
+  `CHORUS_GRADLE_BUILD_DIR` (two checkouts sharing `F:\DunBuild\chorus-gradle` overwrite each other's outputs), copy
+  `android/local.properties` and the gitignored `android/core-bridge/src/main/kotlin/uniffi/` bindings from the main
+  checkout, and when `chorus-ffi` is unchanged point `CARGO_TARGET_DIR` at the existing host build instead of
+  rebuilding it for the new path (a second copy of the target costs gigabytes).
+
 - The owner's phone is a Samsung Galaxy A56 (SM-A566B) with their **real account**: inspect only.
   Mutations go to the emulator (headless with 3 GB; Gboard hangs under memory pressure, so cap
   `CARGO_BUILD_JOBS=2` while it runs) against a demo server (OPS.md §8, "Demo data").

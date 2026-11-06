@@ -149,7 +149,9 @@ custom order.
 
 ### 5.1 Structure
 
-- Spaces rail (internal space first, then shared spaces, then DMs) → categories → channels.
+- One chat list (D-120): every chat by latest activity, pinned first, in folders (D-113). A shared space with
+  several channels is one entry that opens into its channels (a forum, as Telegram's); our own space's
+  channels and DMs are rows of their own. Channel names are kept as written.
 - Channel settings: name, topic, icon, colour, autoproxy mode, sticky speaker, notification level,
   slow-mode (Advanced), archive, **permissions** (below).
 - **Channel permissions** (Discord-style, D-047): each space has roles (`owner`, `admin`,

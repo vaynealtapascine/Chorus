@@ -97,6 +97,7 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 
 ### UI — Owner's Figma redesign
 
+- [x] UI14 Chat list, menus and profiles (owner, 2026-11-06, D-120): one Telegram-style list on every width with shared spaces as forum entries (web + Android); web channel names as written; web right-click / hold menus on messages and rows; faces in chat open the profile; one Twitter-like profile for our members and friends' (web + Android). Branch `t3/chat-list-menus-profiles`. Not deployed; not yet seen on a phone (web checked at 1280 and 400 px on the demo).
 - [~] UI2 Independent named fronts and layers (D-080, `docs/FRONTS.md`). Code complete and live. Left: a native/live visual check; Home shows no review cards for configured accounts (they are on History); follower revealed-front reads stay Body-only by design (D-084).
 - [~] UI3 Polls (D-081/D-086, `docs/POLLS.md`). Complete; web live suite passes. Left: an Android device check.
 - [~] UI6 Android feature pass: slices 1/2/7/8/9/10 done; 3 (members containing members), 4 (real handles), 5 (per-member restrictions), 6 (channel sides), 11 (per-chat wallpaper) open. `docs/handoff/ui6-implementation.md`.
@@ -147,3 +148,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`. Entries befo
 - 2026-11-05 claude-opus-5.5 — Compacted PROGRESS.md, docs/NOTES.md and docs/handoff/ (finished batch handoffs deleted; recoverable from a9c3c2e). Preserved the untracked privacy audit on `wip/privacy-audit` and made it the next task.
 - 2026-11-06 claude-opus-5.5 — SEC1: ownership at ingest (D-119; privacy audit a01–a18 pass), blob possession (`blob_holder`), and the merited Gemini review findings (rate limit, Home rebinding, webhook DNS guard, auth writes, restore window, helper consolidation, three Android a11y fixes); verdicts in `docs/handoff/gemini-review-triage.md`, Q23 opened (285362d, 0778d34).
 - 2026-11-06 claude-opus-5.5 — SEC1 Deployed b141e58 (server, web, Android 0.1.728) to ns2. scripts/privacy-audit.sql on the live DB (2571 ops, read-only): no op of the kinds D-119 now refuses, so the holes were not used.
+- 2026-11-06 claude-opus-5.5 — UI14 (D-120), coordinated with the parallel SEC1 thread (it holds D-119/Q23): chat list with spaces as forums on web and Android, compact web uses the list instead of the spaces strip, web channel names as written, web right-click/hold menus, chat faces open profiles, one profile header everywhere. Branch `t3/chat-list-menus-profiles`, not deployed.
