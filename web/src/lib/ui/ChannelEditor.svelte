@@ -5,7 +5,7 @@
   import { untrack } from 'svelte';
   import { core } from '../core';
   import { fuzzy, members, type ChannelRow, type SpaceRow } from '../data';
-  import { channelChanges, channelCreate, channelSlug, draftOf, draftProblem, type ChannelDraft } from '../chat-manage';
+  import { channelChanges, channelCreate, draftOf, draftProblem, type ChannelDraft } from '../chat-manage';
   import { discColor } from '../chat-list';
   import { flushUploads, stageBlob } from '../sync/uploads';
   import { sync, type Projection } from '../sync/client';
@@ -42,7 +42,7 @@
   const problem = $derived(group ? (draft.name.trim() ? null : 'Give the group a name.')
     : draftProblem(final, what, spaceKind) ?? (what === 'text' && keptToSome && !draft.member_ids.length ? 'Choose who it is kept to.' : null));
   const disc = $derived(core.adaptColor(final.color ?? discColor(channel?.id ?? 'new'), dark));
-  const glyph = $derived(final.icon.trim() || (what === 'text' && channelSlug(final.name) === 'general' ? '#' : (final.name.match(/\p{L}|\p{N}/u)?.[0] ?? '#').toUpperCase()));
+  const glyph = $derived(final.icon.trim() || (what === 'text' && final.name.trim().toLowerCase() === 'general' ? '#' : (final.name.match(/\p{L}|\p{N}/u)?.[0] ?? '#').toUpperCase()));
 
   const title = $derived(group ? 'Edit group' : channel ? (what === 'member_dm' ? 'Edit chat' : 'Edit channel') : what === 'member_dm' ? 'New members’ chat' : 'New channel');
 
@@ -83,12 +83,12 @@
         if (Object.keys(changes).length) sync.create('space.set', scope, group.id, changes);
         // the face is its one chat's (a group with several chats keeps each chat's own)
         if (channel) {
-          const look = channelChanges(before, { ...before, icon: draft.icon, color: draft.color, avatar_blob: draft.avatar_blob }, 'text');
+          const look = channelChanges(before, { ...before, icon: draft.icon, color: draft.color, avatar_blob: draft.avatar_blob });
           if (Object.keys(look).length) sync.create('channel.set', scope, channel.id, look);
         }
         onsaved(channel?.id ?? group.id);
       } else if (channel) {
-        const changes = channelChanges(before, final, what);
+        const changes = channelChanges(before, final);
         if (Object.keys(changes).length) sync.create('channel.set', scope, channel.id, changes);
         onsaved(channel.id);
       } else {
@@ -134,8 +134,7 @@
   {/if}
 
   <label class="field">Name
-    <input bind:value={draft.name} maxlength="80" placeholder={what === 'member_dm' ? 'Kai & June' : 'movie-night'} />
-    {#if what === 'text' && !group && draft.name.trim()}<small>#{channelSlug(draft.name)}</small>{/if}
+    <input bind:value={draft.name} maxlength="80" placeholder={what === 'member_dm' ? 'Kai & June' : 'Movie night'} />
   </label>
   <label class="field">Description
     <textarea bind:value={draft.topic} rows="2" maxlength="500" placeholder="What it's for (optional)"></textarea>
@@ -208,7 +207,6 @@
   .face-actions { display: grid; gap: 2px; justify-items: start; }
   .field { display: grid; gap: 6px; font-size: var(--fs-sm); color: var(--ink-2); border: 0; margin: 0; padding: 0; min-width: 0; }
   .field legend { padding: 0; margin-bottom: 6px; }
-  .field small { color: var(--ink-3); }
   input:not([type]), textarea, .search { font: inherit; font-size: 15px; color: var(--ink); background: var(--surface-2);
     border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px; min-width: 0; }
   textarea { resize: vertical; }

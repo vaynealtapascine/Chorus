@@ -49,11 +49,6 @@ export function draftOf(c: (ChannelRow & { icon?: string; color?: string; avatar
   };
 }
 
-/** A text channel's stored name: trimmed, spaces become dashes, lowercase (like Discord). */
-export function channelSlug(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, '-').slice(0, 80);
-}
-
 /** Why the draft can't be saved, or null. */
 export function draftProblem(d: ChannelDraft, kind: 'text' | 'member_dm', spaceKind = 'internal'): string | null {
   if (!d.name.trim()) return kind === 'member_dm' ? 'Give this chat a name.' : 'Give this channel a name.';
@@ -65,9 +60,10 @@ export function draftProblem(d: ChannelDraft, kind: 'text' | 'member_dm', spaceK
 }
 
 /** Only the fields that changed (field-level LWW keeps other devices' edits to the rest). */
-export function channelChanges(before: ChannelDraft, after: ChannelDraft, kind: 'text' | 'member_dm'): Record<string, unknown> {
+export function channelChanges(before: ChannelDraft, after: ChannelDraft): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  const name = kind === 'text' ? channelSlug(after.name) : after.name.trim();
+  // names are kept as written, spaces, capitals and all (owner, 2026-11-06)
+  const name = after.name.trim();
   if (name !== before.name) out.name = name;
   if (after.topic.trim() !== before.topic.trim()) out.topic = after.topic.trim() || null;
   if (after.icon.trim() !== before.icon.trim()) out.icon = after.icon.trim() || null;
@@ -80,10 +76,10 @@ export function channelChanges(before: ChannelDraft, after: ChannelDraft, kind: 
 
 /** The payload for a new channel or members' chat in a space. */
 export function channelCreate(spaceId: string, d: ChannelDraft, kind: 'text' | 'member_dm'): Record<string, unknown> {
-  const fields = channelChanges(draftOf(undefined), d, kind);
+  const fields = channelChanges(draftOf(undefined), d);
   if (fields.member_ids === null) delete fields.member_ids;
   for (const k of ['topic', 'icon', 'color', 'avatar_blob']) if (fields[k] === null) delete fields[k];
-  return { space_id: spaceId, kind, ...fields, name: kind === 'text' ? channelSlug(d.name) : d.name.trim() };
+  return { space_id: spaceId, kind, ...fields, name: d.name.trim() };
 }
 
 export interface SpaceInfoLike { owner_account_id: string; guest?: boolean; accounts: { id: string }[] }

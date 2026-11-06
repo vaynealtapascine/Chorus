@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canEditSpace, canInvite, channelChanges, channelCreate, channelSlug, draftOf, draftProblem, existingMemberDm, existingPrivate, privateSides, roleIn } from './chat-manage';
+import { canEditSpace, canInvite, channelChanges, channelCreate, draftOf, draftProblem, existingMemberDm, existingPrivate, privateSides, roleIn } from './chat-manage';
 import type { ChannelRow } from './data';
 
 const ch = (id: string, kind: ChannelRow['kind'], member_ids?: string[], space_id = 's'): ChannelRow =>
@@ -26,17 +26,17 @@ describe('chat management', () => {
     expect(existingMemberDm([ch('b', 'member_dm', ['june', 'kai']), ch('a', 'member_dm', ['kai', 'june'])], 's', ['kai', 'june'])?.id).toBe('a');
     expect(existingMemberDm(list, 's', ['kai'])).toBeUndefined();
   });
-  it('writes only what changed, and names channels like Discord', () => {
+  it('writes only what changed, and keeps a channel’s name as written', () => {
     const before = draftOf({ ...ch('c', 'text'), name: 'plans', topic: 'trips', member_ids: ['kai'] });
-    expect(channelChanges(before, { ...before }, 'text')).toEqual({});
-    expect(channelChanges(before, { ...before, name: 'Big Plans ', member_ids: [] }, 'text')).toEqual({ name: 'big-plans', member_ids: null });
-    expect(channelChanges(before, { ...before, topic: ' ', icon: '🌙', color: '#86BFA5' }, 'text')).toEqual({ topic: null, icon: '🌙', color: '#86BFA5' });
-    expect(channelChanges(before, { ...before, member_ids: ['june', 'kai', 'kai'] }, 'text')).toEqual({ member_ids: ['june', 'kai'] });
-    expect(channelSlug('  Movie   Night ')).toBe('movie-night');
+    expect(channelChanges(before, { ...before })).toEqual({});
+    expect(channelChanges(before, { ...before, name: 'Big Plans ', member_ids: [] })).toEqual({ name: 'Big Plans', member_ids: null });
+    expect(channelChanges(before, { ...before, topic: ' ', icon: '🌙', color: '#86BFA5' })).toEqual({ topic: null, icon: '🌙', color: '#86BFA5' });
+    expect(channelChanges(before, { ...before, member_ids: ['june', 'kai', 'kai'] })).toEqual({ member_ids: ['june', 'kai'] });
+    expect(channelChanges(before, { ...before, name: ' Café: plans & ideas!' })).toEqual({ name: 'Café: plans & ideas!' });
   });
   it('makes a new channel or members’ chat without empty fields', () => {
     const d = { ...draftOf(undefined), name: 'Movie night' };
-    expect(channelCreate('home', d, 'text')).toEqual({ space_id: 'home', kind: 'text', name: 'movie-night' });
+    expect(channelCreate('home', d, 'text')).toEqual({ space_id: 'home', kind: 'text', name: 'Movie night' });
     expect(channelCreate('home', { ...d, name: 'Kai & June', member_ids: ['kai', 'june'] }, 'member_dm'))
       .toEqual({ space_id: 'home', kind: 'member_dm', name: 'Kai & June', member_ids: ['june', 'kai'] });
     expect(draftProblem({ ...d, name: '' }, 'text')).toMatch(/name/);

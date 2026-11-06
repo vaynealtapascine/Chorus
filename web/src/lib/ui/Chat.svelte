@@ -773,7 +773,7 @@
     (space?.kind === 'internal' ? !self : space?.kind === 'dm' ? current.kind === 'member_dm' && !!sides?.mine.length : canManage));
   function addChannel(e: SubmitEvent) {
     e.preventDefault();
-    const name = newChannel.trim().toLowerCase().replace(/\s+/g, '-');
+    const name = newChannel.trim();
     if (!name || !space) return;
     const id = sync.newId();
     sync.create('channel.create', scope, id, { space_id: space.id, kind: 'text', name });
