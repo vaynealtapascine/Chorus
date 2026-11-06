@@ -111,7 +111,8 @@
   .journal-context button, .context-search { display: flex; align-items: center; gap: 10px; border: 0; background: none; color: var(--ink-2); padding: 8px 0; text-align: left; font-size: var(--fs-sm); cursor: pointer; }
   .journal-context .context-search { background: var(--surface-2); border-radius: 999px; padding: 12px 16px; color: var(--ink-3); }
   @media (max-width: 1279px) { .journal-layout { grid-template-columns: minmax(0, 1fr); } .journal-context { display: none; } }
-  .journal { max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); align-content: start; min-width: 0; }
+  /* a set width (auto margins would shrink it to its content), so switching sections doesn't move the tabs */
+  .journal { width: 100%; max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); align-content: start; min-width: 0; }
   header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s-3); }
   h1, p { margin: 0; }
   nav { display: flex; gap: var(--s-2); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }

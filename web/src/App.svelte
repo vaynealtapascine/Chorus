@@ -276,7 +276,13 @@
   main { padding: 24px; max-width: 1200px; margin-inline: auto; min-width: 0; outline: none; }
   .chat-page main { padding: 0; max-width: none; }
   .storage-full { margin: 0; padding: 12px 24px; font-size: var(--fs-sm); background: var(--accent-soft); }
-  @media (min-width: 1600px) { .shell:not(.chat-page) { grid-template-columns: minmax(240px, calc((100vw - 1320px) / 2)) minmax(0, 1fr); } .app-nav { align-items: stretch; padding-left: max(16px, calc((100vw - 1560px) / 2)); } }
+  /* wide screens: the sidebar and the page sit together in the middle; the sidebar keeps its width
+     and takes the left margin as padding (it used to shrink to ~100 px past 1800 px) */
+  @media (min-width: 1600px) {
+    .shell:not(.chat-page) { grid-template-columns: calc((100vw - 1440px) / 2 + 240px) minmax(0, 1fr); }
+    .shell:not(.chat-page) .app-nav { padding-left: calc(100% - 224px); }
+    .shell:not(.chat-page) main { margin-left: 0; }
+  }
   .scrim { display: none; }
   @media (min-width: 1024px) {
     .shell.chat-page { grid-template-columns: minmax(0, 1fr); }
