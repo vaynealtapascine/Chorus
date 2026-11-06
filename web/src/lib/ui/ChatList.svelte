@@ -4,7 +4,7 @@
   import { core } from '../core';
   import { chatMembers } from '../subsystems';
   import { channels, latestMessage, members, spaces, unread, fuzzy, type ChannelRow, type MemberRow, type SpaceRow } from '../data';
-  import { ARCHIVED, chatPrefs, chatTime, discColor, dmFace, folderOf, HIDDEN, movePin, orderChats, PINS, previewOf, privateVisible, stillArchived, togglePin, type Folder } from '../chat-list';
+  import { ARCHIVED, chatPrefs, chatTime, discColor, dmFace, folderOf, groupsInto, HIDDEN, isSpaceEntry, movePin, orderChats, PINS, previewOf, privateVisible, stillArchived, togglePin, withSpaces, type Folder, type SpaceEntry } from '../chat-list';
   import { contains, holds, PREF as FOLDERS_PREF, setChat, toJson, withCustom, type Settings as FolderSettings } from '../chat-folders';
   import ChatFolders from './ChatFolders.svelte';
   import { bodyPresence, frontLayers } from '../front-view';
@@ -15,13 +15,16 @@
   import Icon from './Icon.svelte';
   import { longPress } from '../long-press';
 
-  let { projection, dark, currentId, folder, folders, foldersAt = null, onfolders, directory, person, onswitch, onnewchat, viewingAs = null }: {
+  let { projection, dark, currentId, folder, folders, foldersAt = null, onfolders, directory, person, onswitch, onnewchat, viewingAs = null,
+    tabs = [], counts = {}, onfolder }: {
     projection: Projection; dark: boolean; currentId?: string; folder: string; directory: Map<string, SpaceInfo>;
     /** Chat folders (D-113): the settings, and the folders sheet ("" its list, "new:<chat>", a folder) or null. */
     folders: FolderSettings; foldersAt?: string | null; onfolders: (at: string | null) => void;
     person: boolean; onswitch: () => void;
     /** The pencil opens New chat (NewChat.svelte). */
     onnewchat: () => void; viewingAs?: string | null;
+    /** Narrow screens have no folder rail: the folders as tabs over the list, with unread counts. */
+    tabs?: { id: string; label: string }[]; counts?: Record<string, number>; onfolder?: (f: string) => void;
   } = $props();
 
   let query = $state('');
@@ -48,6 +51,8 @@
     id: string; pinned: boolean;
     /** archived for us (D-111) with nothing newer since: listed under Archived chats */
     stowed: boolean;
+    /** in a shared space with several channels: listed under the space's entry, by its own name */
+    grouped: boolean;
   }
   const organize = $derived(chatPrefs(projection.rows.pref ?? {}, sync.accountId));
   const rows: Row[] = $derived.by(() => {
@@ -89,7 +94,9 @@
       const partner = c.kind === 'member_dm' && !sides ? people.get(c.member_ids?.[0] ?? '')
         : sides?.theirs.length ? cards.get(sides.theirs[0])
         : space?.kind === 'dm' ? dmFace(directory.get(space.id), sync.accountId, cards.values()) : undefined;
-      const letter = (title.match(/\p{L}|\p{N}/u)?.[0] ?? '#').toUpperCase();
+      const grouped = !sides && groupsInto(space, siblings);
+      // a channel listed under its space wears its own initial, not the space's
+      const letter = ((grouped ? c.name : title).match(/\p{L}|\p{N}/u)?.[0] ?? '#').toUpperCase();
       const disc = c.avatar_blob ? { glyph: c.icon ?? letter, color: c.color ?? discColor(c.id), blob: c.avatar_blob }
         : partner ? { glyph: partner.sigils[0] ?? partner.name[0] ?? '?', color: partner.color, blob: partner.avatar_blob ?? undefined }
         : { glyph: c.icon ?? letter, color: c.color ?? discColor(c.id) };
@@ -98,6 +105,7 @@
         at: latest?.occurred_at ?? 0, unread: c.id === currentId ? 0 : unread(projection, c.id, sync.accountId),
         muted: notify === 'none', who: preview.who, text: preview.text, disc, id: c.id, pinned: organize.pins.includes(c.id),
         stowed: stillArchived(organize.archived.get(c.id), latest?.occurred_at),
+        grouped,
       };
     }
   }
@@ -140,6 +148,33 @@
   // a search looks through archived chats too
   const shown = $derived(rows.filter((r) => (query.trim() ? fuzzy(query, `${r.title} ${r.text}`) !== null
     : archiveView ? r.stowed : !r.stowed && contains(folders, folder, r.channel.id, r.folder, r.unread, r.muted))));
+  // a shared space with several channels is one entry, like a Telegram forum; opening it lists
+  // its channels by their own names (owner, 2026-11-06). Searches and Archived stay flat.
+  let openSpace = $state<string | null>(null);
+  const spaceRow = (r: Row) => (r.grouped && r.space ? { id: r.space.id, name: r.space.name } : null);
+  const entries: (Row | SpaceEntry<Row>)[] = $derived(query.trim() || archiveView ? shown
+    : orderChats(withSpaces(shown, spaceRow), organize.pins));
+  const inside = $derived(openSpace && !query.trim() && !archiveView
+    ? orderChats(rows.filter((r) => !r.stowed && r.space?.id === openSpace), organize.pins) : null);
+  const insideTitle = $derived(ss.find((s) => s.id === openSpace)?.name ?? '');
+  // opening one of its channels from elsewhere (a link, search) shows the space's channels around it
+  let seen: string | undefined;
+  $effect(() => {
+    if (currentId === seen) return;
+    seen = currentId;
+    const r = rows.find((x) => x.channel.id === currentId);
+    if (r?.grouped) openSpace = r.space?.id ?? null;
+  });
+  function pinSpace(e: SpaceEntry<Row>) {
+    menuFor = null;
+    savePins(e.pinned ? organize.pins.filter((p) => !e.ids.includes(p)) : [...organize.pins, ...e.ids]);
+  }
+  function archiveSpace(e: SpaceEntry<Row>) {
+    menuFor = null;
+    for (const r of e.rows) sync.create('pref.set', sync.accountScope, null, { device: '', key: `${ARCHIVED}${r.channel.id}`, value: Math.max(Date.now(), r.at) });
+  }
+  const letter = (t: string) => (t.match(/\p{L}|\p{N}/u)?.[0] ?? '#').toUpperCase();
+
   // a chat's folders, from its menu: tick the folders of our own it belongs in
   let foldersFor = $state<string | null>(null);
   function toggleFolder(r: Row, id: string) {
@@ -186,8 +221,69 @@
       <button class="switch" onclick={onswitch} aria-label="Switch who is here" title="Switch · Ctrl/⌘ S"><Icon name="swap" size={18} /></button>
     </div>
   {/if}
+  {#if tabs.length > 1 && !archiveView && !inside && !query.trim()}
+    <div class="folder-tabs" role="tablist" aria-label="Chat folders">
+      {#each tabs as t (t.id)}
+        <button role="tab" aria-selected={folder === t.id} class:on={folder === t.id} onclick={() => onfolder?.(t.id)}>
+          {t.label}{#if counts[t.id]}<span class="count">{counts[t.id] > 99 ? '99+' : counts[t.id]}</span>{/if}</button>
+      {/each}
+    </div>
+  {/if}
+  {#if inside}
+    {@const c = core.adaptColor(discColor(openSpace ?? ''), dark)}
+    <div class="space-head">
+      <button class="back" onclick={() => (openSpace = null)} aria-label="Back to chats"><Icon name="back" size={20} /></button>
+      <span class="disc small" style="background: {c.ring}; color: {c.avatar_ink}">{letter(insideTitle)}</span>
+      <span class="space-name"><strong>{insideTitle}</strong><small>{inside.length} {inside.length === 1 ? 'channel' : 'channels'}</small></span>
+    </div>
+  {/if}
   <div class="rows">
-    {#each shown as r (r.channel.id)}
+    {#if inside}
+      {#each inside as r (r.channel.id)}{@render chatRow(r, true)}{/each}
+    {:else}
+    {#each entries as e (e.id)}
+      {#if isSpaceEntry(e)}
+        {@const latest = e.rows[0]}
+        {@const c = core.adaptColor(discColor(e.spaceId), dark)}
+        <div class="row-wrap" role="listitem">
+          <button class="row space-entry" class:pinned={e.pinned} class:compact={folders.compact} onclick={() => (openSpace = e.spaceId)}
+            oncontextmenu={(ev) => { ev.preventDefault(); menuFor = e.id; }} use:longPress={{ enabled: true, onpress: () => (menuFor = e.id) }}
+            aria-label="{e.title}, {e.rows.length} channels{e.unread ? `, ${e.unread} unread` : ''}">
+            <span class="disc forum" style="background: {c.ring}; color: {c.avatar_ink}">{letter(e.title)}</span>
+            <span class="body">
+              <span class="top">
+                <Icon name="globe" size={16} />
+                <span class="title">{e.title}</span>
+                {#if e.muted}<span class="muted-icon" title="Muted"><Icon name="muted" size={14} /></span>{/if}
+                {#if e.at}<time>{chatTime(e.at)}</time>{/if}
+              </span>
+              <span class="bottom">
+                <span class="topic"># {latest.channel.name}</span>
+                {#if latest.who}<span class="who">{latest.who}:</span>{/if}
+                <span class="text">{latest.text}</span>
+                {#if e.unread}<span class="badge" class:muted={e.muted}>{e.unread > 999 ? '999+' : e.unread}</span>
+                {:else if e.pinned}<span class="pin" title="Pinned"><Icon name="pin" size={14} /></span>{/if}
+              </span>
+            </span>
+          </button>
+          <button class="more" aria-label="Actions for {e.title}" aria-haspopup="menu" aria-expanded={menuFor === e.id}
+            onclick={() => (menuFor = menuFor === e.id ? null : e.id)}><Icon name="more" size={18} /></button>
+          {#if menuFor === e.id}
+            <div class="row-menu" role="menu">
+              <button role="menuitem" onclick={() => { menuFor = null; openSpace = e.spaceId; }}><Icon name="chat" size={16} /> Show channels</button>
+              <button role="menuitem" onclick={() => pinSpace(e)}><Icon name="pin" size={16} /> {e.pinned ? 'Unpin' : 'Pin to top'}</button>
+              <button role="menuitem" onclick={() => archiveSpace(e)}><Icon name="archive" size={16} /> Archive all</button>
+            </div>
+          {/if}
+        </div>
+      {:else}{@render chatRow(e, false)}{/if}
+    {:else}
+      <p class="none">{query.trim() ? 'No chats match.' : 'No chats here yet.'}</p>
+    {/each}
+    {/if}
+  </div>
+</section>
+{#snippet chatRow(r: Row, inSpace: boolean)}
       <div class="row-wrap" class:drop={dropOn === r.id} role="listitem"
         ondragover={(e) => { if (dragging && r.pinned) { e.preventDefault(); dropOn = r.id; } }}
         ondragleave={() => { if (dropOn === r.id) dropOn = null; }}
@@ -202,7 +298,7 @@
         <span class="body">
           <span class="top">
             {#if r.icon}<Icon name={r.icon} size={16} />{/if}
-            <span class="title">{r.title}</span>
+            <span class="title">{inSpace ? r.channel.name : r.title}</span>
             {#if r.muted}<span class="muted-icon" title="Muted"><Icon name="muted" size={14} /></span>{/if}
             {#if r.at}<time>{chatTime(r.at)}</time>{/if}
           </span>
@@ -233,11 +329,7 @@
         </div>
       {/if}
       </div>
-    {:else}
-      <p class="none">{query.trim() ? 'No chats match.' : 'No chats here yet.'}</p>
-    {/each}
-  </div>
-</section>
+{/snippet}
 {#if foldersAt !== null}
   <ChatFolders settings={folders} {person} startWith={foldersAt || null} onclose={() => onfolders(null)}
     chats={rows.map((r) => ({ id: r.channel.id, title: r.title, kind: r.folder, own: r.space?.kind === 'internal' }))} />
@@ -303,4 +395,21 @@
   .badge { flex: none; min-width: 22px; padding: 2px 7px; border-radius: 11px; background: var(--sun); color: var(--on-sun); font-size: 12px; line-height: 16px; font-weight: 700; text-align: center; }
   .badge.muted { background: var(--line); color: var(--ink); }
   .none { color: var(--ink-3); text-align: center; padding: 32px 16px; font-size: var(--fs-sm); }
+  /* a space's entry is a button styled as a row; its disc is rounded square, as Telegram's forums */
+  button.row { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+  .disc.forum { border-radius: 16px; }
+  .topic { flex: none; max-width: 40%; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .space-head { display: flex; align-items: center; gap: 10px; padding: 4px 12px 10px 4px; border-bottom: 1px solid var(--line); }
+  .space-head .back { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
+  .space-head .back:hover { background: var(--surface-2); color: var(--ink); }
+  .disc.small { width: 36px; height: 36px; font-size: 15px; border-radius: 12px; }
+  .space-name { display: grid; min-width: 0; }
+  .space-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .space-name small { color: var(--ink-3); font-size: 12px; }
+  .folder-tabs { display: none; gap: 4px; padding: 0 8px 8px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--line); }
+  .folder-tabs button { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 0; border-radius: var(--r-full);
+    background: none; color: var(--ink-3); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+  .folder-tabs button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .folder-tabs .count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--line); color: var(--ink); font-size: 11px; line-height: 16px; text-align: center; }
+  @media (max-width: 1023px) { .folder-tabs { display: flex; } .list { border-right: 0; } }
 </style>

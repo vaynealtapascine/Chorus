@@ -20,7 +20,6 @@
   import { pollOf, pollPayload } from '../polls';
   import AvatarImage from './AvatarImage.svelte';
   import EmojiImage from './EmojiImage.svelte';
-  import SpaceRail from './SpaceRail.svelte';
   import ChatFolderRail from './ChatFolderRail.svelte';
   import ChatList from './ChatList.svelte';
   import { chatPrefs, dayLabel, discColor, dmFace, folderOf, frontEvents, FOLDERS, jumpBack, pushJump } from '../chat-list';
@@ -62,6 +61,18 @@
   $effect(() => sessionStorage.setItem('chorus.chat.folder', folder));
 
   let showInfo = $state(window.matchMedia('(min-width: 1280px)').matches);
+  // below 1024 px the list and a conversation take turns, as on Android: #/chat is the list
+  // (owner, 2026-11-06), and nothing is read while only the list shows
+  const wide = window.matchMedia('(min-width: 1024px)');
+  let compact = $state(!wide.matches);
+  $effect(() => {
+    const on = () => (compact = !wide.matches);
+    wide.addEventListener('change', on);
+    return () => wide.removeEventListener('change', on);
+  });
+  const listing = $derived(compact && !channelId);
+  // a new channel in the shared space open here (its managers; our own space's come from New chat)
+  let addingChannel = $state(false);
   // "Read as": whose view of hidden messages and members' chats this is (none: whoever is here)
   let viewingAs = $state<string | null>(null);
   const roomMembers = $derived(members(projection).filter((m) => !m.deleted && !m.archived));
@@ -739,7 +750,6 @@
     return counts;
   });
 
-  let newChannel = $state('');
   // may this account add channels and change permissions here? (perms.rs: the owner, admins; in a DM, both)
   // slow mode (OPEN_QUESTIONS Q17 default): the channel's settings.slow_mode_s, enforced by the
   // server when a send arrives; managers are exempt
@@ -772,15 +782,6 @@
   // who may edit this chat: our own space's chats, a group's for its managers, our private chat in a DM
   const canEditChannel = $derived(!!current && current.kind !== 'thread' && !lockedOut &&
     (space?.kind === 'internal' ? !self : space?.kind === 'dm' ? current.kind === 'member_dm' && !!sides?.mine.length : canManage));
-  function addChannel(e: SubmitEvent) {
-    e.preventDefault();
-    const name = newChannel.trim();
-    if (!name || !space) return;
-    const id = sync.newId();
-    sync.create('channel.create', scope, id, { space_id: space.id, kind: 'text', name });
-    newChannel = '';
-    router.go(`/chat/${id}`);
-  }
 
   function openThread(m: MessageRow) {
     if (!current) return;
@@ -986,7 +987,7 @@
   // projection, so it would see its own mark missing and write it again, a thousand times over
   const marked = new Map<string, string>();
   $effect(() => {
-    if (!current || !visible || !atLatest || lockedOut) return;
+    if (!current || !visible || !atLatest || lockedOut || listing) return;
     const latest = visibleMsgs.findLast((m) => !m.deleted);
     if (!latest) return;
     // the account, and with "track reading per member" whoever is fronting (core decides)
@@ -1143,31 +1144,16 @@
   {#if poll}<PollCard {projection} parentId={id} {poll} member={speaker} />{/if}
 {/snippet}
 
-<div class="chat" class:with-info={showInfo}>
+<div class="chat" class:with-info={showInfo && !listing} class:listing>
   <div class="desk-rail"><ChatFolderRail folder={openFolder} folders={railFolders} counts={folderCounts} person={!!self} onfolder={(f) => (folder = f)}
     onedit={() => (foldersAt = '')} {onmenu} /></div>
   <div class="desk-list"><ChatList {projection} {dark} currentId={current?.id} folder={openFolder} folders={folderSettings} {foldersAt}
     onfolders={(at) => (foldersAt = at)} {directory} person={!!self} {onswitch} {viewingAs}
-    onnewchat={() => (newChat = true)} /></div>
-  <aside class="channels" aria-label="Channels">
-    <div class="channel-title">Chats <a class="icon-button" href="#/search" aria-label="Search messages"><Icon name="search" size={18} /></a></div>
-    <SpaceRail spaces={ss} channels={allChannels} currentId={space?.id} {directory} me={sync.accountId} />
-    {#each spaceChannels as c (c.id)}
-      {@const n = c.id === current?.id ? 0 : unread(projection, c.id, sync.accountId)}
-      <a href="#/chat/{c.id}" class:on={c.id === current?.id} class:unread={n > 0}
-        ># {c.name}{#if n}<span class="badge">{n}</span>{/if}</a
-      >
-    {/each}
-    {#if space && canManage}
-      <form onsubmit={addChannel}>
-        <input bind:value={newChannel} placeholder="new channel" aria-label="New channel name" />
-      </form>
-    {/if}
-    <button class="new-chat" onclick={() => (newChat = true)} aria-label="New chat"><Icon name="plus" size={18} /> New chat</button>
-  </aside>
+    onnewchat={() => (newChat = true)} tabs={railFolders} counts={folderCounts} onfolder={(f) => (folder = f)} /></div>
 
   <section class="room" aria-label={current ? `#${current.name}` : 'Chat'} ondragover={(e) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); }} ondrop={dropFiles}>
     <header class="room-head" inert={searchHere}>
+      {#if current?.kind !== 'thread'}<a class="icon-button list-back" href="#/chat" aria-label="Back to chats"><span aria-hidden="true">‹</span></a>{/if}
       {#if current?.kind === 'thread'}
         <a class="icon-button thread-back" href="#/chat/{parentChannel?.id ?? ''}" aria-label="Back to #{parentChannel?.name ?? 'channel'}"><span aria-hidden="true">‹</span></a>
       {/if}
@@ -1186,6 +1172,7 @@
             <a href="#/trash/{current.id}"><Icon name="delete" size={18} />Show deleted</a>
             {#if canEditChannel}<button onclick={() => { editingChannel = true; menuOpen = false; }}><Icon name="edit" size={18} />{current.kind === 'member_dm' ? 'Edit chat…' : 'Edit channel…'}</button>{/if}
             <button onclick={() => { newChat = true; menuOpen = false; }}><Icon name="plus" size={18} />New chat…</button>
+            {#if space?.kind === 'shared' && canManage}<button onclick={() => { addingChannel = true; menuOpen = false; }}><Icon name="hash" size={18} />New channel in {space.name}…</button>{/if}
             {#if space?.kind === 'internal'}
               <label class="notify">Viewing as
                 <select aria-label="Viewing as member" value={viewingAs ?? ''} onchange={(e) => (viewingAs = e.currentTarget.value || null)}>
@@ -1672,6 +1659,9 @@
   <ChannelEditor {projection} {dark} spaceId={space.id} spaceKind={space.kind} group={space}
     channel={spaceChannels.length <= 1 ? spaceChannels[0] : undefined} onclose={() => (editingGroup = false)} />
 {/if}
+{#if addingChannel && space}
+  <ChannelEditor {projection} {dark} spaceId={space.id} spaceKind={space.kind} onclose={() => (addingChannel = false)} onsaved={(id) => router.go(`/chat/${id}`)} />
+{/if}
 {#if editingChannel && current && space && !lockedOut}
   <ChannelEditor {projection} {dark} spaceId={space.id} spaceKind={space.kind} channel={current}
     canDelete={space.kind === 'internal' || canManage || !!sides?.mine.length} onclose={() => (editingChannel = false)} />
@@ -1719,8 +1709,6 @@
   .locked { display: grid; justify-items: center; gap: 8px; margin: auto; max-width: 340px; padding: 32px 16px; text-align: center; color: var(--ink-2); }
   .locked p { margin: 0; font-size: var(--fs-sm); color: var(--ink-3); }
   .lock-disc { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--ink-2); }
-  .new-chat { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 10px; border: 0; border-radius: var(--r-full); background: var(--accent-soft); color: var(--accent); font: inherit; font-size: var(--fs-sm); cursor: pointer; white-space: nowrap; }
-  @media (min-width: 1024px) { .new-chat { display: none; } }
   .chat {
     display: grid;
     grid-template-columns: 260px minmax(0, 1fr);
@@ -1730,62 +1718,13 @@
   }
   @media (max-width: 1023px) {
     .chat {
-      grid-template-columns: 1fr;
-      grid-template-rows: auto 1fr;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
       height: calc(100dvh - 144px - env(safe-area-inset-bottom));
     }
-    /* `.chat .channels` so this beats the base rule below (same specificity would lose to it) */
-    .channel-title { display: none; }
-    .chat .channels {
-      display: flex;
-      align-items: center;
-      gap: var(--s-2);
-      overflow-x: auto;
-    }
-    .channels form {
-      display: none;
-    }
-  }
-  .channels {
-    padding: 12px;
-    overflow-y: auto;
-    border-right: 1px solid var(--line);
-    background: var(--surface);
-    display: grid;
-    align-content: start;
-    gap: 2px;
-  }
-  .channels a {
-    color: var(--ink-2);
-    text-decoration: none;
-    padding: 14px 12px;
-    border-radius: var(--r-sm);
-    white-space: nowrap;
-  }
-  .channels a.on {
-    background: var(--surface-3);
-    color: var(--ink);
-  }
-  .channels a.unread {
-    color: var(--ink);
-    font-weight: 600;
-  }
-  .badge {
-    margin-left: var(--s-2);
-    font-size: var(--fs-xs);
-    font-weight: 600;
-    color: var(--accent);
-  }
-  .channels input {
-    margin-top: var(--s-2);
-    width: 100%;
-    font: inherit;
-    font-size: var(--fs-sm);
-    color: var(--ink);
-    background: none;
-    border: 1px dashed var(--line);
-    border-radius: var(--r-sm);
-    padding: var(--s-1) var(--s-3);
+    .chat.listing .desk-list { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; min-width: 0; }
+    .chat.listing .desk-list > :global(*) { min-height: 0; }
+    .chat.listing .room, .chat.listing .room-info { display: none; }
   }
   .room {
     display: flex;
@@ -1965,7 +1904,6 @@
   .send:disabled {
     opacity: 0.5;
   }
-  .channel-title { display: flex; align-items: center; justify-content: space-between; padding-left: 10px; font-size: var(--fs-lg); font-weight: 700; }
   .room-info { background: var(--surface); padding: 16px; border-left: 1px solid var(--line); min-width: 0; overflow-y: auto; text-align: center; }
   .info-heading { display: flex; align-items: center; justify-content: space-between; font-size: var(--fs-sm); }
   .room-symbol { display: grid; place-items: center; width: 72px; height: 72px; margin: 16px auto; background: var(--accent); color: var(--on-accent); font-size: 28px; border-radius: 50%; }
@@ -1985,13 +1923,14 @@
     .chat { grid-template-columns: 76px 344px minmax(0, 1fr); height: 100dvh; }
     .desk-rail, .desk-list { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; min-width: 0; }
     .desk-rail > :global(*), .desk-list > :global(*) { min-height: 0; }
-    .chat .channels { display: none; }
   }
   @media (min-width: 1280px) { .chat.with-info { grid-template-columns: 76px 344px minmax(0, 1fr) 300px; } }
   @media (max-width: 1279px) { .room-info { position: fixed; inset: 76px 0 0 auto; width: min(340px, 100%); z-index: 8; box-shadow: var(--shadow-pop); } }
-  @media (max-width: 1023px) { .room-info { top: 72px; bottom: calc(72px + env(safe-area-inset-bottom)); } .channel-title { display: none; } .channels { border-right: 0; border-bottom: 1px solid var(--line); padding: 8px; } header { gap: 4px; } }
+  @media (max-width: 1023px) { .room-info { top: 72px; bottom: calc(72px + env(safe-area-inset-bottom)); } header { gap: 4px; } }
   /* ── Figma F5.21 conversation ───────────────────────────────────────────── */
   .room-head { flex-wrap: nowrap; gap: 4px; padding: 8px 4px 8px 12px; min-height: 57px; }
+  .room-head .icon-button.list-back { display: none; font-size: 26px; line-height: 1; color: var(--ink-2); text-decoration: none; width: 36px; }
+  @media (max-width: 1023px) { .room-head .icon-button.list-back { display: grid; } }
   .room-head .thread-back { font-size: 26px; line-height: 1; color: var(--ink-2); text-decoration: none; width: 36px; }
   .room-disc { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; font-weight: 700; font-size: 16px; }
   .titles { flex: 1; min-width: 0; display: grid; gap: 1px; padding: 0 6px; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; }

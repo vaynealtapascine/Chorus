@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ARCHIVED, byActivity, chatPrefs, jumpBack, pushJump, stillArchived, chatTime, dayLabel, folderOf, frontEvents, HIDDEN, HIDE_PRIVATE, hideSpoilers, isPrivate, movePin, orderChats, PINS, previewOf, privateVisible, togglePin, dmFace } from './chat-list';
+import { ARCHIVED, byActivity, chatPrefs, jumpBack, pushJump, stillArchived, chatTime, dayLabel, folderOf, frontEvents, HIDDEN, HIDE_PRIVATE, hideSpoilers, isPrivate, movePin, orderChats, PINS, previewOf, privateVisible, togglePin, dmFace, groupsInto, isSpaceEntry, withSpaces } from './chat-list';
 import type { ChannelRow, MessageRow, SpaceRow } from './data';
 
 const space = (kind: SpaceRow['kind']): SpaceRow => ({ id: kind, kind, name: kind });
@@ -147,5 +147,35 @@ describe('pins, private chats and cleared chats (D-097)', () => {
     expect(dmFace(dm('system'), 'me', [card('kai', 'them', 'kai')])).toBeUndefined();
     expect(dmFace(dm('person'), 'me', [])).toBeUndefined();
     expect(dmFace(undefined, 'me', [])).toBeUndefined();
+  });
+});
+
+describe('spaces as one entry, like Telegram forums (owner, 2026-11-06)', () => {
+  const row = (id: string, at: number, unread = 0, muted = false, pinned = false) => ({ id, at, title: id, unread, muted, pinned });
+  it('folds a shared space with several channels, never our own space or a DM', () => {
+    expect(groupsInto({ kind: 'shared' }, 2)).toBe(true);
+    expect(groupsInto({ kind: 'shared' }, 1)).toBe(false);
+    expect(groupsInto({ kind: 'internal' }, 9)).toBe(false);
+    expect(groupsInto({ kind: 'dm' }, 3)).toBe(false);
+    expect(groupsInto(undefined, 3)).toBe(false);
+  });
+  it('sums unread, is muted only when every channel is, and keeps its channels newest first', () => {
+    const club = { id: 'club', name: 'Book club' };
+    const rows = [row('general', 5), row('a', 10, 2, true), row('b', 30, 1, false, true), row('c', 20, 0, true)];
+    const out = withSpaces(rows, (r) => (r.id === 'general' ? null : club));
+    expect(out.map((e) => e.id)).toEqual(['general', 'space:club']);
+    const e = out[1];
+    if (!isSpaceEntry(e)) throw new Error('expected the space');
+    expect(e).toMatchObject({ title: 'Book club', at: 30, unread: 3, muted: false, pinned: true, ids: ['a', 'b', 'c'] });
+    expect(e.rows.map((r) => r.id)).toEqual(['b', 'c', 'a']);
+    expect(isSpaceEntry(out[0])).toBe(false);
+    const quiet = withSpaces([row('x', 1, 0, true), row('y', 2, 0, true)], () => club)[0];
+    expect(isSpaceEntry(quiet) && quiet.muted).toBe(true);
+  });
+  it('places a space by its newest chat, or where its first pinned channel is', () => {
+    const club = withSpaces([row('a', 50), row('b', 10)], () => ({ id: 'club', name: 'Club' }))[0] as { id: string; at: number; title: string; ids: string[] };
+    const rows = [row('x', 40), club, row('y', 60)];
+    expect(orderChats(rows, []).map((r) => r.id)).toEqual(['y', 'space:club', 'x']);
+    expect(orderChats(rows, ['x', 'b']).map((r) => r.id)).toEqual(['x', 'space:club', 'y']);
   });
 });

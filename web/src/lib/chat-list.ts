@@ -201,10 +201,58 @@ export function jumpBack(trail: string[], present: (id: string) => boolean): { i
 }
 
 /** Pinned (in pin order) first, then the rest by activity. */
-export function orderChats<T extends { id: string; at: number; title: string }>(rows: T[], pins: string[]): T[] {
+export function orderChats<T extends { id: string; at: number; title: string; ids?: string[] }>(rows: T[], pins: string[]): T[] {
   const rank = new Map(pins.map((p, i) => [p, i]));
-  const pinned = rows.filter((r) => rank.has(r.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
-  return [...pinned, ...byActivity(rows.filter((r) => !rank.has(r.id)))];
+  // a space's entry stands where its first pinned channel would
+  const of = (r: T) => Math.min(...(r.ids ?? [r.id]).map((id) => rank.get(id) ?? Infinity));
+  const pinned = rows.filter((r) => of(r) < Infinity).sort((a, b) => of(a) - of(b));
+  return [...pinned, ...byActivity(rows.filter((r) => of(r) === Infinity))];
+}
+
+/** A shared space with more than one channel, as one entry of the chat list (owner, 2026-11-06):
+ * like a Telegram forum, it shows its latest message under the space's name, and opening it lists
+ * its channels. Its own chats (`rows`) are newest first. */
+export interface SpaceEntry<T> {
+  /** `space:<id>`, so it never clashes with a channel id */
+  id: string; spaceId: string; title: string; rows: T[]; ids: string[];
+  at: number; unread: number; muted: boolean; pinned: boolean;
+}
+
+/** Which rows fold into their space: a shared space's, when it has more than one channel. Our own
+ * space's channels and DMs stay rows of their own, as Telegram keeps chats and forums apart. */
+export function groupsInto(space: { kind: string } | undefined, channelsInSpace: number): boolean {
+  return space?.kind === 'shared' && channelsInSpace > 1;
+}
+
+/** The list's entries: rows of their own, and one entry per space that folds (`spaceOf` names it,
+ * or null for a row of its own), placed by its newest chat. */
+export function withSpaces<T extends { id: string; at: number; title: string; unread: number; muted: boolean; pinned: boolean }>(
+  rows: T[], spaceOf: (row: T) => { id: string; name: string } | null,
+): (T | SpaceEntry<T>)[] {
+  const out: (T | SpaceEntry<T>)[] = [];
+  const entries = new Map<string, SpaceEntry<T>>();
+  for (const r of rows) {
+    const s = spaceOf(r);
+    if (!s) { out.push(r); continue; }
+    let e = entries.get(s.id);
+    if (!e) {
+      e = { id: `space:${s.id}`, spaceId: s.id, title: s.name, rows: [], ids: [], at: 0, unread: 0, muted: true, pinned: false };
+      entries.set(s.id, e);
+      out.push(e);
+    }
+    e.rows.push(r);
+    e.ids.push(r.id);
+    e.at = Math.max(e.at, r.at);
+    e.unread += r.unread;
+    e.muted &&= r.muted;
+    e.pinned ||= r.pinned;
+  }
+  for (const e of entries.values()) e.rows = byActivity(e.rows);
+  return out;
+}
+
+export function isSpaceEntry<T>(e: T | SpaceEntry<T>): e is SpaceEntry<T> {
+  return typeof (e as SpaceEntry<T>).spaceId === 'string' && Array.isArray((e as SpaceEntry<T>).rows);
 }
 
 export function togglePin(pins: string[], id: string): string[] {
