@@ -888,9 +888,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             // an account DM's channel is just "dm": it is shown as the account at the other end
             val dmName = (if (paneLocked) "Private chat" else paneSides?.theirs?.takeIf { it.isNotEmpty() }?.joinToString(" & ", transform = ::nameOf)
                 ?: dmPartner?.shownName)?.takeIf { !inThread }
-            // a DM with another account shows who it is with, as in the list
-            val listed = listRows.find { it.channel.id == channel?.id }?.takeIf { !inThread && it.icon != null }
-            if (listed != null) ChatRowDisc(listed, 36.dp)
+            // the same disc as the chat's row in the list: a DM shows who it is with
+            val listed = listRows.find { it.channel.id == channel?.id }?.takeIf { !inThread }
+            if (listed != null) ChatRowDisc(listed, 36.dp, listed.peer(model, readerId))
             else channel?.let { ChannelDisc(if (dmName != null) it.copy(name = dmName) else it,
                 member = threadParent?.authors?.firstOrNull()?.let(model::member).takeIf { inThread }, size = 36.dp) }
             Column(Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 10.dp)) {

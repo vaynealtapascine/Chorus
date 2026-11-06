@@ -79,6 +79,13 @@ internal fun ChatRowDisc(row: ChatListRow, size: Dp, peer: Member? = null) {
     else ChannelDisc(if (row.space.kind == "dm") row.channel.copy(name = row.title) else row.channel, peer, size)
 }
 
+/** Who a DM between our members is with, seen by [readerId] (else whoever speaks there): the list
+ * and the open chat's header show the same face. */
+internal fun ChatListRow.peer(model: Model, readerId: String?): Member? =
+    if (channel.isMemberDm && space.kind == "internal")
+        channel.memberIds.firstOrNull { it != (readerId ?: ChatSpeaker.pick(model, channel.id)) }?.let(model::member)
+    else null
+
 internal data class ChatListRow(val channel: ChatChannel, val space: ChatSpace, val title: String,
     val latest: ChatMessage?, val unread: Int, val sender: String? = null, val muted: Boolean = false, val pinned: Boolean = false,
     /** A private chat in a DM (D-098), or a channel kept to some of our members (D-097): a lock, not a globe or #. */
@@ -225,7 +232,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                         onOpen = { openSpace = entry.spaceId }, onAction = onSpaceAction); return@items }
                     val row = entry as ChatListRow
                     val direct = row.channel.isMemberDm && row.space.kind == "internal"
-                    val peer = if (direct) row.channel.memberIds.firstOrNull { it != (readerId ?: ChatSpeaker.pick(model, row.channel.id)) }?.let(model::member) else null
+                    val peer = row.peer(model, readerId)
                     Box { Row(Modifier.fillMaxWidth().background(if (selected == row.channel.id) p.accentSoft else if (row.pinned) p.surface else p.bg)
                         .combinedClickable(onClick = { onOpen(row) }, onLongClick = onRowAction?.let { { rowMenu = row.channel.id } },
                             onLongClickLabel = "Chat actions").heightIn(min = if (folders.compact) 56.dp else 70.dp)
