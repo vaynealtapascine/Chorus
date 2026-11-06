@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { intent, LIMIT, pull, THRESHOLD } from './swipe-reply';
+import { intent, LIMIT, origin, pull, SLOP, THRESHOLD } from './swipe-reply';
 
 describe('swipe to reply', () => {
   it('follows the finger at first, then resists, the same either way', () => {
@@ -30,5 +30,12 @@ describe('swipe to reply', () => {
     expect(intent(5, 30)).toBe('scroll');
     // diagonal leans to the scroll so reading isn't interrupted
     expect(intent(20, 18)).toBe('scroll');
+  });
+
+  it('drops only the slop when a swipe starts, so a fast flick keeps its distance', () => {
+    expect(origin(100, 100 + SLOP)).toBe(100 + SLOP);
+    // a flick whose first event is already 70 px along still counts 60 of them
+    expect(100 + 70 - origin(100, 170)).toBe(70 - SLOP);
+    expect(100 - 70 - origin(100, 30)).toBe(-(70 - SLOP));
   });
 });

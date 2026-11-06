@@ -14,10 +14,22 @@ export function pull(drag: number, limit = LIMIT): number {
   return Math.sign(drag) * limit * (1 - Math.exp(-Math.abs(drag) / limit));
 }
 
+/** Movement (px) before a touch counts as a swipe or a scroll. */
+export const SLOP = 10;
+
 /** What a touch that has moved (dx, dy) turns out to be: a sideways swipe, a scroll, or not yet known. */
-export function intent(dx: number, dy: number, slop = 10): 'swipe' | 'scroll' | null {
+export function intent(dx: number, dy: number, slop = SLOP): 'swipe' | 'scroll' | null {
   if (Math.hypot(dx, dy) < slop) return null;
   return Math.abs(dx) > Math.abs(dy) * 1.5 ? 'swipe' : 'scroll';
+}
+
+/**
+ * Where a swipe's travel is measured from once it is recognised: only the slop is dropped, so a
+ * fast flick whose first event is already far along keeps the distance it covered.
+ */
+export function origin(x0: number, x: number, slop = SLOP): number {
+  const dx = x - x0;
+  return Math.abs(dx) <= slop ? x : x0 + Math.sign(dx) * slop;
 }
 
 export interface SwipeOptions {
@@ -63,22 +75,39 @@ export function swipeReply(node: HTMLElement, options: SwipeOptions) {
     if (mode === null) {
       mode = intent(e.clientX - x0, e.clientY - y0);
       if (mode !== 'swipe') return;
-      // start from here, as Android drops the slop, so the bubble doesn't jump
-      x0 = e.clientX;
+      // drop only the slop, as Android does, so the bubble doesn't jump and a flick keeps its distance
+      x0 = origin(x0, e.clientX);
       clearTimeout(settle);
       node.classList.remove('returning');
       node.classList.add('swiping');
+      // keep the finger's events here even when it leaves the row
+      try {
+        node.setPointerCapture(e.pointerId);
+      } catch {
+        /* the pointer is already gone */
+      }
     }
     if (mode === 'swipe') show(pull(e.clientX - x0));
   }
 
-  function end(e: PointerEvent, release: boolean) {
+  // Safari (and Chrome when the finger drifts) start scrolling during a long or hard swipe and
+  // cancel the pointer; refusing the touch's default once it leans sideways keeps it ours.
+  function touchmove(e: TouchEvent) {
+    if (pointer === null || mode === 'scroll' || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    if (mode === 'swipe' || Math.abs(t.clientX - x0) > Math.abs(t.clientY - y0)) {
+      if (e.cancelable) e.preventDefault();
+    }
+  }
+
+  function end(e: PointerEvent) {
     if (e.pointerId !== pointer) return;
     pointer = null;
     if (mode !== 'swipe') return;
     mode = null;
     swallowClick = true;
-    const reply = release && armed && opts.enabled;
+    // once armed the reply is meant, even if the browser took the touch away before the release
+    const reply = armed && opts.enabled;
     node.classList.remove('swiping');
     node.classList.add('returning');
     show(0);
@@ -86,8 +115,6 @@ export function swipeReply(node: HTMLElement, options: SwipeOptions) {
     if (reply) opts.onreply();
   }
 
-  const up = (e: PointerEvent) => end(e, true);
-  const cancel = (e: PointerEvent) => end(e, false);
   // a swipe that ends over the bubble isn't also a tap on it
   const click = (e: MouseEvent) => {
     if (!swallowClick) return;
@@ -98,8 +125,9 @@ export function swipeReply(node: HTMLElement, options: SwipeOptions) {
 
   node.addEventListener('pointerdown', down);
   node.addEventListener('pointermove', move);
-  node.addEventListener('pointerup', up);
-  node.addEventListener('pointercancel', cancel);
+  node.addEventListener('pointerup', end);
+  node.addEventListener('pointercancel', end);
+  node.addEventListener('touchmove', touchmove, { passive: false });
   node.addEventListener('click', click, true);
   return {
     update(next: SwipeOptions) {
@@ -109,8 +137,9 @@ export function swipeReply(node: HTMLElement, options: SwipeOptions) {
       clearTimeout(settle);
       node.removeEventListener('pointerdown', down);
       node.removeEventListener('pointermove', move);
-      node.removeEventListener('pointerup', up);
-      node.removeEventListener('pointercancel', cancel);
+      node.removeEventListener('pointerup', end);
+      node.removeEventListener('pointercancel', end);
+      node.removeEventListener('touchmove', touchmove);
       node.removeEventListener('click', click, true);
     },
   };
