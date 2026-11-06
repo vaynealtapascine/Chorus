@@ -37,6 +37,7 @@
   import ChannelEditor from './ChannelEditor.svelte';
   import NewChat from './NewChat.svelte';
   import SpacePanel from './SpacePanel.svelte';
+  import { profileHref } from '../profile-link';
   import { chatShown, privacyChannel } from '../chat-visible';
   import { alignsRight, readSetting, roomSpeakers, settingValue, type SpeakerMode } from '../room-speakers';
   import { editDraft, inputDraft, markupDraft, parseComposer, updateDraft, mentionAt, mentionChoices, replaceSelection, unicodeEmoji, type MentionChoice, type ComposerDraft } from '../chat-composer';
@@ -1398,6 +1399,7 @@
           oncancelheld={() => sync.cancelHeld(m.id)}
           onreact={(emoji, on) => react(m, emoji, on)}
           onjump={(t) => showMessage(t, m.id)}
+          profileOf={(id) => profileHref(people.get(id), sync.accountId)}
           postOf={(id) => postsById.get(id)}
           {embedLookup}
           extra={pollFor}

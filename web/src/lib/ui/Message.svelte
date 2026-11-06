@@ -61,6 +61,7 @@
     onjump,
     postOf,
     embedLookup,
+    profileOf,
   }: {
     m: MessageRow;
     readOnly?: boolean;
@@ -76,6 +77,8 @@
     /** What its links point at (D-109): the replica's posts, and messages this reader may see here. */
     postOf?: (id: string) => PostRow | undefined;
     embedLookup?: (id: string) => (MessageRow & { channel_name?: string }) | undefined;
+    /** Where an author's face or name leads: their profile, as in the Journal (profile-link.ts). */
+    profileOf?: (memberId: string) => string | null;
     people: Map<string, MemberRow>;
     dark: boolean;
     lookup: (id: string) => (MessageRow & { channel_name?: string }) | undefined;
@@ -226,7 +229,9 @@
   <span class="swipe-hint" aria-hidden="true"><Icon name="action-reply" size={18} /></span>
   {#if out}{@render aside()}{/if}
   {#if !out}
-    <span class="slot">{#if last}{@const a = m.authors[0] ?? ''}<span class="avatar" style="--ring: {color(a).ring}; --avatar-ink: {color(a).avatar_ink}" title={nameOf(a)}><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></span>{/if}</span>
+    <span class="slot">{#if last}{@const a = m.authors[0] ?? ''}{@const href = profileOf?.(a)}
+      {#if href}<a class="avatar" {href} style="--ring: {color(a).ring}; --avatar-ink: {color(a).avatar_ink}" title={nameOf(a)} aria-label="{nameOf(a)}’s profile"><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></a>
+      {:else}<span class="avatar" style="--ring: {color(a).ring}; --avatar-ink: {color(a).avatar_ink}" title={nameOf(a)}><AvatarImage hash={people.get(a)?.avatar_blob} glyph={people.get(a)?.sigils[0] ?? nameOf(a)[0]} name={nameOf(a)} /></span>{/if}{/if}</span>
   {/if}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="msg" class:cont class:self={out} class:pinned={m.pinned} class:selected data-message-id={m.id} onclick={tapBubble}
@@ -242,7 +247,7 @@
           </span>
         {/if}
         <span class="who">
-          {#each m.authors as a, i (a)}{#if i}<span class="amp">{' & '}</span>{/if}<span style="color: {color(a).name}">{nameOf(a)}</span>{/each}
+          {#each m.authors as a, i (a)}{@const href = profileOf?.(a)}{#if i}<span class="amp">{' & '}</span>{/if}{#if href}<a class="name" {href} style="color: {color(a).name}">{nameOf(a)}</a>{:else}<span style="color: {color(a).name}">{nameOf(a)}</span>{/if}{/each}
         </span>
         {#if tag}<span class="layer">{tag}</span>{/if}
         {#if m.sent_offline}<span class="tag" title="Composed offline, synced later">sent offline</span>{/if}
@@ -469,6 +474,9 @@
   .segment-avatar, .thread-avatar { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; overflow: hidden; font-size: 11px;
     background: var(--ring, var(--surface)); color: var(--avatar-ink, var(--ink)); box-shadow: 0 0 0 2px var(--surface-2); }
   .segment-avatar + .segment-avatar { margin-left: -4px; }
+  a.avatar { text-decoration: none; }
+  .name { text-decoration: none; }
+  .name:hover { text-decoration: underline; }
   .avatar { width: 28px; height: 28px; flex: none; display: grid; place-items: center; overflow: hidden; font-size: 14px; border-radius: 50%;
     background: var(--ring, var(--surface-2)); color: var(--avatar-ink, var(--ink)); }
   .avatar.small { width: 20px; height: 20px; font-size: 11px; box-shadow: 0 0 0 2px var(--surface-2); }

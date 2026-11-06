@@ -9,7 +9,7 @@
   import { savedPosts, socialIndex } from '../journal-social';
   import { router } from '../router.svelte';
   import ProfileRelationships from './ProfileRelationships.svelte';
-  import AvatarImage from './AvatarImage.svelte';
+  import ProfileHeader from './ProfileHeader.svelte';
 
   let { projection, id, dark }: { projection: Projection; id: string; dark: boolean } = $props();
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
@@ -63,11 +63,12 @@
 
 <section class="profile">
   {#if member}
-    {#if member.banner_blob}<div class="banner" aria-label="Profile banner"><AvatarImage hash={member.banner_blob} glyph="" name="Profile banner" /></div>{/if}
-    <header><span class="avatar"><AvatarImage hash={member.avatar_blob} glyph={member.sigils[0] ?? member.name[0]} name={member.display_name ?? member.name} /></span>
-      <div><h1 class="display">{member.display_name ?? member.name}</h1>{#if member.pronouns}<p>{member.pronouns}</p>{/if}{#if own}<a href="#/members/{id}">Edit member</a>{/if}</div></header>
-    {#if member.description}<p class="bio">{member.description}</p>{/if}
-    {#if custom.length}<dl class="fields">{#each custom as field (field.name)}<div><dt>{field.name}</dt><dd>{shownValue(field.value)}</dd></div>{/each}</dl>{/if}
+    <ProfileHeader banner={member.banner_blob} avatar={member.avatar_blob} glyph={member.sigils[0] ?? member.name[0]} name={member.display_name ?? member.name}
+      color={member.color} subtitle={[member.pronouns, member.sigils.join(' ')].filter(Boolean).join(' · ')} {dark}>
+      {#snippet actions()}{#if own}<a class="action" href="#/members/{id}">Edit profile</a>{/if}{/snippet}
+      {#if member.description}<p class="bio">{member.description}</p>{/if}
+      {#if custom.length}<dl class="fields">{#each custom as field (field.name)}<div><dt>{field.name}</dt><dd>{shownValue(field.value)}</dd></div>{/each}</dl>{/if}
+    </ProfileHeader>
     <div class="stats" aria-label="Member stats">
       <span>Front: {weekHours} h this week · {monthHours} h in 28 days</span>
       <span>{lastFront ? `Last fronted ${new Date(lastFront).toLocaleDateString()}` : 'No front recorded'}</span>
@@ -85,12 +86,10 @@
 
 <style>
   .profile { max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); }
-  .banner { height: clamp(130px, 24vw, 240px); overflow: hidden; border-radius: var(--r-lg); background: var(--surface-2); }
-  .banner :global(img) { width: 100%; height: 100%; object-fit: cover; }
-  header { display: flex; align-items: center; gap: var(--s-4); }
-  .avatar { display: inline-grid; width: 72px; height: 72px; border-radius: 50%; overflow: hidden; flex: none; }
-  h1, p { margin: 0; }
-  header p, .bio, .empty { color: var(--ink-2); }
+  p { margin: 0; }
+  .bio, .empty { color: var(--ink-2); }
+  .action { padding: 7px 16px; border: 1px solid var(--line); border-radius: var(--r-full); color: var(--ink); font-weight: 600; text-decoration: none; }
+  .action:hover { background: var(--surface-2); }
   .fields, .stats { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); color: var(--ink-2); }
   .fields div { display: flex; gap: var(--s-1); }
   dt { font-weight: 600; } dd { margin: 0; }

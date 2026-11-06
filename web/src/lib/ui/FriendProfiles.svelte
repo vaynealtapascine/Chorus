@@ -1,6 +1,7 @@
 <script lang="ts">
   // A friend's members and their profiles (D-101): only what that account shares with us, as the
-  // server decides; fetched on demand, never synced or kept. Nothing about fronting is here.
+  // server decides; fetched on demand, never synced or kept. Nothing about fronting is here. A
+  // profile looks like our own members' (ProfileHeader), with the posts we may read (owner, 2026-11-06).
   import { core } from '../core';
   import { apiFetch } from '../http';
   import { roleColor } from '../member-list';
@@ -10,8 +11,21 @@
   import MemberBanner from './MemberBanner.svelte';
   import RichText from './RichText.svelte';
   import Icon from './Icon.svelte';
+  import ProfileHeader from './ProfileHeader.svelte';
+  import FriendPostCard from './FriendPostCard.svelte';
+  import type { FriendPost } from '../friends-feed';
+  import { members } from '../data';
+  import { canWriteAs } from '../posts';
+  import { bodyAuthors } from '../front-view';
+  import type { Projection } from '../sync/client';
 
-  let { accountId, memberId, dark }: { accountId: string; memberId?: string; dark: boolean } = $props();
+  let { accountId, memberId, dark, projection }: { accountId: string; memberId?: string; dark: boolean; projection: Projection } = $props();
+  // who reacts and replies from here: as in the Journal, whoever fronts, else the first who may write
+  const speaker = $derived(bodyAuthors(projection, sync.accountId)[0] ?? members(projection).find((m) => canWriteAs(projection, m.id, sync.accountId))?.id ?? null);
+  const speakerName = $derived.by(() => { const m = members(projection).find((x) => x.id === speaker); return m?.display_name ?? m?.name ?? ''; });
+  let tab = $state<'posts' | 'about'>('posts');
+  // their posts and entries we may read, through the same audience check as everywhere (posts::readable_sql)
+  let posts = $state<FriendPost[] | null>(null);
 
   interface Card { id: string; name: string; display_name: string | null; pronouns: string | null; color: string | null; sigil: string | null; avatar_blob: string | null }
   /** A row of their member list: the banner and role pills they share with us, if any. */
@@ -76,6 +90,18 @@
     return () => { cancelled = true; };
   });
 
+  $effect(() => {
+    const account = accountId;
+    const member = memberId;
+    posts = null;
+    if (!member) return;
+    let cancelled = false;
+    void get(`/posts?account=${encodeURIComponent(account)}&author=${encodeURIComponent(member)}&limit=50`)
+      .then((j) => { if (!cancelled) posts = ((j?.items ?? []) as FriendPost[]).filter((p) => !p.reply_to && !p.repost_of); })
+      .catch(() => { if (!cancelled) posts = []; });
+    return () => { cancelled = true; };
+  });
+
   const shownName = (m: Card) => m.display_name ?? m.name;
   const tone = (c: string | null) => (c ? core.adaptColor(c, dark) : null);
   const glyph = (m: Card) => m.sigil ?? shownName(m)[0] ?? '?';
@@ -94,24 +120,33 @@
     {#if missing}
       <p class="muted">This profile isn't shared with you.</p>
     {:else if profile}
-      {@const t = tone(profile.color)}
-      {#if profile.banner_blob}<div class="banner" aria-label="Profile banner"><AvatarImage hash={profile.banner_blob} glyph="" name="Profile banner" /></div>{/if}
-      <header style="--ring: {t?.ring ?? 'var(--line)'}">
-        <span class="avatar"><AvatarImage hash={profile.avatar_blob} glyph={glyph(profile)} name={shownName(profile)} /></span>
-        <div>
-          <h1 class="display" style="color: {t?.name ?? 'inherit'}">{shownName(profile)}</h1>
-          <p class="muted">{[profile.pronouns, owner?.name].filter(Boolean).join(' · ')}</p>
-        </div>
-        {#if profile.post_alerts}
-          {@const state = profile.post_alerts}
-          <button class="alerts" class:on={state === 'active'} disabled={alertsBusy} onclick={toggleAlerts}
-            aria-pressed={state !== 'none'} title={state === 'requested' ? `${owner?.name ?? 'They'} will see your request. Tap to cancel it.` : undefined}>
-            <Icon name="bell" size={18} />
-            {state === 'active' ? 'Post alerts on' : state === 'requested' ? 'Requested' : 'Get post alerts'}
-          </button>
+      <ProfileHeader banner={profile.banner_blob} avatar={profile.avatar_blob} glyph={glyph(profile)} name={shownName(profile)} color={profile.color}
+        subtitle={[profile.pronouns, owner?.name].filter(Boolean).join(' · ')} {dark}>
+        {#snippet actions()}
+          {#if profile?.post_alerts}
+            {@const state = profile.post_alerts}
+            <button class="alerts" class:on={state === 'active'} disabled={alertsBusy} onclick={toggleAlerts}
+              aria-pressed={state !== 'none'} title={state === 'requested' ? `${owner?.name ?? 'They'} will see your request. Tap to cancel it.` : undefined}>
+              <Icon name="bell" size={18} />
+              {state === 'active' ? 'Post alerts on' : state === 'requested' ? 'Requested' : 'Get post alerts'}
+            </button>
+          {/if}
+        {/snippet}
+        {#if profile.description}<p class="bio"><RichText text={profile.description} entities={profile.description_entities ?? []} /></p>{/if}
+      </ProfileHeader>
+      <nav class="tabs" aria-label="Profile sections">
+        <button class:on={tab === 'posts'} aria-pressed={tab === 'posts'} onclick={() => (tab = 'posts')}>Posts</button>
+        <button class:on={tab === 'about'} aria-pressed={tab === 'about'} onclick={() => (tab = 'about')}>About</button>
+      </nav>
+      {#if tab === 'posts'}
+        {#if posts === null}<p class="muted">Loading…</p>
+        {:else}
+          <div class="posts">
+            {#each posts as post (post.id)}<FriendPostCard {post} account={owner?.name ?? ''} {projection} {speaker} {speakerName} {dark} />
+            {:else}<p class="muted">No posts shared with you yet.</p>{/each}
+          </div>
         {/if}
-      </header>
-      {#if profile.description}<p class="bio"><RichText text={profile.description} entities={profile.description_entities ?? []} /></p>{/if}
+      {:else}
       {#if profile.birthday || profile.fields.length}
         <dl class="fields">
           {#if profile.birthday}<div><dt>Birthday</dt><dd>{birthday(profile.birthday)}</dd></div>{/if}
@@ -132,6 +167,7 @@
         </dl>
       {/if}
       {#if profile.relationships?.length}<section aria-label="Relationships"><h2>Relationships</h2>{#each profile.relationships as link (link.id)}<p>{link.type} · {shownName(link.target)}{#if link.note}<br />{link.note}{/if}</p>{/each}</section>{/if}
+      {/if}
       <p class="hint">You see what {owner?.name ?? 'they'} chose to share with you.</p>
     {:else if !error}
       <p class="muted">Loading…</p>
@@ -166,12 +202,11 @@
   .friend { max-width: 760px; margin: 0 auto; display: grid; gap: var(--s-4); }
   .back { color: var(--ink-2); text-decoration: none; font-size: var(--fs-sm); }
   h1 { margin: 0; font-size: var(--fs-2xl); }
-  .banner { height: clamp(130px, 24vw, 240px); overflow: hidden; border-radius: var(--r-lg); background: var(--surface-2); }
-  .banner :global(img) { width: 100%; height: 100%; object-fit: cover; }
-  header { display: flex; align-items: center; gap: var(--s-4); }
-  .avatar { display: inline-grid; place-items: center; width: 72px; height: 72px; border-radius: 50%; overflow: hidden; flex: none; background: var(--surface-2); box-shadow: 0 0 0 3px var(--ring); font-size: 30px; }
-  .avatar.small { width: 44px; height: 44px; font-size: 20px; box-shadow: 0 0 0 2px var(--ring); }
-  header > div { flex: 1; min-width: 0; }
+  .avatar.small { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; flex: none; background: var(--surface-2); box-shadow: 0 0 0 2px var(--ring); font-size: 20px; }
+  .tabs { display: flex; gap: var(--s-2); border-bottom: 1px solid var(--line); }
+  .tabs button { border: 0; background: none; color: var(--ink-2); padding: var(--s-2) var(--s-3); cursor: pointer; font: inherit; }
+  .tabs button.on { border-bottom: 2px solid var(--accent); color: var(--ink); font-weight: 600; }
+  .posts { display: grid; gap: var(--s-3); }
   .alerts { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 8px 14px; min-height: 40px; border-radius: var(--r-full); border: 1px solid var(--line);
     background: var(--surface); color: var(--ink); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
   .alerts.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }

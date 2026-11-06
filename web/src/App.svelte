@@ -181,7 +181,7 @@
       {:else if router.route.name === 'member' && router.route.id}
         <MemberEditor {projection} id={router.route.id} {dark} />
       {:else if router.route.name === 'friend' && router.route.id}
-        <FriendProfiles accountId={router.route.id} memberId={router.route.memberId} {dark} />
+        <FriendProfiles accountId={router.route.id} memberId={router.route.memberId} {dark} {projection} />
       {:else if router.route.name === 'profile' && router.route.id}
         <Profile {projection} id={router.route.id} {dark} />
       {:else if router.route.name === 'journal'}
