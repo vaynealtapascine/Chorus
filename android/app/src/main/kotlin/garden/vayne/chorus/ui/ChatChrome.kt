@@ -23,6 +23,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -89,7 +90,9 @@ internal data class ChatListRow(val channel: ChatChannel, val space: ChatSpace, 
     val archived: Boolean = false,
     /** Who a DM with another account is with: the member a private chat is kept to on their side,
      * or the person (their own member) or account at the other end. */
-    val icon: Member? = null)
+    val icon: Member? = null,
+    /** In a shared space with several channels: listed under the space's entry (owner, 2026-11-06). */
+    val grouped: Boolean = false)
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -99,7 +102,11 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
     onRowAction: ((ChatListRow, String) -> Unit)? = null,
     previews: Map<String, String> = emptyMap(),
     /** Chat folders (D-113): open their settings, or save a change made here. */
-    onEditFolders: ((String?) -> Unit)? = null, onFolders: ((ChatFolders.Settings) -> Unit)? = null) {
+    onEditFolders: ((String?) -> Unit)? = null, onFolders: ((ChatFolders.Settings) -> Unit)? = null,
+    /** The open conversation, on every layout: its space's channels show around it when it folds. */
+    opened: String? = null,
+    /** Pin, unpin or archive every channel of a space's entry at once ("pin", "unpin", "archive"). */
+    onSpaceAction: ((List<ChatListRow>, String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val folders = model.accountPrefs.chatFolders
     // which folder is open stays on this device; a hidden or deleted one falls back to the first shown
@@ -116,14 +123,25 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
     val archiveView = showArchived && archivedRows.isNotEmpty()
     androidx.activity.compose.BackHandler(archiveView) { showArchived = false }
     val listed = if (archiveView) archivedRows else rows.filter { !it.archived }
+    // a shared space with several channels is one entry, like a Telegram forum; opening it lists its
+    // channels (owner, 2026-11-06). Archived chats stay flat.
+    var openSpace by rememberSaveable { mutableStateOf<String?>(null) }
+    val inside = openSpace?.takeIf { !archiveView }?.let { id -> ChatOrganize.order(listed.filter { it.space.id == id },
+        model.accountPrefs.chatPins, { it.channel.id }, { it.latest?.occurredAt ?: 0L }, { it.title }) }?.takeIf { it.isNotEmpty() }
+    androidx.activity.compose.BackHandler(inside != null) { openSpace = null }
+    // opening one of its channels from elsewhere shows the space's channels around it
+    LaunchedEffect(opened) { rows.firstOrNull { it.channel.id == opened }?.takeIf { it.grouped }?.let { openSpace = it.space.id } }
     val pinnedCount = listed.count { it.pinned }
     val system = model.spaces.firstOrNull { it.kind == "internal" }?.name?.takeUnless { it == "Home" }
     Column(modifier.fillMaxHeight().background(p.bg)) {
         Row(Modifier.fillMaxWidth().background(p.surface).padding(start = if (archiveView) 4.dp else 16.dp), verticalAlignment = Alignment.CenterVertically) {
             if (archiveView) ChatIconButton(R.drawable.ic_back, "Back to chats") { showArchived = false }
+            else if (inside != null) ChatIconButton(R.drawable.ic_back, "Back to chats") { openSpace = null }
             Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
-                Text(if (archiveView) "Archived chats" else "Chats", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (archiveView) "Archived chats" else inside?.firstOrNull()?.space?.name ?: "Chats", color = p.ink, fontSize = 20.sp,
+                    lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(if (archiveView) "A new message brings a chat back"
+                    else if (inside != null) "${inside.size} ${if (inside.size == 1) "channel" else "channels"}"
                     else listOfNotNull(system, reader?.let { "reading as $it" }).joinToString(" · ").ifEmpty { "Your conversations" },
                     color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
             }
@@ -141,7 +159,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                 }
             }
         }
-        if (!model.isPerson && !archiveView && folders.showHere) {
+        if (!model.isPerson && !archiveView && inside == null && folders.showHere) {
             val presence = ChatPresentation.presence(model, selected).filter { it.subjectType == "member" }
             Column(Modifier.fillMaxWidth().background(p.surface)) {
                 LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -172,7 +190,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
             }
         }
         // the folders shown, in their order (D-113), then a pencil to arrange them; all hidden: no tabs
-        if (!archiveView && folder != null) {
+        if (!archiveView && inside == null && folder != null) {
             val selectedIndex = folders.visible.indexOf(folder)
             ScrollableTabRow(selectedIndex, containerColor = p.surface, contentColor = p.accent, edgePadding = 8.dp,
                 indicator = { positions -> TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(positions[selectedIndex]), color = p.accent) }) {
@@ -192,14 +210,21 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
             }
         }
         Box(Modifier.weight(1f)) {
-            val filtered = listed.filter { archiveView || folder == null || inFolder(folders, folder, it) }
+            val filtered = inside ?: listed.filter { archiveView || folder == null || inFolder(folders, folder, it) }
+            val entries: List<Any> = if (archiveView || inside != null) filtered
+                else ChatOrganize.withSpaces(filtered, model.accountPrefs.chatPins, { it.channel.id }, { it.latest?.occurredAt ?: 0L },
+                    { it.title }, { it.unread }, { it.muted }, { r -> if (r.grouped) r.space.id to r.space.name else null })
             // a chat that moves to the top (pinned, or a new message) is shown, not left just above the
             // view: lazy lists keep the old first row in place
             val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-            val first = filtered.firstOrNull()?.channel?.id
+            val first = entries.firstOrNull()?.let { (it as? ChatOrganize.SpaceEntry<*>)?.spaceId ?: (it as ChatListRow).channel.id }
             LaunchedEffect(first) { if (listState.firstVisibleItemIndex <= 1) listState.scrollToItem(0) }
             LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 88.dp)) {
-                items(filtered, key = { it.channel.id }) { row ->
+                items(entries, key = { (it as? ChatOrganize.SpaceEntry<*>)?.let { e -> "space:${e.spaceId}" } ?: (it as ChatListRow).channel.id }) { entry ->
+                    @Suppress("UNCHECKED_CAST")
+                    if (entry is ChatOrganize.SpaceEntry<*>) { SpaceEntryRow(entry as ChatOrganize.SpaceEntry<ChatListRow>, folders.compact,
+                        onOpen = { openSpace = entry.spaceId }, onAction = onSpaceAction); return@items }
+                    val row = entry as ChatListRow
                     val direct = row.channel.isMemberDm && row.space.kind == "internal"
                     val peer = if (direct) row.channel.memberIds.firstOrNull { it != (readerId ?: ChatSpeaker.pick(model, row.channel.id)) }?.let(model::member) else null
                     Box { Row(Modifier.fillMaxWidth().background(if (selected == row.channel.id) p.accentSoft else if (row.pinned) p.surface else p.bg)
@@ -216,7 +241,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                                 else if (row.space.kind != "internal") ChatIcon(R.drawable.ic_globe)
                                 else if (row.channel.parentMessageId != null) ChatIcon(R.drawable.ic_reply)
                                 else if (!direct) Text("#", color = p.ink3, fontSize = 16.sp, lineHeight = 22.sp)
-                                Text(row.title, color = p.ink, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
+                                Text(if (inside != null) row.channel.name else row.title, color = p.ink, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                                 row.whose?.let { Text("• $it", color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1,
                                     overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)) }
@@ -253,18 +278,18 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                     }
                     HorizontalDivider(Modifier.padding(start = if (folders.compact) 64.dp else 72.dp), color = p.line, thickness = .5.dp)
                 }
-                if (filtered.isEmpty()) item { Column(Modifier.padding(24.dp)) {
+                if (entries.isEmpty()) item { Column(Modifier.padding(24.dp)) {
                     Text("No chats here yet.", color = p.ink3)
                     if (onNewChannel != null) TextButton(onClick = onNewChannel) { Text("Create a channel") }
                     if (onNew != null) TextButton(onClick = onNew) { Text("Start a chat") }
                 } }
-                if (!archiveView && (folder == "shared" || folder == "direct")) item {
+                if (!archiveView && inside == null && (folder == "shared" || folder == "direct")) item {
                     Text(if (folder == "shared") "Shared spaces include other systems. Messages show who is speaking; system asides stay inside your system."
                         else "One-to-one chats between your members and with other accounts.", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
                         modifier = Modifier.padding(24.dp))
                 }
             }
-            if (onNew != null && !archiveView) ExtendedFloatingActionButton(onClick = onNew, containerColor = p.accent, contentColor = p.onAccent,
+            if (onNew != null && !archiveView && inside == null) ExtendedFloatingActionButton(onClick = onNew, containerColor = p.accent, contentColor = p.onAccent,
                 shape = CircleShape, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
                 icon = { ChatIcon(R.drawable.ic_edit, "New chat or channel", p.onAccent) }, text = { Text("New chat") })
         }
@@ -290,6 +315,58 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
             confirmButton = { TextButton(onClick = { foldersFor = null }) { Text("Done") } },
             dismissButton = { if (onEditFolders != null) TextButton(onClick = { foldersFor = null; onEditFolders("new:${row.channel.id}") }) { Text("New folder…") } })
     }
+}
+
+/** A shared space's entry (owner, 2026-11-06): a rounded-square disc, its name, and its newest
+ * channel's message under it; a tap lists its channels, a long press pins or archives them all. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun SpaceEntryRow(entry: ChatOrganize.SpaceEntry<ChatListRow>, compact: Boolean, onOpen: () -> Unit,
+    onAction: ((List<ChatListRow>, String) -> Unit)?) {
+    val p = LocalChorusPalette.current
+    val latest = entry.rows.first()
+    var menu by remember { mutableStateOf(false) }
+    Box {
+        Row(Modifier.fillMaxWidth().background(if (entry.pinned) p.surface else p.bg)
+            .combinedClickable(onClickLabel = "Show its channels", onClick = onOpen,
+                onLongClick = onAction?.let { { menu = true } }, onLongClickLabel = "Space actions")
+            .heightIn(min = if (compact) 56.dp else 70.dp).padding(horizontal = 12.dp, vertical = if (compact) 4.dp else 8.dp)
+            .semantics { contentDescription = "${entry.name}, ${entry.rows.size} channels" + if (entry.unread > 0) ", ${entry.unread} unread" else "" },
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            val size = if (compact) 40.dp else 48.dp
+            Box(Modifier.size(size).background(p.accentSoft, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                Text(entry.name.firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "#", color = p.accent, fontWeight = FontWeight.SemiBold, fontSize = (size.value * .42f).sp)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ChatIcon(R.drawable.ic_globe)
+                    Text(entry.name, color = p.ink, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                }
+                val preview = ChatPresentation.preview(latest.latest, null)
+                Text(androidx.compose.ui.text.buildAnnotatedString {
+                    withStyle(androidx.compose.ui.text.SpanStyle(color = p.accent)) { append("# ${latest.channel.name}  ") }
+                    append(spoilerPreview(listOfNotNull(latest.sender?.takeIf { it.isNotBlank() }, preview).joinToString(": ")))
+                }, color = p.ink3, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (entry.at > 0) Text(ChatPresentation.listTimeLabel(entry.at), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (entry.muted) Icon(painterResource(R.drawable.ic_bell_off), "Muted", Modifier.size(16.dp), tint = p.ink3)
+                    if (entry.unread > 0) ChatCount(entry.unread, !entry.muted)
+                    else if (entry.pinned) Icon(painterResource(R.drawable.ic_pin), "Pinned", Modifier.size(16.dp), tint = p.ink3)
+                }
+            }
+        }
+        if (onAction != null) DropdownMenu(menu, { menu = false }) {
+            DropdownMenuItem(text = { Text("Show channels") }, onClick = { menu = false; onOpen() })
+            DropdownMenuItem(text = { Text(if (entry.pinned) "Unpin" else "Pin to top") }, onClick = { menu = false; onAction(entry.rows, if (entry.pinned) "unpin" else "pin") },
+                leadingIcon = { Icon(painterResource(if (entry.pinned) R.drawable.ic_unpin else R.drawable.ic_pin), null, Modifier.size(20.dp)) })
+            DropdownMenuItem(text = { Text("Archive all") }, onClick = { menu = false; onAction(entry.rows, "archive") },
+                leadingIcon = { Icon(painterResource(R.drawable.ic_archive), null, Modifier.size(20.dp)) })
+        }
+    }
+    HorizontalDivider(Modifier.padding(start = if (compact) 64.dp else 72.dp), color = p.line, thickness = .5.dp)
 }
 
 /** Whether [row] shows in folder [id] right now (D-113). */

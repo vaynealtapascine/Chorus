@@ -126,6 +126,37 @@ object ChatOrganize {
         return pinned.sortedBy { rank[id(it)] } + rest.sortedWith(compareByDescending(at).thenBy(title))
     }
 
+    /** A shared space with more than one channel, as one entry of the chat list (owner, 2026-11-06),
+     * like a Telegram forum: its newest chat first in [rows], summed unread, muted only when every
+     * channel is. Web's `withSpaces` in chat-list.ts. */
+    data class SpaceEntry<T>(val spaceId: String, val name: String, val rows: List<T>, val at: Long,
+        val unread: Int, val muted: Boolean, val pinned: Boolean)
+
+    /** Which channels fold into their space: a shared space's, when it has more than one. Our own
+     * space's channels and DMs stay rows of their own. */
+    fun groupsInto(spaceKind: String, channelsInSpace: Int): Boolean = spaceKind == "shared" && channelsInSpace > 1
+
+    /** The list's entries in order: rows of their own ([Either.Left]) and one entry per space that
+     * folds ([spaceOf] names it, or null), pinned first where any of its channels is pinned. */
+    fun <T : Any> withSpaces(rows: List<T>, pins: List<String>, id: (T) -> String, at: (T) -> Long, title: (T) -> String,
+        unread: (T) -> Int, muted: (T) -> Boolean, spaceOf: (T) -> Pair<String, String>?): List<Any> {
+        val grouped = rows.groupBy { spaceOf(it) }
+        val rank = pins.withIndex().associate { (i, p) -> p to i }
+        val entries = grouped.filterKeys { it != null }.map { (space, members) ->
+            val newest = members.sortedWith(compareByDescending(at).thenBy(title))
+            SpaceEntry(space!!.first, space.second, newest, newest.maxOf(at), members.sumOf(unread),
+                members.all(muted), members.any { id(it) in rank })
+        }
+        val singles = grouped[null].orEmpty()
+        fun rankOf(e: Any): Int? = if (e is SpaceEntry<*>) e.rows.mapNotNull { @Suppress("UNCHECKED_CAST") rank[id(it as T)] }.minOrNull()
+            else @Suppress("UNCHECKED_CAST") rank[id(e as T)]
+        fun atOf(e: Any): Long = if (e is SpaceEntry<*>) e.at else @Suppress("UNCHECKED_CAST") at(e as T)
+        fun titleOf(e: Any): String = if (e is SpaceEntry<*>) e.name else @Suppress("UNCHECKED_CAST") title(e as T)
+        val all: List<Any> = singles + entries
+        val (pinned, rest) = all.partition { rankOf(it) != null }
+        return pinned.sortedBy { rankOf(it) } + rest.sortedWith(compareByDescending<Any> { atOf(it) }.thenBy { titleOf(it) })
+    }
+
     /** Pin or unpin, keeping the others' order; a new pin goes last among the pins. */
     fun togglePin(pins: List<String>, channelId: String): List<String> =
         if (channelId in pins) pins - channelId else pins + channelId

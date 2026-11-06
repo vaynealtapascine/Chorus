@@ -88,4 +88,26 @@ class ChatOrganizeTest {
             "||chat_archived:c2":{"exists":true,"fields":{"value":null}}}}}"""), "acct")
         assertEquals(mapOf("c1" to 100L), prefs.archivedChats)
     }
+
+    @Test fun aSharedSpaceWithSeveralChannelsIsOneEntryLikeATelegramForum() {
+        assertTrue(ChatOrganize.groupsInto("shared", 2))
+        assertFalse(ChatOrganize.groupsInto("shared", 1))
+        assertFalse(ChatOrganize.groupsInto("internal", 9))
+        assertFalse(ChatOrganize.groupsInto("dm", 3))
+        data class R(val id: String, val at: Long, val unread: Int = 0, val muted: Boolean = false, val space: String? = null)
+        val rows = listOf(R("general", 5), R("a", 10, 2, true, "club"), R("b", 30, 1, space = "club"), R("c", 20, 0, true, "club"), R("x", 25))
+        val entries = ChatOrganize.withSpaces(rows, emptyList(), { it.id }, { it.at }, { it.id }, { it.unread }, { it.muted },
+            { r -> r.space?.let { it to "Book club" } })
+        assertEquals(listOf("club", "x", "general"), entries.map { (it as? ChatOrganize.SpaceEntry<*>)?.spaceId ?: (it as R).id })
+        val club = entries[0] as ChatOrganize.SpaceEntry<*>
+        assertEquals(listOf("b", "c", "a"), club.rows.map { (it as R).id })
+        assertEquals(3, club.unread)
+        assertFalse(club.muted)
+        assertEquals(30L, club.at)
+        // pinned where its first pinned channel is
+        val pinned = ChatOrganize.withSpaces(rows, listOf("general", "c"), { it.id }, { it.at }, { it.id }, { it.unread }, { it.muted },
+            { r -> r.space?.let { it to "Book club" } })
+        assertEquals(listOf("general", "club", "x"), pinned.map { (it as? ChatOrganize.SpaceEntry<*>)?.spaceId ?: (it as R).id })
+        assertTrue((pinned[1] as ChatOrganize.SpaceEntry<*>).pinned)
+    }
 }

@@ -593,10 +593,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             val partner = partnerAccount?.shownName
             // a private chat (D-098): titled by their member on their side, by the friend on ours
             val sides = ChatManage.sides(candidate, home, ownIds)
+            val siblings = model.channels.count { it.spaceId == home.id && it.kind != "thread" }
             val title = if (sides != null) sides.theirs.mapNotNull { privateCards[it]?.name ?: foreignAuthors[it]?.name }
                     .joinToString(" & ").ifEmpty { partner ?: candidate.name }
                 else if (home.kind == "dm") partner ?: home.name
-                else if (home.kind == "shared" && model.channels.count { it.spaceId == home.id && it.kind != "thread" } == 1) home.name else candidate.name
+                else if (home.kind == "shared" && siblings == 1) home.name else candidate.name
             val latest = visible.lastOrNull()
             val sender = latest?.authors?.joinToString(" & ") { id -> model.member(id)?.shownName ?: foreignAuthors[id]?.name
                 ?: directory[home.id]?.accounts?.find { it.id == latest.accountId }?.shownName ?: "Someone" }
@@ -606,7 +607,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 whose = sides?.mine?.mapNotNull { model.member(it)?.shownName }?.joinToString(" & ")?.ifEmpty { null },
                 archived = ChatOrganize.archived(prefs.archivedChats[candidate.id], latest?.occurredAt),
                 icon = if (sides != null) sides.theirs.firstNotNullOfOrNull { privateCards[it] ?: foreignAuthors[it] }?.member
-                    else if (home.kind == "dm" && partnerAccount != null) ChatPresentation.dmIcon(partnerAccount, privateCards.values) else null)
+                    else if (home.kind == "dm" && partnerAccount != null) ChatPresentation.dmIcon(partnerAccount, privateCards.values) else null,
+                grouped = sides == null && ChatOrganize.groupsInto(home.kind, siblings))
         }.let { rows -> ChatOrganize.order(rows, prefs.chatPins, { it.channel.id }, { it.latest?.occurredAt ?: 0L }, { it.title }) }
     }
     var arrangingPins by rememberSaveable { mutableStateOf(false) }
@@ -636,6 +638,19 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     else ChatOrganize.archiveAt(System.currentTimeMillis(), row.latest?.occurredAt)
                 try { chorus.create("pref.set", null, AccountPrefs.payload(ChatOrganize.ARCHIVED + row.channel.id, value)) }
                 catch (e: Exception) { error = e.message ?: "Could not archive this chat." }
+            }
+        }
+    }
+    // a space's entry acts on all its channels at once: one pins write, an archive per channel (D-111)
+    val spaceRowsAction: (List<ChatListRow>, String) -> Unit = { rows, action ->
+        val ids = rows.map { it.channel.id }
+        when (action) {
+            "pin" -> savePins(model.accountPrefs.chatPins + ids.filter { it !in model.accountPrefs.chatPins })
+            "unpin" -> savePins(model.accountPrefs.chatPins - ids.toSet())
+            "archive" -> actions.launch {
+                try { for (row in rows) chorus.create("pref.set", null, AccountPrefs.payload(ChatOrganize.ARCHIVED + row.channel.id,
+                    ChatOrganize.archiveAt(System.currentTimeMillis(), row.latest?.occurredAt))) }
+                catch (e: Exception) { error = e.message ?: "Could not archive this space." }
             }
         }
     }
@@ -857,7 +872,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             openChat, { spaceAction = "new" },
             { switchOpen = true }, onSearch, if (expanded) Modifier.width(240.dp) else Modifier.weight(1f), readerId = readerId,
             onNewChannel = { editChannel = false; channelEditor = true }, onRowAction = rowAction, previews = listPreviews,
-            onEditFolders = { foldersAt = it ?: "" }, onFolders = { saveFolders(it) })
+            onEditFolders = { foldersAt = it ?: "" }, onFolders = { saveFolders(it) }, opened = channel?.id, onSpaceAction = spaceRowsAction)
         if (expanded) VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
         if (pane == "info" && !expanded && channel != null && space != null && !paneLocked) {
             ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; searchHere = true },
