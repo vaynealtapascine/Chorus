@@ -7,7 +7,7 @@
   import { core } from '../core';
   import { members, reactions as allReactions, type MemberRow } from '../data';
   import { canWriteAs, postReaction, posts } from '../posts';
-  import { authorProfileHref, opensPost, quoteView, remoteNames, tagLine, threadAncestors, threadQuotes, threadReplies, type PostDetail, type ThreadItem, type ThreadPost } from '../post-threads';
+  import { authorProfileHref, mergedReactions, opensPost, quoteView, remoteNames, tagLine, threadAncestors, threadQuotes, threadReplies, type PostDetail, type ThreadItem, type ThreadPost } from '../post-threads';
   import QuoteEmbed from './QuoteEmbed.svelte';
   import { apiFetch } from '../http';
   import { apiBase } from '../sync/device';
@@ -36,6 +36,8 @@
   const own = $derived(rows.find((post) => post.id === id && !post.deleted));
 
   let detail = $state<PostDetail | null>(null);
+  // own posts read their reactions from the replica, which has only ours: friends' come with the server read
+  const merged = $derived(mergedReactions(detail, (pid) => reacts.get(pid)));
   let error = $state('');
   let loading = $state(false);
   async function load() {
@@ -151,7 +153,7 @@
       {#each ancestors as parent (parent.id)}
         <!-- own parents keep every action, as own replies do -->
         {#if parent.local}
-          <div class="own-parent"><PostCard {projection} post={parent.local} {people} {dark} reactions={reacts.get(parent.id) ?? new Map()} {speaker} {social} {saved} inThread
+          <div class="own-parent"><PostCard {projection} post={parent.local} {people} {dark} reactions={merged.reactions(parent.id)} reactorNames={merged.names} {speaker} {social} {saved} inThread
             quote={quoteFor(parent)} replyCount={parent.replyCount} onreply={() => open(parent.id)} onreact={(emoji, add) => react(parent.id, emoji, add)} /></div>
         {:else}{@render row(parent, true, true)}{/if}
       {/each}
@@ -160,7 +162,7 @@
 
   {#if own}
     <div class="focus" class:joined={ancestors.length > 0}>
-      <PostCard {projection} post={own} {people} {dark} reactions={reacts.get(own.id) ?? new Map()} {speaker} {social} {saved} inThread full
+      <PostCard {projection} post={own} {people} {dark} reactions={merged.reactions(own.id)} reactorNames={merged.names} {speaker} {social} {saved} inThread full
         quoteCount={quotes.length} onquotes={() => (showQuotes = true)}
         quote={quoteView(own.quote_post_id, postById, name, detail?.quoted)}
         replyCount={replies.length} onreply={focusReply}
@@ -195,7 +197,7 @@
     {#each listed as reply (reply.id)}
       <div class="reply">
         {#if reply.local}
-          <PostCard {projection} post={reply.local} {people} {dark} reactions={reacts.get(reply.id) ?? new Map()} {speaker} {social} {saved} inThread={listed === replies}
+          <PostCard {projection} post={reply.local} {people} {dark} reactions={merged.reactions(reply.id)} reactorNames={merged.names} {speaker} {social} {saved} inThread={listed === replies}
             quote={quoteFor(reply)}
             replyCount={reply.replyCount} onreply={() => open(reply.id)} onreact={(emoji, add) => react(reply.id, emoji, add)} />
         {:else}

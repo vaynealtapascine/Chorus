@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { opensPost, localAncestors, quoteView, remoteNames, replyCounts, threadAncestors, threadQuotes, threadReplies, authorProfileHref, tagLine } from './post-threads';
+import { mergedReactions, opensPost, localAncestors, quoteView, remoteNames, replyCounts, threadAncestors, threadQuotes, threadReplies, authorProfileHref, tagLine } from './post-threads';
 import type { PostRow } from './posts';
 
 const post = (id: string, reply_to?: string, at = 0, deleted = false): PostRow => ({
@@ -80,5 +80,19 @@ describe('journal threads', () => {
     expect(opensPost(on(false), '')).toBe(true);
     expect(opensPost(on(true), '')).toBe(false);
     expect(opensPost(on(false), 'some words')).toBe(false);
+  });
+
+  it("adds other accounts' reactions from the server read to an own post's, once each", () => {
+    const local = new Map([['p', new Map([['💜', ['kai']]])]]);
+    const merged = mergedReactions({ id: 'p', text: '', occurred_at: 1, reactions: [
+      { emoji: '💜', member_id: 'kai', member_name: 'Kai' }, { emoji: '💜', member_id: 'robin', member_name: 'Robin' },
+    ], replies: [{ id: 'r', text: '', occurred_at: 2, reactions: [{ emoji: '💜', member_id: 'robin', member_name: 'Robin' }] }] },
+    (id) => local.get(id));
+    expect([...merged.reactions('p').get('💜')!]).toEqual(['kai', 'robin']);
+    expect([...merged.reactions('r').get('💜')!]).toEqual(['robin']);
+    expect(merged.reactions('none').size).toBe(0);
+    expect(merged.names.get('robin')).toBe('Robin');
+    // the replica's own map is left as it was
+    expect(local.get('p')!.get('💜')).toEqual(['kai']);
   });
 });

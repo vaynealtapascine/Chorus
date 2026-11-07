@@ -145,3 +145,29 @@ export function quoteView(quoteId: string | null | undefined, byId: Map<string, 
   if (remote) return { id: quoteId, post: remote, names: remoteNames(remote) };
   return { id: quoteId, post: null, names: '' };
 }
+
+/**
+ * An own post's reactions on its thread page: the replica's (this account's members) and the
+ * server's, which also has other accounts' readers (a friend's heart only reaches us through the
+ * server read). Each member once per emoji; `names` has the server's names for members we don't
+ * know, so the card can say who.
+ */
+export function mergedReactions(detail: PostDetail | null, local: (id: string) => Map<string, string[]> | undefined):
+  { reactions: (id: string) => Map<string, string[]>; names: Map<string, string> } {
+  const server = new Map<string, ThreadPost['reactions']>();
+  for (const p of [detail, ...(detail?.ancestors ?? []), ...(detail?.replies ?? [])]) if (p?.reactions?.length) server.set(p.id, p.reactions);
+  const names = new Map<string, string>();
+  for (const list of server.values()) for (const r of list ?? []) if (r.member_id) names.set(r.member_id, r.member_name);
+  return {
+    names,
+    reactions: (id) => {
+      const out = new Map([...(local(id) ?? new Map<string, string[]>())].map(([emoji, ids]) => [emoji, [...ids]] as [string, string[]]));
+      for (const r of server.get(id) ?? []) {
+        if (!r.member_id) continue;
+        const ids = out.get(r.emoji) ?? [];
+        if (!ids.includes(r.member_id)) out.set(r.emoji, [...ids, r.member_id]);
+      }
+      return out;
+    },
+  };
+}

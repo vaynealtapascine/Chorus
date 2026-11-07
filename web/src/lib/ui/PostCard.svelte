@@ -25,9 +25,11 @@
   import { journalCompose } from '../journal-compose.svelte';
   import { router } from '../router.svelte';
 
-  let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection, replyCount = 0, replyToNames, inThread = false, quote = null, social, saved, repostedBy, full = false, quoteCount = 0, onquotes }: {
+  let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection, replyCount = 0, replyToNames, inThread = false, quote = null, social, saved, repostedBy, full = false, quoteCount = 0, onquotes, reactorNames }: {
     post: PostRow; people: Map<string, MemberRow>; dark: boolean;
     reactions: Map<string, string[]>; speaker: string | null;
+    /** Names for reactors from other accounts, from the server's read of the post. */
+    reactorNames?: Map<string, string>;
     /** In a feed: stop at 300 characters with Show more (an entry opens its thread). */
     compactEntry?: boolean;
     onreply: () => void; onreact: (emoji: string, add: boolean) => void;
@@ -70,7 +72,7 @@
   const preview = $derived(postPreview(post.text, post.entities));
   const whole = $derived(full || inThread);
   const previewing = $derived(!whole && !bodyExpanded && preview.truncated);
-  const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
+  const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? reactorNames?.get(id) ?? 'Someone';
   const names = $derived(post.authors.map(name).join(' & ') || 'Someone');
   const lead = $derived(people.get(post.authors[0] ?? ''));
   const color = $derived(core.adaptColor(lead?.color ?? '#A09184', dark));
