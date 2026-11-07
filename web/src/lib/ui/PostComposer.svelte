@@ -15,6 +15,7 @@
   import { decodeDraft, draftKey, emptyDraft, encodeDraft, occupied, type JournalDraft } from '../journal-draft';
   import { journalCompose } from '../journal-compose.svelte';
   import { handleMentions, memberHandles } from '../handles';
+  import { remotePost } from '../remote-posts.svelte';
 
   let { projection, initialAuthors = [], replyTo, defaultVisibility = 'private', onsent }: { projection: Projection; initialAuthors?: string[]; replyTo?: string; defaultVisibility?: 'private' | 'followers' | 'server'; onsent?: () => void } = $props();
   const active = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
@@ -77,7 +78,9 @@
   const authorLabel = $derived(active.filter((m) => authors.includes(m.id)).map((m) => m.display_name ?? m.name).join(' & ') || 'Choose author');
   const postById = $derived(new Map(posts(projection).map((p) => [p.id, p])));
   const memberName = (id: string) => active.find((m) => m.id === id)?.display_name ?? members(projection).find((m) => m.id === id)?.name ?? 'Someone';
-  const quote = $derived(draft.quote ? quoteView(draft.quote, postById, memberName) : null);
+  // another account's post is read from the server; quoting it borrows its audience (D-127)
+  const quote = $derived(draft.quote ? quoteView(draft.quote, postById, memberName, postById.has(draft.quote) ? null : remotePost(draft.quote)) : null);
+  const quotingOther = $derived(!!draft.quote && !postById.has(draft.quote));
 
   let pending = $state<{ file: File; alt: string; spoiler: boolean; url: string }[]>([]);
   let error = $state('');
@@ -161,6 +164,7 @@
         ...(sending.quote ? { quote: { post_id: sending.quote } } : {}),
         ...(attachmentIds.length ? { attachments: attachmentIds } : {}),
         ...(pollDraft.poll ? { poll: pollDraft.poll } : {}),
+        ...(sending.alerts ? { alerts: sending.alerts } : {}),
       });
       if (sync.status === 'live') void flushUploads(sync.device);
       // keep who is writing and where it goes, unless new posts have a default; clear what was said
@@ -185,7 +189,8 @@
   {#if restored}<p class="restored">Draft restored{draft.lostFiles ? ` · ${draft.lostFiles} ${draft.lostFiles === 1 ? 'file needs' : 'files need'} attaching again` : ''}. <button type="button" onclick={discard}>Discard</button></p>{/if}
   {#if draft.kind === 'entry'}<input bind:value={draft.title} placeholder="Title (optional)" aria-label="Entry title" />{/if}
   <textarea bind:this={textarea} bind:value={draft.body} onpaste={pasteFiles} rows={draft.kind === 'entry' ? 9 : 2} placeholder={replyTo ? 'Reply…' : draft.quote ? 'Add a comment…' : draft.kind === 'entry' ? 'Write your entry…' : "What's on your mind?"} aria-label="Post text"></textarea>
-  {#if quote}<div class="quoting"><QuoteEmbed {quote} /><button type="button" class="unquote" aria-label="Remove quote" onclick={() => (draft.quote = null)}><Icon name="close" size={16} /></button></div>{/if}
+  {#if quote}<div class="quoting"><QuoteEmbed {quote} gone={quote.post ? undefined : 'Loading the quoted post…'} /><button type="button" class="unquote" aria-label="Remove quote" onclick={() => (draft.quote = null)}><Icon name="close" size={16} /></button></div>
+    {#if quotingOther}<p class="borrowed">Only people who can also read the quoted post will see this.</p>{/if}{/if}
   {#if pending.length}
     <div class="tray" aria-label="Attachments ready to post">
       {#each pending as item, i (item.file.name + i)}
@@ -211,6 +216,11 @@
         {#if draft.pollOptions.length < 20}<button type="button" onclick={() => (draft.pollOptions = [...draft.pollOptions, ''])}>Add option</button>{/if}
         <label><input type="checkbox" bind:checked={draft.pollMultiple} /> Allow more than one choice</label>
       {/if}
+      <fieldset class="alerts"><legend>Notifications</legend>
+        <div class="seg">{#each [['', 'As usual'], ['delayed', 'Random delay'], ['none', 'Don’t notify']] as [id, label] (id)}<button type="button" class:on={draft.alerts === id} aria-pressed={draft.alerts === id} onclick={() => (draft.alerts = id as typeof draft.alerts)}>{label}</button>{/each}</div>
+        <small>{draft.alerts === 'delayed' ? 'Anyone told about it hears a random 5–60 minutes later.' : draft.alerts === 'none' ? 'Nobody is told about it; it still shows where they can read it.'
+          : replyTo ? 'The author you’re replying to, and friends who asked for alerts, hear right away.' : 'Friends who asked for alerts hear right away.'}</small>
+      </fieldset>
     </div></details>
     <span class="audience"><AudienceChip label="This post" value={audience} own buckets={chipBuckets} onchange={setAudience}
       defaultAudience={replyTo ? undefined : accountDefault} onusedefault={useByDefault} /></span>
@@ -237,6 +247,11 @@
   .primary:disabled { opacity: .5; cursor: default; }
   .error { color: var(--danger); margin: 0; }
   .restored { margin: 0; color: var(--ink-3); font-size: var(--fs-xs); }
+  .borrowed { margin: -4px 0 0; color: var(--ink-3); font-size: var(--fs-xs); }
+  .alerts { display: grid; gap: 6px; flex: 1 1 100%; }
+  .alerts .seg { justify-self: start; }
+  .alerts .seg button { white-space: nowrap; }
+  .alerts small { color: var(--ink-3); font-size: var(--fs-xs); }
   .restored button { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
   .author-picker { min-width: 0; position: relative; flex: 1; }
   .author-picker summary { cursor: pointer; color: var(--ink); font-size: var(--fs-sm); min-height: 40px; display: flex; align-items: center; font-weight: 600; }

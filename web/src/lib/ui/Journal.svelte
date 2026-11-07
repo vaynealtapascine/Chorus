@@ -12,6 +12,8 @@
   import { router } from '../router.svelte';
   import JournalLists from './JournalLists.svelte';
   import JournalFeeds from './JournalFeeds.svelte';
+  import { inbox, refreshActivity } from '../inbox-state.svelte';
+  import { remotePost } from '../remote-posts.svelte';
 
   import Icon from './Icon.svelte';
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
@@ -49,7 +51,22 @@
   const savedPostsList = $derived(savedList(entries, saved));
   // a card's Quote opens the composer, which lives on the timeline
   $effect(() => { if (journalCompose.quote && section !== 'timeline' && section !== 'entries') section = 'timeline'; });
-  const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? 'Someone';
+  const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? theirNames.get(id) ?? 'Someone';
+  // other accounts' replies and hearts on our posts (GET /posts/activity, D-127)
+  $effect(() => { void sync.device?.session; void entries.length; void refreshActivity(); });
+  const theirs = $derived(inbox.account === sync.accountId ? inbox.activity : null);
+  const theirNames = $derived(new Map(Object.values(theirs?.reactions ?? {}).flat().map((r) => [r.member_id, r.member_name] as [string, string])));
+  const repliesTo = (id: string) => (social.replies.get(id) ?? 0) + (theirs?.reply_counts[id] ?? 0);
+  function reactionsOf(id: string): Map<string, string[]> {
+    const own = reacts.get(id) ?? new Map<string, string[]>();
+    const other = theirs?.reactions[id];
+    if (!other?.length) return own;
+    const out = new Map([...own].map(([e, ids]) => [e, [...ids]] as [string, string[]]));
+    for (const r of other) { const ids = out.get(r.emoji) ?? []; if (!ids.includes(r.member_id)) out.set(r.emoji, [...ids, r.member_id]); }
+    return out;
+  }
+  const quoteOf = (post: PostRow) => quoteView(post.quote_post_id, postById, memberName,
+    post.quote_post_id && !postById.has(post.quote_post_id) ? remotePost(post.quote_post_id) : null);
   const memberName = name;
   const frontName = (e: { subject_id: string }) => subjectNames.get(e.subject_id) ?? 'Someone';
   function react(post: PostRow, emoji: string, add: boolean) {
@@ -67,8 +84,8 @@
   {:else if section === 'saved'}
   <div class="timeline">
     {#each savedPostsList as post (post.id)}
-      <PostCard {projection} {post} quote={quoteView(post.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(post.id) ?? new Map()} {speaker} compactEntry
-        {social} {saved} replyCount={social.replies.get(post.id) ?? 0} replyToNames={post.reply_to ? byId.get(post.reply_to)?.authors.map(name).join(' & ') : undefined}
+      <PostCard {projection} {post} quote={quoteOf(post)} {people} {dark} reactions={reactionsOf(post.id)} reactorNames={theirNames} {speaker} compactEntry
+        {social} {saved} replyCount={repliesTo(post.id)} replyToNames={post.reply_to ? byId.get(post.reply_to)?.authors.map(name).join(' & ') : undefined}
         onreply={() => router.go(`/journal/post/${encodeURIComponent(post.id)}`)} onreact={(emoji, add) => react(post, emoji, add)} />
     {:else}<p class="empty">Nothing saved yet. Save a post with its bookmark to read it later; only your system sees what you save.</p>{/each}
   </div>
@@ -82,8 +99,8 @@
         {#if !original}<p class="repost-gone">{by} reposted a post that’s no longer available</p>
         {:else}
         <!-- replying opens the post's thread, where the reply box shows what it answers -->
-        <PostCard {projection} post={original} quote={quoteView(original.quote_post_id, postById, memberName)} {people} {dark} reactions={reacts.get(original.id) ?? new Map()} {speaker} compactEntry
-          {social} {saved} repostedBy={by} replyCount={social.replies.get(original.id) ?? 0} replyToNames={original.reply_to ? byId.get(original.reply_to)?.authors.map(name).join(' & ') : undefined}
+        <PostCard {projection} post={original} quote={quoteOf(original)} {people} {dark} reactions={reactionsOf(original.id)} reactorNames={theirNames} {speaker} compactEntry
+          {social} {saved} repostedBy={by} replyCount={repliesTo(original.id)} replyToNames={original.reply_to ? byId.get(original.reply_to)?.authors.map(name).join(' & ') : undefined}
           onreply={() => router.go(`/journal/post/${encodeURIComponent(original.id)}`)} onreact={(emoji, add) => react(original, emoji, add)} />
         {/if}
       {:else if item.kind === 'switch'}

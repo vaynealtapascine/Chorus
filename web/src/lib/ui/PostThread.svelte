@@ -24,6 +24,7 @@
   import RemotePostPoll from './RemotePostPoll.svelte';
   import RichText from './RichText.svelte';
   import PostHistory from './PostHistory.svelte';
+  import { remotePost } from '../remote-posts.svelte';
 
   let { projection, id, dark }: { projection: Projection; id: string; dark: boolean } = $props();
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
@@ -71,7 +72,11 @@
   $effect(() => { id; showQuotes = false; });
   const listed = $derived(showQuotes && quotes.length ? quotes : replies);
   const postById = $derived(new Map(rows.map((post) => [post.id, post])));
-  const quoteFor = (item: ThreadItem) => quoteView(item.local?.quote_post_id ?? item.remote?.quote?.post_id, postById, name, item.remote?.quoted);
+  // our own post quoting another account's: the server's copy, read once (D-127)
+  const quoteFor = (item: ThreadItem) => {
+    const id = item.local?.quote_post_id ?? item.remote?.quote?.post_id;
+    return quoteView(id, postById, name, item.remote?.quoted ?? (id && !postById.has(id) ? remotePost(id) : null));
+  };
   const focused = $derived(own ?? (detail ? detail as ThreadPost : null));
   const focusedNames = $derived(own ? own.authors.map(name).join(' & ') : detail ? remoteNames(detail) : '');
 
@@ -164,7 +169,7 @@
     <div class="focus" class:joined={ancestors.length > 0}>
       <PostCard {projection} post={own} {people} {dark} reactions={merged.reactions(own.id)} reactorNames={merged.names} {speaker} {social} {saved} inThread full
         quoteCount={quotes.length} onquotes={() => (showQuotes = true)}
-        quote={quoteView(own.quote_post_id, postById, name, detail?.quoted)}
+        quote={quoteView(own.quote_post_id, postById, name, detail?.quoted ?? (own.quote_post_id && !postById.has(own.quote_post_id) ? remotePost(own.quote_post_id) : null))}
         replyCount={replies.length} onreply={focusReply}
         onreact={(emoji, add) => react(own.id, emoji, add)} />
     </div>

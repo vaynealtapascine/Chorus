@@ -1,11 +1,14 @@
 <script lang="ts">
-  // The action row on another account's post (a friend's card, a thread): reply, heart and share.
-  // The post isn't in this replica, so (as on Android) it can't be reposted or saved.
+  // The action row on another account's post (a friend's card, a thread), the same five actions as
+  // our own (D-127): reply, repost/quote, heart, save, share. The post isn't in this replica, so it
+  // can't be reposted or saved (shown disabled); it can be quoted, and the quote borrows its audience.
   import { postReaction } from '../posts';
   import { sync } from '../sync/client';
   import { router } from '../router.svelte';
   import { shareText } from '../journal-social';
   import { withHeart } from '../friends-feed';
+  import { journalCompose } from '../journal-compose.svelte';
+  import { keepRemote } from '../remote-posts.svelte';
   import type { ThreadPost } from '../post-threads';
   import Icon from './Icon.svelte';
 
@@ -16,6 +19,21 @@
   } = $props();
   const NAME_NOTICE = 'chorus.journal.name-notice';
   let notice = $state('');
+  let repostMenu = $state(false);
+  // a pointer or Escape outside the menu closes it
+  function outside(node: HTMLElement) {
+    const down = (e: PointerEvent) => { if (!node.contains(e.target as Node)) repostMenu = false; };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') repostMenu = false; };
+    document.addEventListener('pointerdown', down);
+    document.addEventListener('keydown', key);
+    return { destroy() { document.removeEventListener('pointerdown', down); document.removeEventListener('keydown', key); } };
+  }
+  function quote() {
+    repostMenu = false;
+    keepRemote(post);
+    journalCompose.quote = post.id;
+    router.go('/journal');
+  }
   let disclose = $state<HTMLDialogElement | undefined>();
   // our heart answers at once, before the next read
   let answered = $state<ThreadPost | null>(null);
@@ -53,10 +71,15 @@
 
 <div class="actions">
   <button class="act" onclick={() => (onreply ? onreply() : router.go(`/journal/post/${encodeURIComponent(post.id)}`))} aria-label={post.reply_count ? `Reply (${post.reply_count})` : 'Reply'}><Icon name="reply" size={18} />{#if post.reply_count}<span>{post.reply_count}</span>{/if}</button>
+  <span class="pop-anchor">
+    <button class="act" aria-haspopup="menu" aria-expanded={repostMenu} aria-label="Repost or quote" onclick={() => (repostMenu = !repostMenu)}><Icon name="repost" size={18} /></button>
+    {#if repostMenu}<div class="menu" role="menu" use:outside><button role="menuitem" disabled title="Only your own system’s posts can be reposted"><Icon name="repost" size={18} />Repost</button><button role="menuitem" onclick={quote}><Icon name="edit" size={18} />Quote</button></div>{/if}
+  </span>
   <button class="act heart" class:on={hearted} disabled={!speaker} title={hearts.map((r) => r.member_name).join(' · ') || undefined}
     aria-label={speaker ? `${hearted ? 'Remove heart' : 'Heart'} as ${speakerName}${hearts.length ? ` (${hearts.length})` : ''}` : `${hearts.length} hearts`}
     onclick={heart}><Icon name={hearted ? 'heart-filled' : 'heart'} size={18} />{#if hearts.length}<span>{hearts.length}</span>{/if}</button>
-  {#if share}<button class="act last" aria-label="Share" onclick={shareOut}><Icon name="share" size={18} /></button>{/if}
+  <button class="act" aria-label="Save (only your system’s posts)" disabled><Icon name="bookmark" size={18} /></button>
+  <button class="act last" aria-label={share ? 'Share' : 'Share (nothing to share)'} disabled={!share} onclick={shareOut}><Icon name="share" size={18} /></button>
   {#if notice}<span class="notice" role="status">{notice}</span>{/if}
 </div>
 
@@ -68,11 +91,16 @@
 
 <style>
   .actions { display: flex; align-items: center; margin: 0 -8px; }
-  .actions > .act { flex: 1; }
+  .actions > .act, .actions > .pop-anchor { flex: 1; }
+  .pop-anchor { position: relative; display: inline-flex; }
+  .menu { position: absolute; z-index: 20; top: 100%; left: 0; min-width: 160px; display: grid; padding: 6px; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-pop); }
+  .menu button { display: flex; align-items: center; gap: 10px; border: 0; border-radius: 8px; background: none; color: var(--ink); padding: 8px 10px; font: inherit; text-align: left; cursor: pointer; }
+  .menu button:hover:not(:disabled) { background: var(--surface-2); }
+  .menu button:disabled { color: var(--ink-3); cursor: default; }
   .actions > .act.last { flex: none; }
   .act { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 8px; border: 0; background: none; color: var(--ink-3); font: inherit; font-size: 13px; cursor: pointer; }
   .act:hover:not(:disabled) { color: var(--accent); }
-  .act:disabled { cursor: default; opacity: .6; }
+  .act:disabled { cursor: default; opacity: .4; }
   .act.heart.on, .act.heart:hover:not(:disabled) { color: var(--danger); }
   .notice { color: var(--ink-3); font-size: var(--fs-xs); margin-left: 8px; }
   .disclose { max-width: 360px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink); padding: 20px; }

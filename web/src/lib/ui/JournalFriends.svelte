@@ -1,10 +1,12 @@
 <script lang="ts">
-  // Journal › Friends: recent posts the accounts this one follows share with it (a server read,
-  // like Android's JournalFriends; your own journal stays offline in Our system).
+  // Journal › Friends: recent posts the accounts this one follows share with it, and anyone's
+  // replies to our posts that we may read (D-127; a server read, like Android's JournalFriends;
+  // your own journal stays offline in Our system).
   import { apiFetch } from '../http';
   import { apiBase } from '../sync/device';
   import { sync, type Projection } from '../sync/client';
-  import { FRIEND_PAGE, friendsFeed, olderToLoad, type FriendPost, type FriendPosts } from '../friends-feed';
+  import { FRIEND_PAGE, friendsFeed, olderToLoad, REPLIES, type FriendPost, type FriendPosts } from '../friends-feed';
+  import { inbox, loadActivity } from '../inbox-state.svelte';
   import FriendPostCard from './FriendPostCard.svelte';
 
   let { projection, speaker, speakerName, dark }: { projection: Projection; speaker: string | null; speakerName: string; dark: boolean } = $props();
@@ -34,6 +36,12 @@
         try { const posts = await page(f.account.id); loaded.push({ id: f.account.id, account, posts, more: posts.length >= FRIEND_PAGE }); }
         catch { error = 'Some friends’ posts could not be loaded. Try again when connected.'; }
       }
+      try {
+        const activity = await loadActivity();
+        inbox.activity = activity;
+        const replies = activity.items.filter((i) => i.kind === 'reply' && i.post).map((i) => i.post as unknown as FriendPost);
+        loaded.push({ id: REPLIES, account: 'Someone', posts: replies, more: activity.items.length >= 50 });
+      } catch { error = 'Replies to your posts could not be loaded. Try again when connected.'; }
       sources = loaded;
     } catch {
       error = 'Friends’ posts need a connection. Your own journal is available in Our system.';
@@ -48,7 +56,14 @@
       const next = [...sources];
       for (const i of olderToLoad(next)) {
         const s = next[i];
-        const posts = await page(s.id, Math.min(...s.posts.map((p) => p.occurred_at)));
+        const before = Math.min(...s.posts.map((p) => p.occurred_at));
+        if (s.id === REPLIES) {
+          const activity = await loadActivity(before);
+          const posts = activity.items.filter((a) => a.kind === 'reply' && a.post).map((a) => a.post as unknown as FriendPost);
+          next[i] = { ...s, posts: [...s.posts, ...posts], more: activity.items.length >= 50 && posts.length > 0 };
+          continue;
+        }
+        const posts = await page(s.id, before);
         next[i] = { ...s, posts: [...s.posts, ...posts], more: posts.length >= FRIEND_PAGE };
       }
       sources = next;
@@ -70,7 +85,7 @@
   {#each items as item (item.post.id)}
     <FriendPostCard post={item.post} account={item.account} {projection} {speaker} {speakerName} {dark} />
   {:else}
-    {#if !loading && !error}<p class="quiet">No shared posts yet. Posts from accounts you follow will appear here.</p>{/if}
+    {#if !loading && !error}<p class="quiet">No shared posts yet. Posts from accounts you follow, and replies to yours, will appear here.</p>{/if}
   {/each}
   <!-- re-created after each page, so a list still short of the screen keeps loading -->
   {#if hasOlder}{#key sources}<div class="quiet older" use:nearEnd><button onclick={loadOlder} disabled={loadingOlder}>{loadingOlder ? 'Loading older posts…' : 'Older posts'}</button></div>{/key}{/if}

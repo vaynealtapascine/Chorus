@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { router } from './lib/router.svelte';
   import { sync, type Projection, type Status } from './lib/sync/client';
   import Chat from './lib/ui/Chat.svelte';
@@ -19,6 +20,10 @@
   import FriendProfiles from './lib/ui/FriendProfiles.svelte';
   import PostStage from './lib/ui/PostStage.svelte';
   import More from './lib/ui/More.svelte';
+  import Notifications from './lib/ui/Notifications.svelte';
+  import { inbox, refreshInbox } from './lib/inbox-state.svelte';
+  import { readMarks, showsPref, unread as unreadCount } from './lib/inbox';
+  import { bodyAuthors } from './lib/front-view';
   import Switcher from './lib/ui/Switcher.svelte';
   import Fronts from './lib/ui/Fronts.svelte';
   import LayersDisplay from './lib/ui/LayersDisplay.svelte';
@@ -95,16 +100,35 @@
   };
   // a person account has one member, themself, and no front to switch (D-003)
   const person = $derived(!!projection && !!selfMember(projection));
+  // Figma F11: Notifications beside Fronting and Chat; on a phone-wide screen the bar keeps
+  // Fronting · Notifications · Chat · Journal · More, and Members and Friends wait in More
   const allTabs = [
-    { path: '/members', name: 'members', label: 'Members', icon: 'members' },
     { path: '/', name: 'home', label: 'Fronting', icon: 'front' },
+    { path: '/notifications', name: 'notifications', label: 'Notifications', icon: 'bell' },
     { path: '/chat', name: 'chat', label: 'Chat', icon: 'chat' },
-    { path: '/people', name: 'people', label: 'Friends', icon: 'friends' },
+    { path: '/journal', name: 'journal', label: 'Journal', icon: 'journal' },
+    { path: '/members', name: 'members', label: 'Members', icon: 'members', wide: true },
+    { path: '/people', name: 'people', label: 'Friends', icon: 'friends', wide: true },
     { path: '/more', name: 'more', label: 'More', icon: 'more' },
   ];
   const tabs = $derived(person
-    ? [{ path: '/journal', name: 'journal', label: 'Journal', icon: 'journal' }, ...allTabs.filter((t) => !['members', 'home'].includes(t.name))]
+    ? [allTabs[3], allTabs[1], allTabs[2], { ...allTabs[5], wide: false }, allTabs[6]]
     : allTabs);
+  // the Notifications badge: unread for whoever reads by default (D-127), checked every minute
+  const ready = $derived(!!projection);
+  $effect(() => {
+    if (!ready || !sync.device?.session) return;
+    const latest = () => untrack(() => projection);
+    void refreshInbox(latest()!);
+    const t = setInterval(() => { const p = latest(); if (p) void refreshInbox(p); }, 60_000);
+    return () => clearInterval(t);
+  });
+  const inboxUnread = $derived.by(() => {
+    if (!projection || inbox.account !== sync.accountId) return 0;
+    const reader = selfMember(projection)?.id ?? bodyAuthors(projection, sync.accountId)[0] ?? members(projection)[0]?.id;
+    const read = (reader && readMarks(projection.rows.pref, sync.accountId).get(reader)) || { until: 0, ids: [] };
+    return unreadCount(inbox.items, read, showsPref(projection.rows.pref, sync.accountId));
+  });
   const active = $derived(['member', 'profile'].includes(router.route.name) ? 'members' : router.route.name === 'post' ? 'journal' :
     router.route.name === 'stage' ? 'chat' : router.route.name === 'friend' ? 'people' : ['history', 'fronts', 'layers'].includes(router.route.name) ? 'home' :
     ['insights', 'data', 'trash', 'settings', 'computer', 'search', 'post-stage'].includes(router.route.name) ? 'more' : router.route.name);
@@ -129,7 +153,7 @@
     }
     return current.filter((e) => e.layer_id === 'front').map((e) => subjects.get(e.subject_id)?.name).filter(Boolean).join(' & ') || 'No one fronting';
   });
-  const routeTitle = $derived(({ home: person ? 'Home' : 'Fronting', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', post: 'Post', chat: 'Chat', people: 'Friends', friend: 'Friends', history: 'Front history', fronts: 'Fronts', layers: 'Layers & display', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
+  const routeTitle = $derived(({ home: person ? 'Home' : 'Fronting', notifications: 'Notifications', members: 'Members', member: 'Edit member', profile: 'Profile', journal: 'Journal', post: 'Post', chat: 'Chat', people: 'Friends', friend: 'Friends', history: 'Front history', fronts: 'Fronts', layers: 'Layers & display', insights: 'Insights', data: 'Your data', settings: 'Settings', search: 'Search', trash: 'Trash', more: 'More', computer: 'This computer' } as Record<string, string>)[router.route.name] ?? 'Chorus');
 </script>
 
 <svelte:document onclick={openOwnLink} />
@@ -146,12 +170,12 @@
       </a>
       <nav aria-label="Sections">
         {#each tabs as t (t.name)}
-          <a href="#{t.path}" class:on={active === t.name} aria-current={active === t.name ? 'page' : undefined}><Icon name={t.icon} /><span>{t.label}</span></a>
+          <a href="#{t.path}" class:on={active === t.name} class:wide-only={'wide' in t && t.wide} aria-current={active === t.name ? 'page' : undefined}
+            aria-label={t.name === 'notifications' && inboxUnread ? `Notifications, ${inboxUnread} unread` : undefined}><span class="tab-icon"><Icon name={t.icon} />{#if t.name === 'notifications' && inboxUnread}<span class="badge">{inboxUnread > 99 ? '99+' : inboxUnread}</span>{/if}</span><span>{t.label}</span></a>
         {/each}
       </nav>
       <nav class="desktop-tools" aria-label="Your tools">
         {#if self}<a href="#/profile/{self.id}"><Icon name="members" />My profile</a>{/if}
-        {#if !person}<a href="#/journal" class:on={router.route.name === 'journal' || router.route.name === 'post'} aria-current={router.route.name === 'journal' ? 'page' : undefined}><Icon name="journal" />Journal</a>{/if}
         <a href="#/search"><Icon name="search" />Search</a>
         <a href="#/settings"><Icon name="settings" />Settings</a>
       </nav>
@@ -204,6 +228,8 @@
         <PostStage {projection} id={router.route.id} />
       {:else if router.route.name === 'more'}
         <More />
+      {:else if router.route.name === 'notifications'}
+        <Notifications {projection} {dark} />
       {:else if router.route.name === 'chat'}
         <Chat {projection} {dark} channelId={router.route.id} focusId={router.route.messageId}
           onswitch={() => (switching = true)} onmenu={() => (navOpen = true)} />
@@ -254,6 +280,9 @@
   nav { display: grid; gap: 4px; }
   nav a { display: flex; gap: 12px; align-items: center; padding: 12px; min-height: 48px; color: var(--ink-2); text-decoration: none; border-radius: var(--r-full); font-size: var(--fs-md); font-weight: 500; }
   nav a.on { background: var(--surface-2); color: var(--ink); font-weight: 700; }
+  .tab-icon { position: relative; display: inline-grid; }
+  .badge { position: absolute; top: -6px; right: -10px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--sun); color: var(--on-sun);
+    font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
   nav a.on :global(.icon) { color: var(--accent); }
   nav a:hover { background: var(--surface); }
   .desktop-tools { border-top: 1px solid var(--line); padding-top: 16px; }
@@ -301,6 +330,7 @@
     nav { display: flex; justify-content: space-around; gap: 0; }
     nav a { flex: 1; flex-direction: column; gap: 4px; padding: 6px 2px; font-size: 11px; border-radius: 12px; min-width: 0; min-height: 56px; }
     nav a.on { background: transparent; color: var(--accent); }
+    nav a.wide-only { display: none; }
     .app-bar { min-height: 72px; padding: 10px 16px; gap: 4px; }
     .app-bar .status { font-size: 0; gap: 0; }
     .app-bar .status-dot { width: 7px; height: 7px; margin-right: 10px; }

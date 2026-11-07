@@ -27,6 +27,8 @@ export interface ThreadPost {
   quote?: { post_id?: string } | null;
   /** The quoted post, when this reader may read it. */
   quoted?: ThreadPost | null;
+  /** What a listed reply answers, when this reader may read it (`GET /posts` items, D-127). */
+  parent?: ThreadPost | null;
 }
 
 /** A click anywhere on a post opens it, as on Twitter, except on its own links and controls or

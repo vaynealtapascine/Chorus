@@ -10,7 +10,8 @@
   <h1 class="display">More</h1>
   <nav aria-label="More pages">
     {#each [
-      { path: 'journal', title: 'Journal', description: 'Entries, notes and member journals', icon: 'journal' },
+      { path: 'members', title: 'Members', description: 'Your members and profiles', icon: 'members' },
+      { path: 'notifications', title: 'Notifications', description: 'Mentions, replies and friends’ news', icon: 'bell' },
       { path: 'history', title: 'Front history', description: 'Look back, amend or log a switch', icon: 'history' },
       { path: 'insights', title: 'Fronting insights', description: 'History, patterns and exports', icon: 'layers' },
       { path: 'people', title: 'People and sharing', description: 'Friends, followers and privacy', icon: 'friends' },

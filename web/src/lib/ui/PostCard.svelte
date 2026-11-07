@@ -194,17 +194,15 @@
       <!-- a content warning hides what it warns about, not the row -->
       <div class="actions" class:large={full}>
           <button class="act" onclick={onreply} aria-label={replyCount ? `Reply (${replyCount} ${replyCount === 1 ? 'reply' : 'replies'})` : 'Reply'}><Icon name="reply" size={iconSize} />{#if replyCount && !full}<span>{replyCount}</span>{/if}</button>
-          {#if social}
-            <span class="pop-anchor">
-              <button class="act" class:on={!!ownRepost} disabled={!speaker} aria-haspopup="menu" aria-expanded={repostMenu} aria-label={ownRepost ? 'Reposted; open repost options' : 'Repost'} onclick={() => (repostMenu = !repostMenu)}><Icon name="repost" size={iconSize} />{#if reposts && !full}<span>{reposts}</span>{/if}</button>
-              {#if repostMenu}<div class="menu" role="menu" use:outside={() => (repostMenu = false)}><button role="menuitem" onclick={repost}><Icon name="repost" size={18} />{ownRepost ? 'Undo repost' : 'Repost'}</button><button role="menuitem" onclick={quotePost}><Icon name="edit" size={18} />Quote</button></div>{/if}
-            </span>
-          {/if}
+          <span class="pop-anchor">
+            <button class="act" class:on={!!ownRepost} disabled={!speaker} aria-haspopup="menu" aria-expanded={repostMenu} aria-label={ownRepost ? 'Reposted; open repost options' : 'Repost or quote'} onclick={() => (repostMenu = !repostMenu)}><Icon name="repost" size={iconSize} />{#if reposts && !full}<span>{reposts}</span>{/if}</button>
+            {#if repostMenu}<div class="menu" role="menu" use:outside={() => (repostMenu = false)}><button role="menuitem" disabled={!social} onclick={repost}><Icon name="repost" size={18} />{ownRepost ? 'Undo repost' : 'Repost'}</button><button role="menuitem" onclick={quotePost}><Icon name="edit" size={18} />Quote</button></div>{/if}
+          </span>
           <button class="act heart" class:on={hearted} disabled={!speaker} title={reactedBy || undefined}
             aria-label={speaker ? `${hearted ? 'Remove heart' : 'Heart'} as ${name(speaker)}${hearts.length ? ` (${hearts.length})` : ''}` : `${hearts.length} hearts`}
             onclick={heart}><Icon name={hearted ? 'heart-filled' : 'heart'} size={iconSize} />{#if hearts.length && !full}<span>{hearts.length}</span>{/if}</button>
-          {#if saved}<button class="act" class:on={isSaved} aria-pressed={isSaved} aria-label={isSaved ? 'Remove from saved' : 'Save'} onclick={toggleSave}><Icon name={isSaved ? 'bookmark-filled' : 'bookmark'} size={iconSize} /></button>{/if}
-          {#if share}<button class="act last" aria-label="Share" onclick={shareOut}><Icon name="share" size={iconSize} /></button>{/if}
+          <button class="act" class:on={isSaved} aria-pressed={isSaved} disabled={!saved} aria-label={!saved ? 'Save (not available here)' : isSaved ? 'Remove from saved' : 'Save'} onclick={toggleSave}><Icon name={isSaved ? 'bookmark-filled' : 'bookmark'} size={iconSize} /></button>
+          <button class="act last" aria-label={share ? 'Share' : 'Share (nothing to share)'} disabled={!share} onclick={shareOut}><Icon name="share" size={iconSize} /></button>
           {#if notice}<span class="notice" role="status">{notice}</span>{/if}
       </div>
     </div>
@@ -295,7 +293,8 @@
   .menu { position: absolute; top: 100%; left: 0; z-index: 5; display: grid; min-width: 160px; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
   .menu.right { left: auto; right: 0; }
   .menu button, .menu a { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: inherit; font-size: var(--fs-sm); text-align: left; text-decoration: none; cursor: pointer; }
-  .menu button:hover, .menu a:hover { background: var(--surface-2); }
+  .menu button:hover:not(:disabled), .menu a:hover { background: var(--surface-2); }
+  .menu button:disabled { color: var(--ink-3); cursor: default; }
   .disclose { max-width: 360px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink); padding: 20px; }
   .disclose::backdrop { background: rgb(0 0 0 / .4); }
   .disclose h2 { margin: 0 0 8px; font-size: 18px; }

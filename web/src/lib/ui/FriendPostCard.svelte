@@ -5,7 +5,10 @@
   import { router } from '../router.svelte';
   import { entryMeta, fullTimestamp, shortAgo } from '../journal-presentation';
   import type { FriendPost } from '../friends-feed';
-  import { authorProfileHref, opensPost, tagLine } from '../post-threads';
+  import { authorProfileHref, opensPost, quoteView, remoteNames, tagLine } from '../post-threads';
+  import QuoteEmbed from './QuoteEmbed.svelte';
+  import { posts as localPosts } from '../posts';
+  import { members } from '../data';
   import AvatarImage from './AvatarImage.svelte';
   import PostMedia from './PostMedia.svelte';
   import RemotePostActions from './RemotePostActions.svelte';
@@ -25,6 +28,12 @@
   const initial = $derived((names.trim()[0] ?? '?').toUpperCase());
   const tags = $derived(tagLine(post.tags));
   const threadHref = $derived(`#/journal/post/${encodeURIComponent(post.id)}`);
+  // what a reply answers and what a post quotes: ours from this device, others' from the server's read
+  const ownById = $derived(new Map(localPosts(projection).map((p) => [p.id, p])));
+  const memberName = (id: string) => { const m = members(projection).find((x) => x.id === id); return m?.display_name ?? m?.name ?? 'Someone'; };
+  const parent = $derived(post.reply_to ? quoteView(post.reply_to, ownById, memberName, post.parent) : null);
+  const quoted = $derived(post.quote?.post_id ? quoteView(post.quote.post_id, ownById, memberName, post.quoted) : null);
+  const parentNames = $derived(parent?.post ? parent.names : post.parent ? remoteNames(post.parent) : '');
 </script>
 
 <!-- clicking the card is a mouse shortcut; keyboards and screen readers open it by its time link -->
@@ -41,7 +50,8 @@
         <span class="when">· <a href={threadHref} title={fullTimestamp(post.occurred_at)}><time datetime={new Date(post.occurred_at).toISOString()}>{shortAgo(post.occurred_at)}</time></a></span>
       </div>
       {#if names !== account}<p class="from">{account}</p>{/if}
-      {#if post.reply_to}<a class="reply-ref" href="#/journal/post/{encodeURIComponent(post.reply_to)}">Replying to a post</a>{/if}
+      {#if post.reply_to}<a class="reply-ref" href="#/journal/post/{encodeURIComponent(post.reply_to)}">Replying to {parentNames || 'a post'}</a>
+        {#if parent?.post}<QuoteEmbed quote={parent} />{/if}{/if}
       {#if post.cw}<button class="cw" aria-expanded={expanded} onclick={() => (expanded = !expanded)}><span>Content warning: {post.cw}</span><span class="cw-toggle">{expanded ? 'Hide' : 'Show'}</span></button>{/if}
       {#if !post.cw || expanded}
         {#if post.title}<h3 class="display">{post.title}</h3>{/if}
@@ -49,6 +59,7 @@
         {#if post.kind === 'entry' || post.text.length > 280}<a class="expand" href={threadHref}>Show more</a>{/if}
         {#if post.kind === 'entry'}<p class="meta-line">{entryMeta(post.text, post.tags ?? [])}</p>{/if}
         {#if post.attachments?.length}<PostMedia attachments={post.attachments} who={names} occurredAt={post.occurred_at} />{/if}
+        {#if quoted}<QuoteEmbed quote={quoted} />{/if}
         <RemotePostPoll {projection} {post} member={speaker} />
         {#if tags}<p class="tags">{tags}</p>{/if}
       {/if}

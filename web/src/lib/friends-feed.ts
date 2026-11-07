@@ -33,6 +33,9 @@ export function olderToLoad(sources: readonly FriendPosts[]): number[] {
   return sources.flatMap((s, i) => (s.more && s.posts.length && Math.min(...s.posts.map((p) => p.occurred_at)) === frontier ? [i] : []));
 }
 
+/** The source under which other accounts' replies to our posts page (D-127); never an account id. */
+export const REPLIES = 'replies-to-us';
+
 /** Friends' posts newest first (Android's `JournalFriends`), down to the frontier. A repost has no
  * text of its own and the original may be unreadable here, so reposts are left out; a post seen
  * twice shows once. */

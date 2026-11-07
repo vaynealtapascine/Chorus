@@ -17,17 +17,19 @@ export interface JournalDraft {
   pollMultiple: boolean;
   /** Attachments that were in the composer when it was saved; they must be attached again. */
   lostFiles: number;
+  /** Who hears about it (D-127): '' as usual, `delayed` (a random 5–60 minutes later) or `none`. */
+  alerts: '' | 'delayed' | 'none';
 }
 
 export const emptyDraft = (visibility: JournalDraft['visibility'] = 'private', bucketIds: string[] = []): JournalDraft => ({
   kind: 'note', title: '', body: '', cw: '', mood: '', tags: '', visibility, bucketIds, authors: null,
-  quote: null, pollOn: false, pollOptions: ['', ''], pollMultiple: false, lostFiles: 0,
+  quote: null, pollOn: false, pollOptions: ['', ''], pollMultiple: false, lostFiles: 0, alerts: '',
 });
 
 /** Worth keeping: anything the writer typed or chose beyond the context's defaults. */
 export function occupied(d: JournalDraft, defaultVisibility: JournalDraft['visibility'] = 'private', defaultBuckets: string[] = []): boolean {
   return !!(d.body.trim() || d.title.trim() || d.cw.trim() || d.mood.trim() || d.tags.trim() || d.quote || d.pollOn ||
-    d.authors !== null || d.visibility !== defaultVisibility || d.bucketIds.join() !== defaultBuckets.join() || d.lostFiles);
+    d.authors !== null || d.visibility !== defaultVisibility || d.bucketIds.join() !== defaultBuckets.join() || d.lostFiles || d.alerts);
 }
 
 /** Length-prefixed so a context id can never alias another account's key. */
@@ -55,6 +57,7 @@ export function decodeDraft(raw: string | null): JournalDraft | null {
     quote: typeof j.quote === 'string' && j.quote ? j.quote : null,
     pollOn: j.pollOn === true, pollOptions: options.length >= 2 ? options : ['', ''], pollMultiple: j.pollMultiple === true,
     lostFiles: typeof j.lostFiles === 'number' && j.lostFiles > 0 ? Math.floor(j.lostFiles) : 0,
+    alerts: j.alerts === 'delayed' || j.alerts === 'none' ? j.alerts : '',
   };
 }
 
