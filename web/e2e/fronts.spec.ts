@@ -1,65 +1,78 @@
-import { expect, test } from '@playwright/test';
-import { enrol, go, invite } from './helpers';
+import { expect, type Page, test } from '@playwright/test';
+import { addMember, enrol, go, invite } from './helpers';
+
+/** On Fronting: open the switch sheet for the shown front, place `names` (each tap moves one
+ * outward, `taps` times), and switch. */
+async function switchSheet(page: Page, names: string[], taps = 1): Promise<void> {
+  await page.getByRole('button', { name: 'Switch', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: /^Switch / });
+  for (const name of names) for (let i = 0; i < taps; i++) await sheet.locator('button.pick', { hasText: name }).click();
+  await sheet.locator('button.confirm').click();
+  await expect(sheet).toHaveCount(0);
+}
 
 // D-080 management UI: custom layers, a following front, a manual override and Resume following,
-// all through the app's own screens (no seeded ops).
+// all through the app's own screens (no seeded ops). F3 screens (D-122).
 test('fronts can be created, follow Body, be overridden and resume following', async ({ page }, info) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await enrol(page, invite('system'), 'Fronts check');
+  for (const name of ['Kai', 'Moon']) await addMember(page, name);
 
-  // two members from Home's quick switch
-  for (const name of ['Kai', 'Moon']) {
-    await page.getByRole('button', { name: 'Add member' }).click();
-    await page.getByLabel('Name', { exact: true }).fill(name);
-    await page.getByRole('button', { name: 'Add', exact: true }).click();
-  }
+  // a custom layer, from Layers & display
+  await go(page, '');
+  await page.getByRole('link', { name: 'Layers and display' }).click();
+  await page.getByRole('button', { name: /^Add a layer/ }).click();
+  await page.getByLabel('Name', { exact: true }).fill('Quiet');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Edit Quiet' })).toBeVisible();
 
+  // a new front that follows Body
   await go(page, 'fronts');
-  await expect(page.getByRole('heading', { name: 'Fronts' })).toBeVisible();
-  await page.getByLabel('New layer name').fill('Quiet');
-  await page.getByRole('button', { name: 'Add', exact: true }).last().click();
-  await expect(page.getByLabel('Name of layer Quiet')).toBeVisible();
-
+  await page.locator('button.new-head').click();
+  await page.getByRole('button', { name: 'Custom', exact: true }).click();
   await page.getByLabel('New front name').fill('Headspace');
-  await page.getByRole('button', { name: 'Add', exact: true }).first().click();
-  await page.getByLabel('What Headspace follows').selectOption({ label: 'Body' });
-  await expect(page.locator('.card', { hasText: 'Headspace' }).locator('.badge')).toHaveText('Follows Body');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit Headspace' }).click();
+  await page.getByLabel('Follows').selectOption({ label: 'Body' });
+  await expect(page.locator('.card', { hasText: 'Headspace' }).locator('.badge')).toContainText('Body');
   await page.screenshot({ path: info.outputPath('fronts-mobile-dark.png'), fullPage: true });
 
   // Body switches; Headspace mirrors it
+  const tab = (name: RegExp) => page.getByRole('tablist', { name: 'Fronts' }).getByRole('tab', { name });
+  const shown = (name: string) => page.getByRole('region', { name, exact: true });
   await go(page, '');
-  await page.getByRole('tab', { name: /Body/ }).click();
-  await page.locator('.grid').getByRole('button', { name: 'Kai' }).click();
-  await page.getByRole('tab', { name: /Headspace/ }).click();
+  await tab(/^Body/).click();
+  await switchSheet(page, ['Kai']);
+  await expect(shown('Body')).toContainText('Kai');
+  await tab(/^Headspace/).click();
   await expect(page.locator('.follow-state')).toContainText('Follows Body');
-  await expect(page.locator('.card-button')).toContainText('Kai');
+  await expect(shown('Headspace')).toContainText('Kai');
 
   // changing Headspace by hand overrides until Resume following
-  await page.locator('.grid').getByRole('button', { name: 'Moon' }).click();
+  await switchSheet(page, ['Moon']);
   await expect(page.locator('.follow-state')).toContainText('Changed by hand');
-  await expect(page.locator('.card-button')).toContainText('Moon');
-  await page.getByRole('tab', { name: /Body/ }).click();
-  await expect(page.locator('.card-button')).toContainText('Kai');
-  await page.getByRole('tab', { name: /Headspace/ }).click();
+  await expect(shown('Headspace')).toContainText('Moon');
+  await tab(/^Body/).click();
+  await expect(shown('Body')).toContainText('Kai');
+  await tab(/^Headspace/).click();
   await page.getByRole('button', { name: 'Resume following' }).click();
   await expect(page.locator('.follow-state')).toContainText('Follows Body');
-  await expect(page.locator('.card-button')).toContainText('Kai');
-  await expect(page.locator('.card-button')).not.toContainText('Moon');
+  await expect(shown('Headspace')).toContainText('Kai');
+  await expect(shown('Headspace')).not.toContainText('Moon');
 
-  // the switcher offers the custom layer; it survives a reload
+  // the switch sheet offers the custom layer (each tap moves someone outward); it survives a reload
   await page.getByRole('button', { name: 'Switch', exact: true }).click();
-  await expect(page.getByRole('heading', { name: "Who's in Headspace?" })).toBeVisible();
-  const level = page.locator('.tray .lvl').first();
-  await level.click(); // Fronting → Co-conscious
-  await level.click(); // → Present
-  await level.click(); // → Quiet
-  await expect(level).toHaveText('Quiet');
-  await page.getByRole('button', { name: 'Switch', exact: true }).last().click();
+  const sheet = page.getByRole('dialog', { name: /^Switch / });
+  const kai = sheet.locator('button.pick', { hasText: 'Kai' });
+  for (let i = 0; i < 6 && !(await kai.getAttribute('aria-label'))?.includes('Quiet'); i++) await kai.click();
+  await expect(kai).toHaveAttribute('aria-label', 'Kai, Quiet');
+  await sheet.locator('button.confirm').click();
   await page.reload();
-  await page.getByRole('tab', { name: /Headspace/ }).click();
-  await expect(page.locator('.card-button .layer-footer', { hasText: 'Quiet' })).toContainText('Kai');
+  await tab(/^Headspace/).click();
+  await expect(shown('Headspace')).toContainText('Quiet');
+  await expect(shown('Headspace')).toContainText('Kai');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ path: info.outputPath('home-fronts-desktop-dark.png'), fullPage: true });
   expect(errors).toEqual([]);
