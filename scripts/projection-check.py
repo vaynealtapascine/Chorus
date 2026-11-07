@@ -26,6 +26,7 @@ HANDLED = {
     ('post', 'attachments'): 'item_attachment',
     ('post', 'reply_to'): 'reply_to_id (project.rs)',
     ('post', 'repost_of'): 'repost_of_id (project.rs)',
+    ('post', 'alerts'): 'read from the live op by post_alerts::on_post (D-127), never stored',
     ('channel', 'target_type'): 'channel_permission rows (channel.set_permission)',
     ('channel', 'target_id'): 'channel_permission rows',
     ('channel', 'allow'): 'channel_permission rows',

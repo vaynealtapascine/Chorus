@@ -69,8 +69,8 @@ object NotifyCheck {
                 i.optJSONObject("chat")?.let { put("chat", it) }
                 i.optJSONObject("sender")?.let { put("sender", it) }
             }
-        // post alerts (D-106): a new post, or a request for alerts and its answer
-        "post" -> JSONObject().put("t", "post").put("id", i.optString("id"))
+        // post alerts (D-106) and replies to our posts (D-127): a new post, or a request for alerts and its answer
+        "post", "post_reply" -> JSONObject().put("t", "post").put("id", i.optString("id"))
             .put("title", i.text("title") ?: "Chorus").put("text", i.optString("text"))
             .put("post_id", i.optString("post_id")).put("account_id", i.optString("account_id"))
         "alert_request", "alert_accepted" -> JSONObject().put("t", "alert").put("id", i.optString("id"))

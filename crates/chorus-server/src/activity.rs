@@ -53,7 +53,7 @@ pub fn channel_level(conn: &Connection, account: &str, channel: &str, is_dm: boo
 
 /// Per-kind switches (`pref` key `notify_chat`: `{"mention": bool, "dm": bool, "reply": bool,
 /// "message": bool}`), all on unless turned off.
-fn kind_wanted(conn: &Connection, account: &str, kind: &str) -> anyhow::Result<bool> {
+pub(crate) fn kind_wanted(conn: &Connection, account: &str, kind: &str) -> anyhow::Result<bool> {
     Ok(pref(conn, account, "notify_chat")?.and_then(|v| v.get(kind).and_then(Value::as_bool)).unwrap_or(true))
 }
 
@@ -210,7 +210,7 @@ pub fn on_op(conn: &Connection, o: &Op, now: i64) -> anyhow::Result<()> {
     if o.kind == "post.create"
         && let Some(id) = o.entity_id.as_deref()
     {
-        return crate::post_alerts::on_post(conn, id, now);
+        return crate::post_alerts::on_post(conn, id, crate::post_alerts::Alerts::of(&o.payload), now);
     }
     if o.kind != "message.send" {
         return Ok(());
@@ -775,7 +775,7 @@ fn queue(
 pub fn process_due(conn: &Connection, now: i64) -> anyhow::Result<Vec<push::Outbound>> {
     let mut st = conn.prepare_cached(
         "SELECT id, recipient_account_id, payload FROM notification
-         WHERE kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'post', 'alert_request', 'alert_accepted')
+         WHERE kind IN ('mention', 'dm', 'reply', 'message', 'member_dm', 'own_switch', 'post', 'post_reply', 'alert_request', 'alert_accepted')
            AND delivered_at IS NULL AND cancelled_at IS NULL AND due_at <= ?1
          ORDER BY due_at, id LIMIT 500",
     )?;

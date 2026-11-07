@@ -245,3 +245,49 @@ fn turning_alerts_off_stops_them_and_removal_is_a_no() {
     assert_eq!(w.inbox(ALEX).len(), 2);
     assert_eq!(post_alerts::request(&w.c, ALEX, STARS, &kai, w.at()).unwrap(), "requested");
 }
+
+/// D-127: a reply to another account's post tells that account, if it may read the reply; a post
+/// sent with `alerts: "none"` tells nobody, and `alerts: "delayed"` pings 5–60 minutes later.
+#[test]
+fn replies_ping_the_post_author_and_a_post_can_be_quiet_or_late() {
+    let mut w = W::new(&[(STARS, "stars"), (ALEX, "alex"), (SAM, "sam")]);
+    let kai = new_id(NOW as u64, [40; 10]);
+    let ash = new_id(NOW as u64, [42; 10]);
+    w.push(STARS, "member.create", &kai, json!({"name": "Kai", "visibility": {"mode": "server"}}));
+    w.push(ALEX, "member.create", &ash, json!({"name": "Ash", "visibility": {"mode": "server"}}));
+    w.follow(ALEX, STARS);
+    let root = w.post(STARS, &kai, 1, json!({"visibility": {"mode": "server"}}));
+
+    w.post(ALEX, &ash, 2, json!({"reply_to": root, "visibility": {"mode": "server"}, "text": "lovely"}));
+    let told = w.inbox(STARS);
+    assert_eq!(told, [("post_reply".into(), "Ash replied to your post".into(), "lovely".into())]);
+    // the Stars don't follow Alex: a followers-only reply isn't theirs to read, so it's not said
+    w.post(ALEX, &ash, 3, json!({"reply_to": root}));
+    // a quiet reply tells nobody; a reply within the Stars' own account isn't news to them
+    w.post(ALEX, &ash, 4, json!({"reply_to": root, "visibility": {"mode": "server"}, "alerts": "none"}));
+    w.post(STARS, &kai, 5, json!({"reply_to": root, "visibility": {"mode": "server"}}));
+    assert_eq!(w.inbox(STARS).len(), 1);
+
+    // a delayed reply waits a random 5–60 minutes, then arrives like any other
+    w.post(ALEX, &ash, 6, json!({"reply_to": root, "visibility": {"mode": "server"}, "alerts": "delayed"}));
+    let (created, due): (i64, i64) =
+        w.c.query_row(
+            "SELECT created_at, due_at FROM notification WHERE kind = 'post_reply' AND delivered_at IS NULL",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert!((post_alerts::MIN_DELAY_MS..=post_alerts::MAX_DELAY_MS).contains(&(due - created)), "{}", due - created);
+    notifier::process_due(&w.c, created).unwrap();
+    assert_eq!(notifier::list(&w.c, STARS, 50).unwrap()["items"].as_array().unwrap().len(), 1);
+    assert_eq!(w.inbox(STARS).len(), 2);
+
+    // post alerts follow the same choice
+    post_alerts::request(&w.c, ALEX, STARS, &kai, w.at()).unwrap();
+    post_alerts::decide(&w.c, STARS, ALEX, &kai, true, w.at()).unwrap();
+    let before = w.inbox(ALEX).len();
+    w.post(STARS, &kai, 7, json!({"alerts": "none"}));
+    assert_eq!(w.inbox(ALEX).len(), before);
+    w.post(STARS, &kai, 8, json!({"alerts": "delayed"}));
+    assert_eq!(w.inbox(ALEX)[0], ("post".into(), "Kai posted".into(), "post 8".into()));
+}

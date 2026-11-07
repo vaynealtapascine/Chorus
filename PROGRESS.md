@@ -22,9 +22,9 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 ## Now
 
-- **In progress:** UI18
+- **In progress:** UI19
 - **Owner:** claude-opus-5.5, 2026-11-07
-- **Next concrete step:** UI18: look at the Android Handles section, profile line and Journal rows on the emulator or the owner's phone (0.1.791)
+- **Next concrete step:** UI19: server — quote audience narrowing in readable_sql, GET /posts/activity, quoted/parent on GET /posts lists
 - **Notes:** UI17 (owner's fix-and-polish batch, D-125) deployed 2026-11-07 (f5963b4, Android 0.1.761); not yet seen on an iOS browser or the owner's phone. Gemini's raw reviews stay untracked in gemini_review/.
 
 ### SEC1: what is done and what is left
@@ -101,6 +101,7 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 
 ### UI — Owner's Figma redesign
 
+- [~] UI19 Notifications screen and Journal replies (owner, 2026-11-07, D-127): the Figma F11 Notifications inbox (web + Android, a bottom-bar tab with a badge; Needs you / Today / Earlier; chips; hold for options; read as another member; web side panel); Journal › Friends shows replies to our posts and what friends' replies answer; own posts count friends' replies and hearts; one action row everywhere with unavailable actions disabled; quoting another account's post, the quote readable only by who can read both.
 - [~] UI18 Member handles and private full names (owner, 2026-11-07, D-126): default `@member.subsystem.system` from core, claimable handles unique with account handles, shown in profiles, Journal and chat (web + Android); full names private unless shared, display names follow the profile. Merged (4268dee) and deployed (Android 0.1.791). Checked on web against an isolated demo copy (`F:/DunBuild/handles-demo`). Left: an Android emulator look (member editor Handles section, profile line, Journal rows); Android shared-chat mentions of another account's members by handle (web has them).
 - [x] UI17 Owner's fix-and-polish batch (2026-11-07): Android chat icon differs between the list and the chat header; web sidebar squished on wide screens; web chat repaints and icons flashing; web swipe-to-reply cancelling on a hard/long swipe (iOS); Android form controls too large (compact); web Journal width jumping between sections; more transitions on web and Android.
 - [~] UI16 Android drawers and forms (owner, 2026-11-07, D-124; deployed cd87097, Android 0.1.751): every dialog, dropdown and date/time picker is a drawer (`ui/Drawers.kt`; layered when opened from a drawer); forms and displays in the Figma style (filled fields, grouped cards, value rows, notes, wide buttons); singlets see no system words. Checked on the emulator (demo): front menu, switch sheet → date/time drawer (layered), chat row menu, delete question, message actions, message edit, new channel → space choice (layered). Left: a singlet account on a device (DM picker straight to friends); a pass over the remaining older sheets with their own headers (Switcher, Journal authors, PK import, subsystem sheet, chat attach/forward/reader sheets) to use `Drawer`.

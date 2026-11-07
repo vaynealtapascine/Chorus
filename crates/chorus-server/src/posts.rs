@@ -5,8 +5,20 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 /// A malformed visibility value fails closed. An ended follow removes follower and bucket access.
+///
+/// A post quoting another account's post also borrows that post's audience (D-127): besides its
+/// own audience, the reader must be able to read the quoted post (deleted or not), so a quote only
+/// ever narrows who sees the words it carries. Its author always reads it; a quote of the same
+/// account's post is not narrowed.
 pub(crate) fn readable_sql(viewer: &str) -> String {
-    audience_sql(viewer, "p.account_id", "p.visibility")
+    let own = audience_sql(viewer, "p.account_id", "p.visibility");
+    let quoted = audience_sql(viewer, "qp.account_id", "qp.visibility");
+    format!(
+        "({own} AND (p.account_id={viewer} OR p.quote IS NULL OR NOT json_valid(p.quote)
+          OR json_extract(p.quote,'$.post_id') IS NULL
+          OR EXISTS (SELECT 1 FROM post qp WHERE qp.id=json_extract(p.quote,'$.post_id')
+                     AND (qp.account_id=p.account_id OR {quoted}))))"
+    )
 }
 
 /// Whether `viewer` is in an audience (`private` · `followers` · `buckets` · `server`) that
@@ -153,8 +165,127 @@ pub fn list(conn: &Connection, viewer: &str, q: &PostQuery) -> anyhow::Result<Va
         .collect::<Result<Vec<_>, _>>()?;
     for item in &mut items {
         for_viewer(conn, viewer, item)?;
+        attach_context(conn, viewer, item)?;
     }
     Ok(json!({"items": items}))
+}
+
+/// What a feed card needs to stand on its own: the post it quotes ([`attach_quoted`]), what it
+/// answers (`parent`, without its media, reactions or poll) and how many replies this viewer may
+/// read. All under the same read rule, so a hidden parent leaves only "Replying to a post" out.
+pub fn attach_context(conn: &Connection, viewer: &str, item: &mut Value) -> anyhow::Result<()> {
+    attach_quoted(conn, viewer, item)?;
+    if let Some(parent_id) = item["reply_to"].as_str().map(str::to_string)
+        && let Some(mut parent) = one(conn, viewer, &parent_id)?
+    {
+        if let Some(fields) = parent.as_object_mut() {
+            for key in ["quote", "reactions", "attachments", "poll", "poll_tally", "visibility"] {
+                fields.remove(key);
+            }
+        }
+        item["parent"] = parent;
+    }
+    let id = item["id"].as_str().unwrap_or_default().to_string();
+    item["reply_count"] = json!(reply_count(conn, viewer, &id)?);
+    Ok(())
+}
+
+/// `GET /posts/activity` (D-127): what other accounts did with this account's posts, newest
+/// first: their replies, quotes and reposts this viewer may read, and their members' reactions.
+/// Each item names its `target` (our post, briefly). Also every own post's count of such readable
+/// replies and its other-account reactions, so the Journal's own cards can show them.
+pub fn activity(conn: &Connection, viewer: &str, before: Option<i64>, limit: usize) -> anyhow::Result<Value> {
+    let limit = limit.clamp(1, 100);
+    let readable = readable_sql("?1");
+    let mut items: Vec<(i64, Value)> = Vec::new();
+    let target_of = |conn: &Connection, id: &str| -> rusqlite::Result<Option<Value>> {
+        conn.prepare_cached("SELECT id, kind, title, substr(text, 1, 200), cw FROM post WHERE id = ?1 AND account_id = ?2")?
+            .query_row(params![id, viewer], |r| {
+                Ok(json!({"id": r.get::<_, String>(0)?, "kind": r.get::<_, Option<String>>(1)?,
+                    "title": r.get::<_, Option<String>>(2)?, "text": r.get::<_, String>(3)?, "cw": r.get::<_, Option<String>>(4)?}))
+            })
+            .optional()
+    };
+    for (kind, link) in [
+        ("reply", "t.id = p.reply_to_id"),
+        ("quote", "p.repost_of_id IS NULL AND json_valid(p.quote) AND t.id = json_extract(p.quote,'$.post_id')"),
+        ("repost", "t.id = p.repost_of_id"),
+    ] {
+        let sql = format!(
+            "SELECT {COLUMNS}, t.id FROM post p JOIN post t ON {link}
+             WHERE t.account_id = ?1 AND p.account_id <> ?1 AND p.deleted_at IS NULL AND {readable}
+               AND (?2 IS NULL OR p.occurred_at < ?2)
+             ORDER BY p.occurred_at DESC, p.id DESC LIMIT ?3"
+        );
+        let mut st = conn.prepare_cached(&sql)?;
+        let rows = st
+            .query_map(params![viewer, before, limit as i64], |r| Ok((row(r)?, r.get::<_, String>(SCORE)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (mut post, target) in rows {
+            for_viewer(conn, viewer, &mut post)?;
+            if kind != "repost" {
+                attach_quoted(conn, viewer, &mut post)?;
+            }
+            let at = post["occurred_at"].as_i64().unwrap_or_default();
+            items.push((at, json!({"kind": kind, "at": at, "post": post, "target": target_of(conn, &target)?})));
+        }
+    }
+    // reactions carry no time of their own: their clock's physical part is when they were added
+    let mut reactions = serde_json::Map::new();
+    let mut st = conn.prepare_cached(
+        "SELECT r.target_id, r.emoji, r.member_id, COALESCE(m.display_name, m.name), m.account_id, r.added_hlc
+         FROM reaction r JOIN post t ON t.id = r.target_id JOIN member m ON m.id = r.member_id
+         WHERE r.target_type = 'post' AND r.is_present AND t.account_id = ?1 AND t.deleted_at IS NULL
+           AND m.account_id <> ?1
+         ORDER BY r.added_hlc DESC",
+    )?;
+    let rows = st
+        .query_map([viewer], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, Option<String>>(5)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (target, emoji, member, name, account, hlc) in rows {
+        let name = name.unwrap_or_else(|| "Someone".into());
+        let at = hlc.and_then(|h| h.parse::<chorus_core::hlc::Hlc>().ok()).map(|h| h.pt as i64).unwrap_or_default();
+        reactions
+            .entry(target.clone())
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .expect("an array")
+            .push(json!({"emoji": emoji, "member_id": member, "member_name": name}));
+        if before.is_none_or(|b| at < b) {
+            items.push((
+                at,
+                json!({"kind": "reaction", "at": at, "emoji": emoji, "member_id": member, "member_name": name,
+                    "account_id": account, "target": target_of(conn, &target)?}),
+            ));
+        }
+    }
+    items.sort_by_key(|i| std::cmp::Reverse(i.0));
+    items.truncate(limit);
+    let mut counts = serde_json::Map::new();
+    let sql = format!(
+        "SELECT p.reply_to_id, count(*) FROM post p JOIN post t ON t.id = p.reply_to_id
+         WHERE t.account_id = ?1 AND p.account_id <> ?1 AND p.deleted_at IS NULL AND {readable}
+         GROUP BY p.reply_to_id"
+    );
+    let mut st = conn.prepare_cached(&sql)?;
+    for r in st.query_map([viewer], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))? {
+        let (id, n) = r?;
+        counts.insert(id, json!(n));
+    }
+    Ok(json!({
+        "items": items.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
+        "reply_counts": counts,
+        "reactions": reactions,
+    }))
 }
 
 pub fn one(conn: &Connection, viewer: &str, id: &str) -> anyhow::Result<Option<Value>> {

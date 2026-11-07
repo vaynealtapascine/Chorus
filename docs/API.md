@@ -197,7 +197,14 @@ GET  /search/posts?q=&account=&kind=&before=&after=&limit=&cursor=
   default 100) and the opaque cursor work like `/search/messages`. API tokens need `read:posts`
   and search only their own account's posts.
 
-GET  /posts?author=&kind=&before=&limit=
+GET  /posts?author=&kind=&before=&limit=   each item with `quoted` (when readable), `parent` (the post
+                                            it answers, when readable; no media) and `reply_count`
+GET  /posts/activity?before=&limit=        other accounts' readable replies, quotes, reposts and
+                                            reactions on the caller's posts, newest first (D-127):
+                                            {items:[{kind: reply|quote|repost|reaction, at, post?,
+                                            emoji?, member_id?, member_name?, target:{id,kind,title,
+                                            text,cw}}], reply_counts:{post:n}, reactions:{post:[…]}};
+                                            devices only (tokens get empty lists)
 GET  /posts/{id}                           with replies ?depth=
                                            + reply_count on it and each reply, and ancestors (what it
                                            answers, oldest first; ends at the first unreadable parent)

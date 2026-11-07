@@ -348,6 +348,19 @@ notify, and nothing in it says who is fronting. It is delivered immediately, whi
 nothing the subscriber couldn't already read (`GET /posts/{id}`). Android shows them on their own
 "Post alerts" channel and opens the post; web opens `#/journal/post/<id>`.
 
+**Replies to our posts (D-127).** A live reply (written in the last 24 hours) to another
+account's post queues one `post_reply` notification to that account, if it may read the reply
+then (`posts::readable_sql`) and hasn't turned journal replies off (`notify_chat.post_reply`,
+on unless false): "Ash replied to your post", the reply's text (or its warning), `post_id` (the
+reply) and `parent_id`. Replies within one account never notify it. Delivered like a post alert
+(push payload `t: "post"`, opening the reply).
+
+**A post's own choice (D-127).** `post.create` may carry `alerts`: `"none"` (the composer's
+"Don't notify") queues neither post alerts nor a reply notification for it; `"delayed"` ("Random
+delay") gives each recipient its own due time drawn uniformly from 5–60 minutes after the post
+(`post_alerts::MIN_DELAY_MS`/`MAX_DELAY_MS`), so a ping doesn't say exactly when it was written.
+The post itself is readable at once as usual; only the ping waits. Not stored on the post.
+
 ## 7a. Implementation (`chorus_core::notify`)
 
 All of §2–§5 that must agree everywhere is pure core code: `effective_ceiling` (layers + the

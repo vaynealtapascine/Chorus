@@ -1060,3 +1060,75 @@ fn saved_search_rechecks_post_audience_and_does_not_expose_hidden_rank() {
     conn.execute("UPDATE post SET visibility='{\"mode\":\"private\"}' WHERE id='saved'", []).unwrap();
     assert_eq!(posts::search(&conn, &bob, &q).unwrap()["items"], json!([]));
 }
+
+/// D-127: a quote of another account's post is readable only by who may read both posts (its
+/// author always), and `GET /posts/activity` gives an author other accounts' readable replies,
+/// quotes and reactions on their posts, with reply counts; feed items carry what they answer.
+#[test]
+fn quotes_borrow_the_quoted_audience_and_activity_reaches_the_author() {
+    let conn = seed();
+    for (id, visibility, at, reply, quote) in [
+        ("bob-quote-followers", r#"{"mode":"server"}"#, 200, None, Some(r#"{"post_id":"followers"}"#)),
+        ("bob-quote-server", r#"{"mode":"server"}"#, 210, None, Some(r#"{"post_id":"server"}"#)),
+        ("bob-reply", r#"{"mode":"server"}"#, 220, Some("server"), None),
+        // Alice doesn't follow Bob: his followers-only reply is not hers to read
+        ("bob-hidden-reply", r#"{"mode":"followers"}"#, 230, Some("server"), None),
+    ] {
+        conn.execute(
+            "INSERT INTO post(id,account_id,device_id,kind,text,visibility,occurred_at,reply_to_id,quote)
+             VALUES (?1,?2,?2,'note',?1,?3,?4,?5,?6)",
+            params![id, BOB, visibility, at, reply, quote],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO post_author(post_id,member_id,position) VALUES (?1,'bob',0)", [id]).unwrap();
+    }
+    // Carol can't read Alice's followers-only post, so not Bob's quote of it either
+    assert!(posts::one(&conn, CAROL, "bob-quote-followers").unwrap().is_none());
+    assert!(posts::one(&conn, CAROL, "bob-quote-server").unwrap().is_some());
+    for reader in [ALICE, BOB] {
+        assert!(posts::one(&conn, reader, "bob-quote-followers").unwrap().is_some(), "{reader}");
+    }
+    let q = posts::PostQuery { account: Some(BOB.into()), ..Default::default() };
+    let carol: Vec<String> = posts::list(&conn, CAROL, &q).unwrap()["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(!carol.contains(&"bob-quote-followers".to_string()) && carol.contains(&"bob-quote-server".to_string()));
+    // a listed reply carries the post it answers; a quote carries the quoted post
+    let bob_feed =
+        posts::list(&conn, BOB, &posts::PostQuery { account: Some(ALICE.into()), ..Default::default() }).unwrap();
+    let reply = bob_feed["items"].as_array().unwrap().iter().find(|p| p["id"] == "visible-reply").unwrap();
+    assert_eq!(reply["parent"]["id"], "server");
+    assert!(reply["parent"].get("attachments").is_none());
+    let carol_feed = posts::list(&conn, CAROL, &q).unwrap();
+    let quoting = carol_feed["items"].as_array().unwrap().iter().find(|p| p["id"] == "bob-quote-server").unwrap();
+    assert_eq!(quoting["quoted"]["id"], "server");
+
+    let activity = posts::activity(&conn, ALICE, None, 50).unwrap();
+    let seen: Vec<(String, String)> = activity["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| (i["kind"].as_str().unwrap().to_string(), i["post"]["id"].as_str().unwrap_or("").to_string()))
+        .collect();
+    assert!(seen.contains(&("reply".into(), "bob-reply".into())), "{seen:?}");
+    assert!(seen.contains(&("quote".into(), "bob-quote-followers".into())), "{seen:?}");
+    assert!(!seen.iter().any(|(_, id)| id == "bob-hidden-reply"), "{seen:?}");
+    assert!(seen.contains(&("reaction".into(), String::new())), "{seen:?}");
+    let reply = activity["items"].as_array().unwrap().iter().find(|i| i["post"]["id"] == "bob-reply").unwrap();
+    assert_eq!(reply["target"]["id"], "server");
+    assert_eq!(activity["reply_counts"]["server"], 1);
+    // Carol's removed 👍 isn't counted; Alice's own members never are
+    assert_eq!(activity["reactions"]["server"], json!([{"emoji": "💜", "member_id": "bob", "member_name": "bob"}]));
+    // Bob's activity: nothing of other accounts on his posts; paging stops before the given time
+    assert_eq!(posts::activity(&conn, BOB, None, 50).unwrap()["items"], json!([]));
+    assert!(
+        posts::activity(&conn, ALICE, Some(205), 50).unwrap()["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i["at"].as_i64().unwrap() < 205)
+    );
+}

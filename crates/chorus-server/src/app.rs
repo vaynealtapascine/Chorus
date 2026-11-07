@@ -186,6 +186,7 @@ pub fn router(state: AppState) -> Router {
         .route("/spaces/{id}/channels", get(space_channels))
         .route("/channels/{id}/messages", get(channel_messages).post(channel_send))
         .route("/posts", get(posts_list))
+        .route("/posts/activity", get(posts_activity))
         .route("/posts/{id}", get(post_one))
         .route("/posts/{id}/revisions", get(post_revisions))
         .route("/relationship-targets", get(relationship_targets))
@@ -1215,6 +1216,27 @@ async fn posts_list(
         q.account = Some(p.account_id.clone());
     }
     Ok(Json(crate::posts::list(&conn, &p.account_id, &q)?))
+}
+
+#[derive(Deserialize)]
+struct ActivityQuery {
+    before: Option<i64>,
+    limit: Option<usize>,
+}
+
+/// `GET /posts/activity` (D-127): other accounts' replies, quotes, reposts and reactions on this
+/// account's posts. Devices only: an API token reads only its own account's posts.
+async fn posts_activity(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<ActivityQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let p = posts_principal(&s, &conn, &headers)?;
+    if !p.is_device() {
+        return Ok(Json(json!({"items": [], "reply_counts": {}, "reactions": {}})));
+    }
+    Ok(Json(crate::posts::activity(&conn, &p.account_id, q.before, q.limit.unwrap_or(50))?))
 }
 
 #[derive(Deserialize)]

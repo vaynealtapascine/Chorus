@@ -48,7 +48,8 @@ pub fn list(conn: &Connection, principal: &Principal) -> Result<Value, DataError
     if !principal.allows("read:posts") {
         return Err(DataError::Scope("read:posts"));
     }
-    let readable = posts::readable_sql("?1");
+    // a feed's own audience: the post rule without a post's quote narrowing
+    let readable = posts::audience_sql("?1", "p.account_id", "p.visibility");
     let sql = format!(
         "SELECT {FEED_COLUMNS} FROM feed p JOIN account a ON a.id = p.account_id
          WHERE p.deleted_at IS NULL AND p.query_ast IS NOT NULL AND {readable} AND (?2 = 0 OR p.account_id = ?1)
@@ -84,7 +85,7 @@ pub fn items(conn: &Connection, principal: &Principal, id: &str, q: &ItemsQuery)
         return Err(DataError::Scope("read:posts"));
     }
     let viewer = principal.account_id.as_str();
-    let readable = posts::readable_sql("?1");
+    let readable = posts::audience_sql("?1", "p.account_id", "p.visibility");
     let found: Option<(String, String)> = conn
         .query_row(
             &format!(
@@ -112,6 +113,7 @@ pub fn items(conn: &Connection, principal: &Principal, id: &str, q: &ItemsQuery)
                 .ok_or_else(|| DataError::Bad("invalid cursor".into()))?,
         ),
     };
+    let readable = posts::readable_sql("?1");
     let sql = format!(
         "SELECT {} FROM post p WHERE p.deleted_at IS NULL AND {readable} AND (?4 = 0 OR p.account_id = ?1)
            AND (?2 IS NULL OR p.occurred_at < ?2 OR (p.occurred_at = ?2 AND p.id < ?3))

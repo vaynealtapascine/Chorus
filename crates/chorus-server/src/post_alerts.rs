@@ -72,14 +72,48 @@ fn member_name(conn: &Connection, member: &str) -> anyhow::Result<String> {
 }
 
 fn notify(conn: &Connection, recipient: &str, kind: &str, payload: Value, now: i64) -> anyhow::Result<()> {
+    notify_at(conn, recipient, kind, payload, now, now)
+}
+
+fn notify_at(conn: &Connection, recipient: &str, kind: &str, payload: Value, now: i64, due: i64) -> anyhow::Result<()> {
     let id = chorus_core::id::new_id(now as u64, rand::random());
     conn.execute(
         "INSERT INTO notification (id, recipient_account_id, kind, payload, created_at, due_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-        params![id, recipient, kind, serde_json::to_string(&payload)?, now],
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![id, recipient, kind, serde_json::to_string(&payload)?, now, due],
     )?;
     Ok(())
 }
+
+/// A post's own notification choice (D-127), from its `post.create` payload's `alerts`: `none`
+/// pings nobody; `delayed` pings each recipient at its own random time 5–60 minutes later.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Alerts {
+    Now,
+    Delayed,
+    None,
+}
+
+impl Alerts {
+    pub fn of(payload: &Value) -> Self {
+        match payload.get("alerts").and_then(Value::as_str) {
+            Some("none") => Alerts::None,
+            Some("delayed") => Alerts::Delayed,
+            _ => Alerts::Now,
+        }
+    }
+
+    fn due(self, now: i64) -> i64 {
+        match self {
+            Alerts::Delayed => now + rand::random_range(MIN_DELAY_MS..=MAX_DELAY_MS),
+            _ => now,
+        }
+    }
+}
+
+/// The range of a delayed post's pings.
+pub const MIN_DELAY_MS: i64 = 5 * 60 * 1000;
+pub const MAX_DELAY_MS: i64 = 60 * 60 * 1000;
 
 /// A person's own member, when `viewer` follows them (or is them): what asking by account means.
 pub fn person_member(conn: &Connection, viewer: &str, owner: &str) -> anyhow::Result<Option<String>> {
@@ -215,7 +249,10 @@ pub fn decide(
 
 /// After a live `post.create` is projected: ping each approved subscriber of its authors who may
 /// read it now. One notification per subscriber, however many of its authors they follow.
-pub fn on_post(conn: &Connection, post_id: &str, now: i64) -> anyhow::Result<()> {
+pub fn on_post(conn: &Connection, post_id: &str, alerts: Alerts, now: i64) -> anyhow::Result<()> {
+    if alerts == Alerts::None {
+        return Ok(());
+    }
     type Post = (String, Option<String>, Option<String>, String, Option<String>, Option<String>, Option<String>, i64);
     let post: Option<Post> = conn
         .query_row(
@@ -226,8 +263,11 @@ pub fn on_post(conn: &Connection, post_id: &str, now: i64) -> anyhow::Result<()>
         )
         .optional()?;
     let Some((account, kind, title, text, cw, reply_to, repost_of, at)) = post else { return Ok(()) };
-    if reply_to.is_some() || repost_of.is_some() || now - at > FRESH_MS {
+    if repost_of.is_some() || now - at > FRESH_MS {
         return Ok(());
+    }
+    if let Some(parent) = reply_to {
+        return on_reply(conn, post_id, &account, &parent, cw, text, alerts, now);
     }
     let readable = crate::posts::readable_sql("pa.subscriber_account_id");
     let mut st = conn.prepare(&format!(
@@ -280,14 +320,81 @@ pub fn on_post(conn: &Connection, post_id: &str, now: i64) -> anyhow::Result<()>
             sender["color"] = json!(color);
             sender["avatar_blob"] = json!(avatar);
         }
-        notify(
+        notify_at(
             conn,
             &subscriber,
             "post",
             json!({"t": "post", "kind": "post", "title": headline, "text": body, "post_id": post_id,
                    "account_id": account, "member_id": face, "sender": sender}),
             now,
+            alerts.due(now),
         )?;
     }
     Ok(())
+}
+
+/// A reply to another account's post tells that account (D-127, kind `post_reply`), if it may read
+/// the reply and hasn't turned journal replies off (`notify_chat.post_reply`). Opens the reply.
+#[allow(clippy::too_many_arguments)]
+fn on_reply(
+    conn: &Connection,
+    post_id: &str,
+    account: &str,
+    parent: &str,
+    cw: Option<String>,
+    text: String,
+    alerts: Alerts,
+    now: i64,
+) -> anyhow::Result<()> {
+    let Some(owner) = conn
+        .query_row("SELECT account_id FROM post WHERE id = ?1 AND deleted_at IS NULL", [parent], |r| {
+            r.get::<_, String>(0)
+        })
+        .optional()?
+        .filter(|o| o != account)
+    else {
+        return Ok(());
+    };
+    let readable = crate::posts::readable_sql("?1");
+    let may_read: bool = conn.query_row(
+        &format!("SELECT EXISTS(SELECT 1 FROM post p WHERE p.id = ?2 AND p.deleted_at IS NULL AND {readable})"),
+        params![owner, post_id],
+        |r| r.get(0),
+    )?;
+    if !may_read || !crate::activity::kind_wanted(conn, &owner, "post_reply")? {
+        return Ok(());
+    }
+    let mut st = conn.prepare_cached("SELECT member_id FROM post_author WHERE post_id = ?1 ORDER BY position")?;
+    let authors: Vec<String> = st.query_map([post_id], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    let mut names = Vec::new();
+    for m in &authors {
+        names.push(member_name(conn, m)?);
+    }
+    let who = if names.is_empty() { "Someone".to_string() } else { names.join(" & ") };
+    let body = match cw.filter(|c| !c.trim().is_empty()) {
+        Some(c) => format!("Content warning: {c}"),
+        None => text,
+    };
+    let body: String = body.chars().take(280).collect();
+    let mut sender = json!({"name": who});
+    if let Some(m) = authors.first()
+        && let Some((color, avatar)) = conn
+            .query_row("SELECT color, avatar_blob FROM member WHERE id = ?1", [m], |r| {
+                Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?))
+            })
+            .optional()?
+    {
+        sender["color"] = json!(color);
+        sender["avatar_blob"] = json!(avatar);
+    }
+    notify_at(
+        conn,
+        &owner,
+        "post_reply",
+        json!({"t": "post", "kind": "post_reply", "title": format!("{who} replied to your post"), "text": body,
+               "post_id": post_id, "parent_id": parent, "account_id": account, "member_id": authors.first(),
+               "sender": sender}),
+        now,
+        alerts.due(now),
+    )
 }

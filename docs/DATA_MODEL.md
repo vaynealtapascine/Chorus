@@ -210,7 +210,7 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 | `read.mark` | `{channel_id, reader_member_id?, message_id}` | max-by-message-order |
 | `attachment.create` | `{blob_hash, filename, mime, size, width?, height?, duration_ms?, alt_text?}` | APP |
 | `attachment.set` | `{alt_text?, is_spoiler?}` | LWW-F |
-| `post.create` | `{kind: note or entry, authors, title?, text, entities, mood?, tags?, cw?, visibility, reply_to?, quote?, repost_of?, attachments?, poll?}` | APP |
+| `post.create` | `{kind: note or entry, authors, title?, text, entities, mood?, tags?, cw?, visibility, reply_to?, quote?, repost_of?, attachments?, poll?, alerts?}` (`alerts`: `none` · `delayed`, D-127; read from the op at live ingest, not stored) | APP |
 | `message.poll_tally` / `post.poll_tally` | `{channel_id?, counts:{option_id: n}, voters}` — server-derived only, in the parent's scope; never pushed by devices; no voter identities (D-086) | LWW per poll |
 | `post.edit` / `post.delete` / `post.set_visibility` | | APP / LWW-F |
 | `draft.set` / `draft.delete` | composer drafts (per channel or post), synced | LWW-F |
