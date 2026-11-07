@@ -949,6 +949,23 @@ pub fn follower_view(conn: &Connection, follower: &str, target: &str) -> anyhow:
     follower_view_at(conn, follower, target, crate::now_ms())
 }
 
+/// What the follower behind `follow_id` sees of `target` right now (Figma F7.9 "What they see right
+/// now"): the very view they read, for the account they follow. `None` unless it is an active
+/// follow of `target`; the follower's own prefs never come into it.
+pub fn view_of_follower(conn: &Connection, target: &str, follow_id: &str) -> anyhow::Result<Option<Value>> {
+    let follower: Option<String> = conn
+        .query_row(
+            "SELECT follower_account_id FROM follow WHERE id = ?1 AND target_account_id = ?2 AND status = 'active'",
+            params![follow_id, target],
+            |r| r.get(0),
+        )
+        .optional()?;
+    match follower {
+        Some(f) => follower_view(conn, &f, target),
+        None => Ok(None),
+    }
+}
+
 /// [`follower_view`] at a given time (stats count whole days before `now`).
 pub fn follower_view_at(conn: &Connection, follower: &str, target: &str, now: i64) -> anyhow::Result<Option<Value>> {
     let active: bool = conn

@@ -267,6 +267,9 @@ DELETE /alerts/{member}/{account}          say no, or stop their alerts (not tol
 GET  /follows                               following + followers ({following:[…], followers:[…]}, open ones)
 POST /follows {target:"@handle"|account_id}  ask to follow (201; 200 with the open follow's id if one exists)
 PUT  /follows/{id}/prefs {…}                 the follower's own prefs (NOTIFICATIONS.md §4)
+GET  /follows/{id}/view                      what that follower sees of you right now (Figma F7.9): the
+                                             same view as their `/accounts/{you}/view`; only the followed
+                                             account may ask, 404 otherwise (UI20)
 DELETE /follows/{id}                         unfollow (follower) or remove (target)
 GET  /notifications?after=<ms>             delivered notifications, newest first (100); `after` keeps
                                             only newer ones, and pings caused by the calling device's

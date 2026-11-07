@@ -142,6 +142,7 @@ pub fn router(state: AppState) -> Router {
         .route("/devices/{id}/revoke", post(device_revoke))
         .route("/follows", get(follows_list).post(follow_request))
         .route("/follows/{id}/prefs", put(follow_prefs))
+        .route("/follows/{id}/view", get(follow_view))
         .route("/follows/{id}", delete(follow_end))
         .route("/devices/push", put(push_register).delete(push_unregister))
         .route("/devices/push/test", post(push_test))
@@ -521,6 +522,19 @@ async fn follow_prefs(
     let o = follows::set_prefs(&conn, &me.account_id, &id, prefs, now_ms())?;
     fan_out(&s, &conn, &[o], None)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// What one of our followers sees of us right now (F7.9); only the followed account may ask.
+async fn follow_view(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let conn = s.db();
+    let me = who(&s, &conn, &headers)?;
+    crate::notifier::view_of_follower(&conn, &me.account_id, &id)?
+        .map(Json)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "not_found", "not one of your followers".into()))
 }
 
 async fn follow_end(

@@ -325,6 +325,24 @@ fn nothing_is_revealed_before_due_then_the_view_and_inbox_update_together() {
 }
 
 #[test]
+fn the_followed_account_reads_what_one_follower_sees_and_nobody_else_does() {
+    let (mut w, kai, _, secret) = world();
+    let follow: String =
+        w.c.query_row("SELECT id FROM follow WHERE follower_account_id = ?1", [&w.friend], |r| r.get(0)).unwrap();
+    w.switch(&[&kai, &secret], NOW);
+    // before the reveal the followed account sees what the follower sees: nothing yet
+    let early = notifier::view_of_follower(&w.c, &w.sys, &follow).unwrap().unwrap();
+    assert_eq!(early, notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().unwrap());
+    assert_eq!(early["entries"], json!([]));
+    notifier::process_due(&w.c, NOW + SETTLE + DELAY).unwrap();
+    let seen = notifier::view_of_follower(&w.c, &w.sys, &follow).unwrap().unwrap();
+    assert_eq!(seen, notifier::follower_view(&w.c, &w.friend, &w.sys).unwrap().unwrap());
+    assert_eq!(seen["entries"].as_array().unwrap().len(), 1, "a hidden member stays hidden here too");
+    // the follower can't use it to read their own follow from the other side
+    assert!(notifier::view_of_follower(&w.c, &w.friend, &follow).unwrap().is_none());
+}
+
+#[test]
 fn follower_avatar_hash_is_only_exposed_after_reveal() {
     let (mut w, kai, _, _) = world();
     let hash = "a".repeat(64);
