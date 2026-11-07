@@ -5,7 +5,7 @@
   import { core } from '../core';
   import type { BucketRow, FieldDef, MemberRow } from '../data';
   import { roleColor, rolesOf } from '../member-list';
-  import { audienceOf, effectiveAudience, isPrivate, ownAudience, PART_LABELS, withAudience, type Audience, type Part } from '../profile-audience';
+  import { audienceOf, effectiveAudience, isPrivate, ownAudience, withAudience, type Audience, type Part } from '../profile-audience';
   import { sync } from '../sync/client';
   import { flushUploads, stageBlob } from '../sync/uploads';
   import AudienceChip from './AudienceChip.svelte';
@@ -59,16 +59,20 @@
     else if (e.key === 'Enter' && (!multiline || e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
   }
 
-  const PART_TEXT: Part[] = ['display_name', 'pronouns'];
-  function partValue(p: Part): string {
+  // the display name has no audience of its own: whoever may see the member sees it (D-126)
+  type TextPart = 'display_name' | 'name' | 'pronouns';
+  const TEXT_LABELS: Record<TextPart, string> = { display_name: 'Display name', name: 'Full name', pronouns: 'Pronouns' };
+  function partValue(p: Part | TextPart): string {
     if (p === 'display_name') return m.display_name ?? '';
+    if (p === 'name') return m.name;
     if (p === 'pronouns') return m.pronouns ?? '';
     if (p === 'birthday') return m.birthday ?? '';
     return '';
   }
-  function savePart(p: Part) {
+  function savePart(p: Part | TextPart) {
     const v = draft.trim();
-    if ((p === 'display_name' || p === 'pronouns') && v.length > 100) { error = 'Keep it under 100 characters.'; return; }
+    if ((p === 'display_name' || p === 'name' || p === 'pronouns') && v.length > 100) { error = 'Keep it under 100 characters.'; return; }
+    if (p === 'name' && !v) { error = 'Everyone needs a name.'; return; }
     if (p === 'birthday' && v && !/^(\d{4}|-)-\d{2}-\d{2}$/.test(v)) { error = 'Use a date, or --MM-DD without a year.'; return; }
     set({ [p]: v || null });
     editing = null;
@@ -213,24 +217,32 @@
     {#if closed}
       Only your system can see {m.name}'s profile right now. Share it with friends and each part below can be opened up or kept to yourselves.
     {:else}
-      Friends who can open it see {m.name}'s name, colour and avatar, plus each part below that's shared with them.
+      Friends who can open it see {m.display_name ?? m.name}'s display name, handle, colour and avatar, plus each part below that's shared with them.
     {/if}
   </p>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
   <ul class="rows">
-    {#each PART_TEXT as p (p)}
-      {@const own = ownAudience(parts, p)}
+    {#each ['display_name', 'name', 'pronouns'] as const as p (p)}
       <li class="row">
-        <span class="label">{PART_LABELS[p]}</span>
+        <span class="label">{TEXT_LABELS[p]}</span>
         {#if editing === p}
-          <input class="value-edit" use:focus bind:value={draft} maxlength="100" aria-label={PART_LABELS[p]}
+          <input class="value-edit" use:focus bind:value={draft} maxlength="100" aria-label={TEXT_LABELS[p]}
             onkeydown={(e) => keys(e, () => savePart(p))} onblur={() => editing === p && savePart(p)} />
         {:else}
-          <button class="value" class:empty={!partValue(p)} onclick={() => begin(p, partValue(p))}>{partValue(p) || `Add ${PART_LABELS[p].toLowerCase()}`}</button>
+          <button class="value" class:empty={!partValue(p)} onclick={() => begin(p, partValue(p))}>{partValue(p) || `Add ${TEXT_LABELS[p].toLowerCase()}`}</button>
         {/if}
-        <AudienceChip label={PART_LABELS[p]} value={effectiveAudience(raw.visibility, parts, p)} own={!!own} inherit="Same as profile" {buckets} limited={closed} onchange={(a) => setPartAudience(p, a)} />
+        {#if p === 'display_name'}
+          <span class="follows" title="Whoever can see {m.display_name ?? m.name} sees their display name">Same as profile</span>
+        {:else if p === 'name' && !m.display_name}
+          <span class="follows" title="Without a display name, the full name is what everyone sees">Same as profile</span>
+        {:else}
+          <AudienceChip label={TEXT_LABELS[p]} value={effectiveAudience(raw.visibility, parts, p)} own={!!ownAudience(parts, p)} inherit={p === 'name' ? undefined : 'Same as profile'} {buckets} limited={closed} onchange={(a) => setPartAudience(p, a)} />
+        {/if}
       </li>
+      {#if p === 'name' && m.display_name}
+        <li class="note">{effectiveAudience(raw.visibility, parts, 'name').mode === 'private' ? `Friends see ${m.display_name}, never the full name.` : `Shared on purpose: friends it reaches see the full name next to ${m.display_name}.`}</li>
+      {/if}
     {/each}
 
     <li class="row tall">
@@ -385,6 +397,8 @@
   .row { display: grid; grid-template-columns: minmax(110px, 160px) 1fr auto; align-items: center; gap: var(--s-3); padding: var(--s-2) 0; border-top: 1px solid var(--line); min-height: 48px; }
   .row.tall { align-items: start; }
   .label { font-size: var(--fs-sm); color: var(--ink-2); }
+  .follows { font-size: var(--fs-xs); color: var(--ink-3); padding: 0 var(--s-2); white-space: nowrap; }
+  .note { font-size: var(--fs-xs); color: var(--ink-3); padding: 0 0 var(--s-2) calc(min(160px, 30%) + var(--s-3)); }
   .field-label { display: inline-flex; align-items: center; gap: 2px; }
   .value { font: inherit; text-align: left; color: var(--ink); background: none; border: 1px solid transparent; border-radius: var(--r-sm); padding: var(--s-2); cursor: text; min-width: 0; overflow-wrap: anywhere; }
   .value:hover, .value:focus-visible { border-color: var(--line); background: var(--surface-2); }

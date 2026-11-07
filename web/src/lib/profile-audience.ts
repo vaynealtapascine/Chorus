@@ -13,12 +13,13 @@ export type Audience =
 
 export const PRIVATE: Audience = { mode: 'private' };
 
-/** The built-in parts with their own audience, in the order the editor shows them. */
-export const PARTS = ['display_name', 'pronouns', 'description', 'birthday', 'banner'] as const;
+/** The built-in parts with their own audience, in the order the editor shows them. The display
+ *  name has none: it follows the profile (D-126). */
+export const PARTS = ['name', 'pronouns', 'description', 'birthday', 'banner'] as const;
 export type Part = (typeof PARTS)[number];
 
 export const PART_LABELS: Record<Part, string> = {
-  display_name: 'Display name',
+  name: 'Full name',
   pronouns: 'Pronouns',
   description: 'Bio',
   birthday: 'Birthday',
@@ -47,7 +48,8 @@ export function ownAudience(fieldVisibility: unknown, key: string): Audience | n
 
 /** What a part or field is actually shared with, before the profile's own limit. */
 export function effectiveAudience(profile: unknown, fieldVisibility: unknown, key: string, fieldDefault?: unknown): Audience {
-  return ownAudience(fieldVisibility, key) ?? (fieldDefault === undefined ? audienceOf(profile) : audienceOf(fieldDefault));
+  return ownAudience(fieldVisibility, key)
+    ?? (fieldDefault !== undefined ? audienceOf(fieldDefault) : key === 'name' ? PRIVATE : audienceOf(profile));
 }
 
 /** The parts map with [key] set to [audience], or cleared back to "same as profile" with `null`. */

@@ -54,6 +54,11 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
   bsdtar; a deploy where GNU tar answered failed packing (2026-11-03).
 - Python helper scripts: Windows paths in ordinary string literals turn `\a \b \r \0` into
   control bytes (this corrupted `deploy.ps1` once). Use raw strings.
+- Python `open(p, 'w')` on Windows writes CRLF. Git stores LF (`.gitattributes`), but the working
+  copy turns CRLF and every touched file shows as modified; pass `newline=''` (2026-11-07).
+- Another worktree running the gate on the shared `F:\DunBuild\chorus-target` can replace
+  `gate\chorus-server.exe` mid-run (a CLI test then saw the other tree's schema). Give a long-lived
+  worktree its own `CARGO_TARGET_DIR` (2026-11-07, UI18 used `chorus-target-handles`).
 - PowerShell: `$x = if (...) { @() } else { @('--release') }` unwraps to a string and `@x` splats
   characters; write `$x = @(if (...) { '--release' })`. Don't name a variable `$profile`.
 - Windows locks a running exe/DLL (rename works, overwrite doesn't). Run test servers from a copy

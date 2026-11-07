@@ -198,6 +198,10 @@ fn main() -> anyhow::Result<()> {
             if fixed > 0 {
                 tracing::info!(accounts = fixed, "gave person accounts their self member (D-003)");
             }
+            let told = chorus_server::handles::backfill_account_handles(&conn, chorus_server::now_ms())?;
+            if told > 0 {
+                tracing::info!(accounts = told, "wrote account handles into the op log (D-126)");
+            }
             let state = chorus_server::app::Shared::new(conn, cfg.clone())?;
             // a fresh runtime each time: dropping it ends the last run's background tasks
             tokio::runtime::Runtime::new()?.block_on(chorus_server::app::serve(state))?;

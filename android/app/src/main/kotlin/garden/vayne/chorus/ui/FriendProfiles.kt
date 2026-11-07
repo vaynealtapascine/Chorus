@@ -137,6 +137,8 @@ internal fun FriendProfiles(chorus: Chorus, model: garden.vayne.chorus.data.Mode
                                 m.text("pronouns")?.let { Text(it, color = p.ink3, style = MaterialTheme.typography.bodySmall.merge(shadow),
                                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)) }
                             }
+                            m.text("handle")?.let { Text("@$it", color = p.ink3, style = MaterialTheme.typography.bodySmall.merge(shadow),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             val roles = m.optJSONArray("roles")?.let { a -> (0 until a.length()).mapNotNull { a.opt(it) as? String } }.orEmpty()
                             if (roles.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)) { for (r in roles) RolePill(r) }
@@ -181,7 +183,10 @@ private fun FriendMemberProfile(chorus: Chorus, model: garden.vayne.chorus.data.
         }
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(shown(m), color = tonesOf(color).name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            Text(listOfNotNull(m.text("pronouns"), shownAccount).joinToString(" · "), color = p.ink3)
+            // their handle (D-126), and the full name only when they shared it with us
+            m.text("handle")?.let { Text("@$it", color = p.ink2) }
+            val fullName = m.text("name")?.takeIf { m.text("display_name") != null && it != m.text("display_name") }
+            Text(listOfNotNull(fullName, m.text("pronouns"), shownAccount).joinToString(" · "), color = p.ink3)
             if (alerts == "requested") Text("$shownAccount will see your request.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
             error?.let { Text(it, color = p.danger) }
             m.text("description")?.let { Text(it, color = p.ink) }
@@ -215,7 +220,8 @@ private fun FriendMemberProfile(chorus: Chorus, model: garden.vayne.chorus.data.
             if (links.length() > 0) Text("Relationships", color = p.ink, style = MaterialTheme.typography.titleMedium)
             for (i in 0 until links.length()) {
                 val link = links.getJSONObject(i)
-                Text("${link.optString("type")} · ${shown(link.getJSONObject("target"))}", color = p.ink)
+                Text("${link.optString("type")} · ${shown(link.getJSONObject("target"))}" +
+                    (link.getJSONObject("target").text("handle")?.let { "  @$it" } ?: ""), color = p.ink)
                 link.text("note")?.let { Text(it, color = p.ink2) }
             }
             Text("You see what $shownAccount chose to share with you.", color = p.ink3, style = MaterialTheme.typography.bodySmall)

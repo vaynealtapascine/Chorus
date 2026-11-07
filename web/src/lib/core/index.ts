@@ -112,6 +112,9 @@ export const core = {
     JSON.parse(wasm.searchFilter(JSON.stringify(query), JSON.stringify(candidates), JSON.stringify(context))),
   feedFilter: (ast: Json, items: Json[], context: Json): number[] =>
     JSON.parse(wasm.feedFilter(JSON.stringify(ast), JSON.stringify(items), JSON.stringify(context))),
+  /** One account's members → their handles (D-126, core handles.rs). */
+  memberHandles: (input: Json): Record<string, { default: string; claimed: string[]; shown: string }> =>
+    JSON.parse(wasm.memberHandles(JSON.stringify(input))),
   adaptColor: (color: string, dark: boolean, intensity: 'off' | 'subtle' | 'vivid' = 'subtle'): MemberColors =>
     JSON.parse(wasm.adaptColor(color, dark, intensity)),
   hlcTick: (last: string, node: number, now = Date.now()): string => wasm.hlcTick(last, node, now),

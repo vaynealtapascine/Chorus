@@ -93,8 +93,8 @@ matter to a screen.
 ### Member
 | Property | Type | Notes |
 | --- | --- | --- |
-| name | text, short | Required. |
-| display name | text, short | Shown instead of name where set. |
+| name | text, short | Required. The full name: other accounts see it only where its own audience reaches them (private unless chosen), unless there is no display name (D-126). |
+| display name | text, short | Shown instead of name where set; follows the profile, so whoever may see the member sees it (D-126). |
 | pronouns | text, short | |
 | description | rich text | The bio. |
 | colour | colour | Used for name ink, avatar ring, tints. |
@@ -111,6 +111,8 @@ matter to a screen.
 | field visibility | per custom field: visibility | |
 | notification policy | member policy (see *Shapes*) | Announce to everyone / nobody / chosen buckets; announce leaving. |
 | short id | text | 7 letters; Advanced only (D-049). |
+| handles | list of text | Handles the member claims (`@fox`), up to 5; the first is shown. Unique on the server, shared with account handles (D-126). |
+| default handle | (worked out) | `@member.subsystem….system` from the display name, every subsystem on their path (innermost first) and the account handle; reserved, never stored (D-126). |
 | PluralKit id | text | When imported. |
 | archived | time | Archived members hide from the switcher and lists. |
 | custom field values | per field: value | See *Custom field*. |

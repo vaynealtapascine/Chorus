@@ -22,6 +22,11 @@ pub fn core_version() -> String {
 }
 
 #[uniffi::export]
+pub fn member_handles(input_json: String) -> Result<String, CoreError> {
+    wrap(api::member_handles(&input_json))
+}
+
+#[uniffi::export]
 pub fn parse_markup(src: String, names_json: String) -> Result<String, CoreError> {
     wrap(api::parse_markup(&src, &names_json))
 }

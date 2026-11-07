@@ -18,7 +18,9 @@ data class SpaceAccount(val id: String, val handle: String?, val displayName: St
 
 data class SpaceInfo(val id: String, val kind: String, val ownerAccountId: String, val accounts: List<SpaceAccount>)
 data class ForeignAuthor(val id: String, val accountId: String, val name: String, val color: String? = null,
-    val sigil: String? = null, val avatarBlob: String? = null) {
+    val sigil: String? = null, val avatarBlob: String? = null,
+    /** The handle we may see (D-126): their first claim, else their default. */
+    val handle: String? = null) {
     /** Drawn like one of ours (avatar, colour, sigil), so another account's members aren't just letters. */
     val member: Member get() = Member(id, name, null, null, color ?: "#A09184", listOfNotNull(sigil), null, false,
         avatarBlob = avatarBlob)
@@ -30,6 +32,7 @@ data class ForeignAuthor(val id: String, val accountId: String, val name: String
             text(j, "color"), j.optJSONArray("sigils")?.let { a -> (0 until a.length()).firstNotNullOfOrNull { i ->
                 a.optString(i).takeIf { !a.isNull(i) && it.isNotBlank() } } },
             text(j, "avatar_blob"),
+            text(j, "handle"),
         )
     }
 }

@@ -1,7 +1,9 @@
 {
-  "comment": "D-101: who each profile part or custom field is shared with, before the profile's own limit. Web profile-audience.ts and Android ProfileAudience.kt both read this.",
+  "comment": "D-101: who each profile part or custom field is shared with, before the profile's own limit. D-126: the complete name is private unless chosen. Web profile-audience.ts and Android ProfileAudience.kt both read this.",
   "buckets": { "b1": "Close friends", "b2": "Discord" },
   "cases": [
+    { "name": "the complete name is private unless chosen", "profile": { "mode": "followers" }, "parts": {}, "key": "name", "audience": { "mode": "private" }, "label": "Only us" },
+    { "name": "the complete name shared on purpose", "profile": { "mode": "followers" }, "parts": { "name": { "mode": "server" } }, "key": "name", "audience": { "mode": "server" }, "label": "Everyone here" },
     { "name": "unset part follows the profile", "profile": { "mode": "followers" }, "parts": {}, "key": "pronouns", "audience": { "mode": "followers" }, "label": "Friends" },
     { "name": "own audience wins", "profile": { "mode": "followers" }, "parts": { "pronouns": { "mode": "private" } }, "key": "pronouns", "audience": { "mode": "private" }, "label": "Only us" },
     { "name": "no parts map at all", "profile": { "mode": "server" }, "parts": null, "key": "birthday", "audience": { "mode": "server" }, "label": "Everyone here" },

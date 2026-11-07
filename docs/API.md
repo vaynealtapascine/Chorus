@@ -229,9 +229,13 @@ GET  /android/latest                       the published Android build for in-ap
 GET  /emoji                                the server-wide custom emoji set
 GET  /accounts/{id}/view                   follower view of another account (privacy-filtered, §5 NOTIFICATIONS)
 GET  /accounts/{id}/members                the members of that account shared with you (D-101): {items:[{id, name,
-                                           display_name, pronouns, color, sigil, avatar_blob, banner_blob, roles}]},
-                                           unshared parts null; roles are the pills their Members list shows
-                                           (D-100: its roles field and pill setting), [] when that field isn't shared
+                                           display_name, pronouns, color, sigil, avatar_blob, banner_blob, roles,
+                                           handle, handles}]}, unshared parts null; roles are the pills their Members
+                                           list shows (D-100: its roles field and pill setting), [] when that field
+                                           isn't shared. D-126: `name` is the full name only where its `name` part
+                                           reaches you, else the display name; `handle` is the member's shown handle
+                                           (first claim, else default), `handles` their claims; your own members'
+                                           cards also carry `default_handle`
 GET  /accounts/{id}/members/{member}       one shared profile: the card plus description(+_entities), birthday,
                                            banner_blob and fields:[{id,name,type,value}] shared with you; 404 alike
                                            for missing and unshared. Never fronting, history or timestamps.
@@ -322,7 +326,8 @@ Implemented so far (`api_data.rs`, `api_reads.rs`; sessions or API tokens):
   - `DELETE /spaces/{id}/members/me` leaves. The owner of a shared space can't leave it, and
     nobody can leave their home space.
   - `GET /spaces/{id}/authors` returns `{accounts, members}`. `members` holds author cards (name,
-    display name, pronouns, colour, sigils, avatar) for other accounts' members who wrote a message
+    display name, pronouns, colour, sigils, avatar, handle, handles; the name by the D-126 rule
+    above) for other accounts' members who wrote a message
     everyone in the space can read, or whom a private chat you may view is kept to (D-098, its
     `member_ids`), while their account is in the space.
   - A space you aren't in is a 404.
@@ -345,6 +350,9 @@ since schema-15 servers reject the unknown field even if its value is null.
   A pushed op the permissions refuse is acked `forbidden` with the reason
   (e.g. "you don't have the send permission in this channel"). API tokens with `read:messages`
   get only their own account's messages (§2.3).
+- **Handles** (`handles.rs`, D-126): a `member.create`/`member.set` whose `handles` holds a handle
+  another member claims or an account has, or an `account.set` taking a handle a member claims or
+  another account has, is acked `conflict` ("@x is taken"). Post author cards carry `handle` too.
 - **Feeds** (`feeds.rs`, M7.4): `GET /feeds` lists your feeds and the ones other accounts share
   with you (`shared: true`, with `owner {handle, display_name}`). A feed is shared like a post:
   its `visibility` (`private`, `followers`, `buckets`, `server`) is checked with the same rule.

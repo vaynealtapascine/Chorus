@@ -27,7 +27,9 @@
   // their posts and entries we may read, through the same audience check as everywhere (posts::readable_sql)
   let posts = $state<FriendPost[] | null>(null);
 
-  interface Card { id: string; name: string; display_name: string | null; pronouns: string | null; color: string | null; sigil: string | null; avatar_blob: string | null }
+  interface Card { id: string; name: string; display_name: string | null; pronouns: string | null; color: string | null; sigil: string | null; avatar_blob: string | null;
+    /** D-126: the handle we may see, and the handles they claim. `name` is the full name only when it's shared with us. */
+    handle?: string | null; handles?: string[] }
   /** A row of their member list: the banner and role pills they share with us, if any. */
   interface ListCard extends Card { banner_blob?: string | null; roles?: string[] }
   interface Field { id: string; name: string; type: string; value: unknown }
@@ -121,7 +123,8 @@
       <p class="muted">This profile isn't shared with you.</p>
     {:else if profile}
       <ProfileHeader banner={profile.banner_blob} avatar={profile.avatar_blob} glyph={glyph(profile)} name={shownName(profile)} color={profile.color}
-        subtitle={[profile.pronouns, owner?.name].filter(Boolean).join(' · ')} {dark}>
+        handle={profile.handle}
+        subtitle={[profile.display_name && profile.name !== profile.display_name ? profile.name : null, profile.pronouns, owner?.name].filter(Boolean).join(' · ')} {dark}>
         {#snippet actions()}
           {#if profile?.post_alerts}
             {@const state = profile.post_alerts}
@@ -166,7 +169,7 @@
           {/each}
         </dl>
       {/if}
-      {#if profile.relationships?.length}<section aria-label="Relationships"><h2>Relationships</h2>{#each profile.relationships as link (link.id)}<p>{link.type} · {shownName(link.target)}{#if link.note}<br />{link.note}{/if}</p>{/each}</section>{/if}
+      {#if profile.relationships?.length}<section aria-label="Relationships"><h2>Relationships</h2>{#each profile.relationships as link (link.id)}<p>{link.type} · {shownName(link.target)}{#if link.target.handle} <span class="muted">@{link.target.handle}</span>{/if}{#if link.note}<br />{link.note}{/if}</p>{/each}</section>{/if}
       {/if}
       <p class="hint">You see what {owner?.name ?? 'they'} chose to share with you.</p>
     {:else if !error}
@@ -188,6 +191,7 @@
               <span class="avatar small"><AvatarImage hash={m.avatar_blob} glyph={glyph(m)} name={shownName(m)} /></span>
               <span class="who">
                 <span class="name-line"><strong style="color: {t?.name ?? 'inherit'}">{shownName(m)}</strong>{#if m.pronouns}<span class="muted">{m.pronouns}</span>{/if}</span>
+                {#if m.handle}<span class="muted handle">@{m.handle}</span>{/if}
                 {#if m.roles?.length}<span class="pills">{#each m.roles as r (r)}<span class="pill small" style="--pill: {roleColor(r)}">{r}</span>{/each}</span>{/if}
               </span>
             </a>
@@ -224,6 +228,7 @@
   .cards a :global(.banner) { border-radius: 0 13px 13px 0; z-index: -1; }
   .has-banner strong, .has-banner .muted { text-shadow: 0 0 6px var(--surface), 0 0 2px var(--surface); }
   .name-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .handle { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pill.small { font-size: var(--fs-xs); line-height: 1.5; padding: 0 8px; white-space: nowrap; }
   .cards a:hover { border-color: var(--accent); }
   .who { display: grid; gap: 4px; min-width: 0; }

@@ -37,6 +37,7 @@
     <div class="main">
       <div class="identity">
         <span class="authors">{names}</span>
+        {#if post.author_cards?.length === 1 && lead?.handle}<span class="handle">@{lead.handle}</span>{/if}
         <span class="when">· <a href={threadHref} title={fullTimestamp(post.occurred_at)}><time datetime={new Date(post.occurred_at).toISOString()}>{shortAgo(post.occurred_at)}</time></a></span>
       </div>
       {#if names !== account}<p class="from">{account}</p>{/if}
@@ -65,6 +66,7 @@
   .main { display: grid; gap: 4px; min-width: 0; align-content: start; }
   .identity { display: flex; align-items: center; gap: 4px; min-width: 0; line-height: 20px; }
   .authors { font-weight: 600; font-size: 15px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .handle { color: var(--ink-3); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
   .when { color: var(--ink-3); font-size: 14px; white-space: nowrap; }
   .when a { color: inherit; text-decoration: none; }
   .when a:hover, .reply-ref:hover { text-decoration: underline; }

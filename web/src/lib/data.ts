@@ -28,6 +28,10 @@ export interface MemberRow {
   created_at?: number;
   /** The one member of a person account (D-003). */
   is_self?: boolean;
+  /** Handles this member claims (D-126); ours from `member.handles`, another account's from its card. */
+  handles?: string[];
+  /** Another account's member: the handle we may see (their first claim, else their default). */
+  handle?: string;
 }
 
 export interface GroupRow {
@@ -226,6 +230,7 @@ export function members(p: Projection): MemberRow[] {
         deleted: f.deleted_at != null,
         created_at: typeof f.created_at === 'number' ? f.created_at : undefined,
         is_self: f.is_self === true || f.is_self === 1,
+        handles: Array.isArray(f.handles) ? f.handles.filter((h): h is string => typeof h === 'string') : [],
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));

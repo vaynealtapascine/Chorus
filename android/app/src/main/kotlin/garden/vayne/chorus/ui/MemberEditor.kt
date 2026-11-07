@@ -149,8 +149,8 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
                 OutlinedButton(enabled = !busy, onClick = { pickingBanner = false; picker.launch("image/*") }) { Text("Choose avatar") }
                 if (avatar != null) TextButton(enabled = !busy, onClick = { avatar = null }) { Text("Remove avatar") }
             }
-            ChorusField(name, { name = it }, label = { Text("Name") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text("Name, colour and avatar show wherever ${name.ifBlank { "they" }} do: your chats, and friends who can open the profile.") })
+            Text("Colour and avatar show wherever ${display.ifBlank { name }.ifBlank { "they" }} do: your chats, and friends who can open the profile.",
+                color = p.ink3, style = MaterialTheme.typography.bodySmall)
 
             // ─── the profile: every part with its own audience (D-101) ───
             val liveBuckets = model.sharingBuckets
@@ -170,8 +170,21 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
             }
             Text(if (closed) "Only your system can see this profile right now. Share it with friends, then open up or keep each part below."
                 else "Friends who can open it see each part below that's shared with them.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
-            PartHeader("Display name", { partChip("display_name", "Display name") })
+            // the display name follows the profile; the full name is private unless shared (D-126)
+            @Composable fun follows() = Text("Same as profile", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+            PartHeader("Display name", { follows() })
             ChorusField(display, { display = it }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Add a display name", color = p.ink3) })
+            PartHeader("Full name", {
+                if (display.isBlank()) follows()
+                else AudienceChip("Full name", ProfileAudience.effective(ProfileAudience.parse(profileAudience), partsNow, "name"),
+                    own = ProfileAudience.own(partsNow, "name") != null, buckets = liveBuckets, onChange = { setPart("name", it) },
+                    limited = closed, enabled = !busy, looks = model.bucketLooks)
+            })
+            ChorusField(name, { name = it }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
+                supportingText = { Text(if (display.isBlank()) "Without a display name, friends see the full name."
+                    else if (ProfileAudience.effective(ProfileAudience.parse(profileAudience), partsNow, "name").mode == "private")
+                        "Friends see ${display.trim()}, never the full name." else "Shared on purpose: friends it reaches see it next to ${display.trim()}.") })
+            if (baseline != null) MemberHandlesEditor(chorus, model, id, !busy) { error = it }
             PartHeader("Pronouns", { partChip("pronouns", "Pronouns") })
             ChorusField(pronouns, { pronouns = it }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Add pronouns", color = p.ink3) })
             PartHeader("Bio", { partChip("description", "Bio") })

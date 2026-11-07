@@ -82,6 +82,7 @@ pub fn member(conn: &Connection, p: &Principal, id: &str) -> Result<Option<Value
         )
         .optional()?;
     let Some(mut m) = m else { return Ok(None) };
+    crate::handles::stamp(conn, &mut crate::handles::Book::default(), &p.account_id, &p.account_id, &mut m)?;
     let mut st = conn.prepare_cached(
         "SELECT gm.group_id FROM group_membership gm JOIN member_group g ON g.id = gm.group_id
          WHERE gm.member_id = ?1 AND gm.is_present AND g.deleted_at IS NULL ORDER BY g.sort_key, g.name",

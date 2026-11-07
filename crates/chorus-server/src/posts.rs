@@ -117,13 +117,20 @@ pub(crate) fn for_viewer(conn: &Connection, viewer: &str, item: &mut Value) -> r
             audience_sql("?1", "m.account_id", "m.visibility")
         )
     });
+    let owner = item["account_id"].as_str().unwrap_or_default().to_string();
     if let Some(cards) = item["author_cards"].as_array_mut() {
         let mut st = conn.prepare_cached(&AUTHOR)?;
+        let mut book = crate::handles::Book::default();
         for card in cards {
             let Some(id) = card["id"].as_str().map(str::to_string) else { continue };
             let open: Option<Option<String>> = st.query_row(params![viewer, id], |r| r.get(0)).optional()?;
             card["profile"] = json!(open.is_some());
             card["avatar_blob"] = json!(open.flatten());
+            // the complete name only where its own audience allows (D-126)
+            if let Some((name, _)) = crate::profiles::names_for(conn, viewer, &id)? {
+                card["name"] = json!(name);
+            }
+            crate::handles::stamp(conn, &mut book, viewer, &owner, card)?;
         }
     }
     Ok(())

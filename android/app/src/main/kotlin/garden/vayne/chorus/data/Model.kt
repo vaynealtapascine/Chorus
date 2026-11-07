@@ -27,6 +27,8 @@ data class Member(
     val visibility: String? = null,
     val fieldVisibility: String? = null,
     val notifyPolicy: String? = null,
+    /** Handles this member claims (`member.handles`, D-126); the first is the one shown. */
+    val handles: List<String> = emptyList(),
 ) {
     val shownName: String get() = displayName ?: name
     val glyph: String get() = sigils.firstOrNull() ?: name.take(1).uppercase()
@@ -183,7 +185,13 @@ class Model(
     val deviceNames: Map<String, String> = emptyMap(),
     /** Review cards already answered (`front.review_resolve`). */
     val resolvedReviews: Set<String> = emptySet(),
+    /** member id → handles (D-126), from the core. */
+    val memberHandles: Map<String, MemberHandles> = emptyMap(),
+    /** This account's handle (`account.set`), the `.system` part of every default. */
+    val accountHandle: String? = null,
 ) {
+    /** The handle a member of ours is shown with (D-126). */
+    fun handle(id: String): String? = memberHandles[id]?.shown
     val knownMemberIds: Set<String> = members.mapTo(HashSet()) { it.id }.apply { addAll(deletedMemberIds) }
     private val memberById = members.associateBy { it.id }
     private val groupById = groups.associateBy { it.id }
@@ -355,6 +363,7 @@ class Model(
                         f.opt("visibility")?.takeIf { it != JSONObject.NULL }?.toString(),
                         f.opt("field_visibility")?.takeIf { it != JSONObject.NULL }?.toString(),
                         f.opt("notify_policy")?.takeIf { it != JSONObject.NULL }?.toString(),
+                        strings(f.optJSONArray("handles")),
                     )
                 }
                 .sortedWith(compareBy<Member> { it.shownName.lowercase(java.util.Locale.ROOT) }.thenBy { it.id })
@@ -512,7 +521,9 @@ class Model(
                 reviews = FrontReview.list(p.optJSONObject("reviews")?.optJSONArray(accountId))
                     .filter { r -> rows(p, "front_review").none { it.first == r.id && it.second.present("resolution") } },
                 deviceNames = rows(p, "device").mapNotNull { (id, f) -> f.str("name")?.let { id to it } }.toMap(),
-                resolvedReviews = rows(p, "front_review").filter { it.second.present("resolution") }.mapTo(HashSet()) { it.first })
+                resolvedReviews = rows(p, "front_review").filter { it.second.present("resolution") }.mapTo(HashSet()) { it.first },
+                memberHandles = Handles.fromProjection(p, accountId),
+                accountHandle = rows(p, "account").firstOrNull { it.first == accountId }?.second?.str("handle"))
         }
     }
 }

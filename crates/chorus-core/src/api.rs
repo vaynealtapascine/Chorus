@@ -78,6 +78,11 @@ pub fn parse_markup_mapped(src: &str, names_json: &str) -> Result<String, String
     Ok(js(&serde_json::json!({"text": rich.text, "entities": rich.entities, "sources": sources})))
 }
 
+/// One account's members (`handles::Input`) → `{member_id: {"default", "claimed", "shown"}}` (D-126).
+pub fn member_handles(input_json: &str) -> Result<String, String> {
+    Ok(js(&crate::handles::member_handles(&parse("handles input", input_json)?)))
+}
+
 /// Markup → `{"text", "entities"}`.
 pub fn parse_markup(src: &str, names_json: &str) -> Result<String, String> {
     Ok(js(&text::parse(src, &names(names_json)?)))

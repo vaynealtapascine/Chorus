@@ -154,6 +154,50 @@ fn parts_and_fields_only_narrow() {
 }
 
 #[test]
+fn the_complete_name_is_private_unless_chosen_and_cards_carry_handles() {
+    // D-126: friends call a member by their display name; the complete name is its own part,
+    // private unless chosen, and a stored display-name audience no longer hides it
+    let conn = seed();
+    conn.execute("UPDATE account SET handle='lanterns' WHERE id=?1", [ALICE]).unwrap();
+    conn.execute(
+        "UPDATE member SET name='Kai Ashwood', display_name='Kai', handles='[\"kai\"]',
+         field_visibility=json_set(field_visibility, '$.display_name', json('{\"mode\":\"private\"}')) WHERE id='kai'",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE member SET display_name='Nai', field_visibility=json_set(field_visibility, '$.name', json('{\"mode\":\"followers\"}'))
+         WHERE id='nai'",
+        [],
+    )
+    .unwrap();
+    let kai = profiles::profile(&conn, BOB, ALICE, "kai").unwrap().unwrap();
+    assert_eq!((kai["name"].as_str(), kai["display_name"].as_str()), (Some("Kai"), Some("Kai")));
+    assert_eq!(kai["handle"], "kai", "the first claim is the one shown");
+    assert_eq!(kai["handles"], json!(["kai"]));
+    assert!(kai.get("default_handle").is_none(), "a default claimed past stays with the owner");
+    let own = profiles::profile(&conn, ALICE, ALICE, "kai").unwrap().unwrap();
+    assert_eq!(own["name"], "Kai Ashwood");
+    assert_eq!(own["default_handle"], "kai.lanterns");
+    let nai = profiles::profile(&conn, BOB, ALICE, "nai").unwrap().unwrap();
+    assert_eq!(
+        (nai["name"].as_str(), nai["handle"].as_str()),
+        (Some("Nairon"), Some("nai.lanterns")),
+        "shared on purpose"
+    );
+    // without a display name the complete name is what everyone calls them
+    let amy = profiles::profile(&conn, DAVE, ALICE, "amy").unwrap().unwrap();
+    assert_eq!((amy["name"].as_str(), amy["display_name"].as_str()), (Some("Amarynthe"), None));
+    // the same rule outside a profile: Carol can't open Nairon's (a deleted bucket), so the
+    // complete name stays hidden there too
+    assert_eq!(profiles::names_for(&conn, CAROL, "nai").unwrap().unwrap().0, "Nai");
+    assert_eq!(profiles::names_for(&conn, BOB, "nai").unwrap().unwrap().0, "Nairon");
+    let listed = profiles::members(&conn, BOB, ALICE).unwrap();
+    assert_eq!(listed["items"][0]["name"], "Kai");
+    assert_eq!(listed["items"][0]["handle"], "kai");
+}
+
+#[test]
 fn malformed_and_unshared_profiles_fail_closed() {
     let conn = seed();
     for (viewer, member) in [(BOB, "fox"), (BOB, "bad"), (BOB, "old"), (BOB, "nobody"), (CAROL, "nai"), (DAVE, "kai")] {

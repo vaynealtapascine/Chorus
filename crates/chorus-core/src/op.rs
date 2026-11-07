@@ -180,6 +180,7 @@ const MEMBER_FIELDS: &[&str] = &[
     "short_id",
     "pk_id",
     "is_self",
+    "handles",
 ];
 const SYSTEM_FIELDS: &[&str] =
     &["name", "tag", "description", "description_entities", "color", "timezone", "terminology"];
@@ -580,6 +581,11 @@ fn payload_shape(op: &Op) -> Result<(), OpError> {
             }
         }
         "field.define" | "field.set_def" => one_of("type", FIELD_TYPES, false)?,
+        "member.create" | "member.set" => {
+            if let Some(why) = p.get("handles").and_then(crate::handles::claims_problem) {
+                return bad(why);
+            }
+        }
         "space.set_role" => {
             nonempty("account_id")?;
             nonempty("role")?;
@@ -684,6 +690,7 @@ pub const FIELD_RULES: &[(&str, &str, &[Rule])] = {
         ("member", "visibility", &[Json, NotNull]),
         ("member", "field_visibility", &[Json, NotNull]),
         ("member", "notify_policy", &[Json, NotNull]),
+        ("member", "handles", &[Json, NotNull]),
         ("member_group", "kind", &[OneOf(&["subsystem", "group"])]),
         ("member_group", "can_front", &[Bool, NotNull]),
         ("member_group", "visibility", &[Json, NotNull]),

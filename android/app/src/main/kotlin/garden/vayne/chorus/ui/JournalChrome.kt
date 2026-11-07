@@ -43,6 +43,8 @@ internal fun JournalModeChoice(label: String, selected: Boolean, onClick: () -> 
 internal fun JournalPostFrame(names: String, time: String, audience: String?, full: Boolean = false,
     avatar: @Composable () -> Unit, overflow: (@Composable () -> Unit)? = null, onClick: (() -> Unit)? = null,
     endsWithActions: Boolean = false, lineAbove: Boolean = false, lineBelow: Boolean = false, wide: Boolean = false,
+    /** One author's handle (D-126): beside the name, or under it on a focused post (Figma F6.4). */
+    handle: String? = null,
     content: @Composable ColumnScope.() -> Unit) {
     val p = LocalChorusPalette.current
     val inset = if (full || wide) 20.dp else 16.dp
@@ -51,11 +53,20 @@ internal fun JournalPostFrame(names: String, time: String, audience: String?, fu
     @Composable fun Identity() {
         Row(Modifier.fillMaxWidth().padding(end = if (overflow != null) 36.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                Text(names, color = p.ink, fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp, lineHeight = 20.sp),
-                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Text(" · $time", style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
-                    color = p.ink3, maxLines = 1, softWrap = false)
+                val quiet = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp)
+                if (full && handle != null) Column(Modifier.weight(1f, fill = false)) {
+                    Text(names, color = p.ink, fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp, lineHeight = 20.sp),
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text("@$handle", style = quiet, color = p.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                } else {
+                    Text(names, color = p.ink, fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp, lineHeight = 20.sp),
+                        maxLines = if (handle != null) 1 else 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    if (handle != null) Text(" @$handle", style = quiet, color = p.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false))
+                }
+                if (!full || handle == null) Text(" · $time", style = quiet, color = p.ink3, maxLines = 1, softWrap = false)
             }
             if (audience == "private" || audience == "followers") Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_lock),
                 JournalPresentation.audience(audience), Modifier.padding(start = 6.dp).size(14.dp), tint = p.ink3)

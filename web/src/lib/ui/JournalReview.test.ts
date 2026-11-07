@@ -62,7 +62,7 @@ it('gives singlets a complete profile editor without system or self lifecycle co
   const view = (person: boolean) => render(MemberEditor, { props: { projection: fixture(person), id: 'kai', dark: true } }).body;
   const person = view(true);
   for (const label of ['Switch in', 'Fronting', 'fronting', 'Followers hear', 'Members list', 'Subsystems', 'Archive', 'Move to Trash', 'Proxy tags', 'Member DMs']) expect(person).not.toContain(label);
-  for (const label of ['Choose member avatar', 'Colour', 'Name', 'Bio', 'Add a field', 'Settings']) expect(person).toContain(label);
+  for (const label of ['Choose member avatar', 'Colour', 'Display name', 'Full name', 'Handles', 'Claim a handle', 'Bio', 'Add a field', 'Settings']) expect(person).toContain(label);
   const system = view(false);
   for (const label of ['Switch in', 'Fronting', 'Members list', 'Archive', 'Move to Trash']) expect(system).toContain(label);
 });

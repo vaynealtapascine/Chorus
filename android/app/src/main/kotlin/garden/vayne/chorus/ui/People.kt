@@ -494,7 +494,7 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
     // the server's hearts; ours answer at once, before the next read
     var reactions by remember(post.id, post.reactions) { mutableStateOf(post.reactions) }
     val names = post.authorNames.joinToString(" & ").ifBlank { accountName }
-    JournalPostFrame(names, compactAgo(post.occurredAt), null, endsWithActions = true, avatar = {
+    JournalPostFrame(names, compactAgo(post.occurredAt), null, endsWithActions = true, handle = post.looks.handle, avatar = {
         val profile = post.looks.profile?.takeIf { onProfile != null && post.accountId.isNotEmpty() }
         Avatar(names.take(1).uppercase(), post.looks.color ?: "#A09184", 40.dp, ring = false, avatarBlob = post.looks.avatarBlob,
             modifier = if (profile == null) Modifier else Modifier.clip(CircleShape)

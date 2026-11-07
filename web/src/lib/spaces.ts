@@ -10,7 +10,7 @@ export interface SpaceAccount { id: string; handle: string | null; display_name:
   avatar_blob?: string | null }
 /** `guest`: you're not in it; some of its channels are shared with you (channel permissions). */
 export interface SpaceInfo { id: string; kind: 'internal' | 'shared' | 'dm'; name: string | null; owner_account_id: string; guest?: boolean; accounts: SpaceAccount[] }
-interface Card { id: string; account_id: string; name: string | null; display_name: string | null; pronouns: string | null; color: string | null; sigils: string[]; avatar_blob: string | null }
+interface Card { id: string; account_id: string; name: string | null; display_name: string | null; pronouns: string | null; color: string | null; sigils: string[]; avatar_blob: string | null; handle?: string | null; handles?: string[] }
 
 async function call(method: string, path: string, body?: unknown) {
   const r = await apiFetch(`${apiBase()}${path}`, {
@@ -59,6 +59,8 @@ export async function authorCards(spaceId: string): Promise<{ accounts: SpaceAcc
       sigils: c.sigils ?? [],
       proxy_tags: [],
       avatar_blob: c.avatar_blob ?? undefined,
+      handle: c.handle ?? undefined,
+      handles: c.handles ?? [],
       archived: false,
       deleted: false,
     }),

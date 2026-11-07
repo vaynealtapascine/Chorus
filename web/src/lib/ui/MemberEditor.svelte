@@ -9,6 +9,7 @@
   import ProfileFields from './ProfileFields.svelte';
   import { flushUploads, stageBlob } from '../sync/uploads';
   import { addFolder, FOLDER_OF, FOLDERS, memberListPrefs } from '../member-list';
+  import { claimedHere, MAX_CLAIMS, memberHandles, normalizeClaim, validClaim } from '../handles';
 
   let { projection, id, dark }: { projection: Projection; id: string; dark: boolean } = $props();
 
@@ -104,6 +105,33 @@
     set({ proxy_tags: tags.filter((t) => t.prefix || t.suffix) });
   }
 
+  // handles (D-126): the default is theirs for good; claims are checked by the server, which
+  // says so (a sync issue) if another account took one first
+  const handles = $derived(memberHandles(projection, sync.accountId).get(id));
+  let claim = $state('');
+  let claimError = $state('');
+  function addClaim() {
+    const h = normalizeClaim(claim);
+    const list = m?.handles ?? [];
+    if (!h) return;
+    if (!validClaim(h)) { claimError = 'Use 2–32 lowercase letters, digits or _.'; return; }
+    if (list.includes(h)) { claimError = `@${h} is already theirs.`; return; }
+    const other = claimedHere(projection, sync.accountId, h, id);
+    if (other) { claimError = `@${h} belongs to ${other}.`; return; }
+    if (list.length >= MAX_CLAIMS) { claimError = `A member can claim up to ${MAX_CLAIMS} handles.`; return; }
+    set({ handles: [...list, h] });
+    claim = '';
+    claimError = '';
+  }
+  function moveClaim(h: string, by: number) {
+    const list = [...(m?.handles ?? [])];
+    const i = list.indexOf(h);
+    const j = i + by;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    set({ handles: list });
+  }
+
   function toggleGroup(gid: string, on: boolean) {
     sync.create(on ? 'group.add_member' : 'group.remove_member', sync.accountScope, gid, { member_id: id });
   }
@@ -170,7 +198,7 @@
     </header>
 
     <section>
-      <h2>Name, colour &amp; avatar</h2>
+      <h2>Colour &amp; avatar</h2>
       <div class="fields">
         <div class="wide avatar-picker">
           <label>Avatar <input type="file" accept="image/*" onchange={chooseAvatar} aria-label="Choose member avatar" /></label>
@@ -185,10 +213,47 @@
           {/if}
           {#if avatarError}<p role="alert">{avatarError}</p>{/if}
         </div>
-        <label>Name <input value={m.name} onchange={(e) => set({ name: text(e).trim() || m!.name })} /></label>
         <label class="color">Colour <input type="color" value={m.color} onchange={(e) => set({ color: text(e) })} /></label>
       </div>
-      <p class="hint">These show wherever {m.name} does: in your chats, and to friends who can open {m.name}'s profile or see them in a shared chat.</p>
+      <p class="hint">Colour and avatar show wherever {m.display_name ?? m.name} does: in your chats, and to friends who can open their profile or see them in a shared chat. Friends call them by their display name; the full name stays with you unless you share it below.</p>
+    </section>
+
+    <section aria-labelledby="handles-heading">
+      <h2 id="handles-heading">Handles</h2>
+      {#if handles}
+        <ul class="handles">
+          {#each m.handles ?? [] as h, i (h)}
+            <li>
+              <span class="h">@{h}</span>
+              {#if i === 0}<span class="shown">Shown</span>{/if}
+              <span class="handle-actions">
+                {#if i > 0}<button class="ghost" onclick={() => moveClaim(h, -1)} aria-label="Show @{h} first">Show first</button>{/if}
+                <button class="ghost" onclick={() => set({ handles: (m!.handles ?? []).filter((x) => x !== h) })} aria-label="Let go of @{h}">Remove</button>
+              </span>
+            </li>
+          {/each}
+          <li>
+            <span class="h">@{handles.default}</span>
+            {#if !(m.handles ?? []).length}<span class="shown">Shown</span>{/if}
+            <span class="hint">{person ? 'your account' : 'reserved for them'}</span>
+          </li>
+        </ul>
+      {/if}
+      {#if (m.handles ?? []).length < MAX_CLAIMS}
+        <form class="claim" onsubmit={(e) => { e.preventDefault(); addClaim(); }}>
+          <label>Claim a handle <input bind:value={claim} placeholder={(m.display_name ?? m.name).toLowerCase().replace(/[^a-z0-9_]/g, '')} autocomplete="off" spellcheck="false" maxlength="33" /></label>
+          <button class="primary" disabled={!claim.trim()}>Claim</button>
+        </form>
+      {/if}
+      {#if claimError}<p class="warn" role="alert">{claimError}</p>{/if}
+      <p class="hint">
+        {#if person}
+          @{handles?.default ?? ''} is your account's handle. A handle you claim is yours alone on this server; the first one is what friends see.
+        {:else}
+          @{handles?.default ?? ''} is made from their display name, the subsystems they sit in (innermost first) and your system, and stays reserved for them.
+          A claimed handle is theirs alone on this server; the first one is what friends see, so claiming one also keeps their subsystems out of sight.
+        {/if}
+      </p>
     </section>
 
     <section>
@@ -316,6 +381,13 @@
 
 <style>
   .avatar-picker { display: grid; gap: var(--s-2); }
+  .handles { list-style: none; margin: 0 0 var(--s-3); padding: 0; display: grid; }
+  .handles li { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) 0; border-top: 1px solid var(--line); min-height: 44px; flex-wrap: wrap; }
+  .handles .h { font-weight: 600; overflow-wrap: anywhere; }
+  .handles .shown { font-size: var(--fs-xs); color: var(--accent); background: var(--accent-soft); border-radius: var(--r-full); padding: 1px 8px; }
+  .handle-actions { margin-left: auto; display: flex; gap: var(--s-1); }
+  .claim { display: flex; align-items: flex-end; gap: var(--s-2); flex-wrap: wrap; }
+  .claim label { display: grid; gap: var(--s-1); flex: 1 1 220px; }
   .crop-controls { display: grid; gap: var(--s-2); justify-items: start; }
   .crop-controls canvas { width: 192px; height: 192px; border-radius: var(--r-md); border: 1px solid var(--line); }
   .crop-controls label { display: flex; align-items: center; gap: var(--s-2); }

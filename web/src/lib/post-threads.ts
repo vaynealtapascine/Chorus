@@ -14,7 +14,7 @@ export interface ThreadPost {
   occurred_at: number;
   authors?: string[];
   /** `profile`: the reader may open this member's profile, and only then `avatar_blob` (D-101). */
-  author_cards?: { id?: string; name?: string | null; display_name?: string | null; color?: string | null;
+  author_cards?: { id?: string; name?: string | null; display_name?: string | null; color?: string | null; handle?: string | null;
     avatar_blob?: string | null; profile?: boolean }[];
   account_id?: string;
   tags?: string[] | null;

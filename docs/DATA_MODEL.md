@@ -170,10 +170,10 @@ Merge column: **LWW-F** = field-level last-writer-wins by HLC · **SET** = LWW e
 
 | Kind | Payload (summary) | Merge |
 | --- | --- | --- |
-| `account.set` | `{fields}` display_name, handle, avatar, settings | LWW-F |
+| `account.set` | `{fields}` display_name, handle, avatar, settings; the server writes one `{handle}` at enrolment (and once for older accounts) so devices know it offline (D-126) | LWW-F |
 | `system.set` | `{fields}` name, tag, description, colour, terminology, timezone | LWW-F |
 | `member.create` | full initial fields | APP (then LWW-F) |
-| `member.set` | `{fields}` any subset of member columns | LWW-F |
+| `member.set` | `{fields}` any subset of member columns; `handles` must be ≤5 distinct claims, each unique on the server (ingest acks `conflict`, D-126) | LWW-F |
 | `member.archive` / `member.unarchive` | `{}` | LWW-F on `archived_at` |
 | `member.delete` | `{}` tombstone; content authored stays, shows "deleted member" | LWW-F |
 | `group.create` / `group.set` / `group.delete` | fields incl. `parent_id` | LWW-F (cycle guard §5.3 of SYNC) |
@@ -317,6 +317,7 @@ CREATE TABLE member (
   field_visibility    TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(field_visibility)),
   notify_policy       TEXT NOT NULL DEFAULT '{"announce":"everyone","announce_leaving":false}' CHECK (json_valid(notify_policy)),  -- NOTIFICATIONS.md §2.4
   short_id            TEXT NOT NULL,         -- 7 lowercase letters, unique per server; Advanced-only in UI (D-049)
+  handles             TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(handles)),  -- claimed @handles, ≤5 of [a-z0-9_]{2,32}, first shown (D-126)
   pk_id               TEXT,                  -- PluralKit 5/6-char id when imported
   created_at          INTEGER NOT NULL,
   archived_at         INTEGER,

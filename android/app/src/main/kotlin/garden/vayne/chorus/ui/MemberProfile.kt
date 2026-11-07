@@ -320,8 +320,12 @@ private fun ProfileDetails(member: Member, model: Model, spans: List<FrontSpan>,
         val secondary = member.name.takeIf { member.displayName != null && it != member.displayName }
         val sigils = member.sigils.filter(String::isNotBlank)
         val subsystem = Subsystems.groupOf(model, member.id)
-        if (secondary != null || !member.pronouns.isNullOrBlank() || sigils.isNotEmpty() || subsystem != null)
+        // the handle leads the line under the name, as Figma F6.1 (D-126)
+        val handle = model.handle(member.id)
+        if (handle != null || secondary != null || !member.pronouns.isNullOrBlank() || sigils.isNotEmpty() || subsystem != null)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (handle != null) Text("@$handle", color = p.ink2, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                    modifier = Modifier.align(Alignment.CenterVertically))
                 if (secondary != null) Text(secondary, color = p.ink3, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                     modifier = Modifier.align(Alignment.CenterVertically))
                 if (!member.pronouns.isNullOrBlank()) ProfileChip(member.pronouns)
@@ -481,7 +485,7 @@ private fun ProfileAbout(chorus: Chorus, model: Model, member: Member, bundle: P
             }
             HorizontalDivider(color = p.line, thickness = .5.dp)
         }
-        if (member.displayName != null && member.name != member.displayName) AboutRow("Name", member.name)
+        if (member.displayName != null && member.name != member.displayName) AboutRow("Full name", member.name)
         if (!member.pronouns.isNullOrBlank()) AboutRow("Pronouns", member.pronouns)
         if (member.birthday != null) AboutRow("Birthday", ProfilePresentation.birthday(member.birthday))
         for (field in model.profileFields[member.id].orEmpty()) {
