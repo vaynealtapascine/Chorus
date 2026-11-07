@@ -182,7 +182,8 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
                     held = null; save(if (isRead) read.unmark(item, items) else read.mark(item))
                 }
             }
-            MenuRow(if (item.postId != null) "Open post" else if (item.channelId != null) "Open chat" else "Open", R.drawable.ic_chevron_right) { held = null; open(item) }
+            MenuRow(if (item.postId != null) "Open post" else if (item.channelId != null) "Open chat"
+                else if (item.accountId != null && item.actor != null) "Open ${item.actor}" else "Open", R.drawable.ic_chevron_right) { held = null; open(item) }
             follow?.value?.let { f ->
                 val until = System.currentTimeMillis() + 60 * 60 * 1000
                 MenuRow("Quiet ${f.account.shownName} for an hour", R.drawable.ic_bell_off,
@@ -271,7 +272,7 @@ private fun KindBadge(item: InboxItem) {
         "repost" -> Triple(R.drawable.ic_repost, null, p.ok)
         "quote" -> Triple(R.drawable.ic_format_quote, null, p.ok)
         "post" -> Triple(R.drawable.ic_book, null, p.ink2)
-        "follow_request" -> Triple(R.drawable.ic_friends, null, p.warn)
+        "follow_request" -> Triple(R.drawable.ic_members, null, p.warn)
         "alert_ask", "alert_request", "alert_accepted" -> Triple(R.drawable.ic_bell, null, p.warn)
         "review" -> Triple(null, "!", p.warn)
         "export_ready" -> Triple(R.drawable.ic_file, null, p.ink2)

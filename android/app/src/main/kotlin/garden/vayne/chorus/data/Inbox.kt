@@ -93,7 +93,7 @@ object Inbox {
                 "reply" -> chat("replied to you")
                 "dm" -> chat("sent you a message")
                 "message" -> chat("wrote")
-                "member_dm" -> chat("messaged a member").copy(category = "system")
+                "member_dm" -> chat("wrote in a member chat").copy(category = "system")
                 "post_reply" -> InboxItem(id, kind, "mentions", "mentions", at, who, title, quote = text,
                     color = sender?.text("color"), avatarBlob = sender?.text("avatar_blob"), postId = n.text("post_id"),
                     accountId = n.text("account_id"))
@@ -118,7 +118,8 @@ object Inbox {
      * One row per post and emoji: "Kit and Juniper liked “A quiet afternoon”". */
     fun fromActivity(activity: JournalActivity?): List<InboxItem> {
         if (activity == null) return emptyList()
-        fun about(t: ActivityTarget?) = t?.let { (it.title ?: it.cw?.let { cw -> "CW: $cw" } ?: it.text).take(60) }?.let { "“$it”" } ?: "your post"
+        fun about(t: ActivityTarget?) = t?.let { it.title ?: it.cw?.let { cw -> "CW: $cw" } ?: it.text }
+            ?.let { if (it.length > 60) it.take(60).substringBeforeLast(' ').trimEnd('.', ',', ' ') + "…" else it }?.let { "“$it”" } ?: "your post"
         val out = ArrayList<InboxItem>()
         for ((key, group) in activity.items.filter { it.kind == "reaction" }.groupBy { "${it.target?.id}:${it.emoji}" }) {
             val names = group.mapNotNull { it.memberName }.distinct()

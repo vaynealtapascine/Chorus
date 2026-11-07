@@ -498,8 +498,9 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         (t == Tab.More && activeTab !in destinations && !(activeTab == Tab.History && Tab.Home in destinations))) &&
                         !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen,
                     onClick = { select(t) }, icon = { TabIcon(t) }, label = {
-                        Text(t.label, fontSize = 11.sp, lineHeight = 16.sp, maxLines = 1,
-                            overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                        // "Notifications" is the longest label: let it run into the item's padding rather than cut it
+                        Text(t.label, fontSize = 11.sp, lineHeight = 16.sp, maxLines = 1, softWrap = false,
+                            overflow = TextOverflow.Visible, textAlign = TextAlign.Center)
                     },
                     colors = NavigationBarItemDefaults.colors(selectedIconColor = p.accent, selectedTextColor = p.accent,
                         indicatorColor = p.accentSoft, unselectedIconColor = p.ink3, unselectedTextColor = p.ink3),
