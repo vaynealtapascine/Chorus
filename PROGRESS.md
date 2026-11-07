@@ -22,9 +22,9 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 ## Now
 
-- **In progress:** CI1
+- **In progress:** UI16
 - **Owner:** claude-opus-5.5, 2026-11-07
-- **Next concrete step:** rewrite e2e walkthroughs for the current UI, spec by spec (v1 first)
+- **Next concrete step:** device check with a singlet account; move the older sheets onto Drawer
 - **Notes:** UI17 (owner's fix-and-polish batch, D-125) deployed 2026-11-07 (f5963b4, Android 0.1.761); not yet seen on an iOS browser or the owner's phone. Gemini's raw reviews stay untracked in gemini_review/.
 
 ### SEC1: what is done and what is left
@@ -97,7 +97,7 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 
 ### CI
 
-- [~] CI1 GitHub CI green again (owner, 2026-11-07). The web job failed on a timezone-dependent Insights test since 2026-10-30 (fixed). The e2e job fails since D-093 (2026-10-31): enrol is fixed, but the suite still walks the September screens (Add member on Home, `form.add`, `button.member`, "Change who's here"); 9 tests fail at their first member step and 20 behind them haven't run. Rewrite each spec's walkthrough against the current UI (UI8–UI17), run locally with `CHORUS_E2E_CHANNEL=chrome CARGO_TARGET_DIR='F:\DunBuild\chorus-target' bash scripts/e2e-web.sh --no-build` (36 min when everything times out; pass `-- e2e/<spec>.ts` for one).
+- [x] CI1 GitHub CI green again (owner, 2026-11-07). The web job failed on a timezone-dependent Insights test since 2026-10-30 (fixed). The e2e job fails since D-093 (2026-10-31): enrol is fixed, but the suite still walks the September screens (Add member on Home, `form.add`, `button.member`, "Change who's here"); 9 tests fail at their first member step and 20 behind them haven't run. Rewrite each spec's walkthrough against the current UI (UI8–UI17), run locally with `CHORUS_E2E_CHANNEL=chrome CARGO_TARGET_DIR='F:\DunBuild\chorus-target' bash scripts/e2e-web.sh --no-build` (36 min when everything times out; pass `-- e2e/<spec>.ts` for one).
 
 ### UI — Owner's Figma redesign
 
@@ -164,3 +164,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`. Entries befo
 - 2026-11-07 claude-opus-5.5 — UI17 web: swipe-to-reply survives hard/long swipes (iOS), sidebar keeps 240 px past 1600 px, Journal set width, avatars share one object URL and the message menu builds only when open (no flashes), icons warmed, motion layer; Android: chat header disc = list disc, compact fields/switches (D-125), chat/members/fronting motion. Emulator + Chrome checked on the demo; full gate with Android passed. Deployed f5963b4 (web index-DHHJFpzU.js, Android 0.1.761).
 - 2026-11-07 claude-opus-5.5 — Device check on the owner's phone (0.1.761, inspect only): Fronting, history, drawers, switcher, Members, chat list/header, profile, relationships, search, settings, DM picker, buckets, default audience, quick-switch launcher, real FCM pushes all fine. Fixed what it found: invisible fields/choice rows inside same-colour cards (fields are now an ink wash), long drawers under the status bar (Android 15 screenHeightDp counts the bars), front time 0 h for named-front accounts, raw `--08-05` birthdays, search not focusing, quick-switch Add/Remove for everyone, Settings wording. Owner's report: Journal › Friends stopped at 5 posts per account; now pages (web + Android). Not checkable as inspection: widgets (not placed), polls (none visible), inline reply.
 - 2026-11-07 claude-opus-5.5 — Deployed 6cc5211 (server, web `index-C2uTL0SY.js`, Android 0.1.767): the phone-check fixes and Friends paging. No migration.
+- 2026-11-07 claude-opus-5.5 — CI1 e2e suite rewritten for the current screens (shared helpers: addMember, switchIn, fronting, openChat, message, newChannel, newFront, switchSheet, shareWithFriends); 30/30 pass locally in 2.3 min. It found three web bugs, fixed: Front history lines never opened their actions ($state proxy vs ===), a friend's heart missing on your own post's thread page, follower-view 404s for DM partners we don't follow. Web job: timezone-dependent Insights test pinned to UTC.
