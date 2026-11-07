@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Page, expect, test } from '@playwright/test';
-import { enrol, live } from './helpers';
+import { addMember, enrol, live, switchIn } from './helpers';
 
 // this suite's own list: a killed server makes failed requests on purpose, and v1.spec's
 // "no console errors" shouldn't see them
@@ -127,8 +127,8 @@ async function openChat(page: Page): Promise<void> {
   // the app turns `#/chat` into `#/chat/<channel>` at once, which a goto can take as aborted
   if (!page.url().startsWith(base)) await page.goto('/');
   await page.getByRole('link', { name: 'Chat', exact: true }).click();
-  const general = page.getByRole('link', { name: /general/ }).first();
-  if (await general.isVisible().catch(() => false)) await general.click();
+  // at phone width Chat opens on the chat list (D-120)
+  await page.locator('.rows a.row', { hasText: 'general' }).first().click();
   await expect(page.getByLabel('Message', { exact: true })).toBeVisible();
 }
 
@@ -143,11 +143,8 @@ test('the server killed under an open page: sends queue, survive a reload, arriv
   page = watch(await context.newPage(), 'failure');
   await enrol(page, invite('system'), 'Failure Test', `fail_${run}`);
   // someone to speak as
-  await page.getByRole('button', { name: 'Add member' }).click();
-  await page.getByLabel('Name', { exact: true }).fill('Kai');
-  await page.locator('form.add').getByRole('button', { name: 'Add' }).click();
-  await page.locator('button.member', { hasText: 'Kai' }).click();
-  await expect(page.getByLabel("Change who's here")).toContainText('Kai');
+  await addMember(page, 'Kai');
+  await switchIn(page, 'Kai');
   await openChat(page);
   const word = `kz${run}`;
   await send(page, `${word} one, live`);
