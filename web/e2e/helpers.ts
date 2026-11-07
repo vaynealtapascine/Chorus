@@ -42,7 +42,8 @@ export async function enrol(page: Page, code: string, name?: string, handle?: st
   await page.goto(`/i/${code}`);
   if (name) await page.getByPlaceholder('The Stars').fill(name);
   if (handle) await page.getByPlaceholder('stars', { exact: true }).fill(handle);
-  await page.getByRole('button', { name: 'Continue' }).click();
+  // the invite decides the form (D-093): Join for a new account, Link this browser for another device
+  await page.getByRole('button', { name: /^(Join|Link this browser)$/ }).click();
   await live(page);
 }
 
