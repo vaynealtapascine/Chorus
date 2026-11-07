@@ -61,11 +61,28 @@ export async function go(page: Page, hash: string): Promise<void> {
 }
 
 /** Add a member from Members (the name in the search box becomes theirs); lands on their editor. */
-export async function addMember(page: Page, name: string): Promise<void> {
+export async function addMember(page: Page, name: string, sigil?: string): Promise<void> {
   await go(page, 'members');
   await page.getByLabel('Search members').fill(name);
   await page.getByRole('button', { name: 'Add member', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+  if (sigil) {
+    const box = page.getByLabel(/^Sigils/);
+    await box.fill(sigil);
+    await box.press('Tab'); // saved on change
+    await expect(box).toHaveValue(sigil);
+  }
+}
+
+/** A new channel in the system's own space, from the chat list's New chat; lands in it. */
+export async function newChannel(page: Page, name: string): Promise<void> {
+  await go(page, 'chat');
+  await page.getByRole('button', { name: 'New chat' }).click();
+  await page.getByRole('dialog', { name: 'New chat' }).getByRole('button', { name: /^New channel/ }).click();
+  const editor = page.getByRole('dialog', { name: 'New channel' });
+  await editor.getByLabel('Name', { exact: true }).fill(name);
+  await editor.getByRole('button', { name: 'Create' }).click();
+  await expect(page.locator('.room-head h1')).toContainText(name);
 }
 
 /** Body's front becomes this one member, from their editor's Switch in; lands on Fronting. */

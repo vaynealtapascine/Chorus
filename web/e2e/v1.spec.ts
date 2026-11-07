@@ -2,7 +2,7 @@
 // switches, a follower's delayed view, a shared space and a DM, a journal post with a reply and a
 // reaction across accounts, search, and no console errors (the CSP included) anywhere.
 import { expect, test } from '@playwright/test';
-import { addMember, type Device, device, enrol, fronting, go, invite, live, message, openChat, problems, shareWithFriends, switchIn } from './helpers';
+import { addMember, type Device, device, enrol, fronting, go, invite, live, message, newChannel, openChat, problems, shareWithFriends, switchIn } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -211,13 +211,7 @@ test('one internal channel shared with a follower (channel permissions)', async 
   await openChat(stars.page, 'general');
   await stars.page.getByLabel('Message', { exact: true }).fill(inside);
   await stars.page.getByLabel('Message', { exact: true }).press('Enter');
-  await go(stars.page, 'chat');
-  await stars.page.getByRole('button', { name: 'New chat' }).click();
-  await stars.page.getByRole('dialog', { name: 'New chat' }).getByRole('button', { name: /^New channel/ }).click();
-  const editor = stars.page.getByRole('dialog', { name: 'New channel' });
-  await editor.getByLabel('Name', { exact: true }).fill(`news-${run}`);
-  await editor.getByRole('button', { name: 'Create' }).click();
-  await expect(stars.page.locator('.room-head h1')).toContainText(`news-${run}`);
+  await newChannel(stars.page, `news-${run}`);
   await stars.page.getByLabel('Message', { exact: true }).fill(note);
   await stars.page.getByLabel('Message', { exact: true }).press('Enter');
   await stars.page.getByLabel('Channel menu').click();

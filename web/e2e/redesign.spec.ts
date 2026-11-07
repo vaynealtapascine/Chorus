@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { device, enrol, go, invite } from './helpers';
+import { addMember, device, enrol, go, invite, openChat, switchIn } from './helpers';
 
 test('appearance defaults to dark and explicit choices persist across responsive navigation', async ({ browser }) => {
   const { context, page } = await device(browser, 'appearance');
@@ -36,11 +36,9 @@ test('message actions work from the keyboard and compact pins replace chat info'
   try {
     await page.setViewportSize({ width: 390, height: 844 });
     await enrol(page, invite('system'), 'Action check');
-    await page.getByRole('button', { name: 'Add member', exact: true }).click();
-    await page.getByLabel('Name', { exact: true }).fill('Kai');
-    await page.locator('form.add').getByRole('button', { name: 'Add', exact: true }).click();
-    await page.locator('button.member', { hasText: 'Kai' }).click();
-    await go(page, 'chat');
+    await addMember(page, 'Kai');
+    await switchIn(page, 'Kai');
+    await openChat(page, 'general');
     const composer = page.getByLabel('Message', { exact: true });
     await composer.fill('A message with reachable actions');
     await composer.press('Enter');

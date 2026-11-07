@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { device, enrol, go, invite } from './helpers';
+import { addMember, device, enrol, go, invite, openChat, switchIn } from './helpers';
 
 // D-081 / D-086 through the app's own screens: a single-choice chat poll whose member vote can
 // be changed and removed, and a multiple-choice journal poll; totals come from the server tally.
@@ -7,15 +7,10 @@ test('chat and journal polls take one editable vote per member', async ({ browse
   const { context, page } = await device(browser, 'polls');
   try {
     await enrol(page, invite('system'), 'Poll check');
-    for (const name of ['Kai', 'Moon']) {
-      await page.getByRole('button', { name: 'Add member', exact: true }).click();
-      await page.getByLabel('Name', { exact: true }).fill(name);
-      await page.locator('form.add').getByRole('button', { name: 'Add', exact: true }).click();
-      await expect(page.locator('button.member', { hasText: name })).toBeVisible();
-    }
-    await page.locator('button.member', { hasText: 'Kai' }).click();
+    for (const name of ['Kai', 'Moon']) await addMember(page, name);
+    await switchIn(page, 'Kai');
 
-    await go(page, 'chat');
+    await openChat(page, 'general');
     await page.getByRole('button', { name: 'Message options', exact: true }).click(); // polls are behind the composer's options
     await page.getByText('Add a poll', { exact: true }).click();
     await page.getByLabel('Poll option 1').fill('Pasta');
