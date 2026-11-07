@@ -73,6 +73,32 @@ type BusMessage =
   | { t: 'changed'; ops: { id: string }[]; removed: string[] };
 
 /** Two sets of changes as one save: the later copy of an op wins, and the latest metadata. */
+/** Where ops not yet in IndexedDB wait when the page goes away (`pagehide` allows only
+ * synchronous work, and localStorage is synchronous). */
+const UNSAVED = 'chorus-unsaved-ops';
+
+function journalUnsaved(ops: { id: string }[]): void {
+  try {
+    if (ops.length) localStorage.setItem(UNSAVED, JSON.stringify(ops));
+  } catch {
+    // no localStorage (private mode, full): IndexedDB's own write may still land
+  }
+}
+
+/** Put a journal from the last page into IndexedDB before the ops are read. Ops only: the core
+ * puts this device's unconfirmed ops back in the outbox when it opens (relist_unsent). */
+async function restoreUnsaved(): Promise<void> {
+  let ops: { id: string }[] = [];
+  try {
+    ops = JSON.parse(localStorage.getItem(UNSAVED) ?? '[]');
+  } catch {
+    return;
+  }
+  if (!Array.isArray(ops) || !ops.length) return;
+  await save({ ops, hlc_last: '' }, true);
+  try { localStorage.removeItem(UNSAVED); } catch { /* kept: saving it again is harmless */ }
+}
+
 function mergeChanges(a: Changes | null, b: Changes): Changes {
   if (!a) return b;
   const ops = new Map<string, { id: string }>();
@@ -140,6 +166,9 @@ export class SyncClient {
   /** Changes a save couldn't write (the browser's storage is full): tried again with the next
    * save, so nothing made here is lost while the tab is open (R29). */
   private unsaved: Changes | null = null;
+  /** Ops made here that aren't in IndexedDB yet: written to localStorage if the page goes away
+   * before they are (a reload right after an offline send lost the message, CI1). */
+  private notSaved = new Map<string, { id: string }>();
   /** Saving on this device is failing: the app says so. */
   storageFull = false;
 
@@ -156,6 +185,8 @@ export class SyncClient {
     }
     // the replica and outbox are the only copy of offline work: ask not to be evicted
     void keepStorage();
+    await restoreUnsaved();
+    addEventListener('pagehide', () => journalUnsaved([...this.notSaved.values()]));
     // Older saved devices predate the admin capability in the enrolment response.
     if (this.device.is_admin === undefined && navigator.onLine) {
       try { this.device = await renew(this.device); } catch { /* reconnect will retry auth later */ }
@@ -501,6 +532,7 @@ export class SyncClient {
     this.refresh();
     this.watchHeld();
     const fresh = JSON.parse(this.replica!.takeChanges()) as Changes;
+    for (const o of fresh.ops) this.notSaved.set(o.id, o);
     const leader = this.leader;
     this.saving = this.saving
       .then(async () => {
@@ -518,6 +550,7 @@ export class SyncClient {
           return;
         }
         this.unsaved = null;
+        for (const o of ch.ops) this.notSaved.delete(o.id);
         if (this.storageFull) {
           this.storageFull = false;
           this.emit();
