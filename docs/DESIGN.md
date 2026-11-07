@@ -427,7 +427,7 @@ This inventory is retained from the v1 design spec; `PROGRESS.md` owns its imple
 | **Trash** | Deleted items by type, search, restore | Restore |
 | **Insights** | Dashboard cards; each opens a full chart with table + CSV | — |
 | **Sharing** | Followers, requests, buckets, ceilings (presets), following + prefs | — |
-| **Notifications** | History list, per-kind settings | — |
+| **Notifications** | Figma F11 (D-127): chips (All · Mentions · Friends · Our system · App), Needs you / Today / Earlier, unread tint and dot, hold or right-click for options, Read as another member; web side panel "What shows here" + quiet hours; a bottom-bar tab with an unread badge | Mark all read |
 | **Settings** | Basic list + "Advanced" entry at the bottom | — |
 | **Sync issues** | Rejected ops with reason, retry/discard/copy | — |
 | **Onboarding** | Invite, system name, terminology, first members / PK import, first front | Continue |

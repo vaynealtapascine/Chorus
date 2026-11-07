@@ -252,6 +252,11 @@ member. Opening a channel advances read marks. To reset visual checks, seed a ne
 and start with fresh demo-only client data/a fresh browser profile; existing replicas retain
 their own read marks. Clear only the isolated demo installation's data, never the real client's.
 
+The seed has no Journal posts. For the Notifications screen and Journal › Friends (D-127),
+`node scripts/demo-journal-activity.mjs http://127.0.0.1:<port> <lanterns> <junipers> <driftwood> <account>`
+adds cross-account posts, replies, hearts, a quote and a follow request over the sync socket
+(device invite codes for the three accounts, then a `--kind system` account invite code).
+
 Names, content, entity IDs, authored-op IDs, choices and read positions are reproducible. Times
 move with the seed run: General spans yesterday and today in Asia/Manila, with today's messages
 within the last three hours. Normal server-generated tally UUIDs, notification IDs/draws and
