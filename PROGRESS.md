@@ -25,7 +25,7 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 - **In progress:** —
 - **Owner:** claude-opus-5.5, 2026-11-07
 - **Next concrete step:** UI18: look at the Android Handles section on the emulator; UI19: look at Notifications on the owner's phone (inspect only)
-- **Notes:** UI19 (Notifications F11, Journal replies, quotes borrowing audiences, per-post notification choice, D-127) deployed 2026-11-07: server+web 0d436de, Android 0.1.795. Demo for checks: F:/DunBuild/ui19-demo (server 5297, vite 5298, shot.cjs).
+- **Notes:** UI19 (Notifications F11, Journal replies, quotes borrowing audiences, per-post notification choice, D-127) deployed 2026-11-07: server+web f6fbda9, Android 0.1.800. Demo for checks: F:/DunBuild/ui19-demo (server 5297, vite 5298, shot.cjs).
 
 ### SEC1: what is done and what is left
 
@@ -174,3 +174,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`. Entries befo
 - 2026-11-07 claude-opus-5.5 — UI18 merged to main (4268dee, over CI1's last commits), full gate with Android passed, deployed to ns2: server and web `index-DuOJjB7M.js`, Android 0.1.791. Migration 0021 (additive `member.handles`); account handles backfilled into the op log on start.
 - 2026-11-07 claude-opus-5.5: UI19 server + Android deployed (a7bc600, 8110d79, 8222e4f; Android 0.1.795): Notifications tab (F11), replies to our posts in Journal › Friends with what they answer, one action row with disabled actions, quoting other accounts' posts (the quote borrows the quoted audience), reply notifications, per-post Random delay / Don't notify (D-127).
 - 2026-11-07 claude-opus-5.5: UI19 web deployed (0d436de): Notifications page with the F11.5 side panel and sidebar badge, Friends replies with their parents, one action row, quoting other accounts' posts, the composer's notifications choice. `scripts/demo-journal-activity.mjs` seeds cross-account Journal activity on a demo (OPS §8).
+- 2026-11-07 claude-opus-5.5: UI19 follow-up (f6fbda9, owner): DMs, member DMs and all-message channels are pushed but no longer listed in Notifications; mentions and replies still are. Deployed (Android 0.1.800).
