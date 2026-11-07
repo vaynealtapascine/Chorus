@@ -56,7 +56,9 @@ export async function live(page: Page): Promise<void> {
 
 /** Go to a hash route and wait for the socket to be live. */
 export async function go(page: Page, hash: string): Promise<void> {
-  await page.goto(`/#/${hash}`);
+  // only the commit: Chat rewrites `#/chat` to `#/chat/<channel>` while loading, which a goto
+  // waiting for load can report as ERR_ABORTED (NOTES §Web)
+  await page.goto(`/#/${hash}`, { waitUntil: 'commit' });
   await live(page);
 }
 

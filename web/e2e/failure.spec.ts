@@ -125,11 +125,27 @@ async function send(page: Page, text: string): Promise<void> {
 
 async function openChat(page: Page): Promise<void> {
   // the app turns `#/chat` into `#/chat/<channel>` at once, which a goto can take as aborted
-  if (!page.url().startsWith(base)) await page.goto('/');
+  // a new tab can be navigated again while it loads (the app rewriting its address, a service
+  // worker taking over), which reads as an abort (seen on CI): what matters is that it lands
+  for (let tries = 0; !page.url().startsWith(base); tries++) {
+    try {
+      await page.goto('/', { waitUntil: 'commit' });
+    } catch (e) {
+      if (tries >= 2 || !String(e).includes('ERR_ABORTED')) throw e;
+      await page.waitForTimeout(500);
+    }
+  }
   await page.getByRole('link', { name: 'Chat', exact: true }).click();
   // at phone width Chat opens on the chat list (D-120)
   await page.locator('.rows a.row', { hasText: 'general' }).first().click();
   await expect(page.getByLabel('Message', { exact: true })).toBeVisible();
+}
+
+/** The server is back: say so as the browser would (`online`), so the client reconnects now
+ * instead of after a backoff that grew while the server was down, then wait for live. */
+async function back(page: Page): Promise<void> {
+  await page.evaluate(() => dispatchEvent(new Event('online')));
+  await live(page);
 }
 
 async function offline(page: Page): Promise<void> {
@@ -157,7 +173,7 @@ test('the server killed under an open page: sends queue, survive a reload, arriv
   await openChat(page);
   for (const t of ['two, offline', 'three, offline']) await expect(page.locator('.msg', { hasText: t })).toHaveCount(1);
   await start();
-  await live(page);
+  await back(page);
   await converged(page, word, [`${word} one, live`, `${word} two, offline`, `${word} three, offline`]);
 });
 
@@ -176,7 +192,7 @@ test('a file queued offline goes up after a reload and a new version of the app'
   writeFileSync(sw, original.replace(/const CACHE = 'chorus-([^']*)'/, `const CACHE = 'chorus-$1-${run}'`));
   try {
     await start();
-    await live(page);
+    await back(page);
     await page.evaluate(async () => {
       const reg = await navigator.serviceWorker.getRegistration();
       await reg?.update();
@@ -224,7 +240,7 @@ test('two tabs of one browser profile: both send, one closes, nothing is lost or
   await send(second, `${word} second tab, offline`);
   await page.close();
   await start();
-  await live(second);
+  await back(second);
   await send(second, `${word} second tab, back`);
   const all = [
     `${word} from the first tab`,
@@ -269,7 +285,7 @@ test('IndexedDB refusing writes (a full disk): sends still arrive, and the page 
   await openChat(page);
   for (const t of ['offline, disk full', 'with room again']) await expect(page.locator('.msg', { hasText: t })).toHaveCount(1);
   await start();
-  await live(page);
+  await back(page);
   await converged(page, word, [`${word} during a full disk`, `${word} offline, disk full`, `${word} with room again`]);
 });
 
@@ -288,7 +304,7 @@ test('a windowed tab asking the server for older messages while it goes away', a
   await offline(page);
   await expect(olderButton).toBeDisabled();
   await start();
-  await live(page);
+  await back(page);
   await olderButton.click();
   // nothing older than what this tab holds: the button goes
   await expect(olderButton).toHaveCount(0);
