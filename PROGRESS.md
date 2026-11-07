@@ -95,6 +95,10 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 
 - [x] SEC1 Cross-account writes and reads found by the privacy audit and Gemini's review (`docs/handoff/gemini-review-triage.md`).
 
+### CI
+
+- [ ] CI1 GitHub CI green again (owner, 2026-11-07). The web job failed on a timezone-dependent Insights test since 2026-10-30 (fixed). The e2e job fails since D-093 (2026-10-31): enrol is fixed, but the suite still walks the September screens (Add member on Home, `form.add`, `button.member`, "Change who's here"); 9 tests fail at their first member step and 20 behind them haven't run. Rewrite each spec's walkthrough against the current UI (UI8–UI17), run locally with `CHORUS_E2E_CHANNEL=chrome CARGO_TARGET_DIR='F:\DunBuild\chorus-target' bash scripts/e2e-web.sh --no-build` (36 min when everything times out; pass `-- e2e/<spec>.ts` for one).
+
 ### UI — Owner's Figma redesign
 
 - [x] UI17 Owner's fix-and-polish batch (2026-11-07): Android chat icon differs between the list and the chat header; web sidebar squished on wide screens; web chat repaints and icons flashing; web swipe-to-reply cancelling on a hard/long swipe (iOS); Android form controls too large (compact); web Journal width jumping between sections; more transitions on web and Android.
