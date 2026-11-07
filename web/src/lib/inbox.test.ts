@@ -9,6 +9,10 @@ const notes = [
   { id: 'o1', kind: 'own_switch', title: 'Fox is fronting', delivered_at: 250 },
   { id: 'r1', kind: 'post_reply', title: 'Ash replied to your post', text: 'lovely', delivered_at: 200, post_id: 'reply', sender: { name: 'Ash' } },
   { id: 'x', kind: 'something_new', delivered_at: 100 },
+  // plain messages are pushed, not listed
+  { id: 'd1', kind: 'dm', title: 'Kit', text: 'hi', delivered_at: 90, channel_id: 'c' },
+  { id: 'g1', kind: 'message', title: '#general', text: 'hello', delivered_at: 80, channel_id: 'c' },
+  { id: 'md', kind: 'member_dm', title: 'Amy', text: 'psst', delivered_at: 70, channel_id: 'c' },
 ];
 
 describe('inbox', () => {

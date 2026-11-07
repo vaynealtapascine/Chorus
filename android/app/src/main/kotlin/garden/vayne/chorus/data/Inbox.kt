@@ -73,7 +73,7 @@ object Inbox {
 
     private fun JSONObject.text(k: String) = optString(k).takeIf { has(k) && !isNull(k) && it.isNotBlank() }
 
-    /** `GET /notifications` items as rows. Unknown kinds are skipped. */
+    /** `GET /notifications` items as rows. Unknown kinds, and plain messages, are skipped. */
     fun fromNotifications(items: JSONArray?): List<InboxItem> {
         if (items == null) return emptyList()
         return (0 until items.length()).mapNotNull { i ->
@@ -91,9 +91,9 @@ object Inbox {
             when (kind) {
                 "mention" -> chat("mentioned you")
                 "reply" -> chat("replied to you")
-                "dm" -> chat("sent you a message")
-                "message" -> chat("wrote")
-                "member_dm" -> chat("wrote in a member chat").copy(category = "system")
+                // plain messages (DMs, member DMs, a channel set to "all") are pushed but not listed:
+                // the chat list already holds them (owner, 2026-11-07); a mention or reply in a DM is listed
+                "dm", "message", "member_dm" -> null
                 "post_reply" -> InboxItem(id, kind, "mentions", "mentions", at, who, title, quote = text,
                     color = sender?.text("color"), avatarBlob = sender?.text("avatar_blob"), postId = n.text("post_id"),
                     accountId = n.text("account_id"))

@@ -53,7 +53,7 @@ const text = (o: Record<string, unknown> | null | undefined, k: string): string 
 };
 type Json = Record<string, unknown>;
 
-/** `GET /notifications` items as rows; unknown kinds are skipped. */
+/** `GET /notifications` items as rows; unknown kinds, and plain messages, are skipped. */
 export function fromNotifications(items: unknown[] | null | undefined): InboxItem[] {
   const out: InboxItem[] = [];
   for (const raw of items ?? []) {
@@ -73,9 +73,9 @@ export function fromNotifications(items: unknown[] | null | undefined): InboxIte
     switch (kind) {
       case 'mention': out.push(chat('mentioned you')); break;
       case 'reply': out.push(chat('replied to you')); break;
-      case 'dm': out.push(chat('sent you a message')); break;
-      case 'message': out.push(chat('wrote')); break;
-      case 'member_dm': out.push({ ...chat('wrote in a member chat'), category: 'system' }); break;
+      // plain messages (DMs, member DMs, a channel set to "all") are pushed but not listed: the
+      // chat list already holds them (owner, 2026-11-07); a mention or reply in a DM is listed
+      case 'dm': case 'message': case 'member_dm': break;
       case 'post_reply': out.push({ id, kind, category: 'mentions', shows: 'mentions', at, actor: who, title, quote: body, ...look,
         postId: text(n, 'post_id'), accountId: text(n, 'account_id') }); break;
       case 'post': out.push({ id, kind, category: 'friends', shows: 'posts', at, actor: who, title, detail: body, ...look,
