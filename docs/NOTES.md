@@ -76,6 +76,9 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
   `scripts/build-android-core.ps1 -Debug`: the UniFFI Kotlin bindings and `.so` files are ignored
   build outputs; rebuild both ABIs and the bindings together (checksums change with any exported
   type). A fresh worktree needs generated bindings before JVM tests.
+- Timing budgets in tests use SPEC §9's numbers on the reference machine (the owner's PC, through
+  `verify.py`). `CHORUS_BUDGET_SCALE` widens them on slower hosts; CI sets 2 after a GitHub runner
+  took 180 ms on the 150 ms 50k-search first screen (2026-11-07). A new timing assert should read it.
 - Budgets checked by `verify.py`: web JS ≤ 300 KB gz summed over all chunks (D-116), wasm
   ≤ 500 KB gz (D-108). Notes or handoffs quoting 200 KB JS / 300 KB wasm predate those decisions.
 - Several worktrees sharing `F:\DunBuild\chorus-target` can see each other's artifacts as fresh

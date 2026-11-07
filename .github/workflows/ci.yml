@@ -42,6 +42,8 @@ jobs:
       - run: cargo test --workspace --release
         env:
           CHORUS_SIM_SEEDS: "1000"
+          # timing budgets hold on the reference machine (verify.py); shared runners get 2x
+          CHORUS_BUDGET_SCALE: "2"
 
   web:
     runs-on: ubuntu-latest
