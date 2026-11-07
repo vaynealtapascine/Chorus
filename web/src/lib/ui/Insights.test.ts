@@ -8,10 +8,13 @@ import { insightIds, insightOps } from '../testing/insights-fixture';
 import Insights from './Insights.svelte';
 
 beforeAll(async () => loadCore(readFileSync(new URL('../core/pkg/chorus_wasm_bg.wasm', import.meta.url))));
-afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); Object.assign(sync, { replica: null, cached: null, device: null }); });
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); vi.unstubAllEnvs(); Object.assign(sync, { replica: null, cached: null, device: null }); });
 
 it('renders selected-front history and exact-layer time without stale legacy data', () => {
-  const now = Date.parse('2026-10-26T04:00:00Z');
+  // day bars split at local midnight: pin the zone so the ten hours below fall in one day on any
+  // machine (CI runs in UTC; at 04:00Z they straddled midnight there and the test failed)
+  vi.stubEnv('TZ', 'UTC');
+  const now = Date.parse('2026-10-26T14:00:00Z');
   vi.useFakeTimers(); vi.setSystemTime(now);
   const replica = new WebReplica('fixture', 1);
   try {
