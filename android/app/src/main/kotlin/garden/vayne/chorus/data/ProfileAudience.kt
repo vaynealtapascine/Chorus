@@ -53,8 +53,9 @@ object ProfileAudience {
         }.sortedWith(compareBy({ it.second.lowercase() }, { it.first })).toList()
     }
 
-    /** The built-in parts with their own audience, in the editor's order. */
-    val PARTS = listOf("display_name" to "Display name", "pronouns" to "Pronouns", "description" to "Bio",
+    /** The built-in parts with their own audience, in the editor's order. The display name has
+     *  none: it follows the profile (D-126). */
+    val PARTS = listOf("name" to "Full name", "pronouns" to "Pronouns", "description" to "Bio",
         "birthday" to "Birthday", "banner" to "Banner")
 
     /** A stored audience, or private when it's missing or of the wrong shape (fails closed, as the server does). */
@@ -79,9 +80,10 @@ object ProfileAudience {
     }
 
     /** What a part or field is actually shared with, before the profile's own limit. [fieldDefault]
-     *  is the custom field's `default_visibility` (absent for built-in parts). */
+     *  is the custom field's `default_visibility` (absent for built-in parts). The complete name
+     *  is private unless chosen (D-126). */
     fun effective(profile: Any?, fieldVisibility: Any?, key: String, isField: Boolean = false, fieldDefault: Any? = null): Audience =
-        own(fieldVisibility, key) ?: of(if (isField) fieldDefault else profile)
+        own(fieldVisibility, key) ?: if (!isField && key == "name") Audience.PRIVATE else of(if (isField) fieldDefault else profile)
 
     /** The parts map with [key] set to [audience], or cleared back to "same as profile" with `null`. */
     fun with(fieldVisibility: Any?, key: String, audience: Audience?): JSONObject {

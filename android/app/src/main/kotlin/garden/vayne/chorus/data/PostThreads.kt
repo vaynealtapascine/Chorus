@@ -17,7 +17,9 @@ data class ThreadReply(val id: String, val authorNames: List<String>, val text: 
     val attachments: List<ChatAttachment> = emptyList(), val tags: List<String> = emptyList(),
     /** Whose post it is, and whose of its authors' profiles open for this reader. */
     val accountId: String? = null, val profiles: List<String> = emptyList(),
-    val reactions: List<PostReaction> = emptyList())
+    val reactions: List<PostReaction> = emptyList(),
+    /** A lone author's handle as we may see it (D-126). */
+    val handle: String? = null)
 /** A post as a thread view shows it: what it answers ([ancestors], oldest first), its replies,
  * the posts quoting it and its reactions. */
 data class PostDetail(val replies: List<ThreadReply>, val reactions: List<PostReaction>, val root: ThreadReply? = null,
@@ -46,7 +48,7 @@ object PostThreads {
                 item.optJSONObject("quote")?.text("post_id"),
                 item.optJSONObject("quoted")?.let { parse(JSONObject().put("replies", org.json.JSONArray().put(it))).firstOrNull() },
                 PeopleApi.attachments(item), PeopleApi.tags(item), item.text("account_id"), AuthorLooks.of(item).profiles,
-                PostReactions.fromServer(item))
+                PostReactions.fromServer(item), AuthorLooks.of(item).handle)
         } }
     }
 

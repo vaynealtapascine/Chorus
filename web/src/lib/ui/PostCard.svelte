@@ -24,6 +24,7 @@
   import { entryMeta, fullTimestamp, shortAgo } from '../journal-presentation';
   import { journalCompose } from '../journal-compose.svelte';
   import { router } from '../router.svelte';
+  import { memberHandles, shownHandle } from '../handles';
 
   let { post, people, dark, reactions, speaker, compactEntry = false, onreply, onreact, projection, replyCount = 0, replyToNames, inThread = false, quote = null, social, saved, repostedBy, full = false, quoteCount = 0, onquotes, reactorNames }: {
     post: PostRow; people: Map<string, MemberRow>; dark: boolean;
@@ -75,6 +76,8 @@
   const name = (id: string) => people.get(id)?.display_name ?? people.get(id)?.name ?? reactorNames?.get(id) ?? 'Someone';
   const names = $derived(post.authors.map(name).join(' & ') || 'Someone');
   const lead = $derived(people.get(post.authors[0] ?? ''));
+  // one author's handle beside their name, as Figma F6.3 (D-126); joint posts show only names
+  const handle = $derived(post.authors.length === 1 ? shownHandle(lead, projection ? memberHandles(projection, sync.accountId) : new Map()) : undefined);
   const color = $derived(core.adaptColor(lead?.color ?? '#A09184', dark));
   const hearts = $derived(reactions.get(HEART) ?? []);
   const hearted = $derived(!!speaker && hearts.includes(speaker));
@@ -155,6 +158,7 @@
     <a class="avatar" href="#/profile/{post.authors[0] ?? ''}" aria-label="{name(post.authors[0] ?? '')}’s profile"><AvatarImage hash={lead?.avatar_blob} glyph={lead?.sigils[0] ?? name(post.authors[0] ?? '')[0]} name={name(post.authors[0] ?? '')} /></a>
     <div class="identity">
         <span class="authors">{#each post.authors as id, i (id)}{#if i} &amp; {/if}<a href="#/profile/{id}">{name(id)}</a>{/each}</span>
+        {#if handle}<span class="handle">@{handle}</span>{/if}
         <span class="when">· <a href={threadHref} title={fullTimestamp(post.occurred_at)}><time datetime={new Date(post.occurred_at).toISOString()}>{shortAgo(post.occurred_at)}</time></a>{#if post.edited} · edited{/if}</span>
         {#if post.visibility.mode === 'private' || post.visibility.mode === 'followers'}<span class="lock" title={audienceLabel} role="img" aria-label={audienceLabel}><Icon name="lock" size={14} /></span>
         {:else if post.visibility.mode === 'buckets'}{@const b = projection ? buckets(projection).find((x) => post.visibility.bucket_ids?.includes(x.id)) : undefined}<span class="audience"><BucketGlyph icon={b?.icon} color={b?.color} size={14} />{audienceLabel}</span>{/if}
@@ -256,6 +260,7 @@
   .identity { display: flex; align-items: center; gap: 4px; min-width: 0; padding-right: 36px; line-height: 20px; }
   .authors { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .authors a { color: var(--ink); text-decoration: none; }
+  .handle { color: var(--ink-3); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
   .authors a:hover { text-decoration: underline; }
   .when { color: var(--ink-3); font-size: 14px; white-space: nowrap; }
   .when a { color: inherit; text-decoration: none; }

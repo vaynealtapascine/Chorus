@@ -19,6 +19,7 @@ pub mod fcm;
 pub mod feeds;
 pub mod follows;
 pub mod fronts;
+pub mod handles;
 pub mod health;
 pub mod home;
 pub mod home_install;

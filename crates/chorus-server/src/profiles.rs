@@ -1,11 +1,17 @@
 //! Friend profiles (D-101): what another account may see of a system's members, read on demand.
 //!
 //! `member.visibility` says who can open a member's profile at all; `member.field_visibility` maps
-//! a part (`display_name`, `pronouns`, `description`, `birthday`, `banner`) or a custom field id to
+//! a part (`name`, `pronouns`, `description`, `birthday`, `banner`) or a custom field id to
 //! its own audience. A viewer sees a part only if they may see the profile **and** the part. An
-//! absent built-in part follows the profile; an absent custom field follows the field's
-//! `default_visibility` (private unless chosen). Audiences use the post rule (`posts::readable_sql`):
-//! `private` · `followers` · `buckets` · `server`; anything malformed fails closed.
+//! absent built-in part follows the profile, except the complete `name`, which is private unless
+//! chosen (D-126); an absent custom field follows the field's `default_visibility` (private unless
+//! chosen). Audiences use the post rule (`posts::readable_sql`): `private` · `followers` ·
+//! `buckets` · `server`; anything malformed fails closed.
+//!
+//! The display name always follows the profile: whoever may see the member sees it (a stored
+//! `display_name` audience from before D-126 is ignored). A member without one is shown by their
+//! complete name, which then follows the profile too. Every card here carries the member's
+//! handles (`handles.rs`).
 //!
 //! Nothing here says anything about fronting, history or when things changed (NOTIFICATIONS §5).
 
@@ -15,7 +21,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
 /// The built-in profile parts that carry their own audience.
-pub const PARTS: &[&str] = &["display_name", "pronouns", "description", "birthday", "banner"];
+pub const PARTS: &[&str] = &["name", "pronouns", "description", "birthday", "banner"];
 
 /// What the owner's audiences need to know about one viewer.
 pub struct Viewer {
@@ -132,11 +138,23 @@ impl Row {
     fn shown<T: Clone>(&self, v: &Viewer, key: &str, value: &Option<T>) -> Option<T> {
         if self.part(v, key) { value.clone() } else { None }
     }
+    fn display_name(&self) -> Option<&str> {
+        self.display_name.as_deref().filter(|s| !s.trim().is_empty())
+    }
+    /// The complete name when the viewer may see it (the `name` part, private unless chosen),
+    /// else the display name: what everyone who may see the member calls them.
+    fn name_for(&self, v: &Viewer) -> &str {
+        let full = v.own || (self.open(v) && self.audience("name").is_some_and(|a| v.allows(&a)));
+        match self.display_name() {
+            Some(shown) if !full => shown,
+            _ => &self.name,
+        }
+    }
     fn card(&self, v: &Viewer) -> Value {
         json!({
             "id": self.id,
-            "name": self.name,
-            "display_name": self.shown(v, "display_name", &self.display_name).filter(|s| !s.trim().is_empty()),
+            "name": self.name_for(v),
+            "display_name": self.display_name(),
             "pronouns": self.shown(v, "pronouns", &self.pronouns).filter(|s| !s.trim().is_empty()),
             "color": self.color,
             "sigil": self.sigil.clone().filter(|s| !s.trim().is_empty()),
@@ -157,9 +175,11 @@ pub fn members(conn: &Connection, viewer: &str, owner: &str) -> anyhow::Result<V
     let rows = st.query_map([owner], row)?.collect::<Result<Vec<_>, _>>()?;
     let (roles, pills) = role_field(conn, owner)?;
     let mut value = conn.prepare_cached("SELECT value FROM field_value WHERE member_id = ?1 AND field_id = ?2")?;
+    let mut book = crate::handles::Book::default();
     let mut items = Vec::new();
     for m in rows.iter().filter(|m| m.open(&v)) {
         let mut card = m.card(&v);
+        crate::handles::stamp(conn, &mut book, viewer, owner, &mut card)?;
         card["banner_blob"] = json!(m.shown(&v, "banner", &m.banner_blob));
         let mut shown = Vec::new();
         if let Some((field, default)) = &roles
@@ -249,6 +269,7 @@ pub fn profile(conn: &Connection, viewer: &str, owner: &str, member: &str) -> an
         .optional()?;
     let Some(m) = m.filter(|m| m.open(&v)) else { return Ok(None) };
     let mut out = m.card(&v);
+    crate::handles::stamp(conn, &mut crate::handles::Book::default(), viewer, owner, &mut out)?;
     let bio = m.part(&v, "description");
     out["description"] = json!(if bio { m.description.clone() } else { None });
     out["description_entities"] =
@@ -285,6 +306,19 @@ pub fn profile(conn: &Connection, viewer: &str, owner: &str, member: &str) -> an
     Ok(Some(out))
 }
 
+/// A member met outside their profile (a shared chat's author, a post's): the name `viewer` may
+/// call them by, as on a card, and their display name. `None` for a member the server doesn't have.
+pub fn names_for(conn: &Connection, viewer: &str, member: &str) -> rusqlite::Result<Option<(String, Option<String>)>> {
+    let found = conn
+        .query_row(&format!("SELECT {COLUMNS}, account_id FROM member WHERE id = ?1"), [member], |r| {
+            Ok((row(r)?, r.get::<_, String>(13)?))
+        })
+        .optional()?;
+    let Some((m, owner)) = found else { return Ok(None) };
+    let v = Viewer::of(conn, viewer, &owner)?;
+    Ok(Some((m.name_for(&v).to_string(), m.display_name().map(str::to_string))))
+}
+
 /// Small cards only. Reuses exactly the profile-opening rule, without fetching relationships
 /// recursively or granting access to any target's other parts, history or files.
 pub fn visible_card(conn: &Connection, viewer: &str, member: &str) -> anyhow::Result<Option<Value>> {
@@ -303,6 +337,7 @@ pub fn visible_card(conn: &Connection, viewer: &str, member: &str) -> anyhow::Re
         return Ok(None);
     }
     let mut card = m.card(&v);
+    crate::handles::stamp(conn, &mut crate::handles::Book::default(), viewer, &owner, &mut card)?;
     card["account_id"] = json!(owner);
     Ok(Some(card))
 }

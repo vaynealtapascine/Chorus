@@ -22,7 +22,9 @@ data class SharedPost(val id: String, val kind: String, val title: String?, val 
  * rule that lets the picture load). Tapping any other author does nothing.
  */
 data class AuthorLooks(val ids: List<String> = emptyList(), val color: String? = null, val avatarBlob: String? = null,
-    val profiles: List<String> = emptyList()) {
+    val profiles: List<String> = emptyList(),
+    /** A lone author's handle as we may see it (D-126); joint posts show only names. */
+    val handle: String? = null) {
     /** The first author whose profile opens, if any. */
     val profile: String? get() = profiles.firstOrNull()
 
@@ -32,7 +34,8 @@ data class AuthorLooks(val ids: List<String> = emptyList(), val color: String? =
             val rows = (0 until cards.length()).mapNotNull { cards.optJSONObject(it) }
             fun JSONObject.text(k: String) = optString(k).takeIf { has(k) && !isNull(k) && it.isNotBlank() }
             return AuthorLooks(rows.mapNotNull { it.text("id") }, rows.firstOrNull()?.text("color"),
-                rows.firstOrNull()?.text("avatar_blob"), rows.filter { it.optBoolean("profile") }.mapNotNull { it.text("id") })
+                rows.firstOrNull()?.text("avatar_blob"), rows.filter { it.optBoolean("profile") }.mapNotNull { it.text("id") },
+                rows.singleOrNull()?.text("handle"))
         }
     }
 }

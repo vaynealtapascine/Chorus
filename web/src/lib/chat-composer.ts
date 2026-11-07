@@ -1,8 +1,12 @@
 /** Stable, parser-safe mention tokens: duplicate names never choose an arbitrary member. */
 import { core, type Composed, type Entity, type Rich, type Segment } from './core';
-export interface MentionChoice { id: string; name: string; type: 'member' | 'group' | 'front'; token: string }
+export interface MentionChoice {
+  id: string; name: string; type: 'member' | 'group' | 'front'; token: string;
+  /** A member's shown handle (D-126); `foreign` members (another account's) are mentioned by it. */
+  handle?: string; foreign?: boolean;
+}
 const encodedId = (id: string) => id.split('').map((c) => c.charCodeAt(0).toString(16).padStart(4, '0')).join('');
-export function mentionChoices(members: { id: string; name: string }[], groups: { id: string; name: string }[]): MentionChoice[] {
+export function mentionChoices(members: { id: string; name: string; handle?: string; foreign?: boolean }[], groups: { id: string; name: string }[]): MentionChoice[] {
   return [{ id: '', name: 'front', type: 'front', token: 'front' }, ...([
     ...members.map((m) => ({ ...m, type: 'member' as const })),
     ...groups.map((g) => ({ ...g, type: 'group' as const })),

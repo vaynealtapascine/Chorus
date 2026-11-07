@@ -10,10 +10,14 @@
   import { router } from '../router.svelte';
   import ProfileRelationships from './ProfileRelationships.svelte';
   import ProfileHeader from './ProfileHeader.svelte';
+  import { memberHandles } from '../handles';
 
   let { projection, id, dark }: { projection: Projection; id: string; dark: boolean } = $props();
   const people = $derived(new Map(members(projection).map((m) => [m.id, m] as [string, MemberRow])));
   const member = $derived(people.get(id));
+  const handles = $derived(memberHandles(projection, sync.accountId).get(id));
+  // the default stays reserved for them after a claim, so it's listed with the rest
+  const otherHandles = $derived(handles ? [...handles.claimed, handles.default].filter((h) => h !== handles.shown) : []);
   const own = $derived(canWriteAs(projection, id, sync.accountId));
   const writeAs = $derived(own ? id : members(projection).find((m) => canWriteAs(projection, m.id, sync.accountId))?.id ?? null);
   const all = $derived(posts(projection));
@@ -64,7 +68,7 @@
 <section class="profile">
   {#if member}
     <ProfileHeader banner={member.banner_blob} avatar={member.avatar_blob} glyph={member.sigils[0] ?? member.name[0]} name={member.display_name ?? member.name}
-      color={member.color} subtitle={[member.pronouns, member.sigils.join(' ')].filter(Boolean).join(' · ')} {dark}>
+      handle={handles?.shown} also={otherHandles} color={member.color} subtitle={[member.pronouns, member.sigils.join(' ')].filter(Boolean).join(' · ')} {dark}>
       {#snippet actions()}{#if own}<a class="action" href="#/members/{id}">Edit profile</a>{/if}{/snippet}
       {#if member.description}<p class="bio">{member.description}</p>{/if}
       {#if custom.length}<dl class="fields">{#each custom as field (field.name)}<div><dt>{field.name}</dt><dd>{shownValue(field.value)}</dd></div>{/each}</dl>{/if}

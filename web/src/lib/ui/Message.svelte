@@ -30,6 +30,7 @@
     readOnly = false,
     cont,
     people,
+    handleOf,
     dark,
     lookup,
     mine,
@@ -84,6 +85,8 @@
     /** Where an author's face or name leads: their profile, as in the Journal (profile-link.ts). */
     profileOf?: (memberId: string) => string | null;
     people: Map<string, MemberRow>;
+    /** An author's shown handle (D-126), for the tooltip on their name. */
+    handleOf?: (memberId: string) => string | undefined;
     dark: boolean;
     lookup: (id: string) => (MessageRow & { channel_name?: string }) | undefined;
     mine: boolean;
@@ -254,7 +257,7 @@
           </span>
         {/if}
         <span class="who">
-          {#each m.authors as a, i (a)}{@const href = profileOf?.(a)}{#if i}<span class="amp">{' & '}</span>{/if}{#if href}<a class="name" {href} style="color: {color(a).name}">{nameOf(a)}</a>{:else}<span style="color: {color(a).name}">{nameOf(a)}</span>{/if}{/each}
+          {#each m.authors as a, i (a)}{@const href = profileOf?.(a)}{#if i}<span class="amp">{' & '}</span>{/if}{@const handle = handleOf?.(a) ?? people.get(a)?.handle}{#if href}<a class="name" {href} title={handle ? `@${handle}` : undefined} style="color: {color(a).name}">{nameOf(a)}</a>{:else}<span title={handle ? `@${handle}` : undefined} style="color: {color(a).name}">{nameOf(a)}</span>{/if}{/each}
         </span>
         {#if tag}<span class="layer">{tag}</span>{/if}
         {#if m.sent_offline}<span class="tag" title="Composed offline, synced later">sent offline</span>{/if}

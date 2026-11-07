@@ -8,13 +8,13 @@ import org.json.JSONObject
  * composer suggests while an `@word` is being typed.
  */
 object ChatMentions {
-    data class Choice(val id: String?, val name: String, val type: String) {
+    data class Choice(val id: String?, val name: String, val type: String, val handle: String? = null) {
         /** What follows the @: the core reads letters, digits, `_`, `.` and `-` as one name. */
         val token: String get() = name.trim().replace(Regex("[^\\p{L}\\p{N}_.-]+"), "_").trim('_', '.', '-').ifEmpty { type }
     }
 
     fun choices(model: Model): List<Choice> = listOf(Choice(null, "front", "front")) +
-        model.active.sortedBy { it.shownName.lowercase() }.map { Choice(it.id, it.shownName, "member") } +
+        model.active.sortedBy { it.shownName.lowercase() }.map { Choice(it.id, it.shownName, "member", model.handle(it.id)) } +
         model.groups.sortedBy { it.name.lowercase() }.map { Choice(it.id, it.name, "group") }
 
     /** The `names` the core composer resolves mentions with; a name two choices share resolves to neither. */
@@ -22,6 +22,9 @@ object ChatMentions {
         val all = choices(model) + model.active.filter { it.displayName != null && it.displayName != it.name }.map { Choice(it.id, it.name, "member") }
         val counts = all.groupingBy { it.token.lowercase() }.eachCount()
         val mentions = JSONObject()
+        // every handle of ours names its member (D-126), whatever names collide
+        for ((handle, id) in Handles.mentions(model.memberHandles)) mentions.put(handle,
+            JSONObject().put("target_type", "member").put("target_id", id))
         for (c in all) if (counts[c.token.lowercase()] == 1) mentions.put(c.token.lowercase(),
             JSONObject().put("target_type", c.type).put("target_id", c.id ?: JSONObject.NULL))
         return JSONObject().put("mentions", mentions).put("emoji", JSONObject())
@@ -31,7 +34,8 @@ object ChatMentions {
     fun typing(draft: String): String? = Regex("(?:^|\\s)@([^\\s@]*)$").find(draft)?.groupValues?.get(1)
 
     fun matches(model: Model, query: String): List<Choice> =
-        choices(model).filter { it.name.contains(query, ignoreCase = true) || it.token.startsWith(query, ignoreCase = true) }.take(8)
+        choices(model).filter { it.name.contains(query, ignoreCase = true) || it.token.startsWith(query, ignoreCase = true) ||
+            it.handle?.startsWith(query, ignoreCase = true) == true }.take(8)
 
     /** [draft] with its trailing `@word` replaced by the choice. */
     fun insert(draft: String, choice: Choice): String {

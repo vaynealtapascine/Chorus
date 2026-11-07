@@ -133,7 +133,7 @@ pub fn parse_key(spki_b64: &str) -> Result<VerifyingKey, AuthError> {
 }
 
 pub(crate) fn valid_handle(h: &str) -> bool {
-    (2..=32).contains(&h.len()) && h.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+    chorus_core::handles::valid_claim(h)
 }
 
 /// What an invite is for, without using it (D-093): `system` or `person` for a new account (the
@@ -192,8 +192,8 @@ pub fn redeem(
         if !handle.is_empty() && !valid_handle(&handle) {
             return Err(AuthError::BadRequest("handle: 2–32 of a-z, 0-9, _".into()));
         }
-        let taken = !handle.is_empty()
-            && tx.query_row("SELECT 1 FROM account WHERE handle = ?1", [&handle], |_| Ok(())).optional()?.is_some();
+        // one namespace with the handles members claim (D-126)
+        let taken = !handle.is_empty() && crate::handles::taken(&tx, &handle, "", None)?;
         if taken {
             return Err(AuthError::HandleTaken);
         }
@@ -205,6 +205,10 @@ pub fn redeem(
         )?;
         let acct_scope = format!("account:{id}");
         ingest::grant(&tx, &id, &acct_scope)?;
+        if !handle.is_empty() {
+            // so its devices know it offline: it ends every member's default handle (D-126)
+            ingest::server_op(&tx, &id, "account.set", &acct_scope, Some(&id), json!({"handle": handle}), now)?;
+        }
         if kind == "system" {
             // Every system gets a private internal space (SPEC §5.1), created as ordinary ops so
             // devices receive it through sync.
@@ -528,7 +532,8 @@ pub(crate) mod tests {
             .unwrap()
             .map(Result::unwrap)
             .collect();
-        assert_eq!(kinds, ["space.create", "space.join", "channel.create"]);
+        // the handle first, so the account's devices know it offline (D-126)
+        assert_eq!(kinds, ["account.set", "space.create", "space.join", "channel.create"]);
         assert_eq!(ingest::scopes_of(&c, &e.account_id).unwrap().len(), 3);
         // session works, then expires
         assert_eq!(authenticate(&c, &e.session, now + 10, 1000).unwrap().device_id, e.device_id);

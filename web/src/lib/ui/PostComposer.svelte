@@ -14,6 +14,7 @@
   import { quoteView } from '../post-threads';
   import { decodeDraft, draftKey, emptyDraft, encodeDraft, occupied, type JournalDraft } from '../journal-draft';
   import { journalCompose } from '../journal-compose.svelte';
+  import { handleMentions, memberHandles } from '../handles';
 
   let { projection, initialAuthors = [], replyTo, defaultVisibility = 'private', onsent }: { projection: Projection; initialAuthors?: string[]; replyTo?: string; defaultVisibility?: 'private' | 'followers' | 'server'; onsent?: () => void } = $props();
   const active = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
@@ -146,7 +147,10 @@
         });
         attachmentIds.push(id);
       }
-      const rich = core.parseMarkup(sending.body);
+      // our members' @handles become mentions (D-126)
+      const mentions = Object.fromEntries([...handleMentions(memberHandles(projection, sync.accountId), members(projection))]
+        .map(([handle, member]) => [handle, { target_type: 'member', target_id: member }]));
+      const rich = core.parseMarkup(sending.body, { mentions });
       sync.create('post.create', sync.accountScope, sync.newId(), {
         kind: sending.kind, authors, title: sending.kind === 'entry' ? sending.title.trim() || null : null,
         text: rich.text, entities: rich.entities, mood: sending.mood.trim() || null,

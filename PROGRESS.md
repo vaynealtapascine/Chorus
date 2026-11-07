@@ -22,9 +22,9 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 ## Now
 
-- **In progress:** UI16
+- **In progress:** UI18
 - **Owner:** claude-opus-5.5, 2026-11-07
-- **Next concrete step:** device check with a singlet account; move the older sheets onto Drawer
+- **Next concrete step:** full gate with --android, then commit; device check of handles on the emulator demo
 - **Notes:** UI17 (owner's fix-and-polish batch, D-125) deployed 2026-11-07 (f5963b4, Android 0.1.761); not yet seen on an iOS browser or the owner's phone. Gemini's raw reviews stay untracked in gemini_review/.
 
 ### SEC1: what is done and what is left
@@ -101,6 +101,7 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 
 ### UI — Owner's Figma redesign
 
+- [~] UI18 Member handles and private full names (owner, 2026-11-07, D-126): default `@member.subsystem.system` from core, claimable handles unique with account handles, shown in profiles, Journal and chat (web + Android); full names private unless shared, display names follow the profile.
 - [x] UI17 Owner's fix-and-polish batch (2026-11-07): Android chat icon differs between the list and the chat header; web sidebar squished on wide screens; web chat repaints and icons flashing; web swipe-to-reply cancelling on a hard/long swipe (iOS); Android form controls too large (compact); web Journal width jumping between sections; more transitions on web and Android.
 - [~] UI16 Android drawers and forms (owner, 2026-11-07, D-124; deployed cd87097, Android 0.1.751): every dialog, dropdown and date/time picker is a drawer (`ui/Drawers.kt`; layered when opened from a drawer); forms and displays in the Figma style (filled fields, grouped cards, value rows, notes, wide buttons); singlets see no system words. Checked on the emulator (demo): front menu, switch sheet → date/time drawer (layered), chat row menu, delete question, message actions, message edit, new channel → space choice (layered). Left: a singlet account on a device (DM picker straight to friends); a pass over the remaining older sheets with their own headers (Switcher, Journal authors, PK import, subsystem sheet, chat attach/forward/reader sheets) to use `Drawer`.
 - [~] UI15 Fronting as the Figma F3 screens (owner, 2026-11-06, D-122; deployed 9911350, Android 0.1.744): Fronting, switch sheet, member sheet + state, Fronts, Layers & display, Front history with lanes/sentences/reviews, Log a past switch (web + Android), Android front widget. Reviewed by a separate Opus agent against the Figma; its high/medium findings fixed (b6911fa, 28fca66). Checked on the emulator and the web demo at 400 px. Left: device check of the front widget on a home screen; F3.8's unread widget and lock-screen chip (not possible on phones); F3.3's rename/+ on separate layers; Fronts card blurb without the "since" time; web drag-to-reorder doesn't work on touch (arrange mode does).

@@ -644,7 +644,7 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
     val names = post.authors.mapNotNull { model.member(it)?.shownName }.joinToString(" & ").ifBlank { "Someone" }
     val open = onThread?.takeIf { !full }?.let { { it(post) } }
     JournalPostFrame(names, compactAgo(post.occurredAt), post.visibility, full, endsWithActions = showActions && !full,
-        lineAbove = lineAbove, lineBelow = lineBelow, wide = wide, avatar = {
+        handle = post.authors.singleOrNull()?.let(model::handle), lineAbove = lineAbove, lineBelow = lineBelow, wide = wide, avatar = {
         Box {
             Box(Modifier.size(if (full) 48.dp else 40.dp).clip(CircleShape).clickable(enabled = onProfile != null) {
                 if (post.authors.size > 1) authorsOpen = true else post.authors.firstOrNull()?.let { onProfile?.invoke(it) }
@@ -948,6 +948,7 @@ private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, me
     val names = reply.authorNames.joinToString(" & ").ifBlank { "Someone" }
     val shown = reply.cw == null || revealed
     JournalPostFrame(names, compactAgo(reply.occurredAt), null, full, onClick = onOpen, lineAbove = lineAbove,
+        handle = reply.authorIds.singleOrNull()?.let(model::handle) ?: reply.handle.takeIf { reply.authorNames.size == 1 },
         lineBelow = lineBelow, wide = wide, endsWithActions = !full, overflow = {
         JournalOverflow("More options for this post", listOfNotNull(
             onOpen?.let { "Open post" to it },

@@ -567,3 +567,43 @@ fn slow_mode_counts_on_arrival_and_spares_managers() {
     assert_eq!(send(&a, NOW, NOW), None);
     assert_eq!(send(&a, NOW + 1, NOW + 1), None);
 }
+
+#[test]
+fn handles_are_one_namespace_for_claims_and_accounts() {
+    // D-126: a claim another member or account has is refused at ingest, and so is an account
+    // handle a member has claimed; a member re-saving their own claims is fine
+    let (c, a, b) = setup();
+    c.execute("UPDATE account SET handle='stars' WHERE id=?1", [&a]).unwrap();
+    let (sa, sb) = (format!("account:{a}"), format!("account:{b}"));
+    let push = |n: u8, who: &str, scope: &str, kind: &str, payload: Value, entity: Option<&str>| {
+        let mut o = op(n, kind, scope, payload, NOW + i64::from(n)); // later ops win the LWW clock
+        if let Some(e) = entity {
+            o.entity_id = Some(e.to_string());
+        }
+        ingest::accept(&c, &session(who, 0), o, NOW, false).unwrap().0.error.map(|e| (e.code, e.message))
+    };
+    let kai = op(1, "member.create", &sa, json!({}), NOW).entity_id.unwrap();
+    assert_eq!(push(1, &a, &sa, "member.create", json!({"name": "Kai", "handles": ["kai"]}), None), None);
+    assert_eq!(push(2, &a, &sa, "member.set", json!({"handles": ["kai", "kai_2"]}), Some(&kai)), None, "own claims again");
+    let taken = push(3, &b, &sb, "member.create", json!({"name": "Kai", "handles": ["kai_2"]}), None).unwrap();
+    assert_eq!(taken, ("conflict".to_string(), "@kai_2 is taken".to_string()));
+    let account = push(4, &b, &sb, "member.create", json!({"name": "S", "handles": ["stars"]}), None).unwrap();
+    assert_eq!(account.0, "conflict", "an account's handle can't be claimed");
+    assert_eq!(push(5, &a, &sa, "member.create", json!({"name": "S", "handles": ["stars"]}), None).unwrap().0, "conflict");
+    let renamed = push(6, &b, &sb, "account.set", json!({"handle": "kai"}), Some(&b)).unwrap();
+    assert_eq!(renamed.0, "conflict", "nor can an account take a member's claim");
+    assert_eq!(push(7, &b, &sb, "account.set", json!({"handle": "moons"}), Some(&b)), None);
+    assert_eq!(push(8, &b, &sb, "member.create", json!({"name": "D", "handles": ["a.b"]}), None).unwrap().0, "bad_request");
+}
+
+#[test]
+fn enrolment_writes_the_account_handle_into_the_log_once() {
+    let (c, a, _) = setup();
+    c.execute("UPDATE account SET handle='stars' WHERE id=?1", [&a]).unwrap();
+    assert_eq!(chorus_server::handles::backfill_account_handles(&c, NOW).unwrap(), 1);
+    assert_eq!(chorus_server::handles::backfill_account_handles(&c, NOW).unwrap(), 0, "once each");
+    let payload: String = c
+        .query_row("SELECT payload FROM op WHERE kind='account.set' AND scope=?1", [format!("account:{a}")], |r| r.get(0))
+        .unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&payload).unwrap(), json!({"handle": "stars"}));
+}

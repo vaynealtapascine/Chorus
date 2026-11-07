@@ -41,6 +41,7 @@
   import { alignsRight, readSetting, roomSpeakers, settingValue, type SpeakerMode } from '../room-speakers';
   import { editDraft, inputDraft, markupDraft, parseComposer, updateDraft, mentionAt, mentionChoices, replaceSelection, unicodeEmoji, type MentionChoice, type ComposerDraft } from '../chat-composer';
   import { groups } from '../data';
+  import { handleMentions, memberHandles, shownHandle } from '../handles';
   import { canEditSpace, privateSides, roleIn } from '../chat-manage';
   import { selfMember, type MemberRow } from '../data';
   import { apiBase } from '../sync/device';
@@ -200,12 +201,19 @@
   const alignedIds = $derived(new Set(expandFront(projection, sync.accountId,
     [...new Set([...roomSpeakerIds, ...(speaker ? [speaker] : [])])].map((id) => ({ subject_type: 'member', subject_id: id, level: 'front', is_primary: false })))
     .entries.filter((e) => e.subject_type === 'member').map((e) => e.subject_id)));
-  const mentionOptions = $derived(mentionChoices([...people.values()].filter((m) => !m.deleted && !m.archived), groups(projection)));
+  // members by the name everyone may see (never a private full name, D-126), with their handles
+  const ownHandles = $derived(memberHandles(projection, sync.accountId));
+  const mentionable = $derived([...people.values()].filter((m) => !m.deleted && !m.archived));
+  const mentionOptions = $derived(mentionChoices(mentionable.map((m) => ({
+    id: m.id, name: m.display_name ?? m.name, handle: shownHandle(m, ownHandles), foreign: !!m.account_id && m.account_id !== sync.accountId,
+  })), groups(projection)));
   const names = $derived({
-    mentions: Object.fromEntries(
-      mentionOptions.flatMap((m) => [m.token, ...(mentionOptions.filter((n) => n.name.toLowerCase() === m.name.toLowerCase()).length === 1 ? [m.name] : [])]
+    mentions: Object.fromEntries([
+      // a typed @handle names its member wherever it's written (a name only where it's unique, below)
+      ...[...handleMentions(ownHandles, mentionable)].map(([handle, id]) => [handle, { target_type: 'member', target_id: id }]),
+      ...mentionOptions.flatMap((m) => [m.token, ...(mentionOptions.filter((n) => n.name.toLowerCase() === m.name.toLowerCase()).length === 1 ? [m.name] : [])]
         .map((token) => [token.toLowerCase(), { target_type: m.type, target_id: m.id || null }])),
-    ),
+    ]),
     emoji: Object.fromEntries([
       ...activeEmoji.flatMap((e) => e.aliases.map((alias) => [alias, e.id])),
       ...activeEmoji.map((e) => [e.name, e.id]), // a primary name wins over an alias collision
@@ -289,7 +297,7 @@
   let mentionIndex = $state(0);
   let dismissedMention = $state('');
   const mentionRange = $derived(!editing && !composing ? mentionAt(draft, cursor, selectionEnd) : null);
-  const mentionMatches = $derived(mentionRange && dismissedMention !== `${draft}|${cursor}` ? mentionOptions.filter((m) => m.name.toLowerCase().includes(mentionRange.query)).slice(0, 8) : []);
+  const mentionMatches = $derived(mentionRange && dismissedMention !== `${draft}|${cursor}` ? mentionOptions.filter((m) => m.name.toLowerCase().includes(mentionRange.query) || !!m.handle?.startsWith(mentionRange.query)).slice(0, 8) : []);
   function trackCursor() { const next = box?.selectionStart ?? draft.length; if (next !== cursor) mentionIndex = 0; cursor = next; selectionEnd = box?.selectionEnd ?? cursor; }
   function insertText(text: string, from = cursor, to = selectionEnd) {
     const result = replaceSelection(draft, from, to, text);
@@ -300,8 +308,10 @@
   function insertMention(m: MentionChoice) {
     if (!mentionRange) return;
     const from = mentionRange.from;
-    insertText(`@${m.name} `, from, mentionRange.to);
-    draftDoc = { text: draft, entities: [...draftDoc.entities, { type: 'mention', offset: from, length: m.name.length + 1, target_type: m.type, ...(m.id ? { target_id: m.id } : {}) }] };
+    // another account's member by their handle, ours by name (Figma F5.13)
+    const label = m.foreign && m.handle ? m.handle : m.name;
+    insertText(`@${label} `, from, mentionRange.to);
+    draftDoc = { text: draft, entities: [...draftDoc.entities, { type: 'mention', offset: from, length: label.length + 1, target_type: m.type, ...(m.id ? { target_id: m.id } : {}) }] };
   }
   let emojiPicker = $state(false);
   let emojiFile: File | null = $state(null);
@@ -1357,6 +1367,7 @@
         {#if m.id === firstUnread && unreadBoundary > 0}<div class="service unread-divider"><span>Unread messages</span></div>{/if}
         <Message
           {m}
+          handleOf={(id) => shownHandle(people.get(id), ownHandles)}
           cont={line.cont}
           last={line.last}
           fresh={m.occurred_at > openedAt}
@@ -1579,7 +1590,7 @@
           {#if mentionMatches.length}
             <div class="mention-suggestions" role="listbox" aria-label="Mention suggestions">
               {#each mentionMatches as mention, i (`${mention.type}:${mention.id}`)}
-                <button class:active={i === mentionIndex} role="option" aria-selected={i === mentionIndex} onclick={() => insertMention(mention)}>@{mention.name}<small>{mention.type}{mention.id ? ` · ${mention.id.slice(-8)}` : ' · current fronters'}</small></button>
+                <button class:active={i === mentionIndex} role="option" aria-selected={i === mentionIndex} onclick={() => insertMention(mention)}>@{mention.name}<small>{mention.handle ? `@${mention.handle}` : mention.type === 'front' ? 'current fronters' : mention.type}</small></button>
               {/each}
             </div>
           {/if}

@@ -1,14 +1,16 @@
 <script lang="ts">
   // One profile header for every member, ours or a friend's (owner, 2026-11-06), the Journal's
   // Twitter-like one (Figma F6.1, Android's MemberProfile): the banner, the avatar overlapping its
-  // lower edge with the profile's action beside it, then the name, a subtitle and whatever the
-  // page adds (bio, fields).
+  // lower edge with the profile's action beside it, then the name, the handle (D-126), a subtitle
+  // and whatever the page adds (bio, fields).
   import type { Snippet } from 'svelte';
   import { core } from '../core';
   import AvatarImage from './AvatarImage.svelte';
 
-  let { banner, avatar, glyph, name, color, subtitle = '', dark, actions, children }: {
-    banner?: string | null; avatar?: string | null; glyph: string; name: string; color?: string | null;
+  let { banner, avatar, glyph, name, handle, also = [], color, subtitle = '', dark, actions, children }: {
+    banner?: string | null; avatar?: string | null; glyph: string; name: string;
+    /** The shown handle, without the `@`; [also] lists the member's other handles. */
+    handle?: string | null; also?: string[]; color?: string | null;
     subtitle?: string; dark: boolean; actions?: Snippet; children?: Snippet;
   } = $props();
   const tone = $derived(color ? core.adaptColor(color, dark) : null);
@@ -23,6 +25,7 @@
     {#if actions}<div class="actions">{@render actions()}</div>{/if}
   </div>
   <h1 class="display" style="color: {tone?.name ?? 'inherit'}">{name}</h1>
+  {#if handle}<p class="handle">@{handle}{#if also.length}<span class="also"> · also {also.map((h) => `@${h}`).join(', ')}</span>{/if}</p>{/if}
   {#if subtitle}<p class="subtitle">{subtitle}</p>{/if}
   {@render children?.()}
 </header>
@@ -39,4 +42,6 @@
   .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s-2); padding-bottom: 4px; }
   h1 { margin: var(--s-1) 0 0; overflow-wrap: anywhere; }
   .subtitle { margin: 0; color: var(--ink-3); }
+  .handle { margin: calc(-1 * var(--s-1)) 0 0; color: var(--ink-2); overflow-wrap: anywhere; }
+  .also { color: var(--ink-3); font-size: var(--fs-sm); }
 </style>

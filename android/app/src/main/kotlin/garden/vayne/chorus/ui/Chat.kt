@@ -1191,7 +1191,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         choice.id?.let(model::member)?.let { ChatAvatar(it, 24.dp) }
                         Text("@" + choice.name, color = p.accent, fontSize = 14.sp, lineHeight = 20.sp)
-                        Text(when (choice.type) { "front" -> "who's fronting"; "group" -> "group"; else -> "" }, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+                        Text(when (choice.type) { "front" -> "who's fronting"; "group" -> "group"; else -> choice.handle?.let { "@$it" }.orEmpty() },
+                            color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
                     }
                 }
             }

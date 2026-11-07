@@ -131,6 +131,10 @@ pub fn accept(
     if !crate::profiles::relationship_write_allowed(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", "relationship target unavailable".into(), false), None));
     }
+    // a handle another account or member already has (D-126)
+    if let Some(why) = crate::handles::refused(conn, &author, &o)? {
+        return Ok((AckResult::err(o.id, "conflict", why, false), None));
+    }
     // channel permissions (perms.rs, D-047)
     if !preserved && let Some(why) = crate::perms::write_denied(conn, &author, &o)? {
         return Ok((AckResult::err(o.id, "forbidden", why, false), None));

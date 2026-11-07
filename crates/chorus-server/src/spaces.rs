@@ -303,7 +303,7 @@ pub fn authors(conn: &Connection, me: &str, space: &str) -> Result<Value, SpaceE
          FROM ({}) src JOIN member mb ON mb.id = src.member_id AND mb.deleted_at IS NULL
          WHERE src.space_id = ?1 AND mb.account_id != ?2", public_author_source(Some("?1"))
     ))?;
-    let members: Vec<Value> = st
+    let mut members: Vec<Value> = st
         .query_map([space, me], |r| {
             Ok(json!({
                 "id": r.get::<_, String>(0)?,
@@ -317,5 +317,17 @@ pub fn authors(conn: &Connection, me: &str, space: &str) -> Result<Value, SpaceE
             }))
         })?
         .collect::<Result<_, _>>()?;
+    // the complete name only where its own audience allows; handles as cards carry them (D-126)
+    let mut book = crate::handles::Book::default();
+    for card in &mut members {
+        let (Some(id), Some(owner)) = (card["id"].as_str().map(str::to_string), card["account_id"].as_str().map(str::to_string))
+        else {
+            continue;
+        };
+        if let Some((name, _)) = crate::profiles::names_for(conn, me, &id)? {
+            card["name"] = json!(name);
+        }
+        crate::handles::stamp(conn, &mut book, me, &owner, card)?;
+    }
     Ok(json!({"accounts": accounts_in(conn, space)?, "members": members}))
 }
