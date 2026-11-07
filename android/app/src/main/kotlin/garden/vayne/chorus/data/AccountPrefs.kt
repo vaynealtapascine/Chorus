@@ -26,7 +26,9 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
     /** How Fronting shows each front and layer (`fronting.display`, D-122). */
     val frontingDisplay: FrontingDisplay.Settings = FrontingDisplay.Settings(),
     /** What members are up to while here (`member_status:<id>`, D-122). */
-    val memberStatus: Map<String, MemberStatus> = emptyMap()) {
+    val memberStatus: Map<String, MemberStatus> = emptyMap(),
+    /** Notifications screen (D-127): each reader's read marks, and what shows there. */
+    val inboxRead: Map<String, InboxRead> = emptyMap(), val inboxShows: JSONObject? = null) {
     fun isSaved(postId: String): Boolean = postId in bookmarks
 
     /** A channel's chat notifications; DMs default to everything, other channels to mentions (as on web). */
@@ -63,7 +65,8 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
                 keyed(prefs, accountId, ChatOrganize.ARCHIVED).mapNotNull { (channel, at) -> (at as? Number)?.let { channel to it.toLong() } }.toMap(),
                 ChatFolders.parse(value(ChatFolders.PREF)), ProfileAudience.of(value(POST_AUDIENCE)),
                 FrontingDisplay.parse(value(FrontingDisplay.PREF)),
-                keyed(prefs, accountId, FrontingDisplay.STATUS).mapNotNull { (member, v) -> FrontingDisplay.status(v)?.let { member to it } }.toMap())
+                keyed(prefs, accountId, FrontingDisplay.STATUS).mapNotNull { (member, v) -> FrontingDisplay.status(v)?.let { member to it } }.toMap(),
+                keyed(prefs, accountId, Inbox.READ).mapValues { (_, v) -> InboxRead.parse(v) }, value(Inbox.SHOWS_PREF) as? JSONObject)
         }
 
         /** Account-wide (no device) prefs under [prefix], by the rest of the key; a pending local

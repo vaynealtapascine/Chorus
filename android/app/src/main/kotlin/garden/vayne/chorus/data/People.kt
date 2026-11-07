@@ -14,7 +14,11 @@ data class SharedPost(val id: String, val kind: String, val title: String?, val 
     val attachments: List<ChatAttachment> = emptyList(), val poll: Poll? = null, val pollTally: PollTally? = null,
     val entities: String = "[]", val tags: List<String> = emptyList(),
     /** Whose post it is and its authors, with the first one's look and whose profiles open for us. */
-    val accountId: String = "", val looks: AuthorLooks = AuthorLooks())
+    val accountId: String = "", val looks: AuthorLooks = AuthorLooks(),
+    /** What it answers ([parent] when this reader may read it), what it quotes ([quoted] likewise)
+     * and how many replies this reader may see (D-127). */
+    val replyTo: String? = null, val parent: ThreadReply? = null, val quotePostId: String? = null,
+    val quoted: ThreadReply? = null, val replyCount: Int = 0, val repostOf: String? = null)
 
 /**
  * A post's authors as its reader gets them (D-101): member ids, the first one's colour and picture,
@@ -50,21 +54,25 @@ data class FollowerView(val frontNames: List<String>, val history: List<SharedFr
 object PeopleApi {
     fun sharedPosts(j: JSONObject): List<SharedPost> {
         val items = j.getJSONArray("items")
+        return (0 until items.length()).map { i -> sharedPost(items.getJSONObject(i)) }
+    }
+
+    /** One post as `GET /posts` items and activity rows carry it. */
+    fun sharedPost(post: JSONObject): SharedPost {
         fun JSONObject.optionalText(key: String): String? =
             optString(key).takeIf { has(key) && !isNull(key) && it.isNotBlank() }
-        return (0 until items.length()).map { i ->
-            val post = items.getJSONObject(i)
-            val cards = post.optJSONArray("author_cards")
-            val names = if (cards == null) emptyList() else (0 until cards.length()).mapNotNull { n ->
-                cards.getJSONObject(n).let { it.optionalText("display_name") ?: it.optionalText("name") }
-            }
-            val reactions = PostReactions.fromServer(post)
-            SharedPost(post.getString("id"), post.getString("kind"), post.optionalText("title"),
-                post.getString("text"), post.optionalText("cw"), post.getLong("occurred_at"), names, reactions, attachments(post),
-                Polls.parse(post.optJSONObject("poll")), Polls.tally(post.optJSONObject("poll_tally")),
-                post.optJSONArray("entities")?.toString() ?: "[]", tags(post), post.optionalText("account_id").orEmpty(),
-                AuthorLooks.of(post))
+        val cards = post.optJSONArray("author_cards")
+        val names = if (cards == null) emptyList() else (0 until cards.length()).mapNotNull { n ->
+            cards.getJSONObject(n).let { it.optionalText("display_name") ?: it.optionalText("name") }
         }
+        val reactions = PostReactions.fromServer(post)
+        return SharedPost(post.getString("id"), post.optionalText("kind") ?: "note", post.optionalText("title"),
+            post.optString("text"), post.optionalText("cw"), post.getLong("occurred_at"), names, reactions, attachments(post),
+            Polls.parse(post.optJSONObject("poll")), Polls.tally(post.optJSONObject("poll_tally")),
+            post.optJSONArray("entities")?.toString() ?: "[]", tags(post), post.optionalText("account_id").orEmpty(),
+            AuthorLooks.of(post), post.optionalText("reply_to"), post.optJSONObject("parent")?.let(PostThreads::one),
+            post.optJSONObject("quote")?.optionalText("post_id"), post.optJSONObject("quoted")?.let(PostThreads::one),
+            post.optInt("reply_count", 0), post.optionalText("repost_of"))
     }
 
     /** A post's files as the server sent them; one without a blob is skipped. */

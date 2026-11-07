@@ -486,7 +486,9 @@ private fun FollowAdvanced(ceiling: JSONObject, enabled: Boolean, onChange: (Str
 internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Chorus, model: Model,
     onThread: ((SharedPost) -> Unit)? = null, onReply: ((SharedPost) -> Unit)? = null,
     /** Opens an author's profile (account, member) when it is shared with us. */
-    onProfile: ((String, String) -> Unit)? = null) {
+    onProfile: ((String, String) -> Unit)? = null,
+    /** Quote it in a new post of ours (D-127); null leaves Quote disabled. */
+    onQuote: ((SharedPost) -> Unit)? = null, onOpenPost: ((String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     var revealed by rememberSaveable(post.id) { mutableStateOf(false) }
     var expanded by rememberSaveable(post.id) { mutableStateOf(false) }
@@ -500,6 +502,15 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
             modifier = if (profile == null) Modifier else Modifier.clip(CircleShape)
                 .clickable(onClickLabel = "Open their profile") { onProfile?.invoke(post.accountId, profile) })
     }, onClick = onThread?.let { open -> { open(post) } }) {
+        // a reply says what it answers: the post itself when we may read it, else only that it replies
+        post.replyTo?.let { parentId ->
+            val to = post.parent?.authorNames?.joinToString(" & ")?.takeIf { it.isNotBlank() }
+                ?: model.posts.find { it.id == parentId }?.authors?.mapNotNull { model.member(it)?.shownName }?.joinToString(" & ")?.takeIf { it.isNotBlank() }
+            Text(if (to != null) "Replying to $to" else "Replying to a post", color = p.ink3, style = MaterialTheme.typography.bodySmall,
+                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = if (onOpenPost == null) Modifier else Modifier.clickable(onClickLabel = "Open the post this replies to") { onOpenPost(parentId) })
+            if (post.parent != null || model.posts.any { it.id == parentId }) ThreadQuote(parentId, post.parent, model, onOpenPost, chorus)
+        }
         if (post.cw != null) TextButton(onClick = { revealed = !revealed }) {
             Text("Content warning: ${post.cw} · ${if (revealed) "Hide" else "Show"}")
         }
@@ -513,26 +524,31 @@ internal fun SharedPostPreview(post: SharedPost, accountName: String, chorus: Ch
             }) { Text(if (expanded) "Show less" else "Show more") }
             PollCard(chorus, model, post.id, Reply.speaker(model)?.id, post.poll, post.pollTally)
             JournalMedia(post.attachments, chorus, names, post.occurredAt)
+            post.quotePostId?.let { ThreadQuote(it, post.quoted, model, onOpenPost, chorus) }
             if (post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
                 style = MaterialTheme.typography.bodySmall)
         }
         JournalPostActions(garden.vayne.chorus.data.PostThreads.foreignPost(post.id, post.kind, post.title, post.text, post.occurredAt, post.cw),
-            model, chorus, onReply = { (onThread ?: onReply)?.invoke(post) }, foreign = true,
+            model, chorus, onReply = { (onThread ?: onReply)?.invoke(post) }, foreign = true, replies = post.replyCount,
+            onQuote = onQuote?.let { quote -> { quote(post) } },
             reactions = PostReactions.merge(model.postReactions[post.id].orEmpty(), reactions),
             onReacted = { who -> reactions = PostReactions.toggle(reactions, who.id, who.shownName) })
     }
 }
 
+/** Each follow preset as "Name · what it means" (the request and Notifications screens). */
+internal val FOLLOW_PRESET_LABELS = mapOf(
+    "inherit" to "Account default", "close" to "Close · right away, exact time",
+    "gentle" to "Gentle · 5–20 min, rounded", "private" to "Private · 30–90 min, part of day",
+    "digest" to "Digest · daily summary", "off" to "Off · no switch alerts",
+    "custom" to "Custom (Advanced)",
+)
+
 @Composable
 internal fun FollowPresetPicker(label: String, choice: String, onChoice: (String) -> Unit) {
     val p = LocalChorusPalette.current
     var open by remember { mutableStateOf(false) }
-    val labels = mapOf(
-        "inherit" to "Account default", "close" to "Close · right away, exact time",
-        "gentle" to "Gentle · 5–20 min, rounded", "private" to "Private · 30–90 min, part of day",
-        "digest" to "Digest · daily summary", "off" to "Off · no switch alerts",
-        "custom" to "Custom (Advanced)",
-    )
+    val labels = FOLLOW_PRESET_LABELS
     val current = labels[choice] ?: labels.getValue("custom")
     ChoiceField(label, current) { open = true }
     MenuDrawer(open, { open = false }, label, "How soon and how exactly they hear about switches") {

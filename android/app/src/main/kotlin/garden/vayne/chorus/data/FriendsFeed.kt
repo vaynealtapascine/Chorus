@@ -23,12 +23,13 @@ object FriendsFeed {
         return sources.indices.filter { sources[it].more && sources[it].oldest == frontier }
     }
 
-    /** What to show: each post once, newest first, down to the frontier, with its account's name. */
+    /** What to show: each post once, newest first, down to the frontier, with its account's name. A
+     * repost has no words of its own and its original may be unreadable here, so it is left out. */
     fun shown(sources: List<Source>): List<Pair<String, SharedPost>> {
         val frontier = frontier(sources) ?: Long.MIN_VALUE
         val seen = HashSet<String>()
         return sources.flatMap { s -> s.posts.map { s.name to it } }
-            .filter { (_, post) -> post.occurredAt >= frontier && seen.add(post.id) }
+            .filter { (_, post) -> post.repostOf == null && post.occurredAt >= frontier && seen.add(post.id) }
             .sortedWith(compareByDescending<Pair<String, SharedPost>> { it.second.occurredAt }.thenByDescending { it.second.id })
     }
 }

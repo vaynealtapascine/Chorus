@@ -11,11 +11,15 @@ import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.*
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 
+/** The source id under which replies to our posts page (D-127); never an account id. */
+private const val REPLIES = "replies-to-us"
+
 @Composable
 internal fun JournalFriends(chorus: Chorus, model: Model, onThread: (String) -> Unit, onReply: (String) -> Unit,
-    onProfile: ((String, String) -> Unit)? = null) {
+    onProfile: ((String, String) -> Unit)? = null, onQuote: ((String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
-    // each followed account's pages so far; older ones load near the bottom (owner, 2026-11-07)
+    // each followed account's pages so far, plus other accounts' replies to our posts (D-127), which
+    // come from anyone whose reply we may read; older ones load near the bottom (owner, 2026-11-07)
     var sources by remember { mutableStateOf(listOf<FriendsFeed.Source>()) }
     val posts = remember(sources) { FriendsFeed.shown(sources) }
     var loading by remember { mutableStateOf(true) }
@@ -36,6 +40,12 @@ internal fun JournalFriends(chorus: Chorus, model: Model, onThread: (String) -> 
                 catch (e: kotlinx.coroutines.CancellationException) { throw e }
                 catch (_: Exception) { error = "Some friends’ posts could not be loaded. Try again when connected." }
             }
+            try {
+                val activity = JournalActivityApi.refresh(dev)
+                loaded += FriendsFeed.Source(REPLIES, "", activity.replies, activity.items.size >= JournalActivityApi.PAGE)
+            }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (_: Exception) { error = "Replies to your posts could not be loaded. Try again when connected." }
             sources = loaded
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (_: Exception) { error = "Friends’ posts need a connection. Your own journal is available in ${if (model.isPerson) "My posts" else "Our system"}." }
@@ -52,8 +62,13 @@ internal fun JournalFriends(chorus: Chorus, model: Model, onThread: (String) -> 
             val next = sources.toMutableList()
             for (i in waiting) {
                 val s = next[i]
-                val page = PeopleApi.posts(dev, s.accountId, before = s.oldest)
-                next[i] = s.copy(posts = s.posts + page, more = page.size >= FriendsFeed.PAGE)
+                next[i] = if (s.accountId == REPLIES) {
+                    val page = JournalActivityApi.load(dev, before = s.oldest)
+                    s.copy(posts = s.posts + page.replies, more = page.items.size >= JournalActivityApi.PAGE && page.replies.isNotEmpty())
+                } else {
+                    val page = PeopleApi.posts(dev, s.accountId, before = s.oldest)
+                    s.copy(posts = s.posts + page, more = page.size >= FriendsFeed.PAGE)
+                }
             }
             sources = next
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
@@ -66,10 +81,11 @@ internal fun JournalFriends(chorus: Chorus, model: Model, onThread: (String) -> 
             Text(error.orEmpty(), color = p.ink2)
             TextButton(onClick = { refresh++ }) { Text("Try again") }
         } }
-        if (!loading && error == null && posts.isEmpty()) item { Text("No shared posts yet. Posts from accounts you follow will appear here.",
+        if (!loading && error == null && posts.isEmpty()) item { Text("No shared posts yet. Posts from accounts you follow, and replies to yours, will appear here.",
             color = p.ink3, modifier = Modifier.padding(24.dp)) }
         items(posts, key = { it.second.id }) { (name, post) ->
-            SharedPostPreview(post, name, chorus, model, onThread = { onThread(it.id) }, onReply = { onReply(it.id) }, onProfile = onProfile)
+            SharedPostPreview(post, name.ifEmpty { "Someone" }, chorus, model, onThread = { onThread(it.id) }, onReply = { onReply(it.id) },
+                onProfile = onProfile, onQuote = onQuote?.let { quote -> { quote(it.id) } }, onOpenPost = onThread)
             HorizontalDivider(color = p.line)
         }
         if (loadingOlder) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp)) }

@@ -31,6 +31,8 @@ object PostCompose {
         quotePostId: String? = null,
         bucketIds: List<String> = emptyList(),
         authorIds: List<String> = listOf(authorId),
+        /** `delayed` or `none` (D-127); anything else notifies as usual. */
+        alerts: String = "",
     ): JSONObject {
         require(kind in setOf("note", "entry")) { "Choose a post type." }
         val selectedAudience = validatedAudience(Audience(audience, bucketIds), model.sharingBuckets.map { it.first }.toSet())
@@ -48,6 +50,7 @@ object PostCompose {
         if (replyTo != null) result.put("reply_to", replyTo)
         if (quotePostId != null) result.put("quote", JSONObject().put("post_id", quotePostId))
         if (attachmentIds.isNotEmpty()) result.put("attachments", JSONArray(attachmentIds))
+        if (alerts in JournalDraft.ALERTS) result.put("alerts", alerts)
         return result
     }
 

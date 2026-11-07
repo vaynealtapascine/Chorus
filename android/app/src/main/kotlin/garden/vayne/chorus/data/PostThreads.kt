@@ -52,6 +52,9 @@ object PostThreads {
         } }
     }
 
+    /** One post object as the server sends it. */
+    fun one(j: JSONObject): ThreadReply? = parse(JSONObject().put("replies", org.json.JSONArray().put(j))).firstOrNull()
+
     fun parseDetail(j: JSONObject): PostDetail = PostDetail(parse(j), PostReactions.fromServer(j),
         if (j.has("id") && j.has("text")) parse(JSONObject().put("replies", org.json.JSONArray().put(j))).firstOrNull() else null,
         j.optJSONArray("ancestors")?.let { parse(JSONObject().put("replies", it)) }.orEmpty(),

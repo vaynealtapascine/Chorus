@@ -24,7 +24,7 @@ internal fun destinationLabel(name: String) = when(name) {
 }
 private fun destinationIcon(name: String) = when(name) {
     "Home" -> AppIcon.Front; "People" -> AppIcon.Friends; "History" -> AppIcon.History
-    "Members" -> AppIcon.Members; "Chat" -> AppIcon.Chat; "Journal" -> AppIcon.Journal; else -> AppIcon.More
+    "Members" -> AppIcon.Members; "Chat" -> AppIcon.Chat; "Journal" -> AppIcon.Journal; "Notifications" -> AppIcon.Bell; else -> AppIcon.More
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

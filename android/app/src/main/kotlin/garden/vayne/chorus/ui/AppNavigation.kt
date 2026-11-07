@@ -21,7 +21,7 @@ enum class AppIcon(val resource: Int) {
     Friends(R.drawable.ic_friends), More(R.drawable.ic_more), Journal(R.drawable.ic_journal),
     Search(R.drawable.ic_search), Settings(R.drawable.ic_settings), History(R.drawable.ic_history),
     Swap(R.drawable.ic_switch_arrows), Plus(R.drawable.ic_plus), Close(R.drawable.ic_close),
-    Chevron(R.drawable.ic_chevron), Layers(R.drawable.ic_layers), Lock(R.drawable.ic_lock),
+    Chevron(R.drawable.ic_chevron), Layers(R.drawable.ic_layers), Lock(R.drawable.ic_lock), Bell(R.drawable.ic_bell),
 }
 
 @Composable
@@ -31,12 +31,14 @@ fun ChorusIcon(icon: AppIcon, description: String? = null, modifier: Modifier = 
 
 @Composable
 fun MoreScreen(person: Boolean, onMembers: () -> Unit, onHome: () -> Unit, onChat: () -> Unit, onPeople: () -> Unit, onJournal: () -> Unit, onHistory: () -> Unit,
-    onInsights: () -> Unit, onFronts: () -> Unit, onSettings: () -> Unit, onSearch: () -> Unit, onLink: () -> Unit) {
+    onInsights: () -> Unit, onFronts: () -> Unit, onSettings: () -> Unit, onSearch: () -> Unit, onLink: () -> Unit,
+    onNotifications: () -> Unit = {}) {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (!person) {
             item { DestinationRow("Members", "Your members and profiles", AppIcon.Members, onMembers) }
             item { DestinationRow("Fronting", "Current presence and quick switching", AppIcon.Front, onHome) }
         }
+        item { DestinationRow("Notifications", "Mentions, replies and friends’ news", AppIcon.Bell, onNotifications) }
         item { DestinationRow("Chat", "Channels and direct messages", AppIcon.Chat, onChat) }
         item { DestinationRow("Friends", "Connections and following", AppIcon.Friends, onPeople) }
         item { DestinationRow("Journal", "Entries, notes and member journals", AppIcon.Journal, onJournal) }

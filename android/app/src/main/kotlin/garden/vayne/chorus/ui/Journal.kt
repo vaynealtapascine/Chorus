@@ -174,6 +174,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
     var pollMultiple by field({ it.multiple }) { copy(multiple = it) }
     var audience by field({ it.audience }) { copy(audience = it) }
     var bucketIds by field({ it.buckets }) { copy(buckets = it) }
+    var alerts by field({ it.alerts }) { copy(alerts = it) }
     val busy = draftState.busy
     var error by JournalField({ draftState.error }, session::report)
     val actions = rememberCoroutineScope()
@@ -250,6 +251,11 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
     }
 
     val feedListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // other accounts' replies and hearts on our posts, for our own cards' counts (D-127)
+    LaunchedEffect(chorus.device?.session, model.posts.size) {
+        val dev = chorus.device ?: return@LaunchedEffect
+        try { garden.vayne.chorus.data.JournalActivityApi.refresh(dev) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) {}
+    }
     // our own newest post: shown at once instead of slipping in above the first visible card
     var justPosted by remember { mutableStateOf<String?>(null) }
     // which tab and newest post the feed last showed; kept outside the scene so returning from the
@@ -347,7 +353,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                             val authors = draft.authors.orEmpty()
                             val payload = PostCompose.payload(live, dev.accountId, draft.kind, authors.first(), draft.body,
                                 draft.title, draft.cw, draft.audience, draft.mood, draft.tags, draft.reply, attachmentIds = files,
-                                quotePostId = draft.quote, bucketIds = draft.buckets, authorIds = authors)
+                                quotePostId = draft.quote, bucketIds = draft.buckets, authorIds = authors, alerts = draft.alerts)
                             if (draft.poll) payload.put("poll", Polls.draft(draft.options, draft.multiple).getOrThrow())
                             chorus.create("post.create", id, payload, scope = "account:${dev.accountId}", expectedEditorOwner = session.owner)
                         })
@@ -392,12 +398,16 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                             inner()
                         } })
                 }
-                if (quoteOf != null) item {
+                quoteOf?.let { quoted -> item {
                     Column(Modifier.padding(start = 52.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        QuoteEmbed(model.posts.find { it.id == quoteOf }?.takeIf { it.repostOf == null }, model)
+                        val local = model.posts.find { it.id == quoted }
+                        ThreadQuote(quoted, null, model, null, chorus)
+                        // another account's post lends its audience to the quote (D-127)
+                        if (local == null) Text("Only people who can also read the quoted post will see this.", color = p.ink3,
+                            style = MaterialTheme.typography.bodySmall)
                         TextButton(enabled = !busy, onClick = { quoteOf = null }) { Text("Remove quote") }
                     }
-                }
+                } }
                 if (attachments.isNotEmpty()) item {
                     Box(Modifier.padding(start = 52.dp)) {
                         JournalAttachments(attachments, !busy, onChange = { index, file -> attachments = attachments.mapIndexed { i, old -> if (i == index) file else old } },
@@ -409,6 +419,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                     item { ChorusField(mood, { mood = it }, label = { Text("Mood (optional)") }, modifier = Modifier.fillMaxWidth()) }
                     item { ChorusField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, modifier = Modifier.fillMaxWidth()) }
                     item { Column { JournalPollDraftFields(pollOn, { pollOn = it }, pollOptions, { pollOptions = it }, pollMultiple) { pollMultiple = it } } }
+                    item { PostAlertsChoice(alerts, replyTo != null) { alerts = it } }
                 }
                 if (draftState.draft.recovery != null) item {
                     Text("Some saved draft details could not be read. Review the recovered content, authors and audience before posting.", color = p.danger)
@@ -445,7 +456,8 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     ChatIconButton(R.drawable.ic_image, "Attach images or files") { if (!busy) picker.launch("*/*") }
                     ChatIconButton(R.drawable.ic_more, if (editorOptions) "Hide post options" else "Warning, mood, tags and poll") { editorOptions = !editorOptions }
-                    Text(listOfNotNull("CW".takeIf { cw.isNotBlank() }, "Poll".takeIf { pollOn }, "${attachments.size} ${if (attachments.size == 1) "file" else "files"}".takeIf { attachments.isNotEmpty() }).joinToString(" · "),
+                    Text(listOfNotNull("CW".takeIf { cw.isNotBlank() }, "Poll".takeIf { pollOn },
+                        "Delayed".takeIf { alerts == "delayed" }, "Silent".takeIf { alerts == "none" }, "${attachments.size} ${if (attachments.size == 1) "file" else "files"}".takeIf { attachments.isNotEmpty() }).joinToString(" · "),
                         color = p.ink3, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     Text("${body.trim().split(Regex("\\s+")).count { it.isNotBlank() }} words", color = p.ink3,
                         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(end = 12.dp))
@@ -533,7 +545,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         Box(Modifier.weight(1f)) {
         if (journalTab == "friends") JournalFriends(chorus, model, onThread = { threadPostId = it }, onProfile = openFriend, onReply = {
             launchDraft("reply", it, audience = "server")
-        }) else LazyColumn(Modifier.fillMaxSize(), state = feedListState, contentPadding = PaddingValues(bottom = 80.dp)) {
+        }, onQuote = { launchDraft("quote", it) }) else LazyColumn(Modifier.fillMaxSize(), state = feedListState, contentPadding = PaddingValues(bottom = 80.dp)) {
         if (shownEvents.isEmpty()) item {
             Text(if (journalTab == "entries") "No journal entries yet. Start with a few words." else "No posts or switches yet. Write the first note.",
                 color = p.ink2, modifier = Modifier.padding(24.dp))
@@ -574,6 +586,24 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         }
         }
     }
+    }
+}
+
+/** Who hears about this post (D-127): as usual, a random 5–60 minutes later, or nobody. Covers the
+ * post alerts friends asked for and, for a reply, the author it answers. */
+@Composable
+private fun PostAlertsChoice(alerts: String, reply: Boolean, onChange: (String) -> Unit) {
+    val p = LocalChorusPalette.current
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Notifications", color = p.ink2, style = MaterialTheme.typography.labelLarge)
+        val options = listOf("" to "As usual", "delayed" to "Random delay", "none" to "Don’t notify")
+        Segmented(options.map { it.second }, options.indexOfFirst { it.first == alerts }.coerceAtLeast(0)) { onChange(options[it].first) }
+        Text(when (alerts) {
+            "delayed" -> "Anyone told about it hears a random 5–60 minutes later."
+            "none" -> "Nobody is told about it; it still shows where they can read it."
+            else -> if (reply) "The author you’re replying to, and friends who asked for alerts, hear right away."
+                else "Friends who asked for alerts hear right away."
+        }, color = p.ink3, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -697,7 +727,7 @@ private fun JournalPostCardBody(post: JournalPost, model: Model, chorus: Chorus,
             post.mood?.let { Text(it, color = p.ink2, style = MaterialTheme.typography.bodySmall) }
             JournalMedia(post.attachments, chorus, names, post.occurredAt, full = full)
             PollCard(chorus, model, post.id, Reply.speaker(model)?.id)
-            post.quotePostId?.let { id -> ThreadQuote(id, quoted, model, onOpenPost) }
+            post.quotePostId?.let { id -> ThreadQuote(id, quoted, model, onOpenPost, chorus) }
             // tags close the post, after its media, poll and quote, just above the actions
             if (post.tags.isNotEmpty()) Text(post.tags.joinToString("  ") { "#$it" }, color = p.accent,
                 style = MaterialTheme.typography.bodySmall)
@@ -780,7 +810,8 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
                         onQuote = onQuote, onOpenPost = open, lineAbove = i > 0, inThread = true, quoted = parent.quoted,
                         lineBelow = true, wide = true, divider = false)
                     else ThreadReplyCard(parent, chorus, model, replyAuthor?.id, onOpen = { open(parent.id) },
-                        lineAbove = i > 0, lineBelow = true, wide = true, divider = false, onOpenPost = open, onProfile = onProfile)
+                        lineAbove = i > 0, lineBelow = true, wide = true, divider = false, onOpenPost = open, onProfile = onProfile,
+                        onQuote = onQuote)
                 }
             }
             if (rootPost != null) item(key = "root:$postId") {
@@ -842,7 +873,7 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
                     if (own != null) JournalPostCard(own, model, chorus, onReply = { open(it.id) }, onThread = { open(it.id) },
                         onQuote = onQuote, onOpenPost = open, inThread = listed === replies, quoted = reply.quoted)
                     else ThreadReplyCard(reply, chorus, model, replyAuthor?.id, onOpen = { open(reply.id) }, onOpenPost = open,
-                        onProfile = onProfile)
+                        onProfile = onProfile, onQuote = onQuote)
                 }
             }
         }
@@ -938,7 +969,7 @@ private fun JournalReplyBar(author: Member?, authors: List<Member>, onPick: ((St
 private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, member: String?, full: Boolean = false,
     onOpen: (() -> Unit)? = null, lineAbove: Boolean = false, lineBelow: Boolean = false, wide: Boolean = false,
     divider: Boolean = !full, onOpenPost: ((String) -> Unit)? = null,
-    onProfile: ((String, String) -> Unit)? = null) {
+    onProfile: ((String, String) -> Unit)? = null, onQuote: ((JournalPost) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     var revealed by rememberSaveable(reply.id) { mutableStateOf(false) }
@@ -979,12 +1010,12 @@ private fun ThreadReplyCard(reply: ThreadReply, chorus: Chorus, model: Model, me
                 fontSize = if (full) 16.sp else 15.sp, lineHeight = if (full) 24.sp else 21.sp))
             JournalMedia(reply.attachments, chorus, names, reply.occurredAt, full = full)
             PollCard(chorus, model, reply.id, member, reply.poll, reply.pollTally)
-            reply.quotePostId?.let { ThreadQuote(it, reply.quoted, model, onOpenPost) }
+            reply.quotePostId?.let { ThreadQuote(it, reply.quoted, model, onOpenPost, chorus) }
             if (reply.tags.isNotEmpty()) Text(reply.tags.joinToString("  ") { "#$it" }, color = p.accent,
                 style = MaterialTheme.typography.bodySmall)
         }
         if (!full) JournalPostActions(PostThreads.foreignPost(reply.id, "note", reply.title, reply.text, reply.occurredAt, reply.cw),
-            model, chorus, onReply = { onOpen?.invoke() }, foreign = true, replies = reply.replyCount,
+            model, chorus, onReply = { onOpen?.invoke() }, onQuote = onQuote, foreign = true, replies = reply.replyCount,
             reactions = PostReactions.merge(model.postReactions[reply.id].orEmpty(), reactions),
             onReacted = { who -> reactions = PostReactions.toggle(reactions, who.id, who.shownName) })
     }

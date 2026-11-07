@@ -26,6 +26,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import garden.vayne.chorus.data.Inbox
+import garden.vayne.chorus.data.InboxRead
+import garden.vayne.chorus.ui.InboxRoutes
+import garden.vayne.chorus.ui.Notifications
+import garden.vayne.chorus.ui.inboxReader
 import androidx.compose.material3.Text
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
@@ -208,7 +215,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Tab(val label: String, val icon: AppIcon) { Home("Fronting", AppIcon.Front), Chat("Chat", AppIcon.Chat), Journal("Journal", AppIcon.Journal), People("Friends", AppIcon.Friends), Members("Members", AppIcon.Members), More("More", AppIcon.More), History("Front history", AppIcon.History) }
+private enum class Tab(val label: String, val icon: AppIcon) { Home("Fronting", AppIcon.Front), Notifications("Notifications", AppIcon.Bell), Chat("Chat", AppIcon.Chat), Journal("Journal", AppIcon.Journal), People("Friends", AppIcon.Friends), Members("Members", AppIcon.Members), More("More", AppIcon.More), History("Front history", AppIcon.History) }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -348,16 +355,34 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             val person = model.isPerson
             val activeTab = routedTab
             val destinations = navigationTabs
+            // the Notifications badge: unread for whoever is reading (D-127); checked every minute while live
+            val inbox by Inbox.state.collectAsState()
+            LaunchedEffect(chorus.device?.session, status == Status.Live) {
+                val dev = chorus.device ?: return@LaunchedEffect
+                if (status != Status.Live) return@LaunchedEffect
+                while (true) {
+                    try { Inbox.refresh(dev, chorus.model.value) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) {}
+                    kotlinx.coroutines.delay(60_000)
+                }
+            }
+            val unread = inbox?.takeIf { it.first == chorus.device?.accountId }?.second?.let { items ->
+                Inbox.unread(items, inboxReader(model, null)?.let { model.accountPrefs.inboxRead[it.id] } ?: InboxRead(), model.accountPrefs.inboxShows)
+            } ?: 0
+            @Composable fun TabIcon(t: Tab) {
+                if (t == Tab.Notifications && unread > 0) BadgedBox(badge = {
+                    Badge(containerColor = p.sun, contentColor = p.onSun) { Text(if (unread > 99) "99+" else unread.toString()) }
+                }) { ChorusIcon(t.icon, "${t.label}, $unread unread") } else ChorusIcon(t.icon)
+            }
             fun select(t: Tab) { tab = t; settingsOpen = false; searchOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null }
             if (expanded && !chatStageCapture) NavigationRail(containerColor = p.surface) {
                 destinations.forEach { t -> NavigationRailItem(selected = t == activeTab || (t == Tab.More && activeTab !in destinations),
-                    onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = { Text(t.label) }) }
+                    onClick = { select(t) }, icon = { TabIcon(t) }, label = { Text(t.label) }) }
             }
             Column(Modifier.weight(1f).navigationBarsPadding()) {
             // Fronting, its history and its subpages draw their own Figma bars (F3.1, F3.4, F3.7, F3.9)
             val frontingChrome = !person && !searchOpen && !settingsOpen && !insightsOpen && sharedDraft == null &&
                 (frontsOpen || layersFront != null || activeTab == Tab.Home || activeTab == Tab.History)
-            val chatOwnChrome = frontingChrome || (activeTab in listOf(Tab.Chat, Tab.Journal) || (activeTab == Tab.Members && membersFocused)) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
+            val chatOwnChrome = frontingChrome || (activeTab in listOf(Tab.Chat, Tab.Journal, Tab.Notifications) || (activeTab == Tab.Members && membersFocused)) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
             if (chatOwnChrome && !chatStageCapture) Box(Modifier.fillMaxWidth().background(p.surface).statusBarsPadding())
             if (!chatStageCapture && !chatOwnChrome) Row(
                 Modifier.fillMaxWidth().background(p.surface).statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
@@ -414,6 +439,15 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 when (shownTab) {
                     Tab.Home -> Home(chorus, model, onFronts = { frontsOpen = true }, onHistory = { historyFront = it; tab = Tab.History },
                         onLayers = { layersFront = it })
+                    Tab.Notifications -> Notifications(chorus, model, InboxRoutes(
+                        onPost = { id -> journalReplyPost = null; journalOpenPost = id; tab = Tab.Journal },
+                        onChat = { channel, message ->
+                            chatSpace = model.channels.find { it.id == channel }?.spaceId; chatChannel = channel
+                            chatMessage = message; chatSearchHit = null; tab = Tab.Chat
+                        },
+                        onFriends = { tab = Tab.People },
+                        onHistory = { tab = if (person) Tab.Journal else Tab.History },
+                        onSettings = { settingsOpen = true }))
                     Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
                         onStageCapture = { chatStageCapture = it }, onDismissSearchHit = { chatSearchHit = null },
                         sharedDraft = chatShare, sharedChannel = sharedChannel,
@@ -440,7 +474,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     Tab.History -> History(chorus, model, historyFront, onBack = { tab = Tab.Home })
                     Tab.More -> MoreScreen(person, onMembers = { tab = Tab.Members }, onHome = { tab = Tab.Home }, onChat = { tab = Tab.Chat }, onPeople = { tab = Tab.People }, onJournal = { tab = Tab.Journal }, onHistory = { tab = Tab.History },
                         onInsights = { insightsOpen = true }, onFronts = { frontsOpen = true }, onSettings = { settingsOpen = true },
-                        onSearch = { searchSection="Messages"; searchOpen = true }, onLink = { linking = true })
+                        onSearch = { searchSection="Messages"; searchOpen = true }, onLink = { linking = true },
+                        onNotifications = { tab = Tab.Notifications })
                 }
                 }
                 }
@@ -462,7 +497,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     selected = (t == activeTab || (t == Tab.Home && activeTab == Tab.History) ||
                         (t == Tab.More && activeTab !in destinations && !(activeTab == Tab.History && Tab.Home in destinations))) &&
                         !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen,
-                    onClick = { select(t) }, icon = { ChorusIcon(t.icon) }, label = {
+                    onClick = { select(t) }, icon = { TabIcon(t) }, label = {
                         Text(t.label, fontSize = 11.sp, lineHeight = 16.sp, maxLines = 1,
                             overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                     },

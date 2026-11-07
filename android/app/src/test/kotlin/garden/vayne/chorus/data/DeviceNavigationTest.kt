@@ -5,9 +5,10 @@ import org.junit.Test
 
 class DeviceNavigationTest {
     @Test fun defaultsPutJournalInTheBarAndFriendsRemainAvailable() {
-        assertEquals(listOf("Members", "Home", "Chat", "Journal"), DeviceNavigation.resolve(null, false))
+        assertEquals(listOf("Home", "Notifications", "Chat", "Journal"), DeviceNavigation.resolve(null, false))
         assertTrue("People" in DeviceNavigation.available(false))
-        assertEquals(listOf("Journal", "Chat", "People"), DeviceNavigation.resolve(null, true))
+        assertTrue("Members" in DeviceNavigation.available(false))
+        assertEquals(listOf("Journal", "Notifications", "Chat", "People"), DeviceNavigation.resolve(null, true))
     }
     @Test fun persistedNamesAreBoundedDeduplicatedAndAccountAppropriate() {
         assertEquals(listOf("Chat", "People", "Journal", "Members"), DeviceNavigation.resolve("Chat,Chat,bad,People,Journal,Members,Home", false))

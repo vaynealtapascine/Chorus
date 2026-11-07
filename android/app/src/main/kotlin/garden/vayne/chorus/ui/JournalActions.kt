@@ -52,7 +52,8 @@ private const val NAME_NOTICE = "heart_name_notice"
  * (Figma F6.3: 18 dp icons, 13 sp counts), so the columns line up from post to post whatever the
  * counts are; each target reaches 8 dp past its icon. A heart is one tap; the contextual identity
  * disclosure appears only the first time on this device, and only when other accounts can read
- * the post. Long-press the heart to see who reacted. Callbacks left null hide that action. */
+ * the post. Long-press the heart to see who reacted. The row is the same on every post (D-127):
+ * an action whose callback is null is shown disabled, never hidden, so the columns never move. */
 @Composable
 internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enabled: Boolean = true,
     onReply: (() -> Unit)? = null, onReact: (() -> Unit)? = null, replies: Int = 0,
@@ -76,50 +77,58 @@ internal fun JournalActions(reactions: List<PostReaction>, member: Member?, enab
     val icon = if (large) 22.dp else 18.dp
     // keyed, so a heart appearing between two others never hands its animation state to a neighbour
     val actions = ArrayList<Pair<String, @Composable () -> Unit>>()
-    if (onReply != null) actions += "reply" to {
-        ActionButton(shown(replies), p.ink3, "Reply", large, onClick = onReply) {
-            Icon(painterResource(R.drawable.ic_reply), null, Modifier.size(icon), tint = p.ink3)
+    // an action this post can't take is shown faded and does nothing
+    fun faded(tint: Color, on: Boolean) = if (on) tint else tint.copy(alpha = .38f)
+    actions += "reply" to {
+        ActionButton(shown(replies), faded(p.ink3, onReply != null), "Reply", large, enabled = onReply != null, onClick = { onReply?.invoke() }) {
+            Icon(painterResource(R.drawable.ic_reply), null, Modifier.size(icon), tint = faded(p.ink3, onReply != null))
         }
     }
-    if (onRepost != null) actions += "repost" to {
+    // repost and quote share one button: it works if either does, and its menu fades the other
+    val canRepost = onRepost != null || (reposted && onUndoRepost != null)
+    actions += "repost" to {
         Box {
-            val tint = if (reposted) p.accent else p.ink3
-            ActionButton(shown(reposts), tint, if (reposted) "Reposted; open repost options" else "Repost", large,
-                onClick = { repostMenu = true }) {
+            val tint = faded(if (reposted) p.accent else p.ink3, canRepost || onQuote != null)
+            ActionButton(shown(reposts), tint, if (reposted) "Reposted; open repost options" else "Repost or quote", large,
+                enabled = canRepost || onQuote != null, onClick = { repostMenu = true }) {
                 PopIcon(R.drawable.ic_repost, reposted, tint, icon)
             }
             MenuDrawer(repostMenu, { repostMenu = false }, if (reposted) "Reposted" else "Repost") {
-                MenuRow(if (reposted) "Undo repost" else "Repost", R.drawable.ic_repost, enabled = enabled,
-                    subtitle = null) {
+                MenuRow(if (reposted) "Undo repost" else "Repost", R.drawable.ic_repost, enabled = enabled && canRepost,
+                    subtitle = if (canRepost) null else "Only your own system’s posts can be reposted") {
                     repostMenu = false
-                    if (reposted) onUndoRepost?.invoke() else onRepost()
+                    if (reposted) onUndoRepost?.invoke() else onRepost?.invoke()
                 }
-                if (onQuote != null) MenuRow("Quote", R.drawable.ic_format_quote, "Repost with your own words") { repostMenu = false; onQuote() }
+                MenuRow("Quote", R.drawable.ic_format_quote, if (onQuote != null) "Repost with your own words" else "This post can’t be quoted",
+                    enabled = onQuote != null) { repostMenu = false; onQuote?.invoke() }
             }
         }
     }
-    if (canReact || hearts > 0) actions += "heart" to {
-        val tint = if (selected) p.danger else p.ink3
+    actions += "heart" to {
+        val tint = faded(if (selected) p.danger else p.ink3, canReact || hearts > 0)
         ActionButton(shown(hearts), tint,
             if (canReact) "${if (selected) "Remove heart" else "Heart"} as ${member!!.shownName}; visible to post readers"
-            else "$hearts ${if (hearts == 1) "heart" else "hearts"}", large, enabled = enabled || !canReact,
+            else "$hearts ${if (hearts == 1) "heart" else "hearts"}", large, enabled = (enabled && canReact) || hearts > 0,
             onClick = { if (canReact) heart() else who = true },
             onLongClick = { who = true }.takeIf { hearts > 0 }, longClickLabel = "Show who reacted") {
             PopIcon(if (selected) R.drawable.ic_heart_filled else R.drawable.ic_heart, selected, tint, icon, burst = true)
         }
     }
-    if (onBookmark != null) actions += "save" to {
-        val tint = if (saved) p.accent else p.ink3
-        ActionButton(null, tint, if (saved) "Remove from saved" else "Save", large, onClick = onBookmark) {
+    actions += "save" to {
+        val tint = faded(if (saved) p.accent else p.ink3, onBookmark != null)
+        ActionButton(null, tint, if (onBookmark == null) "Save (not available for this post)" else if (saved) "Remove from saved" else "Save", large,
+            enabled = onBookmark != null, onClick = { onBookmark?.invoke() }) {
             PopIcon(if (saved) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark, saved, tint, icon)
         }
     }
     // with a link to copy (D-109), Share opens a small menu: Copy link, then the system's Share
-    if (onShare != null || onCopyLink != null) actions += "share" to {
+    actions += "share" to {
         var shareMenu by remember { mutableStateOf(false) }
+        val canShare = onShare != null || onCopyLink != null
         Box {
-            ActionButton(null, p.ink3, "Share", large, onClick = { if (onCopyLink != null) shareMenu = true else onShare?.invoke() }) {
-                Icon(painterResource(R.drawable.ic_share), null, Modifier.size(icon), tint = p.ink3)
+            ActionButton(null, faded(p.ink3, canShare), if (canShare) "Share" else "Share (nothing to share)", large, enabled = canShare,
+                onClick = { if (onCopyLink != null) shareMenu = true else onShare?.invoke() }) {
+                Icon(painterResource(R.drawable.ic_share), null, Modifier.size(icon), tint = faded(p.ink3, canShare))
             }
             MenuDrawer(shareMenu, { shareMenu = false }, "Share") {
                 MenuRow("Copy link", R.drawable.ic_link, "Opens for people who can already read it") { shareMenu = false; onCopyLink?.invoke() }
@@ -253,9 +262,14 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
             finally { busy = false }
         }
     }
-    // a post from another account isn't in the local replica: it can be hearted and shared, not reposted or saved
+    // a post from another account isn't in the local replica: it can be hearted, quoted and shared, not reposted or saved
     val own = member?.takeIf { !foreign }?.let { JournalSocial.repostBy(model.posts, post.id, it.id) }
-    JournalActions(reactions, member, !busy, onReply = onReply, replies = replies ?: JournalSocial.replyCount(model.posts, post.id),
+    // our own posts also count other accounts' replies and show their hearts (GET /posts/activity)
+    val activity by JournalActivityApi.state.collectAsState()
+    val theirs = activity?.takeIf { !foreign && it.first == account }?.second
+    val shownReactions = theirs?.reactions?.get(post.id)?.let { PostReactions.merge(reactions, it) } ?: reactions
+    JournalActions(shownReactions, member, !busy, onReply = onReply,
+        replies = replies ?: (JournalSocial.replyCount(model.posts, post.id) + (theirs?.replyCounts?.get(post.id) ?: 0)),
         reposts = JournalSocial.reposts(model.posts, post.id).size, reposted = own != null,
         onRepost = member?.takeIf { !foreign }?.let { who -> {
             write("Could not repost. Try again.") {
@@ -266,7 +280,8 @@ internal fun JournalPostActions(post: JournalPost, model: Model, chorus: Chorus,
         onUndoRepost = own?.let { repost -> { write("Could not undo the repost. Try again.") {
             chorus.create("post.delete", repost.id, org.json.JSONObject())
         } } },
-        onQuote = onQuote?.takeIf { !foreign }?.let { { it(post) } },
+        // another account's post can be quoted too; the quote borrows its audience (D-127)
+        onQuote = onQuote?.let { { it(post) } },
         onShare = JournalSocial.shareText(post.title, post.cw, post.text).takeIf { it.isNotBlank() }?.let { text ->
             { shareJournalText(ctx, post.title, text) }
         },

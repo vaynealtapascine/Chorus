@@ -33,10 +33,12 @@ data class JournalDraft(val id: String, val revision: Long = 0, val body: String
     val launches: List<JournalLaunch> = emptyList(), val recovery: String? = null,
     val receipts: List<String> = emptyList(),
     /** The writer picked this audience, rather than it being the account's default (D-117). */
-    val audienceChosen: Boolean = false) {
+    val audienceChosen: Boolean = false,
+    /** Who hears about it (D-127): "" as usual, `delayed` (a random 5–60 minutes later) or `none`. */
+    val alerts: String = "") {
     val occupied: Boolean get() = body.isNotEmpty() || title.isNotEmpty() || files.isNotEmpty() ||
         authors != null || cw.isNotEmpty() || tags.isNotEmpty() || mood.isNotEmpty() || reply != null ||
-        quote != null || poll || options.any { it.isNotEmpty() } || audienceChosen || recovery != null
+        quote != null || poll || options.any { it.isNotEmpty() } || audienceChosen || recovery != null || alerts.isNotEmpty()
 
     /** A draft nobody has started shows the account's default audience. Once it holds anything,
      * what it shows stays, so a default changed on another device never widens words being written. */
@@ -51,9 +53,12 @@ data class JournalDraft(val id: String, val revision: Long = 0, val body: String
         .put("reply", reply).put("quote", quote).put("poll", poll).put("options", JSONArray(options)).put("multiple", multiple)
         .put("files", JSONArray(files.map { it.json() })).put("editing", editing).put("advanced", advanced)
         .put("sendingPost", sendingPost).put("launches", JSONArray(launches.map { it.json() })).put("recovery", recovery)
-        .put("receipts", JSONArray(receipts)).toString()
+        .put("receipts", JSONArray(receipts)).put("alerts", alerts).toString()
 
     companion object {
+        /** A post's notification choices besides the usual (D-127). */
+        val ALERTS = setOf("delayed", "none")
+
         /** Salvage fields independently. Any damage preserves the entire original record inside
          * recovery, blocks send, and requires review; defaults must never silently widen privacy
          * or replace an explicit author selection with the current front. */
@@ -86,6 +91,7 @@ data class JournalDraft(val id: String, val revision: Long = 0, val body: String
                 editing = field(true) { j.getBoolean("editing") }, advanced = field(false) { j.getBoolean("advanced") },
                 sendingPost = nullable("sendingPost"), recovery = nullable("recovery"),
                 receipts = if (j.has("receipts")) strings("receipts") else emptyList(),
+                alerts = j.optString("alerts").takeIf { it in ALERTS }.orEmpty(),
                 launches = field(emptyList()) { j.getJSONArray("launches").let { a -> List(a.length()) { i -> a.getJSONObject(i).let {
                     JournalLaunch(it.getString("id"), it.getString("kind"), it.getString("text"), files(it.getJSONArray("files")),
                         it.optString("post").takeIf(String::isNotEmpty), it.optString("author").takeIf(String::isNotEmpty),

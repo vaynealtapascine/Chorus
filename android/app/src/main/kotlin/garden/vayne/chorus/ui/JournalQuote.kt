@@ -49,12 +49,25 @@ internal fun QuoteEmbed(quoted: JournalPost?, model: Model, modifier: Modifier =
 
 /** The quote inside a thread post: the device's own copy when it has one, else the server's. */
 @Composable
-internal fun ThreadQuote(quotePostId: String, quoted: ThreadReply?, model: Model, onOpen: ((String) -> Unit)?,
+internal fun ThreadQuote(quotePostId: String, quoted: ThreadReply?, model: Model, onOpen: ((String) -> Unit)?, chorus: garden.vayne.chorus.data.Chorus? = null,
     gone: String = "Quoted post unavailable") {
     val local = model.posts.find { it.id == quotePostId }?.takeIf { it.repostOf == null }
     val open = onOpen?.let { { it(quotePostId) } }
-    if (local != null || quoted == null) QuoteEmbed(local, model, onOpen = open, gone = gone)
-    else QuoteEmbed(JournalPost(quoted.id, "note", quoted.authorIds, quoted.title, quoted.text, quoted.occurredAt, quoted.cw,
-        "server", null, null, emptyList(), entities = quoted.entities), model, onOpen = open,
-        names = quoted.authorNames.joinToString(" & ").ifBlank { "Someone" }, gone = gone)
+    val fetched = if (local == null && quoted == null) rememberRemotePost(chorus, quotePostId) else null
+    val remote = quoted ?: fetched
+    if (local != null || remote == null) QuoteEmbed(local, model, onOpen = open, gone = gone)
+    else QuoteEmbed(JournalPost(remote.id, "note", remote.authorIds, remote.title, remote.text, remote.occurredAt, remote.cw,
+        "server", null, null, emptyList(), entities = remote.entities), model, onOpen = open,
+        names = remote.authorNames.joinToString(" & ").ifBlank { "Someone" }, gone = gone)
+}
+
+/** Another account's post, read once per process through the server's audience check; null while
+ * loading, offline, or when this reader may not read it. */
+@Composable
+internal fun rememberRemotePost(chorus: garden.vayne.chorus.data.Chorus?, id: String): ThreadReply? {
+    val state = androidx.compose.runtime.produceState(garden.vayne.chorus.data.RemotePosts.cached(id), id, chorus?.device?.session) {
+        val dev = chorus?.device ?: return@produceState
+        value = garden.vayne.chorus.data.RemotePosts.get(dev, id)
+    }
+    return state.value
 }
