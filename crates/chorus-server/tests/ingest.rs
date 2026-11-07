@@ -584,16 +584,26 @@ fn handles_are_one_namespace_for_claims_and_accounts() {
     };
     let kai = op(1, "member.create", &sa, json!({}), NOW).entity_id.unwrap();
     assert_eq!(push(1, &a, &sa, "member.create", json!({"name": "Kai", "handles": ["kai"]}), None), None);
-    assert_eq!(push(2, &a, &sa, "member.set", json!({"handles": ["kai", "kai_2"]}), Some(&kai)), None, "own claims again");
+    assert_eq!(
+        push(2, &a, &sa, "member.set", json!({"handles": ["kai", "kai_2"]}), Some(&kai)),
+        None,
+        "own claims again"
+    );
     let taken = push(3, &b, &sb, "member.create", json!({"name": "Kai", "handles": ["kai_2"]}), None).unwrap();
     assert_eq!(taken, ("conflict".to_string(), "@kai_2 is taken".to_string()));
     let account = push(4, &b, &sb, "member.create", json!({"name": "S", "handles": ["stars"]}), None).unwrap();
     assert_eq!(account.0, "conflict", "an account's handle can't be claimed");
-    assert_eq!(push(5, &a, &sa, "member.create", json!({"name": "S", "handles": ["stars"]}), None).unwrap().0, "conflict");
+    assert_eq!(
+        push(5, &a, &sa, "member.create", json!({"name": "S", "handles": ["stars"]}), None).unwrap().0,
+        "conflict"
+    );
     let renamed = push(6, &b, &sb, "account.set", json!({"handle": "kai"}), Some(&b)).unwrap();
     assert_eq!(renamed.0, "conflict", "nor can an account take a member's claim");
     assert_eq!(push(7, &b, &sb, "account.set", json!({"handle": "moons"}), Some(&b)), None);
-    assert_eq!(push(8, &b, &sb, "member.create", json!({"name": "D", "handles": ["a.b"]}), None).unwrap().0, "bad_request");
+    assert_eq!(
+        push(8, &b, &sb, "member.create", json!({"name": "D", "handles": ["a.b"]}), None).unwrap().0,
+        "bad_request"
+    );
 }
 
 #[test]
@@ -603,7 +613,9 @@ fn enrolment_writes_the_account_handle_into_the_log_once() {
     assert_eq!(chorus_server::handles::backfill_account_handles(&c, NOW).unwrap(), 1);
     assert_eq!(chorus_server::handles::backfill_account_handles(&c, NOW).unwrap(), 0, "once each");
     let payload: String = c
-        .query_row("SELECT payload FROM op WHERE kind='account.set' AND scope=?1", [format!("account:{a}")], |r| r.get(0))
+        .query_row("SELECT payload FROM op WHERE kind='account.set' AND scope=?1", [format!("account:{a}")], |r| {
+            r.get(0)
+        })
         .unwrap();
     assert_eq!(serde_json::from_str::<Value>(&payload).unwrap(), json!({"handle": "stars"}));
 }

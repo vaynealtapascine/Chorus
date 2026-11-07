@@ -320,7 +320,8 @@ pub fn authors(conn: &Connection, me: &str, space: &str) -> Result<Value, SpaceE
     // the complete name only where its own audience allows; handles as cards carry them (D-126)
     let mut book = crate::handles::Book::default();
     for card in &mut members {
-        let (Some(id), Some(owner)) = (card["id"].as_str().map(str::to_string), card["account_id"].as_str().map(str::to_string))
+        let (Some(id), Some(owner)) =
+            (card["id"].as_str().map(str::to_string), card["account_id"].as_str().map(str::to_string))
         else {
             continue;
         };

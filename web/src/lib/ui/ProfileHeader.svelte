@@ -25,7 +25,7 @@
     {#if actions}<div class="actions">{@render actions()}</div>{/if}
   </div>
   <h1 class="display" style="color: {tone?.name ?? 'inherit'}">{name}</h1>
-  {#if handle}<p class="handle">@{handle}{#if also.length}<span class="also"> · also {also.map((h) => `@${h}`).join(', ')}</span>{/if}</p>{/if}
+  {#if handle}<p class="handle">@{handle}{#if also.length}<span class="also">{` · also ${also.map((h) => `@${h}`).join(', ')}`}</span>{/if}</p>{/if}
   {#if subtitle}<p class="subtitle">{subtitle}</p>{/if}
   {@render children?.()}
 </header>

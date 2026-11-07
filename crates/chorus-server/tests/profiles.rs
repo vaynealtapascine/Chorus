@@ -180,7 +180,11 @@ fn the_complete_name_is_private_unless_chosen_and_cards_carry_handles() {
     assert_eq!(own["name"], "Kai Ashwood");
     assert_eq!(own["default_handle"], "kai.lanterns");
     let nai = profiles::profile(&conn, BOB, ALICE, "nai").unwrap().unwrap();
-    assert_eq!((nai["name"].as_str(), nai["handle"].as_str()), (Some("Nairon"), Some("nai.lanterns")), "shared on purpose");
+    assert_eq!(
+        (nai["name"].as_str(), nai["handle"].as_str()),
+        (Some("Nairon"), Some("nai.lanterns")),
+        "shared on purpose"
+    );
     // without a display name the complete name is what everyone calls them
     let amy = profiles::profile(&conn, DAVE, ALICE, "amy").unwrap().unwrap();
     assert_eq!((amy["name"].as_str(), amy["display_name"].as_str()), (Some("Amarynthe"), None));

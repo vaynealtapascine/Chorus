@@ -36,7 +36,8 @@ pub fn of_account(conn: &Connection, account: &str) -> rusqlite::Result<BTreeMap
                 display_name: r.get(2)?,
                 short_id: r.get(3)?,
                 is_self: r.get::<_, Option<bool>>(4)?.unwrap_or(false),
-                handles: serde_json::from_str(&r.get::<_, Option<String>>(5)?.unwrap_or_default()).unwrap_or(Value::Null),
+                handles: serde_json::from_str(&r.get::<_, Option<String>>(5)?.unwrap_or_default())
+                    .unwrap_or(Value::Null),
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -71,9 +72,17 @@ impl Book {
 
     /// What `viewer` sees: everything for their own members; the shown handle and the claimed
     /// list for anyone else's.
-    pub fn card_fields(&mut self, conn: &Connection, viewer: &str, account: &str, member: &str) -> rusqlite::Result<Value> {
+    pub fn card_fields(
+        &mut self,
+        conn: &Connection,
+        viewer: &str,
+        account: &str,
+        member: &str,
+    ) -> rusqlite::Result<Value> {
         Ok(match self.get(conn, account, member)? {
-            Some(h) if viewer == account => json!({"handle": h.shown, "handles": h.claimed, "default_handle": h.default}),
+            Some(h) if viewer == account => {
+                json!({"handle": h.shown, "handles": h.claimed, "default_handle": h.default})
+            }
             Some(h) => json!({"handle": h.shown, "handles": h.claimed}),
             None => json!({"handle": null, "handles": []}),
         })
@@ -82,7 +91,13 @@ impl Book {
 
 /// Copy [`Book::card_fields`] into a member card that carries `id` (and `account_id`, else
 /// `account`).
-pub fn stamp(conn: &Connection, book: &mut Book, viewer: &str, account: &str, card: &mut Value) -> rusqlite::Result<()> {
+pub fn stamp(
+    conn: &Connection,
+    book: &mut Book,
+    viewer: &str,
+    account: &str,
+    card: &mut Value,
+) -> rusqlite::Result<()> {
     let Some(id) = card["id"].as_str().map(str::to_string) else { return Ok(()) };
     if let Value::Object(fields) = book.card_fields(conn, viewer, account, &id)?
         && let Some(obj) = card.as_object_mut()
@@ -152,8 +167,23 @@ pub fn backfill_account_handles(conn: &Connection, now: i64) -> anyhow::Result<u
                          AND op.status = 'applied' AND json_extract(op.payload, '$.handle') IS NOT NULL)",
     )?;
     let rows: Vec<(String, String)> = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
+    let mut told = 0;
     for (id, handle) in &rows {
-        crate::ingest::server_op(conn, id, "account.set", &format!("account:{id}"), Some(id), json!({"handle": handle}), now)?;
+        // never keep the server from starting: a handle ingest refuses stays as it is
+        match crate::ingest::server_op(
+            conn,
+            id,
+            "account.set",
+            &format!("account:{id}"),
+            Some(id),
+            json!({"handle": handle}),
+            now,
+        ) {
+            Ok(_) => told += 1,
+            Err(e) => {
+                tracing::warn!(account = %id, error = %format!("{e:#}"), "account handle not written to the op log")
+            }
+        }
     }
-    Ok(rows.len())
+    Ok(told)
 }
