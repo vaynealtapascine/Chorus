@@ -90,6 +90,27 @@ internal fun FriendPage(chorus: Chorus, model: Model, data: FriendsData, account
     val self = if (!account.isSystem) shared?.firstOrNull() else null
     val buckets = model.privacyBuckets.filter { accountId in model.bucketAssignments[it.id].orEmpty() }
 
+    // between us: what we share, what we hear, where we talk (a person's page too)
+    val between: @Composable () -> Unit = {
+        val follower = row.follower?.takeIf { it.status == "active" }
+        val following = row.following?.takeIf { it.status == "active" }
+        if (follower != null || following != null || spaces.isNotEmpty()) {
+            SectionLabel("Between you", Modifier.padding(horizontal = 12.dp, vertical = 0.dp))
+            follower?.let { f ->
+                val override = model.followCeilings[f.id] ?: JSONObject()
+                val choice = FollowPresets.choiceOf(override)
+                val how = if (choice == "inherit") buckets.firstOrNull()?.let { FollowPresets.choiceOf(it.ceiling).takeIf { c -> c != "inherit" }?.let(Friends::presetName) }
+                    ?: Friends.presetName(Friends.everyoneElse(model.accountPrefs.followCeiling)) else Friends.presetName(choice)
+                LinkRow("What you share with them", listOfNotNull(buckets.joinToString(", ") { it.name }.ifEmpty { null },
+                    if (model.isPerson) null else how).joinToString(" · ").ifEmpty { "In no bucket" }, R.drawable.ic_shield) { onShare(f.id) }
+            }
+            following?.let { f ->
+                val names = shared.orEmpty().associate { it.optString("id") to shownMember(it) }
+                LinkRow("Notifications from them", Friends.prefsSummary(f.prefs, names, now), R.drawable.ic_bell) { onNotify(f.id) }
+            }
+            if (spaces.isNotEmpty()) LinkRow("Shared spaces", spaces.joinToString(" · ") { spaceName(it, model) }, R.drawable.ic_members) { chats = true }
+        }
+    }
     Column(Modifier.fillMaxSize().background(p.bg)) {
         SubpageBar(name, listOfNotNull(if (account.isSystem) "System" else "Person",
             if (!account.isSystem) account.handle?.let { "@$it" } else Friends.friendsSince(row.since, now)
@@ -135,6 +156,7 @@ internal fun FriendPage(chorus: Chorus, model: Model, data: FriendsData, account
             if (!account.isSystem) {
                 QuietNote("$name is one person, so there’s no fronting to show. You see their posts, journal and messages.", R.drawable.ic_user,
                     Modifier.padding(horizontal = 16.dp))
+                between()
                 PersonTabs(chorus, model, accountId, name, self, onThread, onReplyPost)
                 return@Column
             }
@@ -151,25 +173,7 @@ internal fun FriendPage(chorus: Chorus, model: Model, data: FriendsData, account
                 }
             } else if (shared != null && row.follows) QuietNote("$name haven’t shared any member profiles with you yet.", R.drawable.ic_members,
                 Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-            // between us: what we share, what we hear, where we talk
-            val follower = row.follower?.takeIf { it.status == "active" }
-            val following = row.following?.takeIf { it.status == "active" }
-            if (follower != null || following != null || spaces.isNotEmpty()) {
-                SectionLabel("Between you", Modifier.padding(horizontal = 12.dp, vertical = 0.dp))
-                follower?.let { f ->
-                    val override = model.followCeilings[f.id] ?: JSONObject()
-                    val choice = FollowPresets.choiceOf(override)
-                    val how = if (choice == "inherit") buckets.firstOrNull()?.let { FollowPresets.choiceOf(it.ceiling).takeIf { c -> c != "inherit" }?.let(Friends::presetName) }
-                        ?: Friends.presetName(Friends.everyoneElse(model.accountPrefs.followCeiling)) else Friends.presetName(choice)
-                    LinkRow("What you share with them", listOfNotNull(buckets.joinToString(", ") { it.name }.ifEmpty { null },
-                        if (model.isPerson) null else how).joinToString(" · ").ifEmpty { "In no bucket" }, R.drawable.ic_shield) { onShare(f.id) }
-                }
-                following?.let { f ->
-                    val names = shared.orEmpty().associate { it.optString("id") to shownMember(it) }
-                    LinkRow("Notifications from them", Friends.prefsSummary(f.prefs, names, now), R.drawable.ic_bell) { onNotify(f.id) }
-                }
-                if (spaces.isNotEmpty()) LinkRow("Shared spaces", spaces.joinToString(" · ") { spaceName(it, model) }, R.drawable.ic_members) { chats = true }
-            }
+            between()
             if (model.isPerson) QuietNote("$name choose what they share and when. You can make their notifications quieter, never louder.",
                 R.drawable.ic_shield, Modifier.padding(16.dp))
             Spacer(Modifier.height(24.dp))
