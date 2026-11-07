@@ -22,9 +22,9 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 ## Now
 
-- **In progress:** —
+- **In progress:** UI20
 - **Owner:** claude-opus-5.5, 2026-11-07
-- **Next concrete step:** UI18: look at the Android Handles section on the emulator; UI19: look at Notifications on the owner's phone (inspect only)
+- **Next concrete step:** Android: data/Friends.kt helpers + tests, then ui/Friends.kt (F7.1 list, tabs), friend page, sharing, bucket page, notifications from a friend
 - **Notes:** UI19 (Notifications F11, Journal replies, quotes borrowing audiences, per-post notification choice, D-127) deployed 2026-11-07: server+web f6fbda9, Android 0.1.800. Demo for checks: F:/DunBuild/ui19-demo (server 5297, vite 5298, shot.cjs).
 
 ### SEC1: what is done and what is left
@@ -101,6 +101,7 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 
 ### UI — Owner's Figma redesign
 
+- [~] UI20 Friends as the Figma F7 screens (owner, 2026-11-07): Friends list with Around right now (F7.1), a friend's page for a system or a person (F7.2, F7.3, F7.5), a person's Following / Followers / Requests (F7.4), Requests with an accept drawer (F7.7), Sharing with buckets (F7.8), sharing with one friend (F7.9), a bucket's page (F7.10), notifications from one friend (F7.12); Android first and deployed, then web.
 - [x] UI19 Notifications screen and Journal replies (owner, 2026-11-07, D-127): the Figma F11 Notifications inbox (web + Android, a bottom-bar tab with a badge; Needs you / Today / Earlier; chips; hold for options; read as another member; web side panel); Journal › Friends shows replies to our posts and what friends' replies answer; own posts count friends' replies and hearts; one action row everywhere with unavailable actions disabled; quoting another account's post, the quote readable only by who can read both. Server + Android deployed 2026-11-07 (8222e4f, Android 0.1.795); checked on the emulator against an isolated demo (`F:/DunBuild/ui19-demo`, port 5297). Web deployed too (0d436de), checked at 1360 and 400 px against the demo. Left: a look on the owner's phone (inspect only).
 - [~] UI18 Member handles and private full names (owner, 2026-11-07, D-126): default `@member.subsystem.system` from core, claimable handles unique with account handles, shown in profiles, Journal and chat (web + Android); full names private unless shared, display names follow the profile. Merged (4268dee) and deployed (Android 0.1.791). Checked on web against an isolated demo copy (`F:/DunBuild/handles-demo`). Left: an Android emulator look (member editor Handles section, profile line, Journal rows); Android shared-chat mentions of another account's members by handle (web has them).
 - [x] UI17 Owner's fix-and-polish batch (2026-11-07): Android chat icon differs between the list and the chat header; web sidebar squished on wide screens; web chat repaints and icons flashing; web swipe-to-reply cancelling on a hard/long swipe (iOS); Android form controls too large (compact); web Journal width jumping between sections; more transitions on web and Android.
