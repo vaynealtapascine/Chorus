@@ -110,19 +110,22 @@ internal fun CeilingControls(ceiling: JSONObject, inherited: String, enabled: Bo
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CeilingFieldRow(f: CeilingField, ceiling: JSONObject, inherited: String, enabled: Boolean, save: (Any?, Boolean) -> Unit) {
+internal fun CeilingFieldRow(f: CeilingField, ceiling: JSONObject, inherited: String, enabled: Boolean, titled: Boolean = true,
+    save: (Any?, Boolean) -> Unit) {
     val p = LocalChorusPalette.current
     val custom = ceiling.has(f.key)
     val value: Any? = (if (custom) ceiling.opt(f.key) else f.default).takeIf { it != JSONObject.NULL }
     fun put(v: Any?) { if (BucketControls.valid(f.key, v)) save(v, false) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(f.label, color = p.ink, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            // a drawer titled with the field already says its name and hint
+            Text(if (titled) f.label else if (custom) "Set here" else "Inherited", color = if (titled) p.ink else p.ink2,
+                fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
             TextButton(enabled = enabled, onClick = { if (custom) save(null, true) else save(f.default, false) }) {
                 Text(if (custom) "Use ${inherited.lowercase()}" else "Customize", fontSize = 13.sp)
             }
         }
-        f.hint?.let { Text(it, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp) }
+        if (titled) f.hint?.let { Text(it, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp) }
         if (!custom) { Text(inherited, color = p.ink3, fontSize = 13.sp); return@Column }
         when (f.kind) {
             "bool" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -214,165 +217,6 @@ private fun ClockField(label: String, current: String, enabled: Boolean, modifie
     ChorusField(text, { text = it.take(5); if (Regex("([01][0-9]|2[0-3]):[0-5][0-9]").matches(text) && text != current) save(text) },
         modifier, enabled = enabled, singleLine = true, label = { Text("$label (HH:MM)") }, isError = !ok,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-}
-
-/** The Sharing buckets section of People: one row per bucket, then a way to make one. */
-internal fun LazyListScope.bucketItems(model: Model, onOpen: (String?) -> Unit) {
-    item(key = "buckets:title") {
-        val p = LocalChorusPalette.current
-        Column(Modifier.padding(top = 12.dp)) {
-            Text("Sharing buckets", color = p.ink, fontWeight = FontWeight.SemiBold)
-            Text(if (model.isPerson) "Group followers to choose who sees which posts."
-                else "Group followers to choose what each group sees and hears. A follower in several buckets gets the most open setting for each detail.",
-                color = p.ink2)
-        }
-    }
-    for (b in model.privacyBuckets) item(key = "bucket:${b.id}") {
-        val p = LocalChorusPalette.current
-        val n = model.bucketAssignments[b.id].orEmpty().size
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.surface).clickable(onClickLabel = "Edit ${b.name}") { onOpen(b.id) }
-            .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            BucketGlyph(b.icon, b.color, 36.dp, disc = true)
-            Column(Modifier.weight(1f)) {
-                Text(b.name, color = p.ink, maxLines = 1)
-                Text(listOfNotNull("$n ${if (n == 1) "follower" else "followers"}",
-                    if (model.isPerson) null else presetLabel(FollowPresets.choiceOf(b.ceiling))).joinToString(" · "), color = p.ink3, fontSize = 12.sp)
-            }
-            ChorusIcon(AppIcon.Chevron, null, Modifier.size(16.dp))
-        }
-    }
-    item(key = "buckets:new") {
-        val p = LocalChorusPalette.current
-        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onOpen(null) }.padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ChorusIcon(AppIcon.Plus, null, Modifier.size(20.dp))
-            Text("New bucket", color = p.accent)
-        }
-    }
-}
-
-private fun presetLabel(choice: String) = when (choice) {
-    "inherit" -> "Account default"; "close" -> "Close"; "gentle" -> "Gentle"; "private" -> "Private"
-    "digest" -> "Digest"; "off" -> "No switch alerts"; else -> "Custom"
-}
-
-/**
- * One bucket, or a new one ([bucketId] null): its name, icon, notification preset and Advanced
- * controls (systems), who is in it, and deleting it. Every change saves as it's made.
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-internal fun BucketEditor(model: Model, bucketId: String?, followers: List<FollowInfo>, enabled: Boolean, newId: () -> String,
-    onDismiss: () -> Unit, create: (String, String, JSONObject) -> Unit) {
-    val p = LocalChorusPalette.current
-    val id = rememberSaveable(bucketId) { bucketId ?: newId() }
-    val bucket: PrivacyBucket? = model.privacyBuckets.find { it.id == id }
-    var name by rememberSaveable(id) { mutableStateOf(bucket?.name.orEmpty()) }
-    var icon by rememberSaveable(id) { mutableStateOf(bucket?.icon ?: BucketControls.DEFAULT_ICON) }
-    var color by rememberSaveable(id) { mutableStateOf(bucket?.color) }
-    var emoji by rememberSaveable(id) { mutableStateOf((bucket?.icon ?: "").takeUnless { BucketControls.isBuiltIn(it) }.orEmpty()) }
-    fun setIcon(option: String) {
-        icon = option
-        if (bucket != null && bucket.icon != option) create("bucket.set", id, JSONObject().put("icon", option))
-    }
-    fun setColor(option: String?) {
-        color = option
-        if (bucket != null && bucket.color != option) create("bucket.set", id, JSONObject().put("color", option ?: JSONObject.NULL))
-    }
-    var preset by rememberSaveable(id) { mutableStateOf("inherit") }
-    var confirmDelete by remember { mutableStateOf(false) }
-    Drawer(onDismiss, if (bucket == null) "New bucket" else "Edit bucket", "A group of followers who see the same things") {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            ChorusField(name, { name = it.take(60) }, Modifier.fillMaxWidth(), enabled = enabled, singleLine = true, label = { Text("Name") })
-            if (bucket != null && name.isNotBlank() && name.trim() != bucket.name)
-                TextButton(enabled = enabled, onClick = { create("bucket.set", id, JSONObject().put("name", name.trim())) }) { Text("Save name") }
-            Text("Icon", color = p.ink2, fontSize = 13.sp)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (option in BucketControls.icons) {
-                    val on = (bucket?.icon ?: icon) == option
-                    Box(Modifier.size(40.dp).clip(CircleShape).background(if (on) p.accentSoft else p.surface2)
-                        .border(1.dp, if (on) p.accent else p.surface2, CircleShape)
-                        .clickable(enabled = enabled, role = Role.RadioButton, onClickLabel = option) { setIcon(option) }
-                        .semantics { contentDescription = "$option icon${if (on) ", chosen" else ""}" },
-                        contentAlignment = Alignment.Center) {
-                        Icon(painterResource(bucketIconRes(option)), null, Modifier.size(20.dp), tint = if (on) p.accent else p.ink2)
-                    }
-                }
-            }
-            // its own icon: any emoji or symbol
-            val ownIcon = !BucketControls.isBuiltIn(bucket?.icon ?: icon)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChorusField(emoji, { emoji = it.take(BucketControls.CUSTOM_ICON_MAX) }, Modifier.width(150.dp), enabled = enabled,
-                    singleLine = true, label = { Text("Or an emoji") }, isError = emoji.isNotBlank() && !BucketControls.isCustomIcon(emoji.trim()))
-                if (BucketControls.isCustomIcon(emoji.trim()) && emoji.trim() != (bucket?.icon ?: icon))
-                    TextButton(enabled = enabled, onClick = { setIcon(emoji.trim()) }) { Text("Use it") }
-                else if (ownIcon) Text("In use", color = p.accent, fontSize = 13.sp)
-            }
-            Text("Colour", color = p.ink2, fontSize = 13.sp)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                val current = bucket?.color ?: color
-                Box(Modifier.size(36.dp).clip(CircleShape).border(2.dp, if (current == null) p.ink else p.line, CircleShape)
-                    .clickable(enabled = enabled, role = Role.RadioButton, onClickLabel = "No colour") { setColor(null) }
-                    .semantics { contentDescription = "No colour${if (current == null) ", chosen" else ""}" }, contentAlignment = Alignment.Center) {
-                    BucketGlyph(bucket?.icon ?: icon, null, 18.dp)
-                }
-                for (swatch in BucketControls.swatches) {
-                    val on = current == swatch
-                    Box(Modifier.size(36.dp).clip(CircleShape).background(tonesOf(swatch).ring).border(2.dp, if (on) p.ink else p.bg, CircleShape)
-                        .clickable(enabled = enabled, role = Role.RadioButton, onClickLabel = "Colour $swatch") { setColor(swatch) }
-                        .semantics { contentDescription = "Colour $swatch${if (on) ", chosen" else ""}" })
-                }
-            }
-            ColourField(color ?: bucket?.color ?: "#42A397", { setColor(BucketControls.color(it)) }, label = "Another colour", enabled = enabled)
-            if (bucket == null) {
-                if (!model.isPerson) FollowPresetPicker("Sees switches", preset) { preset = it }
-                Button(enabled = enabled && name.isNotBlank(), onClick = {
-                    create("bucket.set", id, JSONObject().put("name", name.trim()).put("icon", icon).put("color", color ?: JSONObject.NULL)
-                        .put("ceiling", if (preset == "inherit") JSONObject() else FollowPresets.ceiling(preset)))
-                }) { Text("Create bucket") }
-                return@Column
-            }
-            if (!model.isPerson) {
-                FollowPresetPicker("Sees switches", FollowPresets.choiceOf(bucket.ceiling)) { choice ->
-                    create("bucket.set", id, JSONObject().put("ceiling", FollowPresets.ceiling(choice, bucket.ceiling)))
-                }
-                CeilingControls(bucket.ceiling, "Account default", enabled) { create("bucket.set", id, JSONObject().put("ceiling", it)) }
-            }
-            HorizontalDivider(color = p.line)
-            Text("Who's in it", color = p.ink, fontWeight = FontWeight.Medium)
-            val inside = model.bucketAssignments[id].orEmpty()
-            if (followers.isEmpty()) Text("No followers yet.", color = p.ink3)
-            for (f in followers) Row(Modifier.fillMaxWidth().clickable(enabled = enabled, role = Role.Checkbox) {
-                create(if (f.account.id in inside) "bucket.unassign" else "bucket.assign", id, JSONObject().put("follower_account_id", f.account.id))
-            }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(f.account.id in inside, null, enabled = enabled)
-                Text(f.account.shownName, color = p.ink, modifier = Modifier.padding(start = 8.dp))
-            }
-            HorizontalDivider(color = p.line)
-            if (confirmDelete) {
-                Text("Delete “${bucket.name}”? Anything shared only with it goes back to just you.", color = p.ink2)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(enabled = enabled, onClick = { create("bucket.delete", id, JSONObject()); onDismiss() },
-                        colors = ButtonDefaults.buttonColors(containerColor = p.danger)) { Text("Delete") }
-                    TextButton(onClick = { confirmDelete = false }) { Text("Keep") }
-                }
-            } else TextButton(enabled = enabled, onClick = { confirmDelete = true }) { Text("Delete bucket", color = p.danger) }
-        }
-    }
-}
-
-/** A follower's buckets, on their card: tap one to put them in or take them out. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-internal fun FollowerBuckets(model: Model, follower: String, enabled: Boolean, toggle: (String, Boolean) -> Unit) {
-    if (model.privacyBuckets.isEmpty()) return
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (b in model.privacyBuckets) {
-            val on = follower in model.bucketAssignments[b.id].orEmpty()
-            FilterChip(on, { toggle(b.id, !on) }, enabled = enabled, label = { Text(b.name, maxLines = 1) },
-                leadingIcon = { BucketGlyph(b.icon, b.color) })
-        }
-    }
 }
 
 /**

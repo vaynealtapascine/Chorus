@@ -230,7 +230,7 @@ private fun FriendMemberProfile(chorus: Chorus, model: garden.vayne.chorus.data.
 }
 
 @Composable
-private fun FriendField(name: String, value: @Composable () -> Unit) {
+internal fun FriendField(name: String, value: @Composable () -> Unit) {
     val p = LocalChorusPalette.current
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(name, color = p.ink2, style = MaterialTheme.typography.labelMedium)
@@ -240,7 +240,7 @@ private fun FriendField(name: String, value: @Composable () -> Unit) {
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun FriendValue(type: String, value: Any?) {
+internal fun FriendValue(type: String, value: Any?) {
     val p = LocalChorusPalette.current
     val uri = LocalUriHandler.current
     when {

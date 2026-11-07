@@ -82,7 +82,7 @@ import garden.vayne.chorus.ui.DeviceLink
 import garden.vayne.chorus.ui.Chat
 import garden.vayne.chorus.ui.Members
 import garden.vayne.chorus.ui.Onboarding
-import garden.vayne.chorus.ui.People
+import garden.vayne.chorus.ui.FriendsScreen
 import garden.vayne.chorus.ui.SettingsScreen
 import garden.vayne.chorus.ui.ContentSearch
 import garden.vayne.chorus.ui.Journal
@@ -252,6 +252,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var chatFocused by rememberSaveable { mutableStateOf(false) }
     var journalFocused by rememberSaveable { mutableStateOf(false) }
     var membersFocused by rememberSaveable { mutableStateOf(false) }
+    var friendsFocused by rememberSaveable { mutableStateOf(false) }
     val destinationState = androidx.compose.runtime.key(chorus.device?.accountId) {
         androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     }
@@ -382,7 +383,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             // Fronting, its history and its subpages draw their own Figma bars (F3.1, F3.4, F3.7, F3.9)
             val frontingChrome = !person && !searchOpen && !settingsOpen && !insightsOpen && sharedDraft == null &&
                 (frontsOpen || layersFront != null || activeTab == Tab.Home || activeTab == Tab.History)
-            val chatOwnChrome = frontingChrome || (activeTab in listOf(Tab.Chat, Tab.Journal, Tab.Notifications) || (activeTab == Tab.Members && membersFocused)) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
+            val chatOwnChrome = frontingChrome || (activeTab in listOf(Tab.Chat, Tab.Journal, Tab.Notifications, Tab.People) || (activeTab == Tab.Members && membersFocused)) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
             if (chatOwnChrome && !chatStageCapture) Box(Modifier.fillMaxWidth().background(p.surface).statusBarsPadding())
             if (!chatStageCapture && !chatOwnChrome) Row(
                 Modifier.fillMaxWidth().background(p.surface).statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
@@ -465,9 +466,10 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         externalNewEntry = journalNewEntry, onExternalNewEntryConsumed = { journalNewEntry = null },
                         active = shownTab == activeTab, onFocusedRoute = { journalFocused = it },
                         onSearch = { searchSection=it; searchOpen=true })
-                    Tab.People -> People(chorus, model,
+                    Tab.People -> FriendsScreen(chorus, model,
                         onOpenChat = { spaceId -> chatSpace = spaceId; chatChannel = null; chatSearchHit = null; tab = Tab.Chat },
-                        onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal })
+                        onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal },
+                        onFocusedRoute = { friendsFocused = it })
                     Tab.Members -> Members(chorus, model, onJournal = { member, post ->
                         journalOpenProfile = member; journalOpenPost = post; tab = Tab.Journal
                     }, active = shownTab == activeTab, onFocusedRoute = { membersFocused = it })
@@ -484,7 +486,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             // chrome. The shell applies the system navigation inset exactly once.
             val focused = (frontsOpen || layersFront != null) && !searchOpen && !settingsOpen && !insightsOpen ||
                 !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen &&
-                ((activeTab == Tab.Chat && chatFocused) || (activeTab == Tab.Journal && journalFocused) || (activeTab == Tab.Members && membersFocused))
+                ((activeTab == Tab.Chat && chatFocused) || (activeTab == Tab.Journal && journalFocused) || (activeTab == Tab.Members && membersFocused) || (activeTab == Tab.People && friendsFocused))
             androidx.compose.animation.AnimatedVisibility(
                 visible = !expanded && sharedDraft == null && !chatStageCapture && !WindowInsets.isImeVisible && !focused,
                 enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(if (motion) 220 else 0)) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(if (motion) 180 else 0)),

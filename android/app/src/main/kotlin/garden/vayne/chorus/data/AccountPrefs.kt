@@ -28,7 +28,9 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
     /** What members are up to while here (`member_status:<id>`, D-122). */
     val memberStatus: Map<String, MemberStatus> = emptyMap(),
     /** Notifications screen (D-127): each reader's read marks, and what shows there. */
-    val inboxRead: Map<String, InboxRead> = emptyMap(), val inboxShows: JSONObject? = null) {
+    val inboxRead: Map<String, InboxRead> = emptyMap(), val inboxShows: JSONObject? = null,
+    /** The bucket new friends start in (`follow.start_bucket`, UI20 F7.8); only a starting choice. */
+    val startBucket: String? = null) {
     fun isSaved(postId: String): Boolean = postId in bookmarks
 
     /** A channel's chat notifications; DMs default to everything, other channels to mentions (as on web). */
@@ -66,7 +68,8 @@ data class AccountPrefs(val notifyChat: JSONObject = JSONObject(), val followCei
                 ChatFolders.parse(value(ChatFolders.PREF)), ProfileAudience.of(value(POST_AUDIENCE)),
                 FrontingDisplay.parse(value(FrontingDisplay.PREF)),
                 keyed(prefs, accountId, FrontingDisplay.STATUS).mapNotNull { (member, v) -> FrontingDisplay.status(v)?.let { member to it } }.toMap(),
-                keyed(prefs, accountId, Inbox.READ).mapValues { (_, v) -> InboxRead.parse(v) }, value(Inbox.SHOWS_PREF) as? JSONObject)
+                keyed(prefs, accountId, Inbox.READ).mapValues { (_, v) -> InboxRead.parse(v) }, value(Inbox.SHOWS_PREF) as? JSONObject,
+                (value(Friends.START_BUCKET) as? String)?.takeIf { it.isNotBlank() })
         }
 
         /** Account-wide (no device) prefs under [prefix], by the rest of the key; a pending local

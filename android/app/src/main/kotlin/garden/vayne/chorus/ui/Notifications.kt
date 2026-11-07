@@ -227,20 +227,12 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
         MenuRow("Notification settings", R.drawable.ic_sliders) { settings = false; routes.onSettings() }
     }
 
+    // the same drawer as Friends › Requests (F7.7): how much they hear and their bucket
     accepting?.let { item ->
-        MenuDrawer(true, { accepting = null }, "Accept ${item.actor ?: "them"}", "How soon and how exactly they hear about switches") {
-            for (option in FollowPresets.choices.filter { it != "custom" }) {
-                val (label, about) = (FOLLOW_PRESET_LABELS[option] ?: option).split(" · ", limit = 2).let { it[0] to it.getOrNull(1) }
-                MenuRow(label, subtitle = about) {
-                    accepting = null
-                    act("Couldn’t accept. Try again.") {
-                        chorus.create("follow.accept", item.followId!!, JSONObject())
-                        chorus.create("follow.set_ceiling", item.followId, JSONObject().put("ceiling",
-                            FollowPresets.ceiling(option, model.followCeilings[item.followId] ?: JSONObject())))
-                    }
-                }
-            }
-        }
+        val follow = FollowInfo(item.followId!!, garden.vayne.chorus.data.SpaceAccount(item.accountId.orEmpty(), null, item.actor, null), "requested")
+        AcceptDrawer(model, follow, onDismiss = { accepting = null },
+            onDecline = { accepting = null; act("Couldn’t decline. Try again.") { chorus.create("follow.end", follow.id, JSONObject()) } },
+            onAccept = { preset, bucket -> accepting = null; act("Couldn’t accept. Try again.") { acceptFollow(chorus, model, follow, preset, bucket) } })
     }
 }
 

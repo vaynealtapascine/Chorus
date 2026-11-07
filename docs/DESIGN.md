@@ -426,7 +426,7 @@ This inventory is retained from the v1 design spec; `PROGRESS.md` owns its imple
 | **Emoji** (Settings → Server) | Server-wide custom emoji: upload with crop, name, aliases, category, retire | Upload |
 | **Trash** | Deleted items by type, search, restore | Restore |
 | **Insights** | Dashboard cards; each opens a full chart with table + CSV | — |
-| **Sharing** | Followers, requests, buckets, ceilings (presets), following + prefs | — |
+| **Friends** | Figma F7 (D-128): tabs Friends · Requests · Sharing (a person: Following · Followers · Requests); around right now; a friend's page; accept drawer; buckets as pages; sharing with one friend; notifications from one friend | Message |
 | **Notifications** | Figma F11 (D-127): chips (All · Mentions · Friends · Our system · App), Needs you / Today / Earlier, unread tint and dot, hold or right-click for options, Read as another member; web side panel "What shows here" + quiet hours; a bottom-bar tab with an unread badge | Mark all read |
 | **Settings** | Basic list + "Advanced" entry at the bottom | — |
 | **Sync issues** | Rejected ops with reason, retry/discard/copy | — |

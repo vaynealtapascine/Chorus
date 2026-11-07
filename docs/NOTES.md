@@ -253,6 +253,9 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
   reconciles a send by looking for the chosen post id in the op log, never by retrying blindly.
 - `am kill` right after Home may leave the process alive; check the PID changed.
 
+- Emulator text entry: `adb shell input text` into a fresh field can trigger Android's "Try out your stylus" tutorial, which eats the input. `adb shell settings put secure stylus_handwriting_enabled 0` (emulator only) stops it (2026-11-08, UI20).
+- A fresh worktree's Android build needs `android/local.properties` and the generated core bindings (`android/core-bridge/src/main/{kotlin,jniLibs}`, ignored); copy them from the main checkout when the core hasn't changed, else run `scripts/build-android-core.ps1` (UI20).
+
 ## Deploy and ops
 
 - Production is `ns2-up-net-nz` (Linux, Caddy, public; SSH tailnet-only as root).

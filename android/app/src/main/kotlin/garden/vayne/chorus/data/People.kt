@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 /** Follow rows and privacy-filtered views returned by the server for this signed-in device. */
 data class FollowInfo(val id: String, val account: SpaceAccount, val status: String,
-    val prefs: JSONObject = JSONObject())
+    val prefs: JSONObject = JSONObject(), val createdAt: Long = 0)
 data class FollowList(val following: List<FollowInfo>, val followers: List<FollowInfo>)
 data class PostReaction(val emoji: String, val memberId: String, val memberName: String)
 data class SharedPost(val id: String, val kind: String, val title: String?, val text: String,
@@ -45,11 +45,18 @@ data class AuthorLooks(val ids: List<String> = emptyList(), val color: String? =
 }
 data class SharedFront(val names: List<String>, val time: String)
 data class SharedStats(val days: Int, val members: List<Pair<String, Int>>)
-/** Someone a followed account shows as fronting, with their colour, sigil and picture when shared. */
-data class SharedMember(val name: String, val color: String?, val glyph: String? = null, val avatarBlob: String? = null)
-/** [fronts]: additional fronts the followed account granted (D-084), as (name, revealed names). */
+/** Someone a followed account shows as here, with their colour, sigil and picture when shared, and
+ *  the layer they were revealed in (`front`, `cocon`, `present`, or a granted custom layer). */
+data class SharedMember(val name: String, val color: String?, val glyph: String? = null, val avatarBlob: String? = null,
+    val level: String = "front")
+/** [fronts]: additional fronts the followed account granted (D-084), as (name, revealed names).
+ *  [entries]: everyone shown, every layer; [front]: only the front layer. [since] is already
+ *  fuzzed by the server under [time] (the ceiling's time rule); [shared] false when they don't
+ *  share who's here at all. */
 data class FollowerView(val frontNames: List<String>, val history: List<SharedFront>?, val stats: SharedStats?,
-    val fronts: List<Pair<String, List<String>>> = emptyList(), val front: List<SharedMember> = emptyList())
+    val fronts: List<Pair<String, List<String>>> = emptyList(), val front: List<SharedMember> = emptyList(),
+    val entries: List<SharedMember> = front, val since: Long? = null, val time: JSONObject? = null,
+    val shared: Boolean = true, val revealedAt: Long? = null)
 
 object PeopleApi {
     fun sharedPosts(j: JSONObject): List<SharedPost> {
@@ -98,11 +105,10 @@ object PeopleApi {
             return (0 until a.length()).map { i ->
                 val f = a.getJSONObject(i)
                 val p = f.getJSONObject("account")
-                FollowInfo(f.getString("id"), SpaceAccount(p.getString("id"),
-                    p.optString("handle").takeIf { p.has("handle") && !p.isNull("handle") && it.isNotBlank() },
-                    p.optString("display_name").takeIf { p.has("display_name") && !p.isNull("display_name") && it.isNotBlank() },
-                    p.optString("kind").takeIf { p.has("kind") && !p.isNull("kind") && it.isNotBlank() }),
-                    f.getString("status"), f.optJSONObject("prefs") ?: JSONObject())
+                fun JSONObject.text(k: String) = optString(k).takeIf { has(k) && !isNull(k) && it.isNotBlank() }
+                FollowInfo(f.getString("id"), SpaceAccount(p.getString("id"), p.text("handle"), p.text("display_name"),
+                    p.text("kind"), p.text("avatar_blob")),
+                    f.getString("status"), f.optJSONObject("prefs") ?: JSONObject(), f.optLong("created_at"))
             }
         }
         return FollowList(rows("following"), rows("followers"))
@@ -110,7 +116,7 @@ object PeopleApi {
 
     /** Consume only the server's reveal-time follower view; absent history/stats remain absent. */
     fun followerView(j: JSONObject): FollowerView {
-        if (!j.optBoolean("shared", true)) return FollowerView(emptyList(), null, null)
+        if (!j.optBoolean("shared", true)) return FollowerView(emptyList(), null, null, shared = false)
         fun names(entries: org.json.JSONArray?, frontOnly: Boolean): List<String> = if (entries == null) emptyList() else
             (0 until entries.length()).mapNotNull { i ->
                 entries.optJSONObject(i)?.takeIf { !frontOnly || it.optString("level") == "front" }
@@ -134,15 +140,18 @@ object PeopleApi {
                     ?: "Another front") to names(front.optJSONArray("entries"), false)
             }
         } } ?: emptyList()
-        val front = j.optJSONArray("entries")?.let { entries -> (0 until entries.length()).mapNotNull { i ->
-            entries.optJSONObject(i)?.takeIf { it.optString("level") == "front" }?.let { e ->
+        val entries = j.optJSONArray("entries")?.let { entries -> (0 until entries.length()).mapNotNull { i ->
+            entries.optJSONObject(i)?.let { e ->
                 e.optString("name").takeIf { it.isNotBlank() && it != "null" }?.let { name ->
                     fun shared(key: String) = e.optString(key).takeIf { e.has(key) && !e.isNull(key) && it.isNotBlank() }
-                    SharedMember(name, shared("color"), shared("glyph"), shared("avatar_blob"))
+                    SharedMember(name, shared("color"), shared("glyph"), shared("avatar_blob"), shared("level") ?: "front")
                 }
             }
         } } ?: emptyList()
-        return FollowerView(front.map { it.name }, history, stats, fronts, front)
+        val front = entries.filter { it.level == "front" }
+        fun at(key: String) = j.optLong(key).takeIf { j.has(key) && !j.isNull(key) }
+        return FollowerView(front.map { it.name }, history, stats, fronts, front, entries, at("since"), j.optJSONObject("time"),
+            revealedAt = at("revealed_at"))
     }
 
     /** Keep time at the precision already chosen by the server; never render hidden clock data. */
@@ -172,6 +181,10 @@ object PeopleApi {
     }
     suspend fun view(dev: DeviceRecord, accountId: String): JSONObject =
         Api.call("GET", dev.base, "/accounts/$accountId/view", null, dev.session)
+
+    /** What one of our followers sees of us right now (F7.9), by their follow's id. */
+    suspend fun followerSees(dev: DeviceRecord, followId: String): FollowerView =
+        followerView(Api.call("GET", dev.base, "/follows/$followId/view", null, dev.session))
 
     /** A followed system's members shared with us (D-101); the server decides what's in each. */
     suspend fun members(dev: DeviceRecord, accountId: String): JSONObject =

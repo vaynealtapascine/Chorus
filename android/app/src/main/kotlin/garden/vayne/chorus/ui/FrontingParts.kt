@@ -145,18 +145,19 @@ fun ToggleRow(title: String, checked: Boolean, subtitle: String? = null, enabled
     }
 }
 
-/** A two-or-more-way segmented control (F3.2 Replace / Add, F3.7 Day / Week / Month). */
+/** A two-or-more-way segmented control (F3.2 Replace / Add, F3.7 Day / Week / Month); [accent] fills the
+ * chosen one as the Friends screens do (F7.9, F7.10, F7.12). */
 @Composable
-fun Segmented(options: List<String>, selected: Int, modifier: Modifier = Modifier, onSelect: (Int) -> Unit) {
+fun Segmented(options: List<String>, selected: Int, modifier: Modifier = Modifier, accent: Boolean = false, onSelect: (Int) -> Unit) {
     val p = LocalChorusPalette.current
     Row(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.surface2).padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp)) {
         options.forEachIndexed { i, label ->
             Box(Modifier.weight(1f).heightIn(min = 32.dp).clip(RoundedCornerShape(9.dp))
-                .background(if (i == selected) p.surface else Color.Transparent)
+                .background(if (i != selected) Color.Transparent else if (accent) p.accent else p.surface)
                 .clickable(role = Role.Tab) { onSelect(i) }.semantics { contentDescription = label + if (i == selected) ", selected" else "" },
                 contentAlignment = Alignment.Center) {
-                Text(label, color = if (i == selected) p.ink else p.ink3, fontSize = 13.sp,
+                Text(label, color = if (i != selected) p.ink3 else if (accent) p.onAccent else p.ink, fontSize = 13.sp,
                     fontWeight = if (i == selected) FontWeight.SemiBold else FontWeight.Medium)
             }
         }

@@ -61,7 +61,7 @@ Deployed 2026-11-06; the live-DB audit found nothing. Left: Q23 (poll votes of d
 - Ship in slices: commit → full gate (`verify.py --android`) → `pwsh scripts/deploy-linux.ps1
   [-Android] [-NoBuild]` → log line with the Android version. Phones update on next app start.
 - No release (`v*` tag) until the owner says so. Spec changes that alter user-visible behaviour
-  go through `docs/OPEN_QUESTIONS.md` (open now: Q21, Q22, Q23).
+  go through `docs/OPEN_QUESTIONS.md` (open now: Q21, Q22, Q23, Q24).
 - Production checks use the test account `claudetest` (its device is the owner's Chrome
   profile), never the owner's account. Mutations go to the emulator or an isolated demo server
   (`docs/OPS.md` §8 "Demo data"; `F:/DunBuild/ui8-demo` is a seeded two-account demo on 5283).
