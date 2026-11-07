@@ -23,9 +23,9 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 ## Now
 
 - **In progress:** UI20
-- **Owner:** claude-opus-5.5, 2026-11-07
-- **Next concrete step:** Android: data/Friends.kt helpers + tests, then ui/Friends.kt (F7.1 list, tabs), friend page, sharing, bucket page, notifications from a friend
-- **Notes:** UI19 (Notifications F11, Journal replies, quotes borrowing audiences, per-post notification choice, D-127) deployed 2026-11-07: server+web f6fbda9, Android 0.1.800. Demo for checks: F:/DunBuild/ui19-demo (server 5297, vite 5298, shot.cjs).
+- **Owner:** claude-opus-5.5, 2026-11-08
+- **Next concrete step:** Web: rewrite People.svelte as the F7 Friends screens (tabs, friend page, accept drawer, sharing, bucket page, notifications from a friend); move browser push to Settings
+- **Notes:** UI20 Android + server deployed 2026-11-08 (e1b06af, Android 0.1.804, web index-mK3OI4M8.js unchanged in features). Demo for checks: F:/DunBuild/ui20-demo (server 5299; Lanterns, Junipers, Driftwood, Mossbank, person Ren via scratch script). Worktree t3-082d5194 uses its own CARGO_TARGET_DIR F:/DunBuild/chorus-target-friends and CHORUS_GRADLE_BUILD_DIR F:/DunBuild/chorus-gradle-friends.
 
 ### SEC1: what is done and what is left
 
@@ -176,3 +176,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`. Entries befo
 - 2026-11-07 claude-opus-5.5: UI19 server + Android deployed (a7bc600, 8110d79, 8222e4f; Android 0.1.795): Notifications tab (F11), replies to our posts in Journal › Friends with what they answer, one action row with disabled actions, quoting other accounts' posts (the quote borrows the quoted audience), reply notifications, per-post Random delay / Don't notify (D-127).
 - 2026-11-07 claude-opus-5.5: UI19 web deployed (0d436de): Notifications page with the F11.5 side panel and sidebar badge, Friends replies with their parents, one action row, quoting other accounts' posts, the composer's notifications choice. `scripts/demo-journal-activity.mjs` seeds cross-account Journal activity on a demo (OPS §8).
 - 2026-11-07 claude-opus-5.5: UI19 follow-up (f6fbda9, owner): DMs, member DMs and all-message channels are pushed but no longer listed in Notifications; mentions and replies still are. Deployed (Android 0.1.800).
+- 2026-11-08 claude-opus-5.5: UI20 server + Android deployed (7ae85bb, e1b06af; Android 0.1.804): the Figma F7 Friends screens on Android (D-128), `GET /follows/{id}/view` for "What they see right now", accept drawer shared with the Notifications inbox, `follow.start_bucket` pref; Q24 opened (hidden-member count). Web next.
