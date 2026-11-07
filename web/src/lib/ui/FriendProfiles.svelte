@@ -123,7 +123,7 @@
       <p class="muted">This profile isn't shared with you.</p>
     {:else if profile}
       <ProfileHeader banner={profile.banner_blob} avatar={profile.avatar_blob} glyph={glyph(profile)} name={shownName(profile)} color={profile.color}
-        handle={profile.handle} also={(profile.handles ?? []).filter((h) => h !== profile?.handle)}
+        handle={profile.handle}
         subtitle={[profile.display_name && profile.name !== profile.display_name ? profile.name : null, profile.pronouns, owner?.name].filter(Boolean).join(' · ')} {dark}>
         {#snippet actions()}
           {#if profile?.post_alerts}

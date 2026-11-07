@@ -486,10 +486,6 @@ private fun ProfileAbout(chorus: Chorus, model: Model, member: Member, bundle: P
             HorizontalDivider(color = p.line, thickness = .5.dp)
         }
         if (member.displayName != null && member.name != member.displayName) AboutRow("Full name", member.name)
-        model.memberHandles[member.id]?.let { h ->
-            val all = (h.claimed + h.default).distinct()
-            if (all.size > 1) AboutRow("Handles", all.joinToString("  ") { "@$it" })
-        }
         if (!member.pronouns.isNullOrBlank()) AboutRow("Pronouns", member.pronouns)
         if (member.birthday != null) AboutRow("Birthday", ProfilePresentation.birthday(member.birthday))
         for (field in model.profileFields[member.id].orEmpty()) {

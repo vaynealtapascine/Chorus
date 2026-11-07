@@ -1,10 +1,12 @@
-//! Member handles (D-126): every member has a default handle, `@member.subsystem.system`, made
+//! Member handles (D-126): every member has a default handle, `@member.subsystem….system`, made
 //! from what everyone may already see of them, and may claim handles of their own.
 //!
 //! - **Default** (reserved, never stored): the member's shown name (display name, else name),
-//!   then the innermost subsystem they are in, then the account's handle, as lowercase segments
-//!   joined by dots: `foxglove.lanterns`, `kai.littles.stars`. A person account's self member is
-//!   the account handle alone. It follows renames and moves, so it is worked out wherever it is
+//!   then every subsystem on the path from the innermost one they are in out to the top, then the
+//!   account's handle, as lowercase segments joined by dots: `foxglove.lanterns`,
+//!   `kai.littles.stars`, `moss.tiny-ones.littles.stars`, so each member has exactly one path. A
+//!   member in several unrelated subsystems takes the deepest (the smaller id breaks a tie). A
+//!   person account's self member is the account handle alone. It follows renames and moves, so it is worked out wherever it is
 //!   shown, the same way on every device and on the server, offline included.
 //! - **Claimed** (`member.handles`, up to [`MAX_CLAIMS`]): 2–32 of `a-z`, `0-9`, `_`, the account
 //!   handle rule. They never contain a dot, so they can't collide with a default; the server keeps
@@ -201,13 +203,18 @@ pub fn member_handles(input: &Input) -> BTreeMap<String, Handles> {
                     m.id.chars().rev().filter(char::is_ascii_alphanumeric).take(7).collect::<String>()
                 });
             }
-            let sub = inner
-                .get(m.id.as_str())
-                .and_then(|(_, g)| groups.get(g))
-                .and_then(|g| g.name.as_deref())
-                .map(segment)
-                .filter(|s| !s.is_empty());
-            let rest = sub.map_or_else(|| system.clone(), |s| format!("{s}.{system}"));
+            // the innermost subsystem, then each subsystem holding it, out to the top
+            let mut path: Vec<String> = Vec::new();
+            let mut seen = HashSet::new();
+            let mut at = inner.get(m.id.as_str()).map(|(_, g)| *g);
+            while let Some(g) = at.filter(|g| seen.insert(*g)).and_then(|g| groups.get(g)) {
+                if g.kind.as_deref() == Some("subsystem") {
+                    path.extend(g.name.as_deref().map(segment).filter(|s| !s.is_empty()));
+                }
+                at = g.parent_id.as_deref();
+            }
+            path.push(system.clone());
+            let rest = path.join(".");
             let mut n = 1;
             loop {
                 let first = if n == 1 { own.clone() } else { format!("{own}-{n}") };
@@ -263,24 +270,31 @@ mod tests {
     }
 
     #[test]
-    fn defaults_name_the_member_innermost_subsystem_and_system() {
+    fn defaults_name_the_member_every_subsystem_on_their_path_and_system() {
         let h = member_handles(&input(json!({
             "account": {"id": "a", "handle": "lanterns"},
             "members": [
                 {"id": "m1", "name": "Foxglove Marsh", "display_name": "Foxglove"},
                 {"id": "m2", "name": "Kai"},
                 {"id": "m3", "name": "🌌", "short_id": "qwertyu"},
-                {"id": "m4", "name": "Ren", "handles": ["ren", "renny"]}
+                {"id": "m4", "name": "Ren", "handles": ["ren", "renny"]},
+                {"id": "m5", "name": "Moss"},
+                {"id": "m6", "name": "Wren"}
             ],
             "groups": [
                 {"id": "g1", "kind": "subsystem", "name": "Littles"},
                 {"id": "g2", "kind": "subsystem", "name": "Tiny Ones", "parent_id": "g1"},
-                {"id": "g3", "kind": "group", "name": "Hosts"}
+                {"id": "g3", "kind": "group", "name": "Hosts"},
+                {"id": "g4", "kind": "subsystem", "name": "Burrow", "parent_id": "g2"},
+                {"id": "g5", "kind": "group", "name": "Circle", "parent_id": "g1"},
+                {"id": "g6", "kind": "subsystem", "name": "Inner", "parent_id": "g5"}
             ],
-            "membership": [["g1", "m2"], ["g2", "m2"], ["g3", "m1"], ["g1", "m4"]]
+            "membership": [["g1", "m2"], ["g2", "m2"], ["g3", "m1"], ["g1", "m4"], ["g4", "m5"], ["g6", "m6"]]
         })));
+        assert_eq!(h["m5"].default, "moss.burrow.tiny-ones.littles.lanterns");
+        assert_eq!(h["m6"].default, "wren.inner.littles.lanterns", "a plain group on the path names nothing");
         assert_eq!(h["m1"].default, "foxglove.lanterns", "the display name, never the complete name");
-        assert_eq!(h["m2"].default, "kai.tiny-ones.lanterns", "the innermost subsystem only");
+        assert_eq!(h["m2"].default, "kai.tiny-ones.littles.lanterns", "every subsystem on the path, innermost first");
         assert_eq!(h["m3"].default, "qwertyu.lanterns");
         assert_eq!(h["m4"].default, "ren.littles.lanterns");
         assert_eq!(h["m4"].claimed, vec!["ren", "renny"]);
@@ -313,7 +327,7 @@ mod tests {
                        {"id": "g2", "kind": "subsystem", "name": "Pool", "parent_id": "g1"}],
             "membership": [["g1", "m"], ["g2", "m"]]
         })));
-        assert_eq!(h["m"].default, "kai.loop.the-stars");
+        assert_eq!(h["m"].default, "kai.loop.pool.the-stars", "a cycle ends where it repeats");
         assert_eq!(system_segment(&Account { id: "0192f8c2-7d1e".into(), ..Default::default() }), "0192f8c2");
     }
 }

@@ -250,8 +250,8 @@
         {#if person}
           @{handles?.default ?? ''} is your account's handle. A handle you claim is yours alone on this server; the first one is what friends see.
         {:else}
-          @{handles?.default ?? ''} is made from their display name, subsystem and your system, and stays reserved for them.
-          A claimed handle is theirs alone on this server; the first one is what friends see, so claiming one also keeps their subsystem out of sight.
+          @{handles?.default ?? ''} is made from their display name, the subsystems they sit in (innermost first) and your system, and stays reserved for them.
+          A claimed handle is theirs alone on this server; the first one is what friends see, so claiming one also keeps their subsystems out of sight.
         {/if}
       </p>
     </section>

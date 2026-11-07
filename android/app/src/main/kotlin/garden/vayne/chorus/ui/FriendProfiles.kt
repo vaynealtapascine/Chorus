@@ -184,10 +184,7 @@ private fun FriendMemberProfile(chorus: Chorus, model: garden.vayne.chorus.data.
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(shown(m), color = tonesOf(color).name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             // their handle (D-126), and the full name only when they shared it with us
-            m.text("handle")?.let { handle ->
-                val also = m.optJSONArray("handles")?.let { a -> (0 until a.length()).mapNotNull { a.opt(it) as? String } }.orEmpty().filter { it != handle }
-                Text("@$handle" + if (also.isEmpty()) "" else " · also " + also.joinToString(", ") { "@$it" }, color = p.ink2)
-            }
+            m.text("handle")?.let { Text("@$it", color = p.ink2) }
             val fullName = m.text("name")?.takeIf { m.text("display_name") != null && it != m.text("display_name") }
             Text(listOfNotNull(fullName, m.text("pronouns"), shownAccount).joinToString(" · "), color = p.ink3)
             if (alerts == "requested") Text("$shownAccount will see your request.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
