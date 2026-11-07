@@ -22,9 +22,9 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 ## Now
 
-- **In progress:** UI16
+- **In progress:** CI1
 - **Owner:** claude-opus-5.5, 2026-11-07
-- **Next concrete step:** device check on the owner's phone (look, don't post) and a singlet account; then move the older sheets onto Drawer
+- **Next concrete step:** rewrite e2e walkthroughs for the current UI, spec by spec (v1 first)
 - **Notes:** UI17 (owner's fix-and-polish batch, D-125) deployed 2026-11-07 (f5963b4, Android 0.1.761); not yet seen on an iOS browser or the owner's phone. Gemini's raw reviews stay untracked in gemini_review/.
 
 ### SEC1: what is done and what is left
@@ -97,7 +97,7 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 
 ### CI
 
-- [ ] CI1 GitHub CI green again (owner, 2026-11-07). The web job failed on a timezone-dependent Insights test since 2026-10-30 (fixed). The e2e job fails since D-093 (2026-10-31): enrol is fixed, but the suite still walks the September screens (Add member on Home, `form.add`, `button.member`, "Change who's here"); 9 tests fail at their first member step and 20 behind them haven't run. Rewrite each spec's walkthrough against the current UI (UI8–UI17), run locally with `CHORUS_E2E_CHANNEL=chrome CARGO_TARGET_DIR='F:\DunBuild\chorus-target' bash scripts/e2e-web.sh --no-build` (36 min when everything times out; pass `-- e2e/<spec>.ts` for one).
+- [~] CI1 GitHub CI green again (owner, 2026-11-07). The web job failed on a timezone-dependent Insights test since 2026-10-30 (fixed). The e2e job fails since D-093 (2026-10-31): enrol is fixed, but the suite still walks the September screens (Add member on Home, `form.add`, `button.member`, "Change who's here"); 9 tests fail at their first member step and 20 behind them haven't run. Rewrite each spec's walkthrough against the current UI (UI8–UI17), run locally with `CHORUS_E2E_CHANNEL=chrome CARGO_TARGET_DIR='F:\DunBuild\chorus-target' bash scripts/e2e-web.sh --no-build` (36 min when everything times out; pass `-- e2e/<spec>.ts` for one).
 
 ### UI — Owner's Figma redesign
 
