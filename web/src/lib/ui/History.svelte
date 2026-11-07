@@ -22,7 +22,9 @@
   let savedOpen = $state(false);
   let shown = $state(200);
   let error = $state('');
-  let acting = $state<fd.StoryLine | null>(null);
+  // the open line, by its key: a line kept in $state would be a proxy, never === the line (CI1)
+  let acting = $state<string | null>(null);
+  const lineKey = (l: fd.StoryLine) => l.changeId + l.subjectId + l.text;
   let editAt = $state('');
 
   const system = $derived(projection.front_systems?.[sync.accountId]?.system);
@@ -144,13 +146,13 @@
   {:else if !inRange.length}<p class="muted">No changes recorded {zoom.id === 'day' ? 'this day' : 'in this time'}.</p>
   {:else}
     <ol class="list">
-      {#each inRange.slice(0, shown) as line (line.changeId + line.subjectId + line.text)}
+      {#each inRange.slice(0, shown) as line (lineKey(line))}
         {@const l = layerOf(line.layerId)}
-        <li><button onclick={() => { acting = acting === line ? null : line; const s = savedFor(line); editAt = s ? local(s.occurred_at) : ''; }} aria-expanded={acting === line}>
+        <li><button onclick={() => { acting = acting === lineKey(line) ? null : lineKey(line); const s = savedFor(line); editAt = s ? local(s.occurred_at) : ''; }} aria-expanded={acting === lineKey(line)}>
           <time>{stamp(line.at)}</time><Face who={who.get(whoKey(line.subjectType, line.subjectId))} size={34} {dark} />
           <span class="what">{line.text}</span>{#if l}<span class="tag" style={fd.inkVars(l.style, l.color)}>{l.name}</span>{/if}
         </button>
-        {#if acting === line}
+        {#if acting === lineKey(line)}
           {@const s = savedFor(line)}
           <div class="actions">
             {#if s}
