@@ -2,7 +2,7 @@
 // switches, a follower's delayed view, a shared space and a DM, a journal post with a reply and a
 // reaction across accounts, search, and no console errors (the CSP included) anywhere.
 import { expect, test } from '@playwright/test';
-import { type Device, device, enrol, go, invite, live, problems } from './helpers';
+import { addMember, type Device, device, enrol, fronting, go, invite, live, message, openChat, problems, shareWithFriends, switchIn } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -28,14 +28,8 @@ test.afterAll(async () => {
 test('onboarding by invite, members and a switch', async () => {
   const { page } = stars;
   await enrol(page, invite('system'), 'The Stars', starsHandle);
-  for (const name of ['Kai', 'Rin']) {
-    await page.getByRole('button', { name: 'Add member' }).click();
-    await page.getByLabel('Name', { exact: true }).fill(name);
-    await page.locator('form.add').getByRole('button', { name: 'Add' }).click();
-    await expect(page.locator('button.member', { hasText: name })).toBeVisible();
-  }
-  await page.locator('button.member', { hasText: 'Kai' }).click();
-  await expect(page.getByLabel("Change who's here")).toContainText('Kai');
+  for (const name of ['Kai', 'Rin']) await addMember(page, name);
+  await switchIn(page, 'Kai');
 });
 
 test('a switch reaches a second device', async () => {
@@ -45,9 +39,9 @@ test('a switch reaches a second device', async () => {
   const code = link.match(/\/i\/([A-Za-z0-9_-]+)/)?.[1];
   expect(code).toBeTruthy();
   await enrol(desk.page, code!);
-  await expect(desk.page.getByLabel("Change who's here")).toContainText('Kai');
-  await stars.page.locator('button.member', { hasText: 'Rin' }).click();
-  await expect(desk.page.getByLabel("Change who's here")).toContainText('Rin', { timeout: 5_000 });
+  await expect(fronting(desk.page)).toContainText('Kai');
+  await switchIn(stars.page, 'Rin');
+  await expect(fronting(desk.page)).toContainText('Rin', { timeout: 5_000 });
 });
 
 test('a follower sees a switch only after its delay', async () => {
@@ -64,8 +58,7 @@ test('a follower sees a switch only after its delay', async () => {
   await expect(stars.page.locator('li.card', { hasText: 'Robin' }).first()).toBeVisible();
 
   // "Close": no delay beyond the 15 s settle (NOTIFICATIONS §2)
-  await go(stars.page, '');
-  await stars.page.locator('button.member', { hasText: 'Kai' }).click();
+  await switchIn(stars.page, 'Kai');
   const switched = Date.now();
   const following = friend.page.locator('li.card', { hasText: 'The Stars' });
   await go(friend.page, 'people');
@@ -87,15 +80,14 @@ test('a DM between two accounts', async () => {
   await expect(box).toBeVisible();
   await box.fill(hello);
   await box.press('Enter');
-  await expect(friend.page.getByText(hello)).toBeVisible();
+  await expect(message(friend.page, hello)).toBeVisible();
 
-  await go(stars.page, 'chat');
-  await stars.page.locator('nav[aria-label="Spaces"] a.dm', { hasText: 'Robin' }).click();
-  await expect(stars.page.getByText(hello)).toBeVisible();
+  await openChat(stars.page, 'Robin');
+  await expect(message(stars.page, hello)).toBeVisible();
   const back = `hi Robin, Kai here ${run}`;
   await stars.page.getByLabel('Message', { exact: true }).fill(back);
   await stars.page.getByLabel('Message', { exact: true }).press('Enter');
-  await expect(friend.page.getByText(back)).toBeVisible();
+  await expect(message(friend.page, back)).toBeVisible();
 });
 
 test('an edited message keeps its history (SPEC §5.3)', async () => {
@@ -110,9 +102,10 @@ test('an edited message keeps its history (SPEC §5.3)', async () => {
   await box.fill(fixed);
   await box.press('Enter');
   // the other account sees the new text, and "(edited)" opens what it said before
-  const theirs = stars.page.locator('.msg', { hasText: fixed });
+  // "edited" sits beside the bubble (owner, 2026-11-02)
+  const theirs = stars.page.locator('.msg-row', { hasText: fixed });
   await expect(theirs).toBeVisible();
-  await theirs.getByRole('button', { name: '(edited)' }).click();
+  await theirs.getByRole('button', { name: 'edited', exact: true }).click();
   const history = theirs.getByRole('list', { name: 'Edit history' });
   await expect(history.getByRole('listitem')).toHaveCount(2);
   await expect(history.getByRole('listitem').first()).toContainText(hello);
@@ -128,14 +121,13 @@ test('a shared space between two accounts', async () => {
   const welcome = `welcome to the club ${run}`;
   const box = stars.page.getByLabel('Message', { exact: true });
   await expect(box).toBeVisible();
-  await expect(stars.page.locator('p.space')).toContainText(name);
+  await expect(stars.page.locator('.room-head h1')).toContainText(name);
   await box.fill(welcome);
   await box.press('Enter');
-  await expect(stars.page.getByText(welcome)).toBeVisible();
+  await expect(message(stars.page, welcome)).toBeVisible();
 
-  await go(friend.page, 'chat');
-  await friend.page.locator('nav[aria-label="Spaces"] a', { hasText: name }).click();
-  await expect(friend.page.getByText(welcome)).toBeVisible();
+  await openChat(friend.page, name);
+  await expect(message(friend.page, welcome)).toBeVisible();
 });
 
 test('reply privately: from the shared space into the DM, linking back (SPEC §5.3)', async () => {
@@ -144,33 +136,30 @@ test('reply privately: from the shared space into the DM, linking back (SPEC §5
   await msg.getByRole('button', { name: 'Message actions', exact: true }).click();
   await msg.getByTitle('Reply privately').click();
   // the DM opens with the reply ready
-  await expect(friend.page.locator('nav[aria-label="Spaces"] a.dm.on, nav[aria-label="Spaces"] a.on', { hasText: 'Stars' })).toBeVisible();
+  await expect(friend.page.locator('.room-head h1')).toContainText('Stars');
   await expect(friend.page.getByText(/Replying to/)).toBeVisible();
   const answer = `glad to be here ${run}`;
   const box = friend.page.getByLabel('Message', { exact: true });
   await box.fill(answer);
   await box.press('Enter');
   // the system sees it in the DM, with a card pointing back to the club's channel
-  await go(stars.page, 'chat');
-  await stars.page.locator('nav[aria-label="Spaces"] a.dm', { hasText: 'Robin' }).click();
+  await openChat(stars.page, 'Robin');
   const reply = stars.page.locator('.msg', { hasText: answer });
   await expect(reply).toBeVisible();
-  await expect(reply.locator('.replybar')).toContainText(welcome.slice(0, 20));
-  await expect(reply.locator('.replybar .elsewhere')).toContainText('#general');
+  await expect(reply.locator('.reply-quote')).toContainText(welcome.slice(0, 20));
+  await expect(reply.locator('.reply-quote .elsewhere')).toContainText('#general');
 });
 
 test('space roles: the owner makes someone read-only, and their send is refused with why', async () => {
   const club = `Book club ${run}`;
-  await go(stars.page, 'chat');
-  await stars.page.locator('nav[aria-label="Spaces"] a', { hasText: club }).click();
+  await openChat(stars.page, club);
   await stars.page.getByLabel('Channel menu').click();
   await stars.page.getByText('Space roles…').click();
   const role = stars.page.getByLabel(/^Role of /).first();
   await role.selectOption('read_only');
   await expect(role).toHaveValue('read_only');
 
-  await go(friend.page, 'chat');
-  await friend.page.locator('nav[aria-label="Spaces"] a', { hasText: club }).click();
+  await openChat(friend.page, club);
   const quiet = `can I still talk ${run}`;
   const box = friend.page.getByLabel('Message', { exact: true });
   await box.fill(quiet);
@@ -180,7 +169,7 @@ test('space roles: the owner makes someone read-only, and their send is refused 
   await expect(refused).toContainText(quiet);
   await refused.getByRole('button', { name: 'Dismiss' }).click();
   await expect(refused).toHaveCount(0);
-  await expect(stars.page.getByText(quiet)).toHaveCount(0);
+  await expect(message(stars.page, quiet)).toHaveCount(0);
   // and back to a member, so the rest of the run can talk; the menu closed again
   await role.selectOption('member');
   await stars.page.getByLabel('Channel menu').click();
@@ -188,21 +177,19 @@ test('space roles: the owner makes someone read-only, and their send is refused 
 
 test('slow mode holds a second message and it can be cancelled (D-076)', async () => {
   const club = `Book club ${run}`;
-  await go(stars.page, 'chat');
-  await stars.page.locator('nav[aria-label="Spaces"] a', { hasText: club }).click();
+  await openChat(stars.page, club);
   await stars.page.getByLabel('Channel menu').click();
   const slow = stars.page.getByLabel('Slow mode for this channel');
   await slow.selectOption('300');
   await expect(slow).toHaveValue('300');
 
-  await go(friend.page, 'chat');
-  await friend.page.locator('nav[aria-label="Spaces"] a', { hasText: club }).click();
+  await openChat(friend.page, club);
   const box = friend.page.getByLabel('Message', { exact: true });
   const first = `first under slow mode ${run}`;
   const second = `second too soon ${run}`;
   await box.fill(first);
   await box.press('Enter');
-  await expect(stars.page.getByText(first)).toBeVisible();
+  await expect(message(stars.page, first)).toBeVisible();
   await box.fill(second);
   await box.press('Enter');
   // held, not refused: a countdown and a Cancel, and no Sync issue
@@ -210,8 +197,8 @@ test('slow mode holds a second message and it can be cancelled (D-076)', async (
   await expect(held).toContainText(/Slow mode: sending in \d+ s/);
   await expect(friend.page.getByRole('list', { name: 'Messages not sent' })).toHaveCount(0);
   await held.getByRole('button', { name: 'Cancel' }).click();
-  await expect(friend.page.getByText(second)).toHaveCount(0);
-  await expect(stars.page.getByText(second)).toHaveCount(0);
+  await expect(message(friend.page, second)).toHaveCount(0);
+  await expect(message(stars.page, second)).toHaveCount(0);
   // off again for the rest of the run
   await slow.selectOption('0');
   await stars.page.getByLabel('Channel menu').click();
@@ -220,14 +207,17 @@ test('slow mode holds a second message and it can be cancelled (D-076)', async (
 test('one internal channel shared with a follower (channel permissions)', async () => {
   const note = `news for Robin ${run}`;
   const inside = `inside only ${run}`;
-  await stars.page.setViewportSize({ width: 1440, height: 900 }); // the new-channel field is desktop-only
-  await go(stars.page, 'chat');
-  await stars.page.locator('nav[aria-label="Spaces"] a', { hasText: 'Home' }).click();
+  // the system's own space opens on its #general (chat list, D-120)
+  await openChat(stars.page, 'general');
   await stars.page.getByLabel('Message', { exact: true }).fill(inside);
   await stars.page.getByLabel('Message', { exact: true }).press('Enter');
-  await stars.page.getByLabel('New channel name').fill(`news-${run}`);
-  await stars.page.getByLabel('New channel name').press('Enter');
-  await expect(stars.page.locator('section.room h1')).toContainText(`news-${run}`);
+  await go(stars.page, 'chat');
+  await stars.page.getByRole('button', { name: 'New chat' }).click();
+  await stars.page.getByRole('dialog', { name: 'New chat' }).getByRole('button', { name: /^New channel/ }).click();
+  const editor = stars.page.getByRole('dialog', { name: 'New channel' });
+  await editor.getByLabel('Name', { exact: true }).fill(`news-${run}`);
+  await editor.getByRole('button', { name: 'Create' }).click();
+  await expect(stars.page.locator('.room-head h1')).toContainText(`news-${run}`);
   await stars.page.getByLabel('Message', { exact: true }).fill(note);
   await stars.page.getByLabel('Message', { exact: true }).press('Enter');
   await stars.page.getByLabel('Channel menu').click();
@@ -235,7 +225,7 @@ test('one internal channel shared with a follower (channel permissions)', async 
   await stars.page.getByLabel('Permission target').selectOption({ label: 'Robin' });
   await stars.page.getByLabel('See it permission').selectOption('allow');
   // A live projection update must not erase the unsaved permissions draft.
-  await go(desk.page, 'chat');
+  await openChat(desk.page, 'general');
   await desk.page.getByLabel('Message', { exact: true }).fill(`while editing permissions ${run}`);
   await desk.page.getByLabel('Message', { exact: true }).press('Enter');
   await expect(stars.page.getByLabel('See it permission')).toHaveValue('allow');
@@ -245,11 +235,10 @@ test('one internal channel shared with a follower (channel permissions)', async 
 
   await expect(async () => {
     await go(friend.page, 'chat');
-    await friend.page.locator('nav[aria-label="Spaces"] a', { hasText: 'shared with you' }).click({ timeout: 2_000 });
-    await expect(friend.page.getByText(note)).toBeVisible({ timeout: 2_000 });
+    await friend.page.locator('.rows a.row', { hasText: `news-${run}` }).click({ timeout: 2_000 });
+    await expect(message(friend.page, note)).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
-  await expect(friend.page.getByText(inside)).toHaveCount(0);
-  await stars.page.setViewportSize({ width: 420, height: 900 });
+  await expect(message(friend.page, inside)).toHaveCount(0);
 });
 
 test('a post with a reply and a reaction across accounts', async () => {
@@ -259,60 +248,68 @@ test('a post with a reply and a reaction across accounts', async () => {
   await stars.page.getByText('Post options', { exact: true }).click();
   await stars.page.getByLabel('Tags').fill('garden');
   await stars.page.getByText('Post options', { exact: true }).click();
-  await stars.page.getByLabel('Visible to').selectOption('followers');
+  await shareWithFriends(stars.page, 'This post');
   await stars.page.getByRole('button', { name: 'Post', exact: true }).click();
   await expect(stars.page.locator('article.post', { hasText: text })).toBeVisible();
 
-  // the follower finds it with the account it follows, reacts and replies
+  // the follower finds it in Journal › Friends, hearts it and replies on its thread page
   const reply = `congrats from Robin ${run}`;
-  await go(friend.page, 'people');
-  const shared = friend.page.locator('article.shared-post', { hasText: text });
+  const shared = friend.page.locator('article.post', { hasText: text });
   await expect(async () => {
-    await friend.page.reload();
-    await live(friend.page);
-    await expect(shared).toBeVisible({ timeout: 2_000 });
+    await go(friend.page, 'journal');
+    await friend.page.getByRole('navigation', { name: 'Journal sections' }).getByRole('button', { name: 'Friends' }).click();
+    await expect(shared).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 30_000 });
-  await shared.getByRole('button', { name: 'React 💜' }).click();
-  await expect(shared.getByRole('button', { name: 'Remove 💜 reaction' })).toBeVisible();
+  const removeHeart = shared.getByRole('button', { name: /^Remove heart as / });
+  await shared.getByRole('button', { name: /^Heart as / }).click();
+  // the first heart on another account's post says once that they see who hearted
+  const disclose = friend.page.locator('dialog.disclose[open]');
+  await expect(disclose.or(removeHeart)).toBeVisible();
+  if (await disclose.isVisible()) await disclose.getByRole('button', { name: 'Heart', exact: true }).click();
+  await expect(removeHeart).toBeVisible();
   await shared.getByRole('button', { name: 'Reply' }).click();
-  await shared.getByLabel('Post text').fill(reply);
-  await shared.locator('form.composer').getByRole('button', { name: 'Reply', exact: true }).click();
-  await expect(shared.getByLabel('Post text')).toBeHidden();
+  const theirThread = friend.page.getByRole('region', { name: 'Post thread' });
+  await expect(theirThread.getByText(/Replying to/)).toBeVisible();
+  await theirThread.getByLabel('Post text').fill(reply);
+  await theirThread.locator('form.composer').getByRole('button', { name: 'Reply', exact: true }).click();
+  await expect(theirThread.locator('article', { hasText: reply })).toBeVisible();
 
-  // the author sees both on the post's thread page, the reply under a box that says what it answers
+  // the author sees both on the post's thread page
   await go(stars.page, 'journal');
-  await stars.page.locator('article.post', { hasText: text }).getByTitle('Open the thread').click();
+  await stars.page.locator('article.post', { hasText: text }).getByRole('link', { name: 'now' }).click();
   const thread = stars.page.getByRole('region', { name: 'Post thread' });
   await expect(thread.getByText(/Replying to/)).toBeVisible();
   await expect(async () => {
     await thread.getByRole('button', { name: 'Refresh' }).click();
-    await expect(thread.getByText(reply)).toBeVisible({ timeout: 2_000 });
-    await expect(thread.getByText('💜 Robin')).toBeVisible({ timeout: 2_000 });
+    await expect(thread.locator('article.row', { hasText: reply })).toBeVisible({ timeout: 2_000 });
+    await expect(thread.getByText('1 like')).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
   // the friend's reply opens as a thread of its own, with the post it answers above it
   await thread.locator('article.row', { hasText: reply }).getByTitle('Open this post').click();
   await expect(thread.locator('.ancestors')).toContainText(text);
   await stars.page.goBack();
-  await expect(thread.getByText(reply)).toBeVisible();
+  await expect(thread.locator('article.row', { hasText: reply })).toBeVisible();
 });
 
 test('search finds messages and posts', async () => {
+  const scope = (page: typeof stars.page, name: string) =>
+    page.getByRole('navigation', { name: 'Search scope' }).getByRole('button', { name }).click();
   await go(stars.page, 'search');
-  await stars.page.getByLabel('Search messages').fill(`Robin ${run}`);
-  await expect(stars.page.locator('.results article', { hasText: `hello from Robin ${run}` })).toBeVisible();
+  await stars.page.getByLabel('Search all chats').fill(`Robin ${run}`);
+  await expect(stars.page.locator('article', { hasText: `hello from Robin ${run}` }).first()).toBeVisible();
 
   // posts: the follower finds the followers-only post; the server checks who may read it
   await go(friend.page, 'search');
-  await friend.page.getByRole('tab', { name: 'Posts' }).click();
-  await friend.page.getByLabel('Search posts').fill(`tomatoes ${run}`);
-  await expect(friend.page.locator('.results article', { hasText: `tomatoes are in ${run}` })).toBeVisible();
-  await friend.page.getByLabel('Search posts').fill(`nothing-like-this-${run}`);
-  await expect(friend.page.getByText('No matching posts.')).toBeVisible();
+  await scope(friend.page, 'Journal');
+  await friend.page.getByLabel('Search Journal').fill(`tomatoes ${run}`);
+  await expect(friend.page.locator('article', { hasText: `tomatoes are in ${run}` }).first()).toBeVisible();
+  await friend.page.getByLabel('Search Journal').fill(`nothing-like-this-${run}`);
+  await expect(friend.page.getByText('No matching Journal posts or entries.')).toBeVisible();
 
   // switches, searched on the device (works offline)
-  await stars.page.getByRole('tab', { name: 'Switches' }).click();
+  await scope(stars.page, 'Switches');
   await stars.page.getByLabel('Search switches').fill('kai');
-  await expect(stars.page.locator('.results article', { hasText: 'Kai' }).first()).toBeVisible();
+  await expect(stars.page.locator('article', { hasText: 'Kai' }).first()).toBeVisible();
 });
 
 test('sync everything now', async () => {
@@ -339,7 +336,7 @@ test('a feed shared with followers', async () => {
   await stars.page.getByRole('button', { name: 'Feeds' }).click();
   await stars.page.getByLabel('Name', { exact: true }).fill(name);
   await stars.page.getByLabel('Filter').fill('tag:garden');
-  await stars.page.getByLabel('Who can open it').selectOption('followers');
+  await shareWithFriends(stars.page, 'This feed');
   await stars.page.getByRole('button', { name: 'Save feed' }).click();
   await expect(stars.page.locator('nav[aria-label="Saved feeds"]')).toContainText(name);
 
@@ -354,7 +351,7 @@ test('a feed shared with followers', async () => {
   await stars.page.getByRole('button', { name: 'New feed' }).click();
   await stars.page.getByLabel('Name', { exact: true }).fill(fronting);
   await stars.page.getByLabel('Filter').fill('tag:garden fronting:true');
-  await stars.page.getByLabel('Who can open it').selectOption('followers');
+  await shareWithFriends(stars.page, 'This feed');
   await expect(stars.page.getByRole('note')).toContainText('who was fronting when these posts were written');
   await stars.page.getByRole('button', { name: 'Save feed' }).click();
   await expect(stars.page.locator('nav[aria-label="Saved feeds"]')).toContainText(fronting);
