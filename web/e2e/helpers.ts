@@ -143,3 +143,27 @@ export async function switchSheet(page: Page, names: string[], taps = 1): Promis
   await sheet.locator('button.confirm').click();
   await expect(sheet).toHaveCount(0);
 }
+
+/** Ask to follow someone by handle from Friends (UI20, F7.1). */
+export async function follow(page: Page, handle: string): Promise<void> {
+  await go(page, 'people');
+  await page.getByRole('button', { name: 'Follow someone' }).click();
+  await page.getByLabel('Their handle').fill(handle);
+  await page.getByRole('button', { name: 'Send request' }).click();
+}
+
+/** A system accepts the first follow request from Friends › Requests with a preset (F7.7). */
+export async function acceptRequest(page: Page, preset: 'Close — instant' | 'Gentle' | 'Private' | 'Digest' | 'Off'): Promise<void> {
+  await go(page, 'people');
+  await page.getByRole('tab', { name: /^Requests/ }).click();
+  await page.getByRole('button', { name: 'Accept…' }).first().click();
+  const sheet = page.getByRole('dialog', { name: /follow you\?$/ });
+  await sheet.getByRole('radio', { name: new RegExp(`^${preset}`) }).click();
+  await sheet.getByRole('button', { name: /^Accept/ }).click();
+  await expect(sheet).toBeHidden();
+}
+
+/** A friend's row on Friends, by name. */
+export function friendRow(page: Page, name: string) {
+  return page.locator('.fr-row', { hasText: name });
+}

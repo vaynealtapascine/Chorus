@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { addMember, device, enrol, go, invite, live, newFront, switchSheet } from './helpers';
+import { acceptRequest, addMember, device, enrol, follow, friendRow, go, invite, live, newFront, switchSheet } from './helpers';
 
 const run = Date.now().toString(36);
 
@@ -21,15 +21,13 @@ test('a follower sees an additional front only once granted', async ({ browser }
     await notify.getByLabel('Fronting').check();
 
     await enrol(friend.page, invite('person'), 'Robin', `robin${run}`);
-    await go(friend.page, 'people');
-    await friend.page.getByLabel('Handle to follow').fill(`@grants${run}`);
-    await friend.page.getByRole('button', { name: 'Follow', exact: true }).click();
-    await go(sys.page, 'people');
-    const request = sys.page.locator('li.card', { hasText: 'wants to follow you' });
-    await request.locator('select').selectOption('close');
-    await request.getByRole('button', { name: 'Accept' }).click();
+    await follow(friend.page, `@grants${run}`);
+    await acceptRequest(sys.page, 'Close — instant');
 
-    const following = friend.page.locator('li.card', { hasText: 'Grant Stars' });
+    // granted fronts show on the followed system's own page (F7.2, Around now)
+    await go(friend.page, 'people');
+    await friendRow(friend.page, 'Grant Stars').click();
+    const following = friend.page.locator('.fr-card.around');
     const switchHead = async (who: string) => {
       await go(sys.page, '');
       await sys.page.getByRole('tablist', { name: 'Fronts' }).getByRole('tab', { name: /^Headspace/ }).click();
@@ -46,17 +44,24 @@ test('a follower sees an additional front only once granted', async ({ browser }
     await friend.page.waitForTimeout(20_000); // past the settle: still nothing without a grant
     await followerSees('Headspace', false);
 
-    await go(sys.page, 'people');
-    const card = sys.page.locator('li.card', { hasText: 'Robin' }).first();
-    await card.getByText('Additional fronts and layers').click();
-    await card.getByLabel('Headspace').check();
+    // Friends › Robin › What you share with them › Just for Robin › Extra fronts (F7.9)
+    const grant = async (on: boolean) => {
+      await go(sys.page, 'people');
+      await sys.page.getByRole('tab', { name: 'Friends' }).click();
+      await friendRow(sys.page, 'Robin').click();
+      await sys.page.getByRole('link', { name: /What you share with them/ }).click();
+      await sys.page.getByRole('button', { name: /^Just for Robin/ }).click();
+      await sys.page.getByRole('button', { name: /^Extra fronts/ }).click();
+      const toggle = sys.page.getByRole('switch', { name: /Headspace/ });
+      if ((await toggle.getAttribute('aria-checked')) !== String(on)) await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-checked', String(on));
+    };
+    await grant(true);
     await switchHead('Moon'); // a change after the grant reveals on the usual schedule
     await followerSees('Headspace: Moon', true);
     await friend.page.screenshot({ path: info.outputPath('follower-granted-front.png'), fullPage: true });
 
-    await go(sys.page, 'people');
-    await card.getByText('Additional fronts and layers').click();
-    await card.getByLabel('Headspace').uncheck();
+    await grant(false);
     await followerSees('Headspace', false);
   } finally {
     await sys.context.close();

@@ -277,7 +277,7 @@
             {#each sharingBuckets as bucket (bucket.id)}
               <label class="check"><input type="checkbox" checked={announceBucketIds.includes(bucket.id)} onchange={(e) => setAnnounceBucket(bucket.id, e.currentTarget.checked)} /> <BucketLabel {bucket} /></label>
             {/each}
-            {#if !sharingBuckets.length}<span class="hint">Create a sharing bucket on the People page first.</span>{/if}
+            {#if !sharingBuckets.length}<span class="hint">Create a sharing bucket in Friends › Sharing first.</span>{/if}
           </div>
         {/if}
       </div>

@@ -7,6 +7,7 @@
   import { apiBase } from '../sync/device';
   import { apiFetch } from '../http';
   import { sync, type Projection } from '../sync/client';
+  import { disablePush, enablePush, pushActive, pushSupported, testPush } from '../push';
 
   let { projection }: { projection: Projection } = $props();
   const isSystem = $derived(!selfMember(projection));
@@ -86,6 +87,24 @@
       note = error instanceof Error ? error.message : String(error);
     }
   }
+  // this browser's notifications (Web Push, or the page's own while it's open); moved here from People (UI20)
+  let pushOn = $state(false);
+  let canNotify = $state(typeof Notification !== 'undefined' && Notification.permission === 'granted');
+  let pushNote = $state('');
+  pushActive().then((on) => (pushOn = on));
+  async function enableNotifications() {
+    if (pushSupported()) {
+      const err = await enablePush();
+      pushOn = !err;
+      pushNote = err ? `${err} Notifications will show while Chorus is open.` : '';
+      if (!err) { canNotify = true; return; }
+    }
+    canNotify = (await Notification.requestPermission()) === 'granted';
+  }
+  async function sendTest() {
+    const err = await testPush();
+    pushNote = err ? `The test didn't go out: ${err}` : 'Sent. It should arrive in a few seconds, even with this tab closed.';
+  }
 </script>
 
 <section class="settings">
@@ -112,6 +131,16 @@
       </form>
     {/if}
     {#if note}<p role="status">{note}</p>{/if}
+    <div class="browser">
+      <span>This browser</span>
+      {#if pushOn}
+        <button onclick={sendTest}>Send a test</button>
+        <button onclick={async () => { await disablePush(); pushOn = false; }}>Stop notifying this browser</button>
+      {:else if typeof Notification !== 'undefined' && (!canNotify || pushSupported())}
+        <button onclick={enableNotifications}>Notify me in this browser</button>
+      {:else}<span class="muted">{canNotify ? 'Notifies while Chorus is open.' : 'This browser can’t show notifications.'}</span>{/if}
+    </div>
+    {#if pushNote}<p class="muted" role="status">{pushNote}</p>{/if}
   </section>
   {#if isSystem}
     <section class="card">
@@ -123,7 +152,7 @@
         </select>
       </label>
       <CeilingControls {ceiling} inherited="Built-in default" omit={['share_history', 'share_stats']} onchange={(c) => savePref('follow_ceiling', c)} />
-      <p class="muted">Set buckets and each follower’s access on <a href="#/people">People</a>.</p>
+      <p class="muted">Set buckets and each follower’s access in <a href="#/people">Friends</a>.</p>
     </section>
   {/if}
   <details class="card">
@@ -157,4 +186,5 @@
   .quiet { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); border-top: 1px solid var(--line); padding-top: var(--s-3); }
   summary { cursor: pointer; font-weight: 600; }
   .advanced { display: grid; gap: var(--s-3); padding-top: var(--s-3); }
+  .browser { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 </style>

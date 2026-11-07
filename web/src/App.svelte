@@ -18,6 +18,11 @@
   import PostThread from './lib/ui/PostThread.svelte';
   import Profile from './lib/ui/Profile.svelte';
   import FriendProfiles from './lib/ui/FriendProfiles.svelte';
+  import FriendPage from './lib/ui/FriendPage.svelte';
+  import FriendSharing from './lib/ui/FriendSharing.svelte';
+  import FriendNotify from './lib/ui/FriendNotify.svelte';
+  import BucketPage from './lib/ui/BucketPage.svelte';
+  import AdvancedSharing from './lib/ui/AdvancedSharing.svelte';
   import PostStage from './lib/ui/PostStage.svelte';
   import More from './lib/ui/More.svelte';
   import Notifications from './lib/ui/Notifications.svelte';
@@ -190,8 +195,8 @@
     </aside>
     {#if navOpen}<button class="scrim" aria-label="Close navigation" onclick={() => (navOpen = false)}></button>{/if}
     <div class="workspace">
-      <!-- Fronting's subpages carry their own back-arrow bars (Figma F3.4, F3.5, F3.7, F3.9) -->
-      <header class="app-bar" class:subpage={['fronts', 'layers', 'history'].includes(router.route.name) && !person}>
+      <!-- Fronting's subpages carry their own back-arrow bars (Figma F3.4, F3.5, F3.7, F3.9), as Friends' pages do (F7) -->
+      <header class="app-bar" class:subpage={(['fronts', 'layers', 'history'].includes(router.route.name) && !person) || router.route.name === 'friend' || router.route.name === 'people'}>
         <div><strong>{routeTitle}</strong><span class="account-subtitle">{accountName}{#if router.route.name === 'home' && !person}{' · '}{homeSimple ? 'simple view' : `${current.length} here now`}{/if}</span></div>
         <span class="status" data-status={status} role="status"><span class="status-dot"></span>{statusLabel[status]}</span>
         {#if router.route.name === 'home' && !person}
@@ -216,8 +221,10 @@
         <Members {projection} {dark} />
       {:else if router.route.name === 'member' && router.route.id}
         <MemberEditor {projection} id={router.route.id} {dark} />
-      {:else if router.route.name === 'friend' && router.route.id}
+      {:else if router.route.name === 'friend' && router.route.id && router.route.memberId}
         <FriendProfiles accountId={router.route.id} memberId={router.route.memberId} {dark} {projection} />
+      {:else if router.route.name === 'friend' && router.route.id}
+        <FriendPage accountId={router.route.id} {dark} {projection} />
       {:else if router.route.name === 'profile' && router.route.id}
         <Profile {projection} id={router.route.id} {dark} />
       {:else if router.route.name === 'journal'}
@@ -251,6 +258,14 @@
         <ThisComputer />
       {:else if router.route.name === 'settings'}
         <Settings {projection} />
+      {:else if router.route.name === 'people' && router.route.id === 'share' && router.route.memberId}
+        <FriendSharing followId={router.route.memberId} {projection} {dark} />
+      {:else if router.route.name === 'people' && router.route.id === 'notify' && router.route.memberId}
+        <FriendNotify followId={router.route.memberId} />
+      {:else if router.route.name === 'people' && router.route.id === 'bucket'}
+        {#key router.route.memberId}<BucketPage bucketId={router.route.memberId === 'new' ? null : router.route.memberId ?? null} {projection} {dark} />{/key}
+      {:else if router.route.name === 'people' && router.route.id === 'advanced'}
+        <AdvancedSharing {projection} />
       {:else if router.route.name === 'people'}
         <People {projection} {dark} />
       {:else if router.route.name === 'trash'}

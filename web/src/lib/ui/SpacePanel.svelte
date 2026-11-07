@@ -117,7 +117,7 @@
         {#each adding as a (a.id)}
           <label><input type="checkbox" checked={chosen.includes(a.id)} onchange={(e) => (chosen = e.currentTarget.checked ? [...chosen, a.id] : chosen.filter((x) => x !== a.id))} /> {accountName(a)}</label>
         {:else}
-          <p class="hint">Everyone you're connected to is already here. Follow someone on People to add them.</p>
+          <p class="hint">Everyone you're connected to is already here. Follow someone in Friends to add them.</p>
         {/each}
         <div class="row-actions"><button class="ghost" onclick={() => (adding = null)}>Cancel</button><button class="primary" disabled={!chosen.length || busy} onclick={() => void add()}>Add</button></div>
       </li>

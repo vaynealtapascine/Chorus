@@ -30,6 +30,8 @@ function parse(hash: string): Route {
   if (parts[0] === 'insights') return { name: 'insights' };
   if (parts[0] === 'stage' && parts[1]) return { name: 'stage', id: decodeURIComponent(parts[1]) };
   if (parts[0] === 'data') return { name: 'data' };
+  // Friends' own pages (UI20): sharing with one friend, notifications from one, a bucket, Advanced sharing
+  if (parts[0] === 'people' && ['share', 'notify', 'bucket', 'advanced'].includes(parts[1])) return { name: 'people', id: parts[1], memberId: parts[2] ? decodeURIComponent(parts[2]) : undefined };
   if (parts[0] === 'people' && parts[1]) return { name: 'friend', id: decodeURIComponent(parts[1]), memberId: parts[2] ? decodeURIComponent(parts[2]) : undefined };
   if (parts[0] === 'people') return { name: 'people' };
   if (parts[0] === 'trash') return { name: 'trash', id: parts[1] ? decodeURIComponent(parts[1]) : undefined };

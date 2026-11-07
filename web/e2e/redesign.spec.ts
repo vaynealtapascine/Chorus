@@ -25,7 +25,8 @@ test('appearance defaults to dark and explicit choices persist across responsive
     await expect(page.getByRole('navigation', { name: 'Sections', exact: true }).getByRole('link')).toHaveCount(5);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByRole('link', { name: 'More', exact: true }).click();
-    await expect(page.getByRole('link', { name: 'Journal Entries, notes and member journals' })).toBeVisible();
+    // Journal moved onto the bar beside Notifications (UI19); Friends is one of More's rows
+    await expect(page.getByRole('main').getByRole('link', { name: /^Friends/ })).toBeVisible();
   } finally {
     await context.close();
   }

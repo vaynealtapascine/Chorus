@@ -179,7 +179,7 @@
           {#if !self && keepPrivate}<Icon name="lock" size={16} />{/if}
         </button>
       {:else}
-        {#if friends}<p class="hint">{friendsError || 'Follow someone on People to message them.'}</p>{/if}
+        {#if friends}<p class="hint">{friendsError || 'Follow someone in Friends to message them.'}</p>{/if}
       {/each}
     </div>
   {:else}
@@ -193,7 +193,7 @@
           <span>{accountName(a)}</span>
         </label>
       {:else}
-        <p class="hint">{friends === null ? 'Loading…' : friendsError || 'Follow someone on People first: groups are with people you follow or who follow you.'}</p>
+        <p class="hint">{friends === null ? 'Loading…' : friendsError || 'Follow someone in Friends first: groups are with people you follow or who follow you.'}</p>
       {/each}
     </div>
     <p class="hint">Everyone in the group sees who is speaking. You can add and remove people later from the group's info.</p>

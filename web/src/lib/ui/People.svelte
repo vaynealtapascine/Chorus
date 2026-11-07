@@ -1,671 +1,333 @@
 <script lang="ts">
-  // Follows (M6.1): follow someone by handle; accept followers and choose how much they see.
-  // Follows live in the followed account's scope, so accepting and the privacy preset are ordinary
-  // ops; asking to follow, unfollowing and your own prefs go through /api/v1/follows.
-  import BucketLabel from './BucketLabel.svelte';
-  import CeilingControls from './CeilingControls.svelte';
-  import BucketIconPicker from './BucketIconPicker.svelte';
-  import { DEFAULT_BUCKET_ICON, withPreset, canonical, PRESET_KEYS } from '../bucket-controls';
-  import { notifyPreset } from '../core/pkg/chorus_wasm.js';
+  // Friends (UI20, Figma F7, D-128): a system sees Friends · Requests · Sharing (F7.1, F7.7, F7.8),
+  // a person Following · Followers · Requests (F7.4). A friend opens on their own page
+  // (#/people/<account>); sharing with one friend, a bucket, Advanced sharing and notifications from
+  // a friend are pages of their own (#/people/share|bucket|advanced|notify/…). Everything about other
+  // accounts is the server's filtered view; accepting and buckets are ordinary ops.
+  import '../design/friends.css';
+  import { onMount } from 'svelte';
+  import { BUCKET_SWATCHES } from '../bucket-controls';
   import { bucketAssignments, buckets, members, selfMember } from '../data';
-  import { apiBase } from '../sync/device';
-  import { apiFetch } from '../http';
-  import { sync, type Projection } from '../sync/client';
+  import { everyoneElsePreset, presetOf, startBucket } from '../follow-presets';
+  import { api, friends, type Alert } from '../friends-state.svelte';
+  import {
+    accountColor, activity, around, connectedSince, follows, friendsSince, isSystem, nowLine, personName, presetName, sinceLine, waiting,
+    type FollowRow, type FriendRow, type Person,
+  } from '../friends-screens';
   import { bodyAuthors } from '../front-view';
-  import { fuzzyWhen, precisionOfRule, type Part, type Precision } from '../fuzz';
-  import AvatarImage from './AvatarImage.svelte';
-  import FriendPostCard from './FriendPostCard.svelte';
-  import type { FriendPost } from '../friends-feed';
-  import { disablePush, enablePush, pushActive, pushSupported, testPush } from '../push';
-  import { createShared, openDm } from '../spaces';
-  import { putFront } from '../friend-fronts.svelte';
+  import { shortAgo } from '../journal-presentation';
+  import { canWriteAs } from '../posts';
+  import { openDm } from '../spaces';
+  import { sync, type Projection } from '../sync/client';
+  import AcceptSheet from './AcceptSheet.svelte';
+  import BucketGlyph from './BucketGlyph.svelte';
+  import FriendFace from './FriendFace.svelte';
+  import Icon from './Icon.svelte';
+  import Sheet from './Sheet.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
-
-  interface Person { id: string; handle: string | null; display_name: string | null; kind: string; avatar_blob?: string | null }
-  interface FollowRow { id: string; account: Person; status: string; created_at: number; prefs?: Record<string, unknown> }
-
-  interface ViewEntry { t: string; name: string; level: string; color?: string | null; glyph?: string | null; avatar_blob?: string | null }
-  interface When { at: number | null; precision: Precision; part?: Part | null }
-  interface View {
-    entries: ViewEntry[];
-    since: number | null;
-    time?: { mode?: string };
-    shared?: boolean;
-    /** additional fronts they granted you (D-084), as revealed */
-    fronts?: { id: string; name: string | null; entries: ViewEntry[]; since: number | null }[];
-    /** only when they share it: past revealed fronts, newest first */
-    history?: { entries: { name: string }[]; time: When }[];
-    stats?: { days: number; members: { name: string; share_pct: number }[] };
-  }
-  interface Note {
-    id: string;
-    kind: 'switch' | 'mention' | 'dm' | 'reply' | 'message' | 'member_dm' | 'own_switch' | 'post' | 'alert_request' | 'alert_accepted';
-    text: string;
-    title?: string;
-    channel_id?: string;
-    /** Post alerts (D-106): the new post, or whose alerts were asked for or granted. */
-    post_id?: string;
-    member_id?: string;
-    account_id?: string;
-    time: { at: number | null; precision: Precision; part?: Part | null };
-    account?: { handle: string | null; display_name: string | null };
-  }
-  const noteTitle = (n: Note) => n.account?.display_name ?? (n.account?.handle ? `@${n.account.handle}` : (n.title ?? 'Chorus'));
-
-  let views = $state<Record<string, View>>({});
-  let sharedPosts = $state<Record<string, FriendPost[]>>({});
-  let notes = $state<Note[]>([]);
-  let seenNotes = new Set<string>();
-  let canNotify = $state(typeof Notification !== 'undefined' && Notification.permission === 'granted');
-  // Web Push: notifications even with no Chorus tab open (only in the built app)
-  let pushOn = $state(false);
-  let pushNote = $state('');
-  let testNote = $state('');
-  pushActive().then((on) => (pushOn = on));
-  let following = $state<FollowRow[]>([]);
-  let followers = $state<FollowRow[]>([]);
-  /** Who asked to hear about our members' posts, and who does (D-106). */
-  interface Alert { member_id: string; status: 'requested' | 'active'; account: Person }
-  let alerts = $state<Alert[]>([]);
-  const memberName = (id: string) => { const m = members(projection).find((x) => x.id === id); return m?.display_name ?? m?.name ?? 'a member'; };
-  /** A followed person's post alerts, by account (a singlet has no member pages to ask from). */
-  let personAlerts = $state<Record<string, 'none' | 'requested' | 'active'>>({});
-  async function togglePersonAlerts(account: string) {
-    try {
-      const on = (personAlerts[account] ?? 'none') === 'none';
-      const j = await api(`/accounts/${encodeURIComponent(account)}/alerts`, { method: on ? 'PUT' : 'DELETE' });
-      personAlerts = { ...personAlerts, [account]: j.post_alerts };
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
-  async function decideAlert(a: Alert, approve: boolean) {
-    try {
-      await api(`/alerts/${encodeURIComponent(a.member_id)}/${encodeURIComponent(a.account.id)}`, { method: approve ? 'PUT' : 'DELETE' });
-      await load();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
-  let target = $state('');
-  let error = $state('');
-  let busy = $state(false);
-
-  const PRESETS = [
-    { id: 'close', label: 'Close', hint: 'right away, exact times, switch-outs too' },
-    { id: 'gentle', label: 'Gentle', hint: '5–20 min later, time rounded to 15 min' },
-    { id: 'private', label: 'Private', hint: '30–90 min later, only "this evening"' },
-    { id: 'digest', label: 'Digest', hint: 'one summary a day' },
-    { id: 'off', label: 'Off', hint: 'no switch notifications' },
-  ] as const;
-  const presetJson = Object.fromEntries(PRESETS.map((p) => [p.id, notifyPreset(p.id)]));
+  const person = $derived(!!selfMember(projection));
+  const tabs = $derived(person ? ['Following', 'Followers', 'Requests'] : ['Friends', 'Requests', 'Sharing']);
+  const own = $derived(members(projection).filter((m) => canWriteAs(projection, m.id, sync.accountId)));
+  const reader = $derived(selfMember(projection) ?? own.find((m) => m.id === bodyAuthors(projection, sync.accountId)[0]) ?? own[0]);
+  const ownName = $derived((projection.rows.system?.[sync.accountId]?.fields.name as string | undefined)
+    || ((h) => (h ? `@${h}` : ''))(projection.rows.account?.[sync.accountId]?.fields.handle as string | undefined) || (person ? 'you' : 'your system'));
   const ownBuckets = $derived(buckets(projection));
   const assignments = $derived(bucketAssignments(projection));
-  const accountSettings = $derived((projection.rows.account?.[sync.accountId]?.fields.settings ?? {}) as Record<string, unknown>);
-  const defaultCeiling = $derived((
-    projection.rows.pref?.[`||follow_ceiling`]?.fields.value
-    ?? projection.rows.pref?.[`${sync.accountId}||follow_ceiling`]?.fields.value
-    ?? accountSettings.follow_ceiling
-    ?? {}
-  ) as Record<string, unknown>);
-  const defaultPreset = $derived(presetOf(defaultCeiling));
-  let newBucket = $state('');
-  // the bucket whose delete is being confirmed
-  let deleting = $state<string | null>(null);
-  let newBucketPreset = $state('gentle');
 
-  // sharing toggles and front/layer grants (D-084) are independent of the preset
-  const ORTHOGONAL = ['share_history', 'share_stats', 'fronts', 'layers'];
-  const withoutSharing = (c: Record<string, unknown>) =>
-    Object.fromEntries(Object.entries(c).filter(([k]) => !ORTHOGONAL.includes(k)));
-  const grantsOf = (c: Record<string, unknown>) =>
-    Object.fromEntries(Object.entries(c).filter(([k]) => (k === 'fronts' || k === 'layers') && Array.isArray(c[k]) && (c[k] as unknown[]).length));
-  // what the owner can grant: live additional fronts and live custom layers
-  const named = $derived(projection.front_systems?.[sync.accountId]?.system);
-  const grantableFronts = $derived(named ? Object.values(named.fronts).filter((f) => !f.deleted && f.id !== sync.accountId)
-    .sort((a, b) => a.name.localeCompare(b.name)) : []);
-  const grantableLayers = $derived(named ? Object.values(named.layers).filter((l) => !l.deleted && !['front', 'cocon', 'present'].includes(l.id))
-    .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name)) : []);
-  function presetOf(ceiling: unknown): string {
-    const c = (ceiling ?? {}) as Record<string, unknown>;
-    const raw = canonical(Object.fromEntries(Object.entries(c).filter(([k]) => PRESET_KEYS.includes(k))));
-    return PRESETS.find((p) => canonical(JSON.parse(presetJson[p.id])) === raw)?.id ?? (raw === '{}' ? 'inherit' : 'custom');
-  }
-
-  function addBucket(e: SubmitEvent) {
-    e.preventDefault();
-    if (!newBucket.trim()) return;
-    sync.create('bucket.set', sync.accountScope, sync.newId(), {
-      name: newBucket.trim(), icon: DEFAULT_BUCKET_ICON, ceiling: newBucketPreset === 'inherit' ? {} : JSON.parse(presetJson[newBucketPreset]),
-    });
-    newBucket = '';
-  }
-
-  function assign(bucketId: string, followerId: string, present: boolean) {
-    sync.create(present ? 'bucket.assign' : 'bucket.unassign', sync.accountScope, bucketId, {
-      follower_account_id: followerId,
-    });
-  }
-
-  async function api(path: string, init: RequestInit = {}) {
-    const r = await apiFetch(`${apiBase()}${path}`, {
-      ...init,
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${sync.device?.session ?? ''}` },
-    });
-    const text = await r.text();
-    const j = text ? JSON.parse(text) : {};
-    if (!r.ok) throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-    return j;
-  }
-
-  async function load() {
-    try {
-      const j = await api('/follows');
-      following = j.following;
-      followers = j.followers;
-      alerts = (await api('/alerts').catch(() => ({ items: alerts }))).items;
-      await loadViews();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
-
-  const isSystem = $derived(!selfMember(projection));
-
-  /** What we may see of the accounts we follow, and our switch notifications (polled). */
-  async function loadViews() {
-    const next: Record<string, View> = {};
-    const nextPosts: Record<string, FriendPost[]> = {};
-    for (const f of following.filter((x) => x.status === 'active')) {
-      try {
-        next[f.account.id] = await api(`/accounts/${f.account.id}/view`);
-        putFront(f.account.id, next[f.account.id]);
-      } catch {
-        /* not shared (yet) */
-      }
-      try {
-        const result = await api(`/posts?account=${encodeURIComponent(f.account.id)}&limit=5`);
-        nextPosts[f.account.id] = result.items as FriendPost[];
-      } catch {
-        /* older server or temporarily offline */
-      }
-    }
-    const nextAlerts: Record<string, 'none' | 'requested' | 'active'> = {};
-    for (const f of following.filter((x) => x.status === 'active' && x.account.kind === 'person')) {
-      try {
-        nextAlerts[f.account.id] = (await api(`/accounts/${encodeURIComponent(f.account.id)}/alerts`)).post_alerts;
-      } catch {
-        /* an older server */
-      }
-    }
-    views = next;
-    sharedPosts = nextPosts;
-    personAlerts = nextAlerts;
-    const j = await api('/notifications');
-    const fresh = (j.items as Note[]).filter((n) => !seenNotes.has(n.id));
-    // a desktop notification for anything new while this page is open (not on first load)
-    if (seenNotes.size && canNotify && !pushOn && document.hidden) {
-      for (const n of fresh) new Notification(noteTitle(n), { body: n.text, tag: n.id });
-    }
-    for (const n of j.items as Note[]) seenNotes.add(n.id);
-    notes = j.items;
-  }
-
-  $effect(() => {
-    const t = setInterval(() => void loadViews().catch(() => {}), 30_000);
+  onMount(() => {
+    void friends.load();
+    const t = setInterval(() => void friends.load(), 30_000);
     return () => clearInterval(t);
   });
-
-  async function enableNotifications() {
-    if (pushSupported()) {
-      const err = await enablePush();
-      pushOn = !err;
-      pushNote = err ?? '';
-      if (!err) {
-        canNotify = true;
-        return;
-      }
-    }
-    canNotify = (await Notification.requestPermission()) === 'granted';
-  }
-
-  async function sendTest() {
-    const err = await testPush();
-    testNote = err ? `The test didn't go out: ${err}` : 'Sent. It should arrive in a few seconds, even with this tab closed.';
-  }
-
-  async function turnOffPush() {
-    await disablePush();
-    pushOn = false;
-  }
-
-  function viewLine(v: View | undefined): string {
-    if (!v) return '';
-    if (v.shared === false) return "They don't share who's fronting";
-    const front = v.entries.filter((e) => e.level === 'front').map((e) => e.name);
-    if (!front.length) return v.since == null ? 'Nothing shared yet' : 'No one fronting';
-    const who = front.length > 1 ? `${front.slice(0, -1).join(', ')} & ${front.at(-1)}` : front[0];
-    const when = fuzzyWhen(v.since, precisionOfRule(v.time)).replace(/^at /, '');
-    return `${who} ${front.length > 1 ? 'are' : 'is'} fronting${when ? ` · since ${when}` : ''}`;
-  }
-
   // reload when the synced follow rows change (a request arrived, another device accepted…)
   const followKey = $derived(JSON.stringify(projection.rows.follow ?? {}));
   $effect(() => {
     void followKey;
-    const t = setTimeout(load, 150);
+    const t = setTimeout(() => void friends.load(), 150);
     return () => clearTimeout(t);
   });
 
-  async function follow(e: SubmitEvent) {
+  let searching = $state(false);
+  let query = $state('');
+  let adding = $state(false);
+  let handle = $state('');
+  let accepting = $state<FollowRow | null>(null);
+  let startOpen = $state(false);
+  let notice = $state('');
+  const now = $derived((void friends.rows, Date.now()));
+  const shown = $derived(friends.rows.filter((r) => {
+    const q = query.trim().toLowerCase();
+    return !q || personName(r.account).toLowerCase().includes(q) || (r.account.handle ?? '').toLowerCase().includes(q);
+  }));
+  const asked = $derived(friends.alerts.filter((a) => a.status === 'requested'));
+  const hearing = $derived(friends.alerts.filter((a) => a.status === 'active'));
+  const ours = $derived(friends.following.filter((f) => f.status === 'requested'));
+  const requestCount = $derived(friends.requests.length + asked.length);
+  const memberName = (id: string) => { const m = members(projection).find((x) => x.id === id); return m?.display_name ?? m?.name ?? 'a member'; };
+  const tab = $derived(Math.min(friends.tab, tabs.length - 1));
+
+  async function act(failure: string, f: () => Promise<unknown> | unknown) {
+    notice = '';
+    try { await f(); await friends.load(); } catch (e) { notice = e instanceof Error ? e.message : failure; }
+  }
+  const message = (id: string) => act('Couldn’t open the chat.', async () => { location.hash = `#/chat/space:${await openDm(id)}`; });
+  const open = (id: string) => (location.hash = `#/people/${encodeURIComponent(id)}`);
+  function follow(e: SubmitEvent) {
     e.preventDefault();
-    if (!target.trim()) return;
-    busy = true;
-    error = '';
-    try {
-      await api('/follows', { method: 'POST', body: JSON.stringify({ target: target.trim() }) });
-      target = '';
-      await load();
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-    } finally {
-      busy = false;
-    }
+    if (!handle.trim()) return;
+    void act('Couldn’t send the request.', async () => { await api('/follows', { method: 'POST', body: JSON.stringify({ target: handle.trim() }) }); handle = ''; adding = false; });
   }
-
-  async function unfollow(id: string) {
-    await api(`/follows/${id}`, { method: 'DELETE' });
-    await load();
+  const decline = (f: FollowRow) => act('Couldn’t decline.', () => sync.create('follow.end', sync.accountScope, f.id, {}));
+  const cancel = (f: FollowRow) => act('Couldn’t cancel.', () => api(`/follows/${f.id}`, { method: 'DELETE' }));
+  const decideAlert = (a: Alert, yes: boolean) => act('Couldn’t answer.', () => api(`/alerts/${encodeURIComponent(a.member_id)}/${encodeURIComponent(a.account.id)}`, { method: yes ? 'PUT' : 'DELETE' }));
+  function accept(f: FollowRow) {
+    if (person) void act('Couldn’t accept.', () => sync.create('follow.accept', sync.accountScope, f.id, {}));
+    else accepting = f;
   }
-
-  // Shared spaces and DMs (M6.2) are for people you're connected to, either way round.
-  const connections = $derived(
-    [...new Map([...followers, ...following].filter((f) => f.status === 'active').map((f) => [f.account.id, f.account])).values()],
-  );
-  let spaceName = $state('');
-  let spaceWith = $state<string[]>([]);
-
-  async function message(accountId: string) {
-    error = '';
-    try {
-      location.hash = `#/chat/space:${await openDm(accountId)}`;
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
+  function chooseStart(id: string | null) {
+    sync.create('pref.set', sync.accountScope, null, { device: '', key: 'follow.start_bucket', value: id ?? '' });
+    startOpen = false;
   }
-
-  async function newSpace(e: SubmitEvent) {
-    e.preventDefault();
-    error = '';
-    try {
-      const id = await createShared(spaceName.trim(), spaceWith);
-      spaceName = '';
-      spaceWith = [];
-      location.hash = `#/chat/space:${id}`;
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-    }
-  }
-
-  const followCeiling = (id: string) => (projection.rows.follow?.[id]?.fields.ceiling ?? {}) as Record<string, unknown>;
-  function ceilingOf(id: string): string {
-    const c = followCeiling(id);
-    return JSON.stringify(withoutSharing(c)) === '{}' ? 'inherit' : presetOf(c);
-  }
-
-  function setPreset(id: string, preset: string) {
-    const base = preset === 'inherit' ? {} : JSON.parse(presetJson[preset]);
-    sync.create('follow.set_ceiling', sync.accountScope, id, { ceiling: preset === 'inherit' ? { ...grantsOf(followCeiling(id)) } : withPreset(followCeiling(id), base) });
-  }
-
-  const granted = (id: string, key: 'fronts' | 'layers') => {
-    const v = followCeiling(id)[key];
-    return Array.isArray(v) ? (v as string[]) : [];
-  };
-  /** Grant or revoke one additional front / custom layer for one follower (D-084). */
-  function setGrant(id: string, key: 'fronts' | 'layers', value: string, on: boolean) {
-    const c = followCeiling(id);
-    const next = granted(id, key).filter((x) => x !== value);
-    if (on) next.push(value);
-    // an empty list stays: this follower's own setting wins over any bucket's grants (D-115)
-    const ceiling = { ...c, [key]: next };
-    sync.create('follow.set_ceiling', sync.accountScope, id, { ceiling });
-  }
-
-  function accept(id: string, preset: string) {
-    sync.create('follow.accept', sync.accountScope, id, {});
-    if (isSystem) setPreset(id, preset);
-  }
-
-  function remove(id: string) {
-    sync.create('follow.end', sync.accountScope, id, {});
-  }
-
-  const name = (p: Person) => p.display_name ?? (p.handle ? `@${p.handle}` : 'Someone');
-  const reactMember = $derived(selfMember(projection)?.id ?? bodyAuthors(projection, sync.accountId)[0]);
-  const reactName = $derived(members(projection).find((m) => m.id === reactMember)?.display_name ?? 'You');
-  let choice = $state<Record<string, string>>({});
+  const color = (p: Person) => accountColor(p.id, BUCKET_SWATCHES);
+  const start = $derived(ownBuckets.find((b) => b.id === startBucket(projection)) ?? null);
 </script>
 
-<section class="page">
-  <h1 class="display">People</h1>
-
-  <form class="follow" onsubmit={follow}>
-    <input bind:value={target} placeholder="@handle" aria-label="Handle to follow" autocomplete="off" />
-    <button class="primary" disabled={busy}>Follow</button>
-  </form>
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-
-  <!-- a singlet comes here for the people they follow; a system for its requests and followers -->
-  {#if !isSystem}{@render followingList()}{/if}
-
-  {#if followers.some((f) => f.status === 'requested')}
-    <h2>Requests</h2>
-    <ul>
-      {#each followers.filter((f) => f.status === 'requested') as f (f.id)}
-      <li class="card">
-        <span class="person-avatar"><AvatarImage hash={f.account.avatar_blob} glyph={(f.account.display_name ?? f.account.handle ?? '?')[0]} name={name(f.account)} /></span>
-        <div class="who"><strong>{name(f.account)}</strong><span>wants to follow you</span></div>
-          {#if isSystem}
-          <label class="preset">
-            <span>They'll see switches</span>
-            <select value={choice[f.id] ?? 'inherit'} onchange={(e) => (choice[f.id] = e.currentTarget.value)}>
-              <option value="inherit">Default ({defaultPreset})</option>
-              {#each PRESETS as p (p.id)}<option value={p.id}>{p.label} — {p.hint}</option>{/each}
-            </select>
-          </label>
-          {/if}
-          <div class="actions">
-            <button class="primary" onclick={() => accept(f.id, choice[f.id] ?? 'inherit')}>Accept</button>
-            <button class="ghost" onclick={() => remove(f.id)}>Decline</button>
-          </div>
-        </li>
-      {/each}
-    </ul>
-  {/if}
-
-  {#if alerts.length}
-    <h2>Post alerts</h2>
-    <p class="hint">They hear when that member posts something they can already see.</p>
-    <ul>
-      {#each alerts as a (`${a.member_id}:${a.account.id}`)}
-        <li class="card">
-          <span class="person-avatar"><AvatarImage hash={a.account.avatar_blob} glyph={(a.account.display_name ?? a.account.handle ?? '?')[0]} name={name(a.account)} /></span>
-          <div class="who"><strong>{name(a.account)}</strong><span>{a.status === 'requested' ? 'wants to hear' : 'hears'} when {memberName(a.member_id)} posts</span></div>
-          <div class="actions">
-            {#if a.status === 'requested'}<button class="primary" onclick={() => decideAlert(a, true)}>Allow</button>{/if}
-            <button class="ghost" onclick={() => decideAlert(a, false)}>{a.status === 'requested' ? 'Decline' : 'Stop'}</button>
-          </div>
-        </li>
-      {/each}
-    </ul>
-  {/if}
-
-  <h2>Followers</h2>
-  {#if isSystem}<p class="hint">Delay hides <em>when</em> you switched as it happens; fuzzing hides the exact time afterwards.</p>
-  {:else}<p class="hint">They see the posts you share with followers.</p>{/if}
-  <ul>
-    {#each followers.filter((f) => f.status === 'active') as f (f.id)}
-      {@const current = ceilingOf(f.id)}
-      <li class="card">
-        <span class="person-avatar"><AvatarImage hash={f.account.avatar_blob} glyph={(f.account.display_name ?? f.account.handle ?? '?')[0]} name={name(f.account)} /></span>
-        <div class="who"><strong>{name(f.account)}</strong>{#if f.account.handle}<span>@{f.account.handle}</span>{/if}</div>
-        {#if isSystem}
-        <label class="preset">
-          <span>Sees switches</span>
-          <select value={current} onchange={(e) => setPreset(f.id, e.currentTarget.value)}>
-            {#if current === 'custom'}<option value="custom" disabled>Custom (Advanced)</option>{/if}
-            <option value="inherit">Default ({defaultPreset})</option>
-            {#each PRESETS as p (p.id)}<option value={p.id}>{p.label} — {p.hint}</option>{/each}
-          </select>
-        </label>
-        {/if}
-        {#if isSystem}<CeilingControls ceiling={followCeiling(f.id)} inherited="Their buckets or the default" onchange={(ceiling) => sync.create('follow.set_ceiling', sync.accountScope, f.id, { ceiling })} />{/if}
-        {#if isSystem && (grantableFronts.length || grantableLayers.length)}
-          <details class="grants">
-            <summary>Additional fronts and layers</summary>
-            <p class="hint">They see Body only until you allow more. Delays and privacy rules still apply.</p>
-            {#if grantableFronts.length}
-              <div class="bucket-checks" aria-label={`Fronts ${name(f.account)} may see`}>
-                {#each grantableFronts as front (front.id)}
-                  <label><input type="checkbox" checked={granted(f.id, 'fronts').includes(front.id)}
-                    onchange={(e) => setGrant(f.id, 'fronts', front.id, e.currentTarget.checked)} /> {front.name}</label>
-                {/each}
-              </div>
-            {/if}
-            {#if grantableLayers.length}
-              <div class="bucket-checks" aria-label={`Layers ${name(f.account)} may see`}>
-                {#each grantableLayers as layer (layer.id)}
-                  <label><input type="checkbox" checked={granted(f.id, 'layers').includes(layer.id)}
-                    onchange={(e) => setGrant(f.id, 'layers', layer.id, e.currentTarget.checked)} /> {layer.name}</label>
-                {/each}
-              </div>
-            {/if}
-          </details>
-        {/if}
-        {#if ownBuckets.length}
-          <div class="bucket-checks" aria-label={`Buckets for ${name(f.account)}`}>
-            {#each ownBuckets as bucket (bucket.id)}
-              <label><input type="checkbox" checked={assignments.get(bucket.id)?.has(f.account.id) ?? false}
-                onchange={(e) => assign(bucket.id, f.account.id, e.currentTarget.checked)} /> <BucketLabel {bucket} /></label>
-            {/each}
-          </div>
-        {/if}
-        <div class="actions">
-          <button class="ghost" onclick={() => message(f.account.id)}>Message</button>
-          <button class="ghost" onclick={() => remove(f.id)}>Remove</button>
-        </div>
-      </li>
-    {:else}
-      <li class="muted">No followers yet. Share your handle with friends.</li>
-    {/each}
-  </ul>
-
-  <section class="bucket-section" aria-label="Sharing buckets">
-    <h2>Sharing buckets</h2>
-    {#if isSystem}<p class="hint">Group followers to choose what each group can hear. A follower in several buckets gets the most open setting for each detail.</p>
-    {:else}<p class="hint">Group followers to choose who sees which posts.</p>{/if}
-    <form class="bucket-new" onsubmit={addBucket}>
-      <input bind:value={newBucket} placeholder="Bucket name" aria-label="New bucket name" />
-      {#if isSystem}<select bind:value={newBucketPreset} aria-label="New bucket ceiling">
-        <option value="inherit">Account default</option>{#each PRESETS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
-      </select>{/if}
-      <button class="primary">Create bucket</button>
-    </form>
-    {#each ownBuckets as bucket (bucket.id)}
-      {@const preset = presetOf(bucket.ceiling)}
-      <div class="card bucket-row">
-        <BucketLabel {bucket} /><span class="hint">{assignments.get(bucket.id)?.size ?? 0} {(assignments.get(bucket.id)?.size ?? 0) === 1 ? 'follower' : 'followers'}</span>
-        <BucketIconPicker icon={bucket.icon} color={bucket.color} name={bucket.name}
-          onicon={(icon) => sync.create('bucket.set', sync.accountScope, bucket.id, { icon })}
-          oncolor={(color) => sync.create('bucket.set', sync.accountScope, bucket.id, { color })} />
-        <label>Name <input value={bucket.name} aria-label={`Rename ${bucket.name}`} onchange={(e) => {
-          const name = e.currentTarget.value.trim();
-          if (name && name !== bucket.name) sync.create('bucket.set', sync.accountScope, bucket.id, { name });
-        }} /></label>
-        {#if isSystem}<label>Ceiling <select value={preset} aria-label={`Ceiling for ${bucket.name}`} onchange={(e) => sync.create('bucket.set', sync.accountScope, bucket.id, {
-          ceiling: e.currentTarget.value === 'inherit' ? {} : withPreset(bucket.ceiling, JSON.parse(presetJson[e.currentTarget.value])),
-        })}>
-          {#if preset === 'custom'}<option value="custom" disabled>Custom (Advanced)</option>{/if}
-          <option value="inherit">Account default</option>{#each PRESETS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
-        </select></label>{/if}
-        {#if isSystem}<CeilingControls ceiling={bucket.ceiling} inherited="Account default" onchange={(ceiling) => sync.create('bucket.set', sync.accountScope, bucket.id, { ceiling })} />{/if}
-        {#if deleting === bucket.id}
-          <span class="hint">Delete “{bucket.name}”? Anything shared only with it goes back to just you.</span>
-          <button class="ghost danger" onclick={() => { sync.create('bucket.delete', sync.accountScope, bucket.id, {}); deleting = null; }}>Delete</button>
-          <button class="ghost" onclick={() => (deleting = null)}>Keep</button>
-        {:else}<button class="ghost" onclick={() => (deleting = bucket.id)}>Delete</button>{/if}
-      </div>
-    {/each}
-    {#if isSystem}<p class="hint">Set the default for new followers in <a href="#/settings">Settings</a>.</p>{/if}
-  </section>
-
-  {#if isSystem}{@render followingList()}{/if}
-
-  {#if connections.length}
-    <h2>Shared spaces</h2>
-    <p class="hint">
-      A chat with people you're connected to. What you post there is seen as it's sent, so it also shows who's
-      around at that moment, even if your switch notifications are delayed.
-    </p>
-    <form class="card new-space" onsubmit={newSpace}>
-      <input bind:value={spaceName} placeholder="Name (e.g. Book club)" aria-label="Shared space name" maxlength="80" required />
-      <div class="bucket-checks" aria-label="Who to bring in">
-        {#each connections as a (a.id)}
-          <label><input type="checkbox" value={a.id} bind:group={spaceWith} /> {name(a)}</label>
-        {/each}
-      </div>
-      <button class="primary" disabled={!spaceName.trim()}>Start a shared space</button>
-    </form>
-  {/if}
-
-  {#if notes.length || following.length || isSystem}
-    <div class="notes-head">
-      <h2>Recent</h2>
-      {#if pushOn}
-        <button class="ghost" onclick={sendTest}>Send a test</button>
-        <button class="ghost" onclick={turnOffPush}>Stop notifying this browser</button>
-      {:else if typeof Notification !== 'undefined' && (!canNotify || pushSupported())}
-        <button class="ghost" onclick={enableNotifications}>Notify me in this browser</button>
-      {/if}
+<section class="fr-page" aria-busy={!friends.loaded}>
+  <header class="fr-head">
+    {#if reader}<FriendFace name={reader.display_name ?? reader.name} color={reader.color} glyph={reader.sigils[0]} blob={reader.avatar_blob} size={36} {dark} />{/if}
+    <div class="fr-titles">
+      <h1>Friends</h1>
+      <span>{person ? `${reader?.display_name ?? reader?.name ?? ownName} · just me` : `${ownName} · reading as ${reader?.display_name ?? reader?.name ?? 'nobody'}`}</span>
     </div>
-    {#if pushNote}<p class="muted">{pushNote} Notifications will show while this page is open.</p>{/if}
-    {#if testNote}<p class="muted">{testNote}</p>{/if}
-    <ul>
-      {#each notes as n (n.id)}
-        <li class="note">
-          <strong>{noteTitle(n)}</strong>
-          {#if n.kind !== 'switch' && n.channel_id}
-            <a href="#/chat/{n.channel_id}">{n.text}</a>
-          {:else if n.post_id}
-            <a href="#/journal/post/{encodeURIComponent(n.post_id)}">{n.text}</a>
-          {:else if n.kind === 'alert_accepted' && n.account_id && n.member_id && following.some((f) => f.account.id === n.account_id && f.account.kind === 'system')}
-            <a href="#/people/{encodeURIComponent(n.account_id)}/{encodeURIComponent(n.member_id)}">{n.text}</a>
-          {:else}
-            <span>{n.text}</span>
-          {/if}
-          <time>{fuzzyWhen(n.time.at, n.time.precision, n.time.part)}</time>
-        </li>
-      {:else}
-        <li class="muted">Nothing yet. Switches arrive after the delay each system chose.</li>
+    <button class="fr-icon ink" aria-label="Follow someone" onclick={() => (adding = true)}><Icon name="user-plus" /></button>
+    <button class="fr-icon ink" aria-label={searching ? 'Close search' : 'Search friends'} onclick={() => { searching = !searching; query = ''; }}><Icon name={searching ? 'close' : 'search'} /></button>
+  </header>
+  <div class="fr-tabs" role="tablist" aria-label="Friends">
+    {#each tabs as label, i (label)}
+      <button role="tab" aria-selected={tab === i} onclick={() => (friends.tab = i)}>{label}{#if label === 'Requests' && requestCount}<span class="fr-count">{requestCount}</span>{/if}</button>
+    {/each}
+  </div>
+  {#if searching}<div class="search"><input bind:value={query} placeholder="Search friends" aria-label="Search friends" /></div>{/if}
+  {#if friends.error}<p class="fr-error" role="alert">{friends.error}</p>{/if}
+  {#if notice}<p class="fr-error" role="alert">{notice}</p>{/if}
+  {#if !friends.loaded && !friends.error}<p class="fr-empty">Loading…</p>{/if}
+
+  {#if tabs[tab] === 'Friends'}
+    {@const near = shown.filter((r) => around(r, now))}
+    {@const rest = shown.filter((r) => !around(r, now))}
+    {#if friends.loaded && !shown.length}{@render empty()}{/if}
+    {#if near.length}
+      <h2 class="fr-section"><span>Around right now</span><span class="fr-aside">as each friend shares it</span></h2>
+      <ul class="fr-list">{#each near as r (r.account.id)}<li>{@render row(r, true)}</li>{/each}</ul>
+    {/if}
+    {#if rest.length}
+      <h2 class="fr-section"><span>Not sharing who’s around</span></h2>
+      <ul class="fr-list">{#each rest as r (r.account.id)}<li>{@render row(r, false)}</li>{/each}</ul>
+    {/if}
+    {#if shown.length}<p class="fr-note"><Icon name="clock" size={16} />Times are as each friend shares them. Some round to the quarter hour or show only “this morning”.</p>{/if}
+  {:else if tabs[tab] === 'Following'}
+    {@const followed = shown.filter((r) => r.following)}
+    {#if friends.loaded && !followed.length}{@render empty()}{/if}
+    {@render group('Systems', followed.filter((r) => isSystem(r.account)))}
+    {@render group('People', followed.filter((r) => !isSystem(r.account)))}
+  {:else if tabs[tab] === 'Followers'}
+    {@const list = shown.filter((r) => r.follower)}
+    {#if friends.loaded && !list.length}<p class="fr-empty">Nobody follows you yet. Share your handle so friends can ask.</p>{/if}
+    <ul class="fr-list">
+      {#each list as r (r.account.id)}
+        {@const theirs = ownBuckets.filter((b) => assignments.get(b.id)?.has(r.account.id))}
+        <li><button class="fr-row" onclick={() => open(r.account.id)}>
+          <FriendFace name={personName(r.account)} color={color(r.account)} blob={r.account.avatar_blob} size={40} {dark} />
+          <span class="fr-body">
+            <span class="fr-name"><strong>{personName(r.account)}</strong><span class="fr-pill">{isSystem(r.account) ? 'System' : 'Person'}</span></span>
+            {#if theirs.length}<span class="fr-faces">{#each theirs.slice(0, 3) as b (b.id)}<span class="fr-pill accent"><BucketGlyph icon={b.icon} color={b.color} size={13} />{b.name}</span>{/each}</span>
+            {:else}<span class="fr-line quiet">In no bucket</span>{/if}
+          </span>
+          <span class="chev"><Icon name="chevron-right" size={18} /></span>
+        </button></li>
       {/each}
     </ul>
+    <h2 class="fr-section"><span>Buckets</span><span class="fr-aside">who sees which posts</span></h2>
+    {@render bucketRows()}
+  {:else if tabs[tab] === 'Requests'}
+    {#if friends.loaded && !friends.requests.length && !asked.length && !ours.length && !hearing.length}<p class="fr-empty">No requests right now.</p>{/if}
+    {#if friends.requests.length}
+      <h2 class="fr-section"><span>Want to follow {ownName}</span></h2>
+      <ul class="fr-list">
+        {#each friends.requests as f (f.id)}
+          <li>{@render request(f.account, person ? 'Would like to follow you.' : 'Would like to know when you switch.', [
+            [person ? 'Accept' : 'Accept…', true, () => accept(f)], ['Decline', false, () => decline(f)]])}</li>
+        {/each}
+      </ul>
+    {/if}
+    {#if asked.length}
+      <h2 class="fr-section"><span>Want to hear about posts</span></h2>
+      <ul class="fr-list">
+        {#each asked as a (`${a.member_id}:${a.account.id}`)}
+          <li>{@render request(a.account, person ? 'Would like to hear when you post.' : `Would like to hear when ${memberName(a.member_id)} posts.`, [
+            ['Allow', true, () => decideAlert(a, true)], ['Decline', false, () => decideAlert(a, false)]])}</li>
+        {/each}
+      </ul>
+    {/if}
+    {#if ours.length}
+      <h2 class="fr-section"><span>You asked to follow</span></h2>
+      <ul class="fr-list">{#each ours as f (f.id)}<li>{@render request(f.account, 'Waiting for them to accept.', [['Cancel request', false, () => cancel(f)]])}</li>{/each}</ul>
+    {/if}
+    {#if hearing.length}
+      <h2 class="fr-section"><span>Hear about our posts</span></h2>
+      <ul class="fr-list">
+        {#each hearing as a (`${a.member_id}:${a.account.id}`)}
+          <li>{@render request(a.account, person ? 'Hears when you post.' : `Hears when ${memberName(a.member_id)} posts.`, [['Stop', false, () => decideAlert(a, false)]])}</li>
+        {/each}
+      </ul>
+    {/if}
+  {:else}
+    <p class="fr-note"><Icon name="shield" size={16} />Friends in the same bucket hear the same things. A friend in two buckets gets the more open one.</p>
+    <h2 class="fr-section"><span>Buckets</span><span class="fr-aside">who · how much</span></h2>
+    {@render bucketRows()}
+    <h2 class="fr-section"><span>Everyone else</span></h2>
+    <button class="fr-link" onclick={() => (startOpen = true)}>
+      <Icon name="user-plus" />
+      <span class="fr-text"><strong>New friends start in</strong><span>{start ? `${start.name} · ${presetName(presetOf(start.ceiling))}` : `No bucket · ${presetName(everyoneElsePreset(projection))}`}</span></span>
+      <span class="chev"><Icon name="chevron-right" size={18} /></span>
+    </button>
+    <a class="fr-link" href="#/people/advanced">
+      <Icon name="sliders" />
+      <span class="fr-text"><strong>Advanced sharing</strong><span>Everyone else, front history, stats, extra fronts</span></span>
+      <span class="chev"><Icon name="chevron-right" size={18} /></span>
+    </a>
   {/if}
 </section>
 
-
-{#snippet followingList()}
-  <h2>Following</h2>
-  {#if !isSystem && following.some((f) => f.account.kind === 'system')}
-    <p class="hint">Systems share who's fronting as far as they choose, so you know who you're talking to. Their messages and posts show which member wrote them.</p>
+{#snippet group(title: string, list: FriendRow[])}
+  {#if list.length}
+    <h2 class="fr-section"><span>{title}</span><span class="fr-aside">{list.length}</span></h2>
+    <ul class="fr-list">{#each list as r (r.account.id)}<li>{@render row(r, around(r, now) || (!isSystem(r.account) && follows(r)))}</li>{/each}</ul>
   {/if}
-  <ul>
-    {#each following as f (f.id)}
-      <li class="card">
-        <span class="person-avatar"><AvatarImage hash={f.account.avatar_blob} glyph={(f.account.display_name ?? f.account.handle ?? '?')[0]} name={name(f.account)} /></span>
-        <div class="who">
-          <strong>{name(f.account)}</strong>
-          <span>{f.status === 'requested' ? 'waiting for them to accept' : viewLine(views[f.account.id]) || (f.account.handle ? `@${f.account.handle}` : '')}</span>
-          {#if views[f.account.id]?.entries?.length}
-            <span class="front-avatars">
-              {#each views[f.account.id].entries.filter((e) => e.t === 'subject') as e, i (`${e.name}:${i}`)}
-                <span class="front-avatar" title={e.name}><AvatarImage hash={e.avatar_blob} glyph={e.glyph ?? e.name[0]} name={e.name} /></span>
-              {/each}
-            </span>
-          {/if}
-          {#each views[f.account.id]?.fronts ?? [] as front (front.id)}
-            <span class="granted-front">{front.name ?? 'Another front'}: {front.entries.filter((e) => e.t === 'subject').map((e) => e.name).join(' & ') || 'No one'}</span>
-          {/each}
-          {#if views[f.account.id]?.stats?.members.length}
-            <span>Most often, last {views[f.account.id].stats!.days} days:
-              {views[f.account.id].stats!.members.filter((m) => m.share_pct > 0).map((m) => `${m.name} ${m.share_pct}%`).join(' · ')}</span>
-          {/if}
-          {#if views[f.account.id]?.history && views[f.account.id].history!.length > 1}
-            <details class="history">
-              <summary>Earlier</summary>
-              <ol>
-                {#each views[f.account.id].history!.slice(1) as h, i (i)}
-                  <li>{h.entries.map((e) => e.name).join(' & ') || 'Nobody shared'} <time>{fuzzyWhen(h.time.at, h.time.precision, h.time.part)}</time></li>
-                {/each}
-              </ol>
-            </details>
-          {/if}
-        </div>
-        <div class="actions">
-          {#if f.status === 'active'}<button class="ghost" onclick={() => message(f.account.id)}>Message</button>{/if}
-          {#if f.status === 'active' && f.account.kind === 'system'}<a class="ghost" href="#/people/{encodeURIComponent(f.account.id)}">Members</a>{/if}
-          {#if personAlerts[f.account.id]}
-            {@const state = personAlerts[f.account.id]}
-            <button class="ghost" aria-pressed={state !== 'none'} onclick={() => togglePersonAlerts(f.account.id)}
-              title={state === 'requested' ? 'They will see your request. Click to cancel it.' : 'Hear when they post'}>
-              {state === 'active' ? 'Post alerts on' : state === 'requested' ? 'Alerts requested' : 'Get post alerts'}
-            </button>
-          {/if}
-          <button class="ghost" onclick={() => unfollow(f.id)}>{f.status === 'requested' ? 'Cancel' : 'Unfollow'}</button>
-        </div>
-        {#if f.status === 'active' && (sharedPosts[f.account.id]?.length ?? 0) > 0}
-          <div class="shared-posts" aria-label={`Posts from ${name(f.account)}`}>
-            <strong>Shared posts</strong>
-            {#each sharedPosts[f.account.id] as post (post.id)}
-              <FriendPostCard {post} account={name(f.account)} {projection} speaker={reactMember ?? null} speakerName={reactName} {dark} />
-            {/each}
-          </div>
-        {/if}
-      </li>
-    {:else}
-      <li class="muted">You're not following anyone yet.</li>
-    {/each}
-  </ul>
-  <p class="hint">Quiet hours and notification kinds are in <a href="#/settings">Settings</a>. Each channel’s ⋯ menu has its own notification level.</p>
 {/snippet}
 
+{#snippet empty()}
+  <div class="fr-empty"><strong>No friends here yet</strong><br />Follow someone by their handle with the button at the top. They choose what you see.</div>
+{/snippet}
+
+{#snippet row(r: FriendRow, bright: boolean)}
+  {@const v = r.view}
+  {@const entries = v?.entries ?? []}
+  <div class="fr-row split" class:dim={!bright}>
+    <a class="main" href="#/people/{encodeURIComponent(r.account.id)}">
+    <FriendFace name={personName(r.account)} color={color(r.account)} blob={r.account.avatar_blob} size={44} {dark} />
+    <span class="fr-body">
+      <span class="fr-name"><strong>{personName(r.account)}</strong><span class="fr-pill">{isSystem(r.account) ? 'System' : 'Person'}</span></span>
+      {#if waiting(r)}<span class="fr-line quiet">Waiting for them to accept</span>
+      {:else if !r.following}<span class="fr-line quiet">Follows you · you don’t follow them</span>
+      {:else if isSystem(r.account) && entries.length}
+        <span class="fr-faces">
+          <span class="fr-stack">{#each entries.slice(0, 3) as e, i (`${e.name}:${i}`)}<FriendFace name={e.name} color={e.color ?? '#A09184'} glyph={e.glyph} blob={e.avatar_blob} size={22} {dark} />{/each}</span>
+          <span class="fr-line ink">{nowLine(entries)}</span>
+        </span>
+      {:else if isSystem(r.account) && v?.shared === false}<span class="fr-line quiet">Posts and chat only</span>
+      {:else if isSystem(r.account) && v?.since == null}<span class="fr-line quiet">Shares who’s around after their next switch</span>
+      {:else if isSystem(r.account)}<span class="fr-line quiet">Nobody’s around right now</span>
+      {:else if r.latest && bright}<span class="fr-line">{activity(r.latest, shortAgo(r.latest.occurred_at))}</span>
+      {:else if r.latest}<span class="fr-line quiet">Last posted {shortAgo(r.latest.occurred_at)} ago</span>
+      {:else}<span class="fr-line quiet">Nothing posted yet</span>{/if}
+      {#if r.following && !waiting(r)}
+        {#if isSystem(r.account) && entries.length}{#if sinceLine(v, now)}<span class="fr-small"><Icon name="clock" size={13} />{sinceLine(v, now)}</span>{/if}
+        {:else if isSystem(r.account) && v?.shared === false}<span class="fr-small"><Icon name="eye-off" size={13} />They haven’t shared fronting with you</span>
+        {:else if isSystem(r.account)}{#if friendsSince(connectedSince(r), now)}<span class="fr-small"><Icon name="clock" size={13} />{friendsSince(connectedSince(r), now)}</span>{/if}
+        {:else if bright}<span class="fr-small"><Icon name="user" size={13} />One person, so nothing to front</span>{/if}
+      {/if}
+    </span>
+    </a>
+    {#if follows(r) || r.follower}
+      <button class="fr-icon" aria-label="Message {personName(r.account)}" onclick={() => void message(r.account.id)}><Icon name="message" size={20} /></button>
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet request(account: Person, line: string, buttons: [string, boolean, () => void][])}
+  <div class="fr-row request">
+    <FriendFace name={personName(account)} color={color(account)} blob={account.avatar_blob} size={44} {dark} />
+    <span class="fr-body">
+      <span class="fr-name"><strong>{personName(account)}</strong>{#if account.kind}<span class="fr-pill">{isSystem(account) ? 'System' : 'Person'}</span>{/if}</span>
+      <span class="fr-line">{line}</span>
+      <span class="fr-actions">{#each buttons as [label, primary, run] (label)}<button class="fr-btn" class:primary onclick={run}>{label}</button>{/each}</span>
+    </span>
+  </div>
+{/snippet}
+
+{#snippet bucketRows()}
+  <ul class="fr-list">
+    {#each ownBuckets as b (b.id)}
+      {@const inside = friends.activeFollowers.filter((f) => assignments.get(b.id)?.has(f.account.id))}
+      <li><a class="fr-row bucket" href="#/people/bucket/{encodeURIComponent(b.id)}">
+        <span class="fr-tile tile" style:--fr-tile={b.color ? `color-mix(in srgb, ${b.color} 22%, transparent)` : null}><BucketGlyph icon={b.icon} color={b.color} size={22} /></span>
+        <span class="fr-body">
+          <strong class="bucket-name">{b.name}</strong>
+          {#if inside.length}
+            <span class="fr-faces"><span class="fr-stack">{#each inside.slice(0, 3) as f (f.id)}<FriendFace name={personName(f.account)} color={color(f.account)} blob={f.account.avatar_blob} size={22} {dark} />{/each}</span>
+              <span class="fr-line">{inside.map((f) => personName(f.account)).join(', ')}</span></span>
+          {:else}<span class="fr-line quiet">Nobody yet</span>{/if}
+        </span>
+        {#if !person}{@const p = presetOf(b.ceiling)}<span class="fr-pill preset">{p === 'inherit' ? 'Everyone else’s' : presetName(p)}</span>{/if}
+        <span class="chev"><Icon name="chevron-right" size={18} /></span>
+      </a></li>
+    {/each}
+  </ul>
+  <a class="fr-new" href="#/people/bucket/new"><Icon name="plus" size={18} />New bucket</a>
+{/snippet}
+
+{#if adding}
+  <Sheet title="Follow someone" subtitle="They’ll get a request and choose what you see" onclose={() => (adding = false)}>
+    <form class="follow" onsubmit={follow}>
+      <label class="fr-field"><span>THEIR HANDLE</span><input bind:value={handle} placeholder="@handle" autocomplete="off" aria-label="Their handle" /></label>
+      <p class="fr-note accent"><Icon name="shield" size={16} />{person ? 'Once they accept, you see what they share with followers.' : 'Once they accept, you see what they share with followers. Following them doesn’t share anything of yours.'}</p>
+      <button class="fr-wide" disabled={!handle.trim()}>Send request</button>
+    </form>
+  </Sheet>
+{/if}
+{#if accepting}
+  {@const f = accepting}
+  <AcceptSheet {projection} followId={f.id} accountId={f.account.id} name={personName(f.account)}
+    onclose={() => { accepting = null; setTimeout(() => void friends.load(), 300); }}
+    ondecline={() => { accepting = null; void decline(f); }} />
+{/if}
+{#if startOpen}
+  <Sheet title="New friends start in" subtitle="Where accepting a request starts; you can still pick another" onclose={() => (startOpen = false)}>
+    <div class="options">
+      <button class:on={!start} onclick={() => chooseStart(null)}><span class="text"><strong>No bucket</strong><span>Everyone else · {presetName(everyoneElsePreset(projection))}</span></span>{#if !start}<Icon name="check" size={20} />{/if}</button>
+      {#each ownBuckets as b (b.id)}
+        <button class:on={start?.id === b.id} onclick={() => chooseStart(b.id)}>
+          <BucketGlyph icon={b.icon} color={b.color} size={20} />
+          <span class="text"><strong>{b.name}</strong><span>{presetName(presetOf(b.ceiling))}</span></span>{#if start?.id === b.id}<Icon name="check" size={20} />{/if}
+        </button>
+      {/each}
+    </div>
+  </Sheet>
+{/if}
+
 <style>
-  .person-avatar, .front-avatar { display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: var(--surface-2); color: var(--ink-2); flex: none; }
-  .person-avatar { width: 40px; height: 40px; }
-  .front-avatar { width: 28px; height: 28px; }
-  .front-avatars { display: flex; gap: var(--s-1); margin-top: var(--s-1); }
-  .page { display: grid; gap: var(--s-4); }
-  h1 { font-size: var(--fs-2xl); }
-  h2 { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); margin: var(--s-2) 0 0; }
-  .follow { display: flex; gap: var(--s-2); }
-  .follow input {
-    flex: 1; font: inherit; color: var(--ink); background: var(--surface);
-    border: 1px solid var(--line); border-radius: var(--r-full); padding: var(--s-2) var(--s-4);
-  }
-  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
-  .card {
-    display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: center; justify-content: space-between;
-    padding: var(--s-3) var(--s-4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
-  }
-  .who { display: grid; flex: 1; min-width: 12em; }
-  .who span, .preset span, .hint, .muted { color: var(--ink-3); font-size: var(--fs-sm); }
-  .hint { margin: 0; }
-  .bucket-section { display: grid; gap: var(--s-2); }
-  .bucket-new, .bucket-row, .bucket-checks { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); }
-  .bucket-new input, .bucket-row input { font: inherit; min-width: 10ch; padding: var(--s-1) var(--s-2); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
-  .bucket-row label { display: grid; gap: 2px; }
-  .bucket-checks { width: 100%; font-size: var(--fs-sm); }
-  .new-space input:not([type='checkbox']) { font: inherit; flex: 1; min-width: 12ch; padding: var(--s-1) var(--s-2); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
-  .primary:disabled { opacity: 0.5; }
-  .history { font-size: var(--fs-sm); color: var(--ink-3); }
-  .history ol { margin: var(--s-1) 0 0; padding-left: var(--s-4); display: grid; gap: 2px; }
-  .history time { margin-left: var(--s-2); }
-  .preset { display: grid; gap: 2px; flex: 1; min-width: 14em; }
-  select {
-    font: inherit; font-size: var(--fs-sm); color: var(--ink); background: var(--surface-2);
-    border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-1) var(--s-2);
-  }
-  .actions { display: flex; gap: var(--s-2); }
-  .primary {
-    background: var(--accent); color: var(--surface); border: 0; border-radius: var(--r-full);
-    padding: var(--s-2) var(--s-4); font-weight: 600; cursor: pointer;
-  }
-  .ghost { background: none; border: 0; color: var(--accent); cursor: pointer; }
-  .ghost.danger { color: var(--danger); }
-  .error { color: var(--danger); margin: 0; }
-  .notes-head { display: flex; justify-content: space-between; align-items: baseline; }
-  .note { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: baseline; padding: var(--s-2) 0; border-bottom: 1px solid var(--line); }
-  .note time { margin-left: auto; color: var(--ink-3); font-size: var(--fs-sm); }
-  .shared-posts { width: 100%; display: grid; gap: var(--s-2); border-top: 1px solid var(--line); padding-top: var(--s-2); }
+  .search { padding: 8px 16px; background: var(--surface); }
+  .search input { width: 100%; box-sizing: border-box; border: 0; border-radius: 12px; background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink); font: inherit; padding: 10px 12px; }
+  .chev { color: var(--ink-3); align-self: center; display: grid; }
+  .split { cursor: default; padding: 0 8px 0 0; }
+  .split .main { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 14px; padding: 12px 0 12px 16px; color: inherit; text-decoration: none; }
+  .split.dim .main :global(.fr-face) { opacity: .55; }
+  .split > .fr-icon { margin-top: 10px; }
+  .request { cursor: default; }
+  .request:hover { background: none; }
+  .bucket { align-items: center; text-decoration: none; }
+  .bucket-name { font-size: 16px; font-weight: 600; }
+  .tile { width: 44px; height: 44px; border-radius: 12px; }
+  .preset { background: var(--surface-2); color: var(--ink); font-weight: 500; padding: 4px 10px; border-radius: 12px; }
+  .follow { display: grid; gap: 12px; }
+  .follow .fr-note { margin: 0; }
+  .options { display: grid; gap: 2px; }
+  .options button { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border: 0; border-radius: 12px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+  .options button.on { background: var(--accent-soft); }
+  .options .text { flex: 1; display: grid; }
+  .options .text span { color: var(--ink-3); font-size: 13px; }
+  .options button :global(.icon) { color: var(--accent); }
+  .fr-empty strong { color: var(--ink); }
 </style>

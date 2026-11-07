@@ -1,0 +1,39 @@
+<script lang="ts">
+  // A bottom sheet (a centred dialog on wide screens), as the Friends screens use them (F7.7): a
+  // title and a line under it, a close button, the body, and an optional footer of buttons.
+  import type { Snippet } from 'svelte';
+  import Icon from './Icon.svelte';
+
+  let { title, subtitle, onclose, children, footer, layer = 0 }: {
+    title: string; subtitle?: string | null; onclose: () => void; children: Snippet; footer?: Snippet;
+    /** a sheet opened from a sheet lies over it */
+    layer?: number;
+  } = $props();
+</script>
+
+<svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
+<div class="scrim" onclick={onclose} role="presentation" style="z-index: {40 + layer * 2}"></div>
+<div class="sheet" role="dialog" aria-modal="true" aria-label={title} style="z-index: {41 + layer * 2}; --lower: {layer * 28}px">
+  <div class="handle" aria-hidden="true"></div>
+  <header>
+    <div class="titles"><h2>{title}</h2>{#if subtitle}<p>{subtitle}</p>{/if}</div>
+    <button class="close" aria-label="Close" onclick={onclose}><Icon name="close" size={20} /></button>
+  </header>
+  <div class="body">{@render children()}</div>
+  {#if footer}<footer>{@render footer()}</footer>{/if}
+</div>
+
+<style>
+  .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); }
+  .sheet { position: fixed; inset: auto 0 0 0; margin: 0 auto; max-width: 560px; max-height: calc(92vh - var(--lower)); overflow: auto; background: var(--surface);
+    border-radius: 20px 20px 0 0; box-shadow: var(--shadow-pop); padding-bottom: env(safe-area-inset-bottom); display: grid; align-content: start; }
+  @media (min-width: 641px) { .sheet { inset: calc(6vh + var(--lower)) 0 auto 0; border-radius: 20px; } }
+  .handle { width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: 8px auto 4px; }
+  header { display: flex; align-items: center; gap: 12px; padding: 8px 8px 12px 20px; }
+  .titles { flex: 1; min-width: 0; }
+  h2 { margin: 0; font-size: 19px; line-height: 24px; font-weight: 600; }
+  .titles p { margin: 2px 0 0; color: var(--ink-3); font-size: 13px; }
+  .close { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 50%; cursor: pointer; }
+  .body { display: grid; gap: 10px; padding: 0 16px 16px; }
+  footer { display: flex; gap: 10px; padding: 4px 16px 16px; position: sticky; bottom: 0; background: var(--surface); }
+</style>

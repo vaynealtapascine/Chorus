@@ -2,7 +2,7 @@
 // switches, a follower's delayed view, a shared space and a DM, a journal post with a reply and a
 // reaction across accounts, search, and no console errors (the CSP included) anywhere.
 import { expect, test } from '@playwright/test';
-import { addMember, type Device, device, enrol, fronting, go, invite, live, message, newChannel, openChat, problems, shareWithFriends, switchIn } from './helpers';
+import { acceptRequest, addMember, type Device, device, enrol, follow, friendRow, fronting, go, invite, live, message, newChannel, openChat, problems, shareWithFriends, switchIn } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -46,28 +46,24 @@ test('a switch reaches a second device', async () => {
 
 test('a follower sees a switch only after its delay', async () => {
   await enrol(friend.page, invite('person'), 'Robin', robinHandle);
-  await go(friend.page, 'people');
-  await friend.page.getByLabel('Handle to follow').fill(`@${starsHandle}`);
-  await friend.page.getByRole('button', { name: 'Follow', exact: true }).click();
-  await expect(friend.page.getByText('waiting for them to accept')).toBeVisible();
+  await follow(friend.page, `@${starsHandle}`);
+  await expect(friend.page.getByText('Waiting for them to accept')).toBeVisible();
 
-  await go(stars.page, 'people');
-  const request = stars.page.locator('li.card', { hasText: 'wants to follow you' });
-  await request.locator('select').selectOption('close');
-  await request.getByRole('button', { name: 'Accept' }).click();
-  await expect(stars.page.locator('li.card', { hasText: 'Robin' }).first()).toBeVisible();
+  await acceptRequest(stars.page, 'Close — instant');
+  await stars.page.getByRole('tab', { name: 'Friends' }).click();
+  await expect(friendRow(stars.page, 'Robin')).toBeVisible();
 
   // "Close": no delay beyond the 15 s settle (NOTIFICATIONS §2)
   await switchIn(stars.page, 'Kai');
   const switched = Date.now();
-  const following = friend.page.locator('li.card', { hasText: 'The Stars' });
+  const following = friendRow(friend.page, 'The Stars');
   await go(friend.page, 'people');
   await expect(following).toBeVisible();
-  await expect(following).not.toContainText('Kai is fronting');
+  await expect(following).not.toContainText('Kai fronting');
   await expect(async () => {
     await friend.page.reload();
     await live(friend.page);
-    await expect(following).toContainText('Kai is fronting', { timeout: 1_000 });
+    await expect(following).toContainText('Kai fronting', { timeout: 1_000 });
   }).toPass({ timeout: 60_000, intervals: [2_000] });
   expect(Date.now() - switched).toBeGreaterThanOrEqual(14_000);
 });
@@ -75,7 +71,7 @@ test('a follower sees a switch only after its delay', async () => {
 test('a DM between two accounts', async () => {
   const hello = `hello from Robin ${run}`;
   await go(friend.page, 'people');
-  await friend.page.locator('li.card', { hasText: 'The Stars' }).getByRole('button', { name: 'Message' }).click();
+  await friend.page.getByRole('button', { name: 'Message The Stars' }).click();
   const box = friend.page.getByLabel('Message', { exact: true });
   await expect(box).toBeVisible();
   await box.fill(hello);
@@ -114,10 +110,14 @@ test('an edited message keeps its history (SPEC §5.3)', async () => {
 
 test('a shared space between two accounts', async () => {
   const name = `Book club ${run}`;
-  await go(stars.page, 'people');
-  await stars.page.getByLabel('Shared space name').fill(name);
-  await stars.page.locator('form.new-space label', { hasText: 'Robin' }).locator('input').check();
-  await stars.page.getByRole('button', { name: 'Start a shared space' }).click();
+  // shared spaces start from New chat › New group (the old People form is gone, UI20)
+  await go(stars.page, 'chat');
+  await stars.page.getByRole('button', { name: 'New chat' }).click();
+  const dialog = stars.page.getByRole('dialog', { name: 'New chat' });
+  await dialog.getByRole('button', { name: /^New group/ }).click();
+  await dialog.getByLabel('Group name').fill(name);
+  await dialog.locator('label.person', { hasText: 'Robin' }).locator('input').check();
+  await dialog.getByRole('button', { name: 'Create group' }).click();
   const welcome = `welcome to the club ${run}`;
   const box = stars.page.getByLabel('Message', { exact: true });
   await expect(box).toBeVisible();

@@ -122,7 +122,7 @@
       <span class="avatar" aria-hidden="true"><AvatarImage hash={me.avatar_blob} glyph={me.name[0]} name={me.name} /></span>
       <div>
         <h1 class="display">Hi, {me.display_name ?? me.name}</h1>
-        {#if !friends.length}<p class="empty">Follow friends and chat with them from <a href="#/people">People</a> and <a href="#/chat">Chat</a>.</p>{/if}
+        {#if !friends.length}<p class="empty">Follow friends and chat with them from <a href="#/people">Friends</a> and <a href="#/chat">Chat</a>.</p>{/if}
       </div>
     </section>
     {#if friends.length}
@@ -146,7 +146,7 @@
           {/each}
         </ul>
         {#if friendError}<p class="error" role="alert">{friendError}</p>{/if}
-        <p class="empty"><a href="#/people">People</a> has their posts, and who follows you.</p>
+        <p class="empty"><a href="#/people">Friends</a> has their posts, and who follows you.</p>
       </section>
     {/if}
   {:else}

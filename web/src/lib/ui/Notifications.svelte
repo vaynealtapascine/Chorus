@@ -15,9 +15,9 @@
   import { inbox, refreshInbox } from '../inbox-state.svelte';
   import { chips, isRead, mark, readMarks, readPayload, section, SHOWS, shows, showsPayload, showsPref, unmark, unread, visible, type InboxItem, type InboxRead } from '../inbox';
   import { shortAgo } from '../journal-presentation';
-  import { notifyPreset } from '../core/pkg/chorus_wasm.js';
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
+  import AcceptSheet from './AcceptSheet.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
   const person = $derived(!!selfMember(projection));
@@ -81,16 +81,6 @@
     if (item.kind === 'alert_ask') return act('Couldn’t allow. Try again.', () => call('PUT', `/alerts/${item.memberId}/${item.accountId}`));
     if (person) return act('Couldn’t accept. Try again.', () => sync.create('follow.accept', sync.accountScope, item.followId!, {}));
     accepting = item;
-  }
-  /** Accept with one of the follow presets (People's), or the account default. */
-  function acceptWith(preset: string) {
-    const item = accepting;
-    accepting = null;
-    if (!item?.followId) return;
-    void act('Couldn’t accept. Try again.', () => {
-      sync.create('follow.accept', sync.accountScope, item.followId!, {});
-      if (preset !== 'inherit') sync.create('follow.set_ceiling', sync.accountScope, item.followId!, { ceiling: JSON.parse(notifyPreset(preset)) });
-    });
   }
   function decline(item: InboxItem) {
     if (item.kind === 'alert_ask') return act('Couldn’t decline. Try again.', () => call('DELETE', `/alerts/${item.memberId}/${item.accountId}`));
@@ -226,13 +216,10 @@
 {/if}
 
 {#if accepting}
-  <button class="scrim" aria-label="Close" onclick={() => (accepting = null)}></button>
-  <div class="menu center" role="dialog" aria-label="Accept {accepting.actor}">
-    <p class="menu-title">Accept {accepting.actor}: how soon and how exactly they hear about switches</p>
-    {#each [['inherit', 'Account default', ''], ['close', 'Close', 'right away, exact times'], ['gentle', 'Gentle', '5–20 min later, rounded'], ['private', 'Private', '30–90 min later, part of day'], ['digest', 'Digest', 'one summary a day'], ['off', 'Off', 'no switch notifications']] as [id, label, about] (id)}
-      <button role="menuitem" onclick={() => acceptWith(id)}><span>{label}{#if about}<small>{about}</small>{/if}</span></button>
-    {/each}
-  </div>
+  {@const item = accepting}
+  <!-- the same sheet as Friends › Requests (F7.7): how much they hear and their bucket -->
+  <AcceptSheet {projection} followId={item.followId ?? ''} accountId={item.accountId ?? ''} name={item.actor ?? 'them'}
+    onclose={() => (accepting = null)} ondecline={() => { accepting = null; void decline(item); }} />
 {/if}
 
 <style>

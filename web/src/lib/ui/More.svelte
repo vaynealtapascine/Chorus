@@ -14,7 +14,7 @@
       { path: 'notifications', title: 'Notifications', description: 'Mentions, replies and friends’ news', icon: 'bell' },
       { path: 'history', title: 'Front history', description: 'Look back, amend or log a switch', icon: 'history' },
       { path: 'insights', title: 'Fronting insights', description: 'History, patterns and exports', icon: 'layers' },
-      { path: 'people', title: 'People and sharing', description: 'Friends, followers and privacy', icon: 'friends' },
+      { path: 'people', title: 'Friends', description: 'Who’s around, requests and sharing', icon: 'friends' },
       { path: 'settings', title: 'Settings', description: 'Appearance, notifications and preferences', icon: 'settings' },
       { path: 'search', title: 'Search', description: 'Messages, posts and switches on this device', icon: 'search' },
       { path: 'data', title: 'Your data', description: 'Import, export, API tokens and devices', icon: 'lock' },
