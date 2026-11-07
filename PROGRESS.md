@@ -24,8 +24,8 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 - **In progress:** UI19
 - **Owner:** claude-opus-5.5, 2026-11-07
-- **Next concrete step:** UI19: server — quote audience narrowing in readable_sql, GET /posts/activity, quoted/parent on GET /posts lists
-- **Notes:** UI17 (owner's fix-and-polish batch, D-125) deployed 2026-11-07 (f5963b4, Android 0.1.761); not yet seen on an iOS browser or the owner's phone. Gemini's raw reviews stay untracked in gemini_review/.
+- **Next concrete step:** UI19 web: lib/inbox.ts (port of Android data/Inbox.kt), ui/Notifications.svelte + route + sidebar badge, then Journal Friends replies, the action row, quoting remote posts, composer alerts
+- **Notes:** UI19: server + Android live (Android 0.1.795). Next: web — Notifications page (F11.5 with side panel), sidebar entry with badge, Journal Friends replies + parent, RemotePostActions full row, quote remote posts, composer alerts choice.
 
 ### SEC1: what is done and what is left
 
