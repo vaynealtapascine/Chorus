@@ -192,6 +192,12 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
   `CHORUS_E2E_CHANNEL=chrome CARGO_TARGET_DIR='F:\DunBuild\chorus-target' bash scripts/e2e-web.sh --no-build`.
   Playwright's pinned Chromium is absent; use installed Chrome. `page.goto('/#/chat')` can report
   ERR_ABORTED (the app rewrites the hash): click through instead.
+- Ops reach IndexedDB a moment after they show (write-behind). Unsaved ones go to localStorage
+  (`chorus-unsaved-ops`) on `pagehide` and back into IndexedDB at the next start; core's
+  `relist_unsent` re-queues them. Without it, a reload right after an offline send lost the message.
+- e2e: `page.goto` waits only for `commit` (the app rewrites its address while loading, and a new
+  tab can be taken over by the service worker); a spec that restarts its server fires `online`.
+  Run one spec with `bash scripts/e2e-web.sh --no-build -- e2e/<spec>.ts --max-failures=1`.
 - Typed row caches assume rows are replaced, not mutated: fixtures must replace a changed row.
 
 ## Android
