@@ -1,15 +1,5 @@
-import { expect, type Page, test } from '@playwright/test';
-import { addMember, enrol, go, invite } from './helpers';
-
-/** On Fronting: open the switch sheet for the shown front, place `names` (each tap moves one
- * outward, `taps` times), and switch. */
-async function switchSheet(page: Page, names: string[], taps = 1): Promise<void> {
-  await page.getByRole('button', { name: 'Switch', exact: true }).click();
-  const sheet = page.getByRole('dialog', { name: /^Switch / });
-  for (const name of names) for (let i = 0; i < taps; i++) await sheet.locator('button.pick', { hasText: name }).click();
-  await sheet.locator('button.confirm').click();
-  await expect(sheet).toHaveCount(0);
-}
+import { expect, test } from '@playwright/test';
+import { addMember, enrol, go, invite, newFront, switchSheet } from './helpers';
 
 // D-080 management UI: custom layers, a following front, a manual override and Resume following,
 // all through the app's own screens (no seeded ops). F3 screens (D-122).
@@ -29,12 +19,7 @@ test('fronts can be created, follow Body, be overridden and resume following', a
   await expect(page.getByRole('button', { name: 'Edit Quiet' })).toBeVisible();
 
   // a new front that follows Body
-  await go(page, 'fronts');
-  await page.locator('button.new-head').click();
-  await page.getByRole('button', { name: 'Custom', exact: true }).click();
-  await page.getByLabel('New front name').fill('Headspace');
-  await page.getByRole('button', { name: 'Add', exact: true }).click();
-  await page.getByRole('button', { name: 'Edit Headspace' }).click();
+  await newFront(page, 'Headspace');
   await page.getByLabel('Follows').selectOption({ label: 'Body' });
   await expect(page.locator('.card', { hasText: 'Headspace' }).locator('.badge')).toContainText('Body');
   await page.screenshot({ path: info.outputPath('fronts-mobile-dark.png'), fullPage: true });

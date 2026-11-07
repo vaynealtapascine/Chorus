@@ -102,3 +102,25 @@ export async function shareWithFriends(page: Page, chip: string): Promise<void> 
   await page.getByRole('button', { name: new RegExp(`^${chip}: .*Change who can see it$`) }).click();
   await page.getByRole('menuitemradio', { name: /^Friends/ }).click();
 }
+
+/** A new front from Fronts › New front › Custom; leaves its card open for editing (F3.4). */
+export async function newFront(page: Page, name: string): Promise<void> {
+  await go(page, 'fronts');
+  await page.locator('button.new-head').click();
+  await page.getByRole('button', { name: 'Custom', exact: true }).click();
+  await page.getByLabel('New front name').fill(name);
+  // an account's first front turns on separate fronts, after asking
+  page.once('dialog', (d) => void d.accept());
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('button', { name: `Edit ${name}` }).click();
+}
+
+/** On Fronting: open the switch sheet for the shown front, place `names` (each tap moves someone
+ * one layer outward, `taps` times) and switch (F3.2). */
+export async function switchSheet(page: Page, names: string[], taps = 1): Promise<void> {
+  await page.getByRole('button', { name: 'Switch', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: /^Switch / });
+  for (const name of names) for (let i = 0; i < taps; i++) await sheet.locator('button.pick', { hasText: name }).click();
+  await sheet.locator('button.confirm').click();
+  await expect(sheet).toHaveCount(0);
+}

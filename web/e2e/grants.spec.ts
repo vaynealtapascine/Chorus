@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { device, enrol, go, invite, live } from './helpers';
+import { addMember, device, enrol, go, invite, live, newFront, switchSheet } from './helpers';
 
 const run = Date.now().toString(36);
 
@@ -11,19 +11,13 @@ test('a follower sees an additional front only once granted', async ({ browser }
   const friend = await device(browser, 'grants-friend');
   try {
     await enrol(sys.page, invite('system'), 'Grant Stars', `grants${run}`);
-    for (const name of ['Kai', 'Moon']) {
-      await sys.page.getByRole('button', { name: 'Add member', exact: true }).click();
-      await sys.page.getByLabel('Name', { exact: true }).fill(name);
-      await sys.page.locator('form.add').getByRole('button', { name: 'Add', exact: true }).click();
-      await expect(sys.page.locator('button.member', { hasText: name })).toBeVisible();
-    }
+    for (const name of ['Kai', 'Moon']) await addMember(sys.page, name);
 
     // a second front whose Fronting layer drives switch notifications
-    await go(sys.page, 'fronts');
-    await sys.page.getByLabel('New front name').fill('Headspace');
-    await sys.page.getByRole('button', { name: 'Add', exact: true }).first().click();
+    await newFront(sys.page, 'Headspace');
     const notify = sys.page.locator('fieldset', { hasText: 'Switch notifications' });
     await sys.page.getByText('Who counts for what').click();
+    await notify.getByLabel('Use the default').uncheck();
     await notify.getByLabel('Fronting').check();
 
     await enrol(friend.page, invite('person'), 'Robin', `robin${run}`);
@@ -38,8 +32,8 @@ test('a follower sees an additional front only once granted', async ({ browser }
     const following = friend.page.locator('li.card', { hasText: 'Grant Stars' });
     const switchHead = async (who: string) => {
       await go(sys.page, '');
-      await sys.page.getByRole('tab', { name: /Headspace/ }).click();
-      await sys.page.locator('.grid').getByRole('button', { name: who }).click();
+      await sys.page.getByRole('tablist', { name: 'Fronts' }).getByRole('tab', { name: /^Headspace/ }).click();
+      await switchSheet(sys.page, [who]);
     };
     const followerSees = async (text: string, present: boolean) => expect(async () => {
       await friend.page.reload();
