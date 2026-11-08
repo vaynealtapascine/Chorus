@@ -393,16 +393,15 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 Modifier.fillMaxWidth().background(p.surface).statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text(if (searchOpen) "Search" else if (settingsOpen) "Settings" else if (insightsOpen) "Insights" else if (frontsOpen) "Fronts" else activeTab.label,
-                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.ink)
-                    Text(if (status == Status.Live) "Chorus · synced" else if (status == Status.Connecting) "Connecting…" else "Offline · saved on this device",
-                        fontSize = 12.sp, color = p.ink3)
-                }
+                // the connection banner below says when changes are waiting; a live app says nothing
+                Text(if (searchOpen) "Search" else if (settingsOpen) "Settings" else if (insightsOpen) "Insights" else if (frontsOpen) "Fronts" else activeTab.label,
+                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.ink, modifier = Modifier.weight(1f))
                 IconButton(onClick = { searchSection=if(activeTab==Tab.Journal) "Posts" else "Messages"; searchOpen = !searchOpen; settingsOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null }) { ChorusIcon(if (searchOpen) AppIcon.Close else AppIcon.Search, if (searchOpen) "Close search" else "Search") }
                 if (!person) IconButton(onClick = { quickSwitchOpen = true }) { ChorusIcon(AppIcon.Swap, "Open switcher") }
                 IconButton(onClick = { settingsOpen = !settingsOpen; searchOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null }) { ChorusIcon(if (settingsOpen) AppIcon.Close else AppIcon.Settings, if (settingsOpen) "Close settings" else "Settings") }
             }
+            // changes waiting on this phone, on every screen (F2.5, F10.3)
+            if (!chatStageCapture) garden.vayne.chorus.ui.ConnectionBanner(chorus)
             if (!chatStageCapture) garden.vayne.chorus.ui.UpdateBanner()
             Box(Modifier.weight(1f)) {
                 if (sharedDraft != null) ShareChooser(sharedDraft, model, chorus.device?.accountId,
@@ -487,6 +486,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 }
                 }
                 }
+                // "Catching its breath": the server asked us to slow down (F10.7)
+                if (!chatStageCapture) garden.vayne.chorus.ui.NoticeToast(Modifier.align(Alignment.BottomCenter).padding(16.dp))
             }
             // The bar and viewport resize together during push/pop; focused routes own their
             // chrome. The shell applies the system navigation inset exactly once.

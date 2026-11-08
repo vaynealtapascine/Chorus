@@ -136,7 +136,6 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
         set: garden.vayne.chorus.data.JournalDraft.(T) -> garden.vayne.chorus.data.JournalDraft) =
         JournalField({ get(session.state.value.draft) }) { value -> session.edit { set(value) } }
     val p = LocalChorusPalette.current
-    val connection by chorus.status.collectAsState()
     var editorOptions by field({ it.advanced }) { copy(advanced = it) }
     var journalTab by rememberSaveable { mutableStateOf("system") }
     var feedMenu by remember { mutableStateOf(false) }
@@ -516,9 +515,9 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
             author?.let { member -> Box(Modifier.clickable(enabled = model.isPerson, onClickLabel = "My profile") { profileId = member.id }) { ChatAvatar(member, 36.dp) } }
             Column(Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 6.dp)) {
                 Text("Journal", style = MaterialTheme.typography.titleMedium.copy(fontSize = 20.sp, lineHeight = 26.sp), color = p.ink)
-                Text(if (connection != garden.vayne.chorus.data.Status.Live) "Offline · saved on this device"
-                    else author?.let { "Posting as ${it.shownName}" } ?: "Your system’s stories", color = p.ink3,
-                    style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // offline shows in the connection banner (F2.5)
+                author?.let { Text("Posting as ${it.shownName}", color = p.ink3,
+                    style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
             ChatIconButton(R.drawable.ic_hash, "Feeds") { section = "feeds" }
             ChatIconButton(R.drawable.ic_search, "Search Journal") { onSearch("Posts") }

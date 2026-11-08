@@ -42,6 +42,7 @@ object Api {
                 val j = runCatching { JSONObject(text) }.getOrElse { JSONObject() }
                 if (!r.isSuccessful) {
                     val e = j.optJSONObject("error")
+                    if (r.code == 429) Notices.slowDown(Notices.retryAfter(r.header("Retry-After")))
                     throw ApiException(e?.optString("message")?.ifEmpty { null } ?: "HTTP ${r.code}", e?.optString("code").orEmpty())
                 }
                 j

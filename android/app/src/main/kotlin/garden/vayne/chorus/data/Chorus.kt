@@ -71,6 +71,12 @@ class Chorus private constructor(private val ctx: Context) {
 
     private val _status = MutableStateFlow(Status.Loading)
     val status: StateFlow<Status> = _status
+    // the connection banner (F2.5, F10.3): sockets lost or refused since the last welcome, and
+    // whether Android has a network at all
+    private val _connectFailures = MutableStateFlow(0)
+    val connectFailures: StateFlow<Int> = _connectFailures
+    private val _network = MutableStateFlow(true)
+    val network: StateFlow<Boolean> = _network
     private val _model = MutableStateFlow(Model.Empty)
     val model: StateFlow<Model> = _model
     private val _frontHistoryRevision = MutableStateFlow(0L)
@@ -118,8 +124,10 @@ class Chorus private constructor(private val ctx: Context) {
             try { start() } catch (e: Exception) { storageFailed(e) }
         }
         val cm = ctx.getSystemService(ConnectivityManager::class.java)
+        _network.value = cm?.activeNetwork != null
         cm?.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) { main.post { reconnectNow() } }
+            override fun onAvailable(network: Network) { _network.value = true; main.post { reconnectNow() } }
+            override fun onLost(network: Network) { _network.value = false }
         })
     }
 
@@ -623,6 +631,8 @@ class Chorus private constructor(private val ctx: Context) {
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val frame = runCatching { JSONObject(text) }.getOrNull() ?: return
+                // too many frames: the server closes the socket; say so once (F10.7)
+                if (frame.optString("t") == "error" && frame.optString("code") == "rate_limited") Notices.slowDown(null)
                 if (frame.optString("t") == "error" && frame.optString("code") == "unauthenticated") {
                     if (renewing) return
                     renewing = true
@@ -664,6 +674,7 @@ class Chorus private constructor(private val ctx: Context) {
                             for (i in 0 until scopes.length()) expectedScopes.add(scopes.getString(i))
                         }
                         _status.value = Status.Live
+                        _connectFailures.value = 0
                         backoff = 1000
                         scheduleFileFill()
                         if (frame.optBoolean("reconcile")) {
@@ -716,6 +727,7 @@ class Chorus private constructor(private val ctx: Context) {
                 clearTyping(); replica?.disconnect(); syncReady.value = false
             }
             _status.value = Status.Offline
+            _connectFailures.value += 1
             if (!renewing && (foreground || workLeases > 0)) schedule()
         }
     }
