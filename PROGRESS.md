@@ -23,9 +23,9 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 ## Now
 
 - **In progress:** UI21
-- **Owner:** gemini-4-argon-medium, 2026-11-08
-- **Next concrete step:** UI21 wave 4 (Android Chat slices 1–7 in `docs/handoff/ui21-chat.md`).
-- **Notes:** UI21 wave 3 (Android Members F4.1–F4.5: da99de1, d9c9d52, 12643cb) and UI22 (two-thirds-width Members banners: c3a0acd, D-140) deployed at a8839ac (server, web `index-GaV1UZH1.js`, Android 0.1.835). Plan: docs/handoff/ui21-plan.md.
+- **Owner:** claude-opus-5.5, 2026-11-09
+- **Next concrete step:** Wave 4a: Android chat slices 1-3 (ui21-chat.md), then 4b slices 4-7
+- **Notes:** Waves 1-3 live (Android 0.1.835 with UI22). Wave 4a: new message page, aside pill + audience bar, message actions + mentions; 4b: forward/reply-in, attach, search, chat info. Plan: docs/handoff/ui21-plan.md; design for approved features: docs/handoff/ui21-design.md.
 
 ### SEC1: what is done and what is left
 
