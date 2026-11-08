@@ -23,9 +23,9 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 ## Now
 
 - **In progress:** UI21
-- **Owner:** gpt-6-sol, 2026-11-08
-- **Next concrete step:** Deploy UI21 wave 3 plus UI22 banner sizing after integrating main and passing the full Android gate.
-- **Notes:** UI22 implementation complete. Preserve main commits da99de1, d9c9d52 and 12643cb (UI21 Android Members) and all live work through Android 0.1.828 when deploying; then return to UI21 wave 4. Plan: docs/handoff/ui21-plan.md.
+- **Owner:** gemini-4-argon-medium, 2026-11-08
+- **Next concrete step:** UI21 wave 4 (Android Chat slices 1–7 in `docs/handoff/ui21-chat.md`).
+- **Notes:** UI21 wave 3 (Android Members F4.1–F4.5: da99de1, d9c9d52, 12643cb) and UI22 (two-thirds-width Members banners: c3a0acd, D-140) deployed at a8839ac (server, web `index-GaV1UZH1.js`, Android 0.1.835). Plan: docs/handoff/ui21-plan.md.
 
 ### SEC1: what is done and what is left
 
@@ -185,3 +185,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`. Entries befo
 - 2026-11-08 claude-opus-5.5: UI21 wave 1 on Android (4164a53 forward hides the source chat name in another space, web too; ef5b4df–2dba4b5 text trims + icon-led `EmptyState` + small tap cuts; 4d806c0 connection banner and slow-down toast). Live with Android 0.1.823. Owner answered the UI21 questions: D-130–D-138, Q24 closed.
 - 2026-11-08 claude-opus-5.5: UI21 wave 2 deployed (871f90e, Android 0.1.828, server + web too): Chorus opens on Home (D-130, F0.1–F0.6) with the sections drawer; checked on the emulator against an isolated demo (`F:/DunBuild/ui21-home-demo`, port 5301). Design for the approved new features in `docs/handoff/ui21-design.md`.
 - 2026-11-08 gpt-6-sol — UI22 Implemented fixed two-thirds-width, bottom-right banner backgrounds in both clients, including friends member lists (D-140). Deployment requested; integrate latest main and run the full Android gate before shipping.
+- 2026-11-08 gemini-4-argon-medium — Deployed UI21 wave 3 (Android Members directory, Groups tab, Edit member, Who can see, Archive, Subsystem sheet/reorder: da99de1, d9c9d52, 12643cb) and UI22 (two-thirds-width Members banners on web and Android: c3a0acd, D-140) at a8839ac to ns2: server, web `index-GaV1UZH1.js`, Android 0.1.835.
