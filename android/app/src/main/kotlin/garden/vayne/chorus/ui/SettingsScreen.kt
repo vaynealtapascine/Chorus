@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.AccountPrefs
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.FollowPresets
@@ -51,7 +53,7 @@ import java.util.Date
 
 /** Account pref rows mirror web Settings; each change queues one pref.set (D-063). */
 @Composable
-internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> Unit = {}) {
+internal fun SettingsScreen(chorus: Chorus, model: Model) {
     val p = LocalChorusPalette.current
     val appearance = LocalChorusAppearance.current
     val actions = rememberCoroutineScope()
@@ -145,13 +147,7 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
                 } }
             }
         }
-        item {
-            Text("Settings", color = p.ink, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(top = 12.dp))
-            Text("Account settings sync across your devices; settings under This device stay on this phone.", color = p.ink2)
-            if (!model.isPerson) TextButton(onClick = onOpenInsights) { Text("Insights · Front history") }
-            if (error != null) Text(error.orEmpty(), color = p.danger)
-        }
+        if (error != null) item { Text(error.orEmpty(), color = p.danger, modifier = Modifier.padding(top = 12.dp)) }
         if (issues.isNotEmpty()) {
             item { Text("Sync issues · ${issues.size}", color = p.ink, fontWeight = FontWeight.SemiBold) }
             items(issues, key = { it.id }) { issue ->
@@ -190,7 +186,7 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
                         catch (e: Exception) { deviceError = e.message ?: "Could not save this setting." }
                     }
                 }
-                Text("Keeps available files for offline use. Files over 20 MB are opened online.", color = p.ink2)
+                Text("Read old chats and posts without a connection", color = p.ink3, fontSize = 13.sp)
                 TextButton(enabled = !syncBusy, onClick = {
                     syncBusy = true; syncError = null
                     actions.launch {
@@ -199,8 +195,13 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
                         finally { syncBusy = false }
                     }
                 }) { Text(if (syncBusy) "Syncing…" else "Sync everything now") }
-                if (syncBusy && recheck != null) Text("Checked ${recheck!!.checked} of ${recheck!!.total} scopes", color = p.ink2)
-                if (files != null) Text("Files: ${files!!.done} of ${files!!.total} (${files!!.missing} not available)", color = p.ink2)
+                recheck?.takeIf { syncBusy && it.total > 0 }?.let { r ->
+                    LinearProgressIndicator({ r.checked.toFloat() / r.total }, Modifier.fillMaxWidth(), color = p.accent, trackColor = p.surface3)
+                }
+                files?.takeIf { it.total > 0 }?.let { f ->
+                    LinearProgressIndicator({ f.done.toFloat() / f.total }, Modifier.fillMaxWidth(), color = p.accent, trackColor = p.surface3)
+                    if (f.missing > 0) Text("${f.missing} not available", color = p.ink3, fontSize = 13.sp)
+                }
                 if (spaceUsed != null) Text("Space used: ${formatBytes(spaceUsed!!)}", color = p.ink2)
                 if (syncError != null) Text(syncError.orEmpty(), color = p.danger)
                 if (deviceError != null) Text(deviceError.orEmpty(), color = p.danger)
@@ -211,7 +212,7 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Notifications", color = p.ink, fontWeight = FontWeight.SemiBold)
                 if (!osNotificationsOn) {
-                    Text("Notifications are turned off for Chorus in Android settings.", color = p.danger)
+                    Text("Off in Android settings", color = p.danger)
                     TextButton(onClick = {
                         runCatching {
                             ctx.startActivity(
@@ -224,11 +225,14 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
                 }
                 pushStatus?.let { st ->
                     val how = when (st.delivery) {
-                        "fcm" -> "Delivered instantly via Firebase."
-                        "distributor" -> "Delivered via ${st.distributor?.let { garden.vayne.chorus.data.Push.distributorLabel(ctx, it) } ?: "UnifiedPush"}."
-                        else -> "Checked every few minutes in the background."
+                        "fcm" -> "Instant"
+                        "distributor" -> st.distributor?.let { garden.vayne.chorus.data.Push.distributorLabel(ctx, it) } ?: "UnifiedPush"
+                        else -> "Every few minutes"
                     }
-                    Text(how, color = p.ink2)
+                    Row(Modifier.fillMaxWidth()) {
+                        Text("Delivery", color = p.ink, modifier = Modifier.weight(1f))
+                        Text(how, color = p.accent)
+                    }
                 }
                 TextButton(enabled = !pushBusy, onClick = {
                     pushBusy = true; pushNote = null
@@ -251,14 +255,13 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
                     save("notify_chat", prefs.withChatKind("reply", it))
                 }
                 if (active.isNotEmpty()) {
-                    Text("Quiet hours for people you follow", color = p.ink2)
+                    Text("Quiet hours", color = p.ink2)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ChorusField(quietFrom, { quietFrom = it.take(5) }, label = { Text("From") },
                             singleLine = true, modifier = Modifier.weight(1f))
                         ChorusField(quietTo, { quietTo = it.take(5) }, label = { Text("Until") },
                             singleLine = true, modifier = Modifier.weight(1f))
                     }
-                    Text("Use 24-hour time, in your local time zone.", color = p.ink2)
                     Row {
                         TextButton(enabled = !followBusy && QuietHours.valid(quietFrom, quietTo),
                             onClick = { saveQuiet(QuietWindow(quietFrom, quietTo)) }) {
@@ -274,7 +277,6 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Sharing", color = p.ink, fontWeight = FontWeight.SemiBold)
-                Text("Default for new followers", color = p.ink2)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     for (choice in listOf("close", "gentle", "private")) {
                         TextButton(enabled = !busy, onClick = {
@@ -282,11 +284,9 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
                         }) { Text("${if (ceilingChoice == choice) "✓ " else ""}${choice.replaceFirstChar { it.uppercase() }}") }
                     }
                 }
-                if (ceilingChoice == "custom") Text("Custom ceiling is active. Choose a preset to replace it.", color = p.ink2)
                 CeilingControls(prefs.followCeiling, "Built-in default", !busy, omit = setOf("share_history", "share_stats")) {
                     save("follow_ceiling", it)
                 }
-                Text("Set buckets and each follower's access in People.", color = p.ink2)
             }
         }
         item {
@@ -297,7 +297,7 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Advanced", color = p.ink, fontWeight = FontWeight.SemiBold)
                 pushStatus?.takeIf { it.fcmConfigured && it.distributors.isNotEmpty() }?.let { st ->
-                    Text("Push delivery on this device", color = p.ink2)
+                    Text("How this phone gets them", color = p.ink2)
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         val options = buildList {
                             add("fcm" to "Firebase")
@@ -320,14 +320,13 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, onOpenInsights: () -> 
                 }
                 if (!model.isPerson) {
                     // D-097: DMs between members and members-only channels, only while one of them is here
-                    SettingToggle("Show members' private chats only while they're fronting", prefs.hidePrivate, !busy) {
+                    SettingToggle("Private chats only while their member is here", prefs.hidePrivate, !busy) {
                         save(garden.vayne.chorus.data.ChatOrganize.HIDE_PRIVATE, it)
                     }
                     SettingToggle("Ping my other devices when the front changes", prefs.chatEnabled("own_switch"), !busy) {
                         save("notify_chat", prefs.withChatKind("own_switch", it))
                     }
-                    SettingToggle("Replies from a notification speak as the mentioned member",
-                        prefs.chatEnabled("reply_as_mentioned"), !busy) {
+                    SettingToggle("Reply as the mentioned member", prefs.chatEnabled("reply_as_mentioned"), !busy) {
                         save("notify_chat", prefs.withChatKind("reply_as_mentioned", it))
                     }
                     SettingToggle("Followers can look back at who fronted",

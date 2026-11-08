@@ -42,7 +42,7 @@ internal fun NavigationSettings(selected: List<String>, person: Boolean, onChang
     }
     if (open) {
         var draft by rememberSaveable { mutableStateOf(selected) }
-        Drawer({ open = false }, "Bottom navigation", "Choose up to four destinations. More always stays at the end.") {
+        Drawer({ open = false }, "Bottom navigation") {
 
             run {
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -76,8 +76,6 @@ internal fun InsightsScreen(chorus: Chorus, model: Model, onClose: () -> Unit) {
     val definitions = model.namedFronts?.fronts
     val configured = definitions != null
     val front = selectedFront.takeIf { definitions?.containsKey(it) == true } ?: chorus.device?.accountId.orEmpty()
-    val frontName = definitions?.get(front)?.name ?: "Body"
-    val layerName = model.namedFronts?.layers?.find { it.id==layerId }?.name ?: layerId
     val loadRequest = remember(revision,front,configured,retry) { Any() }
     // A new scope starts empty in the same composition. produceState keys alone retain the
     // previous value until their coroutine starts, briefly mislabelling old charts/exports.
@@ -171,8 +169,7 @@ internal fun InsightsScreen(chorus: Chorus, model: Model, onClose: () -> Unit) {
                     .map { it.id to (it.name + if (it.deleted) " (deleted)" else "") }) { selectedFront=it }
                 InsightChoice("Time layer",layerId,layers) { layerId=it }
                 InsightChoice("History",if (own) "own" else "effective",listOf("effective" to "Front history","own" to "Saved entries")) { own=it=="own" }
-                Text("$frontName · $layerName time. Change counts cover all layers of this front. Day and week bars show member-hours; simultaneous members add together.",color=p.ink2)
-            } else Text("Front history on this device. Simultaneous fronts add together.", color = p.ink2)
+            }
             if (exportError != null) Text(exportError.orEmpty(), color = p.danger)
         }
         if (loaded?.isFailure==true) item {

@@ -281,8 +281,6 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (St
                             Glyph(R.drawable.ic_layers, p.accent, 18.dp)
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text("Simple view is on", color = p.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                Text("Only one layer is shown, empty layers and other fronts are hidden. Switch back to Detailed at any time.",
-                                    color = p.ink2, fontSize = 12.sp, lineHeight = 16.sp)
                                 Text("Layers & display", color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.clickable { onLayers(frontId) }.padding(vertical = 4.dp))
                             }

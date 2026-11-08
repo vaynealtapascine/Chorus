@@ -100,12 +100,10 @@ internal fun PkImportSheet(chorus: Chorus, onDismiss: () -> Unit) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Import from PluralKit", color = p.ink, style = MaterialTheme.typography.titleMedium)
-            Text("In Discord, run pk;export and download the file PluralKit sends you. Importing again later only adds what's new.",
-                color = p.ink2, style = MaterialTheme.typography.bodyMedium)
-            OutlinedButton(enabled = !busy, onClick = { picker.launch("*/*") }) { Text(if (plan == null) "Choose the export file" else "Choose another file") }
+            OutlinedButton(enabled = !busy, onClick = { picker.launch("*/*") }) { Text(if (plan == null) "Choose your pk;export file" else "Choose another file") }
             error?.let { Text(it, color = p.danger) }
             plan?.let { pl ->
-                Text("${pl.optInt("members")} members · ${pl.optInt("groups")} groups · ${pl.optInt("switches")} switches (imported silently, no notifications)",
+                Text("${pl.optInt("members")} members · ${pl.optInt("groups")} groups · ${pl.optInt("switches")} switches",
                     color = p.ink, fontWeight = FontWeight.Medium)
                 val warnings = pl.optJSONArray("warnings")
                 val notes = List(warnings?.length() ?: 0) { warnings!!.optString(it) }

@@ -5,22 +5,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,9 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -106,12 +98,12 @@ fun Onboarding(chorus: Chorus, initialLink: String?) {
             .verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Welcome to Chorus", fontSize = 30.sp, fontWeight = FontWeight.SemiBold, color = p.ink, modifier = Modifier.padding(top = 32.dp))
+        // the wordmark, until the artwork arrives (UI21 Q-C)
+        Text("Chorus", fontSize = 34.sp, fontWeight = FontWeight.Black, color = p.ink, modifier = Modifier.padding(top = 32.dp))
         AnimatedContent(invite, label = "onboarding step") { step ->
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 when (step) {
                     null -> {
-                        Text("A cozy place for plural systems and the people close to them. Paste the invite link you were given.", color = p.ink2)
                         OnboardingCard {
                             ChorusField(
                                 value = link, onValueChange = { link = it; error = null },
@@ -126,26 +118,16 @@ fun Onboarding(chorus: Chorus, initialLink: String?) {
                         }
                     }
                     "device" -> {
-                        Text("This link adds this phone to an account you already have.", color = p.ink2)
                         OnboardingCard {
                             error?.let { Text(it, color = p.danger) }
-                            Button(enabled = !busy, onClick = ::join) { Text(if (busy) "Linking…" else "Link this phone") }
+                            Button(enabled = !busy, onClick = ::join) { Text(if (busy) "Linking…" else "Link this device") }
                             TextButton(enabled = !busy, onClick = { invite = null; error = null }) { Text("Use another link") }
                         }
                     }
                     else -> {
-                        if (step.isNotEmpty()) {
-                            Text("Who's joining?", color = p.ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                KindChoice("We're a system", "More than one of us shares this body. Chorus keeps track of " +
-                                    "members, who's fronting and front history, and lets each of us post and chat as ourselves.",
-                                    kind == "system") { kind = "system" }
-                                KindChoice("Just me", "I'm one person (a singlet). Follow friends, including plural ones, see " +
-                                    "who's fronting when they share it, and chat and post, without the switching tools.",
-                                    kind == "person") { kind = "person" }
-                            }
-                        } else Text("Give your system (or yourself) a name to start.", color = p.ink2)
                         OnboardingCard {
+                            // one toggle in place of D-093's two cards: the same account kind (UI21 F1.1)
+                            if (step.isNotEmpty()) ToggleRow("I am plural", kind == "system", enabled = !busy) { kind = if (it) "system" else "person" }
                             ChorusField(
                                 value = name, onValueChange = { name = it },
                                 label = { Text(when { step.isEmpty() -> "Name (your system, or you)"; kind == "system" -> "Your system's name"; else -> "Your name" }) },
@@ -155,7 +137,6 @@ fun Onboarding(chorus: Chorus, initialLink: String?) {
                             ChorusField(
                                 value = handle, onValueChange = { v -> handle = v.removePrefix("@").lowercase().filter { it in 'a'..'z' || it in '0'..'9' || it == '_' }.take(32) },
                                 label = { Text("Handle (optional)") }, prefix = { Text("@") },
-                                supportingText = { Text("Friends follow you with it.") },
                                 singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                                 modifier = Modifier.fillMaxWidth(),
                             )
@@ -180,24 +161,4 @@ private fun OnboardingCard(content: @Composable () -> Unit) {
             .border(1.dp, p.line, RoundedCornerShape(20.dp)).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) { content() }
-}
-
-@Composable
-private fun KindChoice(title: String, body: String, selected: Boolean, onSelect: () -> Unit) {
-    val p = LocalChorusPalette.current
-    val shape = RoundedCornerShape(16.dp)
-    Row(
-        Modifier.fillMaxWidth().background(if (selected) p.accentSoft else p.surface, shape)
-            .border(if (selected) 2.dp else 1.dp, if (selected) p.accent else p.line, shape)
-            .selectable(selected, role = Role.RadioButton, onClick = onSelect)
-            .heightIn(min = 56.dp).padding(start = 4.dp, top = 12.dp, end = 16.dp, bottom = 12.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        RadioButton(selected, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = p.accent),
-            modifier = Modifier.padding(12.dp))
-        Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-            Text(body, color = p.ink2, fontSize = 14.sp, lineHeight = 20.sp)
-        }
-    }
 }

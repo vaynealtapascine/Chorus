@@ -30,31 +30,28 @@ fun ChorusIcon(icon: AppIcon, description: String? = null, modifier: Modifier = 
 }
 
 @Composable
-fun MoreScreen(person: Boolean, onMembers: () -> Unit, onHome: () -> Unit, onChat: () -> Unit, onPeople: () -> Unit, onJournal: () -> Unit, onHistory: () -> Unit,
-    onInsights: () -> Unit, onFronts: () -> Unit, onSettings: () -> Unit, onSearch: () -> Unit, onLink: () -> Unit,
+fun MoreScreen(person: Boolean, onMembers: () -> Unit, onHome: () -> Unit, onChat: () -> Unit, onPeople: () -> Unit, onJournal: () -> Unit,
+    onInsights: () -> Unit, onSettings: () -> Unit, onSearch: () -> Unit, onLink: () -> Unit,
     onNotifications: () -> Unit = {}) {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (!person) {
-            item { DestinationRow("Members", "Your members and profiles", AppIcon.Members, onMembers) }
-            item { DestinationRow("Fronting", "Current presence and quick switching", AppIcon.Front, onHome) }
+            item { DestinationRow("Members", AppIcon.Members, onMembers) }
+            item { DestinationRow("Fronting", AppIcon.Front, onHome) }
         }
-        item { DestinationRow("Notifications", "Mentions, replies and friends’ news", AppIcon.Bell, onNotifications) }
-        item { DestinationRow("Chat", "Channels and direct messages", AppIcon.Chat, onChat) }
-        item { DestinationRow("Friends", "Connections and following", AppIcon.Friends, onPeople) }
-        item { DestinationRow("Journal", "Entries, notes and member journals", AppIcon.Journal, onJournal) }
-        if (!person) {
-            item { DestinationRow("Fronts and layers", "Separate fronts, following and who counts for what", AppIcon.Front, onFronts) }
-            item { DestinationRow("Front history", "Look back, amend or log a switch", AppIcon.History, onHistory) }
-            item { DestinationRow("Fronting insights", "History, patterns and exports", AppIcon.Layers, onInsights) }
-        }
-        item { DestinationRow("Appearance & preferences", "Theme, notifications and privacy", AppIcon.Settings, onSettings) }
-        item { DestinationRow("Search", "Messages, posts and switches on this device", AppIcon.Search, onSearch) }
-        item { DestinationRow("Link another device", "Use Chorus on another phone or browser", AppIcon.Plus, onLink) }
+        item { DestinationRow("Notifications", AppIcon.Bell, onNotifications) }
+        item { DestinationRow("Chat", AppIcon.Chat, onChat) }
+        item { DestinationRow("Friends", AppIcon.Friends, onPeople) }
+        item { DestinationRow("Journal", AppIcon.Journal, onJournal) }
+        // fronts and front history open from the Fronting screen's bar (UI21)
+        if (!person) item { DestinationRow("Fronting insights", AppIcon.Layers, onInsights) }
+        item { DestinationRow("Appearance & preferences", AppIcon.Settings, onSettings) }
+        item { DestinationRow("Search", AppIcon.Search, onSearch) }
+        item { DestinationRow("Link another device", AppIcon.Plus, onLink) }
     }
 }
 
 @Composable
-private fun DestinationRow(title: String, description: String, icon: AppIcon, onClick: () -> Unit) {
+private fun DestinationRow(title: String, icon: AppIcon, onClick: () -> Unit) {
     val p = LocalChorusPalette.current
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.surface)
         .clickable(onClick = onClick).padding(16.dp), verticalAlignment = Alignment.CenterVertically,
@@ -62,10 +59,7 @@ private fun DestinationRow(title: String, description: String, icon: AppIcon, on
         Surface(shape = RoundedCornerShape(50), color = p.accentSoft, contentColor = p.accent) {
             Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { ChorusIcon(icon) }
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, color = p.ink, fontWeight = FontWeight.SemiBold)
-            Text(description, color = p.ink3, style = MaterialTheme.typography.bodySmall)
-        }
+        Text(title, color = p.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
         ChorusIcon(AppIcon.Chevron)
     }
 }

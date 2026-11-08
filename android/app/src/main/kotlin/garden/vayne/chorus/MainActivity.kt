@@ -433,7 +433,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 else if (insightsOpen) InsightsScreen(chorus, model) { insightsOpen = false }
                 else if (layersFront != null && !model.isPerson) LayersDisplayScreen(chorus, model, layersFront!!) { layersFront = null }
                 else if (frontsOpen && !model.isPerson) FrontsScreen(chorus, model) { frontsOpen = false }
-                else if (settingsOpen) SettingsScreen(chorus, model) { insightsOpen = true; settingsOpen = false }
+                else if (settingsOpen) SettingsScreen(chorus, model)
                 else androidx.compose.animation.Crossfade(targetState = activeTab,
                     animationSpec = androidx.compose.animation.core.tween(if (motion) 120 else 0), label = "Main destination") { shownTab ->
                 destinationState.SaveableStateProvider(shownTab.name) {
@@ -475,8 +475,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         journalOpenProfile = member; journalOpenPost = post; tab = Tab.Journal
                     }, active = shownTab == activeTab, onFocusedRoute = { membersFocused = it })
                     Tab.History -> History(chorus, model, historyFront, onBack = { tab = Tab.Home })
-                    Tab.More -> MoreScreen(person, onMembers = { tab = Tab.Members }, onHome = { tab = Tab.Home }, onChat = { tab = Tab.Chat }, onPeople = { tab = Tab.People }, onJournal = { tab = Tab.Journal }, onHistory = { tab = Tab.History },
-                        onInsights = { insightsOpen = true }, onFronts = { frontsOpen = true }, onSettings = { settingsOpen = true },
+                    Tab.More -> MoreScreen(person, onMembers = { tab = Tab.Members }, onHome = { tab = Tab.Home }, onChat = { tab = Tab.Chat }, onPeople = { tab = Tab.People }, onJournal = { tab = Tab.Journal },
+                        onInsights = { insightsOpen = true }, onSettings = { settingsOpen = true },
                         onSearch = { searchSection="Messages"; searchOpen = true }, onLink = { linking = true },
                         onNotifications = { tab = Tab.Notifications })
                 }
@@ -529,8 +529,6 @@ private fun ShareChooser(draft: SharedDraft, model: Model, accountId: String?, o
         Text(listOfNotNull("Text".takeIf { draft.text.isNotBlank() },
             "${draft.uris.size} file${if (draft.uris.size == 1) "" else "s"}".takeIf { draft.uris.isNotEmpty() })
             .joinToString(" · "), color = p.ink2, modifier = Modifier.padding(bottom = 12.dp))
-        Text("Choose where to prepare this draft. You can review it before posting or sending.",
-            color = p.ink2, modifier = Modifier.padding(bottom = 12.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (model.active.any { it.createdByAccountId == null || it.createdByAccountId == accountId }) item {
                 Text("Post as…", color = p.accent, fontSize = 16.sp,
@@ -548,7 +546,7 @@ private fun ShareChooser(draft: SharedDraft, model: Model, accountId: String?, o
                         .clickable { onChannel(channel) }.padding(16.dp))
             }
             if (model.active.isEmpty() && model.channels.isEmpty()) item {
-                Text("No place to share yet. Finish setting up your account first.", color = p.ink2)
+                Text("Nothing to share into yet", color = p.ink2)
             }
         }
     }

@@ -26,7 +26,7 @@ fun DeviceLink(chorus: Chorus, onClose: () -> Unit) {
     LaunchedEffect(Unit) {
         try { link = chorus.deviceInvite() } catch (e: Exception) { error = e.message ?: "Could not create a link." }
     }
-    Drawer(onClose, "Link another device", "A one-use link that works for a day.", footer = {
+    Drawer(onClose, "Link another device", footer = {
         if (link != null) DrawerButton("Share link", {
             context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
@@ -37,7 +37,7 @@ fun DeviceLink(chorus: Chorus, onClose: () -> Unit) {
     }) {
         when {
             link != null -> {
-                FormNote("Open it on the other device. Anyone with it can join this account until it's used, so send it only to yourself.",
+                FormNote("Works once, for one day.",
                     garden.vayne.chorus.designsystem.R.drawable.ic_lock)
                 FormCard { SelectionContainer { Text(link.orEmpty(), color = LocalChorusPalette.current.ink, fontSize = 14.sp,
                     modifier = Modifier.padding(16.dp)) } }
