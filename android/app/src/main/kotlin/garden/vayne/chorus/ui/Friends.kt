@@ -56,11 +56,32 @@ import org.json.JSONObject
 internal data class FriendsData(val follows: FollowList = FollowList(emptyList(), emptyList()),
     val views: Map<String, FollowerView> = emptyMap(), val latest: Map<String, SharedPost?> = emptyMap(),
     /** Post alerts on our members (D-106): requested or active. */
-    val postAlerts: List<JSONObject> = emptyList(), val loaded: Boolean = false) {
+    val postAlerts: List<JSONObject> = emptyList(), val loaded: Boolean = false,
+    /** Each followed account's newest page of posts (Home's *New from friends*). */
+    val pages: Map<String, List<SharedPost>> = emptyMap()) {
     val rows: List<FriendRow> by lazy { Friends.rows(follows, views, latest) }
     fun row(account: String): FriendRow? = rows.find { it.id == account }
     val requests: List<FollowInfo> get() = follows.followers.filter { it.status == "requested" }
     val followers: List<FollowInfo> get() = follows.followers.filter { it.status == "active" }
+}
+
+/** Read Friends from the server (Friends, Home): follows, what each followed system shares of who's
+ * here, each followed account's newest posts and post alerts ([alerts] stands when they fail). */
+internal suspend fun loadFriendsData(dev: garden.vayne.chorus.data.DeviceRecord, alerts: List<JSONObject> = emptyList()): FriendsData {
+    val follows = PeopleApi.list(dev)
+    val active = follows.following.filter { it.status == "active" }
+    val (views, pages) = coroutineScope {
+        val v = active.filter { it.account.isSystem }.map { f -> async {
+            runCatching { f.account.id to PeopleApi.followerView(PeopleApi.view(dev, f.account.id)) }.getOrNull()
+        } }
+        val l = active.map { f -> async {
+            runCatching { f.account.id to PeopleApi.posts(dev, f.account.id) }.getOrNull()
+        } }
+        v.awaitAll().filterNotNull().toMap() to l.awaitAll().filterNotNull().toMap()
+    }
+    for ((account, view) in views) FriendFronts.put(dev.accountId, account, view)
+    val postAlerts = runCatching { PeopleApi.postAlerts(dev) }.getOrDefault(alerts)
+    return FriendsData(follows, views, pages.mapValues { it.value.firstOrNull() }, postAlerts, loaded = true, pages = pages)
 }
 
 /** An account's colour where it has none of its own: one of the bucket swatches, by id. */
@@ -160,20 +181,7 @@ internal fun FriendsScreen(chorus: Chorus, model: Model, onOpenChat: (String) ->
         val dev = chorus.device ?: return@LaunchedEffect
         loading = true
         try {
-            val follows = PeopleApi.list(dev)
-            val active = follows.following.filter { it.status == "active" }
-            val (views, latest) = coroutineScope {
-                val v = active.filter { it.account.isSystem }.map { f -> async {
-                    runCatching { f.account.id to PeopleApi.followerView(PeopleApi.view(dev, f.account.id)) }.getOrNull()
-                } }
-                val l = active.map { f -> async {
-                    runCatching { f.account.id to PeopleApi.posts(dev, f.account.id).firstOrNull() }.getOrNull()
-                } }
-                v.awaitAll().filterNotNull().toMap() to l.awaitAll().filterNotNull().toMap()
-            }
-            for ((account, view) in views) FriendFronts.put(dev.accountId, account, view)
-            val alerts = runCatching { PeopleApi.postAlerts(dev) }.getOrDefault(data.postAlerts)
-            data = FriendsData(follows, views, latest, alerts, loaded = true)
+            data = loadFriendsData(dev, data.postAlerts)
             error = null
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Exception) { error = e.message ?: "Couldn’t load your friends." }
@@ -532,7 +540,7 @@ internal fun SmallButton(text: String, primary: Boolean = false, icon: Int? = nu
 
 /** Follow someone by their handle. */
 @Composable
-private fun FollowDrawer(onDismiss: () -> Unit, onFollow: (String) -> Unit) {
+internal fun FollowDrawer(onDismiss: () -> Unit, onFollow: (String) -> Unit) {
     var handle by rememberSaveable { mutableStateOf("") }
     Drawer(onDismiss, "Follow someone", footer = {
         DrawerButton("Send request", { onFollow(handle.trim()) }, enabled = handle.isNotBlank())

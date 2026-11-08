@@ -233,41 +233,13 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                     if (entry is ChatOrganize.SpaceEntry<*>) { Box(rowMotion) { SpaceEntryRow(entry as ChatOrganize.SpaceEntry<ChatListRow>, folders.compact,
                         onOpen = { openSpace = entry.spaceId }, onAction = onSpaceAction) }; return@items }
                     val row = entry as ChatListRow
-                    val direct = row.channel.isMemberDm && row.space.kind == "internal"
                     val peer = row.peer(model, readerId)
                     Box(rowMotion) { Row(Modifier.fillMaxWidth().background(if (selected == row.channel.id) p.accentSoft else if (row.pinned) p.surface else p.bg)
                         .combinedClickable(onClick = { onOpen(row) }, onLongClick = onRowAction?.let { { rowMenu = row.channel.id } },
                             onLongClickLabel = "Chat actions").heightIn(min = if (folders.compact) 56.dp else 70.dp)
                             .padding(horizontal = 12.dp, vertical = if (folders.compact) 4.dp else 8.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // a DM's disc shows who it is with
-                        ChatRowDisc(row, if (folders.compact) 40.dp else 48.dp, peer)
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                if (row.latest?.id in model.polls.polls) ChatIcon(R.drawable.ic_poll)
-                                else if (row.private) ChatIcon(R.drawable.ic_lock, "Private")
-                                else if (row.space.kind != "internal") ChatIcon(R.drawable.ic_globe)
-                                else if (row.channel.parentMessageId != null) ChatIcon(R.drawable.ic_reply)
-                                else if (!direct) Text("#", color = p.ink3, fontSize = 16.sp, lineHeight = 22.sp)
-                                Text(if (inside != null) row.channel.name else row.title, color = p.ink, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                                row.whose?.let { Text("• $it", color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)) }
-                            }
-                            val sender = row.sender
-                            val special = previews[row.channel.id]
-                            val preview = ChatPresentation.preview(row.latest, model.polls.polls[row.latest?.id])
-                            Text(spoilerPreview(special ?: listOfNotNull(sender?.takeIf { it.isNotBlank() }, preview).joinToString(": ")),
-                                color = if (special != null) p.accent else p.ink3, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            row.latest?.let { Text(ChatPresentation.listTimeLabel(it.occurredAt), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp) }
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                if (row.muted) Icon(painterResource(R.drawable.ic_bell_off), "Muted", Modifier.size(16.dp), tint = p.ink3)
-                                if (row.unread > 0) ChatCount(row.unread, !row.muted)
-                                else if (row.pinned) Icon(painterResource(R.drawable.ic_pin), "Pinned", Modifier.size(16.dp), tint = p.ink3)
-                            }
-                        }
+                        ChatRowBody(model, row, peer, folders.compact, if (inside != null) row.channel.name else row.title, previews[row.channel.id])
                     }
                     if (onRowAction != null) MenuDrawer(rowMenu == row.channel.id, { rowMenu = null }, row.title,
                         leading = { ChatRowDisc(row, 40.dp) }) {
@@ -317,6 +289,43 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                 }
             }
             if (onEditFolders != null) MenuRow("New folder with this chat", R.drawable.ic_plus) { foldersFor = null; onEditFolders("new:${row.channel.id}") }
+        }
+    }
+}
+
+/** One chat in a list (the chat list, Home's *Waiting for you*): its disc, [title] with the whose-side
+ * or [context] after it ("# general • Garden"), who said what last ([special] in its place, in the
+ * accent), the time and the unread count. */
+@Composable
+internal fun RowScope.ChatRowBody(model: Model, row: ChatListRow, peer: Member?, compact: Boolean, title: String,
+    special: String? = null, context: String? = null) {
+    val p = LocalChorusPalette.current
+    val direct = row.channel.isMemberDm && row.space.kind == "internal"
+    // a DM's disc shows who it is with
+    ChatRowDisc(row, if (compact) 40.dp else 48.dp, peer)
+    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (row.latest?.id in model.polls.polls) ChatIcon(R.drawable.ic_poll)
+            else if (row.private) ChatIcon(R.drawable.ic_lock, "Private")
+            else if (row.space.kind != "internal") ChatIcon(R.drawable.ic_globe)
+            else if (row.channel.parentMessageId != null) ChatIcon(R.drawable.ic_reply)
+            else if (!direct) Text("#", color = p.ink3, fontSize = 16.sp, lineHeight = 22.sp)
+            Text(title, color = p.ink, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            (row.whose ?: context)?.let { Text("• $it", color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)) }
+        }
+        val sender = row.sender
+        val preview = ChatPresentation.preview(row.latest, model.polls.polls[row.latest?.id])
+        Text(spoilerPreview(special ?: listOfNotNull(sender?.takeIf { it.isNotBlank() }, preview).joinToString(": ")),
+            color = if (special != null) p.accent else p.ink3, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        row.latest?.let { Text(ChatPresentation.listTimeLabel(it.occurredAt), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp) }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (row.muted) Icon(painterResource(R.drawable.ic_bell_off), "Muted", Modifier.size(16.dp), tint = p.ink3)
+            if (row.unread > 0) ChatCount(row.unread, !row.muted)
+            else if (row.pinned) Icon(painterResource(R.drawable.ic_pin), "Pinned", Modifier.size(16.dp), tint = p.ink3)
         }
     }
 }
