@@ -21,7 +21,9 @@ export interface MembersView {
 }
 export interface MemberFolder { id: string; name: string }
 
-export const DEFAULT_VIEW: MembersView = { pills: 'all', bio: true, banners: true, flat: false };
+export const DEFAULT_VIEW: MembersView = { pills: 'first', bio: false, banners: false, flat: true };
+/** What a saved view's missing keys mean: D-100's first defaults, so a saved view never changes (D-139). */
+const SAVED_BASE: MembersView = { pills: 'all', bio: true, banners: true, flat: false };
 
 type PrefRows = Record<string, { fields: Record<string, unknown> } | undefined>;
 
@@ -29,7 +31,7 @@ type PrefRows = Record<string, { fields: Record<string, unknown> } | undefined>;
 export function memberListPrefs(prefs: PrefRows, accountId: string): { view: MembersView; folders: MemberFolder[]; folderOf: Map<string, string> } {
   const value = (key: string) => (prefs[`||${key}`] ?? prefs[`${accountId}||${key}`])?.fields.value;
   const v = value(VIEW) as Record<string, unknown> | null | undefined;
-  const view: MembersView = { ...DEFAULT_VIEW };
+  const view: MembersView = { ...(v && typeof v === 'object' ? SAVED_BASE : DEFAULT_VIEW) };
   if (v && typeof v === 'object') {
     if (v.pills === 'off' || v.pills === 'first' || v.pills === 'all') view.pills = v.pills;
     if (typeof v.role_field === 'string' && v.role_field) view.role_field = v.role_field;

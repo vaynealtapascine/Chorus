@@ -22,7 +22,7 @@
   "view": { "pills": "first", "role_field": "f-role", "bio": false, "banners": true, "flat": true },
   "folders": [ { "id": "f1", "name": "Littles" }, { "id": "f2", "name": "Folder" } ],
   "folder_of": { "m1": "f2", "m6": "f1" },
-  "default_view": { "pills": "all", "bio": true, "banners": true, "flat": false },
+  "default_view": { "pills": "first", "bio": false, "banners": false, "flat": true },
   "roles": [
     { "value": ["Host", " Protector ", "Host", "", 3], "roles": ["Host", "Protector"] },
     { "value": "Gatekeeper", "roles": ["Gatekeeper"] },

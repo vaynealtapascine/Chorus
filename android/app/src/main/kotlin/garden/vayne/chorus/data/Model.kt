@@ -36,7 +36,10 @@ data class Member(
 
 data class ProxyTag(val prefix: String, val suffix: String)
 
-data class Group(val id: String, val name: String, val kind: String, val parentId: String?, val color: String?) {
+data class Group(val id: String, val name: String, val kind: String, val parentId: String?, val color: String?,
+    val icon: String? = null, val description: String? = null,
+    /** Who may see it (`member_group.visibility`), only when a write has set it; nobody reads it yet. */
+    val visibility: String? = null) {
     val isSubsystem: Boolean get() = kind == "subsystem"
 }
 
@@ -369,7 +372,8 @@ class Model(
                 .sortedWith(compareBy<Member> { it.shownName.lowercase(java.util.Locale.ROOT) }.thenBy { it.id })
             val groups = rows(p, "member_group")
                 .filter { (_, f) -> !f.present("deleted_at") }
-                .map { (id, f) -> Group(id, f.str("name") ?: "Untitled", f.str("kind") ?: "subsystem", f.str("parent_id"), f.str("color")) }
+                .map { (id, f) -> Group(id, f.str("name") ?: "Untitled", f.str("kind") ?: "subsystem", f.str("parent_id"), f.str("color"),
+                    f.str("icon"), f.str("description"), f.optJSONObject("visibility")?.toString()) }
                 .sortedBy { it.name.lowercase() }
             val membership = HashMap<String, MutableSet<String>>()
             p.optJSONObject("sets")?.optJSONObject("group_membership")?.let { set ->
