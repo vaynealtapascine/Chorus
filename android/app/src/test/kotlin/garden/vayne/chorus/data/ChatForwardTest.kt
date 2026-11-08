@@ -28,6 +28,19 @@ class ChatForwardTest {
         assertFalse(copy.has("id"))
     }
 
+    @Test fun theSourceChatNameStaysHiddenOutsideItsSpace() {
+        val general = ChatChannel("general", "home", "text", "Plans for Kai", null)
+        assertEquals("Plans for Kai", ChatForward.sourceName(general, "home"))
+        assertEquals(null, ChatForward.sourceName(general, "shared"))
+        val outward = ChatForward.payload("c2", "rin", message(), ChatForward.sourceName(general, "shared"), emptyList())
+        assertFalse(outward.getJSONArray("forward_snapshot").getJSONObject(0).has("channel_name"))
+        val bundle = ChatForward.bundle("c2", "rin", listOf(message()), ChatForward.sourceName(general, "shared"), emptyList())
+        assertFalse(bundle.getJSONArray("forward_snapshot").getJSONObject(0).has("channel_name"))
+        val quote = ChatForward.quote(listOf(message(), message().copy(id = "m2")), ChatForward.sourceName(general, "shared"))
+        assertFalse(quote.getJSONArray("items").getJSONObject(0).has("channel_name"))
+        assertEquals(emptyList<String?>(), ChatForward.parse(outward.getJSONArray("forward_snapshot")).mapNotNull { it.channelName })
+    }
+
     @Test fun parsesSnapshotsForDisplay() {
         val items = ChatForward.parse(JSONArray("""[{"message_id":"m1","channel_name":"General","authors":["kai"],"text":"hi","occurred_at":5},{"text":"no id"}]"""))
         assertEquals(listOf(ForwardItem("m1", "hi", "General", listOf("kai"), 5)), items)

@@ -7,7 +7,7 @@
   import { channels, contentWarningsAutoExpand, customEmojis, lastRead, memberMarks, members, messageById, messagePage, pinnedMessages, reactions, readPerMember, segmentParsing, spaces, threadSummaries, unread, type MessageRow, type QuoteValue, type SnapshotItem, type TextRange } from '../data';
   import { activeViewers, memberVisible } from '../hidden';
   import { router } from '../router.svelte';
-  import { snapshot } from '../selection';
+  import { forTarget, quoteForTarget, snapshot } from '../selection';
   import { editedSegments, segmentRich } from '../segments';
   import { canWriteAs, posts } from '../posts';
   import { channelFrontChoices, channelFrontId, channelFrontKey, channelReaders, channelSpeaker } from '../channel-front';
@@ -604,7 +604,7 @@
       ...(preview && preview.segments.length > 1 ? { segments: preview.segments } : {}),
       ...(attachmentIds.length ? { attachments: attachmentIds } : {}),
       ...(replyTo ? { reply_to: replyTo.id } : {}),
-      ...(quoting ? { quote: quoting } : {}),
+      ...(quoting ? { quote: quoteForTarget(quoting, quoteSourceSpaceId || current.space_id, current.space_id) } : {}),
       ...(cw.trim() ? { cw: cw.trim() } : {}),
       ...(visibilityMode === 'members' ? { visibility: { mode: 'members', member_ids: visibleTo } } :
         visibilityMode === 'system_only' ? { visibility: { mode: 'system_only' } } : {}),
@@ -739,7 +739,7 @@
       text: '',
       entities: [],
       forward_of_id: items[0].message_id,
-      forward_snapshot: items,
+      forward_snapshot: forTarget(items, current.space_id, target.space_id),
       ...(attachments.length ? { attachments } : {}),
     });
     forwarding = null;

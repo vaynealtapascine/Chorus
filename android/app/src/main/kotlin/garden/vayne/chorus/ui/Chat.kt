@@ -682,7 +682,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     chorus.newId().also { id -> chorus.create("attachment.create", id, ChatForward.attachmentCopy(a), scope = scope) }
                 }
                 check(stillHere(items)) { "These messages or that chat are no longer available." }
-                chorus.create("message.forward", chorus.newId(), ChatForward.bundle(row.channel.id, speaker, items, from.name, ids), scope = scope)
+                chorus.create("message.forward", chorus.newId(), ChatForward.bundle(row.channel.id, speaker, items, ChatForward.sourceName(from, row.space.id), ids), scope = scope)
                 bundleForward = emptyList()
                 openChat(row)
                 history.sent(); jumpTo = null; followNext = true
@@ -715,7 +715,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     chorus.newId().also { id -> chorus.create("attachment.create", id, ChatForward.attachmentCopy(a), scope = scope) }
                 }
                 checkAccess()
-                chorus.create("message.forward", chorus.newId(), ChatForward.payload(row.channel.id, speaker, message, from.name, ids), scope = scope)
+                chorus.create("message.forward", chorus.newId(), ChatForward.payload(row.channel.id, speaker, message, ChatForward.sourceName(from, row.space.id), ids), scope = scope)
                 forwarding = null; forwardConfirm = null
                 openChat(row)
                 history.sent(); jumpTo = null; followNext = true
@@ -1410,7 +1410,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                     val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
                                         audience, visibleTo.toSet(), space.kind, replyTo = target?.id, attachmentIds = attachmentIds,
                                         accountId = senderAccount,
-                                        quote = quoted.takeIf { it.isNotEmpty() }?.let { q -> ChatForward.quote(q, model.channels.find { it.id == q.first().channelId }?.name ?: channel.name, quotePart) })
+                                        quote = quoted.takeIf { it.isNotEmpty() }?.let { q -> ChatForward.quote(q, ChatForward.sourceName(model.channels.find { it.id == q.first().channelId }, space.id), quotePart) })
                                     if (pollOn) payload.put("poll", Polls.draft(pollOptions.toList(), pollMultiple).getOrThrow())
                                     chorus.create("message.send", chorus.newId(), payload, scope = scope)
                                     history.sent(); jumpTo = null; followNext = true

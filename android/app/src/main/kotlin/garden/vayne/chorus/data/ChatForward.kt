@@ -39,7 +39,7 @@ object ChatForward {
     }
 
     /** Quote one whole message (a range over all of it) or several as a bundle, as web writes them. */
-    fun quote(messages: List<ChatMessage>, channelName: String, part: IntRange? = null): JSONObject = if (messages.size == 1) messages[0].let { m ->
+    fun quote(messages: List<ChatMessage>, channelName: String?, part: IntRange? = null): JSONObject = if (messages.size == 1) messages[0].let { m ->
         // part: a UTF-16 range of the text (Kotlin string indices are UTF-16, like message offsets)
         val range = safeRange(m.text, part)
         val text = if (m.text.isEmpty()) "" else m.text.substring(range.first, range.last + 1)
@@ -47,7 +47,7 @@ object ChatForward {
     } else JSONObject().put("items", JSONArray(messages.map { snapshot(it, channelName) }))
 
     /** Several messages forwarded together as one bundle (D-048), oldest first. */
-    fun bundle(targetChannel: String, speaker: String, messages: List<ChatMessage>, channelName: String,
+    fun bundle(targetChannel: String, speaker: String, messages: List<ChatMessage>, channelName: String?,
         attachmentIds: List<String>): JSONObject = JSONObject()
         .put("channel_id", targetChannel).put("authors", JSONArray(listOf(speaker)))
         .put("text", "").put("entities", JSONArray())
@@ -59,9 +59,15 @@ object ChatForward {
         .put("filename", a.filename).put("mime", a.mime).put("size", a.size).put("alt_text", a.altText)
         .put("is_spoiler", a.spoiler).apply { a.thumbHash?.let { put("thumb_blob_hash", it) } }
 
-    /** The whole message as web `snapshot()` writes it. */
-    fun snapshot(message: ChatMessage, channelName: String): JSONObject = JSONObject()
-        .put("message_id", message.id).put("channel_name", channelName)
+    /**
+     * The source chat's name as a snapshot may carry it: only when the copy stays in the space it
+     * was written in. Forwarded into another space, the original chat's name stays hidden (F5.20).
+     */
+    fun sourceName(source: ChatChannel?, targetSpaceId: String): String? = source?.takeIf { it.spaceId == targetSpaceId }?.name
+
+    /** The whole message as web `snapshot()` writes it; [channelName] null leaves the name out. */
+    fun snapshot(message: ChatMessage, channelName: String?): JSONObject = JSONObject()
+        .put("message_id", message.id).apply { if (channelName != null) put("channel_name", channelName) }
         .put("authors", JSONArray(message.authors)).put("text", message.text)
         .put("entities", runCatching { JSONArray(message.entities) }.getOrElse { JSONArray() })
         .put("occurred_at", message.occurredAt)
@@ -73,7 +79,7 @@ object ChatForward {
         .put("filename", a.filename).put("mime", a.mime).put("size", a.size).put("alt_text", a.altText)
         .put("is_spoiler", a.spoiler).apply { a.thumbHash?.let { put("thumb_blob_hash", it) } }
 
-    fun payload(targetChannel: String, speaker: String, message: ChatMessage, channelName: String,
+    fun payload(targetChannel: String, speaker: String, message: ChatMessage, channelName: String?,
         attachmentIds: List<String>): JSONObject = JSONObject()
         .put("channel_id", targetChannel).put("authors", JSONArray(listOf(speaker)))
         .put("text", "").put("entities", JSONArray())

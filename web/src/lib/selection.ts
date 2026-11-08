@@ -1,4 +1,4 @@
-import type { MessageRow, SnapshotItem, TextRange } from './data';
+import type { MessageRow, QuoteValue, SnapshotItem, TextRange } from './data';
 
 /** Capture the exact visible text at selection time, including clipped rich-text entities. */
 export function snapshot(message: MessageRow, channelName: string, range?: TextRange): SnapshotItem {
@@ -19,4 +19,19 @@ export function snapshot(message: MessageRow, channelName: string, range?: TextR
     ...(range ? {} : { attachments: message.attachments }),
     ...(range ? { offset: start, length: range.length } : { offset: 0, length: message.text.length }),
   };
+}
+
+/** Snapshots as they go to [targetSpaceId]: in another space the source chat's name stays hidden (F5.20). */
+export function forTarget(items: SnapshotItem[], sourceSpaceId: string, targetSpaceId: string): SnapshotItem[] {
+  if (sourceSpaceId === targetSpaceId) return items;
+  return items.map((item) => {
+    const copy = { ...item };
+    delete copy.channel_name;
+    return copy;
+  });
+}
+
+/** A quote as it goes to [targetSpaceId]; a single text range carries no chat name. */
+export function quoteForTarget(quote: QuoteValue, sourceSpaceId: string, targetSpaceId: string): QuoteValue {
+  return 'items' in quote ? { items: forTarget(quote.items, sourceSpaceId, targetSpaceId) } : quote;
 }
