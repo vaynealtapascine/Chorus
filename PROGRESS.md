@@ -22,9 +22,9 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 ## Now
 
-- **In progress:** UI21
-- **Owner:** claude-opus-5.5, 2026-11-08
-- **Next concrete step:** Wave 3: Android Members (F4.1–F4.5)
+- **In progress:** UI22
+- **Owner:** gpt-6-sol, 2026-11-08
+- **Next concrete step:** Set shared web and Android member-row banners to two-thirds width, retaining bottom-right alignment and fade.
 - **Notes:** Wave 1 (sweep: forward privacy fix, text trims, small tap cuts, connection banner) went live in Android 0.1.823 with the D-129 deploy. Owner answered the UI21 batch (D-130–D-138). Wave 2 Home next. Plan + rules: docs/handoff/ui21-plan.md.
 
 ### SEC1: what is done and what is left
@@ -101,6 +101,7 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 
 ### UI — Owner's Figma redesign
 
+- [~] UI22 Lock Members list banner backgrounds to two-thirds of each row panel, anchored bottom-right (owner, 2026-11-08), on web and Android.
 - [~] UI21 Figma parity pass, Android then web (owner, 2026-11-08): every current Flows frame (F0–F11) checked against both apps; missing features and looks built; screens without a frame get the same styling; trim explanatory text, cut taps. Reference images: `F:/DunBuild/figma-cache` (no Figma connector needed). Audits in `docs/handoff/ui21-*.md`.
 - [~] UI20 Friends as the Figma F7 screens (owner, 2026-11-07, D-128): Friends list with Around right now (F7.1), a friend's page for a system or a person (F7.2, F7.3, F7.5), a person's Following / Followers / Requests (F7.4), Requests with an accept drawer (F7.7), Sharing with buckets (F7.8), sharing with one friend (F7.9, new `GET /follows/{id}/view`), a bucket's page (F7.10), notifications from one friend (F7.12). Android, server and web deployed 2026-11-08 (b212f83, web `index-DK_ZDRUV.js`, Android 0.1.808); checked on the emulator and in Chrome (1360 and 400 px) against an isolated demo (`F:/DunBuild/ui20-demo`, server 5299, vite 5300, `shot.cjs`). Left: a look on the owner's phone (inspect only); Q24 (hidden-member count); F7.6/F7.13/F7.14 not built (D-128).
 - [x] UI19 Notifications screen and Journal replies (owner, 2026-11-07, D-127): the Figma F11 Notifications inbox (web + Android, a bottom-bar tab with a badge; Needs you / Today / Earlier; chips; hold for options; read as another member; web side panel); Journal › Friends shows replies to our posts and what friends' replies answer; own posts count friends' replies and hearts; one action row everywhere with unavailable actions disabled; quoting another account's post, the quote readable only by who can read both. Server + Android deployed 2026-11-07 (8222e4f, Android 0.1.795); checked on the emulator against an isolated demo (`F:/DunBuild/ui19-demo`, port 5297). Web deployed too (0d436de), checked at 1360 and 400 px against the demo. Left: a look on the owner's phone (inspect only).
