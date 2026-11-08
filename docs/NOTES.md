@@ -29,6 +29,9 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
   `verify.py --quick --offline [args]`, logged to `F:\DunBuild\chorus-verify.log`
   (`CHORUS_TREE=<worktree>` to run elsewhere). It always adds `--quick`; for the full pre-deploy
   gate source `chorus-env.ps1` and run `python scripts/verify.py --android --offline` yourself.
+- Running `gradlew` by hand (e.g. `:app:compileDebugKotlin --offline`, ~20 s warm): `chorus-env.ps1` doesn't set
+  `GRADLE_USER_HOME`; without `F:\DunBuild\gradle` an offline build fails with "Plugin com.android.application
+  was not found" (verify.py sets it). Set it and `JAVA_HOME` to the JBR first (UI21, 2026-11-08).
 - `JAVA_HOME` may point at Java 8: Gradle needs Android Studio's JBR
   (`C:\Program Files\Android\Android Studio\jbr`; `verify.py` sets it).
 - `android/local.properties` needs the escaped drive colon for lint:
