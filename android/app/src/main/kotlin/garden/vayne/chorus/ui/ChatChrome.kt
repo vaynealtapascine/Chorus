@@ -113,7 +113,9 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
     /** The open conversation, on every layout: its space's channels show around it when it folds. */
     opened: String? = null,
     /** Pin, unpin or archive every channel of a space's entry at once ("pin", "unpin", "archive"). */
-    onSpaceAction: ((List<ChatListRow>, String) -> Unit)? = null) {
+    onSpaceAction: ((List<ChatListRow>, String) -> Unit)? = null,
+    /** The round button on a folder of shared spaces starts one (F5.22). */
+    onNewShared: (() -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val folders = model.accountPrefs.chatFolders
     // which folder is open stays on this device; a hidden or deleted one falls back to the first shown
@@ -264,9 +266,11 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                         onAction = onNew ?: onNewChannel)
                 }
             }
-            if (onNew != null && !archiveView && inside == null) FloatingActionButton(onClick = onNew, containerColor = p.accent, contentColor = p.onAccent,
-                shape = CircleShape, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
-                ChatIcon(R.drawable.ic_edit, "New chat or channel", p.onAccent)
+            val shared = onNewShared != null && NewChat.startFrom(folder, folders) == "shared"
+            if (onNew != null && !archiveView && inside == null) FloatingActionButton(onClick = if (shared) onNewShared!! else onNew,
+                containerColor = p.accent, contentColor = p.onAccent, shape = CircleShape, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
+                if (shared) ChatIcon(R.drawable.ic_users, "New shared space", p.onAccent)
+                else ChatIcon(R.drawable.ic_edit, "New message", p.onAccent)
             }
         }
     }
@@ -396,20 +400,6 @@ internal fun ChatCount(count: Int, unread: Boolean) {
 @Composable
 internal fun ChatActionRow(resource: Int, label: String, danger: Boolean = false, action: () -> Unit) =
     MenuRow(label, resource, danger = danger, onClick = action)
-
-@Composable
-internal fun ChatCreationChoice(resource: Int, title: String, description: String? = null, prominent: Boolean = false, action: () -> Unit) {
-    val p = LocalChorusPalette.current
-    Row(Modifier.fillMaxWidth().background(if (prominent) p.accentSoft else p.surface, RoundedCornerShape(16.dp))
-        .clickable(onClick = action).heightIn(min = if (description == null) 56.dp else 72.dp).padding(16.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        ChatIcon(resource, tint = p.accent)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = p.ink)
-            description?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = p.ink2) }
-        }
-    }
-}
 
 @Composable
 internal fun ChatJumpButton(symbol: String?, count: Int, label: String, onClick: () -> Unit) {

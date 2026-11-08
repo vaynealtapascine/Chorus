@@ -124,6 +124,7 @@ import garden.vayne.chorus.data.Polls
 import garden.vayne.chorus.data.Entry
 import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.SpaceAccount
+import garden.vayne.chorus.data.Member
 import garden.vayne.chorus.data.SpaceInfo
 import garden.vayne.chorus.data.Spaces
 import garden.vayne.chorus.data.accountVisible
@@ -261,15 +262,15 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var channelEditor by rememberSaveable { mutableStateOf(false) }
     var editChannel by rememberSaveable { mutableStateOf(false) }
     var spaceAction by rememberSaveable { mutableStateOf("") }
+    // the New message page (F5.18): "message", "shared" (F5.10), or "message/shared" (opened from it)
+    var newChat by rememberSaveable { mutableStateOf<String?>(null) }
     var directRequest by remember { mutableStateOf<Job?>(null) }
     var pendingDmParticipants by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var pendingDmId by rememberSaveable { mutableStateOf("") }
-    var newSpaceName by rememberSaveable { mutableStateOf("") }
-    var invitedAccounts by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var staging by rememberSaveable { mutableStateOf(false) }
     var stageSelection by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     BackHandler(active && conversationOpen && !staging && !infoOpen) { conversationOpen = false }
-    androidx.compose.runtime.SideEffect { if (active) onFocusedRoute(conversationOpen || infoOpen || staging) }
+    androidx.compose.runtime.SideEffect { if (active) onFocusedRoute(conversationOpen || infoOpen || staging || newChat != null) }
     var capturing by rememberSaveable { mutableStateOf(false) }
     var stageLimit by rememberSaveable { mutableStateOf(100) }
     var stageWindow by remember { mutableStateOf<StageRows?>(null) }
@@ -739,6 +740,80 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             finally { busy = false }
         }
     }
+    // F5.18: a member's DM (or a group of them), as [speaker]; the same conversation each time
+    fun startMemberDm(speaker: Member, recipients: List<Member>) {
+        if (busy || recipients.isEmpty()) return
+        busy = true; error = null
+        directRequest = actions.launch {
+            try {
+                val latest = chorus.model.value
+                val home = latest.spaces.firstOrNull { it.kind == "internal" }
+                    ?: throw IllegalStateException("Your internal space is not available yet.")
+                val participants = garden.vayne.chorus.data.MemberDms.selected(latest.active,
+                    (listOf(speaker) + recipients).map { it.id }.distinct(), chorus.device?.accountId.orEmpty())
+                val existing = garden.vayne.chorus.data.MemberDms.existing(latest.channels, home.id, participants.map { it.id })
+                val requestKey = listOf(home.id) + participants.map { it.id }.sorted()
+                // A timeout/cancel may follow a durable write before its model refresh.
+                // Retry that entity ID so a slow projection cannot create another DM.
+                if (existing == null && pendingDmParticipants != requestKey) {
+                    pendingDmParticipants = requestKey; pendingDmId = chorus.newId()
+                }
+                val target = existing?.id ?: pendingDmId.also { id ->
+                    chorus.create("channel.create", id, garden.vayne.chorus.data.MemberDms.payload(home.id, participants), scope = "space:${home.id}")
+                }
+                withTimeout(15_000) { chorus.model.first { next -> next.channels.any { it.id == target && it.spaceId == home.id } } }
+                // Seed the destination draft before opening; the source draft stays untouched.
+                drafts.getOrPut(target) { ChatDraft() }.author.value = speaker.id
+                selectedSpace = home.id; selectedChannel = target; viewingAs = speaker.id
+                conversationOpen = true; infoOpen = false; newChat = null
+            } catch (_: TimeoutCancellationException) { error = "The conversation is not available yet. Try again after syncing."
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) { error = e.message ?: "Could not start the message." }
+            finally { busy = false }
+        }
+    }
+    // a DM with another account, as [speaker]; [keepPrivate]: a private chat in it (D-098)
+    fun startAccountDm(speaker: Member, account: SpaceAccount, keepPrivate: Boolean) {
+        val dev = chorus.device
+        if (busy || dev == null) return
+        busy = true; error = null
+        directRequest = actions.launch {
+            try {
+                garden.vayne.chorus.data.MemberDms.selected(chorus.model.value.active, listOf(speaker.id), dev.accountId)
+                val targetSpace = Spaces.openDm(dev, account.id)
+                val synced = withTimeout(15_000) { chorus.model.first { next ->
+                    next.spaces.any { it.id == targetSpace } && next.channels.any { it.spaceId == targetSpace && it.kind != "thread" }
+                } }
+                val targetChannel = if (keepPrivate && !model.isPerson) {
+                    val own = synced.members.mapTo(HashSet()) { it.id }
+                    ChatManage.existingPrivate(synced.channels, targetSpace, speaker.id, own) ?: chorus.newId().let { id ->
+                        chorus.create("channel.create", id, ChatManage.privatePayload(targetSpace, speaker), scope = "space:$targetSpace")
+                        withTimeout(15_000) { chorus.model.first { next -> next.channels.any { it.id == id } } }.channels.first { it.id == id }
+                    }
+                } else synced.channels.first { it.spaceId == targetSpace && it.kind != "thread" && it.memberIds.isEmpty() }
+                garden.vayne.chorus.data.MemberDms.selected(chorus.model.value.active, listOf(speaker.id), dev.accountId)
+                drafts.getOrPut(targetChannel.id) { ChatDraft() }.author.value = speaker.id
+                selectedSpace = targetSpace; selectedChannel = targetChannel.id
+                viewingAs = null; conversationOpen = true; infoOpen = false; newChat = null; refresh++
+            } catch (_: TimeoutCancellationException) { error = "The conversation is not available yet. Try again after syncing."
+            } catch (e: CancellationException) { throw e
+            } catch (_: Exception) { error = "Could not start the message. Try again when connected." }
+            finally { busy = false }
+        }
+    }
+    fun createSharedSpace(name: String, accounts: List<String>) {
+        val dev = chorus.device ?: return
+        if (busy || name.isBlank() || accounts.isEmpty()) return
+        busy = true; error = null
+        actions.launch {
+            try {
+                selectedSpace = Spaces.createShared(dev, name, accounts)
+                selectedChannel = ""; conversationOpen = true; newChat = null; refresh++
+            } catch (e: CancellationException) { throw e
+            } catch (_: Exception) { error = "Could not create the space. Try again when connected." }
+            finally { busy = false }
+        }
+    }
     val readingPositions = rememberSaveable(saver = ChatReadPositionsSaver) {
         androidx.compose.runtime.mutableStateMapOf<String, ChatReadingPosition>()
     }
@@ -844,11 +919,23 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 }
             }, newId = { chorus.newId() }, onClose = { foldersAt = null },
             modifier = if (expanded) Modifier.width(320.dp) else Modifier.weight(1f), startWith = foldersAt?.ifEmpty { null })
+        else if (newChat != null && (expanded || pane == "list")) {
+            val pageModifier = if (expanded) Modifier.width(320.dp) else Modifier.weight(1f)
+            if (newChat?.endsWith("shared") == true) NewSharedSpacePage(model, connections, syncStatus == Status.Live, busy, error,
+                onBack = { error = null; newChat = if (newChat == "message/shared") "message" else null },
+                onFriends = { newChat = null; onFriends() }, onCreate = ::createSharedSpace, modifier = pageModifier)
+            else NewMessagePage(chorus, model, connections, syncStatus == Status.Live, busy, error,
+                onBack = { directRequest?.cancel(); error = null; newChat = null },
+                onInternalGroup = { editChannel = false; channelEditor = true },
+                onSharedSpace = { error = null; newChat = "message/shared" }, onFriends = { newChat = null; onFriends() },
+                onMembers = ::startMemberDm, onAccount = ::startAccountDm, modifier = pageModifier)
+        }
         else if (expanded || pane == "list") ChatListPane(model, listRows, if (expanded) channel?.id else null, readerName,
-            openChat, { spaceAction = "new" },
+            openChat, { error = null; newChat = "message" },
             { switchOpen = true }, onSearch, if (expanded) Modifier.width(240.dp) else Modifier.weight(1f), readerId = readerId,
             onNewChannel = { editChannel = false; channelEditor = true }, onRowAction = rowAction, previews = listPreviews,
-            onEditFolders = { foldersAt = it ?: "" }, onFolders = { saveFolders(it) }, opened = channel?.id, onSpaceAction = spaceRowsAction)
+            onEditFolders = { foldersAt = it ?: "" }, onFolders = { saveFolders(it) }, opened = channel?.id, onSpaceAction = spaceRowsAction,
+            onNewShared = { error = null; newChat = "shared" })
         if (expanded) VerticalDivider(Modifier.fillMaxHeight(), color = p.line)
         if (pane == "info" && !expanded && channel != null && space != null && !paneLocked) {
             ChatInfoPane(chorus, channel, space, model, messages, library, directory[space.id], { infoOpen = false; searchHere = true },
@@ -930,7 +1017,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             HorizontalDivider(color = p.line)
         }
         if (error != null) Text(error.orEmpty(), color = p.danger, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(16.dp))
-        if (space == null) EmptyState(R.drawable.ic_chat, "No chats yet", action = "New message", onAction = { spaceAction = "new" })
+        if (space == null) EmptyState(R.drawable.ic_chat, "No chats yet", action = "New message", onAction = { error = null; conversationOpen = false; newChat = "message" })
         else {
         if (channel == null) {
             Text("No channels in this space yet.", color = p.ink2, modifier = Modifier.padding(24.dp))
@@ -1563,120 +1650,6 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         channel.takeIf { editChannel }, onDismiss = { channelEditor = false }, onSaved = { home, id ->
             selectedSpace = home; selectedChannel = id; conversationOpen = true; infoOpen = false; channelEditor = false
         })
-    if (spaceAction == "new") {
-        var choice by rememberSaveable { mutableStateOf("choose") }
-        ChorusSheet(onDismissRequest = { directRequest?.cancel(); spaceAction = "" }, containerColor = p.surface,
-            skipPartiallyExpanded = true) {
-            InspectionDialogContent {
-                Column(Modifier.fillMaxWidth().then(if (choice == "direct") Modifier.fillMaxHeight(0.9f) else Modifier)
-                    .imePadding().then(if (choice == "direct") Modifier else Modifier.verticalScroll(rememberScrollState()))
-                    .padding(horizontal = 20.dp).padding(bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (choice != "choose") ChatIconButton(R.drawable.ic_back, "Back to new chat choices") { directRequest?.cancel(); choice = "choose" }
-                        Text(when (choice) { "direct" -> "Direct message"; "shared" -> "New shared space"; else -> "New chat" },
-                            style = MaterialTheme.typography.titleLarge)
-                    }
-                    if (choice == "choose") {
-                        ChatCreationChoice(R.drawable.ic_thread, "New channel", prominent = true) {
-                            spaceAction = ""; editChannel = false; channelEditor = true
-                        }
-                        ChatCreationChoice(R.drawable.ic_members, "Direct message") { choice = "direct" }
-                        ChatCreationChoice(R.drawable.ic_globe, "New shared space") { choice = "shared" }
-                    } else if (choice == "direct") {
-                        DirectMessagePicker(model.active.filter { it.createdByAccountId == null || it.createdByAccountId == chorus.device?.accountId },
-                            connections, busy, syncStatus == Status.Live, error,
-                            onMembers = { speaker, recipients ->
-                                if (!busy) {
-                                    busy = true; error = null
-                                    directRequest = actions.launch {
-                                        try {
-                                            val latest = chorus.model.value
-                                            val home = latest.spaces.firstOrNull { it.kind == "internal" }
-                                                ?: throw IllegalStateException("Your internal space is not available yet.")
-                                            val participants = garden.vayne.chorus.data.MemberDms.selected(latest.active,
-                                                (listOf(speaker) + recipients).map { it.id }, chorus.device?.accountId.orEmpty())
-                                            val existing = garden.vayne.chorus.data.MemberDms.existing(latest.channels, home.id, participants.map { it.id })
-                                            val requestKey = listOf(home.id) + participants.map { it.id }.sorted()
-                                            // A timeout/cancel may follow a durable write before its model refresh.
-                                            // Retry that entity ID so a slow projection cannot create another DM.
-                                            if (existing == null && pendingDmParticipants != requestKey) {
-                                                pendingDmParticipants = requestKey; pendingDmId = chorus.newId()
-                                            }
-                                            val target = existing?.id ?: pendingDmId.also { id ->
-                                                chorus.create("channel.create", id, garden.vayne.chorus.data.MemberDms.payload(home.id, participants), scope = "space:${home.id}")
-                                            }
-                                            withTimeout(15_000) { chorus.model.first { next -> next.channels.any { it.id == target && it.spaceId == home.id } } }
-                                            // Seed the destination draft before opening; the source draft stays untouched.
-                                            drafts.getOrPut(target) { ChatDraft() }.author.value = speaker.id
-                                            selectedSpace = home.id; selectedChannel = target; viewingAs = speaker.id
-                                            conversationOpen = true; infoOpen = false; spaceAction = ""
-                                        } catch (_: TimeoutCancellationException) { error = "The conversation is not available yet. Try again after syncing."
-                                        } catch (e: CancellationException) { throw e
-                                        } catch (e: Exception) { error = e.message ?: "Could not start the message." }
-                                        finally { busy = false }
-                                    }
-                                }
-                            }, privateChats = !model.isPerson, person = model.isPerson, onAccount = { speaker, account, keepPrivate ->
-                                val dev = chorus.device
-                                if (!busy && dev != null) {
-                                    busy = true; error = null
-                                    directRequest = actions.launch {
-                                        try {
-                                            garden.vayne.chorus.data.MemberDms.selected(chorus.model.value.active, listOf(speaker.id), dev.accountId)
-                                            val targetSpace = Spaces.openDm(dev, account.id)
-                                            val synced = withTimeout(15_000) { chorus.model.first { next ->
-                                                next.spaces.any { it.id == targetSpace } && next.channels.any { it.spaceId == targetSpace && it.kind != "thread" }
-                                            } }
-                                            // a private chat lives in the DM (D-098): ours as this member, or a new one
-                                            val targetChannel = if (keepPrivate) {
-                                                val own = synced.members.mapTo(HashSet()) { it.id }
-                                                ChatManage.existingPrivate(synced.channels, targetSpace, speaker.id, own) ?: chorus.newId().let { id ->
-                                                    chorus.create("channel.create", id, ChatManage.privatePayload(targetSpace, speaker), scope = "space:$targetSpace")
-                                                    withTimeout(15_000) { chorus.model.first { next -> next.channels.any { it.id == id } } }.channels.first { it.id == id }
-                                                }
-                                            } else synced.channels.first { it.spaceId == targetSpace && it.kind != "thread" && it.memberIds.isEmpty() }
-                                            garden.vayne.chorus.data.MemberDms.selected(chorus.model.value.active, listOf(speaker.id), dev.accountId)
-                                            drafts.getOrPut(targetChannel.id) { ChatDraft() }.author.value = speaker.id
-                                            selectedSpace = targetSpace; selectedChannel = targetChannel.id
-                                            viewingAs = null; conversationOpen = true; infoOpen = false; spaceAction = ""; refresh++
-                                        } catch (_: TimeoutCancellationException) { error = "The conversation is not available yet. Try again after syncing."
-                                        } catch (e: CancellationException) { throw e
-                                        } catch (_: Exception) { error = "Could not start the message. Try again when connected." }
-                                        finally { busy = false }
-                                    }
-                                }
-                            })
-                    } else {
-                        ChorusField(newSpaceName, { newSpaceName = it.take(80) }, label = { Text("Shared space name") }, singleLine = true,
-                            modifier = Modifier.fillMaxWidth())
-                        if (connections.isEmpty()) EmptyState(R.drawable.ic_friends, "No friends yet", action = "Friends",
-                            onAction = { spaceAction = ""; onFriends() })
-                        for (account in connections) Row(Modifier.fillMaxWidth().clickable {
-                            invitedAccounts = if (account.id in invitedAccounts) invitedAccounts - account.id else invitedAccounts + account.id
-                        }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(account.id in invitedAccounts, onCheckedChange = { checked ->
-                                invitedAccounts = if (checked) invitedAccounts + account.id else invitedAccounts - account.id
-                            })
-                            Text(account.shownName, style = MaterialTheme.typography.bodyMedium)
-                        }
-                        Button(enabled = !busy && newSpaceName.isNotBlank() && invitedAccounts.isNotEmpty(), onClick = {
-                            val dev = chorus.device ?: return@Button
-                            busy = true; error = null; spaceAction = ""
-                            actions.launch {
-                                try {
-                                    selectedSpace = Spaces.createShared(dev, newSpaceName, invitedAccounts)
-                                    selectedChannel = ""; conversationOpen = true; newSpaceName = ""; invitedAccounts = emptyList(); refresh++
-                                } catch (_: Exception) { error = "Could not create the space. Try again when connected." }
-                                finally { busy = false }
-                            }
-                        }) { Text("Create shared space") }
-                    }
-                    TextButton(onClick = { directRequest?.cancel(); spaceAction = "" }) { Text("Cancel") }
-                }
-            }
-        }
-    }
     if (spaceAction == "leave" && space != null) {
         ConfirmDrawer("Leave ${space.name.ifBlank { "this space" }}?", "You can be added back later.", "Leave", {
             val dev = chorus.device
