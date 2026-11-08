@@ -195,8 +195,10 @@ class Chorus private constructor(private val ctx: Context) {
             check(expectedEditorOwner == null || editorOwner == expectedEditorOwner) { "The account changed. Reopen this draft in its account." }
             check(_status.value != Status.StorageError) { "The local replica could not be saved." }
             val r = replica ?: error("not set up")
+            // a delete names who is here, for Trash's "Deleted by" (F9.5)
+            val acting = memberId ?: Trash.actingMember(kind, _model.value)
             val n = JSONObject().put("kind", kind).put("scope", scope).put("entity_id", entityId ?: JSONObject.NULL)
-                .put("payload", payload).put("member_id", memberId ?: JSONObject.NULL).put("user_time", userTime ?: JSONObject.NULL)
+                .put("payload", payload).put("member_id", acting ?: JSONObject.NULL).put("user_time", userTime ?: JSONObject.NULL)
             val out = JSONObject(r.create(n.toString(), deviceNow(), bytes()))
             try {
                 store.save(r.takeChanges())

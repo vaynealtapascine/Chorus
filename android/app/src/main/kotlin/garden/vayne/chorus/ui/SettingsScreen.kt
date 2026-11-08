@@ -53,6 +53,7 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, page: SettingsPage, on
     val p = LocalChorusPalette.current
     when (page) {
         SettingsPage.Appearance -> AppearanceScreen(model, onBack) { onOpen(SettingsPage.Advanced) }
+        SettingsPage.Trash -> TrashScreen(chorus, model, onBack)
         else -> Column(Modifier.fillMaxSize().background(p.bg)) {
             SubpageBar(if (page == SettingsPage.System && model.isPerson) "Account" else page.title, null, onBack)
             val saver = rememberPrefSaver(chorus)
@@ -317,6 +318,8 @@ private fun DataPage(chorus: Chorus, model: Model, routes: SettingsRoutes, onTra
             FormDivider()
             NavRow("Import from PluralKit", R.drawable.ic_down) { importing = true }
         }
+        FormDivider()
+        NavRow("Trash", R.drawable.ic_delete, onClick = onTrash)
     }
     SectionLabel("This phone")
     FormCard {

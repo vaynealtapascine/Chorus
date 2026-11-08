@@ -192,6 +192,8 @@ class Model(
     val memberHandles: Map<String, MemberHandles> = emptyMap(),
     /** This account's handle (`account.set`), the `.system` part of every default. */
     val accountHandle: String? = null,
+    /** Deleted things this account may restore (F9.5, D-053), newest first. */
+    val trash: List<TrashItem> = emptyList(),
 ) {
     /** The handle a member of ours is shown with (D-126). */
     fun handle(id: String): String? = memberHandles[id]?.shown
@@ -527,7 +529,8 @@ class Model(
                 deviceNames = rows(p, "device").mapNotNull { (id, f) -> f.str("name")?.let { id to it } }.toMap(),
                 resolvedReviews = rows(p, "front_review").filter { it.second.present("resolution") }.mapTo(HashSet()) { it.first },
                 memberHandles = Handles.fromProjection(p, accountId),
-                accountHandle = rows(p, "account").firstOrNull { it.first == accountId }?.second?.str("handle"))
+                accountHandle = rows(p, "account").firstOrNull { it.first == accountId }?.second?.str("handle"),
+                trash = Trash.items(p, accountId))
         }
     }
 }
