@@ -1,4 +1,5 @@
 # What's new in the next Android build: up to three short lines, shown in the update drawer (F10.5).
 # Rewrite them for each deploy; lines starting with # are skipped.
-On this device: see what Chorus keeps and free up space
-Sync issues: retry a change that wasn't saved
+A simpler More, with Appearance accents and your own bottom bar
+Trash shows who deleted what, and Insights got a new look
+Easier setup, and link a device with a QR code
