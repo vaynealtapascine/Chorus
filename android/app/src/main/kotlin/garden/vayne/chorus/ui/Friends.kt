@@ -173,7 +173,13 @@ internal fun FriendsScreen(chorus: Chorus, model: Model, onOpenChat: (String) ->
     var stack by rememberSaveable { mutableStateOf(listOf<String>()) }
     fun push(route: String) { stack = stack + route }
     fun pop() { stack = stack.dropLast(1) }
-    LaunchedEffect(openRoute) { if (openRoute != null) { stack = openRoute; onRouteConsumed() } }
+    // kept above the routes, so coming back from a page returns to the same tab and search
+    var tab by rememberSaveable { mutableStateOf(0) }
+    // a route may start with "tab:<n>" (Privacy and sharing opens the Sharing tab)
+    LaunchedEffect(openRoute) { if (openRoute != null) {
+        openRoute.firstOrNull { it.startsWith("tab:") }?.substringAfter(':')?.toIntOrNull()?.let { tab = it }
+        stack = openRoute.filterNot { it.startsWith("tab:") }; onRouteConsumed()
+    } }
     LaunchedEffect(stack.isNotEmpty()) { onFocusedRoute(stack.isNotEmpty()) }
     BackHandler(stack.isNotEmpty()) { pop() }
 
@@ -199,8 +205,6 @@ internal fun FriendsScreen(chorus: Chorus, model: Model, onOpenChat: (String) ->
         onOpenChat(Spaces.openDm(checkNotNull(chorus.device) { "Not signed in." }, account))
     }
 
-    // kept above the routes, so coming back from a page returns to the same tab and search
-    var tab by rememberSaveable { mutableStateOf(0) }
     var adding by remember { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }

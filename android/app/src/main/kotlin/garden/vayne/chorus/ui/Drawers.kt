@@ -270,8 +270,9 @@ internal fun FormValueRow(label: String, value: String, icon: Int? = null, enabl
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         icon?.let { Glyph(it, p.ink2, 20.dp) }
         Text(label, color = if (enabled) p.ink else p.ink3, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        // the value keeps to the right beside its chevron; a long label wraps first (UI21)
         Text(value, color = if (enabled) p.accent else p.ink3, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1,
-            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 200.dp))
         Glyph(R.drawable.ic_chevron_right, p.ink3, 18.dp)
     }
 }

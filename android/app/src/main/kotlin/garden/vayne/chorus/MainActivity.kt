@@ -276,6 +276,10 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var sharedChannel by remember { mutableStateOf<String?>(null) }
     var linking by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    // the settings pages open, outermost first: "Appearance>Advanced" (F10.1, F10.2)
+    var settingsPath by rememberSaveable { mutableStateOf("") }
+    fun openSettings(page: garden.vayne.chorus.ui.SettingsPage) { settingsPath = page.name; settingsOpen = true }
+    var editingBar by remember { mutableStateOf(false) }
     var quickSwitchOpen by rememberSaveable { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var searchSection by rememberSaveable { mutableStateOf("Messages") }
@@ -341,7 +345,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     BackHandler(sharedDraft != null || settingsOpen || searchOpen || insightsOpen || frontsOpen || layersFront != null) {
         if (sharedDraft != null) onShareDismissed()
         else if (searchOpen) searchOpen = false else if (insightsOpen) insightsOpen = false else if (layersFront != null) layersFront = null
-        else if (frontsOpen) frontsOpen = false else settingsOpen = false
+        else if (frontsOpen) frontsOpen = false
+        else if (settingsPath.contains('>')) settingsPath = settingsPath.substringBeforeLast('>') else settingsOpen = false
     }
     if (linking && status != Status.NoDevice && status != Status.Loading) DeviceLink(chorus) { linking = false }
     var handoverOpen by remember { mutableStateOf(false) }
@@ -350,6 +355,10 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         if (status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
         tab = Tab.Fronting; handoverOpen = handover; quickSwitchOpen = true
         onSwitchConsumed()
+    }
+    if (editingBar) garden.vayne.chorus.ui.BottomBarDrawer(
+        DeviceNavigation.resolve(navPrefs.getString(navAccount, null), model.isPerson), model.isPerson, { editingBar = false }) { choices ->
+        navPrefs.edit().putString(navAccount, choices.joinToString(",")).apply()
     }
     if (quickSwitchOpen && !model.isPerson) Switcher(chorus, model, handover = handoverOpen) { quickSwitchOpen = false; handoverOpen = false }
     BackHandler(sharedDraft == null && !linking && !quickSwitchOpen && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen && layersFront == null && routedTab != Tab.Home) {
@@ -397,7 +406,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             val frontingChrome = !person && !searchOpen && !settingsOpen && !insightsOpen && sharedDraft == null &&
                 (frontsOpen || layersFront != null || activeTab == Tab.Fronting || activeTab == Tab.History)
             // search draws its own bar too: the field is the top bar (F5.9)
-            val chatOwnChrome = frontingChrome || searchOpen && !settingsOpen && !insightsOpen && sharedDraft == null || activeTab in listOf(Tab.Home, Tab.Chat, Tab.Journal, Tab.Notifications, Tab.People, Tab.Members) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
+            val chatOwnChrome = frontingChrome || searchOpen && !settingsOpen && !insightsOpen && sharedDraft == null || (settingsOpen || insightsOpen) && !searchOpen && sharedDraft == null ||
+                activeTab in listOf(Tab.Home, Tab.Chat, Tab.Journal, Tab.Notifications, Tab.People, Tab.Members, Tab.More) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
             if (chatOwnChrome && !chatStageCapture) Box(Modifier.fillMaxWidth().background(p.surface).statusBarsPadding())
             if (!chatStageCapture && !chatOwnChrome) Row(
                 Modifier.fillMaxWidth().background(p.surface).statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
@@ -450,7 +460,14 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                 else if (insightsOpen) InsightsScreen(chorus, model) { insightsOpen = false }
                 else if (layersFront != null && !model.isPerson) LayersDisplayScreen(chorus, model, layersFront!!) { layersFront = null }
                 else if (frontsOpen && !model.isPerson) FrontsScreen(chorus, model, frontsNaming, { frontsNaming = false }) { frontsOpen = false }
-                else if (settingsOpen) SettingsScreen(chorus, model)
+                else if (settingsOpen) {
+                    val page = runCatching { garden.vayne.chorus.ui.SettingsPage.valueOf(settingsPath.substringAfterLast('>')) }
+                        .getOrDefault(garden.vayne.chorus.ui.SettingsPage.Appearance)
+                    SettingsScreen(chorus, model, page, onOpen = { settingsPath = "$settingsPath>${it.name}" },
+                        onBack = { if (settingsPath.contains('>')) settingsPath = settingsPath.substringBeforeLast('>') else settingsOpen = false },
+                        routes = garden.vayne.chorus.ui.SettingsRoutes(onLink = { linking = true },
+                            onFriends = { route -> friendsRoute = route; settingsOpen = false; tab = Tab.People }))
+                }
                 else androidx.compose.animation.Crossfade(targetState = activeTab,
                     animationSpec = androidx.compose.animation.core.tween(if (motion) 120 else 0), label = "Main destination") { shownTab ->
                 destinationState.SaveableStateProvider(shownTab.name) {
@@ -478,7 +495,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         },
                         onFriends = { route -> friendsRoute = route; tab = Tab.People },
                         onHistory = { tab = if (person) Tab.Journal else Tab.History },
-                        onSettings = { settingsOpen = true }))
+                        onSettings = { openSettings(garden.vayne.chorus.ui.SettingsPage.Notifications) }))
                     Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
                         onStageCapture = { chatStageCapture = it }, onDismissSearchHit = { chatSearchHit = null },
                         sharedDraft = chatShare, sharedChannel = sharedChannel,
@@ -506,10 +523,9 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         journalOpenProfile = member; journalOpenPost = post; tab = Tab.Journal
                     }, active = shownTab == activeTab, onFocusedRoute = { membersFocused = it })
                     Tab.History -> History(chorus, model, historyFront, onBack = { tab = Tab.Fronting })
-                    Tab.More -> MoreScreen(person, onDashboard = { tab = Tab.Home }, onMembers = { tab = Tab.Members }, onHome = { tab = Tab.Fronting }, onChat = { tab = Tab.Chat }, onPeople = { tab = Tab.People }, onJournal = { tab = Tab.Journal },
-                        onInsights = { insightsOpen = true }, onSettings = { settingsOpen = true },
-                        onSearch = { searchSection="Messages"; searchOpen = true }, onLink = { linking = true },
-                        onNotifications = { tab = Tab.Notifications })
+                    Tab.More -> MoreScreen(chorus, model, destinations.filter { it != Tab.More }.map { it.key }, unread, garden.vayne.chorus.ui.MoreRoutes(
+                        go = { key -> Tab.of(key)?.let { tab = it } }, onInsights = { insightsOpen = true }, onSettings = { openSettings(it) },
+                        onSearch = { searchSection = "Messages"; searchOpen = true }, onEditBar = { editingBar = true }))
                 }
                 }
                 }
@@ -533,7 +549,9 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     // Front history belongs to Fronting (F3.7) when Fronting is on the bar
                     selected = (t == activeTab || (t == Tab.Fronting && activeTab == Tab.History) ||
                         (t == Tab.More && activeTab !in destinations && activeTab != Tab.Home && !(activeTab == Tab.History && Tab.Fronting in destinations))) &&
-                        !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen,
+                        !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen ||
+                        // settings and insights are More's pages (F10.1)
+                        t == Tab.More && (settingsOpen || insightsOpen) && !searchOpen,
                     onClick = { select(t) }, icon = { TabIcon(t) }, label = {
                         // "Notifications" is the longest label: let it run into the item's padding rather than cut it
                         Text(t.label, fontSize = 11.sp, lineHeight = 16.sp, maxLines = 1, softWrap = false,

@@ -1106,9 +1106,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             }
         }
         val listMotion = rememberChorusMotion()
+        // Appearance › Density (F10.2): Compact draws messages closer together
+        val compact = garden.vayne.chorus.designsystem.LocalChorusAppearance.current.compact
         Box(Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(Modifier.fillMaxSize(), state = listState, reverseLayout = true,
-            contentPadding = PaddingValues(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            contentPadding = PaddingValues(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp)) {
             itemsIndexed(messages.asReversed(), key = { _, message -> message.id }) { index, message ->
                 val older = messages.getOrNull(messages.lastIndex - index - 1)
                 val newer = messages.getOrNull(messages.lastIndex - index + 1)
@@ -1120,7 +1122,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 Column(Modifier.animateItem(fadeInSpec = if (listMotion) ChorusMotion.tween(true) else null,
                     placementSpec = if (listMotion) ChorusMotion.settle() else null,
                     fadeOutSpec = if (listMotion) ChorusMotion.tween(true, ChorusMotion.Quick) else null)
-                    .padding(top = if (groupStart) 8.dp else 0.dp)) {
+                    .padding(top = if (groupStart) (if (compact) 4.dp else 8.dp) else 0.dp)) {
                 if (readerName != null && message.id == firstUnread) Text("${unreadCount} unread for $readerName",
                     color = p.accent, fontSize = 12.sp, lineHeight = 16.sp, textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).background(p.surface).padding(vertical = 6.dp))
@@ -1800,7 +1802,8 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
     val own = if (aligned != null) ChatPresentation.own(message, chorus.device?.accountId.orEmpty(), aligned)
         else ChatPresentation.own(message, chorus.device?.accountId.orEmpty(), actingMemberId)
     val member = message.authors.firstOrNull()?.let(::author)
-    val tone = member?.let { tonesOf(it.color) }
+    // Appearance › Member colours in chat (F10.2): off, names are plain ink
+    val tone = member?.let { tonesOf(it.color) }?.takeIf { garden.vayne.chorus.designsystem.LocalChorusAppearance.current.memberColours }
     val presence = ChatPresentation.presence(model, message.channelId).firstOrNull { it.subjectId == member?.id && it.subjectType == "member" }
     val layer = ChatPresentation.layer(model, presence)
     val aside = message.visibilityMode == "system_only"

@@ -24,6 +24,26 @@ data class ChorusPalette(
     val bubbleOut: Color,
 )
 
+data class AccentTones(val accent: Color, val accentSoft: Color, val onAccent: Color, val bubbleOut: Color)
+
+enum class ChorusAccent(val label: String, val light: AccentTones, val dark: AccentTones) {
+    Teal("Teal",
+        AccentTones(accent = Color(0xFF247D73), accentSoft = Color(0xFFE0EFEB), onAccent = Color(0xFFFFFFFF), bubbleOut = Color(0xFFD8ECE7)),
+        AccentTones(accent = Color(0xFF42A397), accentSoft = Color(0xFF1D2F30), onAccent = Color(0xFF101018), bubbleOut = Color(0xFF213B3A))),
+    Sunflower("Sunflower",
+        AccentTones(accent = Color(0xFF8A6A00), accentSoft = Color(0xFFF6EDCF), onAccent = Color(0xFFFFFFFF), bubbleOut = Color(0xFFF1E6C2)),
+        AccentTones(accent = Color(0xFFF0BD1B), accentSoft = Color(0xFF33301C), onAccent = Color(0xFF1C1B19), bubbleOut = Color(0xFF3A3520))),
+    Lime("Lime",
+        AccentTones(accent = Color(0xFF5A7A1E), accentSoft = Color(0xFFE8F0D8), onAccent = Color(0xFFFFFFFF), bubbleOut = Color(0xFFDDEBC8)),
+        AccentTones(accent = Color(0xFFA8CF6A), accentSoft = Color(0xFF283020), onAccent = Color(0xFF101018), bubbleOut = Color(0xFF2E3A24))),
+    Lavender("Lavender",
+        AccentTones(accent = Color(0xFF6E4FB8), accentSoft = Color(0xFFECE5F8), onAccent = Color(0xFFFFFFFF), bubbleOut = Color(0xFFE2D8F5)),
+        AccentTones(accent = Color(0xFFB79CEB), accentSoft = Color(0xFF2A2638), onAccent = Color(0xFF101018), bubbleOut = Color(0xFF332C46))),
+    Sky("Sky",
+        AccentTones(accent = Color(0xFF3A64B5), accentSoft = Color(0xFFE1E9F8), onAccent = Color(0xFFFFFFFF), bubbleOut = Color(0xFFD5E1F6)),
+        AccentTones(accent = Color(0xFF9DB8F0), accentSoft = Color(0xFF212A3A), onAccent = Color(0xFF101018), bubbleOut = Color(0xFF263248))),
+}
+
 object Tokens {
     val Light = ChorusPalette(
         bg = Color(0xFFF7F6F2),
