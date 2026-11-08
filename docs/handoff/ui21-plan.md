@@ -31,11 +31,16 @@ Reference images and node trees: `F:/DunBuild/figma-cache` (README there). Audit
 5. **More/Settings/Data**: F10.1, F10.2, F9.5, F9.1, F9.6, F10.4, F10.5, onboarding F1.x.
 6. **Journal**: composer/formatting, polls + system board, reading polish, feeds, lists.
 7. **Fronting/Friends/Stage/Notifications** leftovers from that audit.
-8. Later: offline ticks (core), handover + notes, custom emoji, permissions, heading entity,
-   tablet three-pane.
+8. **New features the owner approved (2026-11-08)**, each end to end (core/server/both clients):
+   ticks + opt-in friends' reads (D-131), headings H1/H2 (D-134), poll closing time + Nudge
+   (D-136), system board (D-135), member states shareable (D-138), lock-screen front
+   notification (D-137), handover + notes to ourselves full version (D-132), the full F5.11
+   shared-space permissions (D-133). Then custom emoji on Android, tablet three-pane.
 
 Then web, by the same waves, using each audit's *Web* section.
 
 ## Owner questions (defaults in use)
 
-Collected from the audits; asked in one batch. See each audit's questions section.
+Asked and answered 2026-11-08: D-130–D-138 (and Q24). Pending from the owner: the CHORUS
+wordmark SVG and the serif for member names in onboarding (F1.1) — use a placeholder until
+they arrive. Everything else in the audits' question sections: use the audit's default.
