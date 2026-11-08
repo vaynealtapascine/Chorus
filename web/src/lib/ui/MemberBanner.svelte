@@ -1,6 +1,6 @@
 <script lang="ts">
-  // A member's banner behind their Members row (D-100): the whole banner, scaled to the row's
-  // height and anchored bottom-right, fading out towards the name. Loaded once the row is near view.
+  // A member's banner behind their Members row (D-140): two-thirds of the panel's width,
+  // anchored bottom-right, fading towards the name. Loaded once the row is near view.
   import { sync } from '../sync/client';
   import { loadBlob } from '../sync/blobs';
 
@@ -36,8 +36,8 @@
     right: 0;
     bottom: 0;
     height: 100%;
-    max-width: 100%;
-    object-fit: contain;
+    width: calc(100% * 2 / 3);
+    object-fit: cover;
     object-position: right bottom;
     pointer-events: none;
     opacity: 0;
@@ -45,5 +45,4 @@
     mask-image: linear-gradient(to right, transparent 0, rgb(0 0 0 / .45) 40%, #000 85%);
   }
   .banner.shown { opacity: 1; }
-  .banner:not(.shown) { width: 1px; }
 </style>

@@ -312,7 +312,7 @@ private fun MemberRow(chorus: Chorus, model: Model, m: Member, level: String?, s
     }
 }
 
-/** The whole banner at the row's height, anchored bottom-right, fading out towards the name (D-100). */
+/** Banner fills two-thirds of the row's width, anchored bottom-right and fading towards the name (D-140). */
 @Composable
 internal fun RowBanner(chorus: Chorus, hash: String) {
     val ctx = LocalContext.current
@@ -321,8 +321,8 @@ internal fun RowBanner(chorus: Chorus, hash: String) {
         value = withContext(Dispatchers.IO) { runCatching { Blobs.image(ctx, hash, dev, kind = "profile", maxPx = 900, maxBytes = 10L * 1024 * 1024) }.getOrNull() }
     }
     val shown = image ?: return
-    Image(shown.asImageBitmap(), null, contentScale = ContentScale.Fit, alignment = Alignment.BottomEnd,
-        modifier = Modifier.fillMaxHeight().aspectRatio(shown.width.toFloat() / shown.height.coerceAtLeast(1), matchHeightConstraintsFirst = true)
+    Image(shown.asImageBitmap(), null, contentScale = ContentScale.Crop, alignment = Alignment.BottomEnd,
+        modifier = Modifier.fillMaxHeight().fillMaxWidth(2f / 3f)
             .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
             .drawWithContent {
                 drawContent()

@@ -169,6 +169,7 @@ Web also applies D-110 to chat/search eligibility; its info labels still name th
 | D-136 | **Polls can close and nudge (owner, 2026-11-08, UI21, F6.10).** A poll may have a closing time (votes refused after it, tally final) and a "Nudge" that notifies members who haven't voted (a new notification kind). | Owner answer to the UI21 batch; POLLS.md updated when built. |
 | D-137 | **Front on the lock screen, opt-in (owner, 2026-11-08, UI21, F3.8).** Android gains an off-by-default ongoing notification showing who is fronting, with a Switch action. | Owner answer to the UI21 batch. |
 | D-138 | **Member states can be shared (owner, 2026-11-08, UI21, F3.10).** A member state uses the usual "Who sees this" audience (default: only us), so friends may see it when chosen. A system's speaking layer in a DM with another account (F7.6) is **not** shown. Q24 answered: a friend's page shows only what is shared ("3 members visible", no private count). | Owner answer to the UI21 batch. |
+| D-140 | **Members list banner width (owner request, 2026-11-08).** On web and Android, our Members list and friends' member lists lock each banner background to two-thirds of its row panel's width and the full row height. Crop without stretching, anchored bottom-right, and keep the fade towards the name. Supersedes D-100's height-driven, whole-banner sizing; profile hero banners are unchanged. | Owner request; gpt-6-sol |
 
 ## Versions
 

@@ -273,6 +273,8 @@ The shared spacing rhythm is a four-point scale from `spacing` in frontmatter. C
 - **Journal:** readable feed (up to 760 px), plus a 280 px context column from 1280 px. Below this,
   shortcuts remain reachable through the feed tabs and app navigation.
 - **Members:** responsive row cards with a minimum desired column width of 320 px; long names wrap.
+  Banner backgrounds fill the rightmost two-thirds of each row panel at its full height, cropped
+  without stretching and anchored bottom-right, with the existing fade towards the name (D-140).
 - **Android member profiles (D-090):** Members and Journal share the profile header: a quiet wide
   banner well, overlapping member-colour avatar, prominent name, pronouns and rich bio. Edit
   profile is a labelled 48 dp action. The full-screen editor has pinned Cancel/Save, scrollable

@@ -22,10 +22,10 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 ## Now
 
-- **In progress:** UI22
+- **In progress:** UI21
 - **Owner:** gpt-6-sol, 2026-11-08
-- **Next concrete step:** Set shared web and Android member-row banners to two-thirds width, retaining bottom-right alignment and fade.
-- **Notes:** Wave 1 (sweep: forward privacy fix, text trims, small tap cuts, connection banner) went live in Android 0.1.823 with the D-129 deploy. Owner answered the UI21 batch (D-130–D-138). Wave 2 Home next. Plan + rules: docs/handoff/ui21-plan.md.
+- **Next concrete step:** Deploy UI21 wave 3 plus UI22 banner sizing after integrating main and passing the full Android gate.
+- **Notes:** UI22 implementation complete. Preserve main commits da99de1, d9c9d52 and 12643cb (UI21 Android Members) and all live work through Android 0.1.828 when deploying; then return to UI21 wave 4. Plan: docs/handoff/ui21-plan.md.
 
 ### SEC1: what is done and what is left
 
@@ -101,7 +101,7 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 
 ### UI — Owner's Figma redesign
 
-- [~] UI22 Lock Members list banner backgrounds to two-thirds of each row panel, anchored bottom-right (owner, 2026-11-08), on web and Android.
+- [x] UI22 Lock Members list banner backgrounds to two-thirds of each row panel, anchored bottom-right (owner, 2026-11-08), on web and Android.
 - [~] UI21 Figma parity pass, Android then web (owner, 2026-11-08): every current Flows frame (F0–F11) checked against both apps; missing features and looks built; screens without a frame get the same styling; trim explanatory text, cut taps. Reference images: `F:/DunBuild/figma-cache` (no Figma connector needed). Audits in `docs/handoff/ui21-*.md`.
 - [~] UI20 Friends as the Figma F7 screens (owner, 2026-11-07, D-128): Friends list with Around right now (F7.1), a friend's page for a system or a person (F7.2, F7.3, F7.5), a person's Following / Followers / Requests (F7.4), Requests with an accept drawer (F7.7), Sharing with buckets (F7.8), sharing with one friend (F7.9, new `GET /follows/{id}/view`), a bucket's page (F7.10), notifications from one friend (F7.12). Android, server and web deployed 2026-11-08 (b212f83, web `index-DK_ZDRUV.js`, Android 0.1.808); checked on the emulator and in Chrome (1360 and 400 px) against an isolated demo (`F:/DunBuild/ui20-demo`, server 5299, vite 5300, `shot.cjs`). Left: a look on the owner's phone (inspect only); Q24 (hidden-member count); F7.6/F7.13/F7.14 not built (D-128).
 - [x] UI19 Notifications screen and Journal replies (owner, 2026-11-07, D-127): the Figma F11 Notifications inbox (web + Android, a bottom-bar tab with a badge; Needs you / Today / Earlier; chips; hold for options; read as another member; web side panel); Journal › Friends shows replies to our posts and what friends' replies answer; own posts count friends' replies and hearts; one action row everywhere with unavailable actions disabled; quoting another account's post, the quote readable only by who can read both. Server + Android deployed 2026-11-07 (8222e4f, Android 0.1.795); checked on the emulator against an isolated demo (`F:/DunBuild/ui19-demo`, port 5297). Web deployed too (0d436de), checked at 1360 and 400 px against the demo. Left: a look on the owner's phone (inspect only).
@@ -184,3 +184,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`. Entries befo
 - 2026-11-08 claude-opus-5.5: Owner bug fixes and D-129 deployed (f3edd7e, web `index-BpTssOuR.js`, Android 0.1.823). Checked on the isolated ui20 demo (web): Friends sections, Follow back after accepting, audience menu, the "• Foxglove" chat row. Not checked on a phone or on the owner's account.
 - 2026-11-08 claude-opus-5.5: UI21 wave 1 on Android (4164a53 forward hides the source chat name in another space, web too; ef5b4df–2dba4b5 text trims + icon-led `EmptyState` + small tap cuts; 4d806c0 connection banner and slow-down toast). Live with Android 0.1.823. Owner answered the UI21 questions: D-130–D-138, Q24 closed.
 - 2026-11-08 claude-opus-5.5: UI21 wave 2 deployed (871f90e, Android 0.1.828, server + web too): Chorus opens on Home (D-130, F0.1–F0.6) with the sections drawer; checked on the emulator against an isolated demo (`F:/DunBuild/ui21-home-demo`, port 5301). Design for the approved new features in `docs/handoff/ui21-design.md`.
+- 2026-11-08 gpt-6-sol — UI22 Implemented fixed two-thirds-width, bottom-right banner backgrounds in both clients, including friends member lists (D-140). Deployment requested; integrate latest main and run the full Android gate before shipping.
