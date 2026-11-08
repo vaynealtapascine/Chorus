@@ -24,7 +24,7 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 - **In progress:** UI21
 - **Owner:** claude-opus-5.5, 2026-11-08
-- **Next concrete step:** Wave 2: Android Home (F0.1–F0.6, D-130)
+- **Next concrete step:** Wave 3: Android Members (F4.1–F4.5)
 - **Notes:** Wave 1 (sweep: forward privacy fix, text trims, small tap cuts, connection banner) went live in Android 0.1.823 with the D-129 deploy. Owner answered the UI21 batch (D-130–D-138). Wave 2 Home next. Plan + rules: docs/handoff/ui21-plan.md.
 
 ### SEC1: what is done and what is left
@@ -182,3 +182,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`. Entries befo
 - 2026-11-08 claude-opus-5.5: Owner bug fixes: Android private chats with nobody listed on the friend's side show the friend's picture (`ChatPresentation.rowIcon`); web chat rows show whose a private chat is ("• Kai"); Friends is both ways (D-129): `friends` and `following` audiences, `followers` reads "Followers", Follow back offered after accepting, one-way follows listed apart. Full gate passed.
 - 2026-11-08 claude-opus-5.5: Owner bug fixes and D-129 deployed (f3edd7e, web `index-BpTssOuR.js`, Android 0.1.823). Checked on the isolated ui20 demo (web): Friends sections, Follow back after accepting, audience menu, the "• Foxglove" chat row. Not checked on a phone or on the owner's account.
 - 2026-11-08 claude-opus-5.5: UI21 wave 1 on Android (4164a53 forward hides the source chat name in another space, web too; ef5b4df–2dba4b5 text trims + icon-led `EmptyState` + small tap cuts; 4d806c0 connection banner and slow-down toast). Live with Android 0.1.823. Owner answered the UI21 questions: D-130–D-138, Q24 closed.
+- 2026-11-08 claude-opus-5.5: UI21 wave 2 deployed (871f90e, Android 0.1.828, server + web too): Chorus opens on Home (D-130, F0.1–F0.6) with the sections drawer; checked on the emulator against an isolated demo (`F:/DunBuild/ui21-home-demo`, port 5301). Design for the approved new features in `docs/handoff/ui21-design.md`.
