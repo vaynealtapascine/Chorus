@@ -147,10 +147,10 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
             Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
                 Text(if (archiveView) "Archived chats" else inside?.firstOrNull()?.space?.name ?: "Chats", color = p.ink, fontSize = 20.sp,
                     lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (archiveView) "A new message brings a chat back"
+                val sub = if (archiveView) null
                     else if (inside != null) "${inside.size} ${if (inside.size == 1) "channel" else "channels"}"
-                    else listOfNotNull(system, reader?.let { "reading as $it" }).joinToString(" · ").ifEmpty { "Your conversations" },
-                    color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
+                    else listOfNotNull(system, reader?.let { "reading as $it" }).joinToString(" · ").ifEmpty { null }
+                sub?.let { Text(it, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2) }
             }
             ChatIconButton(R.drawable.ic_search, "Search chats", onSearch)
             ChatIconButton(R.drawable.ic_more, "Chat options") { menu = true }
@@ -195,7 +195,7 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                 }
             }
         }
-        // the folders shown, in their order (D-113), then a pencil to arrange them; all hidden: no tabs
+        // the folders shown, in their order (D-113); all hidden: no tabs. They are arranged from the ⋮
         if (!archiveView && inside == null && folder != null) {
             val selectedIndex = folders.visible.indexOf(folder)
             ScrollableTabRow(selectedIndex, containerColor = p.surface, contentColor = p.accent, edgePadding = 8.dp,
@@ -211,8 +211,6 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                         }
                     })
                 }
-                if (onEditFolders != null) Tab(selected = false, onClick = { onEditFolders(null) }, modifier = Modifier.width(48.dp),
-                    icon = { Icon(painterResource(R.drawable.ic_edit), "Edit chat folders", Modifier.size(18.dp), tint = p.ink3) })
             }
         }
         Box(Modifier.weight(1f)) {
@@ -278,6 +276,9 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                         }
                         if (row.pinned && pinnedCount > 1) MenuRow("Arrange pinned chats", R.drawable.ic_grip) { rowMenu = null; onRowAction(row, "arrange") }
                         if (onFolders != null) MenuRow("Folders…", R.drawable.ic_folder) { rowMenu = null; foldersFor = row }
+                        MenuRow(if (row.muted) "Unmute" else "Mute", if (row.muted) R.drawable.ic_bell else R.drawable.ic_bell_off) {
+                            rowMenu = null; onRowAction(row, "mute")
+                        }
                         MenuRow(if (row.archived) "Unarchive" else "Archive", R.drawable.ic_archive) { rowMenu = null; onRowAction(row, "archive") }
                         MenuRow(if (row.space.kind == "internal") "Delete chat" else "Clear chat", R.drawable.ic_delete, danger = true) {
                             rowMenu = null; onRowAction(row, "remove")
@@ -286,22 +287,15 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
                     }
                     HorizontalDivider(Modifier.padding(start = if (folders.compact) 64.dp else 72.dp), color = p.line, thickness = .5.dp)
                 }
-                if (entries.isEmpty()) item { Column(Modifier.padding(24.dp)) {
-                    Text("No chats here yet.", color = p.ink3)
-                    if (onNewChannel != null) TextButton(onClick = onNewChannel) { Text("Create a channel") }
-                    if (onNew != null) TextButton(onClick = onNew) { Text("Start a chat") }
-                } }
-                if (!archiveView && inside == null && (folder == "shared" || folder == "direct")) item {
-                    Text(if (model.isPerson) { if (folder == "shared") "Group chats with friends. In a system, each member writes as themselves, so names change as they switch."
-                        else "One-to-one chats with friends. A system's members each write under their own name." }
-                        else if (folder == "shared") "Shared spaces include other systems. Messages show who is speaking; system asides stay inside your system."
-                        else "One-to-one chats between your members and with other accounts.", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
-                        modifier = Modifier.padding(24.dp))
+                if (entries.isEmpty()) item {
+                    EmptyState(R.drawable.ic_chat, "No chats yet", action = if (onNew != null) "New message" else onNewChannel?.let { "New channel" },
+                        onAction = onNew ?: onNewChannel)
                 }
             }
-            if (onNew != null && !archiveView && inside == null) ExtendedFloatingActionButton(onClick = onNew, containerColor = p.accent, contentColor = p.onAccent,
-                shape = CircleShape, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                icon = { ChatIcon(R.drawable.ic_edit, "New chat or channel", p.onAccent) }, text = { Text("New chat") })
+            if (onNew != null && !archiveView && inside == null) FloatingActionButton(onClick = onNew, containerColor = p.accent, contentColor = p.onAccent,
+                shape = CircleShape, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
+                ChatIcon(R.drawable.ic_edit, "New chat or channel", p.onAccent)
+            }
         }
     }
     // a chat's folders, from its long-press menu: tick the folders of our own it belongs in
@@ -395,15 +389,15 @@ internal fun ChatActionRow(resource: Int, label: String, danger: Boolean = false
     MenuRow(label, resource, danger = danger, onClick = action)
 
 @Composable
-internal fun ChatCreationChoice(resource: Int, title: String, description: String, prominent: Boolean = false, action: () -> Unit) {
+internal fun ChatCreationChoice(resource: Int, title: String, description: String? = null, prominent: Boolean = false, action: () -> Unit) {
     val p = LocalChorusPalette.current
     Row(Modifier.fillMaxWidth().background(if (prominent) p.accentSoft else p.surface, RoundedCornerShape(16.dp))
-        .clickable(onClick = action).heightIn(min = 72.dp).padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+        .clickable(onClick = action).heightIn(min = if (description == null) 56.dp else 72.dp).padding(16.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         ChatIcon(resource, tint = p.accent)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, style = MaterialTheme.typography.titleSmall, color = p.ink)
-            Text(description, style = MaterialTheme.typography.bodySmall, color = p.ink2)
+            description?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = p.ink2) }
         }
     }
 }

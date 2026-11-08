@@ -25,7 +25,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -86,9 +85,6 @@ internal fun SendAsSheet(model: Model, channelId: String, members: List<Member>,
                     }
                 }
             }
-            HorizontalDivider(Modifier.padding(vertical = 12.dp), color = p.line)
-            Text("Speaking as someone doesn't change who's fronting.", color = p.ink3, fontSize = 13.sp,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         }
     }
 }
@@ -167,7 +163,7 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
         HorizontalDivider(color = p.line)
         when (tab) {
             "media" -> {
-                if (media.isEmpty()) InfoEmpty("No photos or videos shared here yet.")
+                if (media.isEmpty()) EmptyState(R.drawable.ic_image, "Nothing yet")
                 for (row in media.take(shown).chunked(3)) Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 1.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     for (item in row) MediaTile(item, chorus, Modifier.weight(1f).aspectRatio(1f)) { viewing = item }
@@ -176,19 +172,17 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                 if (media.size > shown) TextButton(onClick = { shown += 60 }, modifier = Modifier.padding(8.dp)) { Text("Show more") }
             }
             "files" -> {
-                if (files.isEmpty()) InfoEmpty("No files shared here yet.")
+                if (files.isEmpty()) EmptyState(R.drawable.ic_file, "Nothing yet")
                 for (item in files.take(shown)) FileRow(item, chorus, ChatLibrary.who(item.message, model))
                 if (files.size > shown) TextButton(onClick = { shown += 60 }, modifier = Modifier.padding(8.dp)) { Text("Show more") }
             }
             "links" -> {
-                if (links.isEmpty()) InfoEmpty("No links shared here yet.")
+                if (links.isEmpty()) EmptyState(R.drawable.ic_link, "Nothing yet")
                 for (link in links.take(shown)) LinkRow(link, ChatLibrary.who(link.message, model))
                 if (links.size > shown) TextButton(onClick = { shown += 60 }, modifier = Modifier.padding(8.dp)) { Text("Show more") }
             }
             else -> Column(Modifier.padding(16.dp)) {
                 if (space.kind == "internal" && !model.isPerson) {
-                    Text("Each member keeps their own read position when enabled.", color = p.ink3, fontSize = 12.sp,
-                        modifier = Modifier.padding(bottom = 8.dp))
                     for (member in members) {
                         val entry = presence.firstOrNull { it.subjectType == "member" && it.subjectId == member.id }
                         val mark = model.readMarks[channel.id].orEmpty().firstOrNull { it.member == member.id }
@@ -203,9 +197,7 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                             }
                         }
                     }
-                } else if (space.kind == "internal") {
-                    Text("Private to your account", color = p.ink3, fontSize = 13.sp)
-                } else {
+                } else if (space.kind != "internal") {
                     ChatSpacePanel(chorus, model, space, channel, directory, connections, foreign, speakerId,
                         onEditGroup = if (groupEditable) ({ editGroup = true }) else null, onChanged = onSpaceChanged,
                         onOpenChannel = onOpenChannel, onLeft = onLeft)
@@ -312,12 +304,6 @@ private fun LinkRow(link: ChatLink, who: String) {
             if (openError != null) Text(openError.orEmpty(), color = p.danger, fontSize = 12.sp)
         }
     }
-}
-
-@Composable
-private fun InfoEmpty(text: String) {
-    Text(text, color = LocalChorusPalette.current.ink3, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(24.dp),
-        textAlign = TextAlign.Center)
 }
 
 @Composable

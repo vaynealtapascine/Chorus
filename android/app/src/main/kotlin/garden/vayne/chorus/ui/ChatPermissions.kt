@@ -40,8 +40,6 @@ internal fun ChatPermissions(chorus: Chorus, model: Model, channel: ChatChannel,
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         HorizontalDivider()
         Text("Permissions", style = MaterialTheme.typography.titleMedium)
-        Text("A person's setting beats their role's, then Everyone's. Deny wins at the same level. Owners, admins and DM participants always have access.",
-            style = MaterialTheme.typography.bodySmall)
         ChoiceField("For", target.label, enabled = !busy) { targetOpen = true }
         ChoiceDrawer(targetOpen, "Whose permissions", targets, target, { it.label },
             { item -> selected = "${item.type}|${item.id}"; targetOpen = false }, { targetOpen = false })
@@ -54,11 +52,6 @@ internal fun ChatPermissions(chorus: Chorus, model: Model, channel: ChatChannel,
                     { choice -> draft = draft + (permission to choice); open = false }, { open = false }, subtitle = "For ${target.label}")
             }
         }
-        if (target.type == "account" && info?.accounts?.none { it.id == target.id } == true &&
-            draft["view"] == ChannelPermissions.Choice.Allow) Text("This shares just this channel with them.",
-            style = MaterialTheme.typography.bodySmall)
-        Text("Private chats still use their chosen members. Permission overrides do not change who may speak as them.",
-            style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(enabled = !busy && draft.values.any { it != ChannelPermissions.Choice.Inherit }, onClick = {
                 draft = ChannelPermissions.labels.keys.associateWith { ChannelPermissions.Choice.Inherit }
@@ -83,9 +76,7 @@ internal fun ChatPermissions(chorus: Chorus, model: Model, channel: ChatChannel,
         Text("Slow mode", style = MaterialTheme.typography.titleMedium)
         ChorusField(value = slow, onValueChange = { slow = it }, label = { Text("Seconds between messages") },
             modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !busy, isError = seconds == null,
-            supportingText = { Text(if (seconds == null) "Enter a whole number from 0 to 21600." else "0 turns slow mode off. Managers are exempt.") })
-        Text("Messages sent too soon wait on this device until they can send. You can cancel a waiting message.",
-            style = MaterialTheme.typography.bodySmall)
+            supportingText = if (seconds == null) ({ Text("0 to 21600") }) else null)
         Button(enabled = !busy && seconds != null && slow != slowBaseline, onClick = {
             val current = latestModel.channelPermissionState
             if (!ChannelPermissions.canManage(current, channel, me, info?.ownerAccountId)) return@Button

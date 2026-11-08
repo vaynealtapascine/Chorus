@@ -91,9 +91,7 @@ internal fun ArrangePins(pinned: List<ChatListRow>, modifier: Modifier, onCancel
             Text("Pinned chats", color = p.ink, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             Button(enabled = dragging == null, onClick = { onDone(ids) }) { Text("Done") }
         }
-        Text("Drag a handle to change the order. Pinned chats stay at the top of every folder.", color = p.ink3,
-            style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-        LazyColumn(Modifier.weight(1f).padding(horizontal = 12.dp), state = list,
+        LazyColumn(Modifier.weight(1f).padding(horizontal = 12.dp).padding(top = 8.dp), state = list,
             verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
             items(ids, key = { it }) { id ->
                 val row = rows[id] ?: return@items

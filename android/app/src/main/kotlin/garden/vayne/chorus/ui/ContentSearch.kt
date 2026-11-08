@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.SearchVisibility
 import garden.vayne.chorus.data.ChatMessage
 import garden.vayne.chorus.data.LocalSearch
@@ -38,6 +39,7 @@ import garden.vayne.chorus.data.Model
 import androidx.compose.runtime.collectAsState
 import garden.vayne.chorus.data.SearchDocument
 import garden.vayne.chorus.designsystem.LocalChorusPalette
+import garden.vayne.chorus.designsystem.R
 import java.text.DateFormat
 import java.util.Date
 import java.util.TimeZone
@@ -171,7 +173,6 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
             LaunchedEffect(Unit) { runCatching { typing.requestFocus() } }
             ChorusField(query, { query = it }, label = { Text(if(channelId != null) "Search this chat" else "Search ${if(section == "Messages") "all chats" else if(section == "Posts") "Journal" else section}") },
                 singleLine = true, modifier = Modifier.fillMaxWidth().focusRequester(typing))
-            Text("Try words or from:, in:, has:, before:, after:, is:pinned.", color = p.ink2)
         }
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -180,25 +181,25 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
                 }
             }
         }
-        if(!online) item { Text("Offline · local replica only. Shared posts need a connection.",color=p.ink2) }
         val available=channelId == null || visibility.document(SearchDocument("__search_channel__","Messages",Long.MAX_VALUE,"",channelId=channelId))
-        if(!available) item { Text("This chat is unavailable to the current front.",color=p.ink2) }
+        if(!available) item { EmptyState(R.drawable.ic_lock, "Private chat") }
         else if (index == null || section == "Messages" && messageIndex == null)
             item { Text("Preparing local search…", color = p.ink2) }
-        else if (query.isBlank()) item { Text("Type to search this scope. Chats use the current front; Journal and Saved contain posts and entries.", color = p.ink2) }
+        else if (query.isBlank()) Unit
         else if (section == "Messages" && messageResult.error != null)
             item { Text("Search: ${messageResult.error}", color = p.ink2) }
-        else if (shown.isEmpty() && !loading) item { Text("Nothing in ${when (section) { "Messages" -> "chats"; "Posts" -> "the Journal"; "Saved" -> "saved posts"; else -> section.lowercase() }} matches, on this device${if (online && section != "Switches") " or the server" else ""}.", color = p.ink2) }
+        else if (shown.isEmpty() && !loading) item { EmptyState(R.drawable.ic_search, "No matches") }
         for (doc in shown) item(key = "${doc.kind}:${doc.id}") {
             if (doc.kind == "Messages") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // the whole card opens the message (F5.9)
+                Column(Modifier.fillMaxWidth().clickable(onClickLabel = "Open message") { if(visibility.document(doc)) onOpenMessage(doc) },
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(model.channels.firstOrNull {it.id==doc.channelId}?.name ?: "Chat",color=p.ink2)
                     for (id in contextIds[doc.id].orEmpty()) cards[id]?.let { card ->
                         if(id==doc.id) Text("Match",color=p.accent)
                         ChatMessageCard(card,model,emptyMap(),chorus,emptyList(),null,null,onReply={},
                             onReplyPrivately=null,onEdit=null,reactions=model.messageReactions[card.id].orEmpty(),interactive=false,onStage={})
                     }
-                    TextButton(onClick={ if(visibility.document(doc)) onOpenMessage(doc) }) {Text("Open message")}
                 }
             } else if(doc.kind == "Posts") {
                 val post=model.posts.firstOrNull {it.id==doc.id}
@@ -206,12 +207,13 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
                 else doc.sharedPost?.let {SharedPostPreview(it,"Shared post",chorus,model,onThread={onOpenPost(it.id)})}
             } else SearchCard(doc, model, onOpenMessage, onOpenPost)
         }
-        if (results.size == 100) item { Text("Showing the newest 100 local matches. Narrow the search for more.", color = p.ink2) }
+        if (results.size == 100) item { Text("100+ results", color = p.ink3, fontSize = 13.sp) }
         if (loading) item { Text("Searching server…", color = p.ink2) }
         if (remoteError != null && section != "Switches") item { Text("Server search unavailable: ${remoteError.orEmpty()}", color = p.ink2) }
         if (section != "Switches" && cursor != null && online) item {
             TextButton(enabled = !loading, onClick = ::loadMore) { Text("Load more from server") }
         }
+        if (!online && query.isNotBlank()) item { Text("Searching this device", color = p.ink3, fontSize = 13.sp) }
         item { Text("", modifier = Modifier.padding(bottom = 16.dp)) }
     }
 }

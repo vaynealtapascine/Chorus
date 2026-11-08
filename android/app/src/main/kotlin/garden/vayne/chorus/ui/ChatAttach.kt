@@ -374,10 +374,9 @@ internal fun AttachmentEditor(a: PendingAttachment, onSave: (PendingAttachment) 
     }) {
         preview?.let { Image(it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(16.dp)).background(p.surface2)) }
-        if (a.mime.startsWith("image/")) ChorusField(alt, { alt = it }, label = { Text("Alt text") },
-            placeholder = { Text("Describe the image for people who can't see it") }, minLines = 2,
+        if (a.mime.startsWith("image/")) ChorusField(alt, { alt = it }, label = { Text("Alt text") }, minLines = 2,
             modifier = Modifier.fillMaxWidth())
-        FormCard { ToggleRow("Spoiler", spoiler, "Hidden until someone taps it") { spoiler = it } }
+        FormCard { ToggleRow("Spoiler", spoiler) { spoiler = it } }
     }
 }
 

@@ -456,7 +456,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         active = shownTab == activeTab, onFocusedRoute = { chatFocused = it },
                         onOpenConsumed = { chatSpace = null; chatChannel = null; chatMessage = null },
                         requestedMessage = chatMessage,
-                        onOpenProfile = { journalOpenProfile = it; journalOpenPost = null; tab = Tab.Journal })
+                        onOpenProfile = { journalOpenProfile = it; journalOpenPost = null; tab = Tab.Journal },
+                        onFriends = { tab = Tab.People })
                     Tab.Journal -> Journal(chorus, model, journalReplyPost,
                         onExternalReplyConsumed = { journalReplyPost = null },
                         externalOpenPost = journalOpenPost,

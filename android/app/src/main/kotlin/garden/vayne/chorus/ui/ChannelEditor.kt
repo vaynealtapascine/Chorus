@@ -150,7 +150,7 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
         }
     }
     val title = when { group != null -> "Edit group"; channel == null -> "New channel"; memberChat -> "Edit chat"; else -> "Edit channel" }
-    Drawer(onDismiss, title, if (connection == Status.Live) null else "Offline · changes will sync when connected.", dismissible = !busy,
+    Drawer(onDismiss, title, if (connection == Status.Live) null else "Offline", dismissible = !busy,
         footer = {
             if (problem != null) Text(problem, fontSize = 13.sp, color = p.ink3)
             DrawerButton(if (channel == null) "Create channel" else "Save", ::save, busy = busy,
@@ -168,8 +168,6 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
                         modifier = Modifier.clickable(enabled = !busy && imagesSupported) { picker.launch("image/*") }.padding(vertical = 6.dp))
                     if (avatar != null) Text("Remove picture", color = p.ink2, fontSize = 14.sp,
                         modifier = Modifier.clickable(enabled = !busy && imagesSupported) { avatar = null }.padding(vertical = 6.dp))
-                    Text(if (imagesSupported) "A square picture works best." else "Pictures need a server update. You can still save the name and description.",
-                        fontSize = 12.sp, lineHeight = 16.sp, color = p.ink3)
                 }
             }
         }
@@ -194,8 +192,7 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
                 Segmented(listOf("Everyone", "Only some members"), if (keptToSome) 1 else 0) { if (!busy) keptToSome = it == 1 }
             }
             if (memberChat || keptToSome) {
-                FormNote(if (memberChat) "People in this chat." else "It shows only while one of them is fronting or co-conscious. " +
-                    "This is privacy within your system, not a lock: you all share this account.", R.drawable.ic_lock)
+                if (memberChat) SectionLabel("People in this chat")
                 val people = model.active.filter { m -> memberQuery.isBlank() ||
                     listOf(m.shownName, m.name, *m.sigils.toTypedArray()).any { it.contains(memberQuery.trim(), true) } }
                 if (model.active.size > 8) ChorusField(memberQuery, { memberQuery = it }, label = { Text("Search members") },
@@ -216,10 +213,9 @@ internal fun ChannelEditor(chorus: Chorus, model: Model, initialSpace: String?, 
                 if (people.size > 60) Text("Search to find more members.", fontSize = 13.sp, color = p.ink3)
             }
         }
-        if (connection == Status.Live) Text("Channel owners and managers can edit this.", fontSize = 13.sp, color = p.ink3)
         if (error != null) FormNote(error.orEmpty(), warning = true)
         if (confirmDelete && channel != null) ConfirmDrawer(if (memberChat) "Delete this chat?" else "Delete ${channel.name}?",
-            "It goes for everyone here, messages and all. It can be restored from Trash.", "Delete", danger = true,
+            null, "Delete", danger = true,
             onDismiss = { confirmDelete = false }, onConfirm = {
                 confirmDelete = false
                 actions.launch {

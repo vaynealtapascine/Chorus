@@ -49,7 +49,7 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
             Text("${directory?.accounts?.size ?: 0} ${if (directory?.accounts?.size == 1) "person" else "people"}",
                 color = p.accent, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
             if (owner) PanelLink(R.drawable.ic_plus, "Add people") { adding = true }
-            if (directory == null) Text("Space details are unavailable offline.", color = p.ink3, fontSize = 13.sp)
+            if (directory == null) Text("Offline", color = p.ink3, fontSize = 13.sp)
             for (account in directory?.accounts.orEmpty()) {
                 val theirs = if (account.id == directory?.ownerAccountId) "owner" else model.spaceRoles["${space.id}|${account.id}"] ?: "member"
                 var roleMenu by remember(account.id) { mutableStateOf(false) }
@@ -84,10 +84,7 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
             if (sides != null) Row(Modifier.fillMaxWidth().background(p.surface2, RoundedCornerShape(12.dp)).padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ChatIcon(R.drawable.ic_lock, tint = p.ink2)
-                Text(if (sides.mine.isNotEmpty()) "Private to ${sides.mine.joinToString(" & ", transform = ::nameOf)}. It shows only while they're " +
-                    "fronting or co-conscious, and only they write here. This is privacy within your system, not a lock: you all share this account."
-                    else "A private chat with ${sides.theirs.joinToString(" & ", transform = ::nameOf)}. Hidden from their other members in Chorus; their account and devices are shared.",
-                    color = p.ink2, fontSize = 13.sp)
+                Text("Private · " + (sides.mine.ifEmpty { sides.theirs }).joinToString(" & ", transform = ::nameOf), color = p.ink2, fontSize = 13.sp)
             }
             val shown = remember(model) { ChatOrganize.shown(model) }
             val privates = model.channels.filter { it.spaceId == space.id && it.kind == "member_dm" && shown(it.id) }
@@ -101,7 +98,7 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
             if (!model.isPerson && sides == null && writers.isNotEmpty()) {
                 var choosing by remember { mutableStateOf(false) }
                 PanelLink(R.drawable.ic_lock, "Start a private chat as…") { choosing = true }
-                MenuDrawer(choosing, { choosing = false }, "Start a private chat", "Only the member you pick writes and reads it here.") {
+                MenuDrawer(choosing, { choosing = false }, "Start a private chat") {
                     for (m in writers.sortedByDescending { it.id == speakerId }) MenuRow(m.shownName, subtitle = m.pronouns?.takeIf { it.isNotBlank() },
                         leading = { Avatar(m.glyph, m.color, 36.dp, avatarBlob = m.avatarBlob, ring = false) }) {
                         choosing = false
@@ -145,7 +142,7 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
                 }
             }, enabled = chosen.isNotEmpty(), busy = busy)
         }) {
-            if (candidates.isEmpty()) FormNote("Everyone you're connected to is already here. Follow someone in Friends to add them.", R.drawable.ic_friends)
+            if (candidates.isEmpty()) EmptyState(R.drawable.ic_friends, "No one to add")
             else FormCard {
                 candidates.forEachIndexed { i, a ->
                     if (i > 0) FormDivider()
@@ -166,7 +163,7 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
         }
     }
     removing?.let { account ->
-        ConfirmDrawer("Remove ${account.shownName}?", "They stop seeing ${space.name}. You can add them back later.", "Remove", {
+        ConfirmDrawer("Remove ${account.shownName}?", null, "Remove", {
             removing = null
             actions.launch {
                 try { chorus.create("space.leave", space.id, JSONObject().put("account_id", account.id), scope = scope); onChanged() }
@@ -177,7 +174,7 @@ internal fun ChatSpacePanel(chorus: Chorus, model: Model, space: ChatSpace, chan
     if (leaving) {
         val deletes = space.kind == "shared" && role == "owner"
         ConfirmDrawer(if (deletes) "Delete ${space.name}?" else if (space.kind == "dm") "Leave this conversation?" else "Leave ${space.name}?",
-            if (deletes) "It leaves everyone's chats. It stays in the history and can be restored." else "You can be added back later.",
+            if (deletes) null else "You can be added back later.",
             if (deletes) "Delete" else "Leave", {
                 leaving = false
                 val dev = chorus.device

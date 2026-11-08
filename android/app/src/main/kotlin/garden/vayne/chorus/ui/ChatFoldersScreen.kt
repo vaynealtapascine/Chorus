@@ -74,10 +74,8 @@ internal fun ChatFoldersScreen(model: Model, rows: List<ChatListRow>, onSave: (C
     Column(modifier.fillMaxHeight().background(p.bg)) {
         Row(Modifier.fillMaxWidth().background(p.surface).padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             ChatIconButton(R.drawable.ic_back, "Back to chats", onClose)
-            Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
-                Text("Chat folders", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
-                Text("Sort chats and hide what you don’t need", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
-            }
+            Text("Chat folders", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f).padding(vertical = 12.dp))
         }
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp)) {
             item { FolderSection("My folders") }
@@ -155,12 +153,12 @@ internal fun ChatFoldersScreen(model: Model, rows: List<ChatListRow>, onSave: (C
             }
             item { FolderSection("Chat list display") }
             if (!model.isPerson) {
-                item { DisplaySwitch("Show who’s here strip", "Who is fronting, above your chats", settings.showHere) {
+                item { DisplaySwitch("Show who’s here strip", settings.showHere) {
                     onSave(settings.copy(showHere = it)) } }
-                item { DisplaySwitch("Unread counts per member", "Each member keeps their own read position", model.accountPrefs.readPerMember,
+                item { DisplaySwitch("Unread counts per member", model.accountPrefs.readPerMember,
                     onReadPerMember) }
             }
-            item { DisplaySwitch("Compact rows", "Smaller pictures, more chats on screen", settings.compact) { onSave(settings.copy(compact = it)) } }
+            item { DisplaySwitch("Compact rows", settings.compact) { onSave(settings.copy(compact = it)) } }
         }
     }
 }
@@ -188,13 +186,12 @@ private fun ChatFolderEditor(initial: ChatFolders.Custom, isNew: Boolean, rows: 
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp))
             }
             item { FolderSection("Every chat of a kind") }
-            for ((kind, title, subtitle) in listOf(Triple("internal", "Internal chats", "Your own channels and DMs"),
-                Triple("shared", "Shared spaces", "Spaces shared with other accounts"), Triple("direct", "Direct messages", "One-to-one chats"))) item(key = "kind:$kind") {
-                DisplaySwitch(title, subtitle, kind in folder.kinds) { on -> folder = ChatFolders.setKind(folder, kind, on) { kindOf[it] } }
+            for ((kind, title) in listOf("internal" to "Internal chats", "shared" to "Shared spaces", "direct" to "Direct messages")) item(key = "kind:$kind") {
+                DisplaySwitch(title, kind in folder.kinds) { on -> folder = ChatFolders.setKind(folder, kind, on) { kindOf[it] } }
             }
             item { FolderSection("Only show") }
-            item { DisplaySwitch("Unread chats", "Unread for whoever is reading", folder.unreadOnly) { folder = folder.copy(unreadOnly = it) } }
-            item { DisplaySwitch("Chats that aren’t muted", "Leave muted chats out", folder.hideMuted) { folder = folder.copy(hideMuted = it) } }
+            item { DisplaySwitch("Unread chats", folder.unreadOnly) { folder = folder.copy(unreadOnly = it) } }
+            item { DisplaySwitch("Chats that aren’t muted", folder.hideMuted) { folder = folder.copy(hideMuted = it) } }
             item { FolderSection("Chats (${rows.count { ChatFolders.holds(folder, it.channel.id, kindOf[it.channel.id].orEmpty()) }})") }
             item {
                 ChorusField(query, { query = it }, placeholder = { Text("Search chats") }, singleLine = true,
@@ -226,7 +223,7 @@ private fun ChatFolderEditor(initial: ChatFolders.Custom, isNew: Boolean, rows: 
             }
         }
     }
-    if (confirmDelete) ConfirmDrawer("Delete ${initial.name.ifBlank { "this folder" }}?", "Its chats stay where they are; only the folder goes.",
+    if (confirmDelete) ConfirmDrawer("Delete ${initial.name.ifBlank { "this folder" }}?", null,
         "Delete folder", { confirmDelete = false; onDelete() }, { confirmDelete = false }, danger = true, cancel = "Keep", icon = R.drawable.ic_folder)
 }
 
@@ -237,14 +234,11 @@ private fun FolderSection(title: String) {
 }
 
 @Composable
-private fun DisplaySwitch(title: String, subtitle: String, on: Boolean, onChange: (Boolean) -> Unit) {
+private fun DisplaySwitch(title: String, on: Boolean, onChange: (Boolean) -> Unit) {
     val p = LocalChorusPalette.current
-    Row(Modifier.fillMaxWidth().heightIn(min = 62.dp).clickable(role = Role.Switch) { onChange(!on) }.padding(start = 16.dp, end = 12.dp),
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(role = Role.Switch) { onChange(!on) }.padding(start = 16.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.weight(1f)) {
-            Text(title, color = p.ink, fontSize = 15.sp, lineHeight = 20.sp)
-            Text(subtitle, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
-        }
+        Text(title, color = p.ink, fontSize = 15.sp, lineHeight = 20.sp, modifier = Modifier.weight(1f))
         ChorusSwitch(on, null)
     }
 }

@@ -57,10 +57,8 @@ fun ColumnScope.DirectMessagePicker(
         .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Avatar(sender.glyph, sender.color, 32.dp, avatarBlob = sender.avatarBlob, ring = false)
-        Column(Modifier.weight(1f)) {
-            Text("Speaking as", color = p.ink3, fontSize = 12.sp)
-            Text(sender.shownName, color = p.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+        Text(sender.shownName, color = p.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f))
         Text("Change", color = p.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
     ChorusField(query, { query = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -85,22 +83,18 @@ fun ColumnScope.DirectMessagePicker(
             item { SectionLabel(if (person) "Friends" else "Friends' accounts") }
             if (privateChats && !person && sender != null) item(key = "private") {
                 FormCard(Modifier.padding(bottom = 6.dp)) {
-                    ToggleRow("Private to ${sender.shownName}", keepPrivate,
-                        "Only ${sender.shownName} sees and writes in it, while fronting or co-conscious.", enabled = !busy) { keepPrivate = it }
+                    ToggleRow("Private to ${sender.shownName}", keepPrivate, null, enabled = !busy) { keepPrivate = it }
                 }
             }
             items(connected, key = { "account:${it.id}" }) { account ->
-                PickerRow(account.shownName, if (account.isSystem) "a system · each member writes as themselves" else "one person",
+                PickerRow(account.shownName, if (account.isSystem) "a system" else "one person",
                     false, busy || !online, null, { sender?.let { onAccount(it, account, keepPrivate && privateChats && !person) } }) {
                     Box(Modifier.size(40.dp).background(p.surface3, CircleShape), contentAlignment = Alignment.Center) {
                         Text(account.shownName.removePrefix("@").take(1).uppercase(), color = p.ink, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
-            if (connected.isEmpty()) item {
-                FormNote(if (online) "Follow someone in Friends to message them here." else
-                    if (person) "Connect to load your friends." else "Connect to load friends' accounts. Member DMs work offline.", R.drawable.ic_friends)
-            }
+            if (connected.isEmpty()) item { EmptyState(R.drawable.ic_friends, if (online) "No friends yet" else "Offline") }
         }
     }
     if (error != null) FormNote(error, warning = true)

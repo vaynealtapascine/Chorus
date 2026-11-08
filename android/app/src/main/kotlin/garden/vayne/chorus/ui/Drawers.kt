@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -231,6 +232,21 @@ internal fun DrawerButton(text: String, onClick: () -> Unit, kind: ButtonKind = 
         contentAlignment = Alignment.Center) {
         if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = ink, strokeWidth = 2.dp)
         else Text(text, color = if (on) ink else p.ink3, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/**
+ * What an empty list shows (UI21): an icon in a soft disc, a two-to-four word [label] and at most
+ * one action. No explanation: the screen around it says what belongs here.
+ */
+@Composable
+internal fun EmptyState(icon: Int, label: String, modifier: Modifier = Modifier, action: String? = null, onAction: (() -> Unit)? = null) {
+    val p = LocalChorusPalette.current
+    Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.size(56.dp).background(p.accentSoft, CircleShape), contentAlignment = Alignment.Center) { Glyph(icon, p.accent, 26.dp) }
+        Text(label, color = p.ink2, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        if (action != null && onAction != null) DrawerButton(action, onAction, ButtonKind.Neutral, modifier = Modifier.widthIn(max = 220.dp))
     }
 }
 
