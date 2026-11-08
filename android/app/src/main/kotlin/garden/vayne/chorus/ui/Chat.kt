@@ -127,6 +127,7 @@ import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.SpaceAccount
 import garden.vayne.chorus.data.Member
 import garden.vayne.chorus.data.ChatAside
+import garden.vayne.chorus.data.ChatActions
 import garden.vayne.chorus.data.SpaceInfo
 import garden.vayne.chorus.data.Spaces
 import garden.vayne.chorus.data.accountVisible
@@ -1256,19 +1257,31 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 else ChatPresentation.presence(model, channel.id).filter { it.subjectType == "member" }
                     .associate { it.subjectId to ChatPresentation.layer(model, it) }
             }
-            if (mentionMatches.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(mentionMatches, key = { "${it.type}:${it.id}" }) { choice ->
-                    Row(Modifier.clip(RoundedCornerShape(20.dp)).background(p.surface2)
+            // F5.13: a list over the composer, four at most: a face, "@Name", and where they are now
+            if (mentionMatches.isNotEmpty()) Column(Modifier.fillMaxWidth()) {
+                for (choice in mentionMatches.take(4)) androidx.compose.runtime.key(choice.type, choice.id) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
                         .clickable(onClickLabel = "Mention ${choice.name}") { draft = garden.vayne.chorus.data.ChatMentions.insert(draft, choice) }
-                        .heightIn(min = 40.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        choice.id?.let(model::member)?.let { ChatAvatar(it, 24.dp) }
-                        Text("@" + choice.name, color = p.accent, fontSize = 14.sp, lineHeight = 20.sp)
-                        // a member's caption is where they are now (F5.13); groups and @front need none
-                        val caption = if (choice.type == "member") choice.id?.let(mentionLayers::get) ?: choice.handle?.let { "@$it" } else null
-                        caption?.let { Text(it, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp) }
+                        .heightIn(min = 48.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        val who = choice.id?.let(model::member)
+                        if (who != null) ChatAvatar(who, 32.dp)
+                        else Box(Modifier.size(32.dp).background(if (choice.type == "front") p.accentSoft else p.surface3, CircleShape),
+                            contentAlignment = Alignment.Center) {
+                            Text(if (choice.type == "front") "@" else choice.name.take(1).uppercase(), color = if (choice.type == "front") p.accent else p.ink2,
+                                fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Text("@" + choice.name, color = p.ink, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        val caption = when (choice.type) {
+                            "member" -> choice.id?.let(mentionLayers::get) ?: choice.handle?.let { "@$it" }
+                            "front" -> "whoever fronts when it arrives"
+                            else -> null
+                        }
+                        caption?.let { Text(it, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1) }
                     }
                 }
+                HorizontalDivider(color = p.line)
             }
             Presence(quoting.takeIf { it.isNotEmpty() }) { quoted ->
             Row(Modifier.fillMaxWidth().background(p.surface2, RoundedCornerShape(10.dp)).padding(start = 12.dp),
@@ -1955,86 +1968,99 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
     }
     if (menuOpen) Drawer({ menuOpen = false }) {
         var allEmoji by remember(message.id) { mutableStateOf(false) }
-        // what it said before (SPEC §5.3), fetched when asked and shown under the message here
+        var moreOpen by remember(message.id) { mutableStateOf(false) }
+        // what it said before (SPEC §5.3), fetched when asked and shown under its date here
         var history by remember(message.id, message.text, message.cw) { mutableStateOf<List<MessageRevision>?>(null) }
         var historyError by remember(message.id) { mutableStateOf<String?>(null) }
+        val shown = message.cw == null || revealed
+        val linkBase = chorus.device?.base
+        fun copy(label: String, text: String) {
+            val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+        }
+        fun close() { moreOpen = false; menuOpen = false }
+        // F5.6: every action this message offers now; ChatActions decides which wait behind More
+        val rows = buildMap<String, Triple<Int, String, () -> Unit>> {
+            if (held == null) put("reply", Triple(R.drawable.ic_reply, "Reply") { close(); onReply() })
+            if (onThread != null) put("thread", Triple(R.drawable.ic_thread, if (thread != null) "Open thread" else "Reply in thread") { close(); onThread() })
+            if (shown) put("copy", Triple(R.drawable.ic_copy, "Copy text") { copy("Message", message.text); close() })
+            if (onPin != null) put("pin", Triple(if (message.pinned) R.drawable.ic_unpin else R.drawable.ic_pin, if (message.pinned) "Unpin" else "Pin") { close(); onPin() })
+            if (onForward != null) put("forward", Triple(R.drawable.ic_forward, "Forward") { close(); onForward() })
+            if (onEdit != null && shown) put("edit", Triple(R.drawable.ic_edit, "Edit") { close(); onEdit() })
+            if (onSelect != null) put("select", Triple(R.drawable.ic_check, "Select") { close(); onSelect() })
+            if (onDelete != null) put("delete", Triple(R.drawable.ic_delete, "Delete") { close(); onDelete() })
+            if (held == null && onReplyPrivately != null) put("private", Triple(R.drawable.ic_lock, "Reply privately") { close(); onReplyPrivately() })
+            if (onReplyIn != null) put("reply_in", Triple(R.drawable.ic_reply, "Reply in another chat") { close(); onReplyIn() })
+            if (onQuote != null && shown) put("quote", Triple(R.drawable.ic_format_quote, "Quote") { close(); onQuote() })
+            // a link that opens this message, and shows it as a preview in a chat (D-109)
+            if (held == null && linkBase != null) put("link", Triple(R.drawable.ic_link, "Copy link") {
+                copy("Link", garden.vayne.chorus.data.ChorusLinks.linkTo(linkBase, "message", message.id)); close()
+            })
+            if (held == null && message.edited) put("history", Triple(R.drawable.ic_history, if (history == null) "Edit history" else "Hide edit history") {
+                moreOpen = false
+                if (history != null) history = null else actions.launch {
+                    try { history = chorus.revisions(message.id); historyError = null }
+                    catch (e: Exception) { historyError = e.message ?: "Could not load edit history." }
+                }
+            })
+            if (held == null) put("stage", Triple(R.drawable.ic_layers, "Select in stage mode") { close(); onStage() })
+            if (held == null && unseenBy.isNotEmpty()) put("unseen", Triple(R.drawable.ic_members, "Not seen by…") { showUnseen = !showUnseen; close() })
+        }
+        val layout = ChatActions.layout(rows.keys)
+        @Composable fun Action(key: String) {
+            val (icon, label, run) = rows.getValue(key)
+            ChatActionRow(icon, label, danger = key == "delete", action = run)
+        }
         Column(Modifier.fillMaxWidth().semantics { contentDescription = "Message actions" },
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (held == null && onReact != null) ReactionPicker(reactions, actingMemberId, allEmoji, { allEmoji = !allEmoji }) { emoji, on ->
                 menuOpen = false; onReact(emoji, on)
             }
-            Column(Modifier.fillMaxWidth().background(if (own) p.accentSoft else p.surface2, RoundedCornerShape(16.dp))
-                .padding(horizontal = 14.dp, vertical = 10.dp)) {
-                Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp)
-                Text(spoilerPreview(ChatPresentation.preview(message)), color = p.ink, maxLines = 4, fontSize = 15.sp, lineHeight = 20.sp)
-                Text(ChatPresentation.dateLabel(message.occurredAt) + ", " +
-                    DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.occurredAt)) +
-                    if (held == null && message.edited) " · edited" else "", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
-                    modifier = Modifier.padding(top = 2.dp))
-                if (historyError != null) Text(historyError.orEmpty(), color = p.danger, fontSize = 12.sp, lineHeight = 16.sp)
-                history?.forEach { revision ->
+            // the message itself is on screen above: only when it was written (D-105)
+            Text(ChatPresentation.dateLabel(message.occurredAt) + ", " +
+                DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.occurredAt)) +
+                if (held == null && message.edited) " · edited" else "", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp,
+                modifier = Modifier.padding(horizontal = 12.dp))
+            if (historyError != null) Text(historyError.orEmpty(), color = p.danger, fontSize = 12.sp, lineHeight = 16.sp,
+                modifier = Modifier.padding(horizontal = 12.dp))
+            history?.let { revisions -> Column(Modifier.fillMaxWidth().background(p.surface2, RoundedCornerShape(16.dp))
+                .padding(horizontal = 14.dp, vertical = 4.dp)) {
+                revisions.forEachIndexed { i, revision ->
                     var revisionRevealed by rememberSaveable(message.id, revision.rev) {
                         mutableStateOf(revision.contentWarning == null)
                     }
-                    HorizontalDivider(Modifier.padding(vertical = 6.dp), color = p.line)
+                    if (i > 0) HorizontalDivider(Modifier.padding(vertical = 6.dp), color = p.line)
                     Text("${if (revision.original) "Original" else "Edit ${revision.rev}"} · " +
                         DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(revision.at)),
-                        color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+                        color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 6.dp))
                     if (revision.contentWarning != null) Text(
                         "Content warning: ${revision.contentWarning} · ${if (revisionRevealed) "Hide" else "Show"}",
                         color = p.accent, fontSize = 14.sp, lineHeight = 19.sp,
                         modifier = Modifier.clickable { revisionRevealed = !revisionRevealed }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
-                    if (revisionRevealed) Text(revision.text, color = p.ink, fontSize = 14.sp, lineHeight = 19.sp)
+                    if (revisionRevealed) Text(revision.text, color = p.ink, fontSize = 14.sp, lineHeight = 19.sp, modifier = Modifier.padding(bottom = 6.dp))
                 }
-            }
-        run {
+            } }
             Column(Modifier.fillMaxWidth()) {
                 val seen = model.readMarks[message.channelId].orEmpty().filter { mark ->
                     mark.member.isNotEmpty() && !ReadTracking.needsMark(message.occurredAt, message.id, listOf(mark), mark.member)
                 }.mapNotNull { model.member(it.member) }
                 if (held == null && seen.isNotEmpty()) {
-                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        for (reader in seen.take(3)) ChatAvatar(reader, 24.dp)
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) { for (reader in seen.take(3)) ChatAvatar(reader, 24.dp) }
                         Text("Seen by " + seen.joinToString(", ") { it.shownName }, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
                     }
+                    HorizontalDivider(color = p.line)
                 }
-                HorizontalDivider(color = p.line)
-                if (held == null) ChatActionRow(R.drawable.ic_reply, "Reply") { menuOpen = false; onReply() }
-                if (onThread != null) ChatActionRow(R.drawable.ic_thread, if (thread != null) "Open thread" else "Reply in thread") {
-                    menuOpen = false; onThread()
+                for (key in layout.primary) {
+                    if (key == "delete" && layout.more.isNotEmpty()) ChatActionRow(R.drawable.ic_more, "More") { moreOpen = true }
+                    Action(key)
                 }
-                if (held == null && onReplyPrivately != null) ChatActionRow(R.drawable.ic_lock, "Reply privately") { menuOpen = false; onReplyPrivately() }
-                if (message.cw == null || revealed) ChatActionRow(R.drawable.ic_copy, "Copy text") {
-                    val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Message", message.text)); menuOpen = false
-                }
-                // a link that opens this message, and shows it as a preview in a chat (D-109)
-                val linkBase = chorus.device?.base
-                if (held == null && linkBase != null) ChatActionRow(R.drawable.ic_copy, "Copy link") {
-                    val clipboard = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Link", garden.vayne.chorus.data.ChorusLinks.linkTo(linkBase, "message", message.id)))
-                    menuOpen = false
-                }
-                if (onPin != null) ChatActionRow(if (message.pinned) R.drawable.ic_unpin else R.drawable.ic_pin,
-                    if (message.pinned) "Unpin" else "Pin") { menuOpen = false; onPin() }
-                if (onReplyIn != null) ChatActionRow(R.drawable.ic_reply, "Reply in another chat") { menuOpen = false; onReplyIn() }
-                if (onQuote != null && (message.cw == null || revealed)) ChatActionRow(R.drawable.ic_format_quote, "Quote") { menuOpen = false; onQuote() }
-                if (onForward != null) ChatActionRow(R.drawable.ic_forward, "Forward") { menuOpen = false; onForward() }
-                if (onSelect != null) ChatActionRow(R.drawable.ic_check, "Select") { menuOpen = false; onSelect() }
-                if (onEdit != null && (message.cw == null || revealed)) ChatActionRow(R.drawable.ic_edit, "Edit") { menuOpen = false; onEdit() }
-                if (held == null && message.edited) ChatActionRow(R.drawable.ic_history, if (history == null) "Edit history" else "Hide edit history") {
-                    if (history != null) history = null else actions.launch {
-                        try { history = chorus.revisions(message.id); historyError = null }
-                        catch (e: Exception) { historyError = e.message ?: "Could not load edit history." }
-                    }
-                }
-                if (held == null) ChatActionRow(R.drawable.ic_layers, "Select in stage mode") { menuOpen = false; onStage() }
-                if (held == null && unseenBy.isNotEmpty()) ChatActionRow(R.drawable.ic_members, "Not seen by…") { showUnseen = !showUnseen; menuOpen = false }
-                if (onDelete != null) ChatActionRow(R.drawable.ic_delete, "Delete", danger = true) { menuOpen = false; onDelete() }
+                if ("delete" !in layout.primary && layout.more.isNotEmpty()) ChatActionRow(R.drawable.ic_more, "More") { moreOpen = true }
             }
         }
-        }
+        // the rest, in a drawer over this one (D-124)
+        MenuDrawer(moreOpen, { moreOpen = false }) { for (key in layout.more) Action(key) }
     }
 }
 
