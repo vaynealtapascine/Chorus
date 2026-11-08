@@ -24,8 +24,8 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 - **In progress:** UI21
 - **Owner:** claude-opus-5.5, 2026-11-08
-- **Next concrete step:** Audits of Android vs Figma per area into docs/handoff/ui21-*.md, then Android slices
-- **Notes:** UI20 deployed everywhere 2026-11-08 (b212f83, web index-DK_ZDRUV.js, Android 0.1.808). Left: owner's-phone look (inspect only), Q24. Demo for checks: F:/DunBuild/ui20-demo (server 5299, vite 5300 from worktree t3-082d5194, shot.cjs; Lanterns, Junipers, Driftwood, Mossbank, Ashgrove, person Ren).
+- **Next concrete step:** Wave 2: Android Home (F0.1–F0.6, D-130)
+- **Notes:** Wave 1 (sweep: forward privacy fix, text trims, small tap cuts, connection banner) went live in Android 0.1.823 with the D-129 deploy. Owner answered the UI21 batch (D-130–D-138). Wave 2 Home next. Plan + rules: docs/handoff/ui21-plan.md.
 
 ### SEC1: what is done and what is left
 
@@ -181,3 +181,4 @@ Newest last. Format: `YYYY-MM-DD agent — what happened (commit)`. Entries befo
 - 2026-11-08 claude-opus-5.5: UI20 web deployed (b212f83, `index-DK_ZDRUV.js`) with Android 0.1.808: the F7 Friends screens on web under #/people (D-128), one `Sheet`, the accept sheet shared with Notifications, browser push moved to Settings. The e2e run found a person's page had no Between you (fixed on both clients, 2261ab0); e2e follows the new screens and the redesign spec's stale Journal-in-More step is fixed (CI's e2e had been red since 0d436de). Full gate with Android passed.
 - 2026-11-08 claude-opus-5.5: Owner bug fixes: Android private chats with nobody listed on the friend's side show the friend's picture (`ChatPresentation.rowIcon`); web chat rows show whose a private chat is ("• Kai"); Friends is both ways (D-129): `friends` and `following` audiences, `followers` reads "Followers", Follow back offered after accepting, one-way follows listed apart. Full gate passed.
 - 2026-11-08 claude-opus-5.5: Owner bug fixes and D-129 deployed (f3edd7e, web `index-BpTssOuR.js`, Android 0.1.823). Checked on the isolated ui20 demo (web): Friends sections, Follow back after accepting, audience menu, the "• Foxglove" chat row. Not checked on a phone or on the owner's account.
+- 2026-11-08 claude-opus-5.5: UI21 wave 1 on Android (4164a53 forward hides the source chat name in another space, web too; ef5b4df–2dba4b5 text trims + icon-led `EmptyState` + small tap cuts; 4d806c0 connection banner and slow-down toast). Live with Android 0.1.823. Owner answered the UI21 questions: D-130–D-138, Q24 closed.
