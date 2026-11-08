@@ -5,10 +5,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.InspectionDialogContent
@@ -21,11 +22,13 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** What each Members row shows and the folders it is sorted into (D-100). */
+/**
+ * How the Members list looks (D-100), behind F4.1's sliders icon: folders or one list, role pills,
+ * a bio line, banners, the folders themselves, and the list's less used actions.
+ */
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
-internal fun MembersCustomizeSheet(chorus: Chorus, model: Model, onError: (String) -> Unit, onNewFolder: () -> Unit, onDismiss: () -> Unit) {
-    val p = LocalChorusPalette.current
+internal fun MembersViewDrawer(chorus: Chorus, model: Model, onError: (String) -> Unit, onNewFolder: () -> Unit,
+    onSelect: (() -> Unit)?, onReorder: (() -> Unit)?, onImport: () -> Unit, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     val settings = model.memberList
     val view = settings.view
@@ -35,65 +38,78 @@ internal fun MembersCustomizeSheet(chorus: Chorus, model: Model, onError: (Strin
         catch (e: Exception) { onError("Could not save that. Try again.") }
     }
     fun setView(v: garden.vayne.chorus.data.MembersView) = send("pref.set", null, MemberListPrefs.viewPayload(v))
-    fun setFolders(f: List<garden.vayne.chorus.data.MemberFolder>) = send("pref.set", null, MemberListPrefs.foldersPayload(f))
-    var deleting by remember { mutableStateOf<garden.vayne.chorus.data.MemberFolder?>(null) }
-
-    ChorusSheet(onDismissRequest = onDismiss, containerColor = p.surface, skipPartiallyExpanded = true) {
-        Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("On each member", color = p.ink3, style = MaterialTheme.typography.labelMedium)
-            Text("Role pills", color = p.ink)
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                listOf("off" to "Off", "first" to "First only", "all" to "All").forEachIndexed { i, (id, label) ->
-                    SegmentedButton(view.pills == id, { setView(view.copy(pills = id)) }, SegmentedButtonDefaults.itemShape(i, 3)) { Text(label) }
-                }
+    var choosingPills by remember { mutableStateOf(false) }
+    var choosingField by remember { mutableStateOf(false) }
+    var folders by remember { mutableStateOf(false) }
+    val pillLabels = listOf("off" to "Off", "first" to "First only", "all" to "All")
+    Drawer(onDismiss, "View") {
+        Segmented(listOf("Folders", "List"), if (view.flat) 1 else 0) { setView(view.copy(flat = it == 1)) }
+        FormCard {
+            FormValueRow("Roles", pillLabels.first { it.first == view.pills }.second, R.drawable.ic_members) { choosingPills = true }
+            if (view.pills != "off" && settings.roleFields.isNotEmpty()) {
+                FormDivider()
+                FormValueRow("Roles come from", settings.roleField?.name ?: "Choose", R.drawable.ic_format_list_ul) { choosingField = true }
             }
-            if (view.pills != "off") {
-                val from = settings.roleField
-                if (settings.roleFields.isNotEmpty()) {
-                    var open by remember { mutableStateOf(false) }
-                    ChoiceField("Roles come from", from?.name ?: "Choose a field") { open = true }
-                    ChoiceDrawer(open, "Roles come from", settings.roleFields, from, { it.name },
-                        { d -> open = false; setView(view.copy(roleField = d.id)) }, { open = false })
-                }
-                if (!settings.hasRolesField) TextButton(onClick = {
-                    val id = chorus.newId()
-                    scope.launch {
-                        try {
-                            chorus.create("field.define", id, JSONObject().put("name", "Roles").put("type", "multi_select").put("options", JSONObject().put("choices", JSONArray())))
-                            chorus.create("pref.set", null, MemberListPrefs.viewPayload(view.copy(roleField = id)))
-                        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                        catch (e: Exception) { onError("Could not set up roles. Try again.") }
-                    }
-                }) { Text("Set up a Roles field") }
+            FormDivider()
+            ToggleRow("Bio line", view.bio) { setView(view.copy(bio = it)) }
+            FormDivider()
+            ToggleRow("Banners", view.banners) { setView(view.copy(banners = it)) }
+        }
+        if (view.pills != "off" && !settings.hasRolesField) DrawerButton("Set up Roles", {
+            val id = chorus.newId()
+            scope.launch {
+                try {
+                    chorus.create("field.define", id, JSONObject().put("name", "Roles").put("type", "multi_select").put("options", JSONObject().put("choices", JSONArray())))
+                    chorus.create("pref.set", null, MemberListPrefs.viewPayload(view.copy(roleField = id)))
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (e: Exception) { onError("Could not set up roles. Try again.") }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("A line of their bio", color = p.ink, modifier = Modifier.weight(1f))
-                ChorusSwitch(view.bio, { setView(view.copy(bio = it)) })
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Their banner behind the row", color = p.ink, modifier = Modifier.weight(1f))
-                ChorusSwitch(view.banners, { setView(view.copy(banners = it)) })
-            }
-            HorizontalDivider(color = p.line)
-            Text("Folders", color = p.ink3, style = MaterialTheme.typography.labelMedium)
-            settings.folders.forEachIndexed { i, f ->
-                var name by remember(f.id, f.name) { mutableStateOf(f.name) }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    ChorusField(name, { name = it }, singleLine = true, modifier = Modifier.weight(1f), label = { Text("Folder") },
-                        supportingText = { Text("${model.members.count { !it.archived && settings.folderOf[it.id] == f.id }} members") })
-                    if (name.trim() != f.name && name.isNotBlank()) TextButton(onClick = { setFolders(MemberListPrefs.renameFolder(settings.folders, f.id, name)) }) { Text("Rename") }
-                    TextButton(enabled = i > 0, onClick = { setFolders(MemberListPrefs.moveFolder(settings.folders, f.id, -1)) }) { Text("↑") }
-                    TextButton(enabled = i < settings.folders.size - 1, onClick = { setFolders(MemberListPrefs.moveFolder(settings.folders, f.id, 1)) }) { Text("↓") }
-                    IconButton(onClick = { deleting = f }) { ChorusIcon(AppIcon.Close, "Delete ${f.name}") }
-                }
-            }
-            OutlinedButton(onClick = onNewFolder) { Text("New folder") }
+        }, ButtonKind.Neutral)
+        Column {
+            if (!view.flat) MenuRow("Folders", R.drawable.ic_folder, subtitle = "${settings.folders.size}") { folders = true }
+            onSelect?.let { MenuRow("Select several", R.drawable.ic_check, onClick = it) }
+            onReorder?.let { MenuRow("Reorder", R.drawable.ic_grip, onClick = it) }
+            MenuRow("Import from PluralKit", R.drawable.ic_forward, onClick = onImport)
         }
     }
+    ChoiceDrawer(choosingPills, "Roles", pillLabels, pillLabels.first { it.first == view.pills }, { it.second },
+        { choosingPills = false; setView(view.copy(pills = it.first)) }, { choosingPills = false })
+    ChoiceDrawer(choosingField, "Roles come from", settings.roleFields, settings.roleField, { it.name },
+        { d -> choosingField = false; setView(view.copy(roleField = d.id)) }, { choosingField = false })
+    if (folders) FoldersDrawer(model, onNewFolder = { folders = false; onNewFolder() },
+        onSave = { send("pref.set", null, MemberListPrefs.foldersPayload(it)) }) { folders = false }
+}
+
+/** The folders the list is sorted into: rename, move up or down, remove (the people stay). */
+@Composable
+private fun FoldersDrawer(model: Model, onNewFolder: () -> Unit, onSave: (List<garden.vayne.chorus.data.MemberFolder>) -> Unit, onDismiss: () -> Unit) {
+    val p = LocalChorusPalette.current
+    val settings = model.memberList
+    var deleting by remember { mutableStateOf<garden.vayne.chorus.data.MemberFolder?>(null) }
+    Drawer(onDismiss, "Folders", footer = { DrawerButton("Done", onDismiss) }) {
+        if (settings.folders.isNotEmpty()) FormCard {
+            settings.folders.forEachIndexed { i, f ->
+                if (i > 0) FormDivider()
+                var name by remember(f.id, f.name) { mutableStateOf(f.name) }
+                Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 2.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ChorusField(name, { name = it }, singleLine = true, modifier = Modifier.weight(1f))
+                    if (name.trim() != f.name && name.isNotBlank()) BarIcon(R.drawable.ic_check, "Rename ${f.name}", p.accent, 18.dp) {
+                        onSave(MemberListPrefs.renameFolder(settings.folders, f.id, name)) }
+                    else Text("${model.members.count { !it.archived && settings.folderOf[it.id] == f.id }}", color = p.ink3, fontSize = 13.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp))
+                    if (i > 0) Box(Modifier.rotate(180f)) { BarIcon(R.drawable.ic_down, "Move ${f.name} up", p.ink2, 18.dp) {
+                        onSave(MemberListPrefs.moveFolder(settings.folders, f.id, -1)) } }
+                    if (i < settings.folders.size - 1) BarIcon(R.drawable.ic_down, "Move ${f.name} down", p.ink2, 18.dp) {
+                        onSave(MemberListPrefs.moveFolder(settings.folders, f.id, 1)) }
+                    BarIcon(R.drawable.ic_close, "Delete ${f.name}", p.ink3, 18.dp) { deleting = f }
+                }
+            }
+        }
+        DashedAddRow("New folder", onNewFolder)
+    }
     deleting?.let { f ->
-        ConfirmDrawer("Delete “${f.name}”?", "The people in it stay; they just move out of the folder.", "Delete folder",
-            { setFolders(MemberListPrefs.removeFolder(settings.folders, f.id)); deleting = null }, { deleting = null },
+        ConfirmDrawer("Delete “${f.name}”?", "The people in it stay.", "Delete folder",
+            { onSave(MemberListPrefs.removeFolder(settings.folders, f.id)); deleting = null }, { deleting = null },
             danger = true, cancel = "Keep", icon = R.drawable.ic_folder)
     }
 }
@@ -141,7 +157,6 @@ internal fun RolesDialog(chorus: Chorus, model: Model, member: Member, onDismiss
             }
         })
         else {
-            SectionLabel(if (field.type == "select") "Pick one" else "Tap to add or remove")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (c in (field.choices + chosen).distinct()) RolePill(c, on = c in chosen) { setValue(MemberListPrefs.toggled(field, chosen, c)) }
             }
@@ -151,58 +166,5 @@ internal fun RolesDialog(chorus: Chorus, model: Model, member: Member, onDismiss
             }
         }
         error?.let { FormNote(it, warning = true) }
-    }
-}
-
-/** Subsystems and groups: add, nest and remove (web's "Groups…"). */
-@Composable
-@OptIn(ExperimentalMaterial3Api::class)
-internal fun GroupsSheet(chorus: Chorus, model: Model, onDismiss: () -> Unit) {
-    val p = LocalChorusPalette.current
-    val scope = rememberCoroutineScope()
-    var name by remember { mutableStateOf("") }
-    var subsystem by remember { mutableStateOf(true) }
-    var parent by remember { mutableStateOf<String?>(null) }
-    var removing by remember { mutableStateOf<garden.vayne.chorus.data.Group?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    fun send(block: suspend () -> Unit) = scope.launch {
-        try { block(); error = null }
-        catch (e: kotlinx.coroutines.CancellationException) { throw e }
-        catch (e: Exception) { error = "Could not save that. Try again." }
-    }
-    Drawer(onDismiss, "Subsystems & groups") {
-        if (model.groups.isEmpty()) EmptyState(R.drawable.ic_layers, "No groups yet")
-        else FormCard {
-            model.groups.forEachIndexed { i, g ->
-                if (i > 0) FormDivider()
-                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(model.groupPath(g), color = p.ink, fontSize = 15.sp)
-                        Text("${if (g.isSubsystem) "Subsystem" else "Group"} · ${model.membership[g.id]?.size ?: 0}", color = p.ink3, fontSize = 12.sp)
-                    }
-                    BarIcon(R.drawable.ic_close, "Remove ${g.name}", p.ink3, 18.dp) { removing = g }
-                }
-            }
-        }
-        SectionLabel("Add one")
-        ChorusField(name, { name = it }, singleLine = true, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
-        Segmented(listOf("Subsystem", "Group"), if (subsystem) 0 else 1) { subsystem = it == 0 }
-        val subsystems = model.groups.filter { it.isSubsystem }
-        if (subsystems.isNotEmpty()) {
-            var open by remember { mutableStateOf(false) }
-            ChoiceField("Where", parent?.let(model::group)?.let { "Inside ${model.groupPath(it)}" } ?: "Top level") { open = true }
-            ChoiceDrawer(open, "Where it goes", listOf<garden.vayne.chorus.data.Group?>(null) + subsystems, parent?.let(model::group),
-                { g -> if (g == null) "Top level" else "Inside ${model.groupPath(g)}" }, { g -> parent = g?.id; open = false }, { open = false })
-        }
-        DrawerButton("Add ${if (subsystem) "subsystem" else "group"}", {
-            val payload = JSONObject().put("name", name.trim()).put("kind", if (subsystem) "subsystem" else "group").apply { parent?.let { put("parent_id", it) } }
-            send { chorus.create("group.create", chorus.newId(), payload) }
-            name = ""
-        }, enabled = name.isNotBlank())
-        error?.let { FormNote(it, warning = true) }
-        removing?.let { g ->
-            ConfirmDrawer("Remove ${g.name}?", "Its members stay; they just leave the ${if (g.isSubsystem) "subsystem" else "group"}.", "Remove",
-                { send { chorus.create("group.delete", g.id, JSONObject()) }; removing = null }, { removing = null }, danger = true, cancel = "Keep")
-        }
     }
 }

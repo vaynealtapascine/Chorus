@@ -12,9 +12,10 @@ data class MemberFolder(val id: String, val name: String) {
     fun toJson(): JSONObject = JSONObject().put("id", id).put("name", name)
 }
 
-/** [pills] is `off`, `first` or `all`; [roleField] absent picks one named "Role(s)". */
-data class MembersView(val pills: String = "all", val roleField: String? = null, val bio: Boolean = true,
-    val banners: Boolean = true, val flat: Boolean = false) {
+/** [pills] is `off`, `first` or `all`; [roleField] absent picks one named "Role(s)". With nothing
+ *  saved the list starts as Figma F4.1 draws it: the first role, no bio, no banners, flat (D-139). */
+data class MembersView(val pills: String = "first", val roleField: String? = null, val bio: Boolean = false,
+    val banners: Boolean = false, val flat: Boolean = true) {
     fun toJson(): JSONObject = JSONObject().put("pills", pills).put("bio", bio).put("banners", banners).put("flat", flat)
         .apply { roleField?.let { put("role_field", it) } }
 }
@@ -59,8 +60,9 @@ object MemberListPrefs {
             return (pending ?: stamped)?.optJSONObject("fields")?.opt("value")
         }
         val v = value(VIEW) as? JSONObject
-        val base = MembersView()
-        val view = if (v == null) base else MembersView(
+        // a saved view's missing keys keep D-100's first defaults, so a saved view never changes (D-139)
+        val base = MembersView(pills = "all", bio = true, banners = true, flat = false)
+        val view = if (v == null) MembersView() else MembersView(
             pills = v.opt("pills").takeIf { it == "off" || it == "first" || it == "all" } as? String ?: base.pills,
             roleField = (v.opt("role_field") as? String)?.takeIf { it.isNotEmpty() },
             bio = v.opt("bio") as? Boolean ?: base.bio,

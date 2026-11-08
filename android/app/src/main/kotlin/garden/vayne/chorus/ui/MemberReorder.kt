@@ -1,5 +1,8 @@
 package garden.vayne.chorus.ui
 
+import garden.vayne.chorus.designsystem.R
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -94,11 +97,10 @@ internal fun MemberReorder(chorus: Chorus, model: Model, onClose: () -> Unit) {
             updateTarget()
         }
     }
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(enabled = !busy, onClick = onClose) { Text("Cancel") }
-            Text("Reorder members", color = p.ink, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            Button(enabled = !busy && dragging == null, onClick = {
+    Column(Modifier.fillMaxSize().background(p.bg)) {
+        SubpageBar("Reorder members", null, onClose) {
+            BarIcon(R.drawable.ic_check, if (busy) "Saving" else "Apply", if (busy || dragging != null) p.ink3 else p.accent) {
+                if (busy || dragging != null) return@BarIcon
                 busy = true; error = null
                 actions.launch {
                     try {
@@ -113,30 +115,22 @@ internal fun MemberReorder(chorus: Chorus, model: Model, onClose: () -> Unit) {
                     catch (e: Exception) { error = e.message ?: "Could not save order. Try again." }
                     finally { busy = false }
                 }
-            }) { Text(if (busy) "Saving…" else "Apply") }
+            }
         }
-        Text("Drag a handle to move a member. Changes stay here until Apply.", color = p.ink3,
-            style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         error?.let { Text(it, color = p.danger, modifier = Modifier.padding(16.dp)) }
-        LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp), state = list,
-            verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+        LazyColumn(Modifier.weight(1f), state = list, contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
             items(ids, key = { it }) { id ->
                 val member = latestModel.member(id)
                 if (member != null) {
                     val active = dragging == id
                     Row(Modifier.fillMaxWidth().animateItem(placementSpec = if (motion && !active) tween(180) else null)
                         .zIndex(if (active) 1f else 0f).graphicsLayer { translationY = if (active) dragY else 0f }
-                        .clip(RoundedCornerShape(14.dp)).background(if (active) p.surface3 else p.surface)
-                        .padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Avatar(member.glyph, member.color, 40.dp, avatarBlob = member.avatarBlob)
+                        .background(if (active) p.surface2 else p.bg)
+                        .padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Avatar(member.glyph, member.color, 40.dp, avatarBlob = member.avatarBlob, ring = false)
                         Column(Modifier.weight(1f).padding(start = 12.dp, top = 10.dp, bottom = 10.dp)) {
-                            Text(member.shownName, color = tonesOf(member.color).name, style = MaterialTheme.typography.titleMedium)
-                            Row {
-                                TextButton(enabled = !busy && dragging == null && ids.indexOf(id) > 0,
-                                    onClick = { move(id, ids.indexOf(id) - 1) }) { Text("Earlier") }
-                                TextButton(enabled = !busy && dragging == null && ids.indexOf(id) < ids.lastIndex,
-                                    onClick = { move(id, ids.indexOf(id) + 1) }) { Text("Later") }
-                            }
+                            Text(member.shownName, color = p.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            member.pronouns?.let { Text(it, color = p.ink3, fontSize = 13.sp) }
                         }
                         val ink = p.ink2
                         Canvas(Modifier.size(48.dp).semantics {
@@ -158,8 +152,8 @@ internal fun MemberReorder(chorus: Chorus, model: Model, onClose: () -> Unit) {
                                 change.consume(); fingerY += amount.y; updateTarget()
                             }
                         }) {
-                            for (y in listOf(.38f, .5f, .62f)) drawLine(ink, Offset(size.width * .3f, size.height * y),
-                                Offset(size.width * .7f, size.height * y), strokeWidth = 2.dp.toPx())
+                            for (x in listOf(.4f, .6f)) for (y in listOf(.36f, .5f, .64f))
+                                drawCircle(ink, 1.6.dp.toPx(), Offset(size.width * x, size.height * y))
                         }
                     }
                 }

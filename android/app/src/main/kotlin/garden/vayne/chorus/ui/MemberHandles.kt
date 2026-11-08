@@ -15,6 +15,7 @@ import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Handles
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.designsystem.LocalChorusPalette
+import garden.vayne.chorus.designsystem.R
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -50,8 +51,6 @@ internal fun MemberHandlesEditor(chorus: Chorus, model: Model, memberId: String,
         }
         if (problem == null) { save(claimed + h); claim = "" }
     }
-    HorizontalDivider(color = p.line)
-    Text("Handles", color = p.ink, style = MaterialTheme.typography.titleMedium)
     @Composable fun HandleRow(handle: String, note: String?, shown: Boolean, trailing: @Composable RowScope.() -> Unit = {}) {
         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -65,8 +64,8 @@ internal fun MemberHandlesEditor(chorus: Chorus, model: Model, memberId: String,
     }
     claimed.forEachIndexed { i, h ->
         HandleRow(h, null, i == 0) {
-            if (i > 0) TextButton(enabled = enabled, onClick = { save(listOf(h) + claimed.filter { it != h }) }) { Text("Show first") }
-            TextButton(enabled = enabled, onClick = { save(claimed.filter { it != h }) }) { Text("Remove") }
+            if (i > 0) BarIcon(R.drawable.ic_pin, "Show @$h first", p.ink2, 18.dp) { if (enabled) save(listOf(h) + claimed.filter { it != h }) }
+            BarIcon(R.drawable.ic_close, "Remove @$h", p.ink3, 18.dp) { if (enabled) save(claimed.filter { it != h }) }
         }
     }
     HandleRow(handles.default, if (model.isPerson) "your account" else "reserved for them", claimed.isEmpty())
@@ -75,11 +74,7 @@ internal fun MemberHandlesEditor(chorus: Chorus, model: Model, memberId: String,
             label = { Text("Claim a handle") }, prefix = { Text("@") }, isError = problem != null,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { add() }))
-        Button(enabled = enabled && claim.isNotBlank(), onClick = ::add) { Text("Claim") }
+        DrawerButton("Claim", ::add, ButtonKind.Neutral, enabled = enabled && claim.isNotBlank(), modifier = Modifier.width(88.dp))
     }
     problem?.let { Text(it, color = p.danger, style = MaterialTheme.typography.bodySmall) }
-    Text(if (model.isPerson) "A handle you claim is yours alone on this server; the first one is what friends see."
-        else "@${handles.default} is made from their display name, the subsystems they sit in (innermost first) and your system, and stays reserved for them. " +
-            "A claimed handle is theirs alone on this server; the first one is what friends see, so claiming one also keeps their subsystems out of sight.",
-        color = p.ink3, style = MaterialTheme.typography.bodySmall)
 }
