@@ -154,14 +154,11 @@ internal fun FriendPage(chorus: Chorus, model: Model, data: FriendsData, account
                 }
             }
             if (!account.isSystem) {
-                QuietNote("$name is one person, so there’s no fronting to show. You see their posts, journal and messages.", R.drawable.ic_user,
-                    Modifier.padding(horizontal = 16.dp))
                 between()
                 PersonTabs(chorus, model, accountId, name, self, onThread, onReplyPost)
                 return@Column
             }
             if (row.follows) AroundNowCard(name, row.view, now)
-            else if (row.waiting) QuietNote("Once they accept, you’ll see who’s around as they share it.", R.drawable.ic_clock, Modifier.padding(horizontal = 16.dp))
             row.view?.let { SharedHistory(it) }
             // the members they share with us (F7.2 faces; F7.5 rows, as a person sees a system)
             if (!shared.isNullOrEmpty()) {
@@ -171,11 +168,8 @@ internal fun FriendPage(chorus: Chorus, model: Model, data: FriendsData, account
                     horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     for (m in shared) MemberFace(m) { onMember(m.optString("id")) }
                 }
-            } else if (shared != null && row.follows) QuietNote("$name haven’t shared any member profiles with you yet.", R.drawable.ic_members,
-                Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            }
             between()
-            if (model.isPerson) QuietNote("$name choose what they share and when. You can make their notifications quieter, never louder.",
-                R.drawable.ic_shield, Modifier.padding(16.dp))
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -193,7 +187,7 @@ internal fun FriendPage(chorus: Chorus, model: Model, data: FriendsData, account
     }
     when (confirm) {
         "unfollow" -> ConfirmDrawer(if (row.waiting) "Cancel your request?" else "Unfollow $name?",
-            if (row.waiting) null else "You stop hearing their switches and seeing what they share with followers. They aren’t told.",
+            if (row.waiting) null else "They aren’t told.",
             if (row.waiting) "Cancel request" else "Unfollow", danger = true, onDismiss = { confirm = null }, onConfirm = {
                 confirm = null
                 act("Couldn’t unfollow.") { PeopleApi.unfollow(checkNotNull(chorus.device), row.following!!.id) }
@@ -204,7 +198,7 @@ internal fun FriendPage(chorus: Chorus, model: Model, data: FriendsData, account
                 act("Couldn’t remove them.") { chorus.create("follow.end", row.follower!!.id, JSONObject()) }
             })
     }
-    MenuDrawer(chats, { chats = false }, "Shared spaces", "Spaces you and $name are both in") {
+    MenuDrawer(chats, { chats = false }, "Shared spaces") {
         for (s in spaces) MenuRow(spaceName(s, model), R.drawable.ic_members, "${s.accounts.size} accounts") { chats = false; onOpenChat(s.id) }
     }
 }
@@ -363,7 +357,6 @@ private fun PersonTabs(chorus: Chorus, model: Model, accountId: String, name: St
                 for (i in 0 until fields.length()) fields.getJSONObject(i).let { f -> FriendField(f.optString("name")) { FriendValue(f.optString("type"), f.opt("value")) } }
             }
         }
-        Text("You see what $name chose to share with you.", color = p.ink3, fontSize = 12.sp)
     }
 }
 

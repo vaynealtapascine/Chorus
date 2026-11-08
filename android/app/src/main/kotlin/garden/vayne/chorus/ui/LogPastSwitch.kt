@@ -138,11 +138,6 @@ fun LogPastSwitch(chorus: Chorus, model: Model, initialFront: String, history: N
             BarIcon(R.drawable.ic_check, "Save to history", p.accent) { save() }
         }
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.accentSoft).padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Glyph(R.drawable.ic_history, p.accent, 18.dp)
-                Text("Logging the past doesn't change who's fronting now.", color = p.ink, fontSize = 13.sp, lineHeight = 18.sp)
-            }
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.surface)) {
                 PastRow(R.drawable.ic_target, "Front", frontName(named?.fronts?.get(frontId))) { if (configured) frontMenu = true }
                 val fronts = shownFronts(model, account)

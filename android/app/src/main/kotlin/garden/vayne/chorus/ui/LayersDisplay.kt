@@ -84,7 +84,7 @@ fun LayersDisplayScreen(chorus: Chorus, model: Model, frontId: String, onClose: 
     if (speakers && front != null) SpeakerPicker(chorus, model, frontId) { speakers = false }
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
-        SubpageBar("Layers & display", "${frontName(front)} · each front can be set up differently", onClose)
+        SubpageBar("Layers & display", frontName(front), onClose)
         Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp)) {
             error?.let { Text(it, color = p.danger) }
             SectionLabel("Preset", Modifier.padding(top = 0.dp))
@@ -126,8 +126,6 @@ fun LayersDisplayScreen(chorus: Chorus, model: Model, frontId: String, onClose: 
                     Text("Add a layer, e.g. Passive influence", color = p.accent, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 }
             }
-            Text("Names and order are shared by every front; renaming or reordering never rewrites history.", color = p.ink3,
-                fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp))
             SectionLabel("Reduce clutter")
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.surface)) {
                 ToggleRow("Hide empty layers", view.hideEmpty) { on -> setView { it.copy(hideEmpty = on) } }
@@ -144,7 +142,6 @@ fun LayersDisplayScreen(chorus: Chorus, model: Model, frontId: String, onClose: 
             }
             SectionLabel("Front states")
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("States like Blurry or Dissociated can be switched in like a member.", color = p.ink3, fontSize = 12.sp)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     model.states.forEach { st ->
                         Row(Modifier.clip(CircleShape).background(p.surface2).padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -240,7 +237,7 @@ private fun LayerEditor(chorus: Chorus, model: Model, layer: SceneLayer?, onClos
                     }
                 }
             }
-            ToggleRow("List separately", separate, "Shown as its own row instead of inside the nested layers") { separate = it }
+            ToggleRow("List separately", separate) { separate = it }
             error?.let { Text(it, color = p.danger) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(enabled = name.isNotBlank(), onClick = {
@@ -279,7 +276,6 @@ private fun SpeakerPicker(chorus: Chorus, model: Model, frontId: String, onClose
     ChorusSheet(onDismissRequest = onClose, containerColor = p.surface) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Suggested speakers in chat", color = p.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("Who in ${frontName(front)} the composer offers as speakers.", color = p.ink3, fontSize = 13.sp)
             ToggleRow("Default", sel == null, "Fronting and co-conscious") { on ->
                 actions.launch { runCatching { Front.define(chorus, frontId, purposePatch("authorship", if (on) null else layers.take(2).map { it.id }.toSet())) } }
             }

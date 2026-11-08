@@ -127,13 +127,13 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                 Text("Stage · #${channel.name}", color = p.ink, fontWeight = FontWeight.SemiBold)
                 TextButton(enabled = missingSelected.isEmpty(), onClick = { onCapture(true) }) { Text("Capture") }
             }
-            Text(if (selected.isEmpty()) "Tap messages to pick them. With nothing picked, all show."
-                else "${selected.size} picked · tap to add or remove.", color = p.ink2, fontSize = 13.sp,
+            if (selected.isNotEmpty()) Text("${selected.size} of ${messages.size} picked", color = p.ink2, fontSize = 13.sp,
                 modifier = Modifier.padding(horizontal = 16.dp))
             if (missingSelected.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Text("${missingSelected.size} picked ${if (missingSelected.size == 1) "message is" else "messages are"} not loaded. Load older messages or clear those picks.",
-                    color = p.warn, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                TextButton(enabled = !loadingOlder && hasOlder, onClick = onLoadOlder, modifier = Modifier.weight(1f)) {
+                    Text(if (loadingOlder) "Loading…" else "Load older (${missingSelected.size})", color = p.warn)
+                }
                 TextButton(onClick = { selected = selected.filterNot { it in missingSelected } }) { Text("Clear") }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
@@ -194,8 +194,6 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
                     }, label = { Text("Show $realName as (optional)") }, singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                 }
-                Text(if (onlyMembers.isEmpty()) "All authors shown" else "Only selected authors shown",
-                    color = p.ink2, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp))
                 LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(listOf(null to "All replies", 0 to "No replies", 1 to "Direct", 2 to "2 deep")) { (depth, label) ->
                         JournalChoice(label, replyDepth == depth) { replyDepth = depth }
@@ -249,11 +247,10 @@ internal fun ChatStage(chorus: Chorus, channel: ChatChannel, messages: List<Chat
             }
             if (error != null) Text(error.orEmpty(), color = p.danger, modifier = Modifier.padding(horizontal = 16.dp))
         }
-        if (messages.isEmpty()) Text("No messages to stage in this channel.", color = p.ink2,
-            modifier = Modifier.padding(16.dp))
+        if (messages.isEmpty()) EmptyState(R.drawable.ic_chat, "No messages")
         if (!capturing && hasOlder) TextButton(enabled = !loadingOlder, onClick = onLoadOlder,
             modifier = Modifier.padding(horizontal = 12.dp)) {
-            Text(if (loadingOlder) "Loading…" else "Load 100 older messages")
+            Text(if (loadingOlder) "Loading…" else "Load older")
         }
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             LazyColumn(Modifier.widthIn(max = 390.dp).fillMaxSize().padding(horizontal = 16.dp),

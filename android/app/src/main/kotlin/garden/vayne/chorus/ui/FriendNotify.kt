@@ -82,17 +82,15 @@ internal fun FriendNotifyPage(chorus: Chorus, model: Model, f: FollowInfo, cache
     var digestOpen by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
-        SubpageBar("Notifications from $name", "Only you see these settings", onBack) {
+        SubpageBar("Notifications from $name", null, onBack) {
             BarIcon(R.drawable.ic_check, "Done", p.accent, onClick = onBack)
         }
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-            QuietNote("$name decide the most you can hear. Here you can only make it quieter.", R.drawable.ic_shield,
-                Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp))
             error?.let { Text(it, color = p.danger, fontSize = 13.sp, modifier = Modifier.padding(16.dp)) }
             if (f.account.isSystem) {
                 SectionLabel("Switches", Modifier.padding(horizontal = 12.dp))
                 val on = Friends.enabled(prefs)
-                ToggleRow("Tell me when they switch", on, "As often and as exactly as $name allow") { save(Friends.withEnabled(prefs, it)) }
+                ToggleRow("Tell me when they switch", on, "As $name allow") { save(Friends.withEnabled(prefs, it)) }
                 if (members.isNotEmpty()) {
                     Text("About", color = p.ink3, fontSize = 13.sp, modifier = Modifier.padding(start = 16.dp, top = 6.dp, bottom = 6.dp))
                     val picked = Friends.subjects(prefs)
@@ -119,7 +117,6 @@ internal fun FriendNotifyPage(chorus: Chorus, model: Model, f: FollowInfo, cache
                     if (Friends.DELIVERIES[i] == "digest_daily" && delivery == "digest_daily") digestOpen = true
                     else save(Friends.withDelivery(prefs, Friends.DELIVERIES[i]))
                 }
-                if (delivery == "digest_daily") Text("Tap it again to change the time.", color = p.ink3, fontSize = 12.sp, modifier = Modifier.padding(start = 20.dp, top = 6.dp))
                 Spacer(Modifier.height(6.dp))
             }
             val quiet = Friends.quiet(prefs)
@@ -144,7 +141,7 @@ internal fun FriendNotifyPage(chorus: Chorus, model: Model, f: FollowInfo, cache
         var to by remember { mutableStateOf(quiet?.second ?: "08:00") }
         var hold by remember { mutableStateOf(Friends.quietHold(prefs)) }
         val ok = Friends.CLOCK.matches(from) && Friends.CLOCK.matches(to)
-        Drawer({ quietOpen = false }, "Quiet hours", "Your time. Their switches wait or are skipped.", footer = {
+        Drawer({ quietOpen = false }, "Quiet hours", footer = {
             DrawerButton("Save", { save(Friends.withQuiet(prefs, if (on) from to to else null, hold)); quietOpen = false }, enabled = !on || ok)
         }) {
             FormCard { ToggleRow("Quiet hours", on) { on = it } }
@@ -157,7 +154,7 @@ internal fun FriendNotifyPage(chorus: Chorus, model: Model, f: FollowInfo, cache
             }
         }
     }
-    MenuDrawer(muteOpen, { muteOpen = false }, "Mute $name", "Their switches wait until then; nothing is lost") {
+    MenuDrawer(muteOpen, { muteOpen = false }, "Mute $name") {
         val hour = 60 * 60 * 1000L
         for ((label, span) in listOf("Off" to 0L, "For an hour" to hour, "For 8 hours" to 8 * hour, "For a day" to 24 * hour, "For a week" to 7 * 24 * hour)) {
             MenuRow(label, selected = if (span == 0L) Friends.mutedUntil(prefs, now) == null else null) {

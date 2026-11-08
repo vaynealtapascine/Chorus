@@ -191,7 +191,7 @@ fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, addTo: Strin
     fun pickTime() { pickingTime = true }
 
     ChorusSheet(onDismissRequest = onClose, skipPartiallyExpanded = true, containerColor = p.surface) {
-        SheetHeader("Switch · $frontLabel", "Tap to place someone. Tap again to move them outward.", onClose, actions = {
+        SheetHeader("Switch · $frontLabel", null, onClose, actions = {
             BarIcon(R.drawable.ic_search, if (searching) "Close search" else "Search", p.ink2) { searching = !searching; if (!searching) query = "" }
         })
         Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 6.dp)) {
@@ -317,7 +317,7 @@ fun PlaceSheet(chorus: Chorus, model: Model, frontId: String, s: Subject, since:
                     verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("State", color = p.ink, fontSize = 15.sp)
-                        Text(status?.text ?: "Tired, nonverbal, busy, or your own words", color = p.ink3, fontSize = 13.sp)
+                        status?.text?.let { Text(it, color = p.ink3, fontSize = 13.sp) }
                     }
                     Glyph(R.drawable.ic_chevron_right, p.ink3, 18.dp)
                 }
@@ -331,7 +331,7 @@ fun PlaceSheet(chorus: Chorus, model: Model, frontId: String, s: Subject, since:
                     val layers = FrontScene.layers(model)
                     val following = named?.resolved?.get(f.id)?.state == "following"
                     ToggleRow(frontName(f), there != null, subtitle = there?.let { e -> layers.firstOrNull { it.id == e.level }?.name }
-                        ?: if (following) "Follows ${frontName(named?.fronts?.get(f.followSource))} · changing it stops following" else "Not here") { on ->
+                        ?: if (following) "Follows ${frontName(named?.fronts?.get(f.followSource))}" else "Not here") { on ->
                         act {
                             Front.placeOne(chorus, Placement(s.type, s.id, if (on) layers.firstOrNull()?.id ?: "front" else null, there != null),
                                 if (on) "${s.name} is in ${frontName(f)}" else "${s.name} left ${frontName(f)}", f.id)
@@ -426,7 +426,7 @@ fun MemberStateSheet(chorus: Chorus, model: Model, s: Subject, onClose: () -> Un
         catch (e: Exception) { error = e.message }
     }
     ChorusSheet(onDismissRequest = onClose, skipPartiallyExpanded = true, containerColor = p.surface) {
-        SheetHeader("Member state", "${s.name} · only your system sees this", onClose, lead = { Avatar(s.glyph, s.color, 40.dp, avatarBlob = s.avatarBlob, ring = false) })
+        SheetHeader("Member state", s.name, onClose, lead = { Avatar(s.glyph, s.color, 40.dp, avatarBlob = s.avatarBlob, ring = false) })
         FlowRow(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             (common + "Custom").forEach { name ->

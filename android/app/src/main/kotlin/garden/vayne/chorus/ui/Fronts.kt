@@ -27,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -126,12 +127,14 @@ fun <T> ReorderColumn(items: List<T>, key: (T) -> String, onMove: (List<T>) -> U
  * this screen writes sparse definitions and the display pref. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun FrontsScreen(chorus: Chorus, model: Model, onClose: () -> Unit) {
+fun FrontsScreen(chorus: Chorus, model: Model, startNaming: Boolean = false, onNamingStarted: () -> Unit = {}, onClose: () -> Unit) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<String?>(null) }
     var naming by remember { mutableStateOf(false) }
+    // the Fronting bar's "+" opens straight onto naming a new front (UI21)
+    LaunchedEffect(startNaming) { if (startNaming) { naming = true; onNamingStarted() } }
     var arranging by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     val account = chorus.device?.accountId.orEmpty()
@@ -160,7 +163,7 @@ fun FrontsScreen(chorus: Chorus, model: Model, onClose: () -> Unit) {
         if (named == null) confirming = name to template else write(name, template)
     }
     confirming?.let { (name, template) ->
-        ConfirmDrawer("Set up fronts?", "Adding “${name.trim()}” turns on separate fronts for this system. Body keeps its history and who's in it; this can't be turned off again, though a front can be removed.",
+        ConfirmDrawer("Set up fronts?", "Turns on separate fronts. Body keeps its history. This can't be undone.",
             "Add front", { write(name, template); confirming = null }, { confirming = null }, icon = R.drawable.ic_layers)
     }
     editing?.let { id -> all.firstOrNull { it.id == id }?.let { f ->
@@ -168,12 +171,10 @@ fun FrontsScreen(chorus: Chorus, model: Model, onClose: () -> Unit) {
     } }
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
-        SubpageBar("Fronts", "Separate places someone can be present", onClose) {
+        SubpageBar("Fronts", null, onClose) {
             BarIcon(if (arranging) R.drawable.ic_check else R.drawable.ic_pencil, if (arranging) "Done arranging" else "Arrange fronts", p.ink) { arranging = !arranging }
         }
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Each front has its own layers. Track who's in the body, who's posting in Chorus and who's in your inner world, without mixing them up.",
-                color = p.ink2, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp))
             error?.let { Text(it, color = p.danger) }
             ReorderColumn(live, { it.id }, { next -> saveDisplay(display.copy(order = next.map { it.id })) }, spacing = 10.dp) { f, handle ->
                 val i = live.indexOf(f)
@@ -187,10 +188,7 @@ fun FrontsScreen(chorus: Chorus, model: Model, onClose: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { naming = true }) {
                     Box(Modifier.size(36.dp).background(p.accentSoft, CircleShape), contentAlignment = Alignment.Center) { Glyph(R.drawable.ic_plus, p.accent, 20.dp) }
-                    Column {
-                        Text("New front", color = p.accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Start from a template or build your own", color = p.ink3, fontSize = 12.sp)
-                    }
+                    Text("New front", color = p.accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     // a template already in use isn't offered twice
@@ -315,8 +313,6 @@ private fun FrontEditor(chorus: Chorus, model: Model, front: NamedFront, others:
                 FilterChip(front.followSource == null, onClick = { define(JSONObject().put("follow_source", JSONObject.NULL)) }, label = { Text("Nothing") })
                 others.forEach { o -> FilterChip(front.followSource == o.id, onClick = { define(JSONObject().put("follow_source", o.id)) }, label = { Text(frontName(o)) }) }
             }
-            Text("A following front mirrors its source. Changing it by hand keeps your change until you choose Resume following.",
-                color = p.ink3, fontSize = 12.sp)
             if (model.namedFronts?.resolved?.get(front.id)?.state == "overridden")
                 TextButton(onClick = { act { Front.resume(chorus, front.id) } }) { Text("Resume following") }
             Text("Who counts for what", color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
@@ -331,7 +327,6 @@ private fun FrontEditor(chorus: Chorus, model: Model, front: NamedFront, others:
                             FilterChip(on, onClick = { val now = sel.orEmpty(); define(purposePatch(key, if (on) now - id else now + id)) }, label = { Text(layerName) })
                         }
                     }
-                    if (sel != null && sel.isEmpty()) Text("Nobody is selected.", color = p.ink3, fontSize = 12.sp)
                 }
             }
             error?.let { Text(it, color = p.danger) }

@@ -136,7 +136,9 @@ internal fun SharedMember.subject() = Subject("member", name, name, color ?: "#A
  */
 @Composable
 internal fun FriendsScreen(chorus: Chorus, model: Model, onOpenChat: (String) -> Unit, onReplyPost: (String) -> Unit,
-    onFocusedRoute: (Boolean) -> Unit = {}) {
+    onFocusedRoute: (Boolean) -> Unit = {},
+    /** Open at these pages (from a notification), then [onRouteConsumed]. */
+    openRoute: List<String>? = null, onRouteConsumed: () -> Unit = {}) {
     val p = LocalChorusPalette.current
     val scope = rememberCoroutineScope()
     var data by remember { mutableStateOf(FriendsData()) }
@@ -150,6 +152,7 @@ internal fun FriendsScreen(chorus: Chorus, model: Model, onOpenChat: (String) ->
     var stack by rememberSaveable { mutableStateOf(listOf<String>()) }
     fun push(route: String) { stack = stack + route }
     fun pop() { stack = stack.dropLast(1) }
+    LaunchedEffect(openRoute) { if (openRoute != null) { stack = openRoute; onRouteConsumed() } }
     LaunchedEffect(stack.isNotEmpty()) { onFocusedRoute(stack.isNotEmpty()) }
     BackHandler(stack.isNotEmpty()) { pop() }
 
@@ -206,7 +209,7 @@ internal fun FriendsScreen(chorus: Chorus, model: Model, onOpenChat: (String) ->
             } ?: LaunchedEffect(route) { pop() }
             "notify" -> data.follows.following.find { it.id == rest }?.let { f ->
                 FriendNotifyPage(chorus, model, f, members, onBack = { pop(); reload() })
-            } ?: LaunchedEffect(route) { pop() }
+            } ?: run { if (data.loaded) LaunchedEffect(route) { pop() } }
             "bucket" -> BucketPage(chorus, model, rest.ifEmpty { null }, data.followers, onBack = ::pop)
             "advanced" -> AdvancedSharingPage(chorus, model, onBack = ::pop)
             "member" -> FriendProfiles(chorus, model, rest.substringBefore(':'), data.row(rest.substringBefore(':'))?.account?.shownName.orEmpty(),
@@ -251,8 +254,8 @@ internal fun FriendsScreen(chorus: Chorus, model: Model, onOpenChat: (String) ->
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
             error?.let { item(key = "error") { Text(it, color = p.danger, fontSize = 13.sp, modifier = Modifier.padding(16.dp)) } }
             when (tabs[tab]) {
-                "Friends" -> systemFriends(rows, now, onOpen = { push("friend:$it") }, onMessage = ::message)
-                "Following" -> personFollowing(rows, now, onOpen = { push("friend:$it") }, onMessage = ::message)
+                "Friends" -> systemFriends(rows, now, onOpen = { push("friend:$it") }, onMessage = ::message, onFollow = { adding = true })
+                "Following" -> personFollowing(rows, now, onOpen = { push("friend:$it") }, onMessage = ::message, onFollow = { adding = true })
                 "Followers" -> personFollowers(model, rows, onOpen = { push("friend:$it") }, onBucket = { push("bucket:$it") })
                 "Requests" -> requestItems(model, data, ownName, onOpen = { push("friend:$it") },
                     onAccept = { f -> if (person) act("Couldn’t accept.") { chorus.create("follow.accept", f.id, JSONObject()) } else accepting = f },
@@ -267,7 +270,7 @@ internal fun FriendsScreen(chorus: Chorus, model: Model, onOpenChat: (String) ->
         }
     }
 
-    if (adding) FollowDrawer(person, onDismiss = { adding = false }) { handle ->
+    if (adding) FollowDrawer(onDismiss = { adding = false }) { handle ->
         act("Couldn’t send the request.") { PeopleApi.request(checkNotNull(chorus.device) { "Not signed in." }, handle) }
         adding = false
     }
@@ -291,9 +294,10 @@ internal suspend fun acceptFollow(chorus: Chorus, model: Model, f: FollowInfo, p
 }
 
 /** F7.1: around right now first, then everyone else. */
-private fun LazyListScope.systemFriends(rows: List<FriendRow>, now: Long, onOpen: (String) -> Unit, onMessage: (String) -> Unit) {
+private fun LazyListScope.systemFriends(rows: List<FriendRow>, now: Long, onOpen: (String) -> Unit, onMessage: (String) -> Unit,
+    onFollow: () -> Unit) {
     val (around, rest) = rows.partition { Friends.around(it, now) }
-    if (rows.isEmpty()) item(key = "empty") { EmptyFriends() }
+    if (rows.isEmpty()) item(key = "empty") { EmptyFriends(onFollow) }
     if (around.isNotEmpty()) {
         item(key = "around") { SectionLabel("Around right now", Modifier.padding(horizontal = 12.dp)) {
             Text("as each friend shares it", color = LocalChorusPalette.current.ink3, fontSize = 12.sp) } }
@@ -303,16 +307,13 @@ private fun LazyListScope.systemFriends(rows: List<FriendRow>, now: Long, onOpen
         item(key = "rest") { SectionLabel("Not sharing who’s around", Modifier.padding(horizontal = 12.dp)) }
         for (r in rest) item(key = "r:${r.id}") { FriendListRow(r, now, false, onOpen, onMessage) }
     }
-    if (rows.isNotEmpty()) item(key = "note") {
-        QuietNote("Times are as each friend shares them. Some round to the quarter hour or show only “this morning”.",
-            R.drawable.ic_clock, Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
-    }
 }
 
 /** F7.4 Following: systems, then people. */
-private fun LazyListScope.personFollowing(rows: List<FriendRow>, now: Long, onOpen: (String) -> Unit, onMessage: (String) -> Unit) {
+private fun LazyListScope.personFollowing(rows: List<FriendRow>, now: Long, onOpen: (String) -> Unit, onMessage: (String) -> Unit,
+    onFollow: () -> Unit) {
     val followed = rows.filter { it.following != null }
-    if (followed.isEmpty()) item(key = "empty") { EmptyFriends() }
+    if (followed.isEmpty()) item(key = "empty") { EmptyFriends(onFollow) }
     val (systems, people) = followed.partition { it.account.isSystem }
     for ((title, group) in listOf("Systems" to systems, "People" to people)) {
         if (group.isEmpty()) continue
@@ -326,8 +327,7 @@ private fun LazyListScope.personFollowing(rows: List<FriendRow>, now: Long, onOp
 private fun LazyListScope.personFollowers(model: Model, rows: List<FriendRow>, onOpen: (String) -> Unit, onBucket: (String) -> Unit) {
     val followers = rows.filter { it.follower?.status == "active" }
     if (followers.isEmpty()) item(key = "empty") {
-        Text("Nobody follows you yet. Share your handle so friends can ask.", color = LocalChorusPalette.current.ink3,
-            fontSize = 14.sp, modifier = Modifier.padding(24.dp))
+        EmptyState(R.drawable.ic_friends, "No followers yet")
     }
     for (r in followers) item(key = "f:${r.id}") {
         val p = LocalChorusPalette.current
@@ -354,13 +354,7 @@ private fun LazyListScope.personFollowers(model: Model, rows: List<FriendRow>, o
 }
 
 @Composable
-private fun EmptyFriends() {
-    val p = LocalChorusPalette.current
-    Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("No friends here yet", color = p.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        Text("Follow someone by their handle with the button at the top. They choose what you see.", color = p.ink3, fontSize = 14.sp, lineHeight = 19.sp)
-    }
-}
+private fun EmptyFriends(onFollow: () -> Unit) = EmptyState(R.drawable.ic_friends, "No friends yet", action = "Follow", onAction = onFollow)
 
 /** One friend on the list (F7.1, F7.4): who's here and since when, or what they did last. */
 @Composable
@@ -427,7 +421,7 @@ private fun LazyListScope.requestItems(model: Model, data: FriendsData, ownName:
     val hearing = data.postAlerts.filter { it.optString("status") == "active" }
     val ours = data.follows.following.filter { it.status == "requested" }
     if (data.requests.isEmpty() && asked.isEmpty() && ours.isEmpty() && hearing.isEmpty()) item(key = "none") {
-        Text("No requests right now.", color = LocalChorusPalette.current.ink3, fontSize = 14.sp, lineHeight = 19.sp, modifier = Modifier.padding(24.dp))
+        EmptyState(R.drawable.ic_user_plus, "No requests")
     }
     if (data.requests.isNotEmpty()) {
         item(key = "h:in") { SectionLabel("Want to follow $ownName", Modifier.padding(horizontal = 12.dp)) }
@@ -505,15 +499,13 @@ internal fun SmallButton(text: String, primary: Boolean = false, icon: Int? = nu
 
 /** Follow someone by their handle. */
 @Composable
-private fun FollowDrawer(person: Boolean, onDismiss: () -> Unit, onFollow: (String) -> Unit) {
+private fun FollowDrawer(onDismiss: () -> Unit, onFollow: (String) -> Unit) {
     var handle by rememberSaveable { mutableStateOf("") }
-    Drawer(onDismiss, "Follow someone", "They’ll get a request and choose what you see", footer = {
+    Drawer(onDismiss, "Follow someone", footer = {
         DrawerButton("Send request", { onFollow(handle.trim()) }, enabled = handle.isNotBlank())
     }) {
         ChorusField(handle, { handle = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Their handle") },
             placeholder = { Text("@handle") })
-        FormNote(if (person) "Once they accept, you see what they share with followers." else
-            "Once they accept, you see what they share with followers. Following them doesn’t share anything of yours.", R.drawable.ic_shield)
     }
 }
 
@@ -531,7 +523,7 @@ internal fun AcceptDrawer(model: Model, f: FollowInfo, onDismiss: () -> Unit, on
     // a custom bucket starts with no preset picked, so accepting keeps it in charge
     var preset by remember(bucket) { mutableStateOf<String?>(inherited) }
     var choosingBucket by remember { mutableStateOf(false) }
-    Drawer(onDismiss, "Let ${f.account.shownName} follow you?", "Choose how much they hear. You can change it any time.", footer = {
+    Drawer(onDismiss, "Let ${f.account.shownName} follow you?", "Choose how much they hear.", footer = {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             DrawerButton("Decline", onDecline, ButtonKind.Neutral, modifier = Modifier.weight(.4f))
             DrawerButton(preset?.let { "Accept as ${Friends.presetName(it)}" } ?: "Accept",
@@ -562,13 +554,8 @@ internal fun AcceptDrawer(model: Model, f: FollowInfo, onDismiss: () -> Unit, on
             }
             Glyph(R.drawable.ic_chevron_down, p.ink3, 18.dp)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 4.dp)) {
-            Glyph(R.drawable.ic_clock, p.accent, 16.dp, modifier = Modifier.padding(top = 1.dp))
-            Text("A delay hides when you switched as it happens. Rounding hides the exact time afterwards. Use both for real privacy.",
-                color = p.ink2, fontSize = 13.sp, lineHeight = 18.sp)
-        }
     }
-    MenuDrawer(choosingBucket, { choosingBucket = false }, "Bucket", "Friends in a bucket hear the same things") {
+    MenuDrawer(choosingBucket, { choosingBucket = false }, "Bucket") {
         MenuRow("No bucket", subtitle = "Everyone else · ${Friends.presetName(Friends.everyoneElse(model.accountPrefs.followCeiling))}",
             selected = bucket == null, leading = { BucketTile(null, null, 36.dp) }) { bucket = null; choosingBucket = false }
         for (option in model.privacyBuckets) MenuRow(option.name, subtitle = Friends.presetName(FollowPresets.choiceOf(option.ceiling)),

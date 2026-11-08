@@ -246,6 +246,10 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var chatSpace by rememberSaveable { mutableStateOf<String?>(null) }
     var chatChannel by rememberSaveable { mutableStateOf<String?>(null) }
     var chatSearchHit by remember { mutableStateOf<SearchDocument?>(null) }
+    // a Friends page a notification opens (UI21): its route stack
+    var friendsRoute by remember { mutableStateOf<List<String>?>(null) }
+    // the Fronting bar's "+" opens Fronts on the new-front drawer
+    var frontsNaming by remember { mutableStateOf(false) }
     // a link to a message (D-109): the chat opens at it
     var chatMessage by remember { mutableStateOf<String?>(null) }
     var chatStageCapture by remember { mutableStateOf(false) }
@@ -432,21 +436,21 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     })
                 else if (insightsOpen) InsightsScreen(chorus, model) { insightsOpen = false }
                 else if (layersFront != null && !model.isPerson) LayersDisplayScreen(chorus, model, layersFront!!) { layersFront = null }
-                else if (frontsOpen && !model.isPerson) FrontsScreen(chorus, model) { frontsOpen = false }
+                else if (frontsOpen && !model.isPerson) FrontsScreen(chorus, model, frontsNaming, { frontsNaming = false }) { frontsOpen = false }
                 else if (settingsOpen) SettingsScreen(chorus, model)
                 else androidx.compose.animation.Crossfade(targetState = activeTab,
                     animationSpec = androidx.compose.animation.core.tween(if (motion) 120 else 0), label = "Main destination") { shownTab ->
                 destinationState.SaveableStateProvider(shownTab.name) {
                 when (shownTab) {
                     Tab.Home -> Home(chorus, model, onFronts = { frontsOpen = true }, onHistory = { historyFront = it; tab = Tab.History },
-                        onLayers = { layersFront = it })
+                        onLayers = { layersFront = it }, onNewFront = { frontsNaming = true; frontsOpen = true })
                     Tab.Notifications -> Notifications(chorus, model, InboxRoutes(
                         onPost = { id -> journalReplyPost = null; journalOpenPost = id; tab = Tab.Journal },
                         onChat = { channel, message ->
                             chatSpace = model.channels.find { it.id == channel }?.spaceId; chatChannel = channel
                             chatMessage = message; chatSearchHit = null; tab = Tab.Chat
                         },
-                        onFriends = { tab = Tab.People },
+                        onFriends = { route -> friendsRoute = route; tab = Tab.People },
                         onHistory = { tab = if (person) Tab.Journal else Tab.History },
                         onSettings = { settingsOpen = true }))
                     Tab.Chat -> Chat(chorus, model, chatSpace, chatChannel, chatSearchHit,
@@ -470,7 +474,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     Tab.People -> FriendsScreen(chorus, model,
                         onOpenChat = { spaceId -> chatSpace = spaceId; chatChannel = null; chatSearchHit = null; tab = Tab.Chat },
                         onReplyPost = { postId -> journalReplyPost = postId; tab = Tab.Journal },
-                        onFocusedRoute = { friendsFocused = it })
+                        onFocusedRoute = { friendsFocused = it },
+                        openRoute = friendsRoute, onRouteConsumed = { friendsRoute = null })
                     Tab.Members -> Members(chorus, model, onJournal = { member, post ->
                         journalOpenProfile = member; journalOpenPost = post; tab = Tab.Journal
                     }, active = shownTab == activeTab, onFocusedRoute = { membersFocused = it })

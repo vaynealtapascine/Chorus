@@ -154,7 +154,8 @@ private fun rememberFrontNote(chorus: Chorus, model: Model, frontId: String): St
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (String) -> Unit = {}, onLayers: (String) -> Unit = {}) {
+fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (String) -> Unit = {}, onLayers: (String) -> Unit = {},
+    onNewFront: () -> Unit = onFronts) {
     val p = LocalChorusPalette.current
     val accountId = chorus.device?.accountId.orEmpty()
     val named = model.namedFronts
@@ -239,7 +240,7 @@ fun Home(chorus: Chorus, model: Model, onFronts: () -> Unit = {}, onHistory: (St
                             }
                         }
                         Box(Modifier.size(32.dp).clip(CircleShape).layerOutline(p.line, 16.dp, true, 1.dp)
-                            .clickable(onClickLabel = "Fronts", onClick = onFronts).semantics { contentDescription = "Add or manage fronts" },
+                            .clickable(onClickLabel = "New front", onClick = onNewFront).semantics { contentDescription = "Add a front" },
                             contentAlignment = Alignment.Center) { Glyph(R.drawable.ic_plus, p.ink3, 16.dp) }
                     }
                 }

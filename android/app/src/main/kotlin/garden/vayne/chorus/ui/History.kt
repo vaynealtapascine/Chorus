@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -162,7 +163,7 @@ fun History(chorus: Chorus, model: Model, initialFront: String? = null, onBack: 
                 Text(line.text, color = p.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                 Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(line.at)), color = p.ink3, fontSize = 13.sp)
                 row?.note?.let { Text(it, color = p.ink2, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp)) }
-                if (row == null) Text(if (configured) "This change came from the front ${frontName(named?.fronts?.get(front))} follows; edit it there."
+                if (row == null) Text(if (configured) "Comes from ${frontName(named?.fronts?.get(front))}"
                     else "This entry can't be edited here.", color = p.ink3, fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp))
                 else {
                     SheetAction("Edit time", R.drawable.ic_clock) { acting = null; editTime(row) }
@@ -211,7 +212,7 @@ fun History(chorus: Chorus, model: Model, initialFront: String? = null, onBack: 
                     else -> DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(dayStart))
                 }, color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
             }
-            if (loading) item { Text("Loading saved history…", color = p.ink2, modifier = Modifier.padding(vertical = 16.dp)) }
+            if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 16.dp), color = p.accent, trackColor = p.surface3) }
             else if (inRange.isEmpty()) item {
                 Text("No changes recorded ${if (zoom == Zoom.Day) "this day" else "in this time"}.", color = p.ink3, modifier = Modifier.padding(4.dp))
             } else item {
@@ -242,10 +243,7 @@ fun History(chorus: Chorus, model: Model, initialFront: String? = null, onBack: 
             item {
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { savedOpen = !savedOpen }.padding(horizontal = 4.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Saved entries", color = p.ink2, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Edit, undo or restore what was recorded. Past edits keep following active.", color = p.ink3, fontSize = 12.sp)
-                    }
+                    Text("Saved entries", color = p.ink2, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                     Glyph(R.drawable.ic_chevron_down, p.ink3, 18.dp)
                 }
             }
@@ -391,8 +389,7 @@ private fun ReviewCard(chorus: Chorus, model: Model, r: FrontReview, saved: List
         else chorus.create("front.retract", chorus.newId(), JSONObject().put("target_op_id", id))
     }
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.surface).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Keep an accurate history across your devices.", color = p.ink2, fontSize = 13.sp)
-        Text("Two devices switched within a minute.", color = p.ink, fontSize = 14.sp)
+        Text("Two devices switched within a minute", color = p.ink, fontSize = 14.sp)
         listOf(a, b).forEach { s ->
             val on = pick != null && pick == s?.id
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.surface2)

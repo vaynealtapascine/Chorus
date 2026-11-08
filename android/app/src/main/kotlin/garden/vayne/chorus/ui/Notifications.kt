@@ -33,7 +33,8 @@ import org.json.JSONObject
 
 /** Where a notification leads: a post, a chat message, Friends, front history or settings. */
 internal class InboxRoutes(val onPost: (String) -> Unit, val onChat: (String, String?) -> Unit,
-    val onFriends: () -> Unit, val onHistory: () -> Unit, val onSettings: () -> Unit)
+    /** Friends, opened at a page: its route stack (e.g. "friend:<account>", then "notify:<follow>"). */
+    val onFriends: (List<String>) -> Unit, val onHistory: () -> Unit, val onSettings: () -> Unit)
 
 /** The member whose read marks the screen shows: whoever is fronting (a person: their own member). */
 internal fun inboxReader(model: Model, chosen: String?): Member? =
@@ -62,7 +63,7 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
         loading = true
         try { Inbox.refresh(dev, chorus.model.value); error = null }
         catch (e: kotlinx.coroutines.CancellationException) { throw e }
-        catch (_: Exception) { error = "Couldn’t check for new notifications. Showing what this device has." }
+        catch (_: Exception) { error = "Offline · showing saved" }
         finally { loading = false }
     }
     var chosenReader by rememberSaveable { mutableStateOf<String?>(null) }
@@ -102,7 +103,7 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
             item.channelId != null -> routes.onChat(item.channelId, item.messageId)
             item.kind == "own_switch" -> routes.onHistory()
             item.kind == "export_ready" -> routes.onSettings()
-            item.accountId != null -> routes.onFriends()
+            item.accountId != null -> routes.onFriends(listOf("friend:${item.accountId}"))
         }
     }
 
@@ -133,8 +134,7 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
             error?.let { item(key = "error") { Text(it, color = p.ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(16.dp)) } }
             notice?.let { item(key = "notice") { Text(it, color = p.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(16.dp)) } }
             if (shown.isEmpty() && !loading) item(key = "empty") {
-                Text(if (chip == "all") "Nothing waiting. Mentions, replies and friends’ news land here." else "Nothing here yet.",
-                    color = p.ink3, modifier = Modifier.padding(24.dp))
+                EmptyState(R.drawable.ic_bell, if (chip == "all") "All caught up" else "Nothing yet")
             }
             var last: String? = null
             for (item in shown) {
@@ -174,7 +174,6 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
         if (follow != null) LaunchedEffect(friend) {
             follow.value = runCatching { PeopleApi.list(checkNotNull(chorus.device)).following.find { it.account.id == friend && it.status == "active" } }.getOrNull()
         }
-        val name = item.actor ?: "them"
         MenuDrawer(true, { held = null }, item.title, listOfNotNull(categoryLabel(item), compactAgo(item.at)).joinToString(" · ")) {
             if (!item.needsYou) {
                 val isRead = read.read(item)
@@ -193,7 +192,9 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
                         PeopleApi.setPrefs(checkNotNull(chorus.device), f.id, JSONObject(f.prefs.toString()).put("mute_until", until))
                     }
                 }
-                MenuRow("Notifications from ${f.account.shownName}", R.drawable.ic_bell, "Who, which layers, how often") { held = null; routes.onFriends() }
+                MenuRow("Notifications from ${f.account.shownName}", R.drawable.ic_bell) {
+                    held = null; routes.onFriends(listOf("friend:${f.account.id}", "notify:${f.id}"))
+                }
             }
             item.shows?.let { key ->
                 val label = Inbox.SHOWS.first { it.first == key }.second
@@ -202,13 +203,11 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
                     scope.launch { runCatching { chorus.create("pref.set", null, Inbox.showsPayload(shows, key, false)) } }
                 }
             }
-            if (friend == null && item.accountId == null && item.kind != "review") Text("From $name", color = p.ink3,
-                style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp))
         }
     }
 
     // F11.4: each member keeps their own unread marks; they never leave the account
-    MenuDrawer(readAs, { readAs = false }, "Read as", "Each member keeps their own unread marks. Marks never leave your system.") {
+    MenuDrawer(readAs, { readAs = false }, "Read as") {
         for (m in model.active.filter { it.createdByAccountId == null || it.createdByAccountId == account }) {
             val n = Inbox.unread(items, model.accountPrefs.inboxRead[m.id] ?: InboxRead(), shows)
             MenuRow(m.shownName, subtitle = if (n > 0) "$n unread" else "caught up", selected = m.id == reader?.id,
@@ -217,7 +216,10 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
     }
 
     // F11.5's side panel as a drawer: what shows here; devices still follow notification settings
-    MenuDrawer(settings, { settings = false }, "What shows here", "Everything here also reaches your devices as set in Notification settings.") {
+    MenuDrawer(settings, { settings = false }, "What shows here") {
+        // how this phone delivers them lives in settings (F7.13)
+        MenuRow("This device", R.drawable.ic_monitor) { settings = false; routes.onSettings() }
+        MenuDivider()
         for ((key, label) in Inbox.SHOWS.filter { !model.isPerson || it.first != "own_switches" }) {
             Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(label, color = p.ink, modifier = Modifier.weight(1f))

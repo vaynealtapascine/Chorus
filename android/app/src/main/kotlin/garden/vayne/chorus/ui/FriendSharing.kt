@@ -51,10 +51,6 @@ private val DETAIL_NOTES = mapOf("delay" to "Hides when you switched", "time" to
 /** F7.8 Sharing: buckets with who's in them and how much they hear, then everyone else. */
 internal fun LazyListScope.sharingItems(model: Model, followers: List<FollowInfo>, onBucket: (String) -> Unit, onNewBucket: () -> Unit,
     onAdvanced: () -> Unit, chorus: Chorus) {
-    item(key = "note") {
-        QuietNote("Friends in the same bucket hear the same things. A friend in two buckets gets the more open one.", R.drawable.ic_shield,
-            Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp))
-    }
     item(key = "h:buckets") { SectionLabel("Buckets", Modifier.padding(horizontal = 12.dp)) {
         Text("who · how much", color = LocalChorusPalette.current.ink3, fontSize = 12.sp) } }
     for (b in model.privacyBuckets) item(key = "b:${b.id}") { BucketRow(model, b, followers.map { it.account }) { onBucket(b.id) } }
@@ -116,7 +112,7 @@ private fun StartInRow(chorus: Chorus, model: Model) {
         open = false
         scope.launch { runCatching { chorus.create("pref.set", null, AccountPrefs.payload(Friends.START_BUCKET, id ?: "")) } }
     }
-    MenuDrawer(open, { open = false }, "New friends start in", "Where accepting a request starts; you can still pick another") {
+    MenuDrawer(open, { open = false }, "New friends start in") {
         MenuRow("No bucket", subtitle = "Everyone else · $fallback", selected = start == null, leading = { BucketTile(null, null, 36.dp) }) { choose(null) }
         for (b in model.privacyBuckets) MenuRow(b.name, subtitle = Friends.presetName(FollowPresets.choiceOf(b.ceiling)), selected = start?.id == b.id,
             leading = { BucketTile(b.icon, b.color, 36.dp) }) { choose(b.id) }
@@ -189,7 +185,7 @@ internal fun FriendSharingPage(chorus: Chorus, model: Model, f: FollowInfo, onBa
                     Icon(painterResource(R.drawable.ic_plus), null, Modifier.size(14.dp), tint = p.ink2)
                     Text("Add", color = p.ink2, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 }
-                if (model.privacyBuckets.isEmpty()) Text("No buckets yet. Make one under Sharing.", color = p.ink3, fontSize = 13.sp)
+                if (model.privacyBuckets.isEmpty()) EmptyState(R.drawable.ic_shield, "No buckets yet")
             }
             if (!model.isPerson) {
                 SectionLabel("Also share", Modifier.padding(horizontal = 12.dp))
@@ -211,7 +207,7 @@ internal fun FriendSharingPage(chorus: Chorus, model: Model, f: FollowInfo, onBa
                     .clickable(role = Role.Button) { removing = true }.padding(horizontal = 12.dp, vertical = 8.dp))
         }
     }
-    MenuDrawer(adding, { adding = false }, "Add to a bucket", "They hear the most open of their buckets") {
+    MenuDrawer(adding, { adding = false }, "Add to a bucket", "Most open bucket wins") {
         for (b in model.privacyBuckets.filter { it !in theirs }) MenuRow(b.name, subtitle = if (model.isPerson) null else Friends.presetName(FollowPresets.choiceOf(b.ceiling)),
             leading = { BucketTile(b.icon, b.color, 36.dp) }) { adding = false; bucketOp("bucket.assign", b.id) }
     }
@@ -221,7 +217,7 @@ internal fun FriendSharingPage(chorus: Chorus, model: Model, f: FollowInfo, onBa
             MenuRow("Take $name out", R.drawable.ic_close, danger = true) { bucketMenu = null; bucketOp("bucket.unassign", b.id) }
         }
     }
-    if (hears) Drawer({ hears = false }, "Who $name hear about", "Each member chooses who hears when they front") {
+    if (hears) Drawer({ hears = false }, "Who $name hear about") {
         val bucketIds = theirs.map { it.id }.toSet()
         for (m in model.active.filter { !it.isSelf }) {
             var editing by remember(m.id) { mutableStateOf(false) }
@@ -234,7 +230,7 @@ internal fun FriendSharingPage(chorus: Chorus, model: Model, f: FollowInfo, onBa
             }
         }
     }
-    if (justFor) Drawer({ justFor = false }, "Just for $name", "Anything set here wins over their buckets") {
+    if (justFor) Drawer({ justFor = false }, "Just for $name") {
         // what they'd get without these: their (first) bucket over everyone else's
         val beneath = JSONObject(model.accountPrefs.followCeiling.toString()).apply {
             theirs.firstOrNull()?.ceiling?.let { c -> for (k in c.keys()) put(k, c.get(k)) }
@@ -323,7 +319,7 @@ internal fun CeilingDetails(model: Model, ceiling: JSONObject, inherited: String
             }
         }
     }
-    if (more) Drawer({ more = false }, "More details", "Each is inherited from $inherited until you change it") {
+    if (more) Drawer({ more = false }, "More details") {
         CeilingControls(ceiling, inherited.replaceFirstChar { it.uppercase() }, enabled, omit = MAIN_DETAILS.toSet() + SHARING_KEYS, onChange = onChange)
     }
     if (grants) GrantsDrawer(model, ceiling, enabled, { grants = false }, onChange)
@@ -358,7 +354,7 @@ private fun GrantsDrawer(model: Model, ceiling: JSONObject, enabled: Boolean, on
     val named = model.namedFronts
     val fronts = named?.fronts?.values?.filter { !it.deleted && it.id != named.bodyId }?.sortedBy { it.name.lowercase() }.orEmpty()
     val layers = named?.layers?.filter { !it.deleted && it.id !in setOf("front", "cocon", "present") }.orEmpty()
-    Drawer(onDismiss, "Extra fronts", "They see Body only until you allow more. Delays and privacy rules still apply.") {
+    Drawer(onDismiss, "Extra fronts") {
         if (fronts.isEmpty() && layers.isEmpty()) Text("You have no other fronts or custom layers.", color = p.ink3, fontSize = 14.sp, lineHeight = 19.sp)
         for ((key, rows) in listOf("fronts" to fronts.map { it.id to it.name }, "layers" to layers.map { it.id to it.name })) {
             val chosen = FollowPresets.granted(ceiling, key)
@@ -536,8 +532,6 @@ internal fun AdvancedSharingPage(chorus: Chorus, model: Model, onBack: () -> Uni
             }
             SectionLabel("Details", Modifier.padding(horizontal = 12.dp)) { Text("buckets inherit these", color = p.ink3, fontSize = 12.sp) }
             CeilingDetails(model, ceiling, "Chorus’s default", null, true, null) { save(it) }
-            QuietNote("Buckets and each friend’s own settings can share more or less than this. A friend in several buckets gets the most open one.",
-                R.drawable.ic_shield, Modifier.padding(16.dp))
         }
     }
 }
