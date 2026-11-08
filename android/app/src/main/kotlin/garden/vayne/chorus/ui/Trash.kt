@@ -66,12 +66,7 @@ internal fun TrashScreen(chorus: Chorus, model: Model, onBack: () -> Unit) {
         }
         error?.let { Text(it, color = p.danger, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) }
         if (rows.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Glyph(R.drawable.ic_delete, p.ink3, 32.dp)
-                    Text(if (all.isEmpty()) "Trash is empty" else "Nothing here", color = p.ink3, fontSize = 15.sp)
-                }
-            }
+            EmptyState(R.drawable.ic_delete, if (all.isEmpty()) "Trash is empty" else "Nothing here", Modifier.padding(top = 48.dp))
         } else {
         val (week, earlier) = rows.partition { Trash.thisWeek(it, now) }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
