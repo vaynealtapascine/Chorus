@@ -174,8 +174,8 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
                 }
                 error?.let { Text(it, color = p.danger, modifier = Modifier.padding(vertical = 4.dp)) }
                 if (shownCount == 0 && !(foldered && filter == ALL && settings.folders.isNotEmpty()))
-                    Text(if (query.isNotBlank()) "No members match. Try another name." else "No ${if (archived) "archived " else ""}members yet.",
-                        color = p.ink3, modifier = Modifier.padding(vertical = 16.dp))
+                    EmptyState(if (query.isNotBlank()) R.drawable.ic_search else if (archived) R.drawable.ic_archive else R.drawable.ic_members,
+                        if (query.isNotBlank()) "No matches" else "None yet")
             }
             for (s in sections) {
                 val folder = s.folder
@@ -194,7 +194,7 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
                 }
                 if (!open) continue
                 if (folder != null && s.members.isEmpty()) item(key = "empty:${folder.id}") {
-                    Text("Empty. Long-press someone to move them here.", color = p.ink3, style = MaterialTheme.typography.bodySmall,
+                    Text("Empty", color = p.ink3, style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.fillMaxWidth().border(1.dp, p.line, RoundedCornerShape(12.dp)).padding(12.dp))
                 }
                 items(s.members, key = { it.id }) { m ->
@@ -246,7 +246,6 @@ fun Members(chorus: Chorus, model: Model, onJournal: (String?, String?) -> Unit,
             })
         }) {
             ChorusField(name, { name = it }, label = { Text("Name") }, placeholder = { Text("e.g. Littles") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            FormNote("Folders only sort this list; they don't change groups, fronting or who sees what.", R.drawable.ic_folder)
         }
     }
 }

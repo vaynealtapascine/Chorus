@@ -77,7 +77,6 @@ internal fun ColourPicker(initial: String, onDismiss: () -> Unit, onApply: (Stri
     var hue by rememberSaveable { mutableStateOf(start[0]) }
     var saturation by rememberSaveable { mutableStateOf(start[1]) }
     var brightness by rememberSaveable { mutableStateOf(start[2]) }
-    var precision by rememberSaveable { mutableStateOf(false) }
     var hex by rememberSaveable { mutableStateOf(ColourValue.normalize(initial) ?: "#42A397") }
     val current = ColourValue.hex(hue, saturation, brightness)
     fun choose(value: String) {
@@ -95,29 +94,21 @@ internal fun ColourPicker(initial: String, onDismiss: () -> Unit, onApply: (Stri
                 Row(Modifier.fillMaxWidth().background(tones.tint, RoundedCornerShape(16.dp)).padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Avatar("A", current, 44.dp)
-                    Column {
-                        Text("Colour preview", color = tones.name, style = MaterialTheme.typography.titleMedium)
-                        Text(current, color = p.ink, style = MaterialTheme.typography.bodySmall)
-                    }
+                    Text(current, color = tones.name, style = MaterialTheme.typography.titleMedium)
                 }
-                Text("Palette", style = MaterialTheme.typography.labelLarge)
                 ColourSwatches(swatches, current, ::choose)
-                if (recent.isNotEmpty()) {
-                    Text("Recent", style = MaterialTheme.typography.labelLarge)
-                    ColourSwatches(recent, current, ::choose)
-                }
+                if (recent.isNotEmpty()) ColourSwatches(recent, current, ::choose)
                 Box(Modifier.fillMaxWidth().height(10.dp).background(Brush.horizontalGradient(listOf(Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red)), CircleShape))
                 ColourSlider("Hue", hue, 0f..360f, "${hue.roundToInt()} degrees") { hue = it; hex = ColourValue.hex(it, saturation, brightness) }
                 Box(Modifier.fillMaxWidth().height(8.dp).background(Brush.horizontalGradient(listOf(ColourValue.rgb(ColourValue.hex(hue, 0f, brightness)), ColourValue.rgb(ColourValue.hex(hue, 1f, brightness)))), CircleShape))
                 ColourSlider("Saturation", saturation, 0f..1f, "${(saturation * 100).roundToInt()} percent") { saturation = it; hex = ColourValue.hex(hue, it, brightness) }
                 ColourSlider("Brightness", brightness, 0f..1f, "${(brightness * 100).roundToInt()} percent") { brightness = it; hex = ColourValue.hex(hue, saturation, it) }
-                TextButton(modifier = Modifier.heightIn(min = 48.dp), onClick = { precision = !precision }) { Text(if (precision) "Hide hex value" else "Enter hex value") }
-                if (precision) ChorusField(hex, { raw ->
+                ChorusField(hex, { raw ->
                     hex = raw.take(7)
                     ColourValue.normalize(hex)?.let { choose(it) }
-                }, label = { Text("Hex colour") }, supportingText = { Text("Six digits, for example #42A397") }, singleLine = true,
+                }, label = { Text("Hex colour") }, singleLine = true,
                     isError = ColourValue.normalize(hex) == null, modifier = Modifier.fillMaxWidth())
-                Button(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !precision || ColourValue.normalize(hex) != null, onClick = {
+                Button(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = ColourValue.normalize(hex) != null, onClick = {
                     prefs.edit().putString("recent", (listOf(current) + recent).distinct().take(8).joinToString(",")).apply()
                     onApply(current)
                 }) { Text("Apply colour") }

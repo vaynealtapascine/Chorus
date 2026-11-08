@@ -35,7 +35,7 @@ internal fun JournalFormatToolbar(value: TextFieldValue, enabled: Boolean, onMap
         item { FormatButton(R.drawable.ic_format_list_ol, "Numbered text", ready) { change(EditorFormatting.mappedLines(value, "", numbered = true)) } }
         item { FormatButton(R.drawable.ic_link, "Insert link", ready) { linkSelection = value; url = ""; linkError = null; linkOpen = true } }
     }
-    if (linkOpen) Drawer({ linkOpen = false }, "Insert link", "On the selected words, or as its own text", footer = {
+    if (linkOpen) Drawer({ linkOpen = false }, "Insert link", footer = {
         DrawerButton("Insert link", {
             runCatching { EditorFormatting.mappedLink(linkSelection, url.trim()) }.onSuccess { change(it); linkOpen = false }
                 .onFailure { linkError = it.message }

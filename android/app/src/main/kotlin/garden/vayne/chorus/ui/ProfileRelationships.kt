@@ -79,7 +79,6 @@ internal fun ProfileRelationships(chorus: Chorus, model: Model, memberId: String
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (links.isEmpty()) Text("No relationships yet.", color = p.ink2)
         for (link in links) Row(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween) {
             Column(Modifier.weight(1f)) {
@@ -101,8 +100,7 @@ internal fun ProfileRelationships(chorus: Chorus, model: Model, memberId: String
         Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Add relationship", color = p.ink, fontWeight = FontWeight.SemiBold)
-            if (model.relationshipTypes.isEmpty()) Text("Create a relationship type first.", color = p.ink2)
-            else {
+            if (model.relationshipTypes.isNotEmpty()) {
                 Text("Type", color = p.ink2)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(model.relationshipTypes, key = { it.id }) { type ->
@@ -115,8 +113,7 @@ internal fun ProfileRelationships(chorus: Chorus, model: Model, memberId: String
                 }
                 if (external) ChorusField(label, { label = it.take(100) },
                     label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                else if (candidates.isEmpty()) Text("Add another member to link a relationship.", color = p.ink2)
-                else LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                else if (candidates.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(candidates, key = { it.first }) { member ->
                         JournalChoice(member.second, member.first == chosenTarget?.first) { targetId = member.first }
                     }

@@ -66,7 +66,6 @@ internal fun MembersCustomizeSheet(chorus: Chorus, model: Model, onError: (Strin
                         catch (e: Exception) { onError("Could not set up roles. Try again.") }
                     }
                 }) { Text("Set up a Roles field") }
-                Text("Long-press someone and choose Roles… to give them roles.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("A line of their bio", color = p.ink, modifier = Modifier.weight(1f))
@@ -78,7 +77,6 @@ internal fun MembersCustomizeSheet(chorus: Chorus, model: Model, onError: (Strin
             }
             HorizontalDivider(color = p.line)
             Text("Folders", color = p.ink3, style = MaterialTheme.typography.labelMedium)
-            Text("Folders only sort this list; they don't change groups, fronting or who sees what.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
             settings.folders.forEachIndexed { i, f ->
                 var name by remember(f.id, f.name) { mutableStateOf(f.name) }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -135,7 +133,13 @@ internal fun RolesDialog(chorus: Chorus, model: Model, member: Member, onDismiss
     Drawer(onDismiss, field?.name ?: "Roles", member.shownName,
         leading = { Avatar(member.glyph, member.color, 40.dp, avatarBlob = member.avatarBlob, ring = false) },
         footer = { DrawerButton("Done", onDismiss) }) {
-        if (field == null) FormNote("Set up a Roles field in Customize first.", R.drawable.ic_members)
+        if (field == null) DrawerButton("Set up Roles", {
+            send {
+                val id = chorus.newId()
+                chorus.create("field.define", id, JSONObject().put("name", "Roles").put("type", "multi_select").put("options", JSONObject().put("choices", JSONArray())))
+                chorus.create("pref.set", null, MemberListPrefs.viewPayload(settings.view.copy(roleField = id)))
+            }
+        })
         else {
             SectionLabel(if (field.type == "select") "Pick one" else "Tap to add or remove")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -166,8 +170,8 @@ internal fun GroupsSheet(chorus: Chorus, model: Model, onDismiss: () -> Unit) {
         catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Exception) { error = "Could not save that. Try again." }
     }
-    Drawer(onDismiss, "Subsystems & groups", "${model.groups.size} so far") {
-        if (model.groups.isEmpty()) FormNote("No subsystems or groups yet. A subsystem holds members of its own; a group just gathers members.", R.drawable.ic_layers)
+    Drawer(onDismiss, "Subsystems & groups") {
+        if (model.groups.isEmpty()) EmptyState(R.drawable.ic_layers, "No groups yet")
         else FormCard {
             model.groups.forEachIndexed { i, g ->
                 if (i > 0) FormDivider()

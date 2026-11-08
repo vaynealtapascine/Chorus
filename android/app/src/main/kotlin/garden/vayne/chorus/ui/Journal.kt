@@ -375,10 +375,6 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                 // the post being answered scrolls with the draft, so expanding a long one never hides it
                 replyTo?.let { id -> item(key = "replying") { ReplyContext(model.posts.find { it.id == id }, model) } }
                 item(key = "author") { JournalAuthorsPicker(selectedAuthors ?: listOfNotNull(author?.id), mine, !busy) { selectedAuthors = it } }
-                if (replyTo != null) item {
-                    Text("Check the audience before posting.", color = p.ink3, style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(start = 52.dp))
-                }
                 if (kind == "entry") item {
                     JournalTextField(title, { title = it }, "Title (optional)", MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold),
                         Modifier.padding(start = 52.dp), enabled = !busy)
@@ -403,7 +399,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                         val local = model.posts.find { it.id == quoted }
                         ThreadQuote(quoted, null, model, null, chorus)
                         // another account's post lends its audience to the quote (D-127)
-                        if (local == null) Text("Only people who can also read the quoted post will see this.", color = p.ink3,
+                        if (local == null) Text("Visible to readers of the quoted post", color = p.ink3,
                             style = MaterialTheme.typography.bodySmall)
                         TextButton(enabled = !busy, onClick = { quoteOf = null }) { Text("Remove quote") }
                     }
@@ -419,10 +415,10 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                     item { ChorusField(mood, { mood = it }, label = { Text("Mood (optional)") }, modifier = Modifier.fillMaxWidth()) }
                     item { ChorusField(tags, { tags = it }, label = { Text("Tags, separated by commas") }, modifier = Modifier.fillMaxWidth()) }
                     item { Column { JournalPollDraftFields(pollOn, { pollOn = it }, pollOptions, { pollOptions = it }, pollMultiple) { pollMultiple = it } } }
-                    item { PostAlertsChoice(alerts, replyTo != null) { alerts = it } }
+                    item { PostAlertsChoice(alerts) { alerts = it } }
                 }
                 if (draftState.draft.recovery != null) item {
-                    Text("Some saved draft details could not be read. Review the recovered content, authors and audience before posting.", color = p.danger)
+                    Text("Recovered draft: check it before posting", color = p.danger)
                     androidx.compose.foundation.text.selection.SelectionContainer {
                         Text(draftState.draft.recovery.orEmpty(), color = p.ink2, style = MaterialTheme.typography.bodySmall)
                     }
@@ -430,7 +426,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                         Text("Keep original copy and use recovered draft")
                     }
                 }
-                if (missingFiles.isNotEmpty()) item { Text("Unavailable files: ${missingFiles.joinToString()}. Attach them again or remove their references. Your text and file details are kept.", color = p.danger) }
+                if (missingFiles.isNotEmpty()) item { Text("Missing: ${missingFiles.joinToString()}", color = p.danger) }
                 if (error != null) item {
                     Text(error.orEmpty(), color = p.danger)
                     TextButton(enabled = !busy, onClick = { session.checkpoint(); receiptRetry++ }) { Text("Retry saving draft") }
@@ -524,6 +520,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                     else author?.let { "Posting as ${it.shownName}" } ?: "Your system’s stories", color = p.ink3,
                     style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            ChatIconButton(R.drawable.ic_hash, "Feeds") { section = "feeds" }
             ChatIconButton(R.drawable.ic_search, "Search Journal") { onSearch("Posts") }
             ChatIconButton(R.drawable.ic_more, "Journal options") { feedMenu = true }
             MenuDrawer(feedMenu, { feedMenu = false }, "Journal") {
@@ -532,8 +529,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
                 }
                 MenuRow("Saved", R.drawable.ic_bookmark) { feedMenu = false; section = "saved" }
                 MenuRow("Search saved posts", R.drawable.ic_search) { feedMenu = false; onSearch("Saved") }
-                MenuRow("Lists", R.drawable.ic_friends, "People as audiences and feeds") { feedMenu = false; section = "lists" }
-                MenuRow("Feeds", R.drawable.ic_sliders) { feedMenu = false; section = "feeds" }
+                MenuRow("Lists", R.drawable.ic_friends) { feedMenu = false; section = "lists" }
             }
         }
         ScrollableTabRow(selectedTabIndex = listOf("system", "friends", "entries").indexOf(journalTab).coerceAtLeast(0),
@@ -547,8 +543,7 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
             launchDraft("reply", it, audience = "server")
         }, onQuote = { launchDraft("quote", it) }) else LazyColumn(Modifier.fillMaxSize(), state = feedListState, contentPadding = PaddingValues(bottom = 80.dp)) {
         if (shownEvents.isEmpty()) item {
-            Text(if (journalTab == "entries") "No journal entries yet. Start with a few words." else "No posts or switches yet. Write the first note.",
-                color = p.ink2, modifier = Modifier.padding(24.dp))
+            EmptyState(if (journalTab == "entries") R.drawable.ic_book else R.drawable.ic_journal, "Nothing yet")
         }
         for (event in shownEvents) item(key = "${if (event.post == null) "switch" else "post"}:${event.id}") {
             Column(Modifier.animateItem(fadeInSpec = if (motion) ChorusMotion.tween(true, ChorusMotion.Gentle) else null,
@@ -592,18 +587,12 @@ private fun JournalLoaded(chorus: Chorus, model: Model, session: garden.vayne.ch
 /** Who hears about this post (D-127): as usual, a random 5–60 minutes later, or nobody. Covers the
  * post alerts friends asked for and, for a reply, the author it answers. */
 @Composable
-private fun PostAlertsChoice(alerts: String, reply: Boolean, onChange: (String) -> Unit) {
+private fun PostAlertsChoice(alerts: String, onChange: (String) -> Unit) {
     val p = LocalChorusPalette.current
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Notifications", color = p.ink2, style = MaterialTheme.typography.labelLarge)
         val options = listOf("" to "As usual", "delayed" to "Random delay", "none" to "Don’t notify")
         Segmented(options.map { it.second }, options.indexOfFirst { it.first == alerts }.coerceAtLeast(0)) { onChange(options[it].first) }
-        Text(when (alerts) {
-            "delayed" -> "Anyone told about it hears a random 5–60 minutes later."
-            "none" -> "Nobody is told about it; it still shows where they can read it."
-            else -> if (reply) "The author you’re replying to, and friends who asked for alerts, hear right away."
-                else "Friends who asked for alerts hear right away."
-        }, color = p.ink3, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -772,7 +761,7 @@ internal fun JournalThread(chorus: Chorus, model: Model, postId: String, onClose
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (_: Exception) {
             remote = null
-            error = "Showing entries and replies saved on this device. Connect and refresh to load more."
+            error = "Offline"
         } finally { refreshing = false }
     }
     val replies = PostThreads.merge(local, remote?.replies.orEmpty())
@@ -917,7 +906,6 @@ private fun ReplyContext(parent: JournalPost?, model: Model) {
                 onTextLayout = { if (!expanded) overflows = it.hasVisualOverflow },
                 modifier = Modifier.animateContentSize(if (motion) ChorusMotion.settle() else androidx.compose.animation.core.snap()))
             if (foldable) Text(if (expanded) "Show less" else "Show more", color = p.accent, style = MaterialTheme.typography.labelLarge)
-            Text("Replying to $names", color = p.ink3, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

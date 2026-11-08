@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.InspectionDialogContent
 import garden.vayne.chorus.data.*
 import garden.vayne.chorus.designsystem.LocalChorusPalette
+import garden.vayne.chorus.designsystem.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -149,8 +150,6 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
                 OutlinedButton(enabled = !busy, onClick = { pickingBanner = false; picker.launch("image/*") }) { Text("Choose avatar") }
                 if (avatar != null) TextButton(enabled = !busy, onClick = { avatar = null }) { Text("Remove avatar") }
             }
-            Text("Colour and avatar show wherever ${display.ifBlank { name }.ifBlank { "they" }} do: your chats, and friends who can open the profile.",
-                color = p.ink3, style = MaterialTheme.typography.bodySmall)
 
             // ─── the profile: every part with its own audience (D-101) ───
             val liveBuckets = model.sharingBuckets
@@ -164,33 +163,27 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
             HorizontalDivider(color = p.line)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Profile", color = p.ink, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                Text("Who can open it ", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+                Text("Who can see ", color = p.ink3, style = MaterialTheme.typography.bodySmall)
                 AudienceChip("${name.ifBlank { "This member" }}'s profile", profileNow, own = true, buckets = liveBuckets,
                     onChange = { profileAudience = (it ?: Audience.PRIVATE).toJson().toString() }, enabled = !busy, looks = model.bucketLooks)
             }
-            Text(if (closed) "Only your system can see this profile right now. Share it with friends, then open up or keep each part below."
-                else "Friends who can open it see each part below that's shared with them.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
-            // the display name follows the profile; the full name is private unless shared (D-126)
-            @Composable fun follows() = Text("Same as profile", color = p.ink3, style = MaterialTheme.typography.bodySmall)
-            PartHeader("Display name", { follows() })
+            // the display name follows the profile; the full name is private unless shared (D-126).
+            // Following the profile shows no label (UI21): a chip appears where a part has its own audience.
+            PartHeader("Display name", {})
             ChorusField(display, { display = it }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Add a display name", color = p.ink3) })
             PartHeader("Full name", {
-                if (display.isBlank()) follows()
-                else AudienceChip("Full name", ProfileAudience.effective(ProfileAudience.parse(profileAudience), partsNow, "name"),
+                if (display.isNotBlank()) AudienceChip("Full name", ProfileAudience.effective(ProfileAudience.parse(profileAudience), partsNow, "name"),
                     own = ProfileAudience.own(partsNow, "name") != null, buckets = liveBuckets, onChange = { setPart("name", it) },
                     limited = closed, enabled = !busy, looks = model.bucketLooks)
             })
-            ChorusField(name, { name = it }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text(if (display.isBlank()) "Without a display name, friends see the full name."
-                    else if (ProfileAudience.effective(ProfileAudience.parse(profileAudience), partsNow, "name").mode == "private")
-                        "Friends see ${display.trim()}, never the full name." else "Shared on purpose: friends it reaches see it next to ${display.trim()}.") })
+            ChorusField(name, { name = it }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
             if (baseline != null) MemberHandlesEditor(chorus, model, id, !busy) { error = it }
             PartHeader("Pronouns", { partChip("pronouns", "Pronouns") })
             ChorusField(pronouns, { pronouns = it }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Add pronouns", color = p.ink3) })
             PartHeader("Bio", { partChip("description", "Bio") })
             RichEditorField(bioEditor, "Bio", enabled = !busy, formatting = true)
             PartHeader("Birthday", { partChip("birthday", "Birthday") })
-            ChorusField(birthday, { birthday = it }, supportingText = { Text("YYYY-MM-DD, or --MM-DD without a year") },
+            ChorusField(birthday, { birthday = it }, placeholder = { Text("YYYY-MM-DD", color = p.ink3) },
                 singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
             PartHeader("Banner", { partChip("banner", "Banner") })
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -217,7 +210,6 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
                 }, onSettings = if (live != null) ({ settingsFor = id }) else null)
                 FieldValueEditor(chorus, def, row.getString("type"), values[i], !busy,
                     onValue = { value -> values = values.toMutableList().apply { set(i, value) } }, onError = { error = it })
-                if (!row.getBoolean("exists")) Text("New private field · added for every member when you save", color = p.ink3, style = MaterialTheme.typography.bodySmall)
             }
             TextButton(enabled = !busy, onClick = { addingField = true }) { Text("+ Add a field") }
             if (addingField) AddFieldDialog(chorus, model, onAdded = { def ->
@@ -234,7 +226,6 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
             if (advanced && !model.isPerson) {
                 ChorusField(sigil, { sigil = it }, label = { Text("Representative characters") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
                 if (!model.isPerson) ColourField(color, { color = it }, modifier = Modifier.fillMaxWidth(), enabled = !busy)
-                Text("Start a message with one or more members' representative characters, then a space.", color = p.ink3, style = MaterialTheme.typography.bodySmall)
                 // who hears when this member fronts (NOTIFICATIONS §2.4): saved as it's chosen, like the web
                 model.member(id)?.let { saved ->
                     MemberAnnounce(model, saved, !busy) { policy ->
@@ -245,15 +236,24 @@ internal fun MemberEditor(chorus: Chorus, model: Model, member: Member?, onDone:
                         }
                     }
                 }
-                if (baseline != null) OutlinedButton(enabled = !busy && !dirty, onClick = {
-                    actions.launch {
-                        busy = true
-                        try { chorus.create(if (member?.archived == true) "member.unarchive" else "member.archive", id, JSONObject(), expectedEditorOwner = owner); editor.finish(); onDone() }
-                        catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                        catch (e: Exception) { error = e.message }
-                        finally { busy = false }
-                    }
-                }) { Text(if (member?.archived == true) "Unarchive member" else "Archive member") }
+            }
+            // archiving sits at the foot of the editor, not under More details (UI21); it asks first
+            if (baseline != null && !model.isPerson) {
+                var confirmArchive by remember { mutableStateOf(false) }
+                fun archive() = actions.launch {
+                    busy = true
+                    try { chorus.create(if (member?.archived == true) "member.unarchive" else "member.archive", id, JSONObject(), expectedEditorOwner = owner); editor.finish(); onDone() }
+                    catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                    catch (e: Exception) { error = e.message }
+                    finally { busy = false }
+                }
+                val shown = display.ifBlank { name }.ifBlank { "this member" }
+                MenuRow(if (member?.archived == true) "Restore $shown" else "Archive $shown", R.drawable.ic_archive,
+                    danger = member?.archived != true, enabled = !busy && !dirty) {
+                    if (member?.archived == true) archive() else confirmArchive = true
+                }
+                if (confirmArchive) ConfirmDrawer("Archive $shown?", null, "Archive", { confirmArchive = false; archive() },
+                    { confirmArchive = false }, danger = true, icon = R.drawable.ic_archive)
             }
             Spacer(Modifier.height(24.dp))
         }

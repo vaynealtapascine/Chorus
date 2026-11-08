@@ -123,11 +123,7 @@ internal fun AddFieldDialog(chorus: Chorus, model: Model, onAdded: (ProfileDetai
             }
         }
         if (confirming) ConfirmDrawer(if (person) "Add “${name.trim()}”?" else "Add “${name.trim()}” to every member?",
-            audience.label(model.sharingBuckets.toMap()).lowercase().let { shown ->
-                val start = if (shown == "only us") (if (person) "only you" else "only us") else "shared with $shown"
-                if (person) "It's a ${typeLabel(type).lowercase()} field on your profile. It starts as $start; you can change that any time."
-                else "It's a ${typeLabel(type).lowercase()} field. Every member gets an empty one to fill in, and it starts as $start; each member can change that for themselves."
-            }, "Add field", busy = busy, cancel = "Not yet", onDismiss = { confirming = false }, icon = R.drawable.ic_plus, content = {
+            if (person) null else "Every member gets an empty one.", "Add field", busy = busy, cancel = "Not yet", onDismiss = { confirming = false }, icon = R.drawable.ic_plus, content = {
                 error?.let { FormNote(it, warning = true) }
             }, onConfirm = {
             busy = true
@@ -181,7 +177,7 @@ internal fun FieldSettingsDialog(chorus: Chorus, model: Model, def: ProfileDetai
         }
         error?.let { FormNote(it, warning = true) }
         if (removing) ConfirmDrawer(if (person) "Remove “${def.name}”?" else "Remove “${def.name}” from every member?",
-            "It disappears from ${if (person) "your profile" else "every profile"}, including for any friend who could see it. Nothing is erased: it stays in your history and exports.",
+            "Nothing is erased.",
             "Remove field", { send(JSONObject(), "field.delete_def") }, { removing = false }, danger = true, cancel = "Keep it")
     }
 }

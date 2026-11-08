@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.designsystem.LocalChorusPalette
+import garden.vayne.chorus.designsystem.R
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -62,7 +63,6 @@ internal fun JournalLists(chorus: Chorus, model: Model, selectedId: String, onSe
                 Text("Lists", color = p.ink, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(top = 14.dp))
             }
-            Text("Gather posts from members in this account. Lists stay private.", color = p.ink2)
         }
         item {
             Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp),
@@ -82,7 +82,7 @@ internal fun JournalLists(chorus: Chorus, model: Model, selectedId: String, onSe
             }
         }
         if (error != null) item { Text(error.orEmpty(), color = p.danger) }
-        if (model.memberLists.isEmpty()) item { Text("Create a list to start collecting posts.", color = p.ink2) }
+        if (model.memberLists.isEmpty()) item { EmptyState(R.drawable.ic_friends, "No lists yet") }
         else {
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

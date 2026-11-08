@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.FeedInfo
 import garden.vayne.chorus.data.Feeds
@@ -93,7 +94,6 @@ internal fun JournalFeeds(chorus: Chorus, model: Model, onTimeline: () -> Unit, 
                     modifier = Modifier.padding(top = 14.dp))
                 TextButton(onClick = { refresh++ }) { Text("Refresh") }
             }
-            Text("Save a filter, or open a feed shared with you. Results follow each reader's access.", color = p.ink2)
         }
         if (all.isNotEmpty()) item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -108,9 +108,8 @@ internal fun JournalFeeds(chorus: Chorus, model: Model, onTimeline: () -> Unit, 
                 Column(Modifier.fillMaxWidth().background(p.surface).padding(12.dp)) {
                     Text(selected.name, color = p.ink, fontWeight = FontWeight.SemiBold)
                     if (selected.description != null) Text(selected.description, color = p.ink2)
-                    if (Feeds.usesFronting(selected.query)) Text(
-                        "This feed shows who was fronting when posts were written, as far as your notifications have shown you.",
-                        color = p.ink2)
+                    if (selected.shared && Feeds.usesFronting(selected.query))
+                        Text("Shows who was fronting, as far as readers were told", color = p.ink3, fontSize = 13.sp)
                     if (!selected.shared) TextButton(onClick = {
                         editingId = selected.id; name = selected.name; description = selected.description.orEmpty()
                         query = selected.query
@@ -153,19 +152,14 @@ internal fun JournalFeeds(chorus: Chorus, model: Model, onTimeline: () -> Unit, 
                     modifier = Modifier.fillMaxWidth())
                 ChorusField(query, { query = it }, label = { Text("Filter") }, minLines = 2,
                     modifier = Modifier.fillMaxWidth())
-                Text("Try from:, kind:, tag:, mood:, has:, reply:, in:, since:, until:, fronting:, or, and - to exclude.",
-                    color = p.ink2)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Who can open it", color = p.ink2)
                     AudienceChip("This feed", audience, own = true, buckets = model.sharingBuckets, person = model.isPerson,
                         onChange = { audienceJson = (it ?: garden.vayne.chorus.data.Audience.PRIVATE).toJson().toString() }, looks = model.bucketLooks)
                 }
-                if (audience.mode != "private") {
-                    Text("Followers get this filter and only posts they can already read.", color = p.ink2)
-                    if (Feeds.usesFronting(query)) Text(
-                        "This feed shows who was fronting when posts were written, as far as each follower's notifications have shown them.",
-                        color = p.ink2)
-                }
+                // SPEC §6.4: a shared feed that filters by fronting says so, on both sides
+                if (audience.mode != "private" && Feeds.usesFronting(query))
+                    Text("Shows who was fronting, as far as readers were told", color = p.ink3, fontSize = 13.sp)
                 TextButton(enabled = !busy && name.isNotBlank() && query.isNotBlank(), onClick = {
                     busy = true; error = null
                     actions.launch {

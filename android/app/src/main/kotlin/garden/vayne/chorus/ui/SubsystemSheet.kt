@@ -53,9 +53,7 @@ internal fun SubsystemSheet(chorus: Chorus, model: Model, member: Member, onDism
         Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).padding(bottom = 16.dp)) {
             Text(if (group == null) "Make $name a subsystem" else "Inside $name", color = p.ink, fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 20.dp))
-            Text(if (group == null) "Choose who is inside $name. While $name fronts, everyone inside shows as fronting with them. Switches stay exactly as you record them."
-                else "While $name fronts, these members show as fronting with them.",
-                color = p.ink2, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 12.dp))
+            Spacer(Modifier.height(12.dp))
             if (group == null) {
                 Button(enabled = !busy, onClick = { write("Could not make $name a subsystem. Try again.") {
                     val id = chorus.newId()
@@ -68,7 +66,7 @@ internal fun SubsystemSheet(chorus: Chorus, model: Model, member: Member, onDism
                 }
                 val existing = Subsystems.unlinkedGroups(model)
                 if (existing.isNotEmpty()) {
-                    Text("Or use a subsystem you already have", color = p.accent, fontSize = 13.sp,
+                    Text("Existing", color = p.accent, fontSize = 13.sp,
                         modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp))
                     LazyColumn {
                         items(existing, key = { it.id }) { g ->
@@ -117,8 +115,6 @@ internal fun SubsystemSheet(chorus: Chorus, model: Model, member: Member, onDism
                 TextButton(enabled = !busy, onClick = { write("Could not change $name. Try again.") {
                     chorus.create("pref.set", null, Subsystems.payload(member.id, null))
                 } }, modifier = Modifier.padding(start = 12.dp, top = 4.dp)) { Text("Stop being a subsystem") }
-                Text("${group.name} stays as a subsystem group, with everyone still in it.", color = p.ink3,
-                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 20.dp))
             }
             if (error != null) Text(error.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))

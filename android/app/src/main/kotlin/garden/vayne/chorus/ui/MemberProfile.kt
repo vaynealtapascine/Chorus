@@ -91,7 +91,8 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
         bundle = null
         if (dev != null && member != null) {
             try { bundle = ProfileApi.load(dev, memberId); error = null }
-            catch (e: Exception) { error = "Profile details unavailable offline." }
+            // offline: the connection banner says so; the profile shows what this device has
+            catch (e: Exception) { error = null }
         }
     }
 
@@ -147,9 +148,9 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
             ProfileDetails(member, model, spans, error, onTab = { tab = it }, onInside = { subsystemOpen = true }, onOpenProfile = onOpenProfile)
         }
         stickyHeader(key = "tabs") { ProfileTabRow(tab) { tab = it } }
-        fun posts(shown: List<JournalPost>, empty: String) {
+        fun posts(shown: List<JournalPost>, empty: String, icon: Int) {
             if (shown.isEmpty()) item(key = "empty:$tab") {
-                ProfileEmpty(empty, Modifier.animateItem())
+                ProfileEmpty(icon, empty, Modifier.animateItem())
             }
             for (post in shown) item(key = "$tab:${post.id}") {
                 Column(Modifier.animateItem()) {
@@ -167,17 +168,17 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
                     }
                 }
                 posts(ownPosts.filter { it.replyTo == null && it.kind != "entry" && it.id != pinned?.id }
-                    .sortedByDescending { it.occurredAt }, "No posts yet.")
+                    .sortedByDescending { it.occurredAt }, "No posts yet", R.drawable.ic_journal)
             }
-            "Replies" -> posts(ownPosts.filter { it.replyTo != null }.sortedByDescending { it.occurredAt }, "No replies yet.")
+            "Replies" -> posts(ownPosts.filter { it.replyTo != null }.sortedByDescending { it.occurredAt }, "No replies yet", R.drawable.ic_reply)
             "Journal" -> posts(ownPosts.filter { it.kind == "entry" && it.replyTo == null }.sortedByDescending { it.occurredAt },
-                "No journal entries yet.")
+                "No entries yet", R.drawable.ic_book)
             "Media" -> {
                 val media = ownPosts.sortedByDescending { it.occurredAt }.flatMap { post ->
                     post.attachments.filter { it.mime.startsWith("image/") }.map { post to it }
                 }
                 if (media.isEmpty()) item(key = "empty:media") {
-                    ProfileEmpty("No photos from ${member.shownName} on this device yet.", Modifier.animateItem())
+                    ProfileEmpty(R.drawable.ic_image, "No photos", Modifier.animateItem())
                 }
                 else for ((row, cells) in media.chunked(3).withIndex()) item(key = "media:$row") {
                     MediaRow(cells, chorus, member.shownName, Modifier.animateItem())
@@ -189,8 +190,7 @@ internal fun MemberProfile(chorus: Chorus, model: Model, memberId: String,
                     model.posts.none { it.id == post.id } && post.id !in removedHighlights
                 }
                 if (local.isEmpty() && foreign.isEmpty()) item(key = "empty:highlights") {
-                    ProfileEmpty(if (bundle == null) "No highlights on this device. Connect to load the rest."
-                        else "No highlights yet. Add one from a post’s ⋯ menu.", Modifier.animateItem())
+                    ProfileEmpty(R.drawable.ic_bookmark, "No highlights", Modifier.animateItem())
                 }
                 for (post in local) item(key = "highlight:${post.id}") {
                     Column(Modifier.animateItem()) {
@@ -442,11 +442,7 @@ private fun PinnedHeader() {
 }
 
 @Composable
-private fun ProfileEmpty(text: String, modifier: Modifier = Modifier) {
-    Text(text, color = LocalChorusPalette.current.ink3, style = MaterialTheme.typography.bodyMedium,
-        modifier = modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp),
-        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-}
+private fun ProfileEmpty(icon: Int, text: String, modifier: Modifier = Modifier) = EmptyState(icon, text, modifier)
 
 /** Three square photos per row, 2 dp apart. A post's content warning covers its photos until tapped. */
 @Composable
@@ -499,11 +495,6 @@ private fun ProfileAbout(chorus: Chorus, model: Model, member: Member, bundle: P
                 else metrics.lastFrontAt?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)) }
                     ?: "No front recorded")
         }
-        AboutRow("Messages", "${metrics.messages}")
-        fun count(n: Int, one: String, many: String) = "$n ${if (n == 1) one else many}"
-        bundle?.let { AboutRow("Shared on the server", listOf(count(it.posts, "post", "posts"), count(it.entries, "entry", "entries"),
-            count(it.notes, "note", "notes")).joinToString(" · ")) }
-        AboutRow("Profile audience", JournalPresentation.audience(model.profileDetails.visibility[member.id] ?: "private", model.isPerson))
         if (linkError != null) Text(linkError.orEmpty(), color = p.danger, style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 8.dp))
         Text("Relationships", color = p.ink, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall,

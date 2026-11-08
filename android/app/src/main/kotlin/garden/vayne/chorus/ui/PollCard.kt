@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
@@ -35,6 +37,7 @@ import garden.vayne.chorus.data.Poll
 import garden.vayne.chorus.data.PollTally
 import garden.vayne.chorus.data.Polls
 import garden.vayne.chorus.designsystem.LocalChorusPalette
+import garden.vayne.chorus.designsystem.R
 import kotlinx.coroutines.launch
 
 /**
@@ -57,7 +60,6 @@ fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?,
     }
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         poll.question?.let { Text(it, color = p.ink, fontWeight = FontWeight.SemiBold) }
-        Text(if (poll.multiple) "Choose any" else "Choose one", color = p.ink3, fontSize = 12.sp)
         for (option in poll.options) {
             val n = tally?.counts?.get(option.id) ?: 0L
             val on = option.id in mine
@@ -67,18 +69,19 @@ fun PollCard(chorus: Chorus, model: Model, parentId: String, member: String?,
                 .drawBehind { drawRect(bar, size = Size(size.width * n / most, size.height)) }
                 .clickable(enabled = member != null, role = Role.Checkbox) { cast(Polls.toggled(poll, mine, option.id)) }
                 .semantics { selected = on; contentDescription = "${option.text}${if (tally != null) ", $n" else ""}" }) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // a round mark for one choice, a square one for several: the shape says how to vote
+                    val mark = if (poll.multiple) RoundedCornerShape(4.dp) else CircleShape
+                    Box(Modifier.size(18.dp).clip(mark).background(if (on) p.accent else p.surface).border(1.5.dp, if (on) p.accent else p.ink3, mark),
+                        contentAlignment = Alignment.Center) { if (on) Glyph(R.drawable.ic_check, p.onAccent, 12.dp) }
                     Text(option.text, color = p.ink, modifier = Modifier.weight(1f))
                     if (tally != null) Text(n.toString(), color = p.ink2, fontSize = 13.sp)
                 }
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(tally?.let { "${it.voters} ${if (it.voters == 1L) "vote" else "votes"}" } ?: "No totals yet",
-                color = p.ink3, fontSize = 12.sp)
-            if (member == null) Text(" · Pick who is speaking to vote", color = p.ink3, fontSize = 12.sp)
-            else if (mine.isNotEmpty()) TextButton(onClick = { cast(emptyList()) }) { Text("Remove my vote") }
-        }
+        // tapping a chosen option again takes the vote back (Polls.toggled)
+        tally?.let { Text("${it.voters} ${if (it.voters == 1L) "vote" else "votes"}", color = p.ink3, fontSize = 12.sp) }
     }
 }
 
