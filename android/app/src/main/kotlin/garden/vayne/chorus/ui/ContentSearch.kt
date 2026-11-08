@@ -6,6 +6,26 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
+import garden.vayne.chorus.data.SearchFilters
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -49,10 +69,24 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-/** Search the permitted local replica even when the server is asleep. */
+/** The search page's tabs (F5.9) and the D-114 scopes beside them: (section, label). */
+private val SEARCH_TABS = listOf("Chats" to "Chats", "Messages" to "Messages", "Media" to "Media", "Files" to "Files",
+    "Links" to "Links", "Posts" to "Journal", "Saved" to "Saved", "Switches" to "Switches")
+
+/** Tabs answered from what the device already shows, without the search index or the server. */
+private val LIBRARY_TABS = setOf("Chats", "Media", "Files", "Links")
+
+/**
+ * Search (Figma F5.9): the field in the top bar, tabs (Chats, Messages, Media, Files, Links, then
+ * Journal, Saved and Switches, D-114), and for messages the From / In / date chips, which write
+ * the query's operators. Message results stay D-114 context cards; the whole card opens it.
+ * Searches the permitted local replica even when the server is asleep.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClose: () -> Unit,
-    onOpenMessage: (SearchDocument) -> Unit, onOpenPost: (String) -> Unit, channelId: String? = null, initialSection: String = "Messages") {
+    onOpenMessage: (SearchDocument) -> Unit, onOpenPost: (String) -> Unit, channelId: String? = null, initialSection: String = "Messages",
+    onOpenChat: (String) -> Unit = {}) {
     val p = LocalChorusPalette.current
     val actions = rememberCoroutineScope()
     var query by rememberSaveable { mutableStateOf("") }
@@ -91,7 +125,7 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
             value = withContext(Dispatchers.Default) { source.search(query, now, tz) }
         }
     }
-    val results = if (section == "Messages") (if(messageResult.raw == query) messageResult.items else emptyList()) else
+    val results = if (section in LIBRARY_TABS) emptyList() else if (section == "Messages") (if(messageResult.raw == query) messageResult.items else emptyList()) else
         remember(index, query, section) { index?.search(query, if(section == "Saved") "Posts" else section, limit = Int.MAX_VALUE).orEmpty()
             .filter { section != "Saved" || it.id in model.accountPrefs.bookmarks }.take(100) }
     val parsed = remember(query) { LocalSearch.parse(query) }
@@ -101,7 +135,7 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
     DisposableEffect(requests) { onDispose { requests.close() } }
     LaunchedEffect(requests) {
         val dev = chorus.device ?: return@LaunchedEffect
-        if (!online || section == "Switches" || query.isBlank()) return@LaunchedEffect
+        if (!online || section == "Switches" || section in LIBRARY_TABS || query.isBlank()) return@LaunchedEffect
         if (section == "Messages" && !validMessageQuery ||
             section in listOf("Posts", "Saved") && parsed.terms.isEmpty()) return@LaunchedEffect
         val requestedQuery = query
@@ -118,7 +152,7 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
             }
         }
     }
-    val remote = if (online) requests.items else emptyList()
+    val remote = if (online && section !in LIBRARY_TABS) requests.items else emptyList()
     LaunchedEffect(requests,remote) {
         // Retain prior-page dependencies when another page introduces a new thread channel.
         remoteChannels = remoteChannels + remote.mapNotNull {it.channelId}
@@ -160,61 +194,179 @@ internal fun ContentSearch(chorus: Chorus, model: Model, online: Boolean, onClos
             }
         }
     }
-    LazyColumn(Modifier.fillMaxSize().background(p.bg).padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(if(channelId != null) "Search this chat" else "Search", color = p.ink, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 14.dp))
-                TextButton(onClick = onClose) { Text("Close") }
+    val words = SearchFilters.words(query)
+    val accountId = chorus.device?.accountId.orEmpty()
+    // what this front may see now, for the tabs that list chats and what they shared
+    val visibleMessages = remember(model, visibility, section) {
+        if (section !in setOf("Media", "Files", "Links")) emptyList()
+        else model.chatMessages.values.flatten().filter { (channelId == null || it.channelId == channelId) && visibility.message(it) }
+    }
+    val chats = remember(model, accountId, section, words) {
+        if (section != "Chats") emptyList()
+        else chatListRows(model, null, accountId, emptyMap(), emptyMap(), emptyMap())
+            .filter { SearchFilters.matches(words, it.title, it.space.name) }.sortedByDescending { it.latest?.occurredAt ?: 0L }
+    }
+    var viewing by remember { mutableStateOf<garden.vayne.chorus.data.ChatFileItem?>(null) }
+    var chip by remember { mutableStateOf<String?>(null) }
+    fun openAt(m: ChatMessage) = onOpenMessage(SearchDocument(m.id, "Messages", m.occurredAt, m.text, channelId = m.channelId))
+    fun place(id: String?): String = model.channels.firstOrNull { it.id == id }?.let { c ->
+        val space = model.spaces.firstOrNull { it.id == c.spaceId }
+        listOfNotNull(c.name.ifBlank { null }, space?.name?.takeIf { it.isNotBlank() && space.kind == "shared" }).joinToString(" • ")
+    } ?: "Chat"
+    Column(Modifier.fillMaxSize().background(p.bg)) {
+        // the field lives in the top bar (F5.9): back, the search, and × to clear it
+        Row(Modifier.fillMaxWidth().background(p.surface).heightIn(min = 64.dp).padding(horizontal = 4.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            BarIcon(R.drawable.ic_back, "Back", p.ink) { onClose() }
+            Row(Modifier.weight(1f).heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(fieldFill()).padding(start = 14.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Glyph(R.drawable.ic_search, p.ink3, 18.dp)
+                // opening search is asking to type: the field takes the keyboard at once
+                val typing = remember { androidx.compose.ui.focus.FocusRequester() }
+                LaunchedEffect(Unit) { runCatching { typing.requestFocus() } }
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    if (query.isEmpty()) Text(if (channelId != null) "Search this chat" else "Search", color = p.ink3, fontSize = 15.sp)
+                    BasicTextField(query, { query = it }, singleLine = true, cursorBrush = SolidColor(p.accent),
+                        textStyle = TextStyle(color = p.ink, fontSize = 15.sp),
+                        modifier = Modifier.fillMaxWidth().focusRequester(typing).semantics { contentDescription = "Search" })
+                }
+                if (query.isNotEmpty()) BarIcon(R.drawable.ic_close, "Clear", p.ink2, 18.dp) { query = "" }
+                else Spacer(Modifier.width(12.dp))
             }
-            // opening search is asking to type: the field takes the keyboard at once
-            val typing = remember { androidx.compose.ui.focus.FocusRequester() }
-            LaunchedEffect(Unit) { runCatching { typing.requestFocus() } }
-            ChorusField(query, { query = it }, label = { Text(if(channelId != null) "Search this chat" else "Search ${if(section == "Messages") "all chats" else if(section == "Posts") "Journal" else section}") },
-                singleLine = true, modifier = Modifier.fillMaxWidth().focusRequester(typing))
         }
-        item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (choice in if(channelId != null) emptyList() else listOf("Messages", "Posts", "Saved", "Switches")) item(key = choice) {
-                    JournalChoice(if(choice == "Messages") "All chats" else if(choice == "Posts") "Journal" else choice, section == choice) { section = choice }
+        if (channelId == null) Column(Modifier.background(p.surface)) {
+            InfoTabs(SEARCH_TABS, section) { section = it }
+            HorizontalDivider(color = p.line)
+        }
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 8.dp)) {
+            if (section == "Messages") item(key = "chips") {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val from = SearchFilters.value(query, "from")
+                    ChoiceChip("From: " + (from ?: "any member"), { chip = "from" }, active = from != null)
+                    if (channelId == null) SearchFilters.value(query, "in").let { at ->
+                        ChoiceChip("In: " + (at ?: "all chats"), { chip = "in" }, active = at != null)
+                    }
+                    val date = SearchFilters.dateLabel(query)
+                    ChoiceChip(date, { chip = "after" }, active = SearchFilters.value(query, "after") != null)
                 }
             }
-        }
-        val available=channelId == null || visibility.document(SearchDocument("__search_channel__","Messages",Long.MAX_VALUE,"",channelId=channelId))
-        if(!available) item { EmptyState(R.drawable.ic_lock, "Private chat") }
-        else if (index == null || section == "Messages" && messageIndex == null)
-            item { Text("Preparing local search…", color = p.ink2) }
-        else if (query.isBlank()) Unit
-        else if (section == "Messages" && messageResult.error != null)
-            item { Text("Search: ${messageResult.error}", color = p.ink2) }
-        else if (shown.isEmpty() && !loading) item { EmptyState(R.drawable.ic_search, "No matches") }
-        for (doc in shown) item(key = "${doc.kind}:${doc.id}") {
-            if (doc.kind == "Messages") {
-                // the whole card opens the message (F5.9)
-                Column(Modifier.fillMaxWidth().clickable(onClickLabel = "Open message") { if(visibility.document(doc)) onOpenMessage(doc) },
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(model.channels.firstOrNull {it.id==doc.channelId}?.name ?: "Chat",color=p.ink2)
-                    for (id in contextIds[doc.id].orEmpty()) cards[id]?.let { card ->
-                        if(id==doc.id) Text("Match",color=p.accent)
-                        ChatMessageCard(card,model,emptyMap(),chorus,emptyList(),null,null,onReply={},
-                            onReplyPrivately=null,onEdit=null,reactions=model.messageReactions[card.id].orEmpty(),interactive=false,onStage={})
+            val available=channelId == null || visibility.document(SearchDocument("__search_channel__","Messages",Long.MAX_VALUE,"",channelId=channelId))
+            if(!available) item { EmptyState(R.drawable.ic_lock, "Private chat") }
+            else if (section == "Chats") {
+                items(chats, key = { "chat:${it.channel.id}" }) { row ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Open chat") { onOpenChat(row.channel.id) }
+                        .heightIn(min = 60.dp).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ChatRowDisc(row, 44.dp, row.peer(model, null))
+                        Column(Modifier.weight(1f)) {
+                            Text(row.title, color = p.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            val line = when (row.space.kind) {
+                                "dm" -> "Direct"
+                                "internal" -> model.systemName?.takeIf { it.isNotBlank() } ?: row.space.name
+                                else -> place(row.channel.id).takeIf { it != row.title } ?: row.space.name
+                            }
+                            Text(line, color = p.ink3, fontSize = 12.sp, maxLines = 1)
+                        }
                     }
                 }
-            } else if(doc.kind == "Posts") {
-                val post=model.posts.firstOrNull {it.id==doc.id}
-                if(post != null) JournalPostCard(post,model,chorus,onReply={onOpenPost(it.id)},onThread={onOpenPost(it.id)},showActions=false)
-                else doc.sharedPost?.let {SharedPostPreview(it,"Shared post",chorus,model,onThread={onOpenPost(it.id)})}
-            } else SearchCard(doc, model, onOpenMessage, onOpenPost)
+                if (chats.isEmpty()) item { EmptyState(R.drawable.ic_search, "No matches") }
+            }
+            else if (section == "Media") {
+                val media = garden.vayne.chorus.data.ChatLibrary.media(visibleMessages).filter { SearchFilters.matches(words, it.attachment.filename, it.attachment.altText, it.message.text) }
+                items(media.take(150).chunked(3), key = { row -> "media:" + row.first().attachment.id }) { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        for (item in row) MediaTile(item, chorus, Modifier.weight(1f).aspectRatio(1f)) { viewing = item }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+                if (media.isEmpty()) item { EmptyState(R.drawable.ic_image, "Nothing yet") }
+            }
+            else if (section == "Files") {
+                val files = garden.vayne.chorus.data.ChatLibrary.files(visibleMessages).filter { SearchFilters.matches(words, it.attachment.filename, it.message.text) }
+                items(files.take(150), key = { "file:" + it.attachment.id }) { item ->
+                    FileRow(item, chorus, garden.vayne.chorus.data.ChatLibrary.who(item.message, model))
+                }
+                if (files.isEmpty()) item { EmptyState(R.drawable.ic_file, "Nothing yet") }
+            }
+            else if (section == "Links") {
+                val links = garden.vayne.chorus.data.ChatLibrary.links(visibleMessages).filter { SearchFilters.matches(words, it.url, it.message.text) }
+                items(links.take(150), key = { "link:" + it.message.id + it.url }) { link ->
+                    LinkRow(link, garden.vayne.chorus.data.ChatLibrary.who(link.message, model))
+                }
+                if (links.isEmpty()) item { EmptyState(R.drawable.ic_link, "Nothing yet") }
+            }
+            else if (index == null || section == "Messages" && messageIndex == null)
+                item { Text("Preparing local search…", color = p.ink2) }
+            else if (query.isBlank()) Unit
+            else if (section == "Messages" && messageResult.error != null)
+                item { Text("Search: ${messageResult.error}", color = p.ink2) }
+            else if (shown.isEmpty() && !loading) item { EmptyState(R.drawable.ic_search, "No matches") }
+            else if (section == "Messages") item(key = "count") {
+                Text(if (shown.size == 1) "1 message found" else "${shown.size}${if (results.size == 100 || cursor != null) "+" else ""} messages found",
+                    color = p.ink3, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+            if (available && section !in LIBRARY_TABS) for (doc in shown) item(key = "${doc.kind}:${doc.id}") {
+                if (doc.kind == "Messages") {
+                    // the whole card opens the message (F5.9); the match is the bright one, its neighbours dim
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Open message") { if(visibility.document(doc)) onOpenMessage(doc) },
+                        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(place(doc.channelId), color = p.ink2, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text(garden.vayne.chorus.data.ChatPresentation.dateLabel(doc.occurredAt), color = p.ink3, fontSize = 12.sp)
+                        }
+                        for (id in contextIds[doc.id].orEmpty()) cards[id]?.let { card ->
+                            Box(Modifier.alpha(if (id == doc.id) 1f else .55f)) {
+                                ChatMessageCard(card,model,emptyMap(),chorus,emptyList(),null,null,onReply={},
+                                    onReplyPrivately=null,onEdit=null,reactions=model.messageReactions[card.id].orEmpty(),interactive=false,onStage={})
+                            }
+                        }
+                    }
+                } else if(doc.kind == "Posts") {
+                    val post=model.posts.firstOrNull {it.id==doc.id}
+                    if(post != null) JournalPostCard(post,model,chorus,onReply={onOpenPost(it.id)},onThread={onOpenPost(it.id)},showActions=false)
+                    else doc.sharedPost?.let {SharedPostPreview(it,"Shared post",chorus,model,onThread={onOpenPost(it.id)})}
+                } else SearchCard(doc, model, onOpenMessage, onOpenPost)
+            }
+            if (section !in LIBRARY_TABS) {
+                if (loading) item { Text("Searching server…", color = p.ink2) }
+                if (remoteError != null && section != "Switches") item { Text("Server search unavailable: ${remoteError.orEmpty()}", color = p.ink2) }
+                if (section != "Switches" && cursor != null && online) item {
+                    TextButton(enabled = !loading, onClick = ::loadMore) { Text("Load more from server") }
+                }
+            }
+            if (!online && query.isNotBlank()) item(key = "device") {
+                Row(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Glyph(R.drawable.ic_clock, p.ink3, 16.dp)
+                    Text("Searching this device", color = p.ink3, fontSize = 13.sp)
+                }
+            }
+            item { Spacer(Modifier.padding(bottom = 16.dp)) }
         }
-        if (results.size == 100) item { Text("100+ results", color = p.ink3, fontSize = 13.sp) }
-        if (loading) item { Text("Searching server…", color = p.ink2) }
-        if (remoteError != null && section != "Switches") item { Text("Server search unavailable: ${remoteError.orEmpty()}", color = p.ink2) }
-        if (section != "Switches" && cursor != null && online) item {
-            TextButton(enabled = !loading, onClick = ::loadMore) { Text("Load more from server") }
+    }
+    viewing?.let { item ->
+        MediaViewer(item.attachment, chorus, garden.vayne.chorus.data.ChatLibrary.who(item.message, model), item.message.occurredAt,
+            item.message.cw?.let { "Content warning: $it" } ?: "Spoiler".takeIf { item.attachment.spoiler }, onClose = { viewing = null },
+            onShowMessage = { viewing = null; openAt(item.message) })
+    }
+    // the chips' choices: who wrote it, where, since when
+    when (chip) {
+        "from" -> {
+            val members = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }
+            ChoiceDrawer(true, "From", listOf<garden.vayne.chorus.data.Member?>(null) + members,
+                members.firstOrNull { it.shownName.equals(SearchFilters.value(query, "from"), ignoreCase = true) },
+                { it?.shownName ?: "Any member" }, { m -> query = SearchFilters.set(query, "from", m?.shownName); chip = null }, { chip = null })
         }
-        if (!online && query.isNotBlank()) item { Text("Searching this device", color = p.ink3, fontSize = 13.sp) }
-        item { Text("", modifier = Modifier.padding(bottom = 16.dp)) }
+        "in" -> {
+            val rows = remember(model, accountId) { chatListRows(model, null, accountId, emptyMap(), emptyMap(), emptyMap()) }
+            ChoiceDrawer(true, "In", listOf<ChatListRow?>(null) + rows,
+                rows.firstOrNull { it.channel.name.equals(SearchFilters.value(query, "in"), ignoreCase = true) },
+                { it?.title ?: "All chats" }, { r -> query = SearchFilters.set(query, "in", r?.channel?.name?.ifBlank { r.channel.id }); chip = null }, { chip = null })
+        }
+        "after" -> ChoiceDrawer(true, "Date", SearchFilters.DATES, SearchFilters.DATES.firstOrNull { it.second == SearchFilters.value(query, "after") },
+            { it.first }, { d -> query = SearchFilters.set(query, "after", d.second); chip = null }, { chip = null })
     }
 }
 

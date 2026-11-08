@@ -396,7 +396,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             // Fronting, its history and its subpages draw their own Figma bars (F3.1, F3.4, F3.7, F3.9)
             val frontingChrome = !person && !searchOpen && !settingsOpen && !insightsOpen && sharedDraft == null &&
                 (frontsOpen || layersFront != null || activeTab == Tab.Fronting || activeTab == Tab.History)
-            val chatOwnChrome = frontingChrome || activeTab in listOf(Tab.Home, Tab.Chat, Tab.Journal, Tab.Notifications, Tab.People, Tab.Members) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
+            // search draws its own bar too: the field is the top bar (F5.9)
+            val chatOwnChrome = frontingChrome || searchOpen && !settingsOpen && !insightsOpen && sharedDraft == null || activeTab in listOf(Tab.Home, Tab.Chat, Tab.Journal, Tab.Notifications, Tab.People, Tab.Members) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
             if (chatOwnChrome && !chatStageCapture) Box(Modifier.fillMaxWidth().background(p.surface).statusBarsPadding())
             if (!chatStageCapture && !chatOwnChrome) Row(
                 Modifier.fillMaxWidth().background(p.surface).statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
@@ -441,6 +442,10 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     },
                     onOpenPost = { id ->
                         journalReplyPost = null; journalOpenPost = id; tab = Tab.Journal; searchOpen = false
+                    },
+                    onOpenChat = { id ->
+                        chatSpace = model.channels.find { it.id == id }?.spaceId; chatChannel = id; chatSearchHit = null; chatMessage = null
+                        tab = Tab.Chat; searchOpen = false
                     })
                 else if (insightsOpen) InsightsScreen(chorus, model) { insightsOpen = false }
                 else if (layersFront != null && !model.isPerson) LayersDisplayScreen(chorus, model, layersFront!!) { layersFront = null }
@@ -513,7 +518,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             }
             // The bar and viewport resize together during push/pop; focused routes own their
             // chrome. The shell applies the system navigation inset exactly once.
-            val focused = (frontsOpen || layersFront != null) && !searchOpen && !settingsOpen && !insightsOpen ||
+            val focused = searchOpen && !settingsOpen && !insightsOpen ||
+                (frontsOpen || layersFront != null) && !searchOpen && !settingsOpen && !insightsOpen ||
                 !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen &&
                 ((activeTab == Tab.Chat && chatFocused) || (activeTab == Tab.Journal && journalFocused) || (activeTab == Tab.Members && membersFocused) || (activeTab == Tab.People && friendsFocused))
             androidx.compose.animation.AnimatedVisibility(

@@ -233,7 +233,7 @@ private fun InfoAction(icon: Int, label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun InfoTabs(tabs: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+internal fun InfoTabs(tabs: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
     val p = LocalChorusPalette.current
     Row(Modifier.fillMaxWidth().padding(top = 16.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
         for ((id, label) in tabs) {
@@ -251,7 +251,7 @@ private fun InfoTabs(tabs: List<Pair<String, String>>, selected: String, onSelec
 
 /** One shared file: what, how big, from whom and when; covered ones ask before opening. */
 @Composable
-private fun FileRow(item: ChatFileItem, chorus: Chorus, who: String) {
+internal fun FileRow(item: ChatFileItem, chorus: Chorus, who: String) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -280,7 +280,7 @@ private fun FileRow(item: ChatFileItem, chorus: Chorus, who: String) {
 
 /** A shared link opens in the browser; one from behind a content warning asks first. */
 @Composable
-private fun LinkRow(link: ChatLink, who: String) {
+internal fun LinkRow(link: ChatLink, who: String) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     var revealed by remember(link.message.id, link.url) { mutableStateOf(link.message.cw == null) }
@@ -307,7 +307,7 @@ private fun LinkRow(link: ChatLink, who: String) {
 }
 
 @Composable
-private fun MediaTile(item: ChatFileItem, chorus: Chorus, modifier: Modifier, onOpen: () -> Unit) {
+internal fun MediaTile(item: ChatFileItem, chorus: Chorus, modifier: Modifier, onOpen: () -> Unit) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val a = item.attachment
