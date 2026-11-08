@@ -948,7 +948,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 onShowMessage = { infoOpen = false; jumpTo = it }, modifier = Modifier.weight(1f), title = infoTitle(channel, space),
                 subtitle = infoSubtitle(channel, space), connections = connections, foreign = foreignAuthors + privateCards,
                 speakerId = replySpeakerId, onSpaceChanged = { refresh++ }, onOpenChannel = { id -> selectedChannel = id; infoOpen = false; conversationOpen = true },
-                onLeft = { selectedSpace = ""; selectedChannel = ""; infoOpen = false; conversationOpen = false; refresh++ })
+                onLeft = { selectedSpace = ""; selectedChannel = ""; infoOpen = false; conversationOpen = false; refresh++ },
+                onFolders = { saveFolders(it) }, onNewFolder = { infoOpen = false; conversationOpen = false; foldersAt = it })
         } else if (expanded || pane == "conversation") Column(Modifier.weight(1f).fillMaxHeight()) {
         Row(Modifier.fillMaxWidth().background(p.surface), verticalAlignment = Alignment.CenterVertically) {
             val inThread = channel?.kind == "thread"
@@ -1576,7 +1577,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 onShowMessage = { jumpTo = it }, modifier = Modifier.width(260.dp), title = infoTitle(channel, space),
                 subtitle = infoSubtitle(channel, space), connections = connections, foreign = foreignAuthors + privateCards,
                 speakerId = replySpeakerId, onSpaceChanged = { refresh++ }, onOpenChannel = { id -> selectedChannel = id },
-                onLeft = { selectedSpace = ""; selectedChannel = ""; refresh++ })
+                onLeft = { selectedSpace = ""; selectedChannel = ""; refresh++ },
+                onFolders = { saveFolders(it) }, onNewFolder = { foldersAt = it })
         }
     }
     }

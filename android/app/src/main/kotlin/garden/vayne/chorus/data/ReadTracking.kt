@@ -61,6 +61,17 @@ object ReadTracking {
         return (0 until result.length()).map { result.getString(it) }
     }
 
+    /** What [member] hasn't read of [messages] (their own messages aside), for chat info's members (F5.26). */
+    fun unread(messages: List<ChatMessage>, marks: List<ReadMark>, member: String): Int =
+        messages.count { member !in it.authors && needsMark(it.occurredAt, it.id, marks, member) }
+
+    /** "caught up", "4 unread", "99+ unread". */
+    fun unreadLabel(count: Int): String = when {
+        count <= 0 -> "caught up"
+        count > 99 -> "99+ unread"
+        else -> "$count unread"
+    }
+
     fun needsMark(at: Long, id: String, marks: List<ReadMark>, member: String): Boolean {
         val last = marks.firstOrNull { it.member == member } ?: return true
         return compare(at, id, last.at, last.id) > 0

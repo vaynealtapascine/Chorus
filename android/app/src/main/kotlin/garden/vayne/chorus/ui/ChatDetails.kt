@@ -91,6 +91,7 @@ internal fun SendAsSheet(model: Model, channelId: String, members: List<Member>,
 
 
 /** F5.26 chat info: who is here and what the channel has shared, from local data only. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace, model: Model, messages: List<ChatMessage>,
     library: List<ChatMessage>, directory: SpaceInfo?, onSearch: () -> Unit, onClose: (() -> Unit)? = null,
@@ -98,7 +99,9 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
     onShowMessage: (String) -> Unit = {}, modifier: Modifier = Modifier,
     title: String = channel.name, subtitle: String? = null, connections: List<SpaceAccount> = emptyList(),
     foreign: Map<String, ForeignAuthor> = emptyMap(), speakerId: String? = null,
-    onSpaceChanged: () -> Unit = {}, onOpenChannel: (String) -> Unit = {}, onLeft: () -> Unit = {}) {
+    onSpaceChanged: () -> Unit = {}, onOpenChannel: (String) -> Unit = {}, onLeft: () -> Unit = {},
+    /** The chat's folders (D-113): saving them, and starting a new folder with this chat. */
+    onFolders: ((ChatFolders.Settings) -> Unit)? = null, onNewFolder: ((String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val presence = ChatPresentation.presence(model, channel.id)
     // a members' chat, or a channel kept to some members, lists just them (D-097, D-099), with
@@ -129,10 +132,21 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
     val media = remember(library) { ChatLibrary.media(library) }
     val files = remember(library) { ChatLibrary.files(library) }
     val links = remember(library) { ChatLibrary.links(library) }
-    Column(modifier.fillMaxHeight().background(p.surface).verticalScroll(rememberScrollState())) {
+    var pinsOpen by remember(channel.id) { mutableStateOf(false) }
+    var foldersOpen by remember(channel.id) { mutableStateOf(false) }
+    val seen = remember(messages, library) { (messages + library).distinctBy { it.id } }
+    val pinned = remember(seen) { seen.filter { it.pinned }.sortedByDescending { it.occurredAt } }
+    val polls = remember(seen, model.polls) { seen.filter { model.polls.polls[it.id] != null }.sortedByDescending { it.occurredAt } }
+    val edit: (() -> Unit)? = if (asGroup) ({ editGroup = true }) else if (channelEditable) ({ editChannel = true }) else null
+    // the tabs stay in view while the pane scrolls under them (F5.26)
+    androidx.compose.foundation.lazy.LazyColumn(modifier.fillMaxHeight().background(p.surface)) {
+        item(key = "head") {
         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (onClose != null) ChatIconButton(R.drawable.ic_back, "Back to conversation", onClose)
             else Text("Chat info", color = p.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 12.dp))
+            Spacer(Modifier.weight(1f))
+            // Edit is the pencil in the bar (F5.26)
+            if (edit != null) ChatIconButton(R.drawable.ic_edit, "Edit", edit)
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             ChannelDisc(channel.copy(name = title), size = 72.dp)
@@ -144,13 +158,16 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                 directory != null && space.kind != "internal" -> "${directory.accounts.size} ${if (directory.accounts.size == 1) "account" else "accounts"}"
                 else -> null
             }
-            Text(listOfNotNull(kind, count).joinToString(" · "), color = p.ink3, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
-            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (notifyLevel == "none") InfoAction(R.drawable.ic_bell, "Unmute") { onNotify(model.accountPrefs.defaultNotify(space.kind)) }
-                else InfoAction(R.drawable.ic_bell_off, "Mute") { onNotify("none") }
-                InfoAction(R.drawable.ic_search, "Search", onSearch)
-                if (asGroup) InfoAction(R.drawable.ic_edit, "Edit") { editGroup = true }
-                else if (channelEditable) InfoAction(R.drawable.ic_edit, "Edit") { editChannel = true }
+            // who it stays with: "only The Lanterns" for our own chats
+            val only = model.systemName?.takeIf { it.isNotBlank() && space.kind == "internal" && !model.isPerson && channel.memberIds.isEmpty() }?.let { "only $it" }
+            Text(listOfNotNull(kind, count, only).joinToString(" · "), color = p.ink3, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val tile = Modifier.weight(1f)
+                if (notifyLevel == "none") InfoAction(R.drawable.ic_bell, "Unmute", tile) { onNotify(model.accountPrefs.defaultNotify(space.kind)) }
+                else InfoAction(R.drawable.ic_bell_off, "Mute", tile) { onNotify("none") }
+                InfoAction(R.drawable.ic_search, "Search", tile, onSearch)
+                InfoAction(R.drawable.ic_pin, "Pinned", tile) { pinsOpen = true }
+                if (onFolders != null) InfoAction(R.drawable.ic_folder, "Folder", tile) { foldersOpen = true }
             }
             channel.topic?.takeIf { it.isNotBlank() }?.let { topic ->
                 Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {
@@ -159,8 +176,15 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                 }
             }
         }
-        InfoTabs(listOf("members" to "Members", "media" to "Media", "files" to "Files", "links" to "Links"), tab) { tab = it }
-        HorizontalDivider(color = p.line)
+        }
+        stickyHeader(key = "tabs") {
+            Column(Modifier.fillMaxWidth().background(p.surface)) {
+                InfoTabs(listOf("members" to "Members", "media" to "Media", "files" to "Files", "links" to "Links", "polls" to "Polls"), tab) { tab = it }
+                HorizontalDivider(color = p.line)
+            }
+        }
+        item(key = "tab:$tab") {
+        Column {
         when (tab) {
             "media" -> {
                 if (media.isEmpty()) EmptyState(R.drawable.ic_image, "Nothing yet")
@@ -181,21 +205,39 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                 for (link in links.take(shown)) LinkRow(link, ChatLibrary.who(link.message, model))
                 if (links.size > shown) TextButton(onClick = { shown += 60 }, modifier = Modifier.padding(8.dp)) { Text("Show more") }
             }
+            "polls" -> {
+                if (polls.isEmpty()) EmptyState(R.drawable.ic_poll, "Nothing yet")
+                for (m in polls.take(shown)) Column(Modifier.fillMaxWidth().clickable(onClickLabel = "Show in chat") { onShowMessage(m.id) }
+                    .padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(ChatLibrary.who(m, model) + " · " + ChatPresentation.dateLabel(m.occurredAt), color = p.ink3, fontSize = 12.sp)
+                    PollCard(chorus, model, m.id, Polls.chatMember(model, speakerId))
+                }
+            }
             else -> Column(Modifier.padding(16.dp)) {
                 if (space.kind == "internal" && !model.isPerson) {
+                    val marks = model.readMarks[channel.id].orEmpty()
                     for (member in members) {
                         val entry = presence.firstOrNull { it.subjectType == "member" && it.subjectId == member.id }
-                        val mark = model.readMarks[channel.id].orEmpty().firstOrNull { it.member == member.id }
-                        val latest = messages.lastOrNull()
-                        val caughtUp = mark != null && latest != null && !ReadTracking.needsMark(latest.occurredAt, latest.id, listOf(mark), member.id)
+                        // what each member hasn't read here yet (F5.26): "caught up", or "12 unread"
+                        val unread = ReadTracking.unread(messages, marks, member.id)
                         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             ChatAvatar(member, 36.dp)
                             Column(Modifier.weight(1f)) {
                                 Text(member.shownName, color = p.ink, fontSize = 15.sp)
-                                val detail = listOfNotNull(ChatPresentation.layer(model, entry), "Caught up".takeIf { caughtUp }).joinToString(" · ")
-                                if (detail.isNotBlank()) Text(detail, color = if (caughtUp) p.accent else p.ink3, fontSize = 12.sp)
+                                ChatPresentation.layer(model, entry)?.let { Text(it, color = p.accent, fontSize = 12.sp) }
                             }
+                            if (marks.isNotEmpty() || messages.isNotEmpty()) Text(ReadTracking.unreadLabel(unread),
+                                color = if (unread > 0) p.accent else p.ink3, fontSize = 12.sp, fontWeight = if (unread > 0) FontWeight.SemiBold else FontWeight.Normal)
                         }
+                    }
+                    // a chat kept to some members gains more from its editor (D-097)
+                    if (channel.memberIds.isNotEmpty() && channelEditable) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        .clickable(role = androidx.compose.ui.semantics.Role.Button) { editChannel = true }.heightIn(min = 56.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.size(36.dp).background(p.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
+                            ChatIcon(R.drawable.ic_user_plus, tint = p.accent)
+                        }
+                        Text("Add a member of ${model.systemName?.takeIf { it.isNotBlank() } ?: "the system"}", color = p.accent, fontSize = 15.sp)
                     }
                 } else if (space.kind != "internal") {
                     ChatSpacePanel(chorus, model, space, channel, directory, connections, foreign, speakerId,
@@ -213,7 +255,25 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
                 }
             }
         }
+        }
+        }
     }
+    // Pinned (F5.26): this chat's pinned messages, newest first; one tap shows it in the chat
+    if (pinsOpen) Drawer({ pinsOpen = false }, "Pinned", pinned.size.takeIf { it > 0 }?.toString()) {
+        if (pinned.isEmpty()) EmptyState(R.drawable.ic_pin, "Nothing yet")
+        for (m in pinned) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+            .clickable(onClickLabel = "Show in chat") { pinsOpen = false; onShowMessage(m.id) }.heightIn(min = 56.dp).padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            m.authors.firstOrNull()?.let(model::member)?.let { ChatAvatar(it, 36.dp) }
+                ?: Box(Modifier.size(36.dp).background(p.surface2, CircleShape), contentAlignment = Alignment.Center) { ChatIcon(R.drawable.ic_pin) }
+            Column(Modifier.weight(1f)) {
+                Text(ChatLibrary.who(m, model) + " · " + ChatPresentation.dateLabel(m.occurredAt), color = p.ink3, fontSize = 12.sp)
+                Text(spoilerPreview(ChatPresentation.preview(m)), color = p.ink, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+    if (foldersOpen && onFolders != null) ChatFoldersDrawer(title, channel, space, model.accountPrefs.chatFolders, onFolders,
+        onNewFolder?.let { new -> { foldersOpen = false; new("new:${channel.id}") } }) { foldersOpen = false }
     viewing?.let { item ->
         MediaViewer(item.attachment, chorus, ChatLibrary.who(item.message, model), item.message.occurredAt,
             item.message.cw?.let { "Content warning: $it" } ?: "Spoiler".takeIf { item.attachment.spoiler }, onClose = { viewing = null },
@@ -222,9 +282,9 @@ internal fun ChatInfoPane(chorus: Chorus, channel: ChatChannel, space: ChatSpace
 }
 
 @Composable
-private fun InfoAction(icon: Int, label: String, onClick: () -> Unit) {
+private fun InfoAction(icon: Int, label: String, modifier: Modifier = Modifier.width(72.dp), onClick: () -> Unit) {
     val p = LocalChorusPalette.current
-    Column(Modifier.width(72.dp).heightIn(min = 64.dp).clip(RoundedCornerShape(12.dp)).background(p.surface2)
+    Column(modifier.heightIn(min = 64.dp).clip(RoundedCornerShape(12.dp)).background(p.surface2)
         .clickable(onClick = onClick).padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         ChatIcon(icon, tint = p.accent)

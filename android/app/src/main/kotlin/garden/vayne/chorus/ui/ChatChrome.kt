@@ -286,24 +286,32 @@ internal fun ChatListPane(model: Model, rows: List<ChatListRow>, selected: Strin
     }
     // a chat's folders, from its long-press menu: tick the folders of our own it belongs in
     foldersFor?.let { row ->
-        val kind = ChatFolders.kindOf(row.channel, row.space)
-        Drawer({ foldersFor = null }, "Folders", row.title, footer = { DrawerButton("Done", { foldersFor = null }) }) {
-            if (folders.custom.isEmpty()) Text("You have no folders of your own yet.", color = p.ink3, modifier = Modifier.padding(horizontal = 4.dp))
-            else FormCard {
-                folders.custom.forEachIndexed { i, f ->
-                    if (i > 0) FormDivider()
-                    val inside = ChatFolders.holds(f, row.channel.id, kind)
-                    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(role = androidx.compose.ui.semantics.Role.Checkbox) {
-                        onFolders?.invoke(ChatFolders.withCustom(folders, ChatFolders.setChat(f, row.channel.id, kind, !inside)))
-                    }.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Glyph(R.drawable.ic_folder, p.ink2, 20.dp)
-                        Text(f.name, color = p.ink, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                        Checkbox(inside, null)
-                    }
+        if (onFolders != null) ChatFoldersDrawer(row.title, row.channel, row.space, folders, onFolders,
+            onEditFolders?.let { edit -> { foldersFor = null; edit("new:${row.channel.id}") } }) { foldersFor = null }
+    }
+}
+
+/** Which folders of our own a chat is in (D-113), ticked in place; from the list's long-press or chat info's Folder. */
+@Composable
+internal fun ChatFoldersDrawer(title: String, channel: ChatChannel, space: ChatSpace, folders: ChatFolders.Settings,
+    onFolders: (ChatFolders.Settings) -> Unit, onNewFolder: (() -> Unit)?, onDismiss: () -> Unit) {
+    val p = LocalChorusPalette.current
+    val kind = ChatFolders.kindOf(channel, space)
+    Drawer(onDismiss, "Folders", title, footer = { DrawerButton("Done", onDismiss) }) {
+        if (folders.custom.isNotEmpty()) FormCard {
+            folders.custom.forEachIndexed { i, f ->
+                if (i > 0) FormDivider()
+                val inside = ChatFolders.holds(f, channel.id, kind)
+                Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(role = androidx.compose.ui.semantics.Role.Checkbox) {
+                    onFolders(ChatFolders.withCustom(folders, ChatFolders.setChat(f, channel.id, kind, !inside)))
+                }.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Glyph(R.drawable.ic_folder, p.ink2, 20.dp)
+                    Text(f.name, color = p.ink, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                    Checkbox(inside, null)
                 }
             }
-            if (onEditFolders != null) MenuRow("New folder with this chat", R.drawable.ic_plus) { foldersFor = null; onEditFolders("new:${row.channel.id}") }
         }
+        if (onNewFolder != null) MenuRow("New folder with this chat", R.drawable.ic_plus) { onNewFolder() }
     }
 }
 

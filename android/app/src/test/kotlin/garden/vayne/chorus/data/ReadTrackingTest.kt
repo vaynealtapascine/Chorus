@@ -51,4 +51,16 @@ class ReadTrackingTest {
             .put("||chat.read_per_member", row(true))))
         assertTrue(AccountPrefs.fromProjection(p, "account").readPerMember)
     }
+
+    @Test fun eachMemberCountsWhatTheyHaveNotRead() {
+        fun m(id: String, at: Long, by: String) = ChatMessage(id, "c", listOf(by), "hi", at, null, "all", emptySet(), "acct", null, emptyList())
+        val messages = listOf(m("a", 1, "fox"), m("b", 2, "amy"), m("c", 3, "fox"), m("d", 4, "amy"))
+        val marks = listOf(ReadMark("fox", 4, "d"), ReadMark("amy", 1, "a"))
+        assertEquals(0, ReadTracking.unread(messages, marks, "fox"))
+        assertEquals(1, ReadTracking.unread(messages, marks, "amy"))
+        assertEquals(4, ReadTracking.unread(messages, marks, "rin"))
+        assertEquals("caught up", ReadTracking.unreadLabel(0))
+        assertEquals("12 unread", ReadTracking.unreadLabel(12))
+        assertEquals("99+ unread", ReadTracking.unreadLabel(140))
+    }
 }
