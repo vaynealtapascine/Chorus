@@ -40,7 +40,7 @@ import garden.vayne.chorus.designsystem.R
 /**
  * New message (Figma F5.18): a full page of things to start, our members and our friends. One tap
  * on a person opens that chat as the default speaker (the face at the top changes who); holding a
- * member picks several for a group, holding a friend offers a private chat (D-098).
+ * member picks several for a group; a friend's lock (or holding the row) starts a private chat (D-098).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -121,7 +121,13 @@ internal fun NewMessagePage(chorus: Chorus, model: Model, connections: List<Spac
                         val fronting = views[FriendFronts.key(accountId, account.id)]?.frontNames
                         ContactRow(name = account.shownName, line = NewChat.friendLine(account, fronting), enabled = !busy && online,
                             onClick = { asSpeaker { s -> onAccount(s, account, false) } },
-                            onLongClick = if (person) null else ({ held = account })) { AccountAvatar(account, 40.dp) }
+                            onLongClick = if (person) null else ({ held = account }),
+                            // a private chat (D-098) is a visible choice too; holding the row stays a shortcut
+                            trailing = if (person || speaker == null) null else ({
+                                BarIcon(R.drawable.ic_lock, "Private chat with ${account.shownName} as ${speaker.shownName}", p.ink3, 20.dp) {
+                                    if (!busy && online) onAccount(speaker, account, true)
+                                }
+                            })) { AccountAvatar(account, 40.dp) }
                     }
                     if (friends.isEmpty()) item("none") {
                         if (!online) EmptyState(R.drawable.ic_wifi_off, "Offline")
@@ -230,7 +236,7 @@ private fun NewChatAction(icon: Int, label: String, onClick: () -> Unit) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ContactRow(name: String, line: String?, enabled: Boolean, accentLine: Boolean = false, selected: Boolean? = null,
-    onClick: () -> Unit, onLongClick: (() -> Unit)? = null, face: @Composable () -> Unit) {
+    onClick: () -> Unit, onLongClick: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null, face: @Composable () -> Unit) {
     val p = LocalChorusPalette.current
     Row(Modifier.fillMaxWidth().combinedClickable(enabled = enabled, role = if (selected != null) Role.Checkbox else Role.Button,
         onClick = onClick, onLongClick = onLongClick)
@@ -242,6 +248,7 @@ private fun ContactRow(name: String, line: String?, enabled: Boolean, accentLine
             Text(name, color = if (enabled) p.ink else p.ink3, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             line?.let { Text(it, color = if (accentLine) p.accent else p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
+        trailing?.invoke()
         if (selected != null) Box(Modifier.size(26.dp).then(if (selected) Modifier.background(p.accent, CircleShape) else Modifier.border(1.5.dp, p.ink3, CircleShape)),
             contentAlignment = Alignment.Center) { if (selected) Glyph(R.drawable.ic_check, p.onAccent, 16.dp) }
     }

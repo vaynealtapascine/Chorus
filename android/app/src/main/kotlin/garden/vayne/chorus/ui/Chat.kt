@@ -273,7 +273,10 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var staging by rememberSaveable { mutableStateOf(false) }
     var stageSelection by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     BackHandler(active && conversationOpen && !staging && !infoOpen) { conversationOpen = false }
-    androidx.compose.runtime.SideEffect { if (active) onFocusedRoute(conversationOpen || infoOpen || staging || newChat != null) }
+    // read here, in composition: a state read only inside SideEffect doesn't recompose this scope,
+    // so the New message page (set from a nested scope) kept the navigation bar (UI21)
+    val focusedRoute = conversationOpen || infoOpen || staging || newChat != null
+    androidx.compose.runtime.SideEffect { if (active) onFocusedRoute(focusedRoute) }
     var capturing by rememberSaveable { mutableStateOf(false) }
     var stageLimit by rememberSaveable { mutableStateOf(100) }
     var stageWindow by remember { mutableStateOf<StageRows?>(null) }
