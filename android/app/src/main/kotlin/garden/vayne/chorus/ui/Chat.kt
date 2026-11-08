@@ -613,8 +613,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 private = sides != null || (home.kind == "internal" && candidate.kind == "text" && candidate.memberIds.isNotEmpty()),
                 whose = sides?.mine?.mapNotNull { model.member(it)?.shownName }?.joinToString(" & ")?.ifEmpty { null },
                 archived = ChatOrganize.archived(prefs.archivedChats[candidate.id], latest?.occurredAt),
-                icon = if (sides != null) sides.theirs.firstNotNullOfOrNull { privateCards[it] ?: foreignAuthors[it] }?.member
-                    else if (home.kind == "dm" && partnerAccount != null) ChatPresentation.dmIcon(partnerAccount, privateCards.values) else null,
+                icon = ChatPresentation.rowIcon(sides, home.kind, partnerAccount, privateCards.values) { privateCards[it] ?: foreignAuthors[it] },
                 grouped = sides == null && ChatOrganize.groupsInto(home.kind, siblings))
         }.let { rows -> ChatOrganize.order(rows, prefs.chatPins, { it.channel.id }, { it.latest?.occurredAt ?: 0L }, { it.title }) }
     }

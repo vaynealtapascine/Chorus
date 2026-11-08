@@ -16,6 +16,13 @@ object ChatPresentation {
         cards.firstOrNull { it.accountId == partner.id }?.takeIf { partner.kind == "person" }?.member
             ?: partner.avatarBlob?.let { ForeignAuthor(partner.id, partner.id, partner.shownName, avatarBlob = it).member }
 
+    /** Whom a DM's row shows: the member a private chat is kept to on their side; with nobody listed
+     * there (D-098: [sides] names only ours), the account at the other end, like any DM. */
+    fun rowIcon(sides: ChatManage.Sides?, spaceKind: String, partner: SpaceAccount?, cards: Collection<ForeignAuthor>,
+        card: (String) -> ForeignAuthor?): Member? =
+        if (sides != null && sides.theirs.isNotEmpty()) sides.theirs.firstNotNullOfOrNull(card)?.member
+        else if (spaceKind == "dm" && partner != null) dmIcon(partner, cards) else null
+
     fun folder(channel: ChatChannel, space: ChatSpace): Folder = when {
         channel.isMemberDm || space.kind == "dm" -> Folder.Direct
         space.kind == "internal" -> Folder.Internal

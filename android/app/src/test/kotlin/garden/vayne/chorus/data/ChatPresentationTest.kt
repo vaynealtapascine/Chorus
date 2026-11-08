@@ -151,4 +151,18 @@ class ChatPresentationTest {
         assertEquals(null, ChatPresentation.dmIcon(system.copy(avatarBlob = null), listOf(ForeignAuthor("m", "s", "Kai"))))
         assertEquals(null, ChatPresentation.dmIcon(person, emptyList()))
     }
+
+    @Test fun aPrivateChatWithNobodyListedOnTheirSideStillShowsThem() {
+        val friend = SpaceAccount("other", "june", "June", "person", "acct-pic")
+        val june = ForeignAuthor("june-self", "other", "June", avatarBlob = "pic")
+        val amy = ForeignAuthor("amy", "other", "Amarynthe", avatarBlob = "amy-pic")
+        val cards = listOf(june, amy).associateBy { it.id }
+        // kept to our Kai only: the row shows the friend at the other end, as any DM does
+        assertEquals("pic", ChatPresentation.rowIcon(ChatManage.Sides(listOf("kai"), emptyList()), "dm", friend, cards.values, cards::get)?.avatarBlob)
+        // kept to one of theirs: that member
+        assertEquals("amy-pic", ChatPresentation.rowIcon(ChatManage.Sides(listOf("kai"), listOf("amy")), "dm", friend, cards.values, cards::get)?.avatarBlob)
+        assertEquals(null, ChatPresentation.rowIcon(ChatManage.Sides(listOf("kai"), listOf("gone")), "dm", friend, cards.values, cards::get))
+        // not a DM: nobody to show
+        assertEquals(null, ChatPresentation.rowIcon(ChatManage.Sides(listOf("kai"), emptyList()), "shared", friend, cards.values, cards::get))
+    }
 }
