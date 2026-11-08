@@ -373,9 +373,9 @@ private fun LazyListScope.personFollowers(model: Model, rows: List<FriendRow>, o
                 }
                 if (buckets.isEmpty()) Text("In no bucket", color = p.ink3, fontSize = 13.sp)
                 else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { for (b in buckets.take(3)) BucketLabel(b.name, b.icon, b.color) }
+                if (r.following == null) SmallButton("Follow back", icon = R.drawable.ic_user_plus) { onFollowBack(r.id) }
             }
-            if (r.following == null) SmallButton("Follow back", icon = R.drawable.ic_user_plus) { onFollowBack(r.id) }
-            else Glyph(R.drawable.ic_chevron_right, p.ink3, 18.dp)
+            Glyph(R.drawable.ic_chevron_right, p.ink3, 18.dp)
         }
     }
     item(key = "buckets") { SectionLabel("Buckets", Modifier.padding(horizontal = 12.dp)) {
@@ -429,8 +429,8 @@ private fun FriendListRow(r: FriendRow, now: Long, bright: Boolean, onOpen: (Str
             small?.let { (icon, text) -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Glyph(icon, p.ink3, 13.dp); Text(text, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
             } }
+            if (onFollowBack != null && r.following == null) SmallButton("Follow back", icon = R.drawable.ic_user_plus) { onFollowBack(r.id) }
         }
-        if (onFollowBack != null && r.following == null) SmallButton("Follow back", icon = R.drawable.ic_user_plus) { onFollowBack(r.id) }
         if (r.follows || r.follower?.status == "active") BarIcon(R.drawable.ic_message, "Message ${r.account.shownName}", p.ink3, 20.dp) { onMessage(r.id) }
     }
 }

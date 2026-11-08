@@ -30,8 +30,8 @@
 
   function accept() {
     acceptFollow(projection, followId, accountId, preset, bucket);
-    onclose();
     void friends.offerFollowBack(accountId, name);
+    onclose();
   }
 </script>
 

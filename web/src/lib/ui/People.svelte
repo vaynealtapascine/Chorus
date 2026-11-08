@@ -333,10 +333,13 @@
   .split .main { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 14px; padding: 12px 0 12px 16px; color: inherit; text-decoration: none; }
   .split.dim .main :global(.fr-face) { opacity: .55; }
   .split > .fr-icon { margin-top: 10px; }
-  .split > .back { align-self: center; flex: none; }
-  .follower { display: flex; align-items: center; padding-right: 12px; }
-  .follower > .fr-row { flex: 1; min-width: 0; }
-  .follower > .back { flex: none; }
+  /* Follow back goes under the text, so the name keeps its width on a phone */
+  .split:has(> .back) { flex-wrap: wrap; }
+  .split:has(> .back) .main { flex-basis: calc(100% - 60px); }
+  .split > .back { order: 3; margin: -4px 0 12px 74px; }
+  .follower { display: flex; flex-wrap: wrap; }
+  .follower > .fr-row { flex: 1 1 100%; min-width: 0; }
+  .follower > .back { margin: -4px 0 12px 70px; }
   .request { cursor: default; }
   .request:hover { background: none; }
   .bucket { align-items: center; text-decoration: none; }
