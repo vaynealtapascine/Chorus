@@ -16,7 +16,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
@@ -34,6 +36,14 @@ import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
 import java.text.DateFormat
 import java.util.Date
+
+/** A dashed [color] outline along [shape] (F5.4/F5.16 asides: the composer and their bubbles). */
+internal fun Modifier.dashedBorder(width: Dp, color: Color, shape: androidx.compose.ui.graphics.Shape): Modifier = drawWithContent {
+    drawContent()
+    val stroke = width.toPx()
+    drawOutline(shape.createOutline(size, layoutDirection, this), color,
+        style = Stroke(stroke, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx()))))
+}
 
 @Composable
 internal fun ChatIcon(resource: Int, description: String? = null, tint: Color = LocalChorusPalette.current.ink2) {

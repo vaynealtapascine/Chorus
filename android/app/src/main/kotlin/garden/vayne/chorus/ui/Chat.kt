@@ -64,6 +64,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.Role
@@ -125,6 +126,7 @@ import garden.vayne.chorus.data.Entry
 import garden.vayne.chorus.data.ForeignAuthor
 import garden.vayne.chorus.data.SpaceAccount
 import garden.vayne.chorus.data.Member
+import garden.vayne.chorus.data.ChatAside
 import garden.vayne.chorus.data.SpaceInfo
 import garden.vayne.chorus.data.Spaces
 import garden.vayne.chorus.data.accountVisible
@@ -1202,6 +1204,26 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 TextButton(enabled = picked.isNotEmpty(), onClick = { bundleForward = picked; selectedIds = emptyList() }) { Text("Forward") }
             }
         }
+        // F5.16: who reads what's written here, and the one-tap aside (F5.4)
+        if (ChatAside.offered(space.kind, model.isPerson)) {
+            val on = audience == "system_only"
+            Row(Modifier.fillMaxWidth().background(if (on) p.accentSoft else p.surface).heightIn(min = 44.dp).padding(start = 16.dp, end = 12.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ChatIcon(if (on) R.drawable.ic_lock else R.drawable.ic_globe, tint = if (on) p.accent else p.ink3)
+                Text(if (on) ChatAside.on(model.systemName) else ChatAside.everyone(directory[space.id]?.accounts),
+                    color = if (on) p.accent else p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f))
+                Row(Modifier.clip(RoundedCornerShape(16.dp)).background(if (on) p.accent else Color.Transparent)
+                    .then(if (on) Modifier else Modifier.border(1.dp, p.line, RoundedCornerShape(16.dp)))
+                    .toggleable(on, role = Role.Switch) { audience = if (it) "system_only" else "all" }
+                    .heightIn(min = 32.dp).padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_lock), null, Modifier.size(14.dp),
+                        tint = if (on) p.onAccent else p.ink)
+                    Text("Aside", color = if (on) p.onAccent else p.ink, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
         // Composer: one line (who's speaking, the text, options, send); options open above it
         Column(Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 12.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1279,9 +1301,12 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             }
             val audienceLabel = when (audience) {
                 "members" -> "Chosen members (${visibleTo.size})"
-                "system_only" -> "Only my system"
+                "system_only" -> "Aside"
                 else -> "Everyone here"
             }
+            // a shared space's audience is the bar over the composer (F5.16), not a tile
+            val asideBar = ChatAside.offered(space.kind, model.isPerson)
+            val aside = audience == "system_only"
             if (attachments.isNotEmpty()) AttachmentTray(attachments, onEdit = { editingFile = it }, onRemove = { i ->
                 attachments.getOrNull(i)?.let { DeviceGallery.discard(ctx, it.uri); attachments.removeAt(i) }
             })
@@ -1298,7 +1323,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     ChorusField(cw, { cw = it }, label = { Text("Content warning") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     if (cw.isNotBlank()) TextButton(onClick = { cw = "" }) { Text("Remove the warning") }
                 })
-                add(AttachOption("audience", "Who sees", R.drawable.ic_lock, audience != "all") {
+                if (!asideBar) add(AttachOption("audience", "Who sees", R.drawable.ic_lock, audience != "all") {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         item { ChatChip("Everyone here", audience == "all") { audience = "all" } }
                         if (space.kind == "internal") item {
@@ -1374,8 +1399,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                 },
                 onDismiss = { moreOpen = false; attachPage = "" })
             // what the message carries besides its text: tap one to change it
-            if (audience != "all" || cw.isNotBlank() || pollOn) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (audience != "all") item { ComposerOptionChip(audienceLabel, R.drawable.ic_lock) { attachPage = "audience"; moreOpen = true } }
+            if ((audience != "all" && !asideBar) || cw.isNotBlank() || pollOn) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (audience != "all" && !asideBar) item { ComposerOptionChip(audienceLabel, R.drawable.ic_lock) { attachPage = "audience"; moreOpen = true } }
                 if (cw.isNotBlank()) item { ComposerOptionChip("CW: ${cw.trim()}", R.drawable.ic_format_eye_off) { attachPage = "cw"; moreOpen = true } }
                 if (pollOn) item { ComposerOptionChip("Poll", R.drawable.ic_poll) { attachPage = "poll"; moreOpen = true } }
             }
@@ -1423,14 +1448,17 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                         onChoose = { selectedAuthor = it; authorsOpen = false }, onDismiss = { authorsOpen = false })
                 }
                 BasicTextField(draft, { draft = it }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)
-                    .background(p.surface2, RoundedCornerShape(24.dp)).semantics { contentDescription = "Message" },
+                    .background(p.surface2, RoundedCornerShape(24.dp))
+                    .then(if (aside) Modifier.dashedBorder(1.dp, p.accent, RoundedCornerShape(24.dp)) else Modifier)
+                    .semantics { contentDescription = if (aside) "Aside" else "Message" },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.ink), maxLines = 4,
                     cursorBrush = SolidColor(p.accent), decorationBox = { inner ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.padding(start = 4.dp).size(40.dp).clip(CircleShape).clickable(onClickLabel = "Add an emoji") { emojiOpen = true },
                                 contentAlignment = Alignment.Center) { ChatIcon(R.drawable.ic_emoji, "Emoji") }
                             Box(Modifier.weight(1f).padding(vertical = 12.dp)) {
-                                if (draft.isEmpty()) Text(if (channel.kind == "thread") "Reply in thread" else "Message",
+                                if (draft.isEmpty()) Text(if (aside) ChatAside.placeholder(model.systemName)
+                                    else if (channel.kind == "thread") "Reply in thread" else "Message", maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     color = p.ink3, style = MaterialTheme.typography.bodyLarge)
                                 inner()
                             }
@@ -1476,7 +1504,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                                     attachments.clear()
                                     draft = ""
                                     cw = ""
-                                    audience = "all"
+                                    audience = ChatAside.afterSend(audience)
                                     visibleTo = emptyList()
                                     replyTo = null
                                     carriedReply = null
@@ -1490,7 +1518,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                             }
                         }
                         .wrapContentSize(Alignment.Center)
-                        .semantics { contentDescription = if (busy) "Sending message" else "Send to $audienceLabel" },
+                        .semantics { contentDescription = if (busy) "Sending message" else if (aside) "Send as aside" else "Send to $audienceLabel" },
                     contentAlignment = Alignment.Center) { ChatIcon(R.drawable.ic_send, tint = if (canSend) p.onAccent else p.ink3) }
             }
         }
@@ -1759,6 +1787,7 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
     val tone = member?.let { tonesOf(it.color) }
     val presence = ChatPresentation.presence(model, message.channelId).firstOrNull { it.subjectId == member?.id && it.subjectType == "member" }
     val layer = ChatPresentation.layer(model, presence)
+    val aside = message.visibilityMode == "system_only"
     var menuOpen by remember(message.id) { mutableStateOf(false) }
     val ctx = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -1793,11 +1822,14 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
         val edited = held == null && message.edited
         if (own && edited) EditedMark()
         Box(Modifier.weight(1f, fill = false)) {
+        val bubble = RoundedCornerShape(
+            topStart = if (!own && !showSender) 6.dp else 16.dp, topEnd = if (own && !showSender) 6.dp else 16.dp,
+            bottomEnd = if (own && showAvatar) 6.dp else 16.dp, bottomStart = if (!own && showAvatar) 6.dp else 16.dp)
         Column(Modifier.widthIn(min = 64.dp, max = 360.dp)
             .then(if (reactions.isNotEmpty()) Modifier.width(IntrinsicSize.Max) else Modifier).heightIn(min = 48.dp)
-            .background(if (own) p.accentSoft else p.surface2, RoundedCornerShape(
-                topStart = if (!own && !showSender) 6.dp else 16.dp, topEnd = if (own && !showSender) 6.dp else 16.dp,
-                bottomEnd = if (own && showAvatar) 6.dp else 16.dp, bottomStart = if (!own && showAvatar) 6.dp else 16.dp))
+            // an aside (F5.4): only our system sees it, so it is drawn apart, a dashed accent outline
+            .then(if (aside) Modifier.background(p.accent.copy(alpha = .06f), bubble).dashedBorder(1.dp, p.accent.copy(alpha = .7f), bubble)
+                else Modifier.background(if (own) p.accentSoft else p.surface2, bubble))
             .then(if (settled) Modifier.semantics { customActions = listOf(CustomAccessibilityAction("Reply") { onReply(); true }) } else Modifier)
             .then(if (selected) Modifier.border(2.dp, p.accent, RoundedCornerShape(16.dp))
                 else if (ring.value > 0f) Modifier.border(2.dp, p.accent.copy(alpha = ring.value), RoundedCornerShape(16.dp)) else Modifier)
@@ -1810,7 +1842,8 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
         if (showSender) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(authors, color = tone?.name ?: p.ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp,
                 modifier = Modifier.weight(1f, fill = false))
-            if (layer != null) Text(layer, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+            if (aside) Text(ChatAside.tag(own, model.systemName), color = p.accent, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1)
+            else if (layer != null) Text(layer, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
         }
         if (message.replyTo != null) {
             val quoted = quote?.authors?.firstOrNull()?.let(::author)
@@ -1879,12 +1912,7 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
         if (showUnseen && unseenBy.isNotEmpty()) Text("Not seen by " + unseenBy.map {
             model.member(it)?.shownName ?: "Someone"
         }.joinToString(", "), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
-        val tags = listOfNotNull(
-
-            "Only this system".takeIf { message.visibilityMode == "system_only" },
-            "Chosen members".takeIf { message.visibilityMode == "members" },
-        )
-        if (tags.isNotEmpty()) Text(tags.joinToString(" · "), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+        if (message.visibilityMode == "members") Text("Chosen members", color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
         if (message.cw != null) {
             Text("Content warning: ${message.cw} · ${if (revealed) "Hide" else "Show"}", color = p.accent,
                 modifier = Modifier.clickable { revealed = !revealed }.heightIn(min = 48.dp).wrapContentSize(Alignment.CenterStart))
