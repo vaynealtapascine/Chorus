@@ -24,6 +24,7 @@ import garden.vayne.chorus.data.PeopleApi
 import garden.vayne.chorus.data.Push
 import garden.vayne.chorus.data.QuietHours
 import garden.vayne.chorus.data.QuietWindow
+import garden.vayne.chorus.data.Status
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
 import kotlinx.coroutines.launch
@@ -320,38 +321,58 @@ private fun DataPage(chorus: Chorus, model: Model, routes: SettingsRoutes, onOpe
     if (importing) PkImportSheet(chorus) { importing = false }
 }
 
-/** The system's name (`system.set`), its handle and the server it lives on. */
+/** The system's name (`system.set`), the account handle (`account.set`, D-126), the server and the connection. */
 @Composable
 private fun SystemPage(chorus: Chorus, model: Model) {
     val p = LocalChorusPalette.current
     val scope = rememberCoroutineScope()
-    var naming by remember { mutableStateOf(false) }
+    val status by chorus.status.collectAsState()
+    var editing by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     FormCard(Modifier.padding(top = 16.dp)) {
         if (!model.isPerson) {
-            FormValueRow("Name", model.systemName?.takeIf { it.isNotBlank() } ?: "Add a name") { naming = true }
+            FormValueRow("Name", model.systemName?.takeIf { it.isNotBlank() } ?: "Add a name") { editing = "name" }
             FormDivider()
         }
-        model.accountHandle?.let { FormInfoRow("Handle", "@$it"); FormDivider() }
-        FormInfoRow("Server", chorus.device?.base?.let { runCatching { java.net.URI(it).host }.getOrNull() ?: it }.orEmpty())
+        FormValueRow("Handle", model.accountHandle?.let { "@$it" } ?: "Add one") { editing = "handle" }
+    }
+    SectionLabel("Connection")
+    FormCard {
+        chorus.device?.let { dev ->
+            val host = runCatching { java.net.URI(dev.base).host }.getOrNull() ?: dev.base
+            FormInfoRow("Server", if (dev.pin != null) "Chorus Home · $host" else host)
+            FormDivider()
+        }
+        FormInfoRow("Status", when (status) {
+            Status.Live -> "Connected"
+            Status.Connecting -> "Connecting…"
+            else -> "Offline"
+        })
     }
     error?.let { Text(it, color = p.danger, fontSize = 14.sp) }
-    if (naming) {
-        var name by remember { mutableStateOf(model.systemName.orEmpty()) }
+    editing?.let { which ->
+        val handle = which == "handle"
+        val current = if (handle) model.accountHandle.orEmpty() else model.systemName.orEmpty()
+        var text by remember { mutableStateOf(current) }
         var busy by remember { mutableStateOf(false) }
-        Drawer({ naming = false }, "System name", dismissible = !busy, footer = {
+        val ok = if (handle) text.length >= 2 else text.isNotBlank()
+        Drawer({ editing = null }, if (handle) "Handle" else "System name", dismissible = !busy, footer = {
             DrawerButton("Save", {
                 busy = true
                 scope.launch {
                     try {
-                        chorus.create("system.set", chorus.device?.accountId, org.json.JSONObject().put("name", name.trim()))
-                        error = null; naming = false
-                    } catch (e: Exception) { error = e.message ?: "Could not rename." }
+                        val (kind, payload) = if (handle) "account.set" to org.json.JSONObject().put("handle", text)
+                            else "system.set" to org.json.JSONObject().put("name", text.trim())
+                        chorus.create(kind, chorus.device?.accountId, payload)
+                        error = null; editing = null
+                    } catch (e: Exception) { error = e.message ?: "Could not save it." }
                     finally { busy = false }
                 }
-            }, enabled = name.isNotBlank() && name.trim() != model.systemName, busy = busy)
+            }, enabled = ok && text.trim() != current, busy = busy)
         }) {
-            ChorusField(name, { name = it.take(100) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Name") })
+            if (handle) ChorusField(text, { text = garden.vayne.chorus.data.Welcoming.handle(it) }, Modifier.fillMaxWidth(), singleLine = true,
+                prefix = { Text("@") }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii))
+            else ChorusField(text, { text = it.take(100) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Name") })
         }
     }
 }

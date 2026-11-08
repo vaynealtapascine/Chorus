@@ -3,9 +3,13 @@ package garden.vayne.chorus.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
+import android.provider.OpenableColumns
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -15,6 +19,7 @@ import garden.vayne.chorus.data.Blobs
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.UploadWork
 import garden.vayne.chorus.designsystem.LocalChorusPalette
+import garden.vayne.chorus.designsystem.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -24,7 +29,6 @@ import java.net.URL
 
 /** Import from PluralKit (D-005): members, groups and switch history from `pk;export`, as on web. */
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
 internal fun PkImportSheet(chorus: Chorus, onDismiss: () -> Unit) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
@@ -35,6 +39,7 @@ internal fun PkImportSheet(chorus: Chorus, onDismiss: () -> Unit) {
     var done by remember { mutableStateOf<Int?>(null) }
     var busy by remember { mutableStateOf(false) }
     var avatarNotes by remember { mutableStateOf(emptyList<String>()) }
+    var fileName by remember { mutableStateOf<String?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch {
             error = null; done = null; plan = null
@@ -48,6 +53,11 @@ internal fun PkImportSheet(chorus: Chorus, onDismiss: () -> Unit) {
                 }
                 plan = JSONObject(withContext(Dispatchers.Default) { uniffi.chorus_ffi.planPluralkit(read, chorus.accountScope) })
                 text = read
+                fileName = runCatching {
+                    ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                        if (c.moveToFirst()) c.getString(0) else null
+                    }
+                }.getOrNull() ?: "pk;export"
             } catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Exception) { error = e.message ?: "This doesn't look like a PluralKit export." }
         }
@@ -86,7 +96,7 @@ internal fun PkImportSheet(chorus: Chorus, onDismiss: () -> Unit) {
                         queued = true
                     } catch (e: kotlinx.coroutines.CancellationException) { throw e }
                     catch (e: Exception) {
-                        avatarNotes = avatarNotes + "$pkId: avatar could not be fetched (${e.message}). You can add it in the member editor."
+                        avatarNotes = avatarNotes + "$pkId: avatar could not be fetched (${e.message})"
                     }
                 }
                 if (queued) UploadWork.enqueue(ctx)
@@ -95,27 +105,32 @@ internal fun PkImportSheet(chorus: Chorus, onDismiss: () -> Unit) {
             finally { busy = false }
         }
     }
-    ChorusSheet(onDismissRequest = { if (!busy) onDismiss() }, containerColor = p.surface,
-        skipPartiallyExpanded = true) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Import from PluralKit", color = p.ink, style = MaterialTheme.typography.titleMedium)
-            OutlinedButton(enabled = !busy, onClick = { picker.launch("*/*") }) { Text(if (plan == null) "Choose your pk;export file" else "Choose another file") }
-            error?.let { Text(it, color = p.danger) }
-            plan?.let { pl ->
-                Text("${pl.optInt("members")} members · ${pl.optInt("groups")} groups · ${pl.optInt("switches")} switches",
-                    color = p.ink, fontWeight = FontWeight.Medium)
-                val warnings = pl.optJSONArray("warnings")
-                val notes = List(warnings?.length() ?: 0) { warnings!!.optString(it) }
-                    .filter { done == null || !it.contains("avatar not imported yet") } + avatarNotes
-                if (notes.isNotEmpty()) {
-                    var open by remember { mutableStateOf(false) }
-                    TextButton(onClick = { open = !open }) { Text("${notes.size} notes") }
-                    if (open) for (n in notes) Text("• $n", color = p.ink3, style = MaterialTheme.typography.bodySmall)
+    Drawer({ if (!busy) onDismiss() }, "Import from PluralKit", dismissible = !busy, footer = {
+        if (plan != null) DrawerButton(if (done == null) "Import" else "Import again", ::run, busy = busy)
+    }) {
+        FormCard {
+            FormValueRow("Export file", fileName ?: "Choose", R.drawable.ic_file, enabled = !busy) { picker.launch("*/*") }
+        }
+        error?.let { FormNote(it, warning = true) }
+        plan?.let { pl ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for ((n, label) in listOf(pl.optInt("members") to "members", pl.optInt("groups") to "groups", pl.optInt("switches") to "switches")) {
+                    Column(Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(cardColor()).padding(vertical = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("$n", color = p.ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text(label, color = p.ink3, fontSize = 13.sp)
+                    }
                 }
-                done?.let { Text("Imported $it new item${if (it == 1) "" else "s"}.${if (it == 0) " Everything was already here." else ""}", color = p.ok) }
-                Button(enabled = !busy, onClick = ::run) { Text(if (busy) "Importing…" else if (done == null) "Import" else "Import again") }
             }
+            val warnings = pl.optJSONArray("warnings")
+            val notes = List(warnings?.length() ?: 0) { warnings!!.optString(it) }
+                .filter { done == null || !it.contains("avatar not imported yet") } + avatarNotes
+            if (notes.isNotEmpty()) {
+                var open by remember { mutableStateOf(false) }
+                FormCard { NavRow("${notes.size} note${if (notes.size == 1) "" else "s"}", R.drawable.ic_alert, chevron = false) { open = !open } }
+                if (open) FormNote(notes.joinToString("\n"))
+            }
+            done?.let { FormNote(if (it == 0) "Everything was already here." else "Imported $it new item${if (it == 1) "" else "s"}.", R.drawable.ic_check) }
         }
     }
 }
