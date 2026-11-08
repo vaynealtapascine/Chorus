@@ -21,7 +21,7 @@ enum class AppIcon(val resource: Int) {
     Friends(R.drawable.ic_friends), More(R.drawable.ic_more), Journal(R.drawable.ic_journal),
     Search(R.drawable.ic_search), Settings(R.drawable.ic_settings), History(R.drawable.ic_history),
     Swap(R.drawable.ic_switch_arrows), Plus(R.drawable.ic_plus), Close(R.drawable.ic_close),
-    Chevron(R.drawable.ic_chevron), Layers(R.drawable.ic_layers), Lock(R.drawable.ic_lock), Bell(R.drawable.ic_bell),
+    Chevron(R.drawable.ic_chevron), Layers(R.drawable.ic_layers), Lock(R.drawable.ic_lock), Bell(R.drawable.ic_bell), Home(R.drawable.ic_home),
 }
 
 @Composable
@@ -30,10 +30,12 @@ fun ChorusIcon(icon: AppIcon, description: String? = null, modifier: Modifier = 
 }
 
 @Composable
-fun MoreScreen(person: Boolean, onMembers: () -> Unit, onHome: () -> Unit, onChat: () -> Unit, onPeople: () -> Unit, onJournal: () -> Unit,
+fun MoreScreen(person: Boolean, onDashboard: () -> Unit = {}, onMembers: () -> Unit, onHome: () -> Unit, onChat: () -> Unit, onPeople: () -> Unit, onJournal: () -> Unit,
     onInsights: () -> Unit, onSettings: () -> Unit, onSearch: () -> Unit, onLink: () -> Unit,
     onNotifications: () -> Unit = {}) {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Chorus opens on Home (D-130); it is listed here whether or not it is on the bar
+        item { DestinationRow("Home", AppIcon.Home, onDashboard) }
         if (!person) {
             item { DestinationRow("Members", AppIcon.Members, onMembers) }
             item { DestinationRow("Fronting", AppIcon.Front, onHome) }

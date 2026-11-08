@@ -16,4 +16,11 @@ class DeviceNavigationTest {
         assertEquals(DeviceNavigation.systemDefault, DeviceNavigation.resolve("Unknown", false))
         assertEquals(emptyList<String>(), DeviceNavigation.resolve("", false))
     }
+    @Test fun homeIsOnNoDefaultBarButEitherKindCanAddIt() {
+        assertFalse(DeviceNavigation.HOME in DeviceNavigation.resolve(null, false))
+        assertFalse(DeviceNavigation.HOME in DeviceNavigation.resolve(null, true))
+        assertEquals(listOf("Today", "Notifications", "Chat", "People"), DeviceNavigation.resolve("Today,Notifications,Chat,People", true))
+        // "Home" stays Fronting's saved name, so a bar saved before D-130 keeps Fronting
+        assertEquals(listOf("Today", "Home"), DeviceNavigation.resolve("Today,Home", false))
+    }
 }

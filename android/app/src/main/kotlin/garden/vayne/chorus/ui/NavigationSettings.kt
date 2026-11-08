@@ -20,10 +20,10 @@ import androidx.compose.ui.unit.dp
 import garden.vayne.chorus.data.DeviceNavigation
 
 internal fun destinationLabel(name: String) = when(name) {
-    "Home" -> "Fronting"; "People" -> "Friends"; "History" -> "Front history"; else -> name
+    "Home" -> "Fronting"; "Today" -> "Home"; "People" -> "Friends"; "History" -> "Front history"; else -> name
 }
 private fun destinationIcon(name: String) = when(name) {
-    "Home" -> AppIcon.Front; "People" -> AppIcon.Friends; "History" -> AppIcon.History
+    "Home" -> AppIcon.Front; "Today" -> AppIcon.Home; "People" -> AppIcon.Friends; "History" -> AppIcon.History
     "Members" -> AppIcon.Members; "Chat" -> AppIcon.Chat; "Journal" -> AppIcon.Journal; "Notifications" -> AppIcon.Bell; else -> AppIcon.More
 }
 

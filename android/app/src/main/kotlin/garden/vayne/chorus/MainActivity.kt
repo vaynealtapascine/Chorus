@@ -215,7 +215,13 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Tab(val label: String, val icon: AppIcon) { Home("Fronting", AppIcon.Front), Notifications("Notifications", AppIcon.Bell), Chat("Chat", AppIcon.Chat), Journal("Journal", AppIcon.Journal), People("Friends", AppIcon.Friends), Members("Members", AppIcon.Members), More("More", AppIcon.More), History("Front history", AppIcon.History) }
+/** Destinations; [key] is the name saved in `chorus.navigation` (Fronting keeps its old "Home"). */
+private enum class Tab(val label: String, val icon: AppIcon, val key: String) {
+    Home("Home", AppIcon.Home, "Today"), Fronting("Fronting", AppIcon.Front, "Home"), Notifications("Notifications", AppIcon.Bell, "Notifications"),
+    Chat("Chat", AppIcon.Chat, "Chat"), Journal("Journal", AppIcon.Journal, "Journal"), People("Friends", AppIcon.Friends, "People"),
+    Members("Members", AppIcon.Members, "Members"), More("More", AppIcon.More, "More"), History("Front history", AppIcon.History, "History");
+    companion object { fun of(key: String): Tab? = entries.firstOrNull { it.key == key } }
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -238,11 +244,12 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     val expanded = LocalConfiguration.current.screenWidthDp >= 840
     val status by chorus.status.collectAsState()
     val model by chorus.model.collectAsState()
+    // Chorus opens on Home (D-130)
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     val navigationTabs = remember(navRevision, navAccount, model.isPerson) {
-        DeviceNavigation.resolve(navPrefs.getString(navAccount, null), model.isPerson).map { Tab.valueOf(it) } + Tab.More
+        DeviceNavigation.resolve(navPrefs.getString(navAccount, null), model.isPerson).mapNotNull { Tab.of(it) } + Tab.More
     }
-    val routedTab = if (model.isPerson && tab in listOf(Tab.Home, Tab.Members, Tab.History)) Tab.Journal else tab
+    val routedTab = if (model.isPerson && tab in listOf(Tab.Fronting, Tab.Members, Tab.History)) Tab.Journal else tab
     var chatSpace by rememberSaveable { mutableStateOf<String?>(null) }
     var chatChannel by rememberSaveable { mutableStateOf<String?>(null) }
     var chatSearchHit by remember { mutableStateOf<SearchDocument?>(null) }
@@ -341,13 +348,15 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     LaunchedEffect(switchRequest, status) {
         val handover = switchRequest ?: return@LaunchedEffect
         if (status == Status.Loading || status == Status.NoDevice || status == Status.StorageError) return@LaunchedEffect
-        tab = Tab.Home; handoverOpen = handover; quickSwitchOpen = true
+        tab = Tab.Fronting; handoverOpen = handover; quickSwitchOpen = true
         onSwitchConsumed()
     }
     if (quickSwitchOpen && !model.isPerson) Switcher(chorus, model, handover = handoverOpen) { quickSwitchOpen = false; handoverOpen = false }
-    BackHandler(sharedDraft == null && !linking && !quickSwitchOpen && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen && layersFront == null && routedTab !in navigationTabs) {
-        // Front history is a Fronting page (F3.7): back returns there when Fronting is on the bar
-        tab = if (routedTab == Tab.History && Tab.Home in navigationTabs) Tab.Home else Tab.More
+    BackHandler(sharedDraft == null && !linking && !quickSwitchOpen && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen && layersFront == null && routedTab != Tab.Home) {
+        // Front history is a Fronting page (F3.7): back returns there when Fronting is on the bar; a
+        // page opened from More returns to More; any destination on the bar returns to Home (D-130)
+        tab = if (routedTab == Tab.History && Tab.Fronting in navigationTabs) Tab.Fronting
+            else if (routedTab !in navigationTabs) Tab.More else Tab.Home
     }
 
     when (status) {
@@ -380,14 +389,14 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             }
             fun select(t: Tab) { tab = t; settingsOpen = false; searchOpen = false; insightsOpen = false; frontsOpen = false; layersFront = null }
             if (expanded && !chatStageCapture) NavigationRail(containerColor = p.surface) {
-                destinations.forEach { t -> NavigationRailItem(selected = t == activeTab || (t == Tab.More && activeTab !in destinations),
+                destinations.forEach { t -> NavigationRailItem(selected = t == activeTab || (t == Tab.More && activeTab !in destinations && activeTab != Tab.Home),
                     onClick = { select(t) }, icon = { TabIcon(t) }, label = { Text(t.label) }) }
             }
             Column(Modifier.weight(1f).navigationBarsPadding()) {
             // Fronting, its history and its subpages draw their own Figma bars (F3.1, F3.4, F3.7, F3.9)
             val frontingChrome = !person && !searchOpen && !settingsOpen && !insightsOpen && sharedDraft == null &&
-                (frontsOpen || layersFront != null || activeTab == Tab.Home || activeTab == Tab.History)
-            val chatOwnChrome = frontingChrome || (activeTab in listOf(Tab.Chat, Tab.Journal, Tab.Notifications, Tab.People) || (activeTab == Tab.Members && membersFocused)) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
+                (frontsOpen || layersFront != null || activeTab == Tab.Fronting || activeTab == Tab.History)
+            val chatOwnChrome = frontingChrome || (activeTab in listOf(Tab.Home, Tab.Chat, Tab.Journal, Tab.Notifications, Tab.People) || (activeTab == Tab.Members && membersFocused)) && !searchOpen && !settingsOpen && !insightsOpen && !frontsOpen && sharedDraft == null
             if (chatOwnChrome && !chatStageCapture) Box(Modifier.fillMaxWidth().background(p.surface).statusBarsPadding())
             if (!chatStageCapture && !chatOwnChrome) Row(
                 Modifier.fillMaxWidth().background(p.surface).statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
@@ -441,7 +450,20 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     animationSpec = androidx.compose.animation.core.tween(if (motion) 120 else 0), label = "Main destination") { shownTab ->
                 destinationState.SaveableStateProvider(shownTab.name) {
                 when (shownTab) {
-                    Tab.Home -> Home(chorus, model, onFronts = { frontsOpen = true }, onHistory = { historyFront = it; tab = Tab.History },
+                    Tab.Home -> garden.vayne.chorus.ui.HomeScreen(chorus, model, garden.vayne.chorus.ui.HomeRoutes(
+                        onSearch = { searchSection = "Messages"; searchOpen = true },
+                        onChat = { space, channel ->
+                            if (channel != null) { chatSpace = space; chatChannel = channel; chatMessage = null; chatSearchHit = null }
+                            tab = Tab.Chat
+                        },
+                        onFriends = { route -> friendsRoute = route; tab = Tab.People },
+                        onHistory = { historyFront = null; tab = Tab.History },
+                        onJournal = { tab = Tab.Journal },
+                        onPost = { id -> journalReplyPost = null; journalOpenPost = id; tab = Tab.Journal },
+                        onReply = { id -> journalReplyPost = id; tab = Tab.Journal },
+                        onWrite = { journalReplyPost = null; journalOpenPost = null; journalNewEntry = System.nanoTime(); tab = Tab.Journal },
+                        onProfile = { id -> journalOpenProfile = id; journalOpenPost = null; tab = Tab.Journal }))
+                    Tab.Fronting -> Home(chorus, model, onFronts = { frontsOpen = true }, onHistory = { historyFront = it; tab = Tab.History },
                         onLayers = { layersFront = it }, onNewFront = { frontsNaming = true; frontsOpen = true })
                     Tab.Notifications -> Notifications(chorus, model, InboxRoutes(
                         onPost = { id -> journalReplyPost = null; journalOpenPost = id; tab = Tab.Journal },
@@ -478,8 +500,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                     Tab.Members -> Members(chorus, model, onJournal = { member, post ->
                         journalOpenProfile = member; journalOpenPost = post; tab = Tab.Journal
                     }, active = shownTab == activeTab, onFocusedRoute = { membersFocused = it })
-                    Tab.History -> History(chorus, model, historyFront, onBack = { tab = Tab.Home })
-                    Tab.More -> MoreScreen(person, onMembers = { tab = Tab.Members }, onHome = { tab = Tab.Home }, onChat = { tab = Tab.Chat }, onPeople = { tab = Tab.People }, onJournal = { tab = Tab.Journal },
+                    Tab.History -> History(chorus, model, historyFront, onBack = { tab = Tab.Fronting })
+                    Tab.More -> MoreScreen(person, onDashboard = { tab = Tab.Home }, onMembers = { tab = Tab.Members }, onHome = { tab = Tab.Fronting }, onChat = { tab = Tab.Chat }, onPeople = { tab = Tab.People }, onJournal = { tab = Tab.Journal },
                         onInsights = { insightsOpen = true }, onSettings = { settingsOpen = true },
                         onSearch = { searchSection="Messages"; searchOpen = true }, onLink = { linking = true },
                         onNotifications = { tab = Tab.Notifications })
@@ -503,8 +525,8 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             ) {
                 destinations.forEach { t -> NavigationBarItem(
                     // Front history belongs to Fronting (F3.7) when Fronting is on the bar
-                    selected = (t == activeTab || (t == Tab.Home && activeTab == Tab.History) ||
-                        (t == Tab.More && activeTab !in destinations && !(activeTab == Tab.History && Tab.Home in destinations))) &&
+                    selected = (t == activeTab || (t == Tab.Fronting && activeTab == Tab.History) ||
+                        (t == Tab.More && activeTab !in destinations && activeTab != Tab.Home && !(activeTab == Tab.History && Tab.Fronting in destinations))) &&
                         !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen,
                     onClick = { select(t) }, icon = { TabIcon(t) }, label = {
                         // "Notifications" is the longest label: let it run into the item's padding rather than cut it
