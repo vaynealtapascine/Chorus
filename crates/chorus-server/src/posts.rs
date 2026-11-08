@@ -21,15 +21,24 @@ pub(crate) fn readable_sql(viewer: &str) -> String {
     )
 }
 
-/// Whether `viewer` is in an audience (`private` · `followers` · `buckets` · `server`) that
-/// `owner` set on something of theirs: posts, and member profiles (`profiles::Viewer::allows`).
+/// Whether `viewer` is in an audience (`private` · `friends` · `followers` · `following` · `buckets` ·
+/// `server`) that `owner` set on something of theirs: posts, and member profiles
+/// (`profiles::Viewer::allows`). Friends is both ways (D-129).
 pub(crate) fn audience_sql(viewer: &str, owner: &str, audience: &str) -> String {
+    let follows = format!(
+        "EXISTS (SELECT 1 FROM follow f WHERE f.follower_account_id={viewer}
+              AND f.target_account_id={owner} AND f.status='active')"
+    );
+    let followed = format!(
+        "EXISTS (SELECT 1 FROM follow f WHERE f.follower_account_id={owner}
+              AND f.target_account_id={viewer} AND f.status='active')"
+    );
     format!(
         "({owner}={viewer} OR CASE WHEN json_valid({audience}) THEN
     (json_extract({audience},'$.mode')='server' OR
-     (json_extract({audience},'$.mode') IN ('followers','buckets') AND
-      EXISTS (SELECT 1 FROM follow f WHERE f.follower_account_id={viewer}
-              AND f.target_account_id={owner} AND f.status='active') AND
+     (json_extract({audience},'$.mode')='following' AND {followed}) OR
+     (json_extract({audience},'$.mode')='friends' AND {follows} AND {followed}) OR
+     (json_extract({audience},'$.mode') IN ('followers','buckets') AND {follows} AND
       (json_extract({audience},'$.mode')='followers' OR
        EXISTS (SELECT 1 FROM json_each({audience},'$.bucket_ids') ids
                JOIN bucket_assignment ba ON ba.bucket_id=ids.value AND ba.follower_account_id={viewer} AND ba.is_present

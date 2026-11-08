@@ -5,8 +5,8 @@
 //! its own audience. A viewer sees a part only if they may see the profile **and** the part. An
 //! absent built-in part follows the profile, except the complete `name`, which is private unless
 //! chosen (D-126); an absent custom field follows the field's `default_visibility` (private unless
-//! chosen). Audiences use the post rule (`posts::readable_sql`): `private` · `followers` ·
-//! `buckets` · `server`; anything malformed fails closed.
+//! chosen). Audiences use the post rule (`posts::readable_sql`): `private` · `friends` ·
+//! `followers` · `following` · `buckets` · `server`; anything malformed fails closed.
 //!
 //! The display name always follows the profile: whoever may see the member sees it (a stored
 //! `display_name` audience from before D-126 is ignored). A member without one is shown by their
@@ -27,22 +27,28 @@ pub const PARTS: &[&str] = &["name", "pronouns", "description", "birthday", "ban
 pub struct Viewer {
     own: bool,
     follows: bool,
+    /// The owner follows the viewer: `following`, and with [`Viewer::follows`] `friends` (D-129).
+    followed: bool,
     buckets: HashSet<String>,
 }
 
 impl Viewer {
     pub fn of(conn: &Connection, viewer: &str, owner: &str) -> rusqlite::Result<Viewer> {
         if viewer == owner {
-            return Ok(Viewer { own: true, follows: true, buckets: HashSet::new() });
+            return Ok(Viewer { own: true, follows: true, followed: true, buckets: HashSet::new() });
         }
-        let follows = conn
-            .query_row(
-                "SELECT 1 FROM follow WHERE follower_account_id = ?1 AND target_account_id = ?2 AND status = 'active'",
-                params![viewer, owner],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some();
+        let active = |follower: &str, target: &str| -> rusqlite::Result<bool> {
+            Ok(conn
+                .query_row(
+                    "SELECT 1 FROM follow WHERE follower_account_id = ?1 AND target_account_id = ?2 AND status = 'active'",
+                    params![follower, target],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some())
+        };
+        let follows = active(viewer, owner)?;
+        let followed = active(owner, viewer)?;
         let mut buckets = HashSet::new();
         if follows {
             let mut st = conn.prepare_cached(
@@ -53,7 +59,7 @@ impl Viewer {
                 buckets.insert(id?);
             }
         }
-        Ok(Viewer { own: false, follows, buckets })
+        Ok(Viewer { own: false, follows, followed, buckets })
     }
 
     /// Whether this audience includes the viewer. Malformed or unknown audiences fail closed.
@@ -64,6 +70,8 @@ impl Viewer {
         match audience.get("mode").and_then(Value::as_str) {
             Some("server") => true,
             Some("followers") => self.follows,
+            Some("following") => self.followed,
+            Some("friends") => self.follows && self.followed,
             Some("buckets") => {
                 self.follows
                     && audience

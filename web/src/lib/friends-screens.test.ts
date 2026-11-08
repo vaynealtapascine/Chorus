@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import {
-  acceptCeiling, announcedTo, around, fieldValue, friendRows, hearsAbout, nowLine, prefsSummary, sinceLine, subjects,
+  acceptCeiling, announcedTo, around, connectedSince, fieldValue, friendRows, hearsAbout, mutual, nowLine, prefsSummary, sinceLine, subjects,
   timeNote, withLevel, withQuiet, withSubject, quiet, type FollowRow, type FriendRow, type Person,
 } from './friends-screens';
 
@@ -71,4 +71,15 @@ it('says who a follower hears about and reads ceiling details shortly', () => {
   expect(fieldValue('delay', { min_s: 300, max_s: 1200 })).toBe('5–20 min');
   expect(fieldValue('time', { mode: 'round', round_min: 5 })).toBe('5 min');
   expect(fieldValue('quiet_hours', null)).toBe('None');
+});
+
+it('friends are both ways: one follow is not a friendship (D-129)', () => {
+  const j = person('j');
+  const one: FriendRow = { account: j, following: { ...follow('f', j), created_at: 100 }, follower: null, view: null, latest: null };
+  expect(mutual(one)).toBe(false);
+  expect(connectedSince(one)).toBe(0);
+  const both = { ...one, follower: { ...follow('g', j), created_at: 300 } };
+  expect(mutual(both)).toBe(true);
+  expect(connectedSince(both)).toBe(300);
+  expect(mutual({ ...both, following: { ...both.following!, status: 'requested' } })).toBe(false);
 });

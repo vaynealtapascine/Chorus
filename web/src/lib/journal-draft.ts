@@ -8,7 +8,7 @@ export interface JournalDraft {
   cw: string;
   mood: string;
   tags: string;
-  visibility: 'private' | 'buckets' | 'followers' | 'server';
+  visibility: 'private' | 'buckets' | 'friends' | 'followers' | 'following' | 'server';
   bucketIds: string[];
   authors: string[] | null;
   quote: string | null;
@@ -47,7 +47,7 @@ export function decodeDraft(raw: string | null): JournalDraft | null {
   let j: Record<string, unknown>;
   try { j = JSON.parse(raw); } catch { return null; }
   if (!j || typeof j !== 'object' || j.v !== 1) return null;
-  const visibility = (['private', 'buckets', 'followers', 'server'] as const).find((v) => v === j.visibility) ?? 'private';
+  const visibility = (['private', 'buckets', 'friends', 'followers', 'following', 'server'] as const).find((v) => v === j.visibility) ?? 'private';
   const options = strings(j.pollOptions);
   return {
     kind: j.kind === 'entry' ? 'entry' : 'note',

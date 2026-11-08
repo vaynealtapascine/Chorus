@@ -4,6 +4,7 @@
   // so accepting keeps it in charge. Friends › Requests and the Notifications inbox both use it.
   import { untrack } from 'svelte';
   import { buckets } from '../data';
+  import { friends } from '../friends-state.svelte';
   import { acceptFollow, everyoneElsePreset, presetOf, startBucket } from '../follow-presets';
   import { PRESET_IDS, presetAbout, presetName } from '../friends-screens';
   import type { Projection } from '../sync/client';
@@ -30,6 +31,7 @@
   function accept() {
     acceptFollow(projection, followId, accountId, preset, bucket);
     onclose();
+    void friends.offerFollowBack(accountId, name);
   }
 </script>
 

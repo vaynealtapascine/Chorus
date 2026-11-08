@@ -31,12 +31,20 @@ class FriendsState {
   error = $state('');
   /** The tab Friends was on, kept while a friend's page is open. */
   tab = $state(0);
+  /** Whom to offer following back, having just accepted their request (D-129). */
+  followBack = $state<{ id: string; name: string } | null>(null);
   rows: FriendRow[] = $derived(friendRows(this.following, this.followers, this.views, this.latest));
   requests = $derived(this.followers.filter((f) => f.status === 'requested'));
   activeFollowers = $derived(this.followers.filter((f) => f.status === 'active'));
   private loading: Promise<void> | null = null;
 
   row(account: string): FriendRow | undefined { return this.rows.find((r) => r.account.id === account); }
+
+  /** After accepting someone's request: offer following them back, unless we already do or asked. */
+  async offerFollowBack(id: string, name: string) {
+    await this.load();
+    if (this.loaded && !this.following.some((f) => f.account.id === id)) this.followBack = { id, name };
+  }
 
   load(): Promise<void> {
     this.loading ??= this.fetch().finally(() => (this.loading = null));

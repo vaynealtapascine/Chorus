@@ -11,7 +11,7 @@
   import { everyoneElsePreset, presetOf, startBucket } from '../follow-presets';
   import { api, friends, type Alert } from '../friends-state.svelte';
   import {
-    accountColor, activity, around, connectedSince, follows, friendsSince, isSystem, nowLine, personName, presetName, sinceLine, waiting,
+    accountColor, activity, around, connectedSince, follows, friendsSince, isSystem, mutual, nowLine, personName, presetName, sinceLine, waiting,
     type FollowRow, type FriendRow, type Person,
   } from '../friends-screens';
   import { bodyAuthors } from '../front-view';
@@ -20,6 +20,7 @@
   import { openDm } from '../spaces';
   import { sync, type Projection } from '../sync/client';
   import AcceptSheet from './AcceptSheet.svelte';
+  import FollowBackSheet from './FollowBackSheet.svelte';
   import BucketGlyph from './BucketGlyph.svelte';
   import FriendFace from './FriendFace.svelte';
   import Icon from './Icon.svelte';
@@ -78,11 +79,15 @@
     if (!handle.trim()) return;
     void act('Couldn’t send the request.', async () => { await api('/follows', { method: 'POST', body: JSON.stringify({ target: handle.trim() }) }); handle = ''; adding = false; });
   }
+  const followBack = (id: string) => act('Couldn’t send the request.', () => api('/follows', { method: 'POST', body: JSON.stringify({ target: id }) }));
   const decline = (f: FollowRow) => act('Couldn’t decline.', () => sync.create('follow.end', sync.accountScope, f.id, {}));
   const cancel = (f: FollowRow) => act('Couldn’t cancel.', () => api(`/follows/${f.id}`, { method: 'DELETE' }));
   const decideAlert = (a: Alert, yes: boolean) => act('Couldn’t answer.', () => api(`/alerts/${encodeURIComponent(a.member_id)}/${encodeURIComponent(a.account.id)}`, { method: yes ? 'PUT' : 'DELETE' }));
   function accept(f: FollowRow) {
-    if (person) void act('Couldn’t accept.', () => sync.create('follow.accept', sync.accountScope, f.id, {}));
+    if (person) void act('Couldn’t accept.', () => {
+      sync.create('follow.accept', sync.accountScope, f.id, {});
+      void friends.offerFollowBack(f.account.id, personName(f.account));
+    });
     else accepting = f;
   }
   function chooseStart(id: string | null) {
@@ -114,8 +119,11 @@
   {#if !friends.loaded && !friends.error}<p class="fr-empty">Loading…</p>{/if}
 
   {#if tabs[tab] === 'Friends'}
-    {@const near = shown.filter((r) => around(r, now))}
-    {@const rest = shown.filter((r) => !around(r, now))}
+    {@const both = shown.filter(mutual)}
+    {@const near = both.filter((r) => around(r, now))}
+    {@const rest = both.filter((r) => !around(r, now))}
+    {@const out = shown.filter((r) => r.following && !mutual(r))}
+    {@const back = shown.filter((r) => !r.following)}
     {#if friends.loaded && !shown.length}{@render empty()}{/if}
     {#if near.length}
       <h2 class="fr-section"><span>Around right now</span><span class="fr-aside">as each friend shares it</span></h2>
@@ -125,7 +133,15 @@
       <h2 class="fr-section"><span>Not sharing who’s around</span></h2>
       <ul class="fr-list">{#each rest as r (r.account.id)}<li>{@render row(r, false)}</li>{/each}</ul>
     {/if}
-    {#if shown.length}<p class="fr-note"><Icon name="clock" size={16} />Times are as each friend shares them. Some round to the quarter hour or show only “this morning”.</p>{/if}
+    {#if out.length}
+      <h2 class="fr-section"><span>You follow</span><span class="fr-aside">not following you back</span></h2>
+      <ul class="fr-list">{#each out as r (r.account.id)}<li>{@render row(r, around(r, now))}</li>{/each}</ul>
+    {/if}
+    {#if back.length}
+      <h2 class="fr-section"><span>Follow you</span><span class="fr-aside">follow back to see what they share</span></h2>
+      <ul class="fr-list">{#each back as r (r.account.id)}<li>{@render row(r, false)}</li>{/each}</ul>
+    {/if}
+    {#if both.length}<p class="fr-note"><Icon name="clock" size={16} />Times are as each friend shares them. Some round to the quarter hour or show only “this morning”.</p>{/if}
   {:else if tabs[tab] === 'Following'}
     {@const followed = shown.filter((r) => r.following)}
     {#if friends.loaded && !followed.length}{@render empty()}{/if}
@@ -137,7 +153,7 @@
     <ul class="fr-list">
       {#each list as r (r.account.id)}
         {@const theirs = ownBuckets.filter((b) => assignments.get(b.id)?.has(r.account.id))}
-        <li><button class="fr-row" onclick={() => open(r.account.id)}>
+        <li class="follower"><button class="fr-row" onclick={() => open(r.account.id)}>
           <FriendFace name={personName(r.account)} color={color(r.account)} blob={r.account.avatar_blob} size={40} {dark} />
           <span class="fr-body">
             <span class="fr-name"><strong>{personName(r.account)}</strong><span class="fr-pill">{isSystem(r.account) ? 'System' : 'Person'}</span></span>
@@ -145,7 +161,7 @@
             {:else}<span class="fr-line quiet">In no bucket</span>{/if}
           </span>
           <span class="chev"><Icon name="chevron-right" size={18} /></span>
-        </button></li>
+        </button>{#if !r.following}<button class="fr-btn back" onclick={() => void followBack(r.account.id)}><Icon name="user-plus" size={16} />Follow back</button>{/if}</li>
       {/each}
     </ul>
     <h2 class="fr-section"><span>Buckets</span><span class="fr-aside">who sees which posts</span></h2>
@@ -240,6 +256,7 @@
       {/if}
     </span>
     </a>
+    {#if !r.following}<button class="fr-btn back" onclick={() => void followBack(r.account.id)}><Icon name="user-plus" size={16} />Follow back</button>{/if}
     {#if follows(r) || r.follower}
       <button class="fr-icon" aria-label="Message {personName(r.account)}" onclick={() => void message(r.account.id)}><Icon name="message" size={20} /></button>
     {/if}
@@ -287,6 +304,7 @@
     </form>
   </Sheet>
 {/if}
+{#if friends.followBack}<FollowBackSheet />{/if}
 {#if accepting}
   {@const f = accepting}
   <AcceptSheet {projection} followId={f.id} accountId={f.account.id} name={personName(f.account)}
@@ -315,6 +333,10 @@
   .split .main { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 14px; padding: 12px 0 12px 16px; color: inherit; text-decoration: none; }
   .split.dim .main :global(.fr-face) { opacity: .55; }
   .split > .fr-icon { margin-top: 10px; }
+  .split > .back { align-self: center; flex: none; }
+  .follower { display: flex; align-items: center; padding-right: 12px; }
+  .follower > .fr-row { flex: 1; min-width: 0; }
+  .follower > .back { flex: none; }
   .request { cursor: default; }
   .request:hover { background: none; }
   .bucket { align-items: center; text-decoration: none; }

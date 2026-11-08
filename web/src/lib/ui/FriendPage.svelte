@@ -55,7 +55,7 @@
   });
   // a person: their posts, their own member's about, post alerts by account
   $effect(() => {
-    if (!r || isSystem(r.account) || !follows(r)) return;
+    if (!r || isSystem(r.account) || (!follows(r) && r.follower?.status !== 'active')) return;
     const id = accountId;
     void api(`/posts?account=${encodeURIComponent(id)}&limit=50`).then((j) => (posts = (j.items as FriendPost[]).filter((p) => !p.reply_to && !(p as { repost_of?: string | null }).repost_of)), () => (posts = []));
     void api(`/accounts/${encodeURIComponent(id)}/alerts`).then((j) => (personAlerts = j.post_alerts), () => {});
@@ -124,6 +124,7 @@
       {#if !r.following}<button class="fr-btn" onclick={followBack}><Icon name="user-plus" size={16} />Follow back</button>{/if}
     </div>
     {#if notice}<p class="fr-error" role="alert">{notice}</p>{/if}
+    {#if !r.following && r.follower?.status === 'active'}<p class="fr-note"><Icon name="user-plus" size={16} />{name} follows you. Once you follow back and they accept, you’ll see what they share with followers, and you’re friends.</p>{/if}
 
     {#if !isSystem(r.account)}
       <p class="fr-note"><Icon name="user" size={16} />{name} is one person, so there’s no fronting to show. You see their posts, journal and messages.</p>

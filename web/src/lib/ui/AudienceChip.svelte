@@ -1,7 +1,7 @@
 <script lang="ts">
   // Who can see one profile part, field, or the whole profile (D-101). A chip that opens a small
-  // menu: (follow the profile / field default), Only us, Friends, chosen buckets (past eight,
-  // the rest fold under "N more", D-115) and everyone on this server.
+  // menu: (follow the profile / field default), Only us, Friends, Followers, Following (D-129), chosen
+  // buckets (past eight, the rest fold under "N more", D-115) and everyone on this server.
   import { audienceLabel, isPrivate, sameAudience, type Audience } from '../profile-audience';
   import Icon from './Icon.svelte';
   import BucketLabel from './BucketLabel.svelte';
@@ -76,9 +76,11 @@
         <button role="menuitemradio" aria-checked={!own} onclick={() => pick(null)}>{inherit}</button>
       {/if}
       <button role="menuitemradio" aria-checked={own || !inherit ? value.mode === 'private' : false} onclick={() => pick({ mode: 'private' })}><Icon name="lock" size={16} /> Only us</button>
-      <button role="menuitemradio" aria-checked={(own || !inherit) && value.mode === 'followers'} onclick={() => pick({ mode: 'followers' })}><Icon name="users" size={16} /> Friends <span class="sub">everyone who follows us</span></button>
+      <button role="menuitemradio" aria-checked={(own || !inherit) && value.mode === 'friends'} onclick={() => pick({ mode: 'friends' })}><Icon name="users" size={16} /> Friends <span class="sub">you follow each other</span></button>
+      <button role="menuitemradio" aria-checked={(own || !inherit) && value.mode === 'followers'} onclick={() => pick({ mode: 'followers' })}><Icon name="users" size={16} /> Followers <span class="sub">everyone who follows us</span></button>
+      <button role="menuitemradio" aria-checked={(own || !inherit) && value.mode === 'following'} onclick={() => pick({ mode: 'following' })}><Icon name="users" size={16} /> Following <span class="sub">everyone we follow</span></button>
       {#if buckets.length}
-        <p class="menu-title">Only some friends</p>
+        <p class="menu-title">Only some followers</p>
         {#each listed.shown as b (b.id)}
           <label class="bucket"><input type="checkbox" checked={chosenBuckets.includes(b.id)} onchange={(e) => toggleBucket(b.id, e.currentTarget.checked)} /> <BucketLabel bucket={b} /></label>
         {/each}

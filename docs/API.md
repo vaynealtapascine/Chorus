@@ -365,7 +365,7 @@ since schema-15 servers reject the unknown field even if its value is null.
   another account has, is acked `conflict` ("@x is taken"). Post author cards carry `handle` too.
 - **Feeds** (`feeds.rs`, M7.4): `GET /feeds` lists your feeds and the ones other accounts share
   with you (`shared: true`, with `owner {handle, display_name}`). A feed is shared like a post:
-  its `visibility` (`private`, `followers`, `buckets`, `server`) is checked with the same rule.
+  its `visibility` (`private`, `friends`, `followers`, `following`, `buckets`, `server`) is checked with the same rule.
   `GET /feeds/{id}/items?limit=&cursor=` evaluates it with the core filter (`chorus_core::feed`)
   over the posts **the caller** can read (never the owner's view), newest first, 1–100 a page
   (default 50) with an opaque `next_cursor`; one request looks at up to 2 000 posts, so a sparse

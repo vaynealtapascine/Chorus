@@ -13,7 +13,9 @@ object JournalPresentation {
 
     fun audience(mode: String, person: Boolean = false): String = when (mode) {
         "private" -> if (person) "Only me" else "Only our system"
+        "friends" -> "Friends"
         "followers" -> "Followers"
+        "following" -> "Following"
         "server" -> "Everyone on server"
         else -> "Chosen audience"
     }

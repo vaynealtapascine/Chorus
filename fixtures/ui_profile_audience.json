@@ -4,7 +4,9 @@
   "cases": [
     { "name": "the complete name is private unless chosen", "profile": { "mode": "followers" }, "parts": {}, "key": "name", "audience": { "mode": "private" }, "label": "Only us" },
     { "name": "the complete name shared on purpose", "profile": { "mode": "followers" }, "parts": { "name": { "mode": "server" } }, "key": "name", "audience": { "mode": "server" }, "label": "Everyone here" },
-    { "name": "unset part follows the profile", "profile": { "mode": "followers" }, "parts": {}, "key": "pronouns", "audience": { "mode": "followers" }, "label": "Friends" },
+    { "name": "unset part follows the profile", "profile": { "mode": "followers" }, "parts": {}, "key": "pronouns", "audience": { "mode": "followers" }, "label": "Followers" },
+    { "name": "friends follow each other", "profile": { "mode": "followers" }, "parts": { "pronouns": { "mode": "friends" } }, "key": "pronouns", "audience": { "mode": "friends" }, "label": "Friends" },
+    { "name": "people we follow", "profile": { "mode": "followers" }, "parts": { "pronouns": { "mode": "following" } }, "key": "pronouns", "audience": { "mode": "following" }, "label": "Following" },
     { "name": "own audience wins", "profile": { "mode": "followers" }, "parts": { "pronouns": { "mode": "private" } }, "key": "pronouns", "audience": { "mode": "private" }, "label": "Only us" },
     { "name": "no parts map at all", "profile": { "mode": "server" }, "parts": null, "key": "birthday", "audience": { "mode": "server" }, "label": "Everyone here" },
     { "name": "parts map of the wrong shape hides everything", "profile": { "mode": "server" }, "parts": [1], "key": "birthday", "audience": { "mode": "private" }, "label": "Only us" },
@@ -15,7 +17,7 @@
     { "name": "missing profile audience is private", "profile": null, "parts": {}, "key": "pronouns", "audience": { "mode": "private" }, "label": "Only us" },
     { "name": "custom field follows its default", "profile": { "mode": "followers" }, "parts": {}, "key": "f-roles", "default": { "mode": "server" }, "audience": { "mode": "server" }, "label": "Everyone here" },
     { "name": "custom field with no default is private", "profile": { "mode": "followers" }, "parts": {}, "key": "f-loc", "default": null, "audience": { "mode": "private" }, "label": "Only us" },
-    { "name": "custom field's own choice wins", "profile": { "mode": "followers" }, "parts": { "f-loc": { "mode": "followers" } }, "key": "f-loc", "default": { "mode": "private" }, "audience": { "mode": "followers" }, "label": "Friends" }
+    { "name": "custom field's own choice wins", "profile": { "mode": "followers" }, "parts": { "f-loc": { "mode": "followers" } }, "key": "f-loc", "default": { "mode": "private" }, "audience": { "mode": "followers" }, "label": "Followers" }
   ],
   "post_default": [
     {"name": "nothing chosen is only us", "value": null, "audience": {"mode": "private"}},

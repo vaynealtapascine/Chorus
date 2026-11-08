@@ -225,6 +225,8 @@ internal fun FriendsScreen(chorus: Chorus, model: Model, onOpenChat: (String) ->
     val person = model.isPerson
     val tabs = if (person) listOf("Following", "Followers", "Requests") else listOf("Friends", "Requests", "Sharing")
     var accepting by remember { mutableStateOf<FollowInfo?>(null) }
+    var offerBack by remember { mutableStateOf<SpaceAccount?>(null) }
+    fun followBack(id: String) = act("Couldn’t send the request.") { PeopleApi.request(checkNotNull(chorus.device), id) }
     val requestCount = data.requests.size + data.postAlerts.count { it.optString("status") == "requested" }
     val reader = inboxReader(model, null)
     val ownName = model.systemName?.takeIf { it.isNotBlank() } ?: model.accountHandle?.let { "@$it" } ?: if (person) "you" else "your system"
@@ -254,11 +256,14 @@ internal fun FriendsScreen(chorus: Chorus, model: Model, onOpenChat: (String) ->
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
             error?.let { item(key = "error") { Text(it, color = p.danger, fontSize = 13.sp, modifier = Modifier.padding(16.dp)) } }
             when (tabs[tab]) {
-                "Friends" -> systemFriends(rows, now, onOpen = { push("friend:$it") }, onMessage = ::message, onFollow = { adding = true })
+                "Friends" -> systemFriends(rows, now, onOpen = { push("friend:$it") }, onMessage = ::message, onFollow = { adding = true }, onFollowBack = ::followBack)
                 "Following" -> personFollowing(rows, now, onOpen = { push("friend:$it") }, onMessage = ::message, onFollow = { adding = true })
-                "Followers" -> personFollowers(model, rows, onOpen = { push("friend:$it") }, onBucket = { push("bucket:$it") })
+                "Followers" -> personFollowers(model, rows, onOpen = { push("friend:$it") }, onBucket = { push("bucket:$it") }, onFollowBack = ::followBack)
                 "Requests" -> requestItems(model, data, ownName, onOpen = { push("friend:$it") },
-                    onAccept = { f -> if (person) act("Couldn’t accept.") { chorus.create("follow.accept", f.id, JSONObject()) } else accepting = f },
+                    onAccept = { f -> if (person) act("Couldn’t accept.") {
+                        chorus.create("follow.accept", f.id, JSONObject())
+                        if (data.row(f.account.id)?.following == null) offerBack = f.account
+                    } else accepting = f },
                     onDecline = { f -> act("Couldn’t decline.") { chorus.create("follow.end", f.id, JSONObject()) } },
                     onCancel = { f -> act("Couldn’t cancel.") { PeopleApi.unfollow(checkNotNull(chorus.device), f.id) } },
                     onAlert = { a, yes -> act("Couldn’t answer.") {
@@ -279,10 +284,22 @@ internal fun FriendsScreen(chorus: Chorus, model: Model, onOpenChat: (String) ->
             onDecline = { accepting = null; act("Couldn’t decline.") { chorus.create("follow.end", f.id, JSONObject()) } },
             onAccept = { preset, bucket ->
                 accepting = null
-                act("Couldn’t accept.") { acceptFollow(chorus, model, f, preset, bucket) }
+                act("Couldn’t accept.") {
+                    acceptFollow(chorus, model, f, preset, bucket)
+                    if (data.row(f.account.id)?.following == null) offerBack = f.account
+                }
             })
     }
+    offerBack?.let { them -> FollowBackDrawer(them.shownName, onDismiss = { offerBack = null }) {
+        offerBack = null; followBack(them.id)
+    } }
 }
+
+/** After accepting a request (D-129): they see what we share, not the other way round. */
+@Composable
+internal fun FollowBackDrawer(name: String, onDismiss: () -> Unit, onFollowBack: () -> Unit) =
+    ConfirmDrawer("Follow $name back?", "$name can now see what you share with followers. You won’t see their posts or profiles until you follow back and they accept. Then you’re friends.",
+        "Follow back", onConfirm = onFollowBack, onDismiss = onDismiss)
 
 /** Accept a request (F7.7): into [bucket] when one is picked, with an override only where it differs. */
 internal suspend fun acceptFollow(chorus: Chorus, model: Model, f: FollowInfo, preset: String?, bucket: String?) {
@@ -293,10 +310,12 @@ internal suspend fun acceptFollow(chorus: Chorus, model: Model, f: FollowInfo, p
     }
 }
 
-/** F7.1: around right now first, then everyone else. */
+/** F7.1: friends (both ways, D-129) around right now first, then the other friends, then one-way follows. */
 private fun LazyListScope.systemFriends(rows: List<FriendRow>, now: Long, onOpen: (String) -> Unit, onMessage: (String) -> Unit,
-    onFollow: () -> Unit) {
-    val (around, rest) = rows.partition { Friends.around(it, now) }
+    onFollow: () -> Unit, onFollowBack: (String) -> Unit) {
+    val (around, rest) = rows.filter { it.mutual }.partition { Friends.around(it, now) }
+    val out = rows.filter { it.following != null && !it.mutual }
+    val back = rows.filter { it.following == null }
     if (rows.isEmpty()) item(key = "empty") { EmptyFriends(onFollow) }
     if (around.isNotEmpty()) {
         item(key = "around") { SectionLabel("Around right now", Modifier.padding(horizontal = 12.dp)) {
@@ -306,6 +325,16 @@ private fun LazyListScope.systemFriends(rows: List<FriendRow>, now: Long, onOpen
     if (rest.isNotEmpty()) {
         item(key = "rest") { SectionLabel("Not sharing who’s around", Modifier.padding(horizontal = 12.dp)) }
         for (r in rest) item(key = "r:${r.id}") { FriendListRow(r, now, false, onOpen, onMessage) }
+    }
+    if (out.isNotEmpty()) {
+        item(key = "out") { SectionLabel("You follow", Modifier.padding(horizontal = 12.dp)) {
+            Text("not following you back", color = LocalChorusPalette.current.ink3, fontSize = 12.sp) } }
+        for (r in out) item(key = "o:${r.id}") { FriendListRow(r, now, Friends.around(r, now), onOpen, onMessage) }
+    }
+    if (back.isNotEmpty()) {
+        item(key = "back") { SectionLabel("Follow you", Modifier.padding(horizontal = 12.dp)) {
+            Text("follow back to see what they share", color = LocalChorusPalette.current.ink3, fontSize = 12.sp) } }
+        for (r in back) item(key = "b:${r.id}") { FriendListRow(r, now, false, onOpen, onMessage, onFollowBack) }
     }
 }
 
@@ -324,7 +353,8 @@ private fun LazyListScope.personFollowing(rows: List<FriendRow>, now: Long, onOp
 }
 
 /** F7.4 Followers: who follows us and the buckets they're in, then the buckets themselves. */
-private fun LazyListScope.personFollowers(model: Model, rows: List<FriendRow>, onOpen: (String) -> Unit, onBucket: (String) -> Unit) {
+private fun LazyListScope.personFollowers(model: Model, rows: List<FriendRow>, onOpen: (String) -> Unit, onBucket: (String) -> Unit,
+    onFollowBack: (String) -> Unit) {
     val followers = rows.filter { it.follower?.status == "active" }
     if (followers.isEmpty()) item(key = "empty") {
         EmptyState(R.drawable.ic_friends, "No followers yet")
@@ -344,7 +374,8 @@ private fun LazyListScope.personFollowers(model: Model, rows: List<FriendRow>, o
                 if (buckets.isEmpty()) Text("In no bucket", color = p.ink3, fontSize = 13.sp)
                 else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { for (b in buckets.take(3)) BucketLabel(b.name, b.icon, b.color) }
             }
-            Glyph(R.drawable.ic_chevron_right, p.ink3, 18.dp)
+            if (r.following == null) SmallButton("Follow back", icon = R.drawable.ic_user_plus) { onFollowBack(r.id) }
+            else Glyph(R.drawable.ic_chevron_right, p.ink3, 18.dp)
         }
     }
     item(key = "buckets") { SectionLabel("Buckets", Modifier.padding(horizontal = 12.dp)) {
@@ -358,7 +389,8 @@ private fun EmptyFriends(onFollow: () -> Unit) = EmptyState(R.drawable.ic_friend
 
 /** One friend on the list (F7.1, F7.4): who's here and since when, or what they did last. */
 @Composable
-private fun FriendListRow(r: FriendRow, now: Long, bright: Boolean, onOpen: (String) -> Unit, onMessage: (String) -> Unit) {
+private fun FriendListRow(r: FriendRow, now: Long, bright: Boolean, onOpen: (String) -> Unit, onMessage: (String) -> Unit,
+    onFollowBack: ((String) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val view = r.view
     Row(Modifier.fillMaxWidth().clickable(onClickLabel = "Open ${r.account.shownName}") { onOpen(r.id) }
@@ -398,6 +430,7 @@ private fun FriendListRow(r: FriendRow, now: Long, bright: Boolean, onOpen: (Str
                 Glyph(icon, p.ink3, 13.dp); Text(text, color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
             } }
         }
+        if (onFollowBack != null && r.following == null) SmallButton("Follow back", icon = R.drawable.ic_user_plus) { onFollowBack(r.id) }
         if (r.follows || r.follower?.status == "active") BarIcon(R.drawable.ic_message, "Message ${r.account.shownName}", p.ink3, 20.dp) { onMessage(r.id) }
     }
 }

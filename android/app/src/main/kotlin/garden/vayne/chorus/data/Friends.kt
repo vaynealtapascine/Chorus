@@ -11,10 +11,12 @@ import org.json.JSONObject
 data class FriendRow(val account: SpaceAccount, val following: FollowInfo?, val follower: FollowInfo?,
     val view: FollowerView?, val latest: SharedPost?) {
     val id: String get() = account.id
-    /** Since when we've been connected: the older of the two follows. */
-    val since: Long get() = listOfNotNull(following, follower).filter { it.status == "active" }.minOfOrNull { it.createdAt } ?: 0
     val waiting: Boolean get() = following?.status == "requested"
     val follows: Boolean get() = following?.status == "active"
+    /** Friends follow each other (D-129); one way is a follow, not a friendship. */
+    val mutual: Boolean get() = follows && follower?.status == "active"
+    /** Since when we've been friends: the newer of the two follows. */
+    val since: Long get() = if (mutual) maxOf(following!!.createdAt, follower!!.createdAt) else 0
 }
 
 /**

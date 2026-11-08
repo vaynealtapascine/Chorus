@@ -68,7 +68,7 @@ internal fun JournalPostFrame(names: String, time: String, audience: String?, fu
                 }
                 if (!full || handle == null) Text(" · $time", style = quiet, color = p.ink3, maxLines = 1, softWrap = false)
             }
-            if (audience == "private" || audience == "followers") Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_lock),
+            if (audience != null && audience in setOf("private", "friends", "followers", "following")) Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_lock),
                 JournalPresentation.audience(audience), Modifier.padding(start = 6.dp).size(14.dp), tint = p.ink3)
         }
     }

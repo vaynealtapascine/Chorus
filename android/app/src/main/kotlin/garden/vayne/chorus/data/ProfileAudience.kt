@@ -9,12 +9,14 @@ import org.json.JSONObject
 // `default_visibility`. The server applies the same rule (profiles.rs) and is what decides; this
 // only shows and edits the choices. Mirrors web profile-audience.ts (fixture ui_profile_audience.json).
 
-/** [mode] is `private`, `followers`, `buckets` or `server`; [buckets] only for `buckets`. */
+/** [mode] is `private`, `friends`, `followers`, `following`, `buckets` or `server`; [buckets] only for `buckets`. */
 data class Audience(val mode: String, val buckets: List<String> = emptyList()) {
     fun toJson(): JSONObject = JSONObject().put("mode", mode).apply { if (mode == "buckets") put("bucket_ids", JSONArray(buckets)) }
 
     fun label(bucketNames: Map<String, String> = emptyMap()): String = when (mode) {
-        "followers" -> "Friends"
+        "friends" -> "Friends"
+        "followers" -> "Followers"
+        "following" -> "Following"
         "server" -> "Everyone here"
         "buckets" -> buckets.distinct().filter { it in bucketNames }.let { named ->
             when (named.size) { 0 -> "Only us"; 1 -> bucketNames.getValue(named[0]); else -> "${named.size} buckets" }
@@ -31,15 +33,25 @@ data class Audience(val mode: String, val buckets: List<String> = emptyList()) {
     fun live(liveBuckets: Set<String>): Audience = if (mode != "buckets") this
         else buckets.filter { it in liveBuckets }.let { if (it.isEmpty()) PRIVATE else Audience("buckets", it) }
 
-    /** Incomparable bucket selections may add readers, so warn conservatively. */
+    /** Incomparable selections may add readers, so warn conservatively (web `possiblyWidens`). */
     fun possiblyWidens(previous: Audience): Boolean {
-        val ranks = mapOf("private" to 0, "buckets" to 1, "followers" to 2, "server" to 3)
         if (mode == "buckets" && previous.mode == "buckets") return buckets.any { it !in previous.buckets }
-        return (ranks[mode] ?: 0) > (ranks[previous.mode] ?: 0)
+        return previous.mode !in WITHIN[mode].orEmpty()
     }
 
     companion object {
         val PRIVATE = Audience("private")
+
+        /** The modes each mode surely fits inside (D-129): friends are followers and followed both;
+         * a bucket holds only followers. Followers and Following can't be compared. */
+        private val WITHIN = mapOf(
+            "private" to setOf("private", "friends", "buckets", "followers", "following", "server"),
+            "friends" to setOf("friends", "followers", "following", "server"),
+            "buckets" to setOf("followers", "server"),
+            "followers" to setOf("followers", "server"),
+            "following" to setOf("following", "server"),
+            "server" to setOf("server"),
+        )
     }
 }
 
@@ -62,7 +74,7 @@ object ProfileAudience {
     fun of(v: Any?): Audience {
         val o = v as? JSONObject ?: return Audience.PRIVATE
         return when (val mode = o.opt("mode")) {
-            "followers", "server" -> Audience(mode as String)
+            "friends", "followers", "following", "server" -> Audience(mode as String)
             "buckets" -> Audience("buckets", o.optJSONArray("bucket_ids")?.let { a -> (0 until a.length()).mapNotNull { a.opt(it) as? String } }.orEmpty())
             else -> Audience.PRIVATE
         }

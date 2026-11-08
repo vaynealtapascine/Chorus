@@ -7,7 +7,9 @@
 
 export type Audience =
   | { mode: 'private' }
+  | { mode: 'friends' }
   | { mode: 'followers' }
+  | { mode: 'following' }
   | { mode: 'buckets'; bucket_ids: string[] }
   | { mode: 'server' };
 
@@ -30,7 +32,7 @@ export const PART_LABELS: Record<Part, string> = {
 export function audienceOf(v: unknown): Audience {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return PRIVATE;
   const mode = (v as { mode?: unknown }).mode;
-  if (mode === 'followers' || mode === 'server') return { mode };
+  if (mode === 'friends' || mode === 'followers' || mode === 'following' || mode === 'server') return { mode };
   if (mode === 'buckets') {
     const ids = (v as { bucket_ids?: unknown }).bucket_ids;
     return { mode, bucket_ids: Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : [] };
@@ -63,10 +65,12 @@ export function withAudience(fieldVisibility: unknown, key: string, audience: Au
   return base;
 }
 
-/** A short label: "Only us", "Friends", "Close friends" (one bucket), "2 buckets", "Everyone here". */
+/** A short label: "Only us", "Friends", "Followers", "Close friends" (one bucket), "2 buckets", "Everyone here". */
 export function audienceLabel(a: Audience, bucketNames: Map<string, string> = new Map()): string {
   switch (a.mode) {
-    case 'followers': return 'Friends';
+    case 'friends': return 'Friends';
+    case 'followers': return 'Followers';
+    case 'following': return 'Following';
     case 'server': return 'Everyone here';
     case 'buckets': {
       const named = a.bucket_ids.filter((id) => bucketNames.has(id));
@@ -98,10 +102,21 @@ export function sameAudience(a: Audience, b: Audience): boolean {
   return true;
 }
 
-/** Whether [next] may add readers over [previous] (Android `Audience.possiblyWidens`): a wider mode
- * does, and so does any bucket that wasn't chosen before, since bucket sets can't be compared. */
+/** The modes each mode surely fits inside (D-129): friends are followers and followed both; a bucket
+ * holds only followers. Followers and Following can't be compared, nor friends and a bucket. */
+const WITHIN: Record<Audience['mode'], Audience['mode'][]> = {
+  private: ['private', 'friends', 'buckets', 'followers', 'following', 'server'],
+  friends: ['friends', 'followers', 'following', 'server'],
+  buckets: ['followers', 'server'],
+  followers: ['followers', 'server'],
+  following: ['following', 'server'],
+  server: ['server'],
+};
+
+/** Whether [next] may add readers over [previous] (Android `Audience.possiblyWidens`): a mode not
+ * inside the old one does, and so does any bucket that wasn't chosen before, since bucket sets
+ * can't be compared. */
 export function possiblyWidens(next: Audience, previous: Audience): boolean {
-  const rank = { private: 0, buckets: 1, followers: 2, server: 3 } as const;
   if (next.mode === 'buckets' && previous.mode === 'buckets') return next.bucket_ids.some((id) => !previous.bucket_ids.includes(id));
-  return rank[next.mode] > rank[previous.mode];
+  return !WITHIN[next.mode].includes(previous.mode);
 }

@@ -90,7 +90,7 @@
     new Date(post.occurred_at).toLocaleDateString(undefined, { dateStyle: 'medium' }));
   const iconSize = $derived(full ? 22 : 18);
   const threadHref = $derived(`#/journal/post/${encodeURIComponent(post.id)}`);
-  const audienceLabel = $derived(post.visibility.mode === 'private' ? 'Only your system' : post.visibility.mode === 'followers' ? 'Followers'
+  const audienceLabel = $derived(post.visibility.mode === 'private' ? 'Only your system' : post.visibility.mode === 'friends' ? 'Friends' : post.visibility.mode === 'followers' ? 'Followers' : post.visibility.mode === 'following' ? 'Following'
     : post.visibility.mode === 'buckets' ? projection ? bucketAudience(audienceOf(post.visibility), buckets(projection)) : 'Selected buckets' : 'Everyone on this server');
 
   function heart() {
@@ -160,7 +160,7 @@
         <span class="authors">{#each post.authors as id, i (id)}{#if i} &amp; {/if}<a href="#/profile/{id}">{name(id)}</a>{/each}</span>
         {#if handle}<span class="handle">@{handle}</span>{/if}
         <span class="when">· <a href={threadHref} title={fullTimestamp(post.occurred_at)}><time datetime={new Date(post.occurred_at).toISOString()}>{shortAgo(post.occurred_at)}</time></a>{#if post.edited} · edited{/if}</span>
-        {#if post.visibility.mode === 'private' || post.visibility.mode === 'followers'}<span class="lock" title={audienceLabel} role="img" aria-label={audienceLabel}><Icon name="lock" size={14} /></span>
+        {#if post.visibility.mode !== 'server' && post.visibility.mode !== 'buckets'}<span class="lock" title={audienceLabel} role="img" aria-label={audienceLabel}><Icon name="lock" size={14} /></span>
         {:else if post.visibility.mode === 'buckets'}{@const b = projection ? buckets(projection).find((x) => post.visibility.bucket_ids?.includes(x.id)) : undefined}<span class="audience"><BucketGlyph icon={b?.icon} color={b?.color} size={14} />{audienceLabel}</span>{/if}
     </div>
     <div class="main">

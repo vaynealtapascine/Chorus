@@ -50,9 +50,11 @@ internal fun AudienceChip(label: String, value: Audience, own: Boolean, buckets:
                 MenuRow(title, subtitle = sub, selected = on) { pick(); open = false }
             inherit?.let { item(it, null, !own) { onChange(null) } }
             item(if (person) "Only me" else "Only us", null, choosing && value.mode == "private") { onChange(Audience.PRIVATE) }
-            item("Friends", if (person) "everyone who follows me" else "everyone who follows us", choosing && value.mode == "followers") { onChange(Audience("followers")) }
+            item("Friends", "you follow each other", choosing && value.mode == "friends") { onChange(Audience("friends")) }
+            item("Followers", if (person) "everyone who follows me" else "everyone who follows us", choosing && value.mode == "followers") { onChange(Audience("followers")) }
+            item("Following", if (person) "everyone I follow" else "everyone we follow", choosing && value.mode == "following") { onChange(Audience("following")) }
             if (buckets.isNotEmpty()) {
-                SectionLabel("Only some friends")
+                SectionLabel("Only some followers")
                 val (shown, folded) = garden.vayne.chorus.data.BucketControls.listed(buckets, { it.first }, chosenBuckets, allBuckets)
                 for ((id, name) in shown) Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(12.dp))
                     .clickable {

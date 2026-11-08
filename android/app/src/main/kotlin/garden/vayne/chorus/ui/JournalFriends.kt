@@ -30,9 +30,11 @@ internal fun JournalFriends(chorus: Chorus, model: Model, onThread: (String) -> 
         sources = emptyList(); loading = true; error = null
         try {
             val dev = checkNotNull(chorus.device)
-            val following = PeopleApi.list(dev).following.filter { it.status == "active" }
+            // those who only follow us can still share with people they follow (D-129)
+            val follows = PeopleApi.list(dev)
+            val active = (follows.following + follows.followers).filter { it.status == "active" }.distinctBy { it.account.id }
             val loaded = mutableListOf<FriendsFeed.Source>()
-            for (follow in following) {
+            for (follow in active) {
                 try {
                     val page = PeopleApi.posts(dev, follow.account.id)
                     loaded += FriendsFeed.Source(follow.account.id, follow.account.shownName, page, page.size >= FriendsFeed.PAGE)

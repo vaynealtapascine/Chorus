@@ -25,10 +25,11 @@ export const personName = (p: Pick<Person, 'display_name' | 'handle'>): string =
 export const isSystem = (p: Pick<Person, 'kind'>): boolean => p.kind === 'system';
 export const follows = (r: FriendRow): boolean => r.following?.status === 'active';
 export const waiting = (r: FriendRow): boolean => r.following?.status === 'requested';
-/** Since when we've been connected: the older of the two active follows. */
+/** Friends follow each other (D-129); one way is a follow, not a friendship. */
+export const mutual = (r: FriendRow): boolean => follows(r) && r.follower?.status === 'active';
+/** Since when we've been friends: the newer of the two follows. */
 export function connectedSince(r: FriendRow): number {
-  const at = [r.following, r.follower].filter((f) => f?.status === 'active').map((f) => f!.created_at);
-  return at.length ? Math.min(...at) : 0;
+  return mutual(r) ? Math.max(r.following!.created_at, r.follower!.created_at) : 0;
 }
 
 /** Everyone we follow (in the order we followed them), then those who only follow us. */

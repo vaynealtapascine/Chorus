@@ -18,6 +18,8 @@
   import AvatarImage from './AvatarImage.svelte';
   import Icon from './Icon.svelte';
   import AcceptSheet from './AcceptSheet.svelte';
+  import FollowBackSheet from './FollowBackSheet.svelte';
+  import { friends } from '../friends-state.svelte';
 
   let { projection, dark }: { projection: Projection; dark: boolean } = $props();
   const person = $derived(!!selfMember(projection));
@@ -79,7 +81,10 @@
   }
   function accept(item: InboxItem) {
     if (item.kind === 'alert_ask') return act('Couldn’t allow. Try again.', () => call('PUT', `/alerts/${item.memberId}/${item.accountId}`));
-    if (person) return act('Couldn’t accept. Try again.', () => sync.create('follow.accept', sync.accountScope, item.followId!, {}));
+    if (person) return act('Couldn’t accept. Try again.', () => {
+      sync.create('follow.accept', sync.accountScope, item.followId!, {});
+      void friends.offerFollowBack(item.accountId ?? '', item.actor ?? 'them');
+    });
     accepting = item;
   }
   function decline(item: InboxItem) {
@@ -215,6 +220,7 @@
   </div>
 {/if}
 
+{#if friends.followBack}<FollowBackSheet />{/if}
 {#if accepting}
   {@const item = accepting}
   <!-- the same sheet as Friends › Requests (F7.7): how much they hear and their bucket -->

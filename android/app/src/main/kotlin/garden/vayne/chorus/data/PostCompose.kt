@@ -61,7 +61,7 @@ object PostCompose {
     }
 
     fun validatedAudience(value: Audience, liveBuckets: Set<String>): Audience {
-        require(value.mode in setOf("private", "followers", "buckets", "server")) { "Choose an audience." }
+        require(value.mode in setOf("private", "friends", "followers", "following", "buckets", "server")) { "Choose an audience." }
         require(value.mode != "buckets" || (value.buckets.isNotEmpty() && value.buckets.all { it.isNotBlank() && it in liveBuckets })) {
             "Choose existing buckets before sharing."
         }

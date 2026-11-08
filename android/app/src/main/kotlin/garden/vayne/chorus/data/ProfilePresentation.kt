@@ -58,7 +58,9 @@ object ProfilePresentation {
     /** The chip under the bio saying who can open this profile. */
     fun audienceLine(mode: String, person: Boolean): String = when (mode) {
         "private" -> if (person) "Only you see this profile" else "Only our system sees this profile"
+        "friends" -> "Friends see this profile"
         "followers" -> "Followers see this profile"
+        "following" -> if (person) "People you follow see this profile" else "People your system follows see this profile"
         "server" -> "Everyone on the server sees this profile"
         else -> "Chosen people see this profile"
     }

@@ -755,9 +755,13 @@ CREATE TABLE server_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);  -- schema
 ```json
 {"mode": "private"}
 {"mode": "buckets", "bucket_ids": ["…"]}
+{"mode": "friends"}
 {"mode": "followers"}
+{"mode": "following"}
 {"mode": "server"}
 ```
+
+`friends` is both ways; `followers` follow this account; `following` are those it follows (D-129).
 
 Message-only extra modes: `{"mode":"members","member_ids":[…]}` (soft in-system),
 `{"mode":"system_only"}` (aside in a shared space).

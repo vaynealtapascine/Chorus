@@ -396,7 +396,9 @@ A state can be "fronting" like a member (subject type `state`).
 
 **Visibility**
 - `private` — only this account (and, for members, "only us")
+- `friends` — accounts this one follows that follow it back (D-129)
 - `followers` — anyone following this account (within their ceiling)
+- `following` — accounts this one follows, whether or not they follow back
 - `buckets` + list of → Bucket — chosen groups of followers
 - `server` — everyone signed in to this server
 - messages only: `members` + list of → Member (soft, inside the system); `system_only` (an aside

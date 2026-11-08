@@ -52,5 +52,12 @@ describe('changing a post audience', () => {
     expect(possiblyWidens(b('a'), b('a', 'c'))).toBe(false);
     expect(possiblyWidens(b('a', 'd'), b('a', 'c'))).toBe(true);
     expect(possiblyWidens(b('a'), { mode: 'followers' })).toBe(false);
+    // friends are inside both directions; the two directions can't be compared
+    expect(possiblyWidens({ mode: 'friends' }, { mode: 'followers' })).toBe(false);
+    expect(possiblyWidens({ mode: 'friends' }, { mode: 'following' })).toBe(false);
+    expect(possiblyWidens({ mode: 'followers' }, { mode: 'friends' })).toBe(true);
+    expect(possiblyWidens({ mode: 'following' }, { mode: 'followers' })).toBe(true);
+    expect(possiblyWidens({ mode: 'followers' }, { mode: 'following' })).toBe(true);
+    expect(possiblyWidens(b('a'), { mode: 'following' })).toBe(true);
   });
 });

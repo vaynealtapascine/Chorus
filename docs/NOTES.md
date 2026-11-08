@@ -270,3 +270,7 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
 - What's live: `GET https://chorus.vayne.garden/api/v1/server` and `/api/v1/android/latest`
   (version and changelog).
 - Invites: `pwsh scripts/invite.ps1` (over ssh, or `-Local`).
+
+## 2026-11-08: a one-off rustc error in the gate
+
+`cargo test --profile gate` once failed on `#[tokio::test]` in `tests/rest_fuzz.rs` with "cannot determine resolution for the attribute macro ... import resolution is stuck", right after clippy had compiled the same file. Rebuilding that target alone worked and the next full gate passed. If it shows up with no change near the macro, rebuild before investigating.

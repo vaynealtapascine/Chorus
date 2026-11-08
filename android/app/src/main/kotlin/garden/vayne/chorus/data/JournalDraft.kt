@@ -98,10 +98,10 @@ data class JournalDraft(val id: String, val revision: Long = 0, val body: String
                         it.optString("audience").takeIf(String::isNotEmpty))
                 } } } })
             if (j.optInt("version") != 1 || draft.kind !in setOf("note", "entry") ||
-                draft.audience !in setOf("private", "followers", "buckets", "server")) damaged = true
+                draft.audience !in setOf("private", "friends", "followers", "following", "buckets", "server")) damaged = true
             return draft.copy(recovery = if (damaged) raw else draft.recovery,
                 kind = draft.kind.takeIf { it in setOf("note", "entry") } ?: "note",
-                audience = draft.audience.takeIf { it in setOf("private", "followers", "buckets", "server") } ?: "private",
+                audience = draft.audience.takeIf { it in setOf("private", "friends", "followers", "following", "buckets", "server") } ?: "private",
                 selectionStart = draft.selectionStart.coerceIn(0, draft.body.length),
                 selectionEnd = draft.selectionEnd.coerceIn(0, draft.body.length))
         }

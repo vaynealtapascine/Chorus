@@ -369,3 +369,42 @@ fn relationship_writes_link_visible_singlets_but_refuse_hidden_targets_and_forei
     assert!(write(BOB, 5, "bob", "member", "missing").is_err());
     assert!(write(BOB, 6, "kai", "member", "bob").is_err(), "the source must be one's own");
 }
+
+/// D-129: Friends is both ways; Followers and Following are one way each, in opposite directions.
+#[test]
+fn friends_followers_and_following_are_different_people() {
+    let conn = seed();
+    // Bob and Carol follow Alice (seed). Alice follows Bob back and Dave, whose own follow has ended.
+    for (id, target) in [("back-bob", BOB), ("back-dave", DAVE)] {
+        conn.execute(
+            "INSERT INTO follow(id,follower_account_id,target_account_id,status,created_at) VALUES (?1,?2,?3,'active',0)",
+            params![id, ALICE, target],
+        )
+        .unwrap();
+    }
+    let allows =
+        |viewer: &str, mode: &str| profiles::Viewer::of(&conn, viewer, ALICE).unwrap().allows(&json!({"mode": mode}));
+    let reads = |viewer: &str, mode: &str| {
+        conn.execute(
+            "INSERT OR REPLACE INTO post(id,account_id,device_id,kind,text,visibility,occurred_at,front_snapshot)
+             VALUES (?1,?2,?2,'note','x',?3,1,'[]')",
+            params![format!("p-{mode}"), ALICE, json!({"mode": mode}).to_string()],
+        )
+        .unwrap();
+        posts::one(&conn, viewer, &format!("p-{mode}")).unwrap().is_some()
+    };
+    for (viewer, friends, followers, following) in [
+        (BOB, true, true, true),     // both ways
+        (CAROL, false, true, false), // follows Alice, not followed back
+        (DAVE, false, false, true),  // followed by Alice, doesn't follow her
+    ] {
+        for (mode, want) in [("friends", friends), ("followers", followers), ("following", following)] {
+            assert_eq!(allows(viewer, mode), want, "profile {mode} for {viewer}");
+            assert_eq!(reads(viewer, mode), want, "post {mode} for {viewer}");
+        }
+    }
+    // a follow that ended takes Following and Friends with it
+    conn.execute("UPDATE follow SET status='ended' WHERE id='back-bob'", []).unwrap();
+    assert!(!allows(BOB, "friends") && !allows(BOB, "following") && allows(BOB, "followers"));
+    assert!(!reads(BOB, "friends") && !reads(BOB, "following") && reads(BOB, "followers"));
+}

@@ -153,6 +153,9 @@ internal fun FriendPage(chorus: Chorus, model: Model, data: FriendsData, account
                     act("Couldn’t send the request.") { PeopleApi.request(checkNotNull(chorus.device), accountId) }
                 }
             }
+            if (row.following == null && row.follower?.status == "active") Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
+                FormNote("$name follows you. Once you follow back and they accept, you’ll see what they share with followers, and you’re friends.", R.drawable.ic_user_plus)
+            }
             if (!account.isSystem) {
                 between()
                 PersonTabs(chorus, model, accountId, name, self, onThread, onReplyPost)

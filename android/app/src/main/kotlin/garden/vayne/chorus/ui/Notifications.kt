@@ -78,6 +78,8 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
     var settings by remember { mutableStateOf(false) }
     var held by remember { mutableStateOf<InboxItem?>(null) }
     var accepting by remember { mutableStateOf<InboxItem?>(null) }
+    // who just got accepted, while we may still follow them back (D-129)
+    var offerBack by remember { mutableStateOf<InboxItem?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
 
     fun save(next: InboxRead) {
@@ -95,6 +97,9 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
             catch (_: Exception) { notice = failure }
         }
     }
+    suspend fun followsAlready(item: InboxItem): Boolean = runCatching {
+        PeopleApi.list(checkNotNull(chorus.device)).following.any { it.account.id == item.accountId }
+    }.getOrDefault(true)
     fun open(item: InboxItem) {
         if (!item.needsYou) save(read.mark(item))
         when {
@@ -150,7 +155,8 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
                     InboxRow(item, unread = item.needsYou || !read.read(item), model, onOpen = { open(item) }, onHold = { held = item },
                         onAccept = when (item.kind) {
                             "follow_request" -> ({ if (model.isPerson) act("Couldn’t accept. Try again.") {
-                                chorus.create("follow.accept", item.followId!!, JSONObject()) } else accepting = item })
+                                chorus.create("follow.accept", item.followId!!, JSONObject())
+                                offerBack = item.takeUnless { followsAlready(item) } } else accepting = item })
                             "alert_ask" -> ({ act("Couldn’t allow. Try again.") {
                                 PeopleApi.decidePostAlert(checkNotNull(chorus.device), item.memberId.orEmpty(), item.accountId.orEmpty(), true) } })
                             else -> null
@@ -234,8 +240,15 @@ internal fun Notifications(chorus: Chorus, model: Model, routes: InboxRoutes) {
         val follow = FollowInfo(item.followId!!, garden.vayne.chorus.data.SpaceAccount(item.accountId.orEmpty(), null, item.actor, null), "requested")
         AcceptDrawer(model, follow, onDismiss = { accepting = null },
             onDecline = { accepting = null; act("Couldn’t decline. Try again.") { chorus.create("follow.end", follow.id, JSONObject()) } },
-            onAccept = { preset, bucket -> accepting = null; act("Couldn’t accept. Try again.") { acceptFollow(chorus, model, follow, preset, bucket) } })
+            onAccept = { preset, bucket -> accepting = null; act("Couldn’t accept. Try again.") {
+                acceptFollow(chorus, model, follow, preset, bucket)
+                offerBack = item.takeUnless { followsAlready(item) }
+            } })
     }
+    offerBack?.let { item -> FollowBackDrawer(item.actor ?: "them", onDismiss = { offerBack = null }) {
+        offerBack = null
+        act("Couldn’t send the request.") { PeopleApi.request(checkNotNull(chorus.device), item.accountId.orEmpty()) }
+    } }
 }
 
 private fun categoryLabel(item: InboxItem): String? = when (item.category) {

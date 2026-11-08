@@ -372,7 +372,7 @@
 
 <dialog bind:this={confirmAdd} aria-labelledby="add-title">
   <h3 id="add-title">Add “{newName.trim()}” to every member?</h3>
-  <p>It's a {typeLabel(newType).toLowerCase()} field. Every member gets an empty one to fill in, and it starts as <strong>{newAudience.mode === 'private' ? 'only us' : newAudience.mode === 'followers' ? 'shared with friends' : newAudience.mode === 'server' ? 'shared with everyone here' : 'shared with chosen buckets'}</strong>; each member can change that for themselves.</p>
+  <p>It's a {typeLabel(newType).toLowerCase()} field. Every member gets an empty one to fill in, and it starts as <strong>{newAudience.mode === 'private' ? 'only us' : newAudience.mode === 'friends' ? 'shared with friends' : newAudience.mode === 'followers' ? 'shared with followers' : newAudience.mode === 'following' ? 'shared with who you follow' : newAudience.mode === 'server' ? 'shared with everyone here' : 'shared with chosen buckets'}</strong>; each member can change that for themselves.</p>
   <div class="actions">
     <button class="primary" onclick={add}>Add field</button>
     <button class="ghost" onclick={() => confirmAdd?.close()}>Not yet</button>

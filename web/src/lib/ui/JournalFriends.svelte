@@ -29,9 +29,11 @@
   async function load() {
     loading = true; error = '';
     try {
-      const following = ((await api('/follows')).following as Follow[]).filter((f) => f.status === 'active');
+      // those who only follow us can still share with people they follow (D-129)
+      const follows = await api('/follows');
+      const active = [...new Map(([...follows.following, ...follows.followers] as Follow[]).filter((f) => f.status === 'active').map((f) => [f.account.id, f])).values()];
       const loaded: (FriendPosts & { id: string })[] = [];
-      for (const f of following) {
+      for (const f of active) {
         const account = f.account.display_name || (f.account.handle ? `@${f.account.handle}` : 'Someone');
         try { const posts = await page(f.account.id); loaded.push({ id: f.account.id, account, posts, more: posts.length >= FRIEND_PAGE }); }
         catch { error = 'Some friends’ posts could not be loaded. Try again when connected.'; }
