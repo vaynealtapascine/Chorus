@@ -62,4 +62,32 @@ class ChatForwardTest {
         assertFalse(ChatForward.asksFirst(shared, "s", "general", "general", message("members")))
         assertFalse(ChatForward.asksFirst(shared, "other", "c3", "general", message()))
     }
+
+    @Test fun aCommentAndHiddenAuthorsTravelWithTheForward() {
+        val p = ChatForward.payload("c2", "rin", message(), null, emptyList(), comment = "  for Saturday ", showAuthors = false)
+        assertEquals("for Saturday", p.getString("text"))
+        assertEquals(0, p.getJSONArray("forward_snapshot").getJSONObject(0).getJSONArray("authors").length())
+        val shown = ChatForward.payload("c2", "rin", message(), null, emptyList())
+        assertEquals("kai", shown.getJSONArray("forward_snapshot").getJSONObject(0).getJSONArray("authors").getString(0))
+        val bundle = ChatForward.bundle("c2", "rin", listOf(message()), null, emptyList(), "look", showAuthors = false)
+        assertEquals("look", bundle.getString("text"))
+        assertEquals(0, bundle.getJSONArray("forward_snapshot").getJSONObject(0).getJSONArray("authors").length())
+    }
+
+    @Test fun destinationsMatchTheSearchNewestFirst() {
+        data class Row(val id: String, val title: String, val space: String, val at: Long)
+        val rows = listOf(Row("a", "General", "The Lanterns", 1), Row("b", "Book club", "Lanterns + Friends", 3), Row("c", "Quiet room", "The Lanterns", 2))
+        fun pick(q: String, exclude: String? = null) = ChatForward.destinations(rows, q, { listOf(it.title, it.space) }, { it.at }, { it.id == exclude }).map { it.id }
+        assertEquals(listOf("b", "c", "a"), pick(""))
+        assertEquals(listOf("b"), pick("friends"))
+        assertEquals(listOf("c", "a"), pick(" lanterns", exclude = "b"))
+        assertEquals(emptyList<String>(), pick("nobody"))
+    }
+
+    @Test fun theWarningNamesWhoWillSeeIt() {
+        assertEquals("This leaves The Lanterns" to "The Junipers and Driftwood will see it.",
+            ChatForward.warning("The Lanterns", listOf("The Junipers", "Driftwood"), "Book club"))
+        assertEquals("Kit, Rue and Sol will see it.", ChatForward.warning("x", listOf("Kit", "Rue", "Sol", "Kit"), "y").second)
+        assertEquals("Book club will see it.", ChatForward.warning("x", emptyList(), "Book club").second)
+    }
 }

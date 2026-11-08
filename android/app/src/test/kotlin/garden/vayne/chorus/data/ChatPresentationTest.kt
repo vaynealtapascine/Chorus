@@ -38,6 +38,9 @@ class ChatPresentationTest {
     @Test fun warningPreviewNeverLeaksTheHiddenText() {
         assertEquals("Content warning: sensitive", ChatPresentation.preview(message.copy(cw = "sensitive")))
         assertEquals("No messages yet", ChatPresentation.preview(null))
+        val forwarded = message.copy(text = "", forward = listOf(ForwardItem("m0", "Bring the folder", null, emptyList(), 1)))
+        assertEquals("Forwarded · Bring the folder", ChatPresentation.preview(forwarded))
+        assertEquals("Forwarded · for Saturday", ChatPresentation.preview(forwarded.copy(text = "for Saturday")))
         val poll = Poll("Hidden question", emptyList(), false)
         assertEquals("Content warning: sensitive", ChatPresentation.preview(message.copy(cw = "sensitive"), poll))
         assertEquals("Poll · Hidden question", ChatPresentation.preview(message, poll))

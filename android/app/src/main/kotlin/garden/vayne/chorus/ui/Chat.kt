@@ -252,7 +252,6 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     var replyIn by remember { mutableStateOf<ChatMessage?>(null) }
     var selectedIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var bundleForward by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
-    var forwardConfirm by remember { mutableStateOf<ChatListRow?>(null) }
     var deleting by remember { mutableStateOf<ChatMessage?>(null) }
     var undoDelete by remember { mutableStateOf<ChatMessage?>(null) }
     var notifyOpen by remember { mutableStateOf(false) }
@@ -643,7 +642,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     }
     // a snapshot plus copies of its files in the target scope, then the reader follows it there
     // several messages as one bundle (D-048), each still ours to see when it goes
-    fun forwardBundle(items: List<ChatMessage>, row: ChatListRow) {
+    fun forwardBundle(items: List<ChatMessage>, row: ChatListRow, comment: String = "", showAuthors: Boolean = true) {
         val live = chorus.model.value
         val account = chorus.device?.accountId.orEmpty()
         fun stillHere(m: List<ChatMessage>) = m.all { ChatOrganize.actionMessage(chorus.model.value, it.id, viewingAs, account) == it } &&
@@ -661,7 +660,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     chorus.newId().also { id -> chorus.create("attachment.create", id, ChatForward.attachmentCopy(a), scope = scope) }
                 }
                 check(stillHere(items)) { "These messages or that chat are no longer available." }
-                chorus.create("message.forward", chorus.newId(), ChatForward.bundle(row.channel.id, speaker, items, ChatForward.sourceName(from, row.space.id), ids), scope = scope)
+                chorus.create("message.forward", chorus.newId(), ChatForward.bundle(row.channel.id, speaker, items, ChatForward.sourceName(from, row.space.id), ids, comment, showAuthors), scope = scope)
                 bundleForward = emptyList()
                 openChat(row)
                 history.sent(); jumpTo = null; followNext = true
@@ -669,11 +668,11 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
             finally { busy = false }
         }
     }
-    fun forward(message: ChatMessage, row: ChatListRow) {
+    fun forward(message: ChatMessage, row: ChatListRow, comment: String = "", showAuthors: Boolean = true) {
         val live = chorus.model.value
         val current = ChatOrganize.actionMessage(live, message.id, viewingAs, chorus.device?.accountId.orEmpty())
         if (current != message || !ChatOrganize.shown(live, viewingAs)(row.channel.id)) {
-            forwarding = null; forwardConfirm = null; error = "This message or chat is no longer available."
+            forwarding = null; error = "This message or chat is no longer available."
             return
         }
         val from = live.channels.firstOrNull { it.id == message.channelId } ?: return
@@ -694,8 +693,8 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     chorus.newId().also { id -> chorus.create("attachment.create", id, ChatForward.attachmentCopy(a), scope = scope) }
                 }
                 checkAccess()
-                chorus.create("message.forward", chorus.newId(), ChatForward.payload(row.channel.id, speaker, message, ChatForward.sourceName(from, row.space.id), ids), scope = scope)
-                forwarding = null; forwardConfirm = null
+                chorus.create("message.forward", chorus.newId(), ChatForward.payload(row.channel.id, speaker, message, ChatForward.sourceName(from, row.space.id), ids, comment, showAuthors), scope = scope)
+                forwarding = null
                 openChat(row)
                 history.sent(); jumpTo = null; followNext = true
             } catch (e: Exception) { error = e.message ?: "Could not forward the message." }
@@ -1593,36 +1592,31 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
     val forwardableMessage = ChatOrganize.actionMessage(model, forwarding?.id, viewingAs, chorus.device?.accountId.orEmpty())
     LaunchedEffect(model, viewingAs, editingMessageId, forwarding?.id, deleting?.id) {
         if (editingMessageId != null && editableMessage == null) editingMessageId = null
-        if (forwarding != null && forwardableMessage == null) { forwarding = null; forwardConfirm = null }
+        if (forwarding != null && forwardableMessage == null) forwarding = null
         if (deleting != null && ChatOrganize.actionMessage(model, deleting?.id, viewingAs, chorus.device?.accountId.orEmpty()) == null) deleting = null
     }
     editingMessageId?.takeIf { editableMessage != null }?.let { id ->
         MessageEditDialog(chorus, model, id, viewingAs) { editingMessageId = null }
     }
-    forwarding?.takeIf { forwardableMessage != null }?.let { message ->
-        ChorusSheet(onDismissRequest = { forwarding = null }, containerColor = p.surface) {
-            Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-                Text("Forward to…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-                Text(spoilerPreview(ChatPresentation.preview(message)), color = p.ink3, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2,
-                    modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp))
-                for (row in listRows.sortedByDescending { it.latest?.occurredAt ?: 0L }) {
-                    Row(Modifier.fillMaxWidth().clickable(enabled = !busy) {
-                        val source = space ?: return@clickable
-                        val from = channel ?: return@clickable
-                        if (ChatForward.asksFirst(source, row.space.id, row.channel.id, from.id, message, ChatOrganize.restricted(model, from.id))) forwardConfirm = row
-                        else forward(message, row)
-                    }.heightIn(min = 56.dp).padding(horizontal = 20.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        ChannelDisc(row.channel, size = 40.dp)
-                        Column(Modifier.weight(1f)) {
-                            Text(row.title, color = p.ink, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 1)
-                            Text(spaceLabel(row.space, directory[row.space.id], chorus.device?.accountId.orEmpty()), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1)
-                        }
-                    }
-                }
-            }
+    // the red card (F5.20) when a copy leaves where it was written; who is on the other side
+    fun forwardWarning(items: List<ChatMessage>, row: ChatListRow): Pair<String, String>? {
+        val source = space ?: return null
+        val from = channel ?: return null
+        if (items.none { ChatForward.asksFirst(source, row.space.id, row.channel.id, from.id, it, ChatOrganize.restricted(model, from.id)) }) return null
+        val me = chorus.device?.accountId.orEmpty()
+        val sourceName = when (source.kind) {
+            "internal" -> model.systemName?.takeIf { it.isNotBlank() } ?: source.name.ifBlank { "this chat" }
+            "dm" -> "this chat"
+            else -> source.name.ifBlank { "this chat" }
         }
+        val audience = if (row.space.kind == "internal") emptyList() else directory[row.space.id]?.accounts?.filter { it.id != me }?.map { it.shownName }.orEmpty()
+        return ChatForward.warning(sourceName, audience, row.title)
+    }
+    val forwardSpeaker = replySpeakerId?.let(model::member)
+    forwarding?.takeIf { forwardableMessage != null }?.let { message ->
+        ForwardSheet(listRows, model, forwardSpeaker, busy, onDismiss = { forwarding = null }, exclude = message.channelId,
+            warning = { forwardWarning(listOf(message), it) },
+            onSend = { row, comment, showAuthors -> forward(message, row, comment, showAuthors) })
     }
     // Quote: pick a part of the text (long-press to select), or all of it (SPEC §5.3 partial quotes)
     quotePicking?.let { message ->
@@ -1645,42 +1639,17 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
         }
     }
     replyIn?.let { message ->
-        ChorusSheet(onDismissRequest = { replyIn = null }, containerColor = p.surface) {
-            Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-                Text("Reply in…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-                for (row in listRows.filter { it.channel.id != message.channelId }) Row(Modifier.fillMaxWidth().clickable {
-                    // the reply carries over and lands in that chat's composer
-                    replyIn = null
-                    selectedSpace = row.space.id; selectedChannel = row.channel.id; conversationOpen = true
-                    pendingPrivateReply = PendingPrivateReply(message, channelId = row.channel.id, speakerId = replySpeakerId)
-                }.heightIn(min = 56.dp).padding(horizontal = 20.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    ChatRowDisc(row, 40.dp)
-                    Text(row.title, color = p.ink, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 1)
-                }
-            }
-        }
+        ForwardSheet(listRows, model, forwardSpeaker, busy, onDismiss = { replyIn = null }, placeholder = "Reply in…",
+            exclude = message.channelId, onPick = { row ->
+                // the reply carries over and lands in that chat's composer
+                replyIn = null
+                selectedSpace = row.space.id; selectedChannel = row.channel.id; conversationOpen = true
+                pendingPrivateReply = PendingPrivateReply(message, channelId = row.channel.id, speakerId = replySpeakerId)
+            })
     }
-    if (bundleForward.isNotEmpty()) ChorusSheet(onDismissRequest = { bundleForward = emptyList() }, containerColor = p.surface) {
-        Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-            Text("Forward ${bundleForward.size} messages to…", color = p.ink, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-            for (row in listRows.sortedByDescending { it.latest?.occurredAt ?: 0L }) Row(Modifier.fillMaxWidth().clickable(enabled = !busy) {
-                forwardBundle(bundleForward, row)
-            }.heightIn(min = 56.dp).padding(horizontal = 20.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                ChatRowDisc(row, 40.dp)
-                Text(row.title, color = p.ink, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 1)
-            }
-        }
-    }
-    forwardConfirm?.takeIf { forwardableMessage != null && shownNow(it.channel.id) }?.let { row ->
-        ConfirmDrawer("Forward outside this chat?", null,
-            "Forward", { forwarding?.let { forward(it, row) } }, { forwardConfirm = null }, busy = busy, icon = R.drawable.ic_forward) {
-            FormNote("${row.title} will see it.", R.drawable.ic_globe, warning = true, title = "This leaves ${space?.name?.takeIf { space.kind != "dm" } ?: "this chat"}")
-        }
-    }
+    if (bundleForward.isNotEmpty()) ForwardSheet(listRows, model, forwardSpeaker, busy, onDismiss = { bundleForward = emptyList() },
+        placeholder = "Forward ${bundleForward.size} messages to…", exclude = bundleForward.first().channelId, warning = { forwardWarning(bundleForward, it) },
+        onSend = { row, comment, showAuthors -> forwardBundle(bundleForward, row, comment, showAuthors) })
     deleting?.takeIf { ChatOrganize.actionMessage(model, it.id, viewingAs, chorus.device?.accountId.orEmpty()) != null }?.let { message ->
         ConfirmDrawer("Delete this message?", null, "Delete",
             { deleting = null; delete(message) }, { deleting = null }, danger = true)
@@ -1882,8 +1851,10 @@ internal fun ChatMessageCard(message: ChatMessage, model: Model, foreignAuthors:
                 .then(if (onJump != null && interactive) Modifier.clickable(onClickLabel = "Show the original message") { onJump(item.messageId) } else Modifier)) {
                 Box(Modifier.width(2.dp).heightIn(min = 38.dp).background(sourceColor))
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    Text("Forwarded from " + item.authors.joinToString(" & ") { model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: message.authorCards[it]?.name ?: "Someone" }
-                        .ifEmpty { "Someone" }, color = sourceColor, fontSize = 12.sp, lineHeight = 16.sp)
+                    // the forwarder may have left out who wrote it (F5.20)
+                    Text(if (item.authors.isEmpty()) "Forwarded" else "Forwarded from " + item.authors.joinToString(" & ") {
+                        model.member(it)?.shownName ?: foreignAuthors[it]?.name ?: message.authorCards[it]?.name ?: "Someone" },
+                        color = sourceColor, fontSize = 12.sp, lineHeight = 16.sp)
                     Text(listOfNotNull(item.channelName, ChatPresentation.dateLabel(item.occurredAt)).joinToString(" · "),
                         color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
                 }

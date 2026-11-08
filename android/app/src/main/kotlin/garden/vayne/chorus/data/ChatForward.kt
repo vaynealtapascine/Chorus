@@ -48,11 +48,11 @@ object ChatForward {
 
     /** Several messages forwarded together as one bundle (D-048), oldest first. */
     fun bundle(targetChannel: String, speaker: String, messages: List<ChatMessage>, channelName: String?,
-        attachmentIds: List<String>): JSONObject = JSONObject()
+        attachmentIds: List<String>, comment: String = "", showAuthors: Boolean = true): JSONObject = JSONObject()
         .put("channel_id", targetChannel).put("authors", JSONArray(listOf(speaker)))
-        .put("text", "").put("entities", JSONArray())
+        .put("text", comment.trim()).put("entities", JSONArray())
         .put("forward_of_id", messages.first().id)
-        .put("forward_snapshot", JSONArray(messages.sortedBy { it.occurredAt }.map { snapshot(it, channelName) }))
+        .put("forward_snapshot", JSONArray(messages.sortedBy { it.occurredAt }.map { snapshot(it, channelName, showAuthors) }))
         .apply { if (attachmentIds.isNotEmpty()) put("attachments", JSONArray(attachmentIds)) }
 
     private fun attachment(a: ChatAttachment): JSONObject = JSONObject().put("id", a.id).put("blob_hash", a.blobHash)
@@ -65,10 +65,13 @@ object ChatForward {
      */
     fun sourceName(source: ChatChannel?, targetSpaceId: String): String? = source?.takeIf { it.spaceId == targetSpaceId }?.name
 
-    /** The whole message as web `snapshot()` writes it; [channelName] null leaves the name out. */
-    fun snapshot(message: ChatMessage, channelName: String?): JSONObject = JSONObject()
+    /**
+     * The whole message as web `snapshot()` writes it; [channelName] null leaves the name out, and
+     * [showAuthors] false leaves who wrote it out ("Show who originally wrote it", F5.20).
+     */
+    fun snapshot(message: ChatMessage, channelName: String?, showAuthors: Boolean = true): JSONObject = JSONObject()
         .put("message_id", message.id).apply { if (channelName != null) put("channel_name", channelName) }
-        .put("authors", JSONArray(message.authors)).put("text", message.text)
+        .put("authors", JSONArray(if (showAuthors) message.authors else emptyList())).put("text", message.text)
         .put("entities", runCatching { JSONArray(message.entities) }.getOrElse { JSONArray() })
         .put("occurred_at", message.occurredAt)
         .put("attachments", JSONArray(message.attachments.map(::attachment)))
@@ -79,12 +82,13 @@ object ChatForward {
         .put("filename", a.filename).put("mime", a.mime).put("size", a.size).put("alt_text", a.altText)
         .put("is_spoiler", a.spoiler).apply { a.thumbHash?.let { put("thumb_blob_hash", it) } }
 
+    /** One message forwarded, with an optional [comment] of the forwarder's own as its text (F5.20). */
     fun payload(targetChannel: String, speaker: String, message: ChatMessage, channelName: String?,
-        attachmentIds: List<String>): JSONObject = JSONObject()
+        attachmentIds: List<String>, comment: String = "", showAuthors: Boolean = true): JSONObject = JSONObject()
         .put("channel_id", targetChannel).put("authors", JSONArray(listOf(speaker)))
-        .put("text", "").put("entities", JSONArray())
+        .put("text", comment.trim()).put("entities", JSONArray())
         .put("forward_of_id", message.id)
-        .put("forward_snapshot", JSONArray(listOf(snapshot(message, channelName))))
+        .put("forward_snapshot", JSONArray(listOf(snapshot(message, channelName, showAuthors))))
         .apply { if (attachmentIds.isNotEmpty()) put("attachments", JSONArray(attachmentIds)) }
 
     /**
@@ -94,4 +98,29 @@ object ChatForward {
     fun asksFirst(source: ChatSpace, targetSpaceId: String, targetChannel: String, sourceChannel: String,
         message: ChatMessage, restrictedChannel: Boolean = false): Boolean = targetChannel != sourceChannel &&
         ((source.kind == "internal" && targetSpaceId != source.id) || message.visibilityMode != "all" || restrictedChannel)
+
+    /**
+     * Where a forward or a reply can go (F5.20): chats whose [names] match [query], newest first,
+     * without [exclude] (the chat a reply is already in).
+     */
+    fun <T> destinations(items: List<T>, query: String, names: (T) -> List<String?>, latest: (T) -> Long,
+        exclude: (T) -> Boolean = { false }): List<T> {
+        val q = query.trim()
+        return items.filter { !exclude(it) && (q.isEmpty() || names(it).any { n -> n?.contains(q, ignoreCase = true) == true }) }
+            .sortedByDescending(latest)
+    }
+
+    /**
+     * The red card when a forward leaves where it was written (F5.20): "This leaves The Lanterns" /
+     * "The Junipers and Driftwood will see it." [audience] is who else is in the target, else [fallback].
+     */
+    fun warning(source: String, audience: List<String>, fallback: String): Pair<String, String> {
+        val names = audience.filter { it.isNotBlank() }.distinct()
+        val who = when (names.size) {
+            0 -> fallback
+            1 -> names[0]
+            else -> names.dropLast(1).joinToString(", ") + " and " + names.last()
+        }
+        return "This leaves $source" to "$who will see it."
+    }
 }

@@ -102,7 +102,11 @@ object ChatPresentation {
         message.cw != null -> "Content warning: ${message.cw}"
         poll != null -> "Poll" + (poll.question?.takeIf { it.isNotBlank() }
             ?: message.text.takeIf { it.isNotBlank() }?.let { previewText(it, message.entities) })?.let { " · " + it.replace('\n', ' ') }.orEmpty()
-        message.forward.isNotEmpty() -> message.forward.first().let { "Forwarded · " + previewText(it.text, it.entities) }
+        // a forward with a comment of the forwarder's own (F5.20) previews the comment; text that only
+        // repeats the snapshot (as other clients may write it) doesn't count as one
+        message.forward.isNotEmpty() -> "Forwarded · " + (message.text.takeIf { it.isNotBlank() && it != message.forward.joinToString("\n") { f -> f.text } }
+            ?.let { previewText(it, message.entities) }
+            ?: message.forward.first().let { previewText(it.text, it.entities) })
         message.text.isNotBlank() -> previewText(message.text, message.entities)
         message.attachments.isNotEmpty() -> "Attachment · ${message.attachments.first().filename}"
         else -> "Message"
