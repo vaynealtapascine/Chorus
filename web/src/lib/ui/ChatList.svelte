@@ -53,6 +53,9 @@
     stowed: boolean;
     /** in a shared space with several channels: listed under the space's entry, by its own name */
     grouped: boolean;
+    /** whose a private chat with another account is on our side ("• Kai", D-098), so one member's
+     * chat with someone isn't mistaken for another's */
+    whose: string | null;
   }
   const organize = $derived(chatPrefs(projection.rows.pref ?? {}, sync.accountId));
   const rows: Row[] = $derived.by(() => {
@@ -106,6 +109,7 @@
         muted: notify === 'none', who: preview.who, text: preview.text, disc, id: c.id, pinned: organize.pins.includes(c.id),
         stowed: stillArchived(organize.archived.get(c.id), latest?.occurred_at),
         grouped,
+        whose: sides?.mine.map(nameOf).join(' & ') || null,
       };
     }
   }
@@ -302,7 +306,8 @@
         <span class="body">
           <span class="top">
             {#if r.icon}<Icon name={r.icon} size={16} />{/if}
-            <span class="title">{inSpace ? r.channel.name : r.title}</span>
+            <span class="title" class:fit={r.whose}>{inSpace ? r.channel.name : r.title}</span>
+            {#if r.whose}<span class="whose">• {r.whose}</span>{/if}
             {#if r.muted}<span class="muted-icon" title="Muted"><Icon name="muted" size={14} /></span>{/if}
             {#if r.at}<time>{chatTime(r.at)}</time>{/if}
           </span>
@@ -391,6 +396,8 @@
   .top, .bottom { display: flex; align-items: center; gap: 5px; min-width: 0; }
   .top { color: var(--ink-3); }
   .title { flex: 1; min-width: 0; color: var(--ink); font-weight: 600; font-size: 15px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .title.fit { flex: 0 1 auto; }
+  .whose { flex: 1 1 0; min-width: 40px; color: var(--ink-3); font-size: 13px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .muted-icon { display: grid; color: var(--ink-3); }
   time { flex: none; font-size: 12px; line-height: 16px; color: var(--ink-3); }
   .bottom { gap: 4px; font-size: 14px; line-height: 19px; }
