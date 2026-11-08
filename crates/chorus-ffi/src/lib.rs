@@ -307,8 +307,8 @@ impl CoreReplica {
         self.lock().rejected()
     }
 
-    /// Refused ops with why, oldest first (JSON array of `{id, kind, scope, entity_id, payload,
-    /// at, code, message}`): SYNC §7 *Sync issues* (show the reason, let the text be copied).
+    /// Refused ops with why, oldest first (JSON array of `{id, kind, scope, entity_id, member_id,
+    /// payload, at, code, message}`): SYNC §7 *Sync issues* (show the reason, let the text be copied).
     pub fn sync_issues(&self) -> String {
         self.lock().sync_issues()
     }
@@ -316,6 +316,11 @@ impl CoreReplica {
     /// Forget a refused op once seen; it comes out in `take_changes().removed`.
     pub fn dismiss_issue(&self, id: String) -> bool {
         self.lock().dismiss_issue(&id)
+    }
+
+    /// `confirmed`, `refused`, `pending` or `unknown`: where a local op stands (F10.4 Fixed).
+    pub fn op_status(&self, id: String) -> String {
+        self.lock().op_status(&id)
     }
 
     /// Slow mode (D-076): frames for held ops whose wait is over (JSON array). Call it at the

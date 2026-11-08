@@ -614,8 +614,8 @@ impl JsonReplica {
         js(&self.0.store.rejected)
     }
 
-    /// Refused ops with why (JSON array of `{id, kind, scope, entity_id, payload, at, code,
-    /// message}`), for *Sync issues*.
+    /// Refused ops with why (JSON array of `{id, kind, scope, entity_id, member_id, payload, at,
+    /// code, message}`), for *Sync issues*.
     pub fn sync_issues(&self) -> String {
         js(&self.0.sync_issues())
     }
@@ -623,6 +623,11 @@ impl JsonReplica {
     /// Forget a refused op the person has seen; `false` if it wasn't one.
     pub fn dismiss_issue(&mut self, id: &str) -> bool {
         self.0.dismiss_issue(id)
+    }
+
+    /// `confirmed`, `refused`, `pending` or `unknown`: where a local op stands.
+    pub fn op_status(&self, id: &str) -> String {
+        self.0.op_status(id).into()
     }
 
     /// Time passing (slow mode, D-076): frames sending the held ops whose wait is over (JSON

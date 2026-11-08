@@ -91,7 +91,7 @@ internal fun MoreScreen(chorus: Chorus, model: Model, bar: List<String>, unread:
             if (!person) item { NavRow("Fronting insights", AppIcon.History.resource, onClick = routes.onInsights) }
             item { SectionLabel("Settings", Modifier.padding(horizontal = 12.dp)) }
             if (issues.isNotEmpty()) item {
-                NavRow("Sync issues · ${issues.size}", R.drawable.ic_wifi_off, danger = true) { routes.onSettings(SettingsPage.Data) }
+                NavRow("Sync issues · ${issues.size}", R.drawable.ic_alert, danger = true) { routes.onSettings(SettingsPage.Issues) }
             }
             item { NavRow("Appearance", R.drawable.ic_type, appearanceSummary(appearance.mode, appearance.accent, appearance.spacing)) {
                 routes.onSettings(SettingsPage.Appearance) } }

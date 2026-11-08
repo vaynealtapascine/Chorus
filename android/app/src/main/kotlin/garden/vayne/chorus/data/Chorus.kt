@@ -46,7 +46,8 @@ data class RecheckProgress(val checked: Int, val total: Int)
 
 /** A permanently refused local op; core keeps the payload until the owner dismisses it. */
 data class SyncIssue(val id: String, val kind: String, val at: Long, val code: String,
-    val message: String, val text: String)
+    val message: String, val text: String, val scope: String = "", val entityId: String? = null,
+    val memberId: String? = null, val payload: JSONObject = JSONObject())
 
 data class MessageRevision(val rev: Int, val at: Long, val original: Boolean, val text: String,
     val contentWarning: String?)
@@ -94,6 +95,11 @@ class Chorus private constructor(private val ctx: Context) {
     val fileProgress: StateFlow<OfflineFiles.Progress?> = _fileProgress
     private val _syncIssues = MutableStateFlow<List<SyncIssue>>(emptyList())
     val syncIssues: StateFlow<List<SyncIssue>> = _syncIssues
+    private val _fixedIssues = MutableStateFlow<List<SyncIssues.Fixed>>(emptyList())
+    val fixedIssues: StateFlow<List<SyncIssues.Fixed>> = _fixedIssues
+    // when this device last caught up with every scope (F9.6 "Last synced 2 min ago")
+    private val _lastSynced = MutableStateFlow<Long?>(null)
+    val lastSynced: StateFlow<Long?> = _lastSynced
     private val _heldMessages = MutableStateFlow<Map<String, HeldMessage>>(emptyMap())
     val heldMessages: StateFlow<Map<String, HeldMessage>> = _heldMessages
     private var heldTimer: Job? = null // store thread only
@@ -119,9 +125,20 @@ class Chorus private constructor(private val ctx: Context) {
 
     val accountScope: String get() = "account:${device?.accountId.orEmpty()}"
 
+    /** Live and caught up with every scope. */
+    val upToDate: StateFlow<Boolean> get() = syncReady
+
     init {
         scope.launch {
             try { start() } catch (e: Exception) { storageFailed(e) }
+        }
+        scope.launch {
+            syncReady.collect { ready ->
+                if (!ready) return@collect
+                val now = System.currentTimeMillis()
+                _lastSynced.value = now
+                runCatching { store.put(LAST_SYNCED, now.toString()) }
+            }
         }
         val cm = ctx.getSystemService(ConnectivityManager::class.java)
         _network.value = cm?.activeNetwork != null
@@ -139,6 +156,8 @@ class Chorus private constructor(private val ctx: Context) {
         heldTimer = null
         _heldMessages.value = emptyMap()
         _keepEverything.value = store.get("setting:keep_everything") != "false"
+        _lastSynced.value = store.get(LAST_SYNCED)?.toLongOrNull()
+        _fixedIssues.value = SyncIssues.parseFixed(store.get(SyncIssues.KEY))
         val dev = store.get("device")?.let { runCatching { DeviceRecord.fromJson(it) }.getOrNull() }
         device = dev
         typingNames = TypingNames(dev?.accountId.orEmpty())
@@ -261,9 +280,11 @@ class Chorus private constructor(private val ctx: Context) {
         val rows = JSONArray(r.syncIssues())
         _syncIssues.value = (0 until rows.length()).map { n ->
             val row = rows.getJSONObject(n)
+            val payload = row.optJSONObject("payload") ?: JSONObject()
+            fun opt(key: String) = row.optString(key).takeIf { !row.isNull(key) && it.isNotEmpty() }
             SyncIssue(row.getString("id"), row.getString("kind"), row.getLong("at"),
-                row.getString("code"), row.getString("message"),
-                row.optJSONObject("payload")?.optString("text").orEmpty())
+                row.getString("code"), row.getString("message"), payload.optString("text"),
+                row.optString("scope"), opt("entity_id"), opt("member_id"), payload)
         }
     }
 
@@ -361,7 +382,30 @@ class Chorus private constructor(private val ctx: Context) {
         if (!r.dismissIssue(id)) return@withContext
         try { store.save(r.takeChanges()) } catch (e: Exception) { storageFailed(e); throw e }
         refreshIssues(r)
+        // a retry refused again and then discarded was never fixed
+        if (_fixedIssues.value.any { it.opId == id }) {
+            _fixedIssues.value = _fixedIssues.value.filter { it.opId != id }
+            store.put(SyncIssues.KEY, SyncIssues.encodeFixed(_fixedIssues.value))
+        }
     }
+
+    /**
+     * Send a refused op again under a new id (F10.4 Retry): written first, then the refused one is
+     * let go, so nothing is lost if either step fails. It joins the Fixed list as [title].
+     */
+    suspend fun retryIssue(issue: SyncIssue, title: String) {
+        val op = create(issue.kind, issue.entityId, issue.payload, scope = issue.scope.ifEmpty { accountScope }, memberId = issue.memberId)
+        withContext(dispatcher) {
+            val now = System.currentTimeMillis()
+            val fixed = SyncIssues.withFixed(SyncIssues.parseFixed(store.get(SyncIssues.KEY)), SyncIssues.Fixed(title, op, now), now)
+            store.put(SyncIssues.KEY, SyncIssues.encodeFixed(fixed))
+            _fixedIssues.value = fixed
+        }
+        dismissIssue(issue.id)
+    }
+
+    /** `confirmed`, `pending`, `refused` or `unknown` (F10.4's Fixed list). */
+    suspend fun opStatus(id: String): String = withContext(dispatcher) { replica?.opStatus(id) ?: "unknown" }
 
     /** Core's locally replicated versions, including the original and each accepted edit. */
     suspend fun revisions(entityId: String): List<MessageRevision> = withContext(dispatcher) {
@@ -499,6 +543,20 @@ class Chorus private constructor(private val ctx: Context) {
                 if (recheckWatch === watch) { recheckWatch = null; recheckDone = null }
             }
         }
+    }
+
+    /** F9.6's usage bar: the replica, downloaded files, the rest. */
+    suspend fun spaceUsage(): DeviceSpace.Usage = withContext(Dispatchers.IO) {
+        DeviceSpace.measure(ctx.filesDir, ctx.cacheDir, ctx.getDatabasePath("unused").parentFile!!)
+    }
+
+    /**
+     * Clear downloaded files (F9.6), keeping every message and anything not yet uploaded. Keep
+     * everything turns off with it, or the next fill would fetch them all again.
+     */
+    suspend fun clearDownloaded(): Long = fillMutex.withLock {
+        if (_keepEverything.value) setKeepEverything(false)
+        withContext(Dispatchers.IO) { DeviceSpace.clearDownloaded(ctx.filesDir, ctx.cacheDir) }
     }
 
     /** Replica, retained files, and evictable cache, including SQLite's WAL. */
@@ -766,6 +824,7 @@ class Chorus private constructor(private val ctx: Context) {
 
     companion object {
         private const val TAG = "Chorus"
+        private const val LAST_SYNCED = "sync:last_synced"
         @Volatile private var instance: Chorus? = null
 
         fun get(ctx: Context): Chorus =

@@ -1,0 +1,4 @@
+# What's new in the next Android build: up to three short lines, shown in the update drawer (F10.5).
+# Rewrite them for each deploy; lines starting with # are skipped.
+On this device: see what Chorus keeps and free up space
+Sync issues: retry a change that wasn't saved

@@ -103,7 +103,9 @@ if ($Android) {
         version_name = "0.1.$count"
         sha256 = (Get-FileHash (Join-Path $dir 'chorus.apk') -Algorithm SHA256).Hash.ToLower()
         size = (Get-Item (Join-Path $dir 'chorus.apk')).Length
-        changelog = (git -C $root log -5 --format='%s') -join "`n"
+        # the update drawer's "What's new" (F10.5): up to three plain lines, none when the file is empty
+        changelog = (@(Get-Content (Join-Path $root 'android\whats-new.txt') -ErrorAction SilentlyContinue |
+            Where-Object { $_.Trim() -and -not $_.TrimStart().StartsWith('#') } | Select-Object -First 3) -join "`n")
     }
     [IO.File]::WriteAllText((Join-Path $dir 'chorus.json'), ($meta | ConvertTo-Json))
     Write-Host "Published Android $($meta.version_name) ($([math]::Round($meta.size / 1MB, 1)) MB)."

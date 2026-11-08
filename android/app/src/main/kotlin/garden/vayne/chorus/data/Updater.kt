@@ -51,7 +51,18 @@ object Updater {
     private const val CHANNEL = "updates"
     private const val OPEN_CHECK_MS = 5 * 60_000L
 
-    data class Release(val versionCode: Long, val versionName: String, val sha256: String, val size: Long, val url: String)
+    data class Release(val versionCode: Long, val versionName: String, val sha256: String, val size: Long, val url: String,
+        val changelog: List<String> = emptyList())
+
+    /**
+     * The update drawer's *What's new* (F10.5): up to three lines from `chorus.json`'s `changelog`
+     * (`android/whats-new.txt`, by the deploy script). Commit subjects ("feat(web): …"), which
+     * older deploys wrote there, are left out.
+     */
+    fun whatsNew(raw: String): List<String> = raw.lines().map { it.trim().removePrefix("- ").trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("#") && !COMMIT_SUBJECT.containsMatchIn(it) }.take(3)
+
+    private val COMMIT_SUBJECT = Regex("""^(wip:\s*)?[a-z]+(\([^)]*\))?!?:\s""")
 
     /** What the update banner shows. */
     sealed interface State {
@@ -85,7 +96,7 @@ object Updater {
             .onFailure { Log.w(TAG, "update check failed", it) }.getOrNull() ?: return null
         return Release(
             j.optLong("version_code"), j.optString("version_name"), j.optString("sha256"), j.optLong("size"),
-            j.optString("url").ifEmpty { "${dev.base}/download/android" },
+            j.optString("url").ifEmpty { "${dev.base}/download/android" }, whatsNew(j.optString("changelog")),
         )
     }
 

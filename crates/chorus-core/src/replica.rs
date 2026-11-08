@@ -32,6 +32,8 @@ pub struct SyncIssue {
     pub kind: String,
     pub scope: String,
     pub entity_id: Option<String>,
+    /// Who it was written as (the acting member), so a retry keeps it.
+    pub member_id: Option<String>,
     pub payload: serde_json::Value,
     /// When it was written (device time).
     pub at: i64,
@@ -398,6 +400,7 @@ impl Replica {
                     kind: o.kind.clone(),
                     scope: o.scope.clone(),
                     entity_id: o.entity_id.clone(),
+                    member_id: o.member_id.clone(),
                     payload: o.payload.clone(),
                     at: o.device_at,
                     code: e.code.clone(),
@@ -407,6 +410,17 @@ impl Replica {
             .collect();
         crate::sort::by(&mut v, |a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
         v
+    }
+
+    /// Where one of this device's ops stands, for *Sync issues*' Fixed list (F10.4): `confirmed`
+    /// (the server stamped it), `refused`, `pending`, or `unknown` (never here, or dismissed).
+    pub fn op_status(&self, id: &str) -> &'static str {
+        match self.store.ops.get(id) {
+            None => "unknown",
+            Some(_) if self.store.rejected.contains_key(id) => "refused",
+            Some(o) if o.seq.is_some() => "confirmed",
+            Some(_) => "pending",
+        }
     }
 
     /// Let go of a refused op once the person has seen it (it's deleted from storage too).
@@ -646,12 +660,13 @@ mod tests {
             scope,
             entity_id: Some(crate::id::new_id(1, [2; 10])),
             payload: json!({"name": "Kai"}),
-            member_id: None,
+            member_id: Some(crate::id::new_id(1, [4; 10])),
             user_time: None,
         };
         let (o, _) = r.create(new, &now(1000), [3; 10]).unwrap();
         r.take_changes();
         assert!(r.sync_issues().is_empty());
+        assert_eq!(r.op_status(&o.id), "pending");
         r.store.reject(
             &o.id,
             crate::sync::AckError {
@@ -666,11 +681,32 @@ mod tests {
             (issues.len(), issues[0].code.as_str(), issues[0].payload["name"].as_str()),
             (1, "forbidden", Some("Kai"))
         );
+        assert_eq!(issues[0].member_id, o.member_id, "a retry keeps who wrote it");
+        assert_eq!(r.op_status(&o.id), "refused");
         assert!(r.dismiss_issue(&o.id));
+        assert_eq!(r.op_status(&o.id), "unknown");
         assert!(!r.dismiss_issue(&o.id));
         assert!(r.sync_issues().is_empty() && !r.store.ops.contains_key(&o.id));
         let ch = r.take_changes();
         assert!(ch.removed.contains(&o.id), "storage deletes it too");
+    }
+
+    #[test]
+    fn op_status_follows_the_server_stamp() {
+        let scope = format!("account:{}", crate::id::new_id(1, [1; 10]));
+        let mut r = Replica::new("dev", 7);
+        let new = NewOp {
+            kind: "member.create".into(),
+            scope,
+            entity_id: Some(crate::id::new_id(1, [2; 10])),
+            payload: json!({"name": "Kai"}),
+            member_id: None,
+            user_time: None,
+        };
+        let (o, _) = r.create(new, &now(1000), [3; 10]).unwrap();
+        assert_eq!((r.op_status(&o.id), r.op_status("nope")), ("pending", "unknown"));
+        r.store.ops.get_mut(&o.id).unwrap().seq = Some(9);
+        assert_eq!(r.op_status(&o.id), "confirmed");
     }
 
     /// SYNC.md §7.3: after a reconcile, the files named by the restoring ops are listed so the

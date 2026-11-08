@@ -1,7 +1,5 @@
 package garden.vayne.chorus.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
@@ -10,12 +8,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.AccountPrefs
@@ -31,16 +27,14 @@ import garden.vayne.chorus.data.QuietWindow
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
 import kotlinx.coroutines.launch
-import java.text.DateFormat
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Calendar
-import java.util.Date
 
 /** The pages under More's *Settings* (F10.1); a path like `Appearance>Advanced` is one stack. */
 internal enum class SettingsPage(val title: String) {
     Appearance("Appearance"), Advanced("Advanced"), Notifications("Notification settings"), Privacy("Privacy and sharing"),
-    Data("Your data and devices"), System("System settings"), Trash("Trash"),
+    Data("Your data and devices"), System("System settings"), Trash("Trash"), Device("On this device"), Issues("Sync issues"),
 }
 
 /** Where the settings pages lead outside themselves. */
@@ -54,6 +48,8 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, page: SettingsPage, on
     when (page) {
         SettingsPage.Appearance -> AppearanceScreen(model, onBack) { onOpen(SettingsPage.Advanced) }
         SettingsPage.Trash -> TrashScreen(chorus, model, onBack)
+        SettingsPage.Device -> OnThisDeviceScreen(chorus, onBack)
+        SettingsPage.Issues -> SyncIssuesScreen(chorus, model, onBack)
         else -> Column(Modifier.fillMaxSize().background(p.bg)) {
             SubpageBar(if (page == SettingsPage.System && model.isPerson) "Account" else page.title, null, onBack)
             val saver = rememberPrefSaver(chorus)
@@ -63,7 +59,7 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, page: SettingsPage, on
                     SettingsPage.Advanced -> AdvancedPage(model, saver)
                     SettingsPage.Notifications -> NotificationsPage(chorus, model, saver)
                     SettingsPage.Privacy -> PrivacyPage(model, saver, routes)
-                    SettingsPage.Data -> DataPage(chorus, model, routes) { onOpen(SettingsPage.Trash) }
+                    SettingsPage.Data -> DataPage(chorus, model, routes, onOpen)
                     SettingsPage.System -> SystemPage(chorus, model)
                     else -> {}
                 }
@@ -297,83 +293,28 @@ private fun PrivacyPage(model: Model, saver: PrefSaver, routes: SettingsRoutes) 
 private fun Modifier.clickableRadio(selected: Boolean, enabled: Boolean, onClick: () -> Unit): Modifier =
     selectable(selected, enabled = enabled, role = androidx.compose.ui.semantics.Role.RadioButton, onClick = onClick)
 
-/** Trash, linked devices, PluralKit import, and what this phone keeps (F9.6's rows). */
+/** Linked devices, PluralKit import, Trash, what this phone keeps, and sync issues when there are any. */
 @Composable
-private fun DataPage(chorus: Chorus, model: Model, routes: SettingsRoutes, onTrash: () -> Unit) {
-    val p = LocalChorusPalette.current
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val keepEverything by chorus.keepEverything.collectAsState()
-    val files by chorus.fileProgress.collectAsState()
-    val recheck by chorus.recheckProgress.collectAsState()
+private fun DataPage(chorus: Chorus, model: Model, routes: SettingsRoutes, onOpen: (SettingsPage) -> Unit) {
     val issues by chorus.syncIssues.collectAsState()
-    var syncBusy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val files by chorus.fileProgress.collectAsState()
     var spaceUsed by remember { mutableStateOf<Long?>(null) }
     var importing by remember { mutableStateOf(false) }
     LaunchedEffect(chorus, files?.done == files?.total) { spaceUsed = runCatching { chorus.spaceUsedBytes() }.getOrNull() }
-    FormCard(Modifier.padding(top = 16.dp)) {
+    if (issues.isNotEmpty()) FormCard(Modifier.padding(top = 16.dp)) {
+        NavRow("Sync issues · ${issues.size}", R.drawable.ic_alert, danger = true) { onOpen(SettingsPage.Issues) }
+    }
+    FormCard(Modifier.padding(top = if (issues.isEmpty()) 16.dp else 0.dp)) {
         NavRow("Link a device", R.drawable.ic_link, onClick = routes.onLink)
         if (!model.isPerson) {
             FormDivider()
             NavRow("Import from PluralKit", R.drawable.ic_down) { importing = true }
         }
         FormDivider()
-        NavRow("Trash", R.drawable.ic_delete, onClick = onTrash)
-    }
-    SectionLabel("This phone")
-    FormCard {
-        ToggleRow("Keep everything on this device", keepEverything, enabled = !syncBusy) { on ->
-            scope.launch {
-                try { chorus.setKeepEverything(on); error = null }
-                catch (e: Exception) { error = e.message ?: "Could not save this setting." }
-            }
-        }
+        NavRow("Trash", R.drawable.ic_delete) { onOpen(SettingsPage.Trash) }
         FormDivider()
-        NavRow(if (syncBusy) "Syncing…" else "Sync everything now", enabled = !syncBusy, chevron = false,
-            subtitle = files?.takeIf { it.missing > 0 }?.let { "${it.missing} not available" }) {
-            syncBusy = true; error = null
-            scope.launch {
-                try { chorus.recheckAll(); spaceUsed = chorus.spaceUsedBytes() }
-                catch (e: Exception) { error = e.message ?: "Could not finish syncing." }
-                finally { syncBusy = false }
-            }
-        }
-        val progress = recheck?.takeIf { syncBusy && it.total > 0 }?.let { it.checked.toFloat() / it.total }
-            ?: files?.takeIf { it.total > 0 && it.done < it.total }?.let { it.done.toFloat() / it.total }
-        progress?.let { LinearProgressIndicator({ it }, Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp), color = p.accent, trackColor = p.surface3) }
-        spaceUsed?.let { FormDivider(); FormInfoRow("Space used", formatBytes(it)) }
+        NavRow("On this device", R.drawable.ic_monitor, spaceUsed?.let(::formatBytes)) { onOpen(SettingsPage.Device) }
     }
-    if (issues.isNotEmpty()) {
-        SectionLabel("Sync issues · ${issues.size}")
-        issues.forEach { issue ->
-            FormCard {
-                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Could not sync ${issue.kind}", color = p.ink, fontWeight = FontWeight.SemiBold)
-                    Text(issue.message, color = p.danger, fontSize = 14.sp)
-                    if (issue.at > 0) Text(DateFormat.getDateTimeInstance().format(Date(issue.at)), color = p.ink3, fontSize = 13.sp)
-                    if (issue.text.isNotEmpty()) Text(issue.text, color = p.ink2, fontSize = 14.sp)
-                }
-                FormDivider()
-                Row {
-                    if (issue.text.isNotEmpty()) Box(Modifier.weight(1f)) {
-                        NavRow("Copy text", chevron = false) {
-                            ctx.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Chorus text", issue.text))
-                        }
-                    }
-                    Box(Modifier.weight(1f)) {
-                        NavRow("Discard", danger = true, chevron = false) {
-                            scope.launch {
-                                try { chorus.dismissIssue(issue.id); error = null }
-                                catch (e: Exception) { error = e.message ?: "Could not discard this." }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    error?.let { Text(it, color = p.danger, fontSize = 14.sp) }
     if (importing) PkImportSheet(chorus) { importing = false }
 }
 

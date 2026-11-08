@@ -420,7 +420,7 @@ user action
 | Phone rebooted while offline | `boot_id` differs → offset method; accuracy ≈ drift since last sample. |
 | Connection drops mid-batch | Unacked ops stay pending, re-sent; server dedupes by id. |
 | Server crashes mid-ingest | Each batch is one SQLite transaction (op insert + projection); either fully applied or not. |
-| Op rejected (e.g. lost permission while offline) | Shown in *Sync issues* with reason; local state reverted; user can copy text of a rejected message. |
+| Op rejected (e.g. lost permission while offline) | Shown in *Sync issues* with reason; local state reverted; user can copy text of a rejected message. Android's Retry (F10.4) writes the same op again under a new id (same kind, scope, entity, acting `member_id` and payload) before letting the refused one go; a retry the server takes shows under *Fixed* for a week (device-local, `Replica::op_status`). |
 | New device joins | Snapshot of each scope + views, then live. |
 | Newer client, older server | Server stores unknown kinds; if `core_min` > client core, client shows "Update Chorus" and stays read-only for sync (keeps queuing locally). |
 | Device revoked | Server closes the socket with `revoked`; device wipes local data after telling the user (Advanced: keep an export first). |
