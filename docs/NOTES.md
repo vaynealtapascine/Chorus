@@ -274,3 +274,7 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
 ## 2026-11-08: a one-off rustc error in the gate
 
 `cargo test --profile gate` once failed on `#[tokio::test]` in `tests/rest_fuzz.rs` with "cannot determine resolution for the attribute macro ... import resolution is stuck", right after clippy had compiled the same file. Rebuilding that target alone worked and the next full gate passed. If it shows up with no change near the macro, rebuild before investigating.
+
+## 2026-11-08: an Android deploy can run the PC out of commit
+
+`deploy-linux.ps1 -Android` crashed the Gradle daemon ("insufficient memory", `hs_err_pid*.log` and `replay_pid*.log` left in `android/`; delete them) with about 4.5 GB of Windows commit free, though RAM was not full. It fails before anything is uploaded, and a retry passed. Lots of browser tabs and other apps are what eat the commit.
