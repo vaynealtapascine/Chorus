@@ -218,6 +218,7 @@ const MANAGED_FIELDS: &[&str] = &[
     "thread_channel_id",
     "created_by_account_id",
     "deleted_by_account_id",
+    "deleted_by_member_id",
 ];
 
 /// Structural fields set when a message or post is created and never altered by an edit.
@@ -292,6 +293,8 @@ pub(crate) fn apply_op<'a>(
             let mut fields = one("deleted_at", json!(o.time()));
             if trash_item {
                 fields.insert("deleted_by_account_id".into(), json!(o.account_id));
+                // the acting member, for Trash's "Deleted by" (F9.5); null when none was named
+                fields.insert("deleted_by_member_id".into(), json!(o.member_id));
             }
             set_fields(p, spec.table, entity, o.hlc, &fields);
         }
@@ -299,6 +302,7 @@ pub(crate) fn apply_op<'a>(
             let mut fields = one("deleted_at", Value::Null);
             if trash_item {
                 fields.insert("deleted_by_account_id".into(), Value::Null);
+                fields.insert("deleted_by_member_id".into(), Value::Null);
             }
             set_fields(p, spec.table, entity, o.hlc, &fields);
         }

@@ -22,8 +22,8 @@ SP = '0192f8c2-0000-7000-8000-0000000000d1'
 MSG = '0192f8c2-0000-7000-8000-0000000000e1'
 
 
-def op(n, kind, payload, entity=None, at=1_790_000_000_000, node=1, scope=None, seq=None, device='dev1'):
-    return {
+def op(n, kind, payload, entity=None, at=1_790_000_000_000, node=1, scope=None, seq=None, device='dev1', member=None):
+    o = {
         'id': f'0192f8c2-0000-7000-8000-{n:012x}',
         'kind': kind,
         'v': 1,
@@ -39,6 +39,9 @@ def op(n, kind, payload, entity=None, at=1_790_000_000_000, node=1, scope=None, 
         'occurred_at': at,
         'received_at': at,
     }
+    if member is not None:
+        o['member_id'] = member  # the acting member (DATA_MODEL op envelope)
+    return o
 
 
 def entry(m, level='front', primary=False):
@@ -142,6 +145,14 @@ CASES = {
             op(1, 'member.create', {'name': 'Kai'}, entity=M1, at=T),
             op(2, 'member.delete', {}, entity=M1, at=T + 10),
             op(3, 'member.restore', {}, entity=M1, at=T + 20),
+        ])]),
+        'delete_by_member': ('a delete keeps who deleted it, a restore forgets it (Trash, F9.5)', 'project', [json.dumps([
+            op(1, 'member.create', {'name': 'Kai'}, entity=M1, at=T),
+            op(2, 'member.create', {'name': 'June'}, entity=M2, at=T),
+            op(3, 'member.delete', {}, entity=M1, at=T + 10, member=M2),
+            op(4, 'member.delete', {}, entity=M2, at=T + 10),
+            op(5, 'member.delete', {}, entity=M3, at=T + 10, member=M2),
+            op(6, 'member.restore', {}, entity=M3, at=T + 20),
         ])]),
         'message_edit_revisions': ('latest edit shown, revisions counted', 'project', [json.dumps([
             op(1, 'message.send', {'channel_id': 'c1', 'authors': [M1], 'text': 'hi', 'entities': []}, entity=MSG, at=T, scope=f'space:{SP}'),
