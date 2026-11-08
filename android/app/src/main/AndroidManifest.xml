@@ -30,6 +30,8 @@
         android:label="Chorus"
         android:supportsRtl="true"
         android:theme="@style/Theme.Chorus">
+        <!-- the welcome screen's Link device scan (F1.1): Play services fetches its scanner at install -->
+        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui" />
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"

@@ -64,6 +64,7 @@ val HankenGrotesk = FontFamily(
     Font(R.font.hanken_grotesk, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
     Font(R.font.hanken_grotesk, FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
     Font(R.font.hanken_grotesk, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+    Font(R.font.hanken_grotesk, FontWeight.Black, variationSettings = FontVariation.Settings(FontVariation.weight(900))),
 )
 
 /** D-079: dark by default; an explicit device preference may follow the OS or select light. */

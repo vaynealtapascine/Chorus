@@ -14,6 +14,7 @@ sqlcipher = "4.17.0"
 androidx-sqlite = "2.6.2"
 work = "2.11.2"
 firebase-messaging = "26.0.1"
+code-scanner = "16.1.0"
 
 [libraries]
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
@@ -35,6 +36,7 @@ sqlcipher = { group = "net.zetetic", name = "sqlcipher-android", version.ref = "
 androidx-sqlite = { group = "androidx.sqlite", name = "sqlite", version.ref = "androidx-sqlite" }
 work-runtime = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging", version.ref = "firebase-messaging" }
+code-scanner = { group = "com.google.android.gms", name = "play-services-code-scanner", version.ref = "code-scanner" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

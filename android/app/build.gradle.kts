@@ -85,6 +85,7 @@ dependencies {
     implementation(libs.androidx.sqlite)
     implementation(libs.work.runtime)
     implementation(libs.firebase.messaging)
+    implementation(libs.code.scanner)
     testImplementation(libs.junit)
     testImplementation(libs.jna) // host JNA for tests that exercise the real shared composer
     // the real org.json for JVM tests (Android's is a stub there)

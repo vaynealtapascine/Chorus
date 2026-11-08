@@ -35,10 +35,11 @@ import java.util.Calendar
 internal enum class SettingsPage(val title: String) {
     Appearance("Appearance"), Advanced("Advanced"), Notifications("Notification settings"), Privacy("Privacy and sharing"),
     Data("Your data and devices"), System("System settings"), Trash("Trash"), Device("On this device"), Issues("Sync issues"),
+    Link("Link a device"),
 }
 
 /** Where the settings pages lead outside themselves. */
-internal class SettingsRoutes(val onLink: () -> Unit, val onFriends: (List<String>) -> Unit)
+internal class SettingsRoutes(val onFriends: (List<String>) -> Unit)
 
 /** One settings page; [onOpen] goes a level deeper, [onBack] a level up. */
 @Composable
@@ -50,6 +51,7 @@ internal fun SettingsScreen(chorus: Chorus, model: Model, page: SettingsPage, on
         SettingsPage.Trash -> TrashScreen(chorus, model, onBack)
         SettingsPage.Device -> OnThisDeviceScreen(chorus, onBack)
         SettingsPage.Issues -> SyncIssuesScreen(chorus, model, onBack)
+        SettingsPage.Link -> LinkDeviceScreen(chorus, onBack)
         else -> Column(Modifier.fillMaxSize().background(p.bg)) {
             SubpageBar(if (page == SettingsPage.System && model.isPerson) "Account" else page.title, null, onBack)
             val saver = rememberPrefSaver(chorus)
@@ -305,7 +307,7 @@ private fun DataPage(chorus: Chorus, model: Model, routes: SettingsRoutes, onOpe
         NavRow("Sync issues · ${issues.size}", R.drawable.ic_alert, danger = true) { onOpen(SettingsPage.Issues) }
     }
     FormCard(Modifier.padding(top = if (issues.isEmpty()) 16.dp else 0.dp)) {
-        NavRow("Link a device", R.drawable.ic_link, onClick = routes.onLink)
+        NavRow("Link a device", R.drawable.ic_link) { onOpen(SettingsPage.Link) }
         if (!model.isPerson) {
             FormDivider()
             NavRow("Import from PluralKit", R.drawable.ic_down) { importing = true }

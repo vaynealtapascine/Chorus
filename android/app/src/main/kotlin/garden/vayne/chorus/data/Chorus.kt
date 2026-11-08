@@ -590,19 +590,25 @@ class Chorus private constructor(private val ctx: Context) {
         }
     }
 
+    /** This account's devices, this one first (F1.6). */
+    suspend fun linkedDevices(): List<LinkedDevice> = DeviceLinks.devices(authedCall("GET", "/me"), device?.deviceId)
+
+    /** Sign out another device of this account (`POST /devices/{id}/revoke`). */
+    suspend fun revokeDevice(id: String) { authedCall("POST", "/devices/$id/revoke", JSONObject()) }
+
     /** Create a one-use invite for another device, renewing the signed session if needed. */
-    suspend fun deviceInvite(): String = withContext(dispatcher) {
+    suspend fun deviceInvite(): DeviceInvite = withContext(dispatcher) {
         var dev = device ?: error("not set up")
         if (dev.expiresAt <= System.currentTimeMillis() + 60_000) {
             check(renewSession()) { "Could not renew the device session." }
             dev = device ?: error("not set up")
         }
         try {
-            Api.post(dev.base, "/devices/invite", JSONObject(), dev.session).getString("url")
+            DeviceLinks.invite(Api.post(dev.base, "/devices/invite", JSONObject(), dev.session))
         } catch (e: ApiException) {
             if (e.code != "unauthenticated" || !renewSession()) throw e
             dev = device ?: error("not set up")
-            Api.post(dev.base, "/devices/invite", JSONObject(), dev.session).getString("url")
+            DeviceLinks.invite(Api.post(dev.base, "/devices/invite", JSONObject(), dev.session))
         }
     }
 

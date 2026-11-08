@@ -261,6 +261,7 @@ perf and review write-ups, are in `git show a9c3c2e:docs/NOTES.md`.
 - The headless emulator can hang at boot with qemu stuck near 175 MB: kill it, delete `~/.android/avd/<name>.avd/*.lock`, and relaunch with `-no-snapshot -gpu swiftshader_indirect` (2026-11-08, UI21).
 - A state read only inside `SideEffect { }` is not a composition read: the scope doesn't recompose when it changes. Chat's focused-route report missed `newChat` (set from a nested scope), so the bottom bar stayed on New message; read the value into a `val` first (2026-11-09, UI21).
 - After a `chorus-core` change, an APK still carries the old core until `scripts/build-android-core.ps1` rebuilds `jniLibs` (ignored): `verify.py` only builds the host `chorus-ffi` for JVM tests, so those pass while the emulator shows the old projection (2026-11-09, UI21 Trash).
+- Google's code scanner (`play-services-code-scanner`, F1.1 Link device) needs Play services' `barcode_ui` module; the manifest asks for it at install. Its first Gradle resolve needs dl.google.com (cached in `F:\DunBuild\gradle` since 2026-11-09), then `--offline` works (UI21).
 - A fresh worktree's Android build needs `android/local.properties` and the generated core bindings (`android/core-bridge/src/main/{kotlin,jniLibs}`, ignored); copy them from the main checkout when the core hasn't changed, else run `scripts/build-android-core.ps1` (UI20).
 
 ## Deploy and ops

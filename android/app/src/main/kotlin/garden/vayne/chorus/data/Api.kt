@@ -77,14 +77,14 @@ object Api {
 
     /** Redeem an invite with a fresh device key. The account details are only used for new
      * accounts; [kind] is `system` or `person` (D-093). */
-    suspend fun enrol(link: String, name: String?, handle: String? = null, kind: String? = null): DeviceRecord {
+    suspend fun enrol(link: String, name: String?, handle: String? = null, kind: String? = null, deviceName: String? = null): DeviceRecord {
         val (base, code, pin) = parseInvite(link) ?: throw ApiException("That doesn't look like a Chorus invite link.")
         Pins.trust(pin)
         val body = JSONObject()
             .put("code", code)
             .put(
                 "device",
-                JSONObject().put("name", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
+                JSONObject().put("name", deviceName?.trim()?.takeIf { it.isNotEmpty() } ?: "${Build.MANUFACTURER} ${Build.MODEL}".trim())
                     .put("platform", "android").put("public_key", DeviceKey.create()),
             )
         if (!name.isNullOrBlank() || !handle.isNullOrBlank() || kind != null) body.put("account", JSONObject().apply {

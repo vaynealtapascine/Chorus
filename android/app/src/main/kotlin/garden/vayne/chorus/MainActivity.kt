@@ -78,7 +78,6 @@ import garden.vayne.chorus.designsystem.ChorusTheme
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.ui.History
 import garden.vayne.chorus.ui.Home
-import garden.vayne.chorus.ui.DeviceLink
 import garden.vayne.chorus.ui.Chat
 import garden.vayne.chorus.ui.Members
 import garden.vayne.chorus.ui.Onboarding
@@ -274,7 +273,6 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
     var journalShare by remember { mutableStateOf<SharedDraft?>(null) }
     var journalNewEntry by remember { mutableStateOf<Long?>(null) }
     var sharedChannel by remember { mutableStateOf<String?>(null) }
-    var linking by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     // the settings pages open, outermost first: "Appearance>Advanced" (F10.1, F10.2)
     var settingsPath by rememberSaveable { mutableStateOf("") }
@@ -348,7 +346,6 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         else if (frontsOpen) frontsOpen = false
         else if (settingsPath.contains('>')) settingsPath = settingsPath.substringBeforeLast('>') else settingsOpen = false
     }
-    if (linking && status != Status.NoDevice && status != Status.Loading) DeviceLink(chorus) { linking = false }
     var handoverOpen by remember { mutableStateOf(false) }
     LaunchedEffect(switchRequest, status) {
         val handover = switchRequest ?: return@LaunchedEffect
@@ -361,7 +358,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
         navPrefs.edit().putString(navAccount, choices.joinToString(",")).apply()
     }
     if (quickSwitchOpen && !model.isPerson) Switcher(chorus, model, handover = handoverOpen) { quickSwitchOpen = false; handoverOpen = false }
-    BackHandler(sharedDraft == null && !linking && !quickSwitchOpen && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen && layersFront == null && routedTab != Tab.Home) {
+    BackHandler(sharedDraft == null && !quickSwitchOpen && !settingsOpen && !searchOpen && !insightsOpen && !frontsOpen && layersFront == null && routedTab != Tab.Home) {
         // Front history is a Fronting page (F3.7): back returns there when Fronting is on the bar; a
         // page opened from More returns to More; any destination on the bar returns to Home (D-130)
         tab = if (routedTab == Tab.History && Tab.Fronting in navigationTabs) Tab.Fronting
@@ -465,8 +462,7 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
                         .getOrDefault(garden.vayne.chorus.ui.SettingsPage.Appearance)
                     SettingsScreen(chorus, model, page, onOpen = { settingsPath = "$settingsPath>${it.name}" },
                         onBack = { if (settingsPath.contains('>')) settingsPath = settingsPath.substringBeforeLast('>') else settingsOpen = false },
-                        routes = garden.vayne.chorus.ui.SettingsRoutes(onLink = { linking = true },
-                            onFriends = { route -> friendsRoute = route; settingsOpen = false; tab = Tab.People }))
+                        routes = garden.vayne.chorus.ui.SettingsRoutes(onFriends = { route -> friendsRoute = route; settingsOpen = false; tab = Tab.People }))
                 }
                 else androidx.compose.animation.Crossfade(targetState = activeTab,
                     animationSpec = androidx.compose.animation.core.tween(if (motion) 120 else 0), label = "Main destination") { shownTab ->
