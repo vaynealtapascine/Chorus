@@ -22,9 +22,9 @@ History: this file and `docs/NOTES.md` were compacted on 2026-11-05. The full lo
 
 ## Now
 
-- **In progress:** UI20
+- **In progress:** UI21
 - **Owner:** claude-opus-5.5, 2026-11-08
-- **Next concrete step:** Look at Friends on the owner's phone (inspect only); answer to Q24 when the owner gives one
+- **Next concrete step:** Audits of Android vs Figma per area into docs/handoff/ui21-*.md, then Android slices
 - **Notes:** UI20 deployed everywhere 2026-11-08 (b212f83, web index-DK_ZDRUV.js, Android 0.1.808). Left: owner's-phone look (inspect only), Q24. Demo for checks: F:/DunBuild/ui20-demo (server 5299, vite 5300 from worktree t3-082d5194, shot.cjs; Lanterns, Junipers, Driftwood, Mossbank, Ashgrove, person Ren).
 
 ### SEC1: what is done and what is left
@@ -101,6 +101,7 @@ UI4, UI5, UI8, UI9, UI10, UI11a–c, UI12a–d, UI13.
 
 ### UI — Owner's Figma redesign
 
+- [~] UI21 Figma parity pass, Android then web (owner, 2026-11-08): every current Flows frame (F0–F11) checked against both apps; missing features and looks built; screens without a frame get the same styling; trim explanatory text, cut taps. Reference images: `F:/DunBuild/figma-cache` (no Figma connector needed). Audits in `docs/handoff/ui21-*.md`.
 - [~] UI20 Friends as the Figma F7 screens (owner, 2026-11-07, D-128): Friends list with Around right now (F7.1), a friend's page for a system or a person (F7.2, F7.3, F7.5), a person's Following / Followers / Requests (F7.4), Requests with an accept drawer (F7.7), Sharing with buckets (F7.8), sharing with one friend (F7.9, new `GET /follows/{id}/view`), a bucket's page (F7.10), notifications from one friend (F7.12). Android, server and web deployed 2026-11-08 (b212f83, web `index-DK_ZDRUV.js`, Android 0.1.808); checked on the emulator and in Chrome (1360 and 400 px) against an isolated demo (`F:/DunBuild/ui20-demo`, server 5299, vite 5300, `shot.cjs`). Left: a look on the owner's phone (inspect only); Q24 (hidden-member count); F7.6/F7.13/F7.14 not built (D-128).
 - [x] UI19 Notifications screen and Journal replies (owner, 2026-11-07, D-127): the Figma F11 Notifications inbox (web + Android, a bottom-bar tab with a badge; Needs you / Today / Earlier; chips; hold for options; read as another member; web side panel); Journal › Friends shows replies to our posts and what friends' replies answer; own posts count friends' replies and hearts; one action row everywhere with unavailable actions disabled; quoting another account's post, the quote readable only by who can read both. Server + Android deployed 2026-11-07 (8222e4f, Android 0.1.795); checked on the emulator against an isolated demo (`F:/DunBuild/ui19-demo`, port 5297). Web deployed too (0d436de), checked at 1360 and 400 px against the demo. Left: a look on the owner's phone (inspect only).
 - [~] UI18 Member handles and private full names (owner, 2026-11-07, D-126): default `@member.subsystem.system` from core, claimable handles unique with account handles, shown in profiles, Journal and chat (web + Android); full names private unless shared, display names follow the profile. Merged (4268dee) and deployed (Android 0.1.791). Checked on web against an isolated demo copy (`F:/DunBuild/handles-demo`). Left: an Android emulator look (member editor Handles section, profile line, Journal rows); Android shared-chat mentions of another account's members by handle (web has them).
