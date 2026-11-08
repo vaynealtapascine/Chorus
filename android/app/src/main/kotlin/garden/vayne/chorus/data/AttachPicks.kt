@@ -29,4 +29,21 @@ object AttachPicks {
     /** The short type label on a file tile in the composer tray: "PDF", "ZIP", or "FILE". */
     fun extension(name: String): String =
         name.substringAfterLast('.', "").takeIf { it.isNotEmpty() && it.length <= 5 && it != name }?.uppercase() ?: "FILE"
+
+    /** The sheet's count once something is picked (F5.8): "1 selected". */
+    fun selectedLabel(count: Int): String? = if (count > 0) "$count selected" else null
+
+    /**
+     * The Journal tile (F5.8): our own posts and entries one can link, newest first; replies and
+     * reposts stay out (a link to them shows the original anyway).
+     */
+    fun journalChoices(posts: List<JournalPost>, limit: Int = 40): List<JournalPost> =
+        posts.filter { it.replyTo == null && it.repostOf == null }.sortedByDescending { it.occurredAt }.take(limit)
+
+    /** A post's link added to the draft (D-109 shows it as an embed): on its own after any text. */
+    fun withLink(draft: String, link: String): String = when {
+        draft.isBlank() -> link
+        draft.last().isWhitespace() -> draft + link
+        else -> "$draft $link"
+    }
 }

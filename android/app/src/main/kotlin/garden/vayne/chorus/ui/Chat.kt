@@ -1330,15 +1330,86 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     onRemove = { DeviceGallery.discard(ctx, a.uri); attachments.removeAt(i); editingFile = null },
                     onDismiss = { editingFile = null })
             }
+            // whether the message can go, with [files] or without; the attach sheet sends from its caption row too (F5.8)
+            fun sendable(files: Boolean) = !busy && pendingPrivateReply == null && (draft.isNotBlank() || files) &&
+                    (if (draft.isBlank()) author != null && files
+                        else currentPreview?.authors?.isNotEmpty() == true && (currentPreview.text.isNotBlank() || files)) && (replyTo == null || target != null) &&
+                    (audience != "members" || visibleTo.isNotEmpty()) &&
+                    // in a private chat a sigil can't hand the message to someone it isn't kept to
+                    (paneSides?.mine.isNullOrEmpty() || draft.isBlank() || currentPreview?.authors?.all { it in paneSides!!.mine } == true)
+            fun sendNow() {
+                val speakerId = author?.id
+                busy = true
+                error = null
+                actions.launch {
+                    try {
+                        val scope = "space:${space.id}"
+                        val attachmentIds = attachments.map { a -> sendAttachment(chorus, ctx, a, scope) }
+                        // a quote from a chat that has since locked doesn't go
+                        val quoted = quoting.filter { ChatOrganize.actionMessage(chorus.model.value, it.id, viewingAs, senderAccount) == it }
+                        check(quoted.size == quoting.size) { "A quoted message is no longer available." }
+                        val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
+                            audience, visibleTo.toSet(), space.kind, replyTo = target?.id, attachmentIds = attachmentIds,
+                            accountId = senderAccount,
+                            quote = quoted.takeIf { it.isNotEmpty() }?.let { q -> ChatForward.quote(q, ChatForward.sourceName(model.channels.find { it.id == q.first().channelId }, space.id), quotePart) })
+                        if (pollOn) payload.put("poll", Polls.draft(pollOptions.toList(), pollMultiple).getOrThrow())
+                        chorus.create("message.send", chorus.newId(), payload, scope = scope)
+                        history.sent(); jumpTo = null; followNext = true
+                        val alsoTo = threadParentChannel?.takeIf { alsoSend && channel.kind == "thread" }
+                        val parent = threadParent
+                        if (alsoTo != null && parent != null) chorus.create("message.send", chorus.newId(),
+                            ChatCompose.payload(model, alsoTo.id, speakerId, draft, cw, audience, visibleTo.toSet(), space.kind,
+                                replyTo = parent.id, attachmentIds = attachmentIds, accountId = senderAccount), scope = scope)
+                        alsoSend = false
+                        pollOn = false; pollMultiple = false
+                        pollOptions.clear(); pollOptions.addAll(listOf("", ""))
+                        if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
+                        // the bytes are staged in the upload queue now; our own camera shots can go
+                        for (a in attachments) DeviceGallery.discard(ctx, a.uri)
+                        attachments.clear()
+                        draft = ""
+                        cw = ""
+                        audience = ChatAside.afterSend(audience)
+                        visibleTo = emptyList()
+                        replyTo = null
+                        carriedReply = null
+                        quoting = emptyList(); quotePart = null
+                        moreOpen = false
+                    } catch (e: Exception) {
+                        error = e.message ?: "Could not send the message."
+                    } finally {
+                        busy = false
+                    }
+                }
+            }
             val sheetOptions = buildList {
-                add(AttachOption("poll", "Poll", R.drawable.ic_poll, pollOn) {
+                add(AttachOption("poll", "Poll", R.drawable.ic_poll, pollOn, AttachTints.POLL) {
                     PollDraftFields(pollOn, { pollOn = it }, pollOptions, pollMultiple) { pollMultiple = it }
                 })
-                add(AttachOption("cw", "Warning", R.drawable.ic_format_eye_off, cw.isNotBlank()) {
+                // Journal (F5.8): one of our posts or entries, as its link (D-109 shows it as an embed)
+                val linkBase = chorus.device?.base
+                if (linkBase != null) add(AttachOption("journal", "Journal", R.drawable.ic_book, false, AttachTints.JOURNAL) {
+                    val choices = remember(model.posts) { garden.vayne.chorus.data.AttachPicks.journalChoices(model.posts) }
+                    if (choices.isEmpty()) EmptyState(R.drawable.ic_book, "Nothing yet")
+                    for (post in choices) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        .clickable(onClickLabel = "Link this post") {
+                            draft = garden.vayne.chorus.data.AttachPicks.withLink(draft, garden.vayne.chorus.data.ChorusLinks.linkTo(linkBase, "post", post.id))
+                            moreOpen = false; attachPage = ""
+                        }.heightIn(min = 56.dp).padding(horizontal = 4.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        post.authors.firstOrNull()?.let(model::member)?.let { ChatAvatar(it, 36.dp) }
+                        Column(Modifier.weight(1f)) {
+                            Text(post.title?.takeIf { it.isNotBlank() } ?: spoilerPreview(post.text.replace('\n', ' ')).text,
+                                color = p.ink, fontSize = 15.sp, lineHeight = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(ChatPresentation.dateLabel(post.occurredAt), color = p.ink3, fontSize = 12.sp, lineHeight = 16.sp)
+                        }
+                    }
+                })
+                add(AttachOption("cw", "Warning", R.drawable.ic_format_eye_off, cw.isNotBlank(), AttachTints.WARNING) {
                     ChorusField(cw, { cw = it }, label = { Text("Content warning") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     if (cw.isNotBlank()) TextButton(onClick = { cw = "" }) { Text("Remove the warning") }
                 })
-                if (!asideBar) add(AttachOption("audience", "Who sees", R.drawable.ic_lock, audience != "all") {
+                if (!asideBar) add(AttachOption("audience", "Who sees", R.drawable.ic_lock, audience != "all", AttachTints.AUDIENCE) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         item { ChatChip("Everyone here", audience == "all") { audience = "all" } }
                         if (space.kind == "internal") item {
@@ -1359,7 +1430,7 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     }
                 })
                 // Advanced: who speaks by default here (D-103)
-                if (!model.isPerson) add(AttachOption("speaker", "Speaker", R.drawable.ic_front, false) {
+                if (!model.isPerson) add(AttachOption("speaker", "Speaker", R.drawable.ic_front, false, AttachTints.OTHER) {
                     val setting = model.speakerDefaults[channel.id] ?: SpeakerDefault()
                     val fronts = model.namedFronts?.channelChoices.orEmpty()
                     if (fronts.size > 1) {
@@ -1412,7 +1483,14 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                     for (uri in uris) attachments.add(PendingAttachment.of(ctx, uri))
                     moreOpen = false; attachPage = ""
                 },
-                onDismiss = { moreOpen = false; attachPage = "" })
+                onDismiss = { moreOpen = false; attachPage = "" },
+                // the caption is the message's own text: what's typed here stays in the composer
+                caption = draft, onCaption = { draft = it }, speaker = author, canSend = sendable(true),
+                onSend = { uris, hidden ->
+                    for (uri in uris) attachments.add(PendingAttachment.of(ctx, uri).copy(spoiler = hidden))
+                    moreOpen = false; attachPage = ""
+                    sendNow()
+                })
             // what the message carries besides its text: tap one to change it
             if ((audience != "all" && !asideBar) || cw.isNotBlank() || pollOn) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (audience != "all" && !asideBar) item { ComposerOptionChip(audienceLabel, R.drawable.ic_lock) { attachPage = "audience"; moreOpen = true } }
@@ -1480,58 +1558,9 @@ fun Chat(chorus: Chorus, model: Model, requestedSpace: String? = null,
                             ChatIconButton(R.drawable.ic_attach, "Attach photos or files, or add a poll, warning or audience") { attachPage = ""; moreOpen = true }
                         }
                     })
-                val canSend = !busy && pendingPrivateReply == null && (draft.isNotBlank() || attachments.isNotEmpty()) &&
-                    (if (draft.isBlank()) author != null && attachments.isNotEmpty()
-                        else currentPreview?.authors?.isNotEmpty() == true && (currentPreview.text.isNotBlank() || attachments.isNotEmpty())) && (replyTo == null || target != null) &&
-                    (audience != "members" || visibleTo.isNotEmpty()) &&
-                    // in a private chat a sigil can't hand the message to someone it isn't kept to
-                    (paneSides?.mine.isNullOrEmpty() || draft.isBlank() || currentPreview?.authors?.all { it in paneSides!!.mine } == true)
+                val canSend = sendable(attachments.isNotEmpty())
                 Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(if (canSend) p.accent else p.surface2)
-                        .clickable(enabled = canSend) {
-                            val speakerId = author?.id
-                            busy = true
-                            error = null
-                            actions.launch {
-                                try {
-                                    val scope = "space:${space.id}"
-                                    val attachmentIds = attachments.map { a -> sendAttachment(chorus, ctx, a, scope) }
-                                    // a quote from a chat that has since locked doesn't go
-                                    val quoted = quoting.filter { ChatOrganize.actionMessage(chorus.model.value, it.id, viewingAs, senderAccount) == it }
-                                    check(quoted.size == quoting.size) { "A quoted message is no longer available." }
-                                    val payload = ChatCompose.payload(model, channel.id, speakerId, draft, cw,
-                                        audience, visibleTo.toSet(), space.kind, replyTo = target?.id, attachmentIds = attachmentIds,
-                                        accountId = senderAccount,
-                                        quote = quoted.takeIf { it.isNotEmpty() }?.let { q -> ChatForward.quote(q, ChatForward.sourceName(model.channels.find { it.id == q.first().channelId }, space.id), quotePart) })
-                                    if (pollOn) payload.put("poll", Polls.draft(pollOptions.toList(), pollMultiple).getOrThrow())
-                                    chorus.create("message.send", chorus.newId(), payload, scope = scope)
-                                    history.sent(); jumpTo = null; followNext = true
-                                    val alsoTo = threadParentChannel?.takeIf { alsoSend && channel.kind == "thread" }
-                                    val parent = threadParent
-                                    if (alsoTo != null && parent != null) chorus.create("message.send", chorus.newId(),
-                                        ChatCompose.payload(model, alsoTo.id, speakerId, draft, cw, audience, visibleTo.toSet(), space.kind,
-                                            replyTo = parent.id, attachmentIds = attachmentIds, accountId = senderAccount), scope = scope)
-                                    alsoSend = false
-                                    pollOn = false; pollMultiple = false
-                                    pollOptions.clear(); pollOptions.addAll(listOf("", ""))
-                                    if (attachmentIds.isNotEmpty()) UploadWork.enqueue(ctx)
-                                    // the bytes are staged in the upload queue now; our own camera shots can go
-                                    for (a in attachments) DeviceGallery.discard(ctx, a.uri)
-                                    attachments.clear()
-                                    draft = ""
-                                    cw = ""
-                                    audience = ChatAside.afterSend(audience)
-                                    visibleTo = emptyList()
-                                    replyTo = null
-                                    carriedReply = null
-                                    quoting = emptyList(); quotePart = null
-                                    moreOpen = false
-                                } catch (e: Exception) {
-                                    error = e.message ?: "Could not send the message."
-                                } finally {
-                                    busy = false
-                                }
-                            }
-                        }
+                        .clickable(enabled = canSend) { sendNow() }
                         .wrapContentSize(Alignment.Center)
                         .semantics { contentDescription = if (busy) "Sending message" else if (aside) "Send as aside" else "Send to $audienceLabel" },
                     contentAlignment = Alignment.Center) { ChatIcon(R.drawable.ic_send, tint = if (canSend) p.onAccent else p.ink3) }

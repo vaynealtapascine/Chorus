@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -46,8 +47,6 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
@@ -159,23 +158,42 @@ internal object DeviceGallery {
     }
 }
 
-/** A page of the attach sheet besides the gallery: poll, content warning, audience, speaker. */
+/** A page of the attach sheet besides the gallery: poll, journal link, content warning, audience, speaker. */
 internal class AttachOption(val key: String, val label: String, val icon: Int, val active: Boolean,
+    /** The tile's own colour (F5.8 gives each type one). */
+    val tint: Color = AttachTints.OTHER,
     val content: @Composable ColumnScope.() -> Unit)
 
+/** The attach tiles' colours, as in F5.8: teal, blue, coral, lilac, apricot; their icons are dark on all themes. */
+internal object AttachTints {
+    val GALLERY = Color(0xFF45A396)
+    val FILE = Color(0xFF93BDEB)
+    val POLL = Color(0xFFEE8B7E)
+    val JOURNAL = Color(0xFFD7A3D5)
+    val WARNING = Color(0xFFE8C468)
+    val AUDIENCE = Color(0xFF9CCB8B)
+    val OTHER = Color(0xFFF2B36F)
+    val INK = Color(0xFF15171C)
+}
+
 /**
- * Telegram-style attach sheet (F5.8): the camera and recent photos in a grid, picked in order
- * and added together; Gallery (the system photo picker, no permission needed), File, and the
- * message's other options as round tiles, each opening its own page.
+ * Telegram-style attach sheet (F5.8): the camera and recent photos in a grid, picked in order;
+ * once some are picked, a caption row (who speaks, the message's own text, an eye that hides them
+ * behind a tap, send) sends them from here. Gallery (the system photo picker, no permission
+ * needed), File, and the message's other options are round tiles, each opening its own page.
+ * Closing the sheet with photos picked keeps them in the composer.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun AttachSheet(page: String, onPage: (String) -> Unit, already: Int, options: List<AttachOption>,
-    onAdd: (List<Uri>) -> Unit, onDismiss: () -> Unit) {
+    onAdd: (List<Uri>) -> Unit, onDismiss: () -> Unit,
+    caption: String = "", onCaption: (String) -> Unit = {}, speaker: garden.vayne.chorus.data.Member? = null,
+    canSend: Boolean = false, onSend: ((List<Uri>, Boolean) -> Unit)? = null) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val motion = rememberChorusMotion()
     var picked by remember { mutableStateOf(emptyList<Uri>()) }
+    var hidden by rememberSaveable { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
     val access = remember(reload) { DeviceGallery.access(ctx) }
     val media by produceState(emptyList<DeviceMedia>(), access, reload) {
@@ -197,15 +215,17 @@ internal fun AttachSheet(page: String, onPage: (String) -> Unit, already: Int, o
         shot = null
         if (uri != null) { if (ok) onAdd(listOf(uri)) else DeviceGallery.discard(ctx, uri) }
     }
-    // fully open: the tiles under the grid must show without a drag
-    ChorusSheet(onDismissRequest = onDismiss, containerColor = p.surface,
+    // fully open: the tiles under the grid must show without a drag; closing it keeps what was picked
+    ChorusSheet(onDismissRequest = { if (picked.isNotEmpty()) onAdd(picked) else onDismiss() }, containerColor = p.surface,
         skipPartiallyExpanded = true) {
         val option = options.find { it.key == page }
         if (option == null) Column(Modifier.fillMaxWidth()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Add to message", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 24.sp,
+                Text("Recent photos", color = p.ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp,
                     modifier = Modifier.weight(1f))
-                if (room < AttachPicks.MAX) Text("${AttachPicks.MAX - room + picked.size} of ${AttachPicks.MAX}", color = p.ink3,
+                val selected = AttachPicks.selectedLabel(picked.size)
+                if (selected != null) Text(selected, color = p.accent, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+                else if (room < AttachPicks.MAX) Text("${AttachPicks.MAX - room} of ${AttachPicks.MAX}", color = p.ink3,
                     fontSize = 13.sp, lineHeight = 18.sp)
             }
             LazyVerticalGrid(GridCells.Fixed(3), Modifier.fillMaxWidth().heightIn(max = 330.dp),
@@ -228,15 +248,18 @@ internal fun AttachSheet(page: String, onPage: (String) -> Unit, already: Int, o
                     }
                 }
             }
-            if (picked.isNotEmpty()) Button(onClick = { onAdd(picked) }, colors = ButtonDefaults.buttonColors(containerColor = p.accent, contentColor = p.onAccent),
-                modifier = Modifier.fillMaxWidth().padding(16.dp).heightIn(min = 48.dp)) { Text(AttachPicks.addLabel(picked.size)) }
-            else Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 12.dp),
+            if (picked.isNotEmpty() && onSend != null) CaptionRow(caption, onCaption, speaker, hidden, { hidden = it }, canSend) {
+                onSend(picked, hidden)
+            }
+            // while the caption is typed the keyboard needs the room the tiles take
+            if (picked.isEmpty() || !androidx.compose.foundation.layout.WindowInsets.isImeVisible)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                ActionTile(R.drawable.ic_image, "Gallery", enabled = room > 0) {
+                ActionTile(R.drawable.ic_image, "Gallery", AttachTints.GALLERY, enabled = room > 0) {
                     gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                 }
-                ActionTile(R.drawable.ic_file, "File", enabled = room > 0) { files.launch(arrayOf("*/*")) }
-                for (o in options) ActionTile(o.icon, o.label, active = o.active) { onPage(o.key) }
+                ActionTile(R.drawable.ic_file, "File", AttachTints.FILE, enabled = room > 0) { files.launch(arrayOf("*/*")) }
+                for (o in options) ActionTile(o.icon, o.label, o.tint, active = o.active) { onPage(o.key) }
             }
         } else Column(Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -293,14 +316,47 @@ private fun MediaPick(item: DeviceMedia, number: String?, room: Boolean, motion:
     }
 }
 
+/** The caption row (F5.8): who speaks, the message's text, the eye that hides the photos behind a tap, send. */
 @Composable
-private fun ActionTile(icon: Int, label: String, active: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+private fun CaptionRow(caption: String, onCaption: (String) -> Unit, speaker: garden.vayne.chorus.data.Member?, hidden: Boolean,
+    onHidden: (Boolean) -> Unit, canSend: Boolean, onSend: () -> Unit) {
+    val p = LocalChorusPalette.current
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        speaker?.let { ChatAvatar(it, 36.dp) }
+        Row(Modifier.weight(1f).heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp)).background(fieldFill()).padding(start = 16.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f).padding(vertical = 10.dp), contentAlignment = Alignment.CenterStart) {
+                if (caption.isEmpty()) Text("Add a caption…", color = p.ink3, fontSize = 15.sp)
+                androidx.compose.foundation.text.BasicTextField(caption, onCaption, maxLines = 4,
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(p.accent),
+                    textStyle = androidx.compose.ui.text.TextStyle(color = p.ink, fontSize = 15.sp, lineHeight = 20.sp),
+                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Caption" })
+            }
+            Box(Modifier.size(44.dp).clip(CircleShape).toggleable(hidden, role = Role.Switch, onValueChange = onHidden)
+                .semantics { contentDescription = "Hide behind a tap" }, contentAlignment = Alignment.Center) {
+                Box(Modifier.size(32.dp).background(if (hidden) p.accentSoft else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
+                    ChatIcon(R.drawable.ic_eye_off, tint = if (hidden) p.accent else p.ink3)
+                }
+            }
+        }
+        Box(Modifier.size(44.dp).clip(CircleShape).background(if (canSend) p.accent else p.surface3)
+            .clickable(enabled = canSend, role = Role.Button, onClickLabel = "Send", onClick = onSend)
+            .semantics { contentDescription = "Send" }, contentAlignment = Alignment.Center) {
+            ChatIcon(R.drawable.ic_send, tint = if (canSend) p.onAccent else p.ink3)
+        }
+    }
+}
+
+@Composable
+private fun ActionTile(icon: Int, label: String, tint: Color, active: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val p = LocalChorusPalette.current
     Column(Modifier.width(72.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         .alpha(if (enabled) 1f else .4f).semantics { if (active) stateDescription = "On" }.padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.size(48.dp).background(if (active) p.accent else p.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
-            ChatIcon(icon, tint = if (active) p.onAccent else p.accent)
+        Box(Modifier.size(52.dp).then(if (active) Modifier.border(2.dp, p.accent, CircleShape) else Modifier).padding(3.dp)
+            .background(tint, CircleShape), contentAlignment = Alignment.Center) {
+            ChatIcon(icon, tint = AttachTints.INK)
         }
         Text(label, color = if (active) p.accent else p.ink2, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1,
             overflow = TextOverflow.Ellipsis)

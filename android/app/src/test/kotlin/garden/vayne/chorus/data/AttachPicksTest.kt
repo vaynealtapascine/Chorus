@@ -29,4 +29,17 @@ class AttachPicksTest {
         assertEquals("FILE", AttachPicks.extension("README"))
         assertEquals("FILE", AttachPicks.extension("archive.verylongext"))
     }
+
+    @Test fun theJournalTileLinksOurNewestPostsAndEntries() {
+        fun post(id: String, at: Long, replyTo: String? = null, repostOf: String? = null) =
+            JournalPost(id, "note", listOf("kai"), null, "text $id", at, null, "followers", replyTo, null, emptyList(), repostOf = repostOf)
+        val posts = listOf(post("old", 1), post("reply", 5, replyTo = "old"), post("new", 9), post("repost", 7, repostOf = "x"), post("mid", 4))
+        assertEquals(listOf("new", "mid", "old"), AttachPicks.journalChoices(posts).map { it.id })
+        assertEquals(listOf("new"), AttachPicks.journalChoices(posts, limit = 1).map { it.id })
+        assertEquals("https://c/post/1", AttachPicks.withLink("", "https://c/post/1"))
+        assertEquals("look https://c/post/1", AttachPicks.withLink("look", "https://c/post/1"))
+        assertEquals("look\nhttps://c/post/1", AttachPicks.withLink("look\n", "https://c/post/1"))
+        assertEquals("2 selected", AttachPicks.selectedLabel(2))
+        assertEquals(null, AttachPicks.selectedLabel(0))
+    }
 }
