@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import garden.vayne.chorus.data.Api
 import garden.vayne.chorus.data.Chorus
 import garden.vayne.chorus.data.DeviceLinks
+import garden.vayne.chorus.data.Setup
 import garden.vayne.chorus.data.Welcoming
 import garden.vayne.chorus.designsystem.HankenGrotesk
 import garden.vayne.chorus.designsystem.R
@@ -74,8 +75,11 @@ fun Onboarding(chorus: Chorus, initialLink: String?) {
         val account = !forDevice
         scope.launch {
             try {
-                chorus.adopt(Api.enrol(link, name.takeIf { account }, handle.takeIf { account },
-                    (if (plural) "system" else "person").takeIf { account && invite != "" }, device.trim()))
+                val dev = Api.enrol(link, name.takeIf { account }, handle.takeIf { account },
+                    (if (plural) "system" else "person").takeIf { account && invite != "" }, device.trim())
+                // a new system goes through setup next (F1.2–F1.4), which also names it
+                if (account && plural) Setup.begin(ctx, dev.accountId, name.trim())
+                chorus.adopt(dev)
             } catch (e: Exception) {
                 error = e.message ?: "Couldn't reach the server."
             } finally { busy = false }

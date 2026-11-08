@@ -74,6 +74,7 @@ import garden.vayne.chorus.data.HomeSection
 import garden.vayne.chorus.data.Member
 import garden.vayne.chorus.data.Mode
 import garden.vayne.chorus.data.Model
+import garden.vayne.chorus.data.cap
 import garden.vayne.chorus.data.NamedHistory
 import garden.vayne.chorus.data.PeopleApi
 import garden.vayne.chorus.data.Reply
@@ -391,7 +392,7 @@ private fun FrontingNowCard(model: Model, scene: FrontScene, since: Map<String, 
     Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(p.surface)
         .border(1.dp, p.line, RoundedCornerShape(22.dp)).padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("${scene.innermost?.name?.takeIf { model.namedFronts != null } ?: "Fronting"} now", color = p.ink, fontSize = 15.sp,
+            Text("${scene.innermost?.name?.takeIf { model.namedFronts != null } ?: model.words.fronting.cap()} now", color = p.ink, fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             from?.let { Text("since ${time.format(Date(it))} · ${FrontingDisplay.duration(now - it)}", color = p.ink3, fontSize = 12.sp) }
         }

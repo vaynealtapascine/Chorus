@@ -43,4 +43,8 @@ Then web, by the same waves, using each audit's *Web* section.
 
 Asked and answered 2026-11-08: D-130–D-138 (and Q24). Pending from the owner: the CHORUS
 wordmark SVG and the serif for member names in onboarding (F1.1) — use a placeholder until
-they arrive. Everything else in the audits' question sections: use the audit's default.
+they arrive.
+F1.2 words (default in use): one word per row (the Figma shows two ticks per row; the app needs one
+word to show), stored as `system.terminology.system` / `.front` (DATA_MODEL §4.3 gains `system`). Only
+setup's titles, Home's "Fronting now", More's Fronting row and System settings read them so far;
+the rest of the app still says system/fronting. Everything else in the audits' question sections: use the audit's default.

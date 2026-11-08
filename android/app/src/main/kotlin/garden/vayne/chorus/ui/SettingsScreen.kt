@@ -25,6 +25,8 @@ import garden.vayne.chorus.data.Push
 import garden.vayne.chorus.data.QuietHours
 import garden.vayne.chorus.data.QuietWindow
 import garden.vayne.chorus.data.Status
+import garden.vayne.chorus.data.Words
+import garden.vayne.chorus.data.cap
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
 import kotlinx.coroutines.launch
@@ -335,6 +337,10 @@ private fun SystemPage(chorus: Chorus, model: Model) {
             FormDivider()
         }
         FormValueRow("Handle", model.accountHandle?.let { "@$it" } ?: "Add one") { editing = "handle" }
+        if (!model.isPerson) {
+            FormDivider()
+            FormValueRow("Words we use", "${model.words.system.cap()} · ${model.words.fronting}") { editing = "words" }
+        }
     }
     SectionLabel("Connection")
     FormCard {
@@ -350,7 +356,8 @@ private fun SystemPage(chorus: Chorus, model: Model) {
         })
     }
     error?.let { Text(it, color = p.danger, fontSize = 14.sp) }
-    editing?.let { which ->
+    if (editing == "words") WordsDrawer(chorus, model, { editing = null }) { error = it }
+    editing?.takeIf { it != "words" }?.let { which ->
         val handle = which == "handle"
         val current = if (handle) model.accountHandle.orEmpty() else model.systemName.orEmpty()
         var text by remember { mutableStateOf(current) }
@@ -373,6 +380,39 @@ private fun SystemPage(chorus: Chorus, model: Model) {
             if (handle) ChorusField(text, { text = garden.vayne.chorus.data.Welcoming.handle(it) }, Modifier.fillMaxWidth(), singleLine = true,
                 prefix = { Text("@") }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii))
             else ChorusField(text, { text = it.take(100) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Name") })
+        }
+    }
+}
+
+/** F1.2's two choices after setup: what the system calls itself and what being in control is. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun WordsDrawer(chorus: Chorus, model: Model, onDismiss: () -> Unit, onError: (String) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var words by remember { mutableStateOf(model.words) }
+    var busy by remember { mutableStateOf(false) }
+    Drawer(onDismiss, "Words we use", dismissible = !busy, footer = {
+        DrawerButton("Save", {
+            busy = true
+            scope.launch {
+                try {
+                    chorus.create("system.set", chorus.device?.accountId,
+                        org.json.JSONObject().put("terminology", Words.payload(model.terminology, words)))
+                    onDismiss()
+                } catch (e: Exception) { onError(e.message ?: "Could not save them.") }
+                finally { busy = false }
+            }
+        }, enabled = words != model.words, busy = busy)
+    }) {
+        SectionLabel("We call ourselves")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            val choices = Words.SYSTEM_CHOICES + listOfNotNull((model.words.system to model.words.systems).takeIf { it !in Words.SYSTEM_CHOICES })
+            for ((one, many) in choices) ChoiceChip(one.cap(), { words = words.copy(system = one, systems = many) }, active = words.system == one)
+        }
+        SectionLabel("When someone is in control, they are")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            val choices = Words.FRONT_CHOICES + listOfNotNull((model.words.fronting to model.words.front).takeIf { it !in Words.FRONT_CHOICES })
+            for ((ing, noun) in choices) ChoiceChip(ing.cap(), { words = words.copy(front = noun, fronting = ing) }, active = words.fronting == ing)
         }
     }
 }

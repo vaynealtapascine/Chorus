@@ -365,6 +365,15 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             else if (routedTab !in navigationTabs) Tab.More else Tab.Home
     }
 
+    // a new system's setup (F1.2–F1.4) comes before everything else, once the replica is open
+    var setupName by remember(navAccount) { mutableStateOf(garden.vayne.chorus.data.Setup.pending(context, navAccount)) }
+    if (setupName != null && navAccount.isNotEmpty() && !model.isPerson && status != Status.Loading && status != Status.NoDevice &&
+        status != Status.StorageError) {
+        garden.vayne.chorus.ui.SystemSetup(chorus, model, setupName.orEmpty()) {
+            garden.vayne.chorus.data.Setup.done(context, navAccount); setupName = null
+        }
+        return
+    }
     when (status) {
         Status.Loading -> Box(Modifier.fillMaxSize().background(p.bg))
         Status.NoDevice -> Onboarding(chorus, invite)

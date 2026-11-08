@@ -794,8 +794,13 @@ account's own ops on demand through the shared core. See FRONTS.md for the integ
 
 ```json
 {"member": ["member","members"], "front": ["front","fronting"], "switch": ["switch","switches"],
- "subsystem": ["subsystem","subsystems"], "cocon": "co-con", "present": "present"}
+ "subsystem": ["subsystem","subsystems"], "cocon": "co-con", "present": "present",
+ "system": ["system","systems"]}
 ```
+
+`system` is what the system calls itself ("collective", "household"); `front[1]` is the word for being
+in control ("fronting", "steering"). Android's setup (F1.2) and System settings write both, keeping
+the other keys.
 
 ### 4.4 Channel permissions: the rule (D-047, M5.10)
 

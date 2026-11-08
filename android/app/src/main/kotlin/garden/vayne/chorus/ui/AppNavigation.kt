@@ -17,6 +17,7 @@ import garden.vayne.chorus.data.Model
 import garden.vayne.chorus.data.PeopleApi
 import garden.vayne.chorus.data.Reply
 import garden.vayne.chorus.data.Status
+import garden.vayne.chorus.data.cap
 import garden.vayne.chorus.designsystem.LocalChorusAppearance
 import garden.vayne.chorus.designsystem.LocalChorusPalette
 import garden.vayne.chorus.designsystem.R
@@ -78,7 +79,7 @@ internal fun MoreScreen(chorus: Chorus, model: Model, bar: List<String>, unread:
             item { SectionLabel("Go to", Modifier.padding(horizontal = 12.dp)) }
             fun shown(key: String) = key !in bar
             item { NavRow("Home", R.drawable.ic_home) { routes.go("Today") } }
-            if (!person && shown("Home")) item { NavRow("Fronting", AppIcon.Front.resource, front.joinToString(", ").takeIf { it.isNotEmpty() }) { routes.go("Home") } }
+            if (!person && shown("Home")) item { NavRow(model.words.fronting.cap(), AppIcon.Front.resource, front.joinToString(", ").takeIf { it.isNotEmpty() }) { routes.go("Home") } }
             if (!person && shown("Members")) item {
                 NavRow("Members", R.drawable.ic_users, countLine(model.active.size, "member", model.groups.size, "group")) { routes.go("Members") }
             }

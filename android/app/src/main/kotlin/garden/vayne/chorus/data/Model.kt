@@ -182,6 +182,9 @@ class Model(
     val states: List<CustomState> = emptyList(),
     /** The system's own name (`system.name`), for Fronting's subtitle. */
     val systemName: String? = null,
+    /** `system.terminology` as stored (DATA_MODEL §4.3), and the two words F1.2 sets from it. */
+    val terminology: JSONObject? = null,
+    val words: Words = Words.Default,
     /** Unresolved legacy review cards (configured accounts read theirs from front history). */
     val reviews: List<FrontReview> = emptyList(),
     /** device id → its name, where this account's devices are known. */
@@ -254,6 +257,10 @@ class Model(
         val Empty = Model(emptyList(), emptyList(), emptyMap(), emptyList(), null, emptyList())
 
         private fun JSONObject.str(k: String): String? = if (has(k) && !isNull(k)) optString(k).ifEmpty { null } else null
+
+        /** The system row's terminology: an object, or its JSON text. */
+        private fun terminology(f: JSONObject?): JSONObject? =
+            f?.optJSONObject("terminology") ?: f?.str("terminology")?.let { runCatching { JSONObject(it) }.getOrNull() }
         private fun JSONObject.present(k: String) = has(k) && !isNull(k)
 
         private fun rows(p: JSONObject, table: String): List<Pair<String, JSONObject>> {
@@ -524,6 +531,8 @@ class Model(
                     .map { (id, f) -> CustomState(id, f.str("name") ?: "State", f.str("description"), f.str("color"), f.str("icon")) }
                     .sortedBy { it.name.lowercase() },
                 systemName = rows(p, "system").firstOrNull { it.first == accountId }?.second?.str("name"),
+                terminology = terminology(rows(p, "system").firstOrNull { it.first == accountId }?.second),
+                words = Words.parse(terminology(rows(p, "system").firstOrNull { it.first == accountId }?.second)),
                 reviews = FrontReview.list(p.optJSONObject("reviews")?.optJSONArray(accountId))
                     .filter { r -> rows(p, "front_review").none { it.first == r.id && it.second.present("resolution") } },
                 deviceNames = rows(p, "device").mapNotNull { (id, f) -> f.str("name")?.let { id to it } }.toMap(),
