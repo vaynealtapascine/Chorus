@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -81,7 +82,8 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, addTo: String? = null, handover: Boolean = false, onClose: () -> Unit) {
+fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, addTo: String? = null, handover: Boolean = false,
+    search: Boolean = false, onClose: () -> Unit) {
     val p = LocalChorusPalette.current
     val ctx = LocalContext.current
     val actions = rememberCoroutineScope()
@@ -96,7 +98,9 @@ fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, addTo: Strin
     var add by remember { mutableStateOf(addTo != null) }
     val placed = remember { mutableStateListOf<Entry>().also { if (addTo != null) it.addAll(current) } }
     var query by remember { mutableStateOf("") }
-    var searching by remember { mutableStateOf(false) }
+    var searching by remember { mutableStateOf(search) }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    if (search) androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     var options by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
     var at by remember { mutableStateOf<Long?>(null) }
@@ -109,19 +113,7 @@ fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, addTo: Strin
         placed.clear()
         if (toAdd) placed.addAll(current)
     }
-    val subjects = remember(model, query) {
-        val recents = model.recents(40)
-        val pinIds = WidgetPins.read(ctx, accountId)
-        val own = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }
-        val members = own.map { Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob) to
-            listOfNotNull(it.name, it.displayName, it.pronouns, *it.sigils.toTypedArray()).joinToString(" ") }
-        val groups = model.groups.filter { it.isSubsystem && Subsystems.memberOf(model, it.id) == null }
-            .map { Subject("group", it.id, it.name, it.color ?: "#A09184", "◌") to it.name }
-        val states = model.states.map { Subject("state", it.id, it.name, it.color ?: "#A39E92", it.icon ?: "?") to it.name }
-        val rank = { s: Subject -> pinIds.indexOf(s.id).takeIf { it >= 0 } ?: (1_000 + recents.indexOf(s.id).let { if (it < 0) 10_000 else it }) }
-        (members.sortedBy { rank(it.first) } + groups + states).mapNotNull { (s, text) -> fuzzy(query, text)?.let { s to it } }
-            .sortedBy { if (query.isBlank()) 0 else it.second }.map { it.first }
-    }
+    val subjects = remember(model, query) { switchSubjects(model, query, accountId, WidgetPins.read(ctx, accountId)) }
 
     fun tap(s: Subject, layer: String? = null) {
         val i = placed.indexOfFirst { it.subjectType == s.type && it.subjectId == s.id }
@@ -184,8 +176,15 @@ fun Switcher(chorus: Chorus, model: Model, frontId: String? = null, addTo: Strin
     }) {
         if (options) SwitchOptionsDrawer(at, { at = it }, note, { note = it }, notify, { notify = it }, showNote = !add && !handover, alerts = !add) { options = false }
         Segmented(listOf("Replace front", "Add to front"), if (add) 1 else 0) { mode(it == 1) }
-        if (searching) ChorusField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("Search ${subjects.size} members") },
-            leadingIcon = { Glyph(R.drawable.ic_search, p.ink3, 18.dp) })
+        // Enter places the best match, or switches when someone is placed (the launcher's fast path)
+        if (searching) ChorusField(query, { query = it }, Modifier.fillMaxWidth().focusRequester(focus), singleLine = true,
+            placeholder = { Text("Search ${subjects.size} members") }, leadingIcon = { Glyph(R.drawable.ic_search, p.ink3, 18.dp) },
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Go),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onGo = {
+                val top = subjects.firstOrNull()
+                if (top != null && placed.none { it.subjectType == top.type && it.subjectId == top.id }) { tap(top); query = "" }
+                else if (!busy && (if (add) changes.isNotEmpty() else placed.isNotEmpty())) commit()
+            }))
         if (subjects.isEmpty()) EmptyState(R.drawable.ic_members, if (query.isBlank()) "No members yet" else "No one matches")
         else LazyVerticalGrid(GridCells.Fixed(4), Modifier.fillMaxWidth().heightIn(max = 360.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 6.dp, bottom = 6.dp)) {
@@ -225,6 +224,21 @@ private fun SwitchOptionsDrawer(at: Long?, onAt: (Long?) -> Unit, note: String, 
         if (showNote) ChorusField(note, onNote, Modifier.fillMaxWidth(), label = { Text("Note (optional)") })
         if (alerts) ChoiceField("Alerts", kinds.first { it.first == notify }.second) { alerting = true }
     }
+}
+
+/** Who the switch grid offers, best first: this account's members (pins, then recent), top-level
+ * subsystems and states; another account's members never (D-119). */
+internal fun switchSubjects(model: Model, query: String, accountId: String, pins: List<String>): List<Subject> {
+    val recents = model.recents(40)
+    val own = model.active.filter { it.createdByAccountId == null || it.createdByAccountId == accountId }
+    val members = own.map { Subject("member", it.id, it.shownName, it.color, it.glyph, it.avatarBlob) to
+        listOfNotNull(it.name, it.displayName, it.pronouns, *it.sigils.toTypedArray()).joinToString(" ") }
+    val groups = model.groups.filter { it.isSubsystem && Subsystems.memberOf(model, it.id) == null }
+        .map { Subject("group", it.id, it.name, it.color ?: "#A09184", "◌") to it.name }
+    val states = model.states.map { Subject("state", it.id, it.name, it.color ?: "#A39E92", it.icon ?: "?") to it.name }
+    val rank = { s: Subject -> pins.indexOf(s.id).takeIf { it >= 0 } ?: (1_000 + recents.indexOf(s.id).let { if (it < 0) 10_000 else it }) }
+    return (members.sortedBy { rank(it.first) } + groups + states).mapNotNull { (s, text) -> fuzzy(query, text)?.let { s to it } }
+        .sortedBy { if (query.isBlank()) 0 else it.second }.map { it.first }
 }
 
 /** A face in the switch grid, ringed and tagged with the layer it's placed on (F3.2). */

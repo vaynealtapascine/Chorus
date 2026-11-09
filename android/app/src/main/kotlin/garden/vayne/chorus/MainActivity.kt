@@ -409,6 +409,9 @@ private fun App(chorus: Chorus, invite: String?, sharedDraft: SharedDraft?,
             val unread = inbox?.takeIf { it.first == chorus.device?.accountId }?.second?.let { items ->
                 Inbox.unread(items, inboxReader(model, null)?.let { model.accountPrefs.inboxRead[it.id] } ?: InboxRead(), model.accountPrefs.inboxShows)
             } ?: 0
+            // the unread widget (F3.8) shows the same number for the same reader
+            val unreadReader = inboxReader(model, null)?.id
+            LaunchedEffect(unread, unreadReader, inbox != null) { if (inbox != null) garden.vayne.chorus.widget.UnreadWidget.refreshAll(context, model) }
             @Composable fun TabIcon(t: Tab) {
                 if (t == Tab.Notifications && unread > 0) BadgedBox(badge = {
                     Badge(containerColor = p.sun, contentColor = p.onSun) { Text(if (unread > 99) "99+" else unread.toString()) }

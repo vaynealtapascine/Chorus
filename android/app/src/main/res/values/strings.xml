@@ -3,6 +3,9 @@
     <string name="widget_name">Quick switch</string>
     <string name="widget_description">Switch who\'s fronting with one tap</string>
     <string name="front_widget_name">Front</string>
+    <string name="unread_widget_name">Unread</string>
+    <string name="unread_widget_title">Chorus</string>
+    <string name="unread_widget_description">How many notifications wait for whoever is reading</string>
     <string name="front_widget_description">Who\'s in a front at a glance, with Switch and Handover</string>
     <string name="shortcut_switch">Switch…</string>
     <string name="shortcut_switch_out">Switch out</string>

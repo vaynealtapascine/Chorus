@@ -235,10 +235,17 @@ member ring, cached by `(blob_hash, color)`.
 
 ### 3.4 Search launcher
 
-A translucent, dialog-styled Activity (`excludeFromRecents`, `taskAffinity` empty) that opens
-with the keyboard up: fuzzy search over members/subsystems/states (core's matcher, ≤ 16 ms per
-keystroke at 500), results with small **Replace · Add · Remove** buttons, and a "Multi" toggle to
-stage several then **Switch**. Also reachable from app shortcuts and the in-app front pill.
+A translucent Activity (`excludeFromRecents`, `taskAffinity` empty) that opens the app's Switch
+drawer (F3.2) with its search field focused: fuzzy search over members/subsystems/states (core's
+matcher, ≤ 16 ms per keystroke at 500), the face grid with layer tags on Body's layers, Replace /
+Add, and **Switch** with its summary (UI21). Enter places the top match, a second Enter switches.
+Also reachable from app shortcuts and the in-app front pill.
+
+### 3.5 Unread widget
+
+A small RemoteViews widget (F3.8 "Chorus · 3 unread for Foxglove"): the Notifications count for
+the default reader, the same number as the bottom bar's badge; tap opens Notifications. The app
+redraws it when the count or reader changes; a placed widget with no inbox read yet reads it once.
 
 ## 4. Web PWA
 
