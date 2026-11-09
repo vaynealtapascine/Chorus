@@ -1,5 +1,4 @@
 # What's new in the next Android build: up to three short lines, shown in the update drawer (F10.5).
 # Rewrite them for each deploy; lines starting with # are skipped.
-Hold a heart, reaction or poll option to act as several members
-A fuller Journal composer, with polls, headings and camera
-New Feeds, Lists and Relationships screens, and a System board
+Polls can close at a set time, or whenever you choose
+Nudge members who haven't voted yet
