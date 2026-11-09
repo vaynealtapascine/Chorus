@@ -1,4 +1,5 @@
 # What's new in the next Android build: up to three short lines, shown in the update drawer (F10.5).
 # Rewrite them for each deploy; lines starting with # are skipped.
-Polls can close at a set time, or whenever you choose
-Nudge members who haven't voted yet
+A new Stage: tabs for picking, styling and blacking out, and stage a post
+Several states and a note for each member
+Choose what this phone rings for
