@@ -1,5 +1,5 @@
 # What's new in the next Android build: up to three short lines, shown in the update drawer (F10.5).
 # Rewrite them for each deploy; lines starting with # are skipped.
-A simpler More, with Appearance accents and your own bottom bar
-Trash shows who deleted what, and Insights got a new look
-Easier setup, and link a device with a QR code
+Hold a heart, reaction or poll option to act as several members
+A fuller Journal composer, with polls, headings and camera
+New Feeds, Lists and Relationships screens, and a System board
